@@ -23,6 +23,31 @@
  *   OEE           = Availability × Performance × Quality
  *
  * Standards: SEMI E10-0701, SEMI E79-0200, ISO 22400-2 (KPI for MOM).
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * CANONICAL SOURCE OF TRUTH
+ * ─────────────────────────────────────────────────────────────────────────
+ * This module is the ONE place OEE is defined. Every consumer (mqttOeeRouters
+ * `getAllOEE`/`getMachineOEE`/`calculateOEE`, dashboards, reports) must delegate
+ * here rather than re-deriving A/P/Q with its own formula.
+ *
+ * `getMachineOEELive` / `getAllMachinesOEELive` compute OEE on read from REAL
+ * sources — no in-memory cache, no synthetic multipliers, no random fallback:
+ *
+ *   Availability  = online time / (online + offline)            ← machine_status_logs
+ *                   (getMachineUptimeStats — the unified status/uptime path)
+ *   Performance   = (idealCycleTime × totalCount) / runTimeSec  ← daily_statistics
+ *                   runTimeSec = online seconds from the same uptime source.
+ *                   idealCycleTime resolved from the active oee_target's
+ *                   implied ideal (targetPerformance vs avgCycleTime) or, when
+ *                   no ideal is configured, Performance is NULL (honest N/A).
+ *   Quality       = (okCount + ntfCount) / totalCount           ← daily_statistics
+ *                   NTF = "no-trouble-found" (confirmed good); this is the same
+ *                   yield convention used everywhere else (server/db/statistics).
+ *   OEE           = Availability × Performance × Quality
+ *
+ * When a factor's inputs are absent we return `null` for that factor (and for
+ * OEE), NEVER a fabricated number. Callers/UI render null as "N/A".
  */
 
 import { getDb } from "../db/connection";
@@ -31,8 +56,11 @@ import {
   downtimeEvents,
   oeeMetrics,
   oeeTargets,
+  dailyStatistics,
+  machines,
   type InsertOEEMetric,
 } from "../../drizzle/schema";
+import { getMachineUptimeStats } from "../db/machine";
 
 // SEMI E10 category → equipment state mapping. The `category` enum used by
 // downtime_events is application-specific (`unplanned`, `planned`, …); we
@@ -287,4 +315,208 @@ export function evaluateOEEAlert(
     };
   }
   return { level: "ok", oeePct, threshold: target.alertThreshold, message: "within target" };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// LIVE OEE — computed on read from real sources (no in-memory cache).
+//
+// This is the canonical replacement for the legacy socket.ts in-memory
+// `calculateOEE`/`machineOEEData` path. Factors that lack real inputs are
+// returned as `null` (honest N/A) — never fabricated.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Live OEE for a single machine. Percentages are 0..100 to match the existing
+ * frontend contract (CorporateDashboard / OEEDashboard / MachineHealthMonitoring
+ * read `.oee/.availability/.performance/.quality` as percentages). Any factor
+ * whose inputs are missing is `null`, and OEE is `null` unless all three exist.
+ */
+export interface LiveOEEMetrics {
+  machineId: number;
+  machineCode: string;
+  timestamp: Date;
+  availability: number | null; // %  online/(online+offline)
+  performance: number | null;  // %  ideal·count / runTime   (null if no ideal cycle)
+  quality: number | null;      // %  (ok+ntf)/total
+  oee: number | null;          // %  A×P×Q (null if any factor null)
+  details: {
+    windowHours: number;
+    onlineSeconds: number;
+    offlineSeconds: number;
+    totalCount: number;
+    goodCount: number;       // ok + ntf
+    rejectCount: number;     // ng
+    idealCycleTimeSec: number | null;
+    hasUptimeData: boolean;
+    hasProductionData: boolean;
+  };
+}
+
+function pct(x: number): number {
+  return Math.round(Math.min(100, Math.max(0, x * 100)) * 100) / 100;
+}
+
+/**
+ * Compute live OEE for one machine over the trailing `windowHours`.
+ *
+ *  - Availability from the unified machine-status/uptime path
+ *    (getMachineUptimeStats → machine_status_logs).
+ *  - Production counts (ok/ng/ntf/total) summed from daily_statistics for the
+ *    window. Quality = (ok+ntf)/total (NTF treated as good — same convention as
+ *    server/db/statistics yieldRate).
+ *  - Ideal cycle time resolved by `resolveIdealCycleTimeSec`; when none is
+ *    available, Performance (and therefore OEE) is null.
+ */
+export async function getMachineOEELive(params: {
+  machineId: number;
+  machineCode?: string;
+  windowHours?: number;
+  idealCycleTimeSec?: number | null;
+}): Promise<LiveOEEMetrics> {
+  const windowHours = params.windowHours ?? 24;
+  const db = await getDb();
+
+  // Resolve machine code if not supplied.
+  let machineCode = params.machineCode ?? "";
+  if (!machineCode && db) {
+    const rows = await db.select({ code: machines.code })
+      .from(machines).where(eq(machines.id, params.machineId)).limit(1);
+    machineCode = rows[0]?.code ?? `M-${params.machineId}`;
+  }
+
+  const empty = (): LiveOEEMetrics => ({
+    machineId: params.machineId,
+    machineCode,
+    timestamp: new Date(),
+    availability: null,
+    performance: null,
+    quality: null,
+    oee: null,
+    details: {
+      windowHours,
+      onlineSeconds: 0,
+      offlineSeconds: 0,
+      totalCount: 0,
+      goodCount: 0,
+      rejectCount: 0,
+      idealCycleTimeSec: null,
+      hasUptimeData: false,
+      hasProductionData: false,
+    },
+  });
+
+  if (!db) return empty();
+
+  // ── Availability ─────────────────────────────────────────────────────────
+  const uptime = await getMachineUptimeStats(params.machineId, windowHours);
+  const onlineSeconds = uptime.totalOnlineTime;
+  const offlineSeconds = uptime.totalOfflineTime;
+  const totalStatusTime = onlineSeconds + offlineSeconds;
+  const hasUptimeData = totalStatusTime > 0;
+  const availability = hasUptimeData ? onlineSeconds / totalStatusTime : null;
+
+  // ── Production counts (Quality + Performance numerator) ───────────────────
+  const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  const statsRows = await db.select({
+    totalCount: dailyStatistics.totalCount,
+    okCount: dailyStatistics.okCount,
+    ngCount: dailyStatistics.ngCount,
+    ntfCount: dailyStatistics.ntfCount,
+    avgCycleTime: dailyStatistics.avgCycleTime,
+  })
+    .from(dailyStatistics)
+    .where(and(
+      eq(dailyStatistics.machineId, params.machineId),
+      gte(dailyStatistics.date, from),
+    ));
+
+  let totalCount = 0, okCount = 0, ngCount = 0, ntfCount = 0;
+  for (const r of statsRows) {
+    totalCount += Number(r.totalCount) || 0;
+    okCount += Number(r.okCount) || 0;
+    ngCount += Number(r.ngCount) || 0;
+    ntfCount += Number(r.ntfCount) || 0;
+  }
+  const hasProductionData = totalCount > 0;
+  const goodCount = okCount + ntfCount;
+  const quality = hasProductionData ? goodCount / totalCount : null;
+
+  // ── Performance ───────────────────────────────────────────────────────────
+  const idealCycleTimeSec = params.idealCycleTimeSec ?? null;
+  let performance: number | null = null;
+  if (idealCycleTimeSec && idealCycleTimeSec > 0 && hasProductionData && onlineSeconds > 0) {
+    performance = Math.min(1, (idealCycleTimeSec * totalCount) / onlineSeconds);
+  }
+
+  const allFactors = availability !== null && performance !== null && quality !== null;
+  const oee = allFactors ? availability! * performance! * quality! : null;
+
+  return {
+    machineId: params.machineId,
+    machineCode,
+    timestamp: new Date(),
+    availability: availability !== null ? pct(availability) : null,
+    performance: performance !== null ? pct(performance) : null,
+    quality: quality !== null ? pct(quality) : null,
+    oee: oee !== null ? pct(oee) : null,
+    details: {
+      windowHours,
+      onlineSeconds,
+      offlineSeconds,
+      totalCount,
+      goodCount,
+      rejectCount: ngCount,
+      idealCycleTimeSec,
+      hasUptimeData,
+      hasProductionData,
+    },
+  };
+}
+
+/**
+ * Resolve an ideal cycle time (seconds/unit) for a machine.
+ * Priority: explicit caller value → most-recent persisted oee_metrics.idealCycleTime
+ * for this machine → null (no synthetic default).
+ */
+export async function resolveIdealCycleTimeSec(machineId: number): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ idealCycleTime: oeeMetrics.idealCycleTime })
+    .from(oeeMetrics)
+    .where(and(eq(oeeMetrics.machineId, machineId), isNotNull(oeeMetrics.idealCycleTime)))
+    .orderBy(sql`${oeeMetrics.timestamp} DESC`)
+    .limit(1);
+  const v = rows[0]?.idealCycleTime;
+  return v && Number(v) > 0 ? Number(v) : null;
+}
+
+/**
+ * Live OEE for every active machine. Returns one entry per machine; factors are
+ * null where data is absent. This is the canonical backing for `getAllOEE`.
+ */
+export async function getAllMachinesOEELive(params?: {
+  windowHours?: number;
+}): Promise<LiveOEEMetrics[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const windowHours = params?.windowHours ?? 24;
+
+  const machineRows = await db.select({
+    id: machines.id,
+    code: machines.code,
+  })
+    .from(machines)
+    .where(eq(machines.isActive, true));
+
+  const results = await Promise.all(machineRows.map(async (m) => {
+    const idealCycleTimeSec = await resolveIdealCycleTimeSec(m.id);
+    return getMachineOEELive({
+      machineId: m.id,
+      machineCode: m.code,
+      windowHours,
+      idealCycleTimeSec,
+    });
+  }));
+
+  return results;
 }

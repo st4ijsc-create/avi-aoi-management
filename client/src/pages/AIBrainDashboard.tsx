@@ -27,6 +27,11 @@ import {
   XCircle,
   Server,
   ListChecks,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Timer,
+  ShieldAlert,
+  GitCompare,
 } from "lucide-react";
 
 // Cognitive Escalation Ladder — tier metadata (mirrors aiModelRouter.ts Tier 0–4).
@@ -43,10 +48,19 @@ function fmtGB(bytes?: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
+function fmtNum(n?: number): string {
+  if (!n || n <= 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 export default function AIBrainDashboard() {
   const { t } = useTranslation();
   const router = trpc.aiGguf.routerStats.useQuery(undefined, { refetchInterval: 5000 });
   const health = trpc.aiGguf.health.useQuery(undefined, { refetchInterval: 5000 });
+  // AI Gateway stats — DB-backed tokens / latency / rate-limit / A/B over the last 24h.
+  const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { refetchInterval: 5000 });
 
   const stats = router.data;
   const total = stats?.total ?? 0;
@@ -55,7 +69,8 @@ export default function AIBrainDashboard() {
   const vram = h?.vram ?? null;
   const vramPct = vram && vram.total > 0 ? Math.min(100, (vram.used / vram.total) * 100) : 0;
 
-  const refreshAll = () => { router.refetch(); health.refetch(); };
+  const gw = gateway.data;
+  const refreshAll = () => { router.refetch(); health.refetch(); gateway.refetch(); };
 
   return (
     <DashboardLayout>
@@ -194,6 +209,95 @@ export default function AIBrainDashboard() {
                   </div>
                 );
               })
+            )}
+          </CardContent>
+        </Card>
+
+        {/* AI Gateway — tokens / latency / rate-limit / A/B (DB-backed, last 24h) */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-indigo-500" />
+                  {t("aiBrain.gateway", "AI Gateway — đo lường suy luận (24h)")}
+                </CardTitle>
+                <CardDescription>
+                  {t("aiBrain.gatewayDesc", "Token, độ trễ, giới hạn tần suất và A/B — lưu bền trong DB (không mất khi khởi động lại)")}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={gw?.source === "db" ? "default" : "secondary"}>
+                  {gw?.source === "db" ? t("aiBrain.srcDb", "DB bền vững") : t("aiBrain.srcMem", "Bộ nhớ tạm")}
+                </Badge>
+                {gw?.abEnabled ? (
+                  <Badge variant="outline"><GitCompare className="h-3 w-3 mr-1" />A/B</Badge>
+                ) : null}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {gateway.isLoading ? (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : !gw || gw.total === 0 ? (
+              <div className="text-sm text-muted-foreground py-6 text-center">
+                {t("aiBrain.gatewayEmpty", "Chưa có suy luận nào đi qua Gateway trong 24h. Dùng AI Chat / phân tích để bắt đầu thu thập.")}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {/* Token + latency + throttle summary */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5"><ArrowDownToLine className="h-3.5 w-3.5" />{t("aiBrain.tokensIn", "Token vào")}</div>
+                    <div className="text-lg font-semibold mt-1 tabular-nums">{fmtNum(gw.tokensIn)}</div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5"><ArrowUpFromLine className="h-3.5 w-3.5" />{t("aiBrain.tokensOut", "Token ra")}</div>
+                    <div className="text-lg font-semibold mt-1 tabular-nums">{fmtNum(gw.tokensOut)}</div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5" />{t("aiBrain.avgLatency", "Độ trễ TB")}</div>
+                    <div className="text-lg font-semibold mt-1 tabular-nums">{gw.avgLatencyMs > 0 ? `${gw.avgLatencyMs} ms` : "—"}</div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5"><ShieldAlert className="h-3.5 w-3.5" />{t("aiBrain.throttled", "Bị giới hạn / lỗi")}</div>
+                    <div className="text-lg font-semibold mt-1 tabular-nums">{fmtNum(gw.rateLimited)} <span className="text-sm text-muted-foreground font-normal">/ {fmtNum(gw.errors)}</span></div>
+                  </div>
+                </div>
+
+                {/* A/B split (only when active) */}
+                {gw.ab ? (
+                  <div className="rounded-lg border p-3">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5 mb-2"><GitCompare className="h-3.5 w-3.5" />{t("aiBrain.abSplit", "Phân chia A/B")}</div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span>A (control): <span className="font-semibold tabular-nums">{fmtNum(gw.ab.A)}</span></span>
+                      <span>B (experiment): <span className="font-semibold tabular-nums">{fmtNum(gw.ab.B)}</span></span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Per-model token + latency breakdown */}
+                {gw.byModel.length > 0 ? (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-muted-foreground bg-muted/40">
+                      <div className="col-span-5">{t("aiBrain.model", "Model")}</div>
+                      <div className="col-span-2 text-right">{t("aiBrain.requests", "Yêu cầu")}</div>
+                      <div className="col-span-3 text-right">{t("aiBrain.tokens", "Token (vào/ra)")}</div>
+                      <div className="col-span-2 text-right">{t("aiBrain.latency", "Trễ TB")}</div>
+                    </div>
+                    {gw.byModel.map(m => (
+                      <div key={m.model} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm border-t">
+                        <div className="col-span-5 truncate font-mono text-xs" title={m.model}>{m.model}</div>
+                        <div className="col-span-2 text-right tabular-nums">{fmtNum(m.count)}</div>
+                        <div className="col-span-3 text-right tabular-nums text-muted-foreground">{fmtNum(m.tokensIn)}/{fmtNum(m.tokensOut)}</div>
+                        <div className="col-span-2 text-right tabular-nums">{m.avgLatencyMs}ms</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             )}
           </CardContent>
         </Card>

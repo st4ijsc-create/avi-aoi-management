@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge, PermissionGate } from "@/components/PermissionGate";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -308,7 +309,10 @@ export function QualityGatesContent() {
           <div className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
             <div>
-              <h2 className="text-2xl font-bold tracking-tight">{t('qualityGates.title')}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold tracking-tight">{t('qualityGates.title')}</h2>
+                <ViewOnlyBadge module="analytics_spc" />
+              </div>
               <p className="text-muted-foreground">
                 {t('qualityGates.subtitle')}
               </p>
@@ -340,10 +344,12 @@ export function QualityGatesContent() {
           {/* ══════════════ Tab 1: Gates Management ══════════════ */}
           <TabsContent value="gates" className="space-y-4">
             <div className="flex justify-end">
-              <Button onClick={openCreateDialog} className="gap-2">
-                <Plus className="h-4 w-4" />
-                {t('qualityGates.createGate')}
-              </Button>
+              <PermissionGate module="analytics_spc" action="canCreate">
+                <Button onClick={openCreateDialog} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  {t('qualityGates.createGate')}
+                </Button>
+              </PermissionGate>
             </div>
 
             {gatesQuery.isLoading ? (
@@ -405,22 +411,26 @@ export function QualityGatesContent() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => openEditDialog(gate)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => setDeleteConfirmId(gate.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <PermissionGate module="analytics_spc" action="canEdit">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openEditDialog(gate)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </PermissionGate>
+                              <PermissionGate module="analytics_spc" action="canDelete">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  onClick={() => setDeleteConfirmId(gate.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </PermissionGate>
                             </div>
                           </TableCell>
                         </TableRow>

@@ -6,7 +6,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { sql, eq, desc } from "drizzle-orm";
@@ -64,6 +63,24 @@ const reportDefinitionSchema = z.object({
   isPublic: z.boolean().default(false),
 });
 
+/**
+ * IDOR guard for mutating a saved report. Throws unless the caller owns the
+ * report (createdBy === ctx.user.id) or is an admin. Used by update/delete.
+ */
+async function assertReportOwnership(id: number, ctx: { user: { id: number; role: string } }): Promise<void> {
+  if (ctx.user.role === "admin") return;
+  const conn = await getDb();
+  if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  const result: any = await conn.execute(sql`
+    SELECT "createdBy" FROM report_templates WHERE id = ${id}
+  `);
+  const rows = result.rows || result;
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
+  if (rows[0].createdBy == null || rows[0].createdBy !== ctx.user.id) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền sửa hoặc xóa báo cáo này" });
+  }
+}
+
 export const reportBuilderRouter = router({
   /**
    * List user's saved report definitions
@@ -115,7 +132,7 @@ export const reportBuilderRouter = router({
    */
   getById: protectedProcedure
     .input(z.number())
-    .query(async ({ input: id }) => {
+    .query(async ({ input: id, ctx }) => {
       const conn = await getDb();
       if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -125,9 +142,18 @@ export const reportBuilderRouter = router({
         `);
         const rows = result.rows || result;
         if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
-        return rows[0];
+
+        // IDOR guard: only the owner, an admin, or anyone for a default/public
+        // report may read it.
+        const report = rows[0];
+        const isOwner = report.createdBy != null && report.createdBy === ctx.user.id;
+        const isPublic = report.isDefault === true;
+        if (!isOwner && !isPublic && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền xem báo cáo này" });
+        }
+        return report;
       } catch (err: any) {
-        if (err.code === "NOT_FOUND") throw err;
+        if (err.code === "NOT_FOUND" || err.code === "FORBIDDEN") throw err;
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
       }
     }),
@@ -163,6 +189,7 @@ export const reportBuilderRouter = router({
       data: reportDefinitionSchema,
     }))
     .mutation(async ({ input, ctx }) => {
+      await assertReportOwnership(input.id, ctx);
       await db.updateReportTemplate(input.id, {
         name: input.data.name,
         sections: {
@@ -184,6 +211,7 @@ export const reportBuilderRouter = router({
   delete: protectedProcedure
     .input(z.number())
     .mutation(async ({ input: id, ctx }) => {
+      await assertReportOwnership(id, ctx);
       await db.deleteReportTemplate(id);
       return { success: true };
     }),

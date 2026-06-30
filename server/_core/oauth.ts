@@ -1,8 +1,8 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
-import bcrypt from "bcryptjs";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import * as db from "../db";
+import { establishSession, LoginError, verifyCredentials } from "./authService";
 import { getSessionCookieOptions } from "./cookies";
 import {
   getConfiguredProvider,
@@ -315,105 +315,53 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  // Local login route
+  // Local login route.
+  // NOTE: the React UI logs in via tRPC `auth.login` (not this route). This
+  // Express endpoint is kept for non-tRPC clients and now delegates to the SAME
+  // shared auth service (verifyCredentials + establishSession) so brute-force
+  // lockout and login audit logging behave identically everywhere — no more
+  // divergent duplicate copies of the security logic (audit A bug #1).
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
-      
+
       if (!username || !password) {
         res.status(400).json({ error: "Tên đăng nhập và mật khẩu là bắt buộc" });
         return;
       }
-      
-      // Find user by username
-      const user = await db.getUserByUsername(username);
-      if (!user) {
-        // Audit: failed login (unknown username)
-        await db.createAuditLog({ userName: username, action: 'login', entityType: 'auth', status: 'failure', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-        res.status(401).json({ error: "Tên đăng nhập hoặc mật khẩu không đúng" });
-        return;
-      }
-      
-      // Check if user is active
-      if (!user.isActive) {
-        res.status(403).json({ error: "Tài khoản đã bị vô hiệu hóa" });
-        return;
-      }
 
-      // Brute-force lockout check (IEC 62443-2-1 CL2 §CR 1.8)
-      const MAX_ATTEMPTS = 5;
-      const LOCKOUT_MINUTES = 15;
-      if (user.lockedUntil && user.lockedUntil > new Date()) {
-        const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
-        await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'failure', details: { reason: 'account_locked' }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-        res.status(429).json({ error: `Tài khoản tạm khóa do đăng nhập sai nhiều lần. Thử lại sau ${remaining} phút.` });
-        return;
-      }
-
-      // Check if user has password (local account)
-      if (!user.passwordHash) {
-        res.status(400).json({ error: "Tài khoản này không hỗ trợ đăng nhập bằng mật khẩu" });
-        return;
-      }
-
-      // Verify password
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        // Increment failure counter; lock after MAX_ATTEMPTS
-        const newAttempts = (user.loginAttempts ?? 0) + 1;
-        const lockedUntil = newAttempts >= MAX_ATTEMPTS
-          ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
-          : null;
-        await db.updateUserLoginAttempts(user.id, newAttempts, lockedUntil);
-
-        // Audit: failed login (wrong password)
-        await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'failure', details: { reason: lockedUntil ? 'account_locked' : `attempt_${newAttempts}` }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-
-        if (lockedUntil) {
-          res.status(429).json({ error: `Đăng nhập sai ${MAX_ATTEMPTS} lần. Tài khoản bị khóa ${LOCKOUT_MINUTES} phút.` });
-        } else {
-          res.status(401).json({ error: "Tên đăng nhập hoặc mật khẩu không đúng", attemptsRemaining: MAX_ATTEMPTS - newAttempts });
+      let user;
+      try {
+        user = await verifyCredentials(username, password, req);
+      } catch (err) {
+        if (err instanceof LoginError) {
+          const httpStatus: Record<LoginError["code"], number> = {
+            INVALID_CREDENTIALS: 401,
+            ACCOUNT_DISABLED: 403,
+            PASSWORD_UNSUPPORTED: 400,
+            ACCOUNT_LOCKED: 429,
+          };
+          res.status(httpStatus[err.code]).json({ error: err.message, ...(err.meta ?? {}) });
+          return;
         }
-        return;
+        throw err;
       }
 
-      // Reset lockout on successful password verification
-      if ((user.loginAttempts ?? 0) > 0) {
-        await db.updateUserLoginAttempts(user.id, 0, null);
-      }
-      
-      // Check if 2FA is enabled
+      // Check if 2FA is enabled — defer session until the 2FA step.
       const twoFAStatus = await db.get2FAStatus(user.id);
       if (twoFAStatus?.twoFactorEnabled) {
-        // Return requires2FA flag instead of logging in
-        res.json({ 
+        res.json({
           requires2FA: true,
           userId: user.id,
           message: "Vui lòng nhập mã xác thực 2 bước"
         });
         return;
       }
-      
-      // Update last signed in
-      await db.upsertUser({
-        openId: user.openId,
-        lastSignedIn: new Date(),
-      });
-      
-      // Create session token
-      const sessionToken = await sdk.createSessionToken(user.openId, {
-        name: user.name || "",
-        expiresInMs: ONE_YEAR_MS,
-      });
-      
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      
-      // Audit: successful login
-      await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'success', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-      
-      res.json({ 
-        success: true, 
+
+      await establishSession(user, req, res, { method: "password" });
+
+      res.json({
+        success: true,
         user: {
           id: user.id,
           name: user.name,
@@ -470,23 +418,12 @@ export function registerOAuthRoutes(app: Express) {
         }
       }
       
-      // Update last signed in
-      await db.upsertUser({
-        openId: user.openId,
-        lastSignedIn: new Date(),
-      });
-      
-      // Create session token
-      const sessionToken = await sdk.createSessionToken(user.openId, {
-        name: user.name || "",
-        expiresInMs: ONE_YEAR_MS,
-      });
-      
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      
-      res.json({ 
-        success: true, 
+      // 2FA passed → create session (cookie + user_sessions row) and audit the
+      // successful login via the shared service.
+      await establishSession(user, req, res, { method: "2fa" });
+
+      res.json({
+        success: true,
         user: {
           id: user.id,
           name: user.name,

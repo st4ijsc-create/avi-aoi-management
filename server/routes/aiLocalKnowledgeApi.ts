@@ -111,7 +111,9 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.get("/api/ai/local-kb/health", async (_req, res) => {
     try {
-      const health = getKbHealth();
+      // W0.2/W0.3 (doc 11) — getKbHealth is now async (probes LLM loadability +
+      // embed-model match). New fields spread through to the client unchanged.
+      const health = await getKbHealth();
       res.json({
         success: true,
         ...health,
@@ -132,7 +134,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
         return;
       }
 
-      const health = reloadKbArtifacts();
+      const health = await reloadKbArtifacts();
       res.json({ success: true, health });
     } catch (error: any) {
       res.status(500).json({

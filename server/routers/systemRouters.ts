@@ -349,28 +349,13 @@ export const scheduledReportRouter = router({
       }
 
       try {
-        const { generateNGVisualReport, generateNGVisualEmailHTML, generateReport } = await import('../services/reportGenerator');
+        const { buildScheduledReportEmail } = await import('../services/reportScheduler');
         const { createTransporterFromConfig } = await import('../_core/email');
-        
-        // Generate report data
-        const reportData = await generateNGVisualReport({
-          startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
-          endDate: new Date(),
-          factoryId: report.factoryId ?? undefined,
-          workshopId: report.workshopId ?? undefined,
-          lineId: report.lineId ?? undefined,
-        });
 
-        // Get customization from report
-        const customization = {
-          logoUrl: (report as any).logoUrl,
-          primaryColor: (report as any).primaryColor,
-          footerText: (report as any).footerText,
-          reportFormat: (report as any).reportFormat || 'HTML',
-        };
-
-        // Generate HTML email (always needed for email body)
-        const emailHtml = generateNGVisualEmailHTML(reportData, customization);
+        // Build via the shared, reportType-aware builder so the TEST email matches
+        // exactly what the cron would send (window driven by schedule, content by
+        // reportType — no longer hard-coded to NG_VISUAL / last-7-days).
+        const built = await buildScheduledReportEmail(report as any, { subjectPrefix: '[TEST] ' });
 
         // Create email transporter
         const transporter = createTransporterFromConfig(smtpConfig);
@@ -379,24 +364,11 @@ export const scheduledReportRouter = router({
         const mailOptions: any = {
           from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
           to: report.recipients.join(','),
-          subject: `[TEST] ${report.name} - NG Visual Report`,
-          html: emailHtml,
+          subject: built.subject,
+          html: built.html,
         };
-
-        // Add attachment if PDF or Excel format
-        if (customization.reportFormat === 'PDF' || customization.reportFormat === 'EXCEL') {
-          const { content, mimeType, extension } = await generateReport(
-            reportData,
-            customization.reportFormat,
-            customization
-          );
-          
-          const dateStr = new Date().toISOString().split('T')[0];
-          mailOptions.attachments = [{
-            filename: `NG_Visual_Report_${dateStr}.${extension}`,
-            content: content,
-            contentType: mimeType,
-          }];
+        if (built.attachment) {
+          mailOptions.attachments = [built.attachment];
         }
 
         // Send test email
@@ -411,7 +383,7 @@ export const scheduledReportRouter = router({
           errorMessage: null,
         });
 
-        return { success: true, message: `Test email sent successfully (format: ${customization.reportFormat})` };
+        return { success: true, message: `Test email sent successfully (type: ${report.reportType})` };
       } catch (error: any) {
         // Log failure
         await db.createScheduledReportLog({
@@ -438,32 +410,15 @@ export const scheduledReportRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
       }
 
-      const { generateNGVisualReport, generateNGVisualEmailHTML } = await import('../services/reportGenerator');
-      
-      // Generate report data with real filters
-      const reportData = await generateNGVisualReport({
-        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
-        endDate: new Date(),
-        factoryId: report.factoryId ?? undefined,
-        workshopId: report.workshopId ?? undefined,
-        lineId: report.lineId ?? undefined,
-      });
-
-      // Get customization from report
-      const customization = {
-        logoUrl: (report as any).logoUrl,
-        primaryColor: (report as any).primaryColor,
-        footerText: (report as any).footerText,
-        reportFormat: (report as any).reportFormat || 'HTML',
-      };
-
-      // Generate HTML email
-      const emailHtml = generateNGVisualEmailHTML(reportData, customization);
+      // Preview via the shared, reportType-aware builder so the preview matches
+      // what the cron / sendTest would actually emit.
+      const { buildScheduledReportEmail } = await import('../services/reportScheduler');
+      const built = await buildScheduledReportEmail(report as any);
 
       return {
-        html: emailHtml,
-        reportData,
-        customization,
+        html: built.html,
+        subject: built.subject,
+        reportType: report.reportType,
       };
     }),
 

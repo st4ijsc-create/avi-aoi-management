@@ -43,6 +43,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { useParams, useSearch } from "wouter";
 import WorkshopLayoutEditor from "@/components/WorkshopLayoutEditor";
 import { useTwinStream } from "@/hooks/useTwinStream";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type MachineWithStats = {
   id: number;
@@ -512,7 +513,10 @@ export default function Layout() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{t('layout.workshopLayout')}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-foreground">{t('layout.workshopLayout')}</h1>
+              <ViewOnlyBadge module="settings_factory" />
+            </div>
             <p className="text-muted-foreground">{t('layout.workshopLayoutDescription')}</p>
           </div>
           
@@ -549,6 +553,7 @@ export default function Layout() {
             )}
 
             {selectedWorkshop && (
+              <PermissionGate module="settings_factory" action="canCreate">
               <Dialog open={isCreateLayoutOpen} onOpenChange={setIsCreateLayoutOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline">
@@ -595,6 +600,7 @@ export default function Layout() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              </PermissionGate>
             )}
           </div>
         </div>

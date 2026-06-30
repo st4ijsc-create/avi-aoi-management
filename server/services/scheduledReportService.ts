@@ -701,11 +701,20 @@ class ScheduledReportService {
   async generateMachineHealthReportContent(report: ScheduledReport): Promise<MachineHealthReportContent> {
     const { start, end } = this.getReportPeriod(report.frequency);
     
-    // Import health functions
-    const { getAllMachinesOEE, getMachineHealthScore } = await import('../_core/socket');
-    
-    // Get all OEE metrics and calculate health scores
-    const allOEE = getAllMachinesOEE();
+    // Import health functions. OEE now comes from the canonical single source
+    // (oeeService.getAllMachinesOEELive) instead of the retired in-memory socket path.
+    const { getMachineHealthScore } = await import('../_core/socket');
+    const { getAllMachinesOEELive } = await import('./oeeService');
+
+    // Get all OEE metrics and calculate health scores (live values may be null when
+    // a machine lacks uptime/production data → coalesce to 0 for the rollup).
+    const allOEE = (await getAllMachinesOEELive()).map(m => ({
+      machineId: m.machineId,
+      machineCode: m.machineCode,
+      oee: m.oee ?? 0,
+      availability: m.availability ?? 0,
+      quality: m.quality ?? 0,
+    }));
     const healthData: Array<{
       machineId: number;
       machineCode: string;

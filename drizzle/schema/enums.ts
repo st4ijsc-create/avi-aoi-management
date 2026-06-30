@@ -214,6 +214,28 @@ export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", 
 // Runtime connection state of an OT adapter
 export const otAdapterStatusEnum = pgEnum("otadapterstatusenum", ["disabled", "connecting", "connected", "error"]);
 
+// === Doc 12 §5 / P2 — Unified canonical telemetry store (ot_telemetry) ===
+// Source protocol/channel that produced a canonical telemetry sample. ONE table
+// (ot_telemetry) receives samples from every device protocol + the inspection
+// pipeline; this enum records which path wrote each row. Append-only.
+export const telemetryProtocolEnum = pgEnum("telemetryprotocolenum", [
+  "mqtt",
+  "opcua",
+  "modbus",
+  "s7",
+  "ethernet_ip",
+  "mtconnect",
+  "sparkplug",
+  "inspection",
+  "other",
+]);
+// Quality flag of a canonical telemetry sample (OPC-UA style). Default 'good'.
+export const telemetryQualityEnum = pgEnum("telemetryqualityenum", [
+  "good",
+  "bad",
+  "uncertain",
+]);
+
 // === Sprint F4a — Machine control: recipe versioning + deployment + command dispatch ===
 // Lifecycle of a machine recipe version (draft → active → archived)
 export const recipeStatusEnum = pgEnum("recipestatusenum", ["draft", "active", "archived"]);

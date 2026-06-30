@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
+import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 
 export type KbIntent =
   | "how_to"
@@ -213,11 +214,21 @@ interface KbDataBundle {
   chunksById: Map<string, KbChunk>;
   embeddings: KbEmbeddingRecord[];
   loadedAt: number;
+  // W0.3 (doc 11) — embedding-model provenance read from embeddings-meta.json so
+  // we can detect a query/corpus embed-model mismatch (not just a length mismatch).
+  // null when the meta file is missing or lacks the field (→ never false-alarm).
+  corpusEmbedModel: string | null;
+  // W0.2 (doc 11) — when the corpus was built (ISO from meta.generatedAt); null if absent.
+  kbBuiltAt: string | null;
 }
 
 const KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 const CHUNKS_FILE = path.join(KNOWLEDGE_DIR, "chunks.jsonl");
 const EMBEDDINGS_FILE = path.join(KNOWLEDGE_DIR, "embeddings.jsonl");
+// W0.3 (doc 11) — provenance sidecar written by the embed pipeline. Holds the
+// `model` the corpus was embedded with + `generatedAt`. Optional: missing file
+// degrades gracefully (corpusEmbedModel = null → guard stays quiet).
+const EMBEDDINGS_META_FILE = path.join(KNOWLEDGE_DIR, "embeddings-meta.json");
 
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
@@ -243,6 +254,41 @@ const KB_EMBED_DIM = (() => {
   const n = parseInt(process.env.GGUF_EMBED_DIM || "1024", 10);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 })();
+
+// W0.3 (doc 11) — normalize an embed-model identifier for IDENTITY comparison
+// (corpus vs query). Length-only guards miss the dangerous case where a deploy
+// swaps GGUF_EMBED_MODEL for a SAME-DIMENSION but DIFFERENT model → retrieval
+// silently returns garbage. We compare by basename, lowercased, stripping the
+// common "-f16"/quant suffixes and the ".gguf" extension so cosmetically
+// different spellings of the same model still match.
+function normalizeEmbedModelId(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let s = path.basename(String(raw).trim());
+  s = s.replace(/\.gguf$/i, "");
+  s = s.toLowerCase();
+  // Strip common precision/quant suffixes that differ between build-time and
+  // runtime spellings of the SAME model (e.g. "-f16", "-q8_0", ".f16").
+  s = s.replace(/[._-](f16|f32|bf16|q\d(_[\dkms]+)*|int8|int4)$/i, "");
+  s = s.replace(/[._-]+$/g, "");
+  return s || null;
+}
+
+// W0.3 (doc 11) — has the corpus/query embed-model mismatch warning already
+// fired? Keep the log to ONCE-per-process so it stays loud but not spammy.
+let embedModelMismatchWarned = false;
+
+/**
+ * W0.3 (doc 11) — does the corpus embed-model match the query embed-model?
+ * Returns true when the corpus model is UNKNOWN/null (no meta → don't false-alarm)
+ * or when both normalize equal. Returns false ONLY when both are known AND differ.
+ */
+function computeEmbedModelMatches(corpusEmbedModel: string | null): boolean {
+  const corpus = normalizeEmbedModelId(corpusEmbedModel);
+  if (!corpus) return true; // unknown corpus model → cannot assert a mismatch
+  const query = normalizeEmbedModelId(GGUF_EMBED_MODEL_ID);
+  if (!query) return true; // unknown query model → don't false-alarm either
+  return corpus === query;
+}
 
 const ANSWER_CACHE_TTL_MS = Number(process.env.KB_QA_CACHE_TTL_MS ?? 10 * 60 * 1000);
 
@@ -484,11 +530,46 @@ function ensureDataLoaded(forceReload = false): KbDataBundle {
   const chunksById = new Map<string, KbChunk>();
   for (const c of chunks) chunksById.set(c.id, c);
 
+  // W0.3/W0.2 (doc 11) — read the embed provenance sidecar. Best-effort: a
+  // missing/malformed meta file must NOT break KB loading; it just leaves the
+  // model-identity guard quiet (corpusEmbedModel = null) and staleness unknown.
+  let corpusEmbedModel: string | null = null;
+  let kbBuiltAt: string | null = null;
+  try {
+    if (fs.existsSync(EMBEDDINGS_META_FILE)) {
+      const meta = JSON.parse(fs.readFileSync(EMBEDDINGS_META_FILE, "utf8")) as {
+        model?: unknown;
+        generatedAt?: unknown;
+      };
+      if (typeof meta.model === "string" && meta.model.trim()) corpusEmbedModel = meta.model.trim();
+      if (typeof meta.generatedAt === "string" && meta.generatedAt.trim()) {
+        kbBuiltAt = meta.generatedAt.trim();
+      }
+    }
+  } catch {
+    // Leave provenance null on any parse error — degrade quietly.
+  }
+
   dataCache = {
     chunksById,
     embeddings,
     loadedAt: Date.now(),
+    corpusEmbedModel,
+    kbBuiltAt,
   };
+
+  // W0.3 (doc 11) — fire a single LOUD warning if the corpus was embedded with a
+  // different model than the one the query path will use. Retrieval similarity
+  // is only meaningful when both vectors live in the SAME model's space.
+  if (!computeEmbedModelMatches(corpusEmbedModel) && !embedModelMismatchWarned) {
+    embedModelMismatchWarned = true;
+    console.warn(
+      `[aiLocalKnowledge] ⚠️ EMBED-MODEL MISMATCH — corpus embedded with "${corpusEmbedModel}" ` +
+        `but query embed model is "${GGUF_EMBED_MODEL_ID}" (GGUF_EMBED_MODEL). Semantic retrieval ` +
+        `would be CORRUPT → falling back to keyword-only retrieval. Re-embed the corpus with the ` +
+        `current model OR point GGUF_EMBED_MODEL back at the corpus model. (W0.3, doc 11)`,
+    );
+  }
 
   return dataCache;
 }
@@ -1164,15 +1245,57 @@ export async function* generateWithOllamaStream(
   }
 }
 
-export function getKbHealth(): {
+// W0.2 (doc 11) — honest health shape. Keeps every legacy field (ready/chunks/
+// embeddings/loadedAt/paths) for backward-compat and ADDS capability + provenance
+// signals so the client can stop showing a misleading "Sẵn sàng":
+//   llmReady          — a GGUF TEXT model actually resolves+validates on disk
+//                       (else answers silently degrade to extractive)
+//   embedModel        — model the corpus was embedded with (from meta)
+//   queryEmbedModel   — model the query path uses (GGUF_EMBED_MODEL)
+//   embedModelMatches — false ONLY when both known AND differ (retrieval corrupt)
+//   kbBuiltAt         — when the corpus was built (ISO) · staleDays — whole days old
+export interface KbHealth {
   ready: boolean;
   chunks: number;
   embeddings: number;
   loadedAt?: string;
   paths: { chunks: string; embeddings: string };
-} {
+  // W0.2/W0.3 (doc 11) additions:
+  llmReady: boolean;
+  embedModel: string | null;
+  queryEmbedModel: string;
+  embedModelMatches: boolean;
+  kbBuiltAt: string | null;
+  chunkCount: number;
+  staleDays: number | null;
+}
+
+// W0.2 (doc 11) — best-effort "is a text LLM loadable?" check. Never throws;
+// degrades to false so health stays conservative rather than crashing.
+async function probeLlmReady(): Promise<boolean> {
+  try {
+    const { isGgufModelLoadable } = await import("./aiGgufEngine");
+    return await isGgufModelLoadable();
+  } catch {
+    return false;
+  }
+}
+
+function wholeDaysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000)));
+}
+
+export async function getKbHealth(): Promise<KbHealth> {
+  const queryEmbedModel = GGUF_EMBED_MODEL_ID;
   try {
     const data = ensureDataLoaded();
+    // Sub-checks are individually guarded → a failing one degrades to a
+    // conservative value (llmReady:false) instead of failing the whole health.
+    const llmReady = await probeLlmReady();
+    const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
     return {
       ready: true,
       chunks: data.chunksById.size,
@@ -1182,6 +1305,13 @@ export function getKbHealth(): {
         chunks: CHUNKS_FILE,
         embeddings: EMBEDDINGS_FILE,
       },
+      llmReady,
+      embedModel: data.corpusEmbedModel,
+      queryEmbedModel,
+      embedModelMatches,
+      kbBuiltAt: data.kbBuiltAt,
+      chunkCount: data.chunksById.size,
+      staleDays: wholeDaysSince(data.kbBuiltAt),
     };
   } catch {
     return {
@@ -1192,12 +1322,20 @@ export function getKbHealth(): {
         chunks: CHUNKS_FILE,
         embeddings: EMBEDDINGS_FILE,
       },
+      llmReady: false,
+      embedModel: null,
+      queryEmbedModel,
+      embedModelMatches: true,
+      kbBuiltAt: null,
+      chunkCount: 0,
+      staleDays: null,
     };
   }
 }
 
-export function reloadKbArtifacts(): ReturnType<typeof getKbHealth> {
+export function reloadKbArtifacts(): Promise<KbHealth> {
   dataCache = null;
+  embedModelMismatchWarned = false; // W0.3 — allow the mismatch warning to re-fire after a rebuild.
   return getKbHealth();
 }
 
@@ -1234,6 +1372,35 @@ function routeToFeatureHints(route: string): string[] {
   return ROUTE_FEATURE_HINTS[path] ?? [];
 }
 
+// ─── GraphRAG 1-hop expansion (doc 11 follow-up) ──────────────────────────────
+// Flag-gated, additive, fail-safe widening of the cosine candidate pool with
+// 1-hop neighbours from the precomputed semantic graph (knowledge/
+// semantic-graph.json). Default OFF → behavior is byte-for-byte the legacy path
+// (a single cheap boolean check). When ON, after the cosine candidates are
+// scored+deduped we take the top KB_GRAPHRAG_SEEDS seeds and inject up to
+// KB_GRAPHRAG_HOPS_PER_SEED neighbours each (edge similarity ≥ KB_GRAPHRAG_MIN_SIM)
+// into the pool BEFORE the reranker takes its slice, capped at KB_GRAPHRAG_MAX_INJECT
+// total. Injected neighbours get a blended score (seedScore × edge.similarity ×
+// KB_GRAPHRAG_DECAY) so they compete in the reranker pool without outranking true
+// cosine hits. Env (all optional; defaults match the doc):
+//   KB_GRAPHRAG_ENABLED=false        — master switch (default OFF)
+//   KB_GRAPHRAG_SEEDS=5              — top candidates used as expansion seeds
+//   KB_GRAPHRAG_HOPS_PER_SEED=3      — max neighbours pulled per seed
+//   KB_GRAPHRAG_MIN_SIM=0.72         — min edge similarity to follow
+//   KB_GRAPHRAG_DECAY=0.85           — blended-score decay for injected neighbours
+//   KB_GRAPHRAG_MAX_INJECT=8         — hard cap on total injected (bounds prompt size)
+// Debug: set KB_GRAPHRAG_DEBUG=true to log how many neighbours were injected.
+const KB_GRAPHRAG_ENABLED = (process.env.KB_GRAPHRAG_ENABLED ?? "false").toLowerCase() === "true";
+function graphRagOpts() {
+  return {
+    seeds: Number(process.env.KB_GRAPHRAG_SEEDS ?? 5),
+    hopsPerSeed: Number(process.env.KB_GRAPHRAG_HOPS_PER_SEED ?? 3),
+    minSim: Number(process.env.KB_GRAPHRAG_MIN_SIM ?? 0.72),
+    decay: Number(process.env.KB_GRAPHRAG_DECAY ?? 0.85),
+    maxInject: Number(process.env.KB_GRAPHRAG_MAX_INJECT ?? 8),
+  };
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
@@ -1248,7 +1415,12 @@ export async function retrieveKnowledge(
   // C3a — features hinted by the current route (light boost only).
   const routeFeatures = context?.route ? routeToFeatureHints(context.route) : [];
 
-  const qVec = await embedQuestion(question);
+  // W0.3 (doc 11) — when the corpus embed-model differs from the query embed-model
+  // (locked decision Q5: WARN + fall back, never hard-block), skip vector retrieval
+  // entirely. A same-dimension/different-model vector would pass the length guard
+  // but produce a CORRUPT cosine similarity, so keyword-only retrieval is safer.
+  const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
+  const qVec = embedModelMatches ? await embedQuestion(question) : null;
 
   const scored = data.embeddings.map((emb) => {
     const chunk = data.chunksById.get(emb.id);
@@ -1307,30 +1479,85 @@ export async function retrieveKnowledge(
   }
   const finalK = Math.max(1, Math.min(10, topK));
 
+  // GraphRAG 1-hop expansion (flag-gated, additive, fail-safe). When OFF (default)
+  // this is a single boolean check — `pool` below is exactly `deduped`, so the
+  // reranker/top-K flow is byte-for-byte the legacy path. When ON, we inject the
+  // strongest 1-hop neighbours of the top seeds into the pool so the reranker/LLM
+  // sees semantically-linked context (multi-part docs, router↔schema cross-refs).
+  // Any graph error is swallowed by loadSemanticGraph/expandWithGraph → expansion
+  // is skipped, never thrown. Injected neighbours synthesize the same candidate
+  // shape as a cosine hit, with semantic/keyword left 0 (their score is the
+  // pre-blended graph score) so the downstream pipeline treats them uniformly.
+  let pool = deduped;
+  if (KB_GRAPHRAG_ENABLED && deduped.length > 0) {
+    try {
+      const adj = loadSemanticGraph();
+      if (adj.size > 0) {
+        const seedItems = deduped.map((r) => ({ id: r.emb.id, score: r.score, ref: r }));
+        const expanded = expandWithGraph(
+          seedItems,
+          adj,
+          graphRagOpts(),
+          (id, score) => {
+            // Only inject neighbours we actually have a chunk + embedding for;
+            // otherwise the candidate can't be cited or reranked.
+            const chunk = data.chunksById.get(id);
+            if (!chunk) return null;
+            const emb = data.embeddings.find((e) => e.id === id);
+            if (!emb) return null;
+            return {
+              id,
+              score,
+              ref: { emb, chunk, semantic: 0, keyword: 0, score } as (typeof deduped)[number],
+            };
+          },
+        );
+        if (expanded.injected > 0) {
+          pool = expanded.pool.map((c) => c.ref);
+          if ((process.env.KB_GRAPHRAG_DEBUG ?? "").toLowerCase() === "true") {
+            console.error(
+              `[KB_GRAPHRAG] injected ${expanded.injected} neighbour(s) ` +
+                `(pool ${deduped.length} → ${pool.length})`,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      // Fail-safe: never let graph expansion break retrieval.
+      if ((process.env.KB_GRAPHRAG_DEBUG ?? "").toLowerCase() === "true") {
+        console.error("[KB_GRAPHRAG] expansion skipped (error):", err);
+      }
+      pool = deduped;
+    }
+  }
+
   // B2.2 — Reranker stage (flag-gated, fail-safe). When RAG_RERANKER_ENABLED is
   // on: take a wider candidate pool (cosine top-N), rerank by query relevance,
   // and reorder before the final topK slice. When off (default) this whole block
   // is skipped and `topSlice` is exactly the legacy cosine top-K — behavior is
   // unchanged. rerank() never throws (degrades to original order on any error).
-  let topSlice: typeof deduped;
-  if (isRerankerEnabled() && deduped.length > 1) {
+  // NOTE: `pool` is `deduped` plus any GraphRAG-injected neighbours (identical to
+  // `deduped` when the flag is OFF). The reranker draws its candidate pool from it
+  // so injected neighbours can compete for the final top-K.
+  let topSlice: typeof pool;
+  if (isRerankerEnabled() && pool.length > 1) {
     const poolSize = Math.max(finalK, Number(process.env.RAG_RERANKER_POOL ?? 20));
-    const pool = deduped.slice(0, poolSize);
-    const candidates: RerankCandidate[] = pool.map((r) => ({
+    const rerankPool = pool.slice(0, poolSize);
+    const candidates: RerankCandidate[] = rerankPool.map((r) => ({
       id: r.emb.id,
       title: r.emb.title,
       text: r.chunk ? r.chunk.text : "",
       score: r.score,
     }));
     const reranked = await rerank(question, candidates, finalK);
-    const byId = new Map(pool.map((r) => [r.emb.id, r]));
+    const byId = new Map(rerankPool.map((r) => [r.emb.id, r]));
     const reordered = reranked
       .map((rr) => byId.get(rr.candidate.id))
-      .filter((r): r is (typeof pool)[number] => Boolean(r));
+      .filter((r): r is (typeof rerankPool)[number] => Boolean(r));
     // Guard: if the rerank somehow returned nothing usable, fall back to cosine.
-    topSlice = reordered.length > 0 ? reordered : deduped.slice(0, finalK);
+    topSlice = reordered.length > 0 ? reordered : pool.slice(0, finalK);
   } else {
-    topSlice = deduped.slice(0, finalK);
+    topSlice = pool.slice(0, finalK);
   }
 
   const ranked = topSlice.filter((r, idx) => idx === 0 || r.score >= MIN_CITATION_SCORE);

@@ -24,6 +24,7 @@ import { initializeScheduledBackups, shutdownScheduledBackups } from "../service
 import { initMqttBroker, shutdownMqttBroker, publishFactoryAlertUpdate } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { startEscalationScheduler, stopEscalationScheduler } from "../services/alertEscalationService";
+import { startAlertEvaluatorScheduler, stopAlertEvaluatorScheduler } from "../services/alertEvaluatorScheduler";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
 import { cacheWarmingService } from "../services/cacheWarmingService";
@@ -4462,6 +4463,16 @@ async function startServer() {
   // Alert escalation engine — always-on, runs every 60s
   startEscalationScheduler(60_000);
 
+  // P0-E — Alert evaluation scheduler: evaluates legacy alertSettings rules,
+  // runs smart-alert defect-spike / yield-drop detectors, and auto-escalation.
+  // Interval via ALERT_EVALUATOR_INTERVAL_MINUTES (default 2); disable with
+  // ALERT_EVALUATOR_ENABLED=false. Guarded against double-start internally.
+  try {
+    startAlertEvaluatorScheduler();
+  } catch (err) {
+    console.error("[AlertEvaluator] init failed:", (err as any)?.message || err);
+  }
+
   // WS-4 — Predictive maintenance cycle (statistical risk + RUL -> alerts).
   // Disabled by default; opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
   try {
@@ -4535,6 +4546,16 @@ async function startServer() {
     startThresholdTuneScheduler();
   } catch (err) {
     console.error("[aiThresholdTuneScheduler] init failed:", (err as any)?.message || err);
+  }
+
+  // doc 11 · W1.2 — KB auto-sync: keep the AI knowledge base fresh by running the
+  // incremental kb:sync pipeline on a nightly cron. Disabled by default; opt in via
+  // KB_AUTOSYNC_ENABLED=true. Safe no-op when OFF; never blocks boot.
+  try {
+    const { startKbSyncScheduler } = await import("../services/kbSyncScheduler");
+    startKbSyncScheduler();
+  } catch (err) {
+    console.error("[kbSyncScheduler] init failed:", (err as any)?.message || err);
   }
 
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
@@ -4684,10 +4705,14 @@ async function startServer() {
     import("../services/aiThresholdTuneScheduler")
       .then((m) => m.stopThresholdTuneScheduler())
       .catch(() => {});
+    import("../services/kbSyncScheduler")
+      .then((m) => m.stopKbSyncScheduler())
+      .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();
     stopEscalationScheduler();
+    stopAlertEvaluatorScheduler();
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC
       // khi đóng UNS publisher (xem mqttService.shutdownMqttBroker). NBIRTH-on-connect

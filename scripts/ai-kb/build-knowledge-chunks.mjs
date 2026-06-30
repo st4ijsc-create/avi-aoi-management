@@ -1,3 +1,6 @@
+// W1.2-fix — load repo-root .env BEFORE reading process.env (KB_CHUNK_MAX_CHARS, etc.).
+// dotenv (a project dependency) does NOT overwrite already-set process.env keys.
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -120,6 +123,11 @@ function run() {
   const types = readJson("types-dictionary.json");
   const patterns = readJson("patterns.json", {});
   const docsCatalog = readJson("docs-catalog.json");
+  // W1.1 — system self-description catalogs (route/page/role map, nav, tables, modules).
+  const routesCatalog = readJson("routes-catalog.json");
+  const navCatalog = readJson("nav-catalog.json");
+  const schemaTables = readJson("schema-tables.json");
+  const modulesCatalog = readJson("modules-catalog.json");
 
   const chunks = [];
 
@@ -167,6 +175,117 @@ function run() {
   ].join("\n");
 
   chunks.push(makeChunk("pattern", "knowledge/patterns.json", 0, "Code Patterns", patternText));
+
+  // ─── W1.1 — system self-description chunks ──────────────────────────────────
+  // New sourceTypes flow through the SAME stable-id + hash convention as everything
+  // else, so incremental embed picks them up. Keep each chunk < MAX_CHARS.
+
+  // ROUTES (sourceType "route") — one chunk per ~12 routes; maps URL path → page
+  // component → required role/permission → short purpose. Lets the AI answer
+  // "what screen does X, where is it, which role can use it".
+  {
+    const lines = routesCatalog.map((r) => {
+      const access = r.requiredRole?.length
+        ? `role=${r.requiredRole.join("/")}`
+        : r.requiredPermission
+        ? `permission=${r.requiredPermission}`
+        : r.guarded
+        ? "guarded (license/nav-gated)"
+        : "open";
+      const extra = r.redirectTo ? ` → redirects to ${r.redirectTo}` : "";
+      const purpose = r.purpose ? ` — ${r.purpose}` : "";
+      return `${r.path}  ->  page ${r.component} [${access}]${extra}${purpose}`;
+    });
+    const GROUP = 12;
+    for (let i = 0; i < lines.length; i += GROUP) {
+      const part = i / GROUP;
+      const text = [
+        `Application route → page → access map (URL paths handled by client/src/App.tsx).`,
+        `Each line: <route path> -> page <Component> [access], optional purpose.`,
+        "",
+        ...lines.slice(i, i + GROUP),
+      ].join("\n");
+      chunks.push(makeChunk("route", "client/src/App.tsx", part, `Routes (part ${part + 1})`, text));
+    }
+  }
+
+  // NAV (sourceType "nav") — one chunk per sidebar group: where each feature lives
+  // in the menu + role/permission visibility.
+  for (let i = 0; i < navCatalog.length; i += 1) {
+    const g = navCatalog[i];
+    const head = [
+      `Sidebar navigation group: ${g.label} (id=${g.id})`,
+      g.requiredRole ? `Group requiredRole: ${g.requiredRole}` : null,
+      g.permissionCategory ? `Group permissionCategory: ${g.permissionCategory}` : null,
+      `Items (label → route [visibility]):`,
+    ].filter(Boolean);
+    const items = (g.items ?? []).map((it) => {
+      const vis = it.requiredRole
+        ? `role=${it.requiredRole}`
+        : it.requiredPermission
+        ? `permission=${it.requiredPermission}`
+        : "all roles";
+      return `- ${it.label ?? it.href} → ${it.href} [${vis}]`;
+    });
+    const text = [...head, ...items].join("\n");
+    chunks.push(makeChunk("nav", "client/src/lib/navigation.tsx", i, `Nav: ${g.label}`, text));
+  }
+
+  // SCHEMA TABLES (sourceType "schema_table") — group tables by schema file/domain;
+  // one chunk per domain listing table name + columns(type) + FKs. Lets the AI answer
+  // "what table stores X".
+  {
+    const byFile = new Map();
+    for (const t of schemaTables) {
+      if (!byFile.has(t.file)) byFile.set(t.file, []);
+      byFile.get(t.file).push(t);
+    }
+    let partIdx = 0;
+    for (const [file, tables] of byFile) {
+      const domain = file.split("/").pop().replace(/\.ts$/, "");
+      // Each table -> a compact block; pack blocks into chunks under MAX_CHARS.
+      const blocks = tables.map((t) => {
+        const cols = t.columns.map((c) => `${c.field}:${c.type}`).join(", ");
+        const fk = t.fks?.length ? `\n  FKs: ${t.fks.join(", ")}` : "";
+        return `TABLE ${t.table} (${domain} domain, ${file})\n  Columns: ${cols}${fk}`;
+      });
+      let buf = [];
+      let bufLen = 0;
+      const flush = () => {
+        if (!buf.length) return;
+        const text =
+          `Database tables in the ${domain} domain (drizzle schema ${file}).\n\n` + buf.join("\n\n");
+        chunks.push(makeChunk("schema_table", file, partIdx, `Tables: ${domain} domain`, text));
+        partIdx += 1;
+        buf = [];
+        bufLen = 0;
+      };
+      for (const b of blocks) {
+        if (bufLen + b.length > MAX_CHARS && buf.length) flush();
+        buf.push(b);
+        bufLen += b.length + 2;
+      }
+      flush();
+    }
+  }
+
+  // MODULES/PERMISSIONS (sourceType "module") — one chunk per feature module: what it
+  // gates (routes, permission categories, feature codes), default on/off (license).
+  for (let i = 0; i < modulesCatalog.length; i += 1) {
+    const mod = modulesCatalog[i];
+    const text = [
+      `Feature module: ${mod.name} (code ${mod.code})`,
+      `Description: ${mod.description}`,
+      `Licensing: ${mod.isCore ? "CORE — always enabled (no license needed)" : "OPTIONAL — requires the license to include this module code"}`,
+      mod.navGroupId ? `Sidebar nav group: ${mod.navGroupId}` : null,
+      `Permission categories: ${(mod.permissionCategories ?? []).join(", ") || "N/A"}`,
+      `Routes gated by this module: ${(mod.routes ?? []).join(", ") || "N/A"}`,
+      `Feature capabilities (codes): ${(mod.featureCodes ?? []).join(", ") || "N/A"}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    chunks.push(makeChunk("module", "shared/module-registry.ts", i, `Module: ${mod.name}`, text));
+  }
 
   const markdownFiles = collectMarkdownFiles(path.join(ROOT, "docs"))
     .concat(collectMarkdownFiles(path.join(ROOT, "apidocs")));

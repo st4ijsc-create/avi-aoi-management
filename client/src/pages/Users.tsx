@@ -35,6 +35,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type UserType = {
   id: number;
@@ -364,7 +365,10 @@ export default function Users() {
           <CardHeader>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <CardTitle>{t('users.userList')}</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle>{t('users.userList')}</CardTitle>
+                  <ViewOnlyBadge module="admin_users" />
+                </div>
                 <CardDescription>{t('users.manageAccounts')}</CardDescription>
               </div>
               <div className="flex gap-2">
@@ -372,10 +376,12 @@ export default function Users() {
                   <RefreshCw className="h-4 w-4 mr-2" />
                   {t('common.refresh')}
                 </Button>
-                <Button onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('users.addUser')}
-                </Button>
+                <PermissionGate module="admin_users" action="canCreate">
+                  <Button onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {t('users.addUser')}
+                  </Button>
+                </PermissionGate>
               </div>
             </div>
           </CardHeader>
@@ -498,31 +504,37 @@ export default function Users() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(user)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            {user.loginMethod === "local" && (
+                            <PermissionGate module="admin_users" action="canEdit">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleChangePassword(user)}
+                                onClick={() => handleEdit(user)}
                               >
-                                <Key className="h-4 w-4" />
+                                <Pencil className="h-4 w-4" />
                               </Button>
+                            </PermissionGate>
+                            {user.loginMethod === "local" && (
+                              <PermissionGate module="admin_users" action="canEdit">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleChangePassword(user)}
+                                >
+                                  <Key className="h-4 w-4" />
+                                </Button>
+                              </PermissionGate>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-600"
-                              onClick={() => handleDelete(user)}
-                              disabled={user.id === currentUser?.id}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <PermissionGate module="admin_users" action="canDelete">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-500 hover:text-red-600"
+                                onClick={() => handleDelete(user)}
+                                disabled={user.id === currentUser?.id}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </PermissionGate>
                           </div>
                         </TableCell>
                       </TableRow>

@@ -24,7 +24,16 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes, Plus, Trash2, GitMerge, AlertTriangle } from "lucide-react";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+import { EntityCombobox, type EntityOption } from "@/components/EntityCombobox";
 import { toast } from "sonner";
+
+// P2: shared materials master picker — turns componentCode free-text into a real
+// materials.id FK. Degrades to [] when the user lacks masterdata:canView.
+function useMaterialOptions(): EntityOption[] {
+  const q = trpc.masterData.materials.list.useQuery({ activeOnly: true }, { retry: false });
+  return (q.data ?? []).map((m: any) => ({ id: m.id, code: m.code, name: m.name }));
+}
 
 export default function BomManagement() {
   const { hasPermission } = usePermissions();
@@ -54,6 +63,7 @@ export default function BomManagement() {
         <Boxes className="h-6 w-6" />
         <h1 className="text-2xl font-semibold">BOM &amp; Feeder (MES)</h1>
         <Badge variant="outline">G2.4</Badge>
+        <ViewOnlyBadge module="mes_bom" />
       </div>
       <Tabs defaultValue="bom">
         <TabsList>
@@ -96,9 +106,12 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
     onError: (e) => toast.error(e.message),
   });
 
-  const [li, setLi] = useState({ componentCode: "", qtyPer: "1", refDesignator: "" });
+  const materialOptions = useMaterialOptions();
+  const [li, setLi] = useState<{ componentCode: string; materialId: number | null; qtyPer: string; refDesignator: string }>(
+    { componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" },
+  );
   const addLine = trpc.bom.addLineItem.useMutation({
-    onSuccess: () => { toast.success("Đã thêm dòng"); setLi({ componentCode: "", qtyPer: "1", refDesignator: "" }); utils.bom.getDefinition.invalidate(); },
+    onSuccess: () => { toast.success("Đã thêm dòng"); setLi({ componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" }); utils.bom.getDefinition.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
   const delLine = trpc.bom.deleteLineItem.useMutation({
@@ -163,13 +176,25 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
           <CardHeader><CardTitle>Dòng linh kiện — BOM #{selectedBomId}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {canCreate && (
-              <div className="flex items-end gap-2">
-                <div><Label>Mã linh kiện</Label><Input value={li.componentCode} onChange={(e) => setLi({ ...li, componentCode: e.target.value })} className="w-40" /></div>
+              <div className="flex items-end gap-2 flex-wrap">
+                <div>
+                  <Label>Vật liệu (master)</Label>
+                  <div>
+                    <EntityCombobox
+                      options={materialOptions}
+                      value={li.materialId}
+                      onChange={(id, opt) => setLi({ ...li, materialId: id, componentCode: opt?.code ?? li.componentCode })}
+                      placeholder="Chọn vật liệu..."
+                      className="w-56"
+                    />
+                  </div>
+                </div>
+                <div><Label>Mã linh kiện</Label><Input value={li.componentCode} onChange={(e) => setLi({ ...li, componentCode: e.target.value })} className="w-40" placeholder="hoặc nhập tay" /></div>
                 <div><Label>SL/đơn vị</Label><Input value={li.qtyPer} onChange={(e) => setLi({ ...li, qtyPer: e.target.value })} className="w-24" /></div>
                 <div><Label>Ref Designator</Label><Input value={li.refDesignator} onChange={(e) => setLi({ ...li, refDesignator: e.target.value })} className="w-40" /></div>
                 <Button
                   disabled={!li.componentCode || addLine.isPending}
-                  onClick={() => addLine.mutate({ bomId: selectedBomId, componentCode: li.componentCode, qtyPer: Number(li.qtyPer) || 1, refDesignator: li.refDesignator || undefined })}
+                  onClick={() => addLine.mutate({ bomId: selectedBomId, componentCode: li.componentCode, materialId: li.materialId ?? undefined, qtyPer: Number(li.qtyPer) || 1, refDesignator: li.refDesignator || undefined })}
                 ><Plus className="mr-1 h-4 w-4" /> Thêm</Button>
               </div>
             )}
@@ -201,7 +226,10 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
   const [machineId, setMachineId] = useState("");
   const mid = Number(machineId);
   const feeders = trpc.bom.listFeeders.useQuery({ machineId: mid }, { enabled: mid > 0 });
-  const [f, setF] = useState({ componentCode: "", slotCode: "", qtyOnFeeder: "0", reorderLevel: "0" });
+  const materialOptions = useMaterialOptions();
+  const [f, setF] = useState<{ componentCode: string; materialId: number | null; slotCode: string; qtyOnFeeder: string; reorderLevel: string }>(
+    { componentCode: "", materialId: null, slotCode: "", qtyOnFeeder: "0", reorderLevel: "0" },
+  );
   const assign = trpc.bom.assignFeederMaterial.useMutation({
     onSuccess: () => { toast.success("Đã gán feeder"); feeders.refetch(); },
     onError: (e) => toast.error(e.message),
@@ -215,13 +243,25 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
           <div><Label>Machine ID</Label><Input value={machineId} onChange={(e) => setMachineId(e.target.value)} className="w-32" /></div>
           {canCreate && (
             <>
-              <div><Label>Mã LK</Label><Input value={f.componentCode} onChange={(e) => setF({ ...f, componentCode: e.target.value })} className="w-32" /></div>
+              <div>
+                <Label>Vật liệu (master)</Label>
+                <div>
+                  <EntityCombobox
+                    options={materialOptions}
+                    value={f.materialId}
+                    onChange={(id, opt) => setF({ ...f, materialId: id, componentCode: opt?.code ?? f.componentCode })}
+                    placeholder="Chọn vật liệu..."
+                    className="w-52"
+                  />
+                </div>
+              </div>
+              <div><Label>Mã LK</Label><Input value={f.componentCode} onChange={(e) => setF({ ...f, componentCode: e.target.value })} className="w-32" placeholder="hoặc nhập tay" /></div>
               <div><Label>Slot</Label><Input value={f.slotCode} onChange={(e) => setF({ ...f, slotCode: e.target.value })} className="w-24" /></div>
               <div><Label>SL nạp</Label><Input value={f.qtyOnFeeder} onChange={(e) => setF({ ...f, qtyOnFeeder: e.target.value })} className="w-24" /></div>
               <div><Label>Mức đặt lại</Label><Input value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className="w-24" /></div>
               <Button
                 disabled={!(mid > 0) || !f.componentCode || assign.isPending}
-                onClick={() => assign.mutate({ machineId: mid, componentCode: f.componentCode, slotCode: f.slotCode || undefined, qtyOnFeeder: Number(f.qtyOnFeeder) || 0, reorderLevel: Number(f.reorderLevel) || 0 })}
+                onClick={() => assign.mutate({ machineId: mid, componentCode: f.componentCode, materialId: f.materialId ?? undefined, slotCode: f.slotCode || undefined, qtyOnFeeder: Number(f.qtyOnFeeder) || 0, reorderLevel: Number(f.reorderLevel) || 0 })}
               ><Plus className="mr-1 h-4 w-4" /> Gán/Nạp</Button>
             </>
           )}

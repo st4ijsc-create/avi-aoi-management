@@ -209,33 +209,33 @@ export const userRouter = router({
     }),
 
   // 2FA Setup - Generate secret and QR code
+  // Standardised on speakeasy (audit A bug #2): the whole codebase now uses ONE
+  // TOTP library. otplib's generateSecret() also emitted base32, so the secret
+  // ENCODING is identical — users enrolled under the old otplib path keep
+  // working when verified by speakeasy with { encoding: 'base32' }.
   setup2FA: protectedProcedure
     .mutation(async ({ ctx }) => {
-      const { OTP } = await import('otplib');
+      const speakeasy = (await import('speakeasy')).default;
       const QRCode = await import('qrcode');
-      
-      // Create OTP instance
-      const otp = new OTP({ strategy: 'totp' });
-      
-      // Generate secret
-      const secret = otp.generateSecret();
-      
-      // Save secret to database (not enabled yet)
-      await db.setup2FA(ctx.user.id, secret);
-      
-      // Generate QR code URL
+
+      // Generate base32 secret (same encoding the old otplib path produced).
       const user = await db.getUserById(ctx.user.id);
       const appName = 'AVI-AOI-Management';
       const accountName = user?.username || user?.email || `user_${ctx.user.id}`;
-      const otpauth = otp.generateURI({
+      const generated = speakeasy.generateSecret({
+        name: `${appName}:${accountName}`,
         issuer: appName,
-        label: accountName,
-        secret: secret,
+        length: 32,
       });
-      
+      const secret = generated.base32;
+
+      // Save secret to database (not enabled yet)
+      await db.setup2FA(ctx.user.id, secret);
+
+      const otpauth = generated.otpauth_url || '';
       // Generate QR code as data URL
       const qrCodeDataUrl = await QRCode.toDataURL(otpauth);
-      
+
       return {
         secret,
         qrCode: qrCodeDataUrl,
@@ -249,28 +249,29 @@ export const userRouter = router({
       token: z.string().length(6),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { OTP } = await import('otplib');
-      
+      const speakeasy = (await import('speakeasy')).default;
+
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorSecret) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.' });
       }
-      
-      // Verify token
-      const otp = new OTP({ strategy: 'totp' });
-      const result = await otp.verify({
-        token: input.token,
+
+      // Verify token (base32 encoding, ±1 step for clock drift)
+      const valid = speakeasy.totp.verify({
         secret: status.twoFactorSecret,
+        encoding: 'base32',
+        token: input.token,
+        window: 1,
       });
-      
-      if (!result.valid) {
+
+      if (!valid) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
       }
-      
+
       // Enable 2FA
       await db.enable2FA(ctx.user.id);
-      
+
       return { success: true };
     }),
 
@@ -281,15 +282,15 @@ export const userRouter = router({
       password: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { OTP } = await import('otplib');
+      const speakeasy = (await import('speakeasy')).default;
       const bcrypt = await import('bcryptjs');
-      
+
       // Get user
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
       }
-      
+
       // Verify password for local users
       if (user.loginMethod === 'local' && user.passwordHash) {
         const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
@@ -297,27 +298,28 @@ export const userRouter = router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu không đúng' });
         }
       }
-      
+
       // Get 2FA status
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorEnabled || !status.twoFactorSecret) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '2FA chưa được bật' });
       }
-      
+
       // Verify token
-      const otp = new OTP({ strategy: 'totp' });
-      const result = await otp.verify({
-        token: input.token,
+      const valid = speakeasy.totp.verify({
         secret: status.twoFactorSecret,
+        encoding: 'base32',
+        token: input.token,
+        window: 1,
       });
-      
-      if (!result.valid) {
+
+      if (!valid) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
       }
-      
+
       // Disable 2FA
       await db.disable2FA(ctx.user.id);
-      
+
       return { success: true };
     }),
 
@@ -371,15 +373,20 @@ export const userRouter = router({
       return { success: true };
     }),
 
-  // Revoke all other sessions
+  // Revoke all other sessions. The caller's current session is resolved
+  // server-side from ctx.sessionToken (canonical), so revoking never logs the
+  // caller out of their own session (audit A bug #3). Delegates to the same
+  // db helpers as sessionRouter.
   revokeAllSessions: protectedProcedure
-    .input(z.object({
-      // When provided, this session id is preserved (typically the caller's current session).
-      // Clients can obtain it from `getMySessions` (the row matching the active token).
-      currentSessionId: z.number().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      await db.revokeAllSessions(ctx.user.id, input.currentSessionId);
+    .mutation(async ({ ctx }) => {
+      let currentSessionId: number | undefined;
+      if (ctx.sessionToken) {
+        const current = await db.getSessionByToken(ctx.sessionToken);
+        if (current && current.userId === ctx.user.id) {
+          currentSessionId = current.id;
+        }
+      }
+      await db.revokeAllSessions(ctx.user.id, currentSessionId);
       return { success: true };
     }),
 });

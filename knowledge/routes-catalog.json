@@ -1,0 +1,1450 @@
+[
+  {
+    "path": "/",
+    "component": "Home",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/setup",
+    "component": "Setup",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/login",
+    "component": "Login",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/dashboard",
+    "component": "Dashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/andon",
+    "component": "AndonBoard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "F5a: Andon board (ALERT-ONLY)"
+  },
+  {
+    "path": "/device-adapters",
+    "component": "DeviceAdapterManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/device-adapters",
+    "redirectTo": null,
+    "purpose": "G2.2a: OT adapter/tag CONFIG"
+  },
+  {
+    "path": "/command-audit",
+    "component": "CommandAuditLog",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/command-audit",
+    "redirectTo": null,
+    "purpose": "G2.2a: command audit (READ-ONLY)"
+  },
+  {
+    "path": "/recipes",
+    "component": "RecipeManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/recipes",
+    "redirectTo": null,
+    "purpose": "G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)"
+  },
+  {
+    "path": "/interlock-rules",
+    "component": "InterlockRuleManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/interlock-rules",
+    "redirectTo": null,
+    "purpose": "G2.2b: interlock rule admin (CONFIG/VIEW)"
+  },
+  {
+    "path": "/orchestration-studio",
+    "component": "OrchestrationStudio",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/orchestration-studio",
+    "redirectTo": null,
+    "purpose": "E3b: visual orchestration studio (author → simulate → deploy/run)"
+  },
+  {
+    "path": "/engineering",
+    "component": "EngineeringWorkspace",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/engineering",
+    "redirectTo": null,
+    "purpose": "Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)"
+  },
+  {
+    "path": "/rf-test-cell",
+    "component": "RfTestCellSim",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/rf-test-cell",
+    "redirectTo": null,
+    "purpose": "Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)"
+  },
+  {
+    "path": "/factory-live-map",
+    "component": "FactoryLiveMap3D",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/factory-live-map",
+    "redirectTo": null,
+    "purpose": "L4 plant view: 3D factory floor, machines coloured by live status, drill-down"
+  },
+  {
+    "path": "/factory-floor-editor",
+    "component": "FactoryFloorEditor",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/factory-floor-editor",
+    "redirectTo": null,
+    "purpose": "2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads"
+  },
+  {
+    "path": "/cell-twin",
+    "component": "CellTwinPlayer",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/cell-twin",
+    "redirectTo": null,
+    "purpose": "Generic data-driven realtime twin playback for ANY orchestration workflow"
+  },
+  {
+    "path": "/edge-nodes",
+    "component": "EdgeNodesPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/edge-nodes",
+    "redirectTo": null,
+    "purpose": "E4: edge node registry management"
+  },
+  {
+    "path": "/api-keys",
+    "component": "ApiKeysPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/api-keys",
+    "redirectTo": null,
+    "purpose": "Control plane: scoped API-key admin CRUD (create-show-once)"
+  },
+  {
+    "path": "/bom-management",
+    "component": "BomManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)"
+  },
+  {
+    "path": "/master-data",
+    "component": "MasterDataManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)"
+  },
+  {
+    "path": "/work-orders",
+    "component": "WorkOrdersPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/work-orders",
+    "redirectTo": null,
+    "purpose": "Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)"
+  },
+  {
+    "path": "/threshold-approvals",
+    "component": "ThresholdApprovalsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/threshold-approvals",
+    "redirectTo": null,
+    "purpose": "Threshold approval review queue (approve/reject/withdraw)"
+  },
+  {
+    "path": "/anomaly-banks",
+    "component": "AnomalyBankPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/anomaly-banks",
+    "redirectTo": null,
+    "purpose": "Anomaly memory bank management (rebuild/delete per scope, admin)"
+  },
+  {
+    "path": "/history",
+    "component": "History",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/inspection/:id",
+    "component": "InspectionDetail",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/layout",
+    "component": "Layout",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/layout/:id",
+    "component": "Layout",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/settings",
+    "component": "Settings",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/request-role",
+    "component": "RequestRole",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U12: request a higher role"
+  },
+  {
+    "path": "/datasettings",
+    "component": "DataSettings",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/admin",
+    "component": "RedirectToAdminSetting",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/analytics",
+    "component": "RedirectToCategoryAnalytics",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-analytics",
+    "component": "RedirectToAIInspectionAnalytics",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/dashboard-center",
+    "component": "DashboardCenter",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/dashboard-center",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/api-docs",
+    "component": "ApiDocs",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/products",
+    "component": "ProductModels",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/corporate-layout",
+    "component": "CorporateLayout",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/corporate-dashboard",
+    "component": "CorporateDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/corporate-management",
+    "component": "CorporateManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/reports",
+    "component": "Reports",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/alerts",
+    "component": "Alerts",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/users",
+    "component": "Users",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/users",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/product-mapping",
+    "component": "ProductMachineMapping",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/production-orders",
+    "component": "ProductionOrders",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/machine-status",
+    "component": "MachineStatusMonitor",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/profile",
+    "component": "Profile",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/change-password",
+    "component": "ChangePassword",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/audit-logs",
+    "component": "AuditLogs",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/sessions",
+    "component": "SessionManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/production-signoff",
+    "component": "ProductionSessionSignOff",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/product-comparison",
+    "component": "ProductComparison",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-dashboard",
+    "component": "MqttDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-alerts",
+    "component": "MqttAlertRules",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-clients",
+    "component": "MqttClientManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-profiles",
+    "component": "MqttProfileManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-topics",
+    "component": "MqttTopicsMessages",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/custom-dashboard",
+    "component": "CustomDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/system-config",
+    "component": "SystemConfiguration",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/import-export",
+    "component": "ImportExport",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/user-assignments",
+    "component": "UserAssignments",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/scheduled-reports",
+    "component": "ScheduledReports",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/spc-analysis",
+    "component": "SPCAnalysis",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/process-management",
+    "component": "ProcessManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/workstation-management",
+    "component": "WorkstationManagement",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/category-analytics",
+    "component": "CategoryAnalytics",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/user-guide",
+    "component": "UserGuide",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/about-system",
+    "component": "AboutSystem",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/dashboard-templates",
+    "component": "DashboardTemplates",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/backup-restore",
+    "component": "BackupRestore",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/backup-restore",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/template-marketplace",
+    "component": "TemplateMarketplace",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/oee-dashboard",
+    "component": "OEEDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-replay",
+    "component": "MQTTReplay",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/oee-target-settings",
+    "component": "OEETargetSettings",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/machine-health",
+    "component": "MachineHealthMonitoring",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mes-control-tower",
+    "component": "MESControlTower",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/wip-dashboard",
+    "component": "WipLineBalance",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/traceability",
+    "component": "TraceabilityLineage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/digital-twin",
+    "component": "DigitalTwinDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/realtime-report",
+    "component": "RealtimeReportView",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/carbon-dashboard",
+    "component": "CarbonDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/energy-analytics",
+    "component": "EnergyAnalyticsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "G2.6b: energy analytics (READ/ANALYTICS only)"
+  },
+  {
+    "path": "/drill-down",
+    "component": "DrillDownDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/annotation-statistics",
+    "component": "AnnotationStatistics",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/annotation-comparison",
+    "component": "AnnotationComparisonPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/defect-heatmap",
+    "component": "DefectHeatmapPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/defect-prediction",
+    "component": "DefectPredictionPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/root-cause-analysis",
+    "component": "RootCauseAnalysisPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/causal-graph",
+    "component": "CausalGraphEditorPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/causal-graph",
+    "redirectTo": null,
+    "purpose": "Causal knowledge-graph admin editor (validated atomic write)"
+  },
+  {
+    "path": "/predictive-alerts",
+    "component": "PredictiveAlertsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/dashboard-marketplace",
+    "component": "DashboardMarketplace",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/history-export-scheduling",
+    "component": "HistoryExportScheduling",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-hub",
+    "component": "AIHub",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-chat",
+    "component": "AIChatPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-quality-gate",
+    "component": "AIQualityGatePage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-active-learning",
+    "component": "AIActiveLearningPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-image-search",
+    "component": "AIImageSearchPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-reports",
+    "component": "AIReportsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-time-series",
+    "component": "AITimeSeriesPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-performance",
+    "component": "AIPerformanceDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-batch-jobs",
+    "component": "BatchInferencePage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-ab-testing",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/ai-performance",
+    "purpose": null
+  },
+  {
+    "path": "/ai-monitoring",
+    "component": "ModelMonitoringPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-models",
+    "component": "AIModelManagementPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/model-versions",
+    "component": "ModelVersionsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-settings",
+    "component": "AISettingsPage",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/ai-settings",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-data-processing",
+    "component": "AIDataProcessingPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-inspection-analytics",
+    "component": "AIInspectionAnalyticsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-advanced-vision-lab",
+    "component": "AdvancedVisionLabPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-gguf-models",
+    "component": "AIGgufModelsPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/ai-brain",
+    "component": "AIBrainDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/management-insight",
+    "component": "ManagementInsight",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)"
+  },
+  {
+    "path": "/ai-local-kb",
+    "component": "AILocalKnowledgeBasePage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/technician-copilot",
+    "component": "TechnicianCopilot",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "LUỒNG ③: RCA Copilot — one-tap fix approval"
+  },
+  {
+    "path": "/operator",
+    "component": "OperatorHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Role landing: simplified big-button floor operator shell"
+  },
+  {
+    "path": "/quality-home",
+    "component": "QualityHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Role landing: quality_inspector inspection workspace (P1 doc 07 §④)"
+  },
+  {
+    "path": "/supervisor-home",
+    "component": "SupervisorHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U1: supervisor/manager briefing landing"
+  },
+  {
+    "path": "/viewer-home",
+    "component": "ViewerHome",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U3: viewer/user read-only landing"
+  },
+  {
+    "path": "/admin-home",
+    "component": "AdminHome",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": "Doc 10 U5: admin governance briefing landing"
+  },
+  {
+    "path": "/test-annotation",
+    "component": "TestAnnotationPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mask-annotation",
+    "component": "MaskAnnotationPage",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/aoi-packages",
+    "component": "AOIPackages",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-bulletin",
+    "component": "MqttBulletin",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/spc-advanced",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": "/spc-analysis",
+    "purpose": null
+  },
+  {
+    "path": "/correlation-analysis",
+    "component": "CorrelationAnalysis",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/quality-gates",
+    "component": "QualityGates",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/role-builder",
+    "component": "RoleBuilder",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/role-builder",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/enhanced-audit",
+    "component": "EnhancedAuditLogs",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/enhanced-audit",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/pdf-reports",
+    "component": "PdfReports",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/data-comparison",
+    "component": "DataComparison",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/report-builder",
+    "component": "ReportBuilder",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/powerpoint-export",
+    "component": "PowerPointExport",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/enhanced-scheduled-reports",
+    "component": "EnhancedScheduledReports",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/pareto-analysis",
+    "component": "ParetoAnalysis",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/quality-gate-templates",
+    "component": "QualityGateTemplates",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/production-scheduling",
+    "component": "ProductionScheduling",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/machine-registration",
+    "component": "MachineRegistration",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/machine-onboarding",
+    "component": "MachineOnboardingWizard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/license",
+    "component": "LicenseManagement",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/license",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/mqtt-ng-rate",
+    "component": "MqttNgRateThreshold",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/monitoring-setting",
+    "component": "MonitoringSettings",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/analytics-setting",
+    "component": "AnalyticsSettings",
+    "guarded": true,
+    "requiredRole": [
+      "admin"
+    ],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/admin-setting",
+    "component": "AdminSettings",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/admin-setting",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/production-dashboard",
+    "component": "ProductionDashboard",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/station-analysis/:id",
+    "component": "StationAnalysis",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/404",
+    "component": "NotFound",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  }
+]

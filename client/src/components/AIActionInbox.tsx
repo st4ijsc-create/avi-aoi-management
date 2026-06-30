@@ -15,6 +15,8 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { getSharedSocket } from "@/lib/socketManager";
+import { RealtimeBadge, useSocketConnected } from "@/components/RealtimeBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -251,6 +253,7 @@ export function AIActionInbox({
   const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
   const dismissMutation = trpc.aiInbox.dismiss.useMutation();
 
+  const connected = useSocketConnected();
   const items = (listQuery.data?.items ?? []) as InboxItem[];
   const busyId = confirmActionMutation.isPending || dismissMutation.isPending;
 
@@ -258,6 +261,28 @@ export function AIActionInbox({
     void utils.aiInbox.list.invalidate();
     void utils.aiInbox.count.invalidate();
   };
+
+  // Realtime refresh: new work (proposals/alerts) is pushed over the socket, so
+  // refetch the inbox the moment a relevant event lands instead of only polling.
+  useEffect(() => {
+    if (!open) return;
+    const socket = getSharedSocket();
+    const refresh = () => invalidate();
+    const events = [
+      "andon:event",
+      "inspection:alert",
+      "ng:alert",
+      "yield:warning",
+      "qualityGate:triggered",
+      "ai:proposal",
+      "ai:inbox_update",
+    ];
+    events.forEach((e) => socket.on(e, refresh));
+    return () => {
+      events.forEach((e) => socket.off(e, refresh));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // APPROVE — reuse the EXISTING HITL confirm mutation (RBAC + execute on server).
   const handleApprove = async (item: InboxItem) => {
@@ -311,6 +336,7 @@ export function AIActionInbox({
                 {items.length}
               </Badge>
             )}
+            <RealtimeBadge connected={connected} pollingFallback className="ml-auto" />
           </SheetTitle>
           <SheetDescription>{t("aiInbox.subtitle")}</SheetDescription>
         </SheetHeader>
@@ -366,12 +392,36 @@ export function AIActionInbox({
 export function AIActionInboxLauncher() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const utils = trpc.useUtils();
 
   const countQuery = trpc.aiInbox.count.useQuery(undefined, {
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
   const count = countQuery.data?.count ?? 0;
+  // Server may expose a critical sub-count; fall back gracefully if absent.
+  const criticalCount = (countQuery.data as { critical?: number } | undefined)?.critical ?? 0;
+  const hasUnread = count > 0;
+
+  // Realtime: bump the unread badge the instant new work is pushed.
+  useEffect(() => {
+    const socket = getSharedSocket();
+    const refresh = () => void utils.aiInbox.count.invalidate();
+    const events = [
+      "andon:event",
+      "inspection:alert",
+      "ng:alert",
+      "yield:warning",
+      "qualityGate:triggered",
+      "ai:proposal",
+      "ai:inbox_update",
+    ];
+    events.forEach((e) => socket.on(e, refresh));
+    return () => {
+      events.forEach((e) => socket.off(e, refresh));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
@@ -381,11 +431,18 @@ export function AIActionInboxLauncher() {
         className="relative"
         onClick={() => setOpen(true)}
         title={t("aiInbox.title")}
-        aria-label={t("aiInbox.title")}
+        aria-label={
+          hasUnread ? t("aiInbox.unreadAria", { count }) : t("aiInbox.title")
+        }
       >
         <Lightbulb className="h-5 w-5" />
-        {count > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+        {hasUnread && (
+          <span
+            className={cn(
+              "absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white",
+              criticalCount > 0 ? "bg-red-500 animate-pulse" : "bg-amber-500",
+            )}
+          >
             {count > 9 ? "9+" : count}
           </span>
         )}

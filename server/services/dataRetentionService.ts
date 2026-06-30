@@ -32,8 +32,16 @@ interface RetentionTarget {
 }
 
 // High-volume, non-compliance tables only. Conservative defaults; tune via env.
+//
+// P2 / RETENTION DECISION: ot_telemetry is the canonical telemetry store. The
+// Timescale retention policy (DEFERRED migration drizzle/0133_*.sql — hypertable +
+// add_retention_policy) is NOT yet applied, so this service remains the ACTIVE
+// retention path for ot_telemetry today. ⚠ Once 0133 is applied, REMOVE the
+// ot_telemetry row below (or set RETENTION_OT_TELEMETRY_DAYS=0) so the hypertable's
+// native retention policy does not double-delete with this sweeper.
+// Canonical ot_telemetry uses event-time column `ts` (renamed from legacy `timestamp`).
 const TARGETS: RetentionTarget[] = [
-  { table: "ot_telemetry",        column: "timestamp", envKey: "RETENTION_OT_TELEMETRY_DAYS",       defaultDays: 90 },
+  { table: "ot_telemetry",        column: "ts",        envKey: "RETENTION_OT_TELEMETRY_DAYS",       defaultDays: 90 },
   { table: "machine_heartbeats",  column: "timestamp", envKey: "RETENTION_MACHINE_HEARTBEATS_DAYS", defaultDays: 30 },
   { table: "mqtt_message_logs",   column: "createdAt", envKey: "RETENTION_MQTT_LOGS_DAYS",          defaultDays: 60 },
   { table: "mqtt_message_history", column: "timestamp", envKey: "RETENTION_MQTT_HISTORY_DAYS",      defaultDays: 60 },

@@ -1614,3 +1614,39 @@ export const aiAgentSessions = pgTable("ai_agent_sessions", {
 
 export type AiAgentSession = typeof aiAgentSessions.$inferSelect;
 export type InsertAiAgentSession = typeof aiAgentSessions.$inferInsert;
+
+// ============= AI Gateway Metrics (P4 — doc 12 §9) =============
+// One row per inference routed through the AI Gateway (server/services/aiGateway.ts).
+// Persists what was previously an in-memory routerStats counter (lost on restart):
+// tier distribution, tokens in/out, latency, model, A/B variant, and outcome. Written
+// async/batched off the hot path; the gateway dashboards read aggregates from here.
+export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
+  id: serial("id").primaryKey(),
+  // Cognitive-ladder tier (0–4) the request was routed to.
+  tier: integer("tier").notNull(),
+  // Logical task kind (chat/intent/extract/rca/report/vision/embed).
+  task: varchar("task", { length: 32 }).notNull(),
+  // Resolved GGUF model basename (or "default" when the engine default was used).
+  model: varchar("model", { length: 160 }).notNull().default("default"),
+  // A/B experiment variant when an A/B split flag was active ("A"/"B"), else null.
+  abVariant: varchar("abVariant", { length: 1 }),
+  // Token accounting — prompt (in) and generated (out).
+  tokensIn: integer("tokensIn").default(0).notNull(),
+  tokensOut: integer("tokensOut").default(0).notNull(),
+  // Wall-clock latency of the inference in milliseconds.
+  latencyMs: integer("latencyMs").default(0).notNull(),
+  // Outcome: ok | error | rate_limited.
+  outcome: varchar("outcome", { length: 16 }).default("ok").notNull(),
+  // Whether a fast (3B/4B) tier model was configured at decision time.
+  fastModelConfigured: boolean("fastModelConfigured").default(false).notNull(),
+  // Who triggered it (best-effort; null for system/cron callers).
+  userId: integer("userId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_gateway_metrics_created").on(table.createdAt),
+  index("idx_ai_gateway_metrics_tier").on(table.tier),
+  index("idx_ai_gateway_metrics_model").on(table.model),
+]);
+
+export type AiGatewayMetric = typeof aiGatewayMetrics.$inferSelect;
+export type InsertAiGatewayMetric = typeof aiGatewayMetrics.$inferInsert;

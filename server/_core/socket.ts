@@ -532,6 +532,9 @@ export function initializeSocket(server: HttpServer): Server {
   // G2.7 — start the WIP twin broadcaster (no-op unless TWIN_STREAM_ENABLED=true).
   startTwinBroadcaster();
 
+  // P2 follow-up — start the realtime OEE broadcaster (single oeeService source).
+  startOeeBroadcaster();
+
   console.log("[Socket.io] WebSocket server initialized");
   return io;
 }
@@ -690,6 +693,85 @@ export function emitEngineeringSamples(
 ): void {
   if (!io) return; // no socket server (e.g. tests / headless) → silently no-op
   io.to(`engineering:${machineId}`).emit("engineering:samples", { machineId, samples });
+}
+
+// ============ P2 — UNIFIED TELEMETRY BUS CHANNEL ============
+
+/**
+ * One canonical telemetry sample as broadcast on the unified bus channel. This is
+ * the wire shape clients receive on `telemetry:sample`; it mirrors a row of the
+ * canonical ot_telemetry table (event time `ts` as ISO string for JSON transport).
+ */
+export interface TelemetryBroadcastSample {
+  machineId: number | null;
+  deviceId: string | null;
+  protocol: string;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  unit: string | null;
+  quality: string;
+  ts: string; // ISO
+}
+
+/**
+ * P2 — broadcast a batch of canonical telemetry samples on the ONE unified bus
+ * channel. SIGNAL ONLY (never writes to a device or DB; the bus already persisted).
+ * No-op when io is not initialized (tests / headless). Emits the whole batch to the
+ * `global` room, and additionally fans each sample out to its per-machine room so a
+ * client subscribed to `machine:{id}` receives only that machine's samples.
+ */
+export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
+  if (!io || samples.length === 0) return;
+  io.to("global").emit("telemetry:sample", { samples });
+  // Per-machine fan-out: group by machineId so each machine room gets its subset.
+  const byMachine = new Map<number, TelemetryBroadcastSample[]>();
+  for (const s of samples) {
+    if (s.machineId == null) continue;
+    const arr = byMachine.get(s.machineId);
+    if (arr) arr.push(s);
+    else byMachine.set(s.machineId, [s]);
+  }
+  for (const [machineId, arr] of byMachine) {
+    io.to(`machine:${machineId}`).emit("telemetry:sample", { samples: arr });
+  }
+}
+
+// ============ P2 follow-up — REALTIME OEE BROADCAST ============
+
+let oeeBroadcastTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * P2 follow-up — periodically broadcast canonical live OEE (the single oeeService
+ * source of truth) to the `global` room on `oee:update`. Restores realtime OEE
+ * after the legacy in-memory path was retired. Guarded: disable with
+ * OEE_BROADCAST_ENABLED=false; interval via OEE_BROADCAST_INTERVAL_SEC (default 60s,
+ * min 15s). Computes live on read, honest (omits machines without data). Fail-safe:
+ * errors are swallowed so the timer never dies. Dynamic import avoids an import cycle.
+ */
+export function startOeeBroadcaster(): void {
+  if (oeeBroadcastTimer) return; // guard double-start
+  if (process.env.OEE_BROADCAST_ENABLED === "false") return;
+  const intervalSec = Math.max(15, Number(process.env.OEE_BROADCAST_INTERVAL_SEC) || 60);
+  const tick = async () => {
+    try {
+      if (!io) return;
+      const { getAllMachinesOEELive } = await import("../services/oeeService");
+      const metrics = await getAllMachinesOEELive();
+      if (metrics.length === 0) return;
+      io.to("global").emit("oee:update", { metrics, at: new Date().toISOString() });
+    } catch (e) {
+      console.error("[Socket.io] OEE broadcast failed:", (e as any)?.message ?? e);
+    }
+  };
+  oeeBroadcastTimer = setInterval(() => { void tick(); }, intervalSec * 1000);
+  setTimeout(() => { void tick(); }, 5000); // first push shortly after boot
+  console.log(`[Socket.io] OEE broadcaster started (every ${intervalSec}s)`);
+}
+
+export function stopOeeBroadcaster(): void {
+  if (oeeBroadcastTimer) { clearInterval(oeeBroadcastTimer); oeeBroadcastTimer = null; }
 }
 
 // Emit dashboard stats update

@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import {
+  templateToCustomDashboardWidgets,
+  type TemplateLayoutItem,
+} from "@/lib/dashboardTemplateApply";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -130,8 +135,11 @@ export default function DashboardTemplates() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState({
     name: "",
     description: "",
@@ -139,6 +147,46 @@ export default function DashboardTemplates() {
   });
 
   const { data: customTemplates, refetch } = trpc.dashboard.listTemplates.useQuery();
+
+  // Apply = persist a real user custom dashboard built from the template.
+  const createDashboardMutation = trpc.dashboardWidget.createCustomDashboard.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listCustomDashboards.invalidate();
+      toast.success(t('dashboard.templateApplied'), {
+        description: t('dashboard.customDashboard'),
+        action: {
+          label: t('common.view'),
+          onClick: () => setLocation('/custom-dashboard'),
+        },
+      });
+      setApplyingId(null);
+    },
+    onError: (error) => {
+      toast.error(error.message);
+      setApplyingId(null);
+    },
+  });
+
+  const applyTemplate = (params: {
+    key: string;
+    name: string;
+    description?: string;
+    widgets?: string[];
+    layout?: TemplateLayoutItem[];
+  }) => {
+    const widgetConfigs = templateToCustomDashboardWidgets({
+      widgets: params.widgets,
+      layout: params.layout,
+    });
+    setApplyingId(params.key);
+    createDashboardMutation.mutate({
+      name: params.name,
+      description: params.description || undefined,
+      widgets: widgetConfigs,
+      gridCols: 4,
+      isPublic: false,
+    });
+  };
   
   const createTemplateMutation = trpc.dashboard.createTemplate.useMutation({
     onSuccess: () => {
@@ -162,17 +210,6 @@ export default function DashboardTemplates() {
     },
   });
 
-  const applyTemplateMutation = trpc.dashboard.applyTemplate.useMutation({
-    onSuccess: (data) => {
-      toast.success(t('dashboard.templateApplied'));
-      // In a real implementation, this would update the user's dashboard configuration
-      console.log("Applied template:", data);
-    },
-    onError: (error) => {
-      toast.error(error.message);
-    },
-  });
-
   const handleCreateTemplate = () => {
     if (!newTemplate.name.trim()) {
       toast.error(t('dashboard.enterTemplateName'));
@@ -190,8 +227,13 @@ export default function DashboardTemplates() {
   };
 
   const handleApplySystemTemplate = (template: typeof SYSTEM_TEMPLATES[0]) => {
-    // For system templates, we just show a toast with instructions
-    toast.info(`Template: ${template.name} - ${t('dashboard.applyTemplateInstruction')}`);
+    applyTemplate({
+      key: `system-${template.id}`,
+      name: template.name,
+      description: template.description,
+      widgets: template.widgets,
+      layout: template.layout,
+    });
   };
 
   return (
@@ -299,19 +341,20 @@ export default function DashboardTemplates() {
                       <span>{template.widgets.length} widgets</span>
                     </div>
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="flex-1"
-                        onClick={() => handleApplySystemTemplate(template)}
+                        onClick={() => toast.info(t('dashboard.applyTemplateHint', { name: template.name }))}
                       >
                         <Eye className="h-4 w-4 mr-1" />
                         {t('dashboard.preview')}
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="flex-1"
                         onClick={() => handleApplySystemTemplate(template)}
+                        disabled={createDashboardMutation.isPending && applyingId === `system-${template.id}`}
                       >
                         <Copy className="h-4 w-4 mr-1" />
                         {t('dashboard.apply')}
@@ -352,12 +395,18 @@ export default function DashboardTemplates() {
                       <span>{template.usageCount} {t('dashboard.timesUsed')}</span>
                     </div>
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="flex-1"
-                        onClick={() => applyTemplateMutation.mutate({ templateId: template.id })}
-                        disabled={applyTemplateMutation.isPending}
+                        onClick={() => applyTemplate({
+                          key: `custom-${template.id}`,
+                          name: template.name,
+                          description: template.description ?? undefined,
+                          widgets: Array.isArray(template.widgets) ? (template.widgets as string[]) : [],
+                          layout: Array.isArray((template as any).layout) ? (template as any).layout : undefined,
+                        })}
+                        disabled={createDashboardMutation.isPending && applyingId === `custom-${template.id}`}
                       >
                         <Copy className="h-4 w-4 mr-1" />
                         {t('dashboard.apply')}

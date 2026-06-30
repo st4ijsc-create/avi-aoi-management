@@ -318,6 +318,45 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    // FU-3: Enforce session revocation at the auth layer.
+    //
+    // The session JWT is stateless, so a revoked session's cookie would still
+    // verify (and thus authenticate) until it expired. P0-B persists a
+    // `user_sessions` row keyed by this exact cookie (== sessionToken) and
+    // session.revoke / revokeAll flip that row's isActive to false. Here we
+    // make that revocation actually take effect: if a matching row EXISTS and
+    // is inactive or past its expiry, we treat the request as unauthenticated.
+    //
+    // Backward-compat: sessions are only created going forward, so pre-existing
+    // logins / older JWTs have NO matching row. If no row is found we ALLOW
+    // (the JWT alone is authoritative, as before) — we only ever REJECT a row
+    // that exists and is revoked/expired. The lookup is a single indexed query
+    // (user_sessions.sessionToken is UNIQUE + indexed). Fail-open on any
+    // DB/cache error so a transient failure never locks everyone out.
+    if (sessionCookie) {
+      let sessionRevoked = false;
+      try {
+        const sessionRow = await db.getSessionByToken(sessionCookie);
+        if (sessionRow) {
+          const isExpired =
+            sessionRow.expiresAt != null &&
+            new Date(sessionRow.expiresAt).getTime() <= Date.now();
+          sessionRevoked = sessionRow.isActive === false || isExpired;
+        }
+        // No row → backward-compatible allow (sessionRevoked stays false).
+      } catch (error) {
+        // Fail-open on any lookup error (e.g. DB unreachable) so a transient
+        // failure can't lock everyone out. The JWT alone is then authoritative.
+        console.warn(
+          "[Auth] Session-active check failed; failing open:",
+          String(error),
+        );
+      }
+      if (sessionRevoked) {
+        throw ForbiddenError("Session has been revoked");
+      }
+    }
+
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,

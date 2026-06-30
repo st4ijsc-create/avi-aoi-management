@@ -27,6 +27,10 @@ import {
   expandArrayGeometry,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+import {
+  resolveOrCreateMeasurementPointDefId,
+  assertValidPointDefId,
+} from "../services/measurementPointResolver";
 
 const measurementTypeValueList = [
   "DIMENSION",
@@ -224,13 +228,25 @@ export const machineApiRouter = router({
           }
         }
 
-        // Even if point definition not found, still save measurement with pointDefId = 0
-        // This allows data to be captured even if point is not pre-configured
+        // P0-A data-integrity: never persist pointDefId = 0. If no definition was
+        // pre-configured, auto-provision a real one via the shared resolver so the
+        // measurement stays visible to SPC/capability/heatmap analytics.
         const pointCode = measurement.pointId || measurement.pointCode || 'UNKNOWN';
-        if (!pointDef) {
+        let resolvedPointDefId: number;
+        if (pointDef?.id) {
+          resolvedPointDefId = pointDef.id;
+        } else {
           missingPointCodes.push(pointCode);
-          console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'})`);
+          console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'}) — auto-provisioning`);
+          resolvedPointDefId = await resolveOrCreateMeasurementPointDefId(usedCode ?? pointCode, {
+            productModelId: productModelRecord?.id,
+            machineId: machine.id,
+            productCache: productPointCache,
+            machineCache: machinePointCache,
+            autoCreate: true,
+          });
         }
+        assertValidPointDefId(resolvedPointDefId, `submitInspection (machine=${machine.code}, point=${pointCode})`);
 
         // Route measuredValue to the correct DB column based on type
         const rawValue = measurement.measuredValue;
@@ -283,7 +299,7 @@ export const machineApiRouter = router({
 
         measurementResults.push({
           inspectionId,
-          pointDefId: pointDef?.id || 0,
+          pointDefId: resolvedPointDefId,
           measuredValue: numericValue,
           measuredValueText: textValue,
           valueZ: toOptionalDecimal(measurement.valueZ),
@@ -448,6 +464,50 @@ export const machineApiRouter = router({
         });
       } catch (ngRateErr) {
         console.error('[NgRateAlert] Failed to import ngRateAlertService:', ngRateErr);
+      }
+
+      // P0-D: realtime quality-gate evaluation. Runs AFTER results are persisted.
+      // Fire-and-forget + fully guarded — a gate evaluation failure must never
+      // fail the inspection insert. Does NOT touch P0-A's resolver/assert logic.
+      try {
+        const { evaluateGatesAfterInspection } = await import('../services/qualityGateEvaluator');
+        evaluateGatesAfterInspection({
+          machineId: machine.id,
+          inspectionId,
+          productModelId: productModelRecord?.id ?? null,
+          stationId: machine.stationId ?? null,
+        }).catch(err => {
+          console.error('[QualityGate] post-inspection evaluation failed:', err);
+        });
+      } catch (gateErr) {
+        console.error('[QualityGate] Failed to import qualityGateEvaluator:', gateErr);
+      }
+
+      // P2 WIP write-path: populate wip_tracking / station_dwell_time /
+      // line_balance_metrics + bump the matching production order. Runs AFTER
+      // results are persisted; fire-and-forget + fully guarded (the service never
+      // throws) so it can never fail the inspection insert. Does NOT touch the
+      // P0-A resolver/assert nor the P0-D quality-gate logic above.
+      try {
+        const { ingestInspectionToWip } = await import('../services/wipIngestService');
+        ingestInspectionToWip({
+          inspectionId,
+          serialNumber: input.serialNumber,
+          lotNumber: input.batchNumber ?? null,
+          overallResult: input.overallResult,
+          machineId: machine.id,
+          stationId: machine.stationId ?? null,
+          productModelId: productModelRecord?.id ?? null,
+          productCode: resolvedProductModelCode ?? null,
+          cycleTimeSec: input.cycleTime ?? null,
+          // Explicit order link → wipIngest skips its heuristic order bump
+          // (the inline block above already incremented completedQuantity).
+          productionOrderId: productionOrderId ?? null,
+        }).catch(err => {
+          console.error('[wipIngest] post-inspection ingest failed:', err);
+        });
+      } catch (wipErr) {
+        console.error('[wipIngest] Failed to import wipIngestService:', wipErr);
       }
 
       return { success: true, inspectionId };

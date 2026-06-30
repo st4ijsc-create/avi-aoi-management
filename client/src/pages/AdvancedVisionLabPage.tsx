@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import SimilarImageGrid, { type SearchMode, type EmbeddingSource } from "@/components/ai/SimilarImageGrid";
+import ProposeDefectButton, { type ProposeDefectFinding } from "@/components/ai/ProposeDefectButton";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -69,6 +70,47 @@ function ResultJson({ data }: { data: unknown }) {
     <pre className="text-xs bg-muted/50 p-3 rounded-md overflow-auto max-h-80">
       {JSON.stringify(data, null, 2)}
     </pre>
+  );
+}
+
+// ─── Target reference for closing the loop (link a finding to inspection data) ──
+// A lab image is an ad-hoc upload with no inspection context. To PROPOSE a defect
+// the user supplies either an existing measurement-result id (attach) or an
+// inspection id + measurement-point id (create a new NG result).
+interface TargetRef {
+  measurementResultId: string;
+  inspectionId: string;
+  pointDefId: string;
+}
+const emptyTargetRef: TargetRef = { measurementResultId: "", inspectionId: "", pointDefId: "" };
+
+function targetRefToFinding(r: TargetRef): Pick<ProposeDefectFinding, "measurementResultId" | "inspectionId" | "pointDefId"> {
+  return {
+    measurementResultId: r.measurementResultId ? Number(r.measurementResultId) : null,
+    inspectionId: r.inspectionId ? Number(r.inspectionId) : null,
+    pointDefId: r.pointDefId ? Number(r.pointDefId) : null,
+  };
+}
+
+function TargetRefInputs({ value, onChange }: { value: TargetRef; onChange: (v: TargetRef) => void }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 p-2 rounded border border-dashed bg-muted/20">
+      <div className="space-y-1">
+        <Label className="text-[11px]">Measurement result #</Label>
+        <Input type="number" value={value.measurementResultId}
+          onChange={(e) => onChange({ ...value, measurementResultId: e.target.value })} placeholder="gắn vào" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-[11px]">Inspection #</Label>
+        <Input type="number" value={value.inspectionId}
+          onChange={(e) => onChange({ ...value, inspectionId: e.target.value })} placeholder="tạo mới" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-[11px]">Point def #</Label>
+        <Input type="number" value={value.pointDefId}
+          onChange={(e) => onChange({ ...value, pointDefId: e.target.value })} placeholder="tạo mới" />
+      </div>
+    </div>
   );
 }
 
@@ -127,6 +169,7 @@ function ImagePicker({ label, value, onChange }: PickerProps) {
 function TabCompare() {
   const [ok, setOk] = useState<PickerProps["value"]>(null);
   const [ng, setNg] = useState<PickerProps["value"]>(null);
+  const [targetRef, setTargetRef] = useState<TargetRef>(emptyTargetRef);
   const m = trpc.aiAdvancedVision.compareOkVsNg.useMutation();
 
   const run = () => {
@@ -154,6 +197,20 @@ function TabCompare() {
             <span className="text-sm text-muted-foreground">diffRatio = {(d.diffRatio * 100).toFixed(2)}%</span>
           </div>
           <p className="text-sm">{d.summary}</p>
+          {/* P4-F: close the loop — propose a defect when the compare flags NG/REVIEW. */}
+          {d.verdict !== "PASS" && (
+            <div className="space-y-2 pt-2 border-t">
+              <TargetRefInputs value={targetRef} onChange={setTargetRef} />
+              <ProposeDefectButton
+                finding={{
+                  source: "advanced_vision",
+                  findingText: d.summary || `OK/NG compare verdict ${d.verdict} (diffRatio ${(d.diffRatio * 100).toFixed(2)}%)`,
+                  confidence: typeof d.diffRatio === "number" ? Math.min(1, d.diffRatio) : null,
+                  ...targetRefToFinding(targetRef),
+                }}
+              />
+            </div>
+          )}
           <ResultJson data={d} />
         </div>
       ); })()}
@@ -580,6 +637,7 @@ function TabAnomaly() {
   const [productModelId, setProductModelId] = useState("");
   const [machineId, setMachineId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [targetRef, setTargetRef] = useState<TargetRef>(emptyTargetRef);
   const m = trpc.aiAnomaly.score.useMutation();
 
   const run = () => {
@@ -633,6 +691,22 @@ function TabAnomaly() {
             <p className="text-sm text-muted-foreground">
               {t("anomaly.reason")}: {m.data.reason === "no_profile" ? t("anomaly.noProfile") : m.data.reason}
             </p>
+          )}
+          {/* P4-F: close the loop — propose this anomaly as a defect (HITL). */}
+          {m.data.isAnomaly && (
+            <div className="space-y-2 pt-2 border-t">
+              <TargetRefInputs value={targetRef} onChange={setTargetRef} />
+              <ProposeDefectButton
+                finding={{
+                  source: "anomaly",
+                  findingText: `Anomaly score ${m.data.score.toFixed(4)}${m.data.threshold != null ? ` / threshold ${m.data.threshold.toFixed(4)}` : ""} (${m.data.source})`,
+                  confidence: m.data.threshold != null && m.data.threshold > 0
+                    ? Math.min(1, m.data.score / (m.data.threshold * 2))
+                    : null,
+                  ...targetRefToFinding(targetRef),
+                }}
+              />
+            </div>
           )}
           <ResultJson data={m.data} />
         </div>

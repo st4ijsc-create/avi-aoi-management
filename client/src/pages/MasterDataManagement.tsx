@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ export default function MasterDataManagement() {
           <Database className="h-6 w-6" />
           <h1 className="text-2xl font-semibold">{t("masterData.title")}</h1>
           <Badge variant="outline">MES/MOM</Badge>
+          <ViewOnlyBadge module="masterdata" />
         </div>
         <Tabs defaultValue="suppliers">
           <TabsList>

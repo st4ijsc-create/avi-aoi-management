@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type Workstation = {
   id: number;
@@ -231,15 +232,20 @@ export default function WorkstationManagement() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{t('machines.title')}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{t('machines.title')}</h1>
+              <ViewOnlyBadge module="settings_factory" />
+            </div>
             <p className="text-muted-foreground">
               {t('machines.subtitle')}
             </p>
           </div>
-          <Button onClick={() => setIsCreateDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            {t('machines.addWorkstation')}
-          </Button>
+          <PermissionGate module="settings_factory" action="canCreate">
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              {t('machines.addWorkstation')}
+            </Button>
+          </PermissionGate>
         </div>
 
         {/* Stats Cards */}
@@ -422,17 +428,21 @@ export default function WorkstationManagement() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditDialog(ws)}>
-                                <Edit className="w-4 h-4 mr-2" />
-                                {t('machines.edit')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                className="text-red-600"
-                                onClick={() => setDeleteConfirmId(ws.id)}
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                {t('machines.delete')}
-                              </DropdownMenuItem>
+                              <PermissionGate module="settings_factory" action="canEdit">
+                                <DropdownMenuItem onClick={() => openEditDialog(ws)}>
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  {t('machines.edit')}
+                                </DropdownMenuItem>
+                              </PermissionGate>
+                              <PermissionGate module="settings_factory" action="canDelete">
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => setDeleteConfirmId(ws.id)}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  {t('machines.delete')}
+                                </DropdownMenuItem>
+                              </PermissionGate>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

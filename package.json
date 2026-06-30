@@ -27,7 +27,9 @@
     "kb:graph": "node scripts/ai-kb/build-semantic-graph.mjs",
     "kb:phase1": "node scripts/ai-kb/run-phase1.mjs",
     "kb:test": "node scripts/ai-kb/test-phase2-api.mjs",
-    "kb:eval": "node scripts/ai-kb/eval-rag.mjs"
+    "kb:eval": "node scripts/ai-kb/eval-rag.mjs",
+    "kb:stale-check": "node scripts/ai-kb/check-kb-stale.mjs",
+    "hooks:install": "node scripts/ai-kb/install-git-hooks.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

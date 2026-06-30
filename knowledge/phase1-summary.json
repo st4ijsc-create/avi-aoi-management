@@ -1,13 +1,17 @@
 {
-  "generatedAt": "2026-05-05T07:35:40.150Z",
+  "generatedAt": "2026-06-29T13:12:44.470Z",
   "patterns": {
-    "protectedProcedureCount": 758,
-    "publicProcedureCount": 55,
-    "zodObjectCount": 975,
-    "totalSourceFiles": 633,
-    "totalRouterFiles": 79,
-    "totalServiceFiles": 46,
-    "totalDocsFiles": 63
+    "protectedProcedureCount": 1216,
+    "publicProcedureCount": 69,
+    "zodObjectCount": 1425,
+    "totalSourceFiles": 1226,
+    "totalRouterFiles": 149,
+    "totalServiceFiles": 330,
+    "totalDocsFiles": 103,
+    "totalRoutes": 144,
+    "totalNavGroups": 18,
+    "totalSchemaTables": 237,
+    "totalModules": 12
   },
   "outputs": [
     "knowledge/routers-catalog.json",
@@ -15,6 +19,10 @@
     "knowledge/types-dictionary.json",
     "knowledge/code-graph.json",
     "knowledge/docs-catalog.json",
-    "knowledge/patterns.json"
+    "knowledge/patterns.json",
+    "knowledge/routes-catalog.json",
+    "knowledge/nav-catalog.json",
+    "knowledge/schema-tables.json",
+    "knowledge/modules-catalog.json"
   ]
 }

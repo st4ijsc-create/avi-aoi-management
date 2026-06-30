@@ -2,18 +2,45 @@
   {
     "file": "server/services/aiABTesting.ts",
     "exportedFunctions": [
+      "selectCanaryVariant",
       "createExperiment",
       "startExperiment",
       "runABInference",
       "submitABFeedback",
       "getExperimentStats",
-      "concludeExperiment"
+      "concludeExperiment",
+      "pauseExperiment",
+      "evaluateCanaryGuardrail",
+      "promoteWinner"
     ],
     "exportedClasses": [],
     "localImports": [
       "../db/aiAdvanced",
       "./aiInferenceEngine",
-      "../db/ai"
+      "../db/ai",
+      "../../drizzle/schema/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiActionInbox.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiActionInbox"
+    ]
+  },
+  {
+    "file": "server/services/aiActionInbox.ts",
+    "exportedFunctions": [
+      "listInbox",
+      "countInbox",
+      "dismissInboxItem"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../db/auth",
+      "../../drizzle/schema"
     ]
   },
   {
@@ -41,6 +68,180 @@
     ]
   },
   {
+    "file": "server/services/aiActiveLearningAuto.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiActiveLearningAuto"
+    ]
+  },
+  {
+    "file": "server/services/aiActiveLearningAuto.ts",
+    "exportedFunctions": [
+      "scanInferenceForUncertainty",
+      "scanCommitteeDisagreement"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiAdvancedVision.ts",
+    "exportedFunctions": [
+      "compareOkVsNg",
+      "imageQualityCheck",
+      "generateDefectHeatmap",
+      "extractText",
+      "autoDetectRoi",
+      "cropToRoiForVision",
+      "augmentImage",
+      "visualQA",
+      "batchTriage"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiProviderRouter",
+      "./imageAlignment"
+    ]
+  },
+  {
+    "file": "server/services/aiAgentOrchestrator.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiAgentOrchestrator"
+    ]
+  },
+  {
+    "file": "server/services/aiAgentOrchestrator.ts",
+    "exportedFunctions": [
+      "canUseAgentic",
+      "startSession",
+      "approvePlan",
+      "advance",
+      "confirmStep",
+      "cancelSession",
+      "getSession",
+      "expireStaleSessions"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiLocalTools/toolRegistry",
+      "./aiCopilotActions",
+      "./aiAgentPlanner"
+    ]
+  },
+  {
+    "file": "server/services/aiAgentPlanner.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools/toolRegistry",
+      "./aiAgentPlanner"
+    ]
+  },
+  {
+    "file": "server/services/aiAgentPlanner.ts",
+    "exportedFunctions": [
+      "planGoal"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools/toolRegistry",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiAnomalyBankScheduler.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiAnomalyBankScheduler"
+    ]
+  },
+  {
+    "file": "server/services/aiAnomalyBankScheduler.ts",
+    "exportedFunctions": [
+      "decideRebuild",
+      "runAnomalyBankRebuildNow",
+      "startAnomalyBankScheduler",
+      "stopAnomalyBankScheduler",
+      "getAnomalyBankSchedulerStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAnomaly",
+      "./aiAnomalyDetection"
+    ]
+  },
+  {
+    "file": "server/services/aiAnomalyDetection.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiAnomalyDetection",
+      "./aiImageEmbedding"
+    ]
+  },
+  {
+    "file": "server/services/aiAnomalyDetection.ts",
+    "exportedFunctions": [
+      "cosineDistance",
+      "quantileSorted",
+      "computeDistStats",
+      "extractHandcraftedFeatures",
+      "getEmbeddingForAnomaly",
+      "greedyCoreset",
+      "knnScore",
+      "buildMemoryBank",
+      "buildBankFromVectors",
+      "buildBankFromStoredEmbeddings",
+      "backfillAnomalyScores",
+      "scoreImage",
+      "scoreFromVector",
+      "anomalyModelCode",
+      "getAnomalyStats",
+      "shouldEscalateToVision",
+      "getVisionEscalationMeter",
+      "isAnomalyDetectionEnabled"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiImageEmbedding",
+      "../db/aiAnomaly"
+    ]
+  },
+  {
+    "file": "server/services/aiAutoProposer.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiAutoProposer"
+    ]
+  },
+  {
+    "file": "server/services/aiAutoProposer.ts",
+    "exportedFunctions": [
+      "isAutoProposeEnabled",
+      "decideNgBurst",
+      "decideForTrigger",
+      "runForTrigger",
+      "startAutoProposer",
+      "stopAutoProposer"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../_core/eventBus"
+    ]
+  },
+  {
     "file": "server/services/aiBatchEngine.ts",
     "exportedFunctions": [
       "createBatchJob",
@@ -55,6 +256,74 @@
     ]
   },
   {
+    "file": "server/services/aiBatchRcaScheduler.ts",
+    "exportedFunctions": [
+      "runBatchRCAOnce",
+      "initBatchRcaScheduler",
+      "stopBatchRcaScheduler",
+      "getBatchRcaStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "./aiInsightsService",
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiCalibration.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCalibration"
+    ]
+  },
+  {
+    "file": "server/services/aiCalibration.ts",
+    "exportedFunctions": [
+      "computeECE",
+      "applyTemperatureToConfidence",
+      "fitTemperature",
+      "fitTemperatureFromLogits",
+      "collectCalibrationSamples"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiCausalGraph.save.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCausalGraph"
+    ]
+  },
+  {
+    "file": "server/services/aiCausalGraph.ts",
+    "exportedFunctions": [
+      "isCausalGraphEnabled",
+      "loadCausalGraph",
+      "validateCausalGraph",
+      "saveCausalGraph",
+      "getEditableGraph",
+      "addCausalNode",
+      "updateCausalNode",
+      "removeCausalNode",
+      "addCausalEdge",
+      "updateCausalEdge",
+      "removeCausalEdge",
+      "findNode",
+      "queryCausesForDefect",
+      "queryByText",
+      "formatCausalContext",
+      "hybridDefectContext"
+    ],
+    "exportedClasses": [
+      "CausalGraphValidationError"
+    ],
+    "localImports": []
+  },
+  {
     "file": "server/services/aiChatAssistant.ts",
     "exportedFunctions": [
       "processChat",
@@ -65,6 +334,102 @@
       "../db/connection",
       "../../drizzle/schema",
       "../../drizzle/schema/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiChatAssistant.ws-g3.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiChatAssistant"
+    ]
+  },
+  {
+    "file": "server/services/aiCopilotActions.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools/toolRegistry",
+      "./aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiCopilotActions.ts",
+    "exportedFunctions": [
+      "proposeAction",
+      "confirmAction",
+      "cancelAction",
+      "getAction",
+      "expireStaleActions"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "../_core/accessControl",
+      "./aiLocalTools/toolRegistry",
+      "./auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiDatasetBuilder.seg.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiDatasetBuilder"
+    ]
+  },
+  {
+    "file": "server/services/aiDatasetBuilder.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiDatasetBuilder"
+    ]
+  },
+  {
+    "file": "server/services/aiDatasetBuilder.ts",
+    "exportedFunctions": [
+      "collectDatasetSamples",
+      "stratifiedSplit",
+      "datasetDir",
+      "readJsonl",
+      "buildDataset",
+      "buildSegSamplesFromRows",
+      "splitSegmentationByImage",
+      "buildSegmentationDataset"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../db/ai",
+      "../db/aiAdvanced",
+      "../../drizzle/schema",
+      "../db/aiSegmentation",
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiDriftMonitor.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiDriftMonitor"
+    ]
+  },
+  {
+    "file": "server/services/aiDriftMonitor.ts",
+    "exportedFunctions": [
+      "summarizeConfidences",
+      "psiFromHistograms",
+      "checkConfidenceDrift",
+      "getDriftMetrics",
+      "isDriftMonitorEnabled"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema"
     ]
   },
   {
@@ -88,34 +453,125 @@
   {
     "file": "server/services/aiEdgeEnhanced.ts",
     "exportedFunctions": [
-      "quantizeModel",
-      "getQuantizationOptions",
-      "initiateOTAUpdate",
-      "getOTAUpdateStatus",
+      "readStorageBuffer",
+      "sha256Hex",
+      "packageModelForDeployment",
+      "confirmDeployment",
+      "recordEdgeHeartbeat",
+      "syncEdgeResults",
+      "markStaleDeployments",
       "rollbackDevice",
-      "getFleetOverview",
-      "batchDeploy",
-      "compareDevicePerformance",
-      "getDeviceHealthHistory",
-      "syncWithConflictResolution",
-      "getSyncStatusSummary"
+      "getFleetOverview"
     ],
     "exportedClasses": [],
     "localImports": [
       "../db/connection",
       "../../drizzle/schema/ai",
-      "../../drizzle/schema",
       "../db/aiAdvanced",
+      "../db/hierarchy",
       "../storage"
     ]
   },
   {
+    "file": "server/services/aiEvalHarness.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiEvalHarness",
+      "./aiDatasetBuilder"
+    ]
+  },
+  {
+    "file": "server/services/aiEvalHarness.ts",
+    "exportedFunctions": [
+      "evaluateModelVersion",
+      "evaluateQualityGate",
+      "compareBeforeAfter",
+      "persistEvalReport"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/ai",
+      "./aiLocalTraining",
+      "./aiDatasetBuilder",
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiExecutiveReport.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiExecutiveReport"
+    ]
+  },
+  {
+    "file": "server/services/aiExecutiveReport.ts",
+    "exportedFunctions": [
+      "periodWindow",
+      "gatherKpis",
+      "generateExecutiveSummary",
+      "persistExecutiveSummary",
+      "getExecutiveSummaries",
+      "resolveExecReportRecipients",
+      "notifyExecutiveSummary",
+      "runExecutiveReportNow"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema/aiInsight"
+    ]
+  },
+  {
+    "file": "server/services/aiExecutiveReportNotify.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiExecutiveReport"
+    ]
+  },
+  {
+    "file": "server/services/aiExplainability.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiExplainability"
+    ]
+  },
+  {
+    "file": "server/services/aiExplainability.ts",
+    "exportedFunctions": [
+      "splitChannels",
+      "computeCAM",
+      "computeScoreCAM",
+      "occlusionMapFromDrops",
+      "upscaleNearest",
+      "explain"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiInferenceEngine"
+    ]
+  },
+  {
+    "file": "server/services/aiGgufEngine.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/aiGgufEngine.ts",
     "exportedFunctions": [
+      "validateGgufFile",
+      "ggufModelFileExists",
+      "isGgufModelLoadable",
       "loadGgufModel",
       "unloadGgufModel",
       "generateText",
       "chatCompletion",
+      "loadLlavaModel",
+      "describeImage",
       "countTokens",
       "analyzeDefect",
       "generateQualityInsights",
@@ -125,19 +581,43 @@
       "getLoadedGgufModelNames",
       "getEngineHealth",
       "generateEmbedding",
-      "generateEmbeddings"
+      "generateEmbeddings",
+      "stripThinking"
     ],
     "exportedClasses": [],
-    "localImports": []
+    "localImports": [
+      "./ggufConcurrency",
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiImageEmbedding.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "./aiVisionLanguage",
+      "./aiImageEmbedding"
+    ]
   },
   {
     "file": "server/services/aiImageEmbedding.ts",
     "exportedFunctions": [
+      "l2normalize",
+      "cosineSimilarity",
+      "formatVectorLiteral",
+      "parseVectorLiteral",
+      "embedTextOllama",
+      "embedImageAsText",
       "evictEmbeddingSessionCache",
+      "poolEmbeddingFromOutput",
       "extractEmbedding",
       "storeEmbedding",
-      "findSimilarById",
+      "findSimilarByVectorWithMode",
       "findSimilarByVector",
+      "findSimilarByIdWithMode",
+      "findSimilarById",
+      "resolveDefaultImageEmbeddingModel",
       "searchByImage",
       "batchStoreEmbeddings",
       "clusterDefects",
@@ -147,7 +627,8 @@
     "localImports": [
       "../db/connection",
       "../../drizzle/schema",
-      "../db/ai"
+      "../db/ai",
+      "./aiVisionLanguage"
     ]
   },
   {
@@ -155,9 +636,15 @@
     "exportedFunctions": [
       "evictSessionCache",
       "runInference",
-      "getLoadedModels"
+      "runInferenceWithFeatureMap",
+      "runSegmentation",
+      "softmaxArray",
+      "getLoadedModels",
+      "getSessionCacheSize"
     ],
-    "exportedClasses": [],
+    "exportedClasses": [
+      "SegmentationUnavailableError"
+    ],
     "localImports": [
       "../db/ai",
       "../../drizzle/schema"
@@ -169,16 +656,20 @@
       "generateRCAInsights"
     ],
     "exportedClasses": [],
-    "localImports": []
+    "localImports": [
+      "./aiProviderRouter"
+    ]
   },
   {
     "file": "server/services/aiInspectionAnalytics.ts",
     "exportedFunctions": [
       "buildAnalyticsConditions",
+      "detectSpcViolations",
       "getDefectTrend",
       "getDefectPareto",
       "getMachinePerformance",
       "forecastYield",
+      "forecastWithHoltWinters",
       "getCorrelationAnalysis",
       "assessRisks",
       "getControlChart",
@@ -192,13 +683,447 @@
       "assessRisksWithNarration",
       "getControlChartWithNarration",
       "interpretSPCViolations",
-      "generateComprehensiveReportWithNarration"
+      "generateComprehensiveReportWithNarration",
+      "triggerSpcAlerts"
     ],
     "exportedClasses": [],
     "localImports": [
       "../db/connection",
       "../../drizzle/schema",
-      "./cacheService"
+      "./cacheService",
+      "../_core/socket",
+      "../utils/spc"
+    ]
+  },
+  {
+    "file": "server/services/aiIssueClassifier.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiIssueClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiIssueClassifier.ts",
+    "exportedFunctions": [
+      "clampReason",
+      "clampState",
+      "classifyIssue"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiJobQueue.ts",
+    "exportedFunctions": [
+      "enqueueNarrative",
+      "getJob",
+      "listJobs",
+      "getQueueSnapshot",
+      "cancelJob"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiProviderRouter"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.gd1.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.gguf.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeService.ts",
+    "exportedFunctions": [
+      "extractStructuredResponse",
+      "detectLanguage",
+      "getKbHealth",
+      "reloadKbArtifacts",
+      "retrieveKnowledge",
+      "answerQuestion",
+      "warmUpOllamaModels",
+      "isAutoIngestEnabled",
+      "ingestKnowledgeRecord",
+      "ingestKnowledgeRecordAsync"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools",
+      "./aiReranker",
+      "./aiSemanticGraph"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/analyticsTools.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./analyticsTools"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/analyticsTools.ts",
+    "exportedFunctions": [
+      "registerAnalyticsTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "../../db/lineBalance",
+      "../paretoAnalysisService",
+      "../../db/statistics",
+      "../predictiveMaintenanceService",
+      "../aiTimeSeriesEngine",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/handlers.ts",
+    "exportedFunctions": [
+      "registerAllTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/handlersF6.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./handlersF6"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/handlersF6.ts",
+    "exportedFunctions": [
+      "registerF6Tools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../db/processResult",
+      "../../db/otTelemetry",
+      "../../db/lineBalance",
+      "../aiTimeSeriesEngine",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/index.ts",
+    "exportedFunctions": [
+      "tryExecuteTool"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier",
+      "./toolRegistry",
+      "../aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/insightHandlersF6.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./insightHandlersF6"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "exportedFunctions": [
+      "registerInsightF6Tools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../db/lineBalance",
+      "../aiTimeSeriesEngine",
+      "../../utils/statistics",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.f6.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.gd1.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.gd3.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.gguf.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.setspec.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.ts",
+    "exportedFunctions": [
+      "classifyToolIntent",
+      "classifyToolIntentLLM"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/machineControl.tools.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolRegistry",
+      "../aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readToolsP2"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2.ts",
+    "exportedFunctions": [
+      "registerP2ReadTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2bc.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readToolsP2bc"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "exportedFunctions": [
+      "registerP2bcReadTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2d.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readToolsP2d"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2d.ts",
+    "exportedFunctions": [
+      "registerP2dReadTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/toolRegistry.ts",
+    "exportedFunctions": [
+      "isClientTool",
+      "isWriteTool",
+      "assertExecutable",
+      "getTool",
+      "listTools",
+      "clearRegistry"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/alerts.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/alerts",
+      "../../../db/ai",
+      "../toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/client.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/engineering.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../toolRegistry",
+      "../../aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/engineering.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/connection",
+      "../../../../drizzle/schema",
+      "../toolRegistry",
+      "../../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/interlock.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/interlock.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/connection",
+      "../../../../drizzle/schema",
+      "../toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/connection",
+      "../../../../drizzle/schema",
+      "../../../db/machineRecipe",
+      "../../ot/commandDispatcher",
+      "../toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/maintenance.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../toolRegistry",
+      "../../aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/connection",
+      "../../../../drizzle/schema",
+      "../toolRegistry",
+      "../../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/product",
+      "../toolRegistry",
+      "../../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers/yield.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/alerts",
+      "../toolRegistry",
+      "../../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolRegistry",
+      "../aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/writeHandlers.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/product",
+      "./toolRegistry",
+      "../auditTrailService"
     ]
   },
   {
@@ -216,7 +1141,93 @@
       "../db/connection",
       "../db/ai",
       "../db/aiAdvanced",
-      "../../drizzle/schema"
+      "../../drizzle/schema",
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiMetrics.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiMetrics"
+    ]
+  },
+  {
+    "file": "server/services/aiMetrics.ts",
+    "exportedFunctions": [
+      "softmax",
+      "argmax",
+      "normalizedEntropy",
+      "buildConfusionMatrix",
+      "accuracyFromConfusion",
+      "computeMetrics",
+      "computeMetricsFromPredictions",
+      "observeInference",
+      "registerAiBrainMetrics",
+      "normalizeLabel",
+      "displayLabel",
+      "mulberry32",
+      "hashString"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiMetrology.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiMetrology"
+    ]
+  },
+  {
+    "file": "server/services/aiMetrology.ts",
+    "exportedFunctions": [
+      "convexHull",
+      "measureMask",
+      "polygonToMask"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiModelCard.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiModelCard"
+    ]
+  },
+  {
+    "file": "server/services/aiModelCard.ts",
+    "exportedFunctions": [
+      "buildCardForModel",
+      "generateModelCard",
+      "seedPortfolioCards",
+      "listModelCards"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiModelRouter.thinking.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiModelRouter.ts",
+    "exportedFunctions": [
+      "classifyDifficulty",
+      "route",
+      "getRouterStats"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiGgufEngine"
     ]
   },
   {
@@ -249,6 +1260,58 @@
     ]
   },
   {
+    "file": "server/services/aiPlaybookEngine.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiPlaybookEngine",
+      "./aiAgentOrchestrator"
+    ]
+  },
+  {
+    "file": "server/services/aiPlaybookEngine.ts",
+    "exportedFunctions": [
+      "interpolateTemplate",
+      "buildPlanFromPlaybook",
+      "listPlaybooks",
+      "startPlaybook"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiLocalTools/toolRegistry",
+      "../_core/accessControl",
+      "./aiAgentOrchestrator",
+      "./aiPlaybookLoader"
+    ]
+  },
+  {
+    "file": "server/services/aiPlaybookLoader.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiPlaybookLoader"
+    ]
+  },
+  {
+    "file": "server/services/aiPlaybookLoader.ts",
+    "exportedFunctions": [
+      "validatePlaybookSemantics",
+      "loadPlaybooks",
+      "getPlaybooks",
+      "getPlaybookById",
+      "reloadPlaybooks",
+      "__setPlaybookCacheForTest"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools/toolRegistry",
+      "./aiLocalTools/writeHandlers/client",
+      "../logger"
+    ]
+  },
+  {
     "file": "server/services/aiProviderManager.ts",
     "exportedFunctions": [
       "getAIProviderStatus",
@@ -259,19 +1322,65 @@
     "localImports": []
   },
   {
+    "file": "server/services/aiProviderRouter.ts",
+    "exportedFunctions": [
+      "getRecentEvents",
+      "getBreakerSnapshot",
+      "resetBreaker",
+      "setProviderConfig",
+      "getProviderConfig",
+      "generateNarrative",
+      "describeImage"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiGgufEngine"
+    ]
+  },
+  {
     "file": "server/services/aiQualityGate.ts",
     "exportedFunctions": [
       "getQualityGateConfig",
       "invalidateConfigCache",
       "processQualityGate",
-      "getQualityGateStats"
+      "getQualityGateStats",
+      "runCanaryInference",
+      "promoteConfigToModel"
     ],
     "exportedClasses": [],
     "localImports": [
       "../db/connection",
       "../../drizzle/schema",
       "./aiInferenceEngine",
-      "../db/ai"
+      "../db/ai",
+      "./aiABTesting"
+    ]
+  },
+  {
+    "file": "server/services/aiRcaCopilot.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiRcaCopilot",
+      "./aiLocalTools/toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiRcaCopilot.ts",
+    "exportedFunctions": [
+      "isRcaCopilotEnabled",
+      "rankAndValidateHypotheses",
+      "runRca",
+      "persistRca",
+      "latestRca",
+      "proposeTopFix"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiLocalTools/toolRegistry",
+      "./aiCopilotActions"
     ]
   },
   {
@@ -285,9 +1394,112 @@
     ],
     "exportedClasses": [],
     "localImports": [
+      "./aiProviderRouter",
       "../db/connection",
       "../../drizzle/schema",
       "../../drizzle/schema/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiReranker.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiReranker"
+    ]
+  },
+  {
+    "file": "server/services/aiReranker.ts",
+    "exportedFunctions": [
+      "isRerankerEnabled",
+      "parseScoreArray",
+      "getRerankerStatus",
+      "disposeReranker"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiSegmentation.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiSegmentation"
+    ]
+  },
+  {
+    "file": "server/services/aiSegmentation.ts",
+    "exportedFunctions": [
+      "decodeSegmentation",
+      "decodeYoloSeg",
+      "measureDecodedMasks"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiMetrology"
+    ]
+  },
+  {
+    "file": "server/services/aiSelfLearningScheduler.ts",
+    "exportedFunctions": [
+      "runSelfLearningScanOnce",
+      "initSelfLearningScheduler",
+      "stopSelfLearningScheduler",
+      "getSelfLearningStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiActiveLearningAuto",
+      "./aiTrainingPipeline",
+      "./aiDriftMonitor"
+    ]
+  },
+  {
+    "file": "server/services/aiSemanticGraph.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiSemanticGraph"
+    ]
+  },
+  {
+    "file": "server/services/aiSemanticGraph.ts",
+    "exportedFunctions": [
+      "buildAdjacency",
+      "loadSemanticGraph",
+      "__resetSemanticGraphCache"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiSetupAdvisor.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiSetupAdvisor"
+    ]
+  },
+  {
+    "file": "server/services/aiSetupAdvisor.ts",
+    "exportedFunctions": [
+      "isSetupAdvisorEnabled",
+      "setupMinSamples",
+      "round2",
+      "typesRelated",
+      "scoreCandidate",
+      "pickBestTemplate",
+      "assembleProposedPoint",
+      "assembleBundle",
+      "findSimilarTemplate",
+      "buildConfigBundle"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../utils/thresholdSuggestion"
     ]
   },
   {
@@ -310,6 +1522,15 @@
     ]
   },
   {
+    "file": "server/services/aiSpcCpk.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../utils/spc",
+      "./aiInspectionAnalytics"
+    ]
+  },
+  {
     "file": "server/services/aiSpecialistAgentService.ts",
     "exportedFunctions": [
       "listSpecialistAgents",
@@ -322,6 +1543,59 @@
     "exportedClasses": [],
     "localImports": [
       "./aiGgufEngine"
+    ]
+  },
+  {
+    "file": "server/services/aiThresholdAdvisor.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiThresholdAdvisor"
+    ]
+  },
+  {
+    "file": "server/services/aiThresholdAdvisor.ts",
+    "exportedFunctions": [
+      "isThresholdAdvisorEnabled",
+      "minSamples",
+      "clamp",
+      "round2",
+      "quantileSorted",
+      "computeNgRecommendation",
+      "recommendForMeasurementPoint",
+      "recommendNgThreshold",
+      "recommendInspectionParam"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../db/product",
+      "../utils/thresholdSuggestion",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiThresholdTuneScheduler.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiThresholdTuneScheduler"
+    ]
+  },
+  {
+    "file": "server/services/aiThresholdTuneScheduler.ts",
+    "exportedFunctions": [
+      "decidePointTune",
+      "decideNgTune",
+      "runThresholdTuneNow",
+      "startThresholdTuneScheduler",
+      "stopThresholdTuneScheduler",
+      "getThresholdTuneSchedulerStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiThresholdTune",
+      "./aiThresholdAdvisor"
     ]
   },
   {
@@ -343,9 +1617,38 @@
     ]
   },
   {
+    "file": "server/services/aiTodayBriefing.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiTodayBriefing"
+    ]
+  },
+  {
+    "file": "server/services/aiTodayBriefing.ts",
+    "exportedFunctions": [
+      "briefingRoleOf",
+      "buildTodayBriefing"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/auth"
+    ]
+  },
+  {
+    "file": "server/services/aiTrainingPipeline.tier2.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiTrainingPipeline"
+    ]
+  },
+  {
     "file": "server/services/aiTrainingPipeline.ts",
     "exportedFunctions": [
       "createTrainingJob",
+      "runTrainingPipeline",
+      "dispatchTier2",
       "createDataset",
       "cancelTrainingJob",
       "checkAutoRetrainTrigger"
@@ -354,7 +1657,13 @@
     "localImports": [
       "../db/aiAdvanced",
       "../db/ai",
-      "../../drizzle/schema"
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiDatasetBuilder",
+      "./aiLocalTraining",
+      "./localSidecarTrainer",
+      "./aiEvalHarness",
+      "./aiInferenceEngine"
     ]
   },
   {
@@ -365,7 +1674,23 @@
       "generateQAReport"
     ],
     "exportedClasses": [],
-    "localImports": []
+    "localImports": [
+      "./aiProviderRouter"
+    ]
+  },
+  {
+    "file": "server/services/alertEscalationService.ts",
+    "exportedFunctions": [
+      "runEscalationCycle",
+      "startEscalationScheduler",
+      "stopEscalationScheduler"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../../drizzle/schema",
+      "../_core/socket"
+    ]
   },
   {
     "file": "server/services/alertEvaluationService.ts",
@@ -381,6 +1706,110 @@
       "../_core/notification",
       "./emailService",
       "./mqttService"
+    ]
+  },
+  {
+    "file": "server/services/andon/andonService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./andonService"
+    ]
+  },
+  {
+    "file": "server/services/andon/andonService.ts",
+    "exportedFunctions": [
+      "raiseAndon",
+      "acknowledgeAndon",
+      "resolveAndon",
+      "escalateAndon",
+      "listActiveAndons"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/socket",
+      "../auditTrailService"
+    ]
+  },
+  {
+    "file": "server/services/andon/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./andonService"
+    ]
+  },
+  {
+    "file": "server/services/aoiImageEmbeddingWorker.ts",
+    "exportedFunctions": [
+      "isAoiEmbeddingEnabled",
+      "enqueueAoiImageEmbedding",
+      "runAoiInspectionEmbedding",
+      "runAnomalyAndEscalation"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../db/ai",
+      "../../drizzle/schema",
+      "./aiImageEmbedding",
+      "../storage"
+    ]
+  },
+  {
+    "file": "server/services/apsService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./apsService"
+    ]
+  },
+  {
+    "file": "server/services/apsService.ts",
+    "exportedFunctions": [
+      "generateApsSchedule",
+      "compareApsKpi"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "./productionSchedulingService",
+      "./apsSolver"
+    ]
+  },
+  {
+    "file": "server/services/apsSolver.integration.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./apsSolver"
+    ]
+  },
+  {
+    "file": "server/services/apsSolver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./apsSolver",
+      "./productionSchedulingService"
+    ]
+  },
+  {
+    "file": "server/services/apsSolver.ts",
+    "exportedFunctions": [
+      "isApsEnabled",
+      "apsDefaultSetupMin",
+      "apsMaxJobs",
+      "resolveApsCommand",
+      "buildApsModel",
+      "runApsSolver",
+      "parseApsResult"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./productionSchedulingService"
     ]
   },
   {
@@ -403,6 +1832,61 @@
     ]
   },
   {
+    "file": "server/services/backupReplicationService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./backupReplicationService"
+    ]
+  },
+  {
+    "file": "server/services/backupReplicationService.ts",
+    "exportedFunctions": [
+      "replicateBackup",
+      "testReplicationConnectivity"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../logger"
+    ]
+  },
+  {
+    "file": "server/services/backupSchedulerService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./backupSchedulerService"
+    ]
+  },
+  {
+    "file": "server/services/backupSchedulerService.ts",
+    "exportedFunctions": [
+      "scheduleToCron",
+      "computeNextRun",
+      "executeScheduledBackup",
+      "scheduleBackup",
+      "stopScheduledBackup",
+      "initializeScheduledBackups",
+      "shutdownScheduledBackups"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "./backupService"
+    ]
+  },
+  {
+    "file": "server/services/backupService.ts",
+    "exportedFunctions": [
+      "createPgDump",
+      "restoreFromBackup",
+      "listBackupFiles",
+      "deleteBackupFile"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/cacheService.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -418,6 +1902,19 @@
     ]
   },
   {
+    "file": "server/services/componentInstallationService.ts",
+    "exportedFunctions": [
+      "recordComponentInstallation"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../utils/genealogyChain",
+      "./andon/andonService",
+      "../../drizzle/schema"
+    ]
+  },
+  {
     "file": "server/services/dataComparisonService.ts",
     "exportedFunctions": [
       "calculatePreviousPeriod",
@@ -428,6 +1925,82 @@
     "localImports": [
       "../db",
       "../db/connection"
+    ]
+  },
+  {
+    "file": "server/services/dataRetentionService.ts",
+    "exportedFunctions": [
+      "startDataRetention",
+      "stopDataRetention"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection"
+    ]
+  },
+  {
+    "file": "server/services/digitalTwinService.ts",
+    "exportedFunctions": [
+      "colorForStatus",
+      "colorForTwin",
+      "simulateWhatIf",
+      "aggregateWipFlow",
+      "stationLoadHeatmap",
+      "buildPredictionOverlay"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/digitalTwinService.twin-g27.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./digitalTwinService"
+    ]
+  },
+  {
+    "file": "server/services/disasterRecoveryService.ts",
+    "exportedFunctions": [
+      "isDisasterRecoveryEnabled",
+      "isDisasterRecoveryRunning",
+      "runDrVerifyCycle",
+      "startDisasterRecoveryService",
+      "stopDisasterRecoveryService"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/dispatchingService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./dispatchingService"
+    ]
+  },
+  {
+    "file": "server/services/dispatchingService.ts",
+    "exportedFunctions": [
+      "isDispatchingEnabled",
+      "rankDispatch"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/distributedCache.ts",
+    "exportedFunctions": [
+      "tryAcquireCooldown",
+      "clearCooldown",
+      "invalidateAssignments"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./redisService"
     ]
   },
   {
@@ -446,6 +2019,75 @@
     ]
   },
   {
+    "file": "server/services/edge/edge.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./edgeCoordinator",
+      "./edgeRuntime"
+    ]
+  },
+  {
+    "file": "server/services/edge/edgeCoordinator.ts",
+    "exportedFunctions": [
+      "edgeRuntimeEnabled",
+      "registerNode",
+      "listNodes",
+      "getNode",
+      "heartbeat",
+      "markStaleNodesOffline",
+      "deleteNode",
+      "assignRun",
+      "listRunsForNode",
+      "syncRunResult"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/edge/edgeNodeHealthScheduler.ts",
+    "exportedFunctions": [
+      "startEdgeNodeHealthChecker",
+      "stopEdgeNodeHealthChecker"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./edgeCoordinator"
+    ]
+  },
+  {
+    "file": "server/services/edge/edgeRuntime.ts",
+    "exportedFunctions": [
+      "restoreBuffer",
+      "bufferedCount",
+      "_clearBuffer",
+      "setCentralSync",
+      "setHeartbeatSender",
+      "replayBuffer",
+      "startHeartbeat",
+      "stopHeartbeat",
+      "executeAssignedRun"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./edgeCoordinator"
+    ]
+  },
+  {
+    "file": "server/services/edgeStaleScheduler.ts",
+    "exportedFunctions": [
+      "startEdgeStaleScheduler",
+      "stopEdgeStaleScheduler"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiEdgeEnhanced"
+    ]
+  },
+  {
     "file": "server/services/emailService.ts",
     "exportedFunctions": [
       "initEmailService",
@@ -453,6 +2095,30 @@
     ],
     "exportedClasses": [],
     "localImports": []
+  },
+  {
+    "file": "server/services/energyAnalyticsService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./energyAnalyticsService"
+    ]
+  },
+  {
+    "file": "server/services/energyAnalyticsService.ts",
+    "exportedFunctions": [
+      "computeRecipeEnergy",
+      "computePeakDemand",
+      "computePowerFactor",
+      "forecastEnergy",
+      "suggestDemandResponse"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/energy",
+      "../db/timescale",
+      "./aiTimeSeriesEngine"
+    ]
   },
   {
     "file": "server/services/enhancedScheduledReportService.ts",
@@ -471,6 +2137,59 @@
     ]
   },
   {
+    "file": "server/services/equipment/capabilityModel.ts",
+    "exportedFunctions": [
+      "getDefaultCapability",
+      "listDefaultProfiles",
+      "mergeCapability",
+      "getCapabilitiesForMachine"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./packml",
+      "../../../drizzle/schema/hierarchy"
+    ]
+  },
+  {
+    "file": "server/services/equipment/equipment.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./packml",
+      "./capabilityModel",
+      "./equipmentAdapter"
+    ]
+  },
+  {
+    "file": "server/services/equipment/equipmentAdapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./capabilityModel",
+      "../ot/driverRegistry",
+      "../ot/otDriver",
+      "../ot/commandDispatcher",
+      "../robot/robotCommandDispatcher",
+      "../robot/robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/equipment/packml.ts",
+    "exportedFunctions": [
+      "isActingState",
+      "allowedCommands",
+      "canTransition",
+      "nextOnCommand",
+      "settleState",
+      "asPackmlState",
+      "asPackmlCommand"
+    ],
+    "exportedClasses": [
+      "PackmlStateMachine"
+    ],
+    "localImports": []
+  },
+  {
     "file": "server/services/fcmService.ts",
     "exportedFunctions": [
       "sendNGAlertPushNotification",
@@ -483,6 +2202,174 @@
     "localImports": [
       "../_core/env",
       "../db"
+    ]
+  },
+  {
+    "file": "server/services/ggufConcurrency.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./ggufConcurrency"
+    ]
+  },
+  {
+    "file": "server/services/ggufConcurrency.ts",
+    "exportedFunctions": [
+      "getGgufQueueStats"
+    ],
+    "exportedClasses": [
+      "GgufOverloadError",
+      "GgufSlotTimeoutError",
+      "AsyncSemaphore"
+    ],
+    "localImports": []
+  },
+  {
+    "file": "server/services/imageAlignment.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./imageAlignment"
+    ]
+  },
+  {
+    "file": "server/services/imageAlignment.ts",
+    "exportedFunctions": [
+      "alignToReference",
+      "diffRatioGray"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/interlock/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./interlockEngine",
+      "./ruleEvaluator"
+    ]
+  },
+  {
+    "file": "server/services/interlock/interlockEngine.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./interlockEngine"
+    ]
+  },
+  {
+    "file": "server/services/interlock/interlockEngine.ts",
+    "exportedFunctions": [
+      "startInterlock",
+      "stopInterlock",
+      "isInterlockRunning",
+      "runOnce",
+      "evaluateRule"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../andon/andonService",
+      "../ot/commandDispatcher",
+      "./ruleEvaluator"
+    ]
+  },
+  {
+    "file": "server/services/interlock/ruleEvaluator.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./ruleEvaluator"
+    ]
+  },
+  {
+    "file": "server/services/interlock/ruleEvaluator.ts",
+    "exportedFunctions": [
+      "compare",
+      "evaluateCondition",
+      "deriveObserved"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/kb/kbVectorStore.ts",
+    "exportedFunctions": [
+      "isKbPgvectorEnabled",
+      "ingestKbChunks",
+      "searchKb"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/kbSyncScheduler.ts",
+    "exportedFunctions": [
+      "runKbSyncNow",
+      "startKbSyncScheduler",
+      "stopKbSyncScheduler",
+      "getKbSyncSchedulerStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/llamaVisionSidecar.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/llamaVisionSidecar.ts",
+    "exportedFunctions": [
+      "getVisionSidecarConfig",
+      "isVisionSidecarAvailable",
+      "ensureSidecar",
+      "stopSidecar",
+      "describeImageViaSidecar"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiGgufEngine"
+    ]
+  },
+  {
+    "file": "server/services/localSidecarTrainer.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./localSidecarTrainer"
+    ]
+  },
+  {
+    "file": "server/services/localSidecarTrainer.ts",
+    "exportedFunctions": [
+      "isSidecarEnabled",
+      "runSidecarTraining",
+      "pollProgressOnce"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAdvanced",
+      "../db/ai",
+      "./aiDatasetBuilder",
+      "./aiLocalTraining"
+    ]
+  },
+  {
+    "file": "server/services/materializedViewRefreshService.ts",
+    "exportedFunctions": [
+      "startMaterializedViewRefresh",
+      "stopMaterializedViewRefresh"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection"
     ]
   },
   {
@@ -504,8 +2391,16 @@
     ]
   },
   {
+    "file": "server/services/mqttService.aoiBridge.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/mqttService.ts",
     "exportedFunctions": [
+      "handleAoiPublish",
+      "processAedesPublish",
       "initMqttBroker",
       "sendConfigureCommand",
       "sendSoftwareUpdateCommand",
@@ -520,10 +2415,13 @@
       "isExternalMqttConnected",
       "publishToExternalMqtt",
       "getExternalMqttInfo",
-      "publishPointsConfigChanged"
+      "publishPointsConfigChanged",
+      "publishModelUpdate"
     ],
     "exportedClasses": [],
     "localImports": [
+      "./unsPublisher",
+      "./uns/aoiBridge",
       "../../drizzle/schema"
     ]
   },
@@ -541,6 +2439,44 @@
     "localImports": [
       "../../drizzle/schema",
       "./mqttService"
+    ]
+  },
+  {
+    "file": "server/services/mtconnect/mtconnect.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./mtconnectClient",
+      "./mtconnectPoller"
+    ]
+  },
+  {
+    "file": "server/services/mtconnect/mtconnectClient.ts",
+    "exportedFunctions": [
+      "parseProbeXml",
+      "parseStreamsXml",
+      "fetchProbe",
+      "fetchCurrent",
+      "fetchSample"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/mtconnect/mtconnectPoller.ts",
+    "exportedFunctions": [
+      "parseSources",
+      "stateToResult",
+      "mapReadings",
+      "startMtconnectPoller",
+      "stopMtconnectPoller",
+      "isMtconnectRunning",
+      "getMtconnectStats"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./mtconnectClient",
+      "../../../drizzle/schema"
     ]
   },
   {
@@ -577,6 +2513,559 @@
     ]
   },
   {
+    "file": "server/services/oeeService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./oeeService"
+    ]
+  },
+  {
+    "file": "server/services/oeeService.ts",
+    "exportedFunctions": [
+      "computeStateDurations",
+      "computeOEE",
+      "persistOEEMetric",
+      "getActiveOEETarget",
+      "evaluateOEEAlert"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/opcuaGateway.ts",
+    "exportedFunctions": [
+      "startOpcuaGateway",
+      "stopOpcuaGateway",
+      "isOpcuaGatewayRunning"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/orchestration/aiOrchestrationAdvisor.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiOrchestrationAdvisor",
+      "./foe/workflowModel"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/aiOrchestrationAdvisor.ts",
+    "exportedFunctions": [
+      "advisorEnabled",
+      "suggestWorkflow",
+      "optimizeWorkflow",
+      "advisorStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./foe/workflowModel",
+      "./foe/foeSimulator",
+      "../equipment/capabilityModel",
+      "../aiModelRouter"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/aiWatcher.ts",
+    "exportedFunctions": [
+      "startAiWatcher",
+      "stopAiWatcher"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../_core/eventBus"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/foe/foe.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./workflowModel",
+      "./foeEngine"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/foe/foeEngine.ts",
+    "exportedFunctions": [
+      "foeEnabled",
+      "deployWorkflow",
+      "startRun",
+      "getRun",
+      "resumeRun",
+      "abortRun"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../../db/connection",
+      "../../../../drizzle/schema",
+      "./workflowModel",
+      "../../equipment/capabilityModel",
+      "../../equipment/equipmentAdapter",
+      "../../equipment/packml"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/foe/foeSimulator.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./foeSimulator",
+      "./workflowModel"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/foe/foeSimulator.ts",
+    "exportedFunctions": [
+      "simulateWorkflow"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./workflowModel",
+      "../../equipment/capabilityModel",
+      "../../equipment/packml"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/foe/workflowModel.ts",
+    "exportedFunctions": [
+      "evaluateCondition",
+      "validateWorkflow"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../equipment/capabilityModel",
+      "../../equipment/packml"
+    ]
+  },
+  {
+    "file": "server/services/orchestration/rulesEngine.ts",
+    "exportedFunctions": [
+      "startOrchestration",
+      "stopOrchestration"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../_core/eventBus"
+    ]
+  },
+  {
+    "file": "server/services/ot/commandDispatcher.interlock.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./commandDispatcher"
+    ]
+  },
+  {
+    "file": "server/services/ot/commandDispatcher.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./commandDispatcher"
+    ]
+  },
+  {
+    "file": "server/services/ot/commandDispatcher.ts",
+    "exportedFunctions": [
+      "isOtControlEnabled",
+      "isOtReadbackEnabled",
+      "isInterlockAutoBlockEnabled",
+      "dispatch"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./otManager",
+      "../auditTrailService",
+      "./otDriver",
+      "./drivers/readbackCompare"
+    ]
+  },
+  {
+    "file": "server/services/ot/deviceAdapter.ts",
+    "exportedFunctions": [
+      "loadEnabledAdapters"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./driverRegistry",
+      "./otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/driverRegistry.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./driverRegistry",
+      "./drivers/stubDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/driverRegistry.ts",
+    "exportedFunctions": [
+      "registerDriver",
+      "createDriver",
+      "listProtocols",
+      "_clearRegistry"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/eipTag.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./eipTag"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/eipTag.ts",
+    "exportedFunctions": [
+      "parseEipTag",
+      "coerceEipValue"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/ethernetIpDriver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "exportedFunctions": [
+      "createEthernetIpDriver"
+    ],
+    "exportedClasses": [
+      "EthernetIpDriver"
+    ],
+    "localImports": [
+      "../otDriver",
+      "./notImplementedDriver",
+      "./eipTag",
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/mcAddress.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./mcAddress"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/mcAddress.ts",
+    "exportedFunctions": [
+      "parseMcAddress",
+      "coerceMcValue"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/mitsubishiMcDriver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "exportedFunctions": [
+      "createMitsubishiMcDriver"
+    ],
+    "exportedClasses": [
+      "MitsubishiMcDriver"
+    ],
+    "localImports": [
+      "../otDriver",
+      "./notImplementedDriver",
+      "./mcAddress",
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/modbusDecode.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./modbusDecode"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/modbusDecode.ts",
+    "exportedFunctions": [
+      "parseModbusAddress",
+      "wordCountFor",
+      "decodeModbus",
+      "encodeModbus"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/modbusDriver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/modbusDriver.ts",
+    "exportedFunctions": [
+      "createModbusDriver"
+    ],
+    "exportedClasses": [
+      "ModbusDriver"
+    ],
+    "localImports": [
+      "../otDriver",
+      "./notImplementedDriver",
+      "./modbusDecode",
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/notImplementedDriver.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/opcuaAddress.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./opcuaAddress"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/opcuaAddress.ts",
+    "exportedFunctions": [
+      "parseOpcuaAddress",
+      "normalizeOpcuaValue"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/opcuaDriver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/opcuaDriver.ts",
+    "exportedFunctions": [
+      "createOpcuaDriver"
+    ],
+    "exportedClasses": [
+      "OpcuaDriver"
+    ],
+    "localImports": [
+      "../otDriver",
+      "./notImplementedDriver",
+      "./opcuaAddress",
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/otScale.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/otScale.ts",
+    "exportedFunctions": [
+      "inverseScale"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/readbackCompare.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readbackCompare"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/readbackCompare.ts",
+    "exportedFunctions": [
+      "readbackMatches"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/s7Address.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./s7Address"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/s7Address.ts",
+    "exportedFunctions": [
+      "parseS7Address",
+      "coerceS7Value"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/s7Driver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/s7Driver.ts",
+    "exportedFunctions": [
+      "createS7Driver"
+    ],
+    "exportedClasses": [
+      "S7Driver"
+    ],
+    "localImports": [
+      "../otDriver",
+      "./notImplementedDriver",
+      "./s7Address",
+      "./otScale"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/stubDriver.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./stubDriver",
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/drivers/stubDriver.ts",
+    "exportedFunctions": [
+      "createStubDriver"
+    ],
+    "exportedClasses": [
+      "StubDriver"
+    ],
+    "localImports": [
+      "../otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./driverRegistry",
+      "./drivers/stubDriver",
+      "./drivers/opcuaDriver",
+      "./drivers/modbusDriver",
+      "./drivers/s7Driver",
+      "./drivers/mitsubishiMcDriver",
+      "./drivers/ethernetIpDriver",
+      "./otManager",
+      "./deviceAdapter",
+      "./otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/ingest.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./ingest",
+      "./otDriver"
+    ]
+  },
+  {
+    "file": "server/services/ot/ingest.ts",
+    "exportedFunctions": [
+      "mapSampleToRow",
+      "ingestSample"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./otDriver",
+      "./deviceAdapter",
+      "../../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/ot/otDriver.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ot/otManager.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ot/otManager.ts",
+    "exportedFunctions": [
+      "startOt",
+      "stopOt",
+      "isOtRunning",
+      "getActiveAdapter",
+      "getActiveDriver",
+      "listActiveAdapters"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./otDriver",
+      "./deviceAdapter"
+    ]
+  },
+  {
     "file": "server/services/paretoAnalysisService.ts",
     "exportedFunctions": [
       "paretoByDefectType",
@@ -605,6 +3094,22 @@
     ]
   },
   {
+    "file": "server/services/pdmWorkOrderService.ts",
+    "exportedFunctions": [
+      "isPdmWorkOrderEnabled",
+      "isPdmWorkOrderRunning",
+      "runPdmWorkOrderCycle",
+      "computeMttrMtbf",
+      "startPdmWorkOrderService",
+      "stopPdmWorkOrderService"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../../drizzle/schema"
+    ]
+  },
+  {
     "file": "server/services/powerpointService.ts",
     "exportedFunctions": [
       "exportDashboardToPowerPoint",
@@ -617,11 +3122,62 @@
     ]
   },
   {
+    "file": "server/services/predictiveMaintenanceService.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./predictiveMaintenanceService",
+      "./aiTimeSeriesEngine"
+    ]
+  },
+  {
+    "file": "server/services/predictiveMaintenanceService.ts",
+    "exportedFunctions": [
+      "computeReliabilityStats",
+      "computeFailureRiskFromInputs",
+      "computeFailureRisk",
+      "runPredictiveMaintenanceCycle",
+      "startPredictiveMaintenanceJob",
+      "stopPredictiveMaintenanceJob"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./oeeService",
+      "./aiTimeSeriesEngine",
+      "../db/machine"
+    ]
+  },
+  {
+    "file": "server/services/processResultService.ts",
+    "exportedFunctions": [
+      "recordProcessResult"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../utils/genealogyChain",
+      "../../drizzle/schema",
+      "../constants/machineTypes"
+    ]
+  },
+  {
+    "file": "server/services/productionScheduling.ws4.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./productionSchedulingService"
+    ]
+  },
+  {
     "file": "server/services/productionSchedulingService.ts",
     "exportedFunctions": [
       "scheduleFIFO",
       "schedulePriority",
       "scheduleEDF",
+      "simulateWhatIf",
+      "buildScheduleRunPayload",
       "explainScheduleWithAI",
       "scheduleFIFOWithExplanation",
       "schedulePriorityWithExplanation",
@@ -631,10 +3187,187 @@
     "localImports": []
   },
   {
+    "file": "server/services/programming/aiProgrammingCopilot.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiProgrammingCopilot"
+    ]
+  },
+  {
+    "file": "server/services/programming/aiProgrammingCopilot.ts",
+    "exportedFunctions": [
+      "copilotEnabled",
+      "suggestProgram",
+      "explainProgram"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/engineeringStream.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./engineeringStream"
+    ]
+  },
+  {
+    "file": "server/services/programming/engineeringStream.ts",
+    "exportedFunctions": [
+      "streamingEnabled",
+      "defaultSampleSource"
+    ],
+    "exportedClasses": [
+      "EngineeringStreamManager"
+    ],
+    "localImports": []
+  },
+  {
+    "file": "server/services/programming/iec61131/boolEval.ts",
+    "exportedFunctions": [
+      "evalBool"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/programming/iec61131/iec61131Adapter.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./boolEval",
+      "./iec61131Adapter",
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/iec61131/iec61131Adapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "Iec61131StAdapter",
+      "Iec61131LdAdapter"
+    ],
+    "localImports": [
+      "./boolEval",
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./mitsubishiEngineeringAdapter",
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "MitsubishiEngineeringAdapter"
+    ],
+    "localImports": [
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/programming.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./programmingAdapter",
+      "./programmingService"
+    ]
+  },
+  {
+    "file": "server/services/programming/programmingAdapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "StubProgrammingAdapter"
+    ],
+    "localImports": [
+      "./zmotion/zmotionBasicAdapter",
+      "./mitsubishi/mitsubishiEngineeringAdapter",
+      "./robot/robotTmAdapter",
+      "./iec61131/iec61131Adapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/programmingService.ts",
+    "exportedFunctions": [
+      "dpcDeployEnabled",
+      "dpcStreamingEnabled",
+      "dpcForceEnabled",
+      "hashContent",
+      "validateArtifact",
+      "buildArtifact",
+      "simulateBuild",
+      "deployBuild",
+      "rollbackDeployment"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/robot/robotTmAdapter.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./robotTmAdapter",
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/robot/robotTmAdapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "RobotTmAdapter"
+    ],
+    "localImports": [
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/zmotion/zmotionBasicAdapter.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./zmotionBasicAdapter",
+      "../programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/programming/zmotion/zmotionBasicAdapter.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "ZmotionBasicAdapter"
+    ],
+    "localImports": [
+      "../programmingAdapter"
+    ]
+  },
+  {
     "file": "server/services/qualityGateTemplateService.ts",
     "exportedFunctions": [
       "getBuiltinTemplates",
       "getBuiltinTemplate"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/realtimeReportService.ts",
+    "exportedFunctions": [
+      "lttbDownsample",
+      "getComplianceColumns"
     ],
     "exportedClasses": [],
     "localImports": []
@@ -665,13 +3398,178 @@
       "scheduleReport",
       "stopScheduledReport",
       "initializeScheduledReports",
-      "shutdownScheduledReports"
+      "shutdownScheduledReports",
+      "runExecutiveReport",
+      "startExecutiveReportScheduler",
+      "stopExecutiveReportScheduler",
+      "getExecutiveReportSchedulerStatus"
     ],
     "exportedClasses": [],
     "localImports": [
       "../db",
       "../_core/email",
-      "./reportGenerator"
+      "./reportGenerator",
+      "./aiExecutiveReport"
+    ]
+  },
+  {
+    "file": "server/services/robot/driverRegistry.ts",
+    "exportedFunctions": [
+      "registerRobotDriver",
+      "createRobotDriver",
+      "listVendors"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/deltaRobotDriver.ts",
+    "exportedFunctions": [
+      "createDeltaRobotDriver"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./notImplementedRobotDriver",
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/fanucDriver.ts",
+    "exportedFunctions": [
+      "createFanucDriver"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./notImplementedRobotDriver",
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/mitsubishiRobotDriver.ts",
+    "exportedFunctions": [
+      "createMitsubishiRobotDriver"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./notImplementedRobotDriver",
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/notImplementedRobotDriver.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "NotImplementedRobotDriver"
+    ],
+    "localImports": [
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/simRobotDriver.ts",
+    "exportedFunctions": [
+      "createSimRobotDriver"
+    ],
+    "exportedClasses": [
+      "SimRobotDriver"
+    ],
+    "localImports": [
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/drivers/techman.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/robot/drivers/techmanDriver.ts",
+    "exportedFunctions": [
+      "buildTmsct",
+      "xorChecksum",
+      "createTechmanDriver"
+    ],
+    "exportedClasses": [
+      "TechmanDriver"
+    ],
+    "localImports": [
+      "../robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./driverRegistry",
+      "./drivers/simRobotDriver",
+      "./drivers/fanucDriver",
+      "./drivers/mitsubishiRobotDriver",
+      "./drivers/deltaRobotDriver",
+      "./drivers/techmanDriver",
+      "./robotManager",
+      "./robotCommandDispatcher"
+    ]
+  },
+  {
+    "file": "server/services/robot/robotAdapter.ts",
+    "exportedFunctions": [
+      "loadEnabledRobots"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./driverRegistry",
+      "./robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/robotCommandDispatcher.ts",
+    "exportedFunctions": [
+      "dispatchRobotJob"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./robotManager",
+      "./robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/robotDriver.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/robot/robotIngest.ts",
+    "exportedFunctions": [
+      "ingestRobotState"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "./robotAdapter",
+      "./robotDriver"
+    ]
+  },
+  {
+    "file": "server/services/robot/robotManager.ts",
+    "exportedFunctions": [
+      "startRobots",
+      "stopRobots",
+      "getActiveRobot"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./robotDriver",
+      "./robotAdapter"
     ]
   },
   {
@@ -685,10 +3583,416 @@
     ]
   },
   {
+    "file": "server/services/secsgem/gemModel.ts",
+    "exportedFunctions": [
+      "mapEventReportToProcessResult",
+      "mapAlarmToAndon",
+      "mapStatusVariablesToTelemetry"
+    ],
+    "exportedClasses": [
+      "GemModel"
+    ],
+    "localImports": [
+      "./secsMessages",
+      "../../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/secsgem/hsmsClient.ts",
+    "exportedFunctions": [
+      "frameHsms",
+      "frameControl",
+      "frameDataMessage",
+      "parseHsmsFrames",
+      "decodeFrameBody"
+    ],
+    "exportedClasses": [
+      "HsmsClient"
+    ],
+    "localImports": [
+      "./secsMessages"
+    ]
+  },
+  {
+    "file": "server/services/secsgem/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./secsGemRegistry",
+      "./secsMessages",
+      "./hsmsClient",
+      "./gemModel"
+    ]
+  },
+  {
+    "file": "server/services/secsgem/secsgem.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./secsMessages",
+      "./hsmsClient",
+      "./gemModel",
+      "./secsGemRegistry"
+    ]
+  },
+  {
+    "file": "server/services/secsgem/secsGemRegistry.ts",
+    "exportedFunctions": [
+      "isSecsGemEnabled",
+      "registerSecsGem",
+      "createSecsGem",
+      "listSecsGemKeys",
+      "_clearSecsGemRegistry"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./hsmsClient",
+      "./gemModel"
+    ]
+  },
+  {
+    "file": "server/services/secsgem/secsMessages.ts",
+    "exportedFunctions": [
+      "s1f1",
+      "s1f2",
+      "s1f13",
+      "s1f14",
+      "s2f41",
+      "s5f1",
+      "s6f11",
+      "s6f1",
+      "encodeItem",
+      "decodeItem",
+      "encodeMessageBody"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/universalExportService.ts",
     "exportedFunctions": [
       "generateExcelReport",
       "generatePdfReport"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/uns/aoiBridge.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aoiBridge"
+    ]
+  },
+  {
+    "file": "server/services/uns/aoiBridge.ts",
+    "exportedFunctions": [
+      "mapAoiTopicToSparkplug"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../unsBridge",
+      "./sparkplugNode"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugCommand.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./sparkplugEncoder",
+      "./sparkplugCommand",
+      "../ot/commandDispatcher"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugCommand.ts",
+    "exportedFunctions": [
+      "isSparkplugCommandEnabled",
+      "commandTopicFilters",
+      "parseCommandTopic"
+    ],
+    "exportedClasses": [
+      "SparkplugCommandHandler"
+    ],
+    "localImports": [
+      "./sparkplugEncoder",
+      "./topicBuilder",
+      "../ot/commandDispatcher"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugEncoder.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./sparkplugEncoder"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugEncoder.ts",
+    "exportedFunctions": [
+      "encodePayload",
+      "decodePayload",
+      "otTypeToSparkplug"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../ot/otDriver"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugNode.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./sparkplugNode",
+      "./sparkplugEncoder"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugNode.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "SparkplugNode"
+    ],
+    "localImports": [
+      "./topicBuilder",
+      "./sparkplugEncoder",
+      "./sparkplugState"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugState.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./sparkplugState"
+    ]
+  },
+  {
+    "file": "server/services/uns/sparkplugState.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [
+      "SparkplugSeqCounter",
+      "SparkplugNodeState"
+    ],
+    "localImports": []
+  },
+  {
+    "file": "server/services/uns/topicBuilder.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./topicBuilder"
+    ]
+  },
+  {
+    "file": "server/services/uns/topicBuilder.ts",
+    "exportedFunctions": [
+      "buildTopic"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/unsBridge.ts",
+    "exportedFunctions": [
+      "parseAviTopic",
+      "toIsa95",
+      "toUnsTopic",
+      "toSparkplugTopic",
+      "normalize",
+      "isUnsBridgeEnabled"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/unsPublisher.ts",
+    "exportedFunctions": [
+      "resolveSparkplugTarget",
+      "sparkplugMetricToWrite",
+      "initUnsPublisher",
+      "publishNormalized",
+      "publishSparkplugDData",
+      "publishAoiBridge",
+      "publishNdeathGraceful",
+      "shutdownUnsPublisher",
+      "isUnsPublisherConnected"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./unsBridge",
+      "./uns/sparkplugNode",
+      "./uns/sparkplugCommand",
+      "./uns/sparkplugEncoder",
+      "./ot/commandDispatcher",
+      "../db/connection",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/unsPublisher.wiring.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./unsPublisher"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./vda5050Manager",
+      "./vda5050Adapter",
+      "./vda5050Driver",
+      "./vda5050Mapping",
+      "./vda5050Messages"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./vda5050Mapping",
+      "./vda5050Messages"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050Adapter.ts",
+    "exportedFunctions": [
+      "resolveAgvRobot",
+      "agvConfigFromRobot"
+    ],
+    "exportedClasses": [
+      "Vda5050Adapter"
+    ],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../../drizzle/schema/robot",
+      "../robot/robotIngest",
+      "../robot/robotAdapter",
+      "./vda5050Messages",
+      "./vda5050Mapping"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050Driver.ts",
+    "exportedFunctions": [
+      "createVda5050Driver"
+    ],
+    "exportedClasses": [
+      "Vda5050RobotDriver"
+    ],
+    "localImports": [
+      "../robot/robotDriver",
+      "./vda5050Messages",
+      "./vda5050Mapping"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050Manager.ts",
+    "exportedFunctions": [
+      "isVda5050Enabled",
+      "loadEnabledAgvs",
+      "startVda5050",
+      "stopVda5050",
+      "getAgvAdapter",
+      "listAgvAdapters",
+      "isVda5050Running"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../robot/driverRegistry",
+      "./vda5050Driver",
+      "./vda5050Adapter"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050Mapping.ts",
+    "exportedFunctions": [
+      "mapOperatingMode",
+      "isEstopActive",
+      "mapStateToRobotTelemetry",
+      "buildErrorText",
+      "extractBattery",
+      "mapConnectionToOnline",
+      "nextHeaderId",
+      "buildOrder",
+      "jobToOrderNodes"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../robot/robotDriver",
+      "./vda5050Messages"
+    ]
+  },
+  {
+    "file": "server/services/vda5050/vda5050Messages.ts",
+    "exportedFunctions": [
+      "buildVda5050Topic"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/vision/adapters/genericJson.ts",
+    "exportedFunctions": [
+      "createGenericJsonAdapter"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../visionAdapterRegistry"
+    ]
+  },
+  {
+    "file": "server/services/vision/adapters/kohYoung.ts",
+    "exportedFunctions": [
+      "createKohYoungAdapter"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../visionAdapterRegistry"
+    ]
+  },
+  {
+    "file": "server/services/vision/index.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./visionAdapterRegistry",
+      "./adapters/genericJson",
+      "./adapters/kohYoung"
+    ]
+  },
+  {
+    "file": "server/services/vision/visionAdapter.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./visionAdapterRegistry",
+      "./adapters/genericJson",
+      "./adapters/kohYoung",
+      "../../routers/visionAdapterRouter"
+    ]
+  },
+  {
+    "file": "server/services/vision/visionAdapterRegistry.ts",
+    "exportedFunctions": [
+      "registerVisionAdapter",
+      "getVisionAdapter",
+      "listVisionAdapters",
+      "_clearRegistry",
+      "toCanonicalResult",
+      "toCanonicalSeverity",
+      "numOrUndefined"
     ],
     "exportedClasses": [],
     "localImports": []

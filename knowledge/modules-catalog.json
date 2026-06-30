@@ -1,0 +1,383 @@
+[
+  {
+    "code": "CORE_AUTH",
+    "name": "Authentication & Authorization",
+    "description": "Đăng nhập, phân quyền, quản lý phiên, 2FA, hồ sơ cá nhân",
+    "isCore": true,
+    "navGroupId": null,
+    "routes": [
+      "/login",
+      "/setup",
+      "/setup-admin",
+      "/profile",
+      "/change-password"
+    ],
+    "permissionCategories": [],
+    "featureCodes": []
+  },
+  {
+    "code": "CORE_DASHBOARD",
+    "name": "Dashboard",
+    "description": "Bảng điều khiển chính, drill-down analysis, custom dashboard, templates, marketplace",
+    "isCore": true,
+    "navGroupId": "dashboard",
+    "routes": [
+      "/",
+      "/dashboard",
+      "/drill-down",
+      "/custom-dashboard",
+      "/dashboard-templates",
+      "/template-marketplace",
+      "/dashboard-marketplace"
+    ],
+    "permissionCategories": [
+      "dashboard"
+    ],
+    "featureCodes": [
+      "DASHBOARD_VIEW",
+      "DASHBOARD_WIDGETS",
+      "DASHBOARD_DRILLDOWN",
+      "DASHBOARD_TEMPLATES"
+    ]
+  },
+  {
+    "code": "CORE_SETTINGS",
+    "name": "General Settings",
+    "description": "Cài đặt chung hệ thống, cấu hình hệ thống, email, cache, ca làm việc, công đoạn",
+    "isCore": true,
+    "navGroupId": "settings",
+    "routes": [
+      "/settings",
+      "/system-config"
+    ],
+    "permissionCategories": [
+      "settings"
+    ],
+    "featureCodes": [
+      "SETTINGS_VIEW",
+      "SETTINGS_FACTORY",
+      "SETTINGS_ALERTS",
+      "SETTINGS_SHIFTS",
+      "SETTINGS_STAGES",
+      "SETTINGS_YIELD_THRESHOLDS",
+      "SETTINGS_SMTP",
+      "SETTINGS_NOTIFICATION_SOUNDS",
+      "SETTINGS_CACHE"
+    ]
+  },
+  {
+    "code": "CORE_ADMIN",
+    "name": "System Administration",
+    "description": "Quản trị hệ thống, quản lý user, role, audit, license, backup, sessions, user assignments",
+    "isCore": true,
+    "navGroupId": "admin",
+    "routes": [
+      "/admin",
+      "/users",
+      "/role-builder",
+      "/enhanced-audit",
+      "/audit-logs",
+      "/api-docs",
+      "/user-guide",
+      "/license",
+      "/backup-restore",
+      "/sessions",
+      "/user-assignments"
+    ],
+    "permissionCategories": [
+      "admin"
+    ],
+    "featureCodes": [
+      "ADMIN_USERS",
+      "ADMIN_PERMISSIONS",
+      "ADMIN_ROLES",
+      "ADMIN_SYSTEM",
+      "ADMIN_AUDIT",
+      "ADMIN_SESSIONS",
+      "ADMIN_2FA",
+      "ADMIN_BACKUP",
+      "ADMIN_IMPORT_EXPORT"
+    ]
+  },
+  {
+    "code": "MOD_CORPORATE",
+    "name": "Corporate Management",
+    "description": "Quản lý doanh nghiệp đa nhà máy, cấu trúc tổ chức, tổng quan corporate",
+    "isCore": false,
+    "navGroupId": "corporate",
+    "routes": [
+      "/corporate-dashboard",
+      "/corporate-layout",
+      "/corporate-management"
+    ],
+    "permissionCategories": [
+      "dashboard"
+    ],
+    "featureCodes": [
+      "DASHBOARD_CORPORATE"
+    ]
+  },
+  {
+    "code": "MOD_MONITORING",
+    "name": "Machine Monitoring",
+    "description": "Giám sát máy, MQTT dashboard, OEE, sức khỏe thiết bị, bulletin, quản lý workstation",
+    "isCore": false,
+    "navGroupId": "monitoring",
+    "routes": [
+      "/machine-status",
+      "/machine-registration",
+      "/mqtt-dashboard",
+      "/mqtt-clients",
+      "/mqtt-topics",
+      "/mqtt-replay",
+      "/mqtt-profiles",
+      "/mqtt-bulletin",
+      "/mqtt-ng-rate",
+      "/oee-dashboard",
+      "/machine-health",
+      "/workstation-management"
+    ],
+    "permissionCategories": [
+      "machine_monitoring",
+      "mqtt",
+      "analytics"
+    ],
+    "featureCodes": [
+      "MACHINE_STATUS",
+      "MACHINE_ALERTS",
+      "MACHINE_DOWNTIME",
+      "MQTT_VIEW",
+      "MQTT_CONFIGURE",
+      "MQTT_LOGS",
+      "MQTT_PROFILES",
+      "MQTT_ASSIGNMENTS",
+      "MQTT_MONITORING",
+      "MQTT_BULLETIN",
+      "MQTT_NG_RATE_THRESHOLD",
+      "MQTT_REPLAY",
+      "ANALYTICS_OEE",
+      "ANALYTICS_MACHINE_HEALTH",
+      "ANALYTICS_WORKSTATION"
+    ]
+  },
+  {
+    "code": "MOD_ALERTS",
+    "name": "Alert Management",
+    "description": "Cảnh báo, quy tắc cảnh báo MQTT, cảnh báo dự đoán, mục tiêu OEE",
+    "isCore": false,
+    "navGroupId": "alerts",
+    "routes": [
+      "/alerts",
+      "/mqtt-alerts",
+      "/predictive-alerts",
+      "/oee-target-settings"
+    ],
+    "permissionCategories": [
+      "mqtt",
+      "analytics"
+    ],
+    "featureCodes": [
+      "MQTT_ALERTS",
+      "ANALYTICS_PREDICTIVE_ALERTS",
+      "ANALYTICS_OEE_TARGETS"
+    ]
+  },
+  {
+    "code": "MOD_PRODUCTION",
+    "name": "Production Management",
+    "description": "Lệnh sản xuất, lịch sử kiểm tra, AOI packages, lịch trình xuất dữ liệu, quản lý quy trình",
+    "isCore": false,
+    "navGroupId": "production",
+    "routes": [
+      "/production-orders",
+      "/history",
+      "/aoi-packages",
+      "/history-export-scheduling",
+      "/production-scheduling",
+      "/inspection",
+      "/process-management"
+    ],
+    "permissionCategories": [
+      "production",
+      "history",
+      "reports"
+    ],
+    "featureCodes": [
+      "PRODUCTION_ORDERS",
+      "PRODUCTION_LAYOUT",
+      "PRODUCTION_LINE_ASSIGNMENTS",
+      "HISTORY_VIEW",
+      "HISTORY_DETAIL",
+      "HISTORY_EXPORT",
+      "HISTORY_DELETE",
+      "HISTORY_CORRECT",
+      "HISTORY_AI_ANALYSIS",
+      "REPORTS_VIEW",
+      "REPORTS_CREATE",
+      "REPORTS_SCHEDULE",
+      "REPORTS_EXPORT",
+      "REPORTS_TEMPLATES",
+      "MAX_PRODUCTION_ORDERS",
+      "MAX_HISTORY_EXPORT_ROWS"
+    ]
+  },
+  {
+    "code": "MOD_ANALYTICS",
+    "name": "Analytics & Reporting",
+    "description": "Báo cáo, SPC analysis, quality gates, pareto, heatmap, root cause, report builder, annotations",
+    "isCore": false,
+    "navGroupId": "analytics",
+    "routes": [
+      "/reports",
+      "/scheduled-reports",
+      "/category-analytics",
+      "/spc-analysis",
+      "/spc-advanced",
+      "/correlation-analysis",
+      "/quality-gates",
+      "/pareto-analysis",
+      "/quality-gate-templates",
+      "/annotation-statistics",
+      "/annotation-comparison",
+      "/defect-heatmap",
+      "/defect-prediction",
+      "/root-cause-analysis",
+      "/pdf-reports",
+      "/data-comparison",
+      "/report-builder",
+      "/powerpoint-export",
+      "/enhanced-scheduled-reports",
+      "/product-comparison",
+      "/test-annotation"
+    ],
+    "permissionCategories": [
+      "analytics",
+      "reports",
+      "annotations"
+    ],
+    "featureCodes": [
+      "ANALYTICS_VIEW",
+      "ANALYTICS_ADVANCED",
+      "ANALYTICS_SPC",
+      "ANALYTICS_CATEGORY",
+      "ANALYTICS_PRODUCT_COMPARISON",
+      "ANALYTICS_DEFECT_HEATMAP",
+      "ANALYTICS_DEFECT_PREDICTION",
+      "ANALYTICS_ROOT_CAUSE",
+      "ANALYTICS_AI_PERFORMANCE",
+      "ANNOTATION_VIEW",
+      "ANNOTATION_CREATE",
+      "ANNOTATION_TEMPLATES",
+      "ANNOTATION_EXPORT",
+      "ANNOTATION_AI",
+      "MAX_REPORT_ROWS",
+      "MAX_SCHEDULED_REPORTS"
+    ]
+  },
+  {
+    "code": "MOD_DATA_MANAGEMENT",
+    "name": "Data Management",
+    "description": "Quản lý sản phẩm, product mapping, factory layout, cài đặt dữ liệu, import/export, thiết bị, điểm đo, workstation",
+    "isCore": false,
+    "navGroupId": "data-management",
+    "routes": [
+      "/products",
+      "/product-mapping",
+      "/layout",
+      "/datasettings",
+      "/import-export"
+    ],
+    "permissionCategories": [
+      "settings"
+    ],
+    "featureCodes": [
+      "SETTINGS_PRODUCTS",
+      "SETTINGS_MACHINES",
+      "SETTINGS_MEASUREMENT_POINTS",
+      "SETTINGS_WORKSTATIONS",
+      "SETTINGS_PRODUCT_MAPPING",
+      "SETTINGS_PROCESS",
+      "MAX_PRODUCTS",
+      "MAX_MACHINES"
+    ]
+  },
+  {
+    "code": "MOD_AI",
+    "name": "AI & Local Intelligence",
+    "description": "Hệ AI cục bộ (local-first): AI Hub, Copilot/Chat, Vision Lab, GGUF/ONNX models, image search, quality-gate AI, active learning, time-series, knowledge base (RAG)",
+    "isCore": false,
+    "navGroupId": "ai-analytics",
+    "routes": [
+      "/ai-hub",
+      "/ai-chat",
+      "/ai-quality-gate",
+      "/ai-active-learning",
+      "/ai-image-search",
+      "/ai-reports",
+      "/ai-time-series",
+      "/ai-data-processing",
+      "/ai-performance",
+      "/ai-batch-jobs",
+      "/ai-ab-testing",
+      "/ai-monitoring",
+      "/ai-models",
+      "/model-versions",
+      "/ai-settings",
+      "/ai-inspection-analytics",
+      "/ai-advanced-vision-lab",
+      "/ai-gguf-models",
+      "/ai-local-kb",
+      "/mask-annotation"
+    ],
+    "permissionCategories": [
+      "analytics"
+    ],
+    "featureCodes": [
+      "AI_HUB",
+      "AI_CHAT_COPILOT",
+      "AI_VISION_LAB",
+      "AI_IMAGE_SEARCH",
+      "AI_QUALITY_GATE",
+      "AI_ACTIVE_LEARNING",
+      "AI_TIME_SERIES",
+      "AI_MODEL_MANAGEMENT",
+      "AI_BATCH_INFERENCE",
+      "AI_MONITORING",
+      "AI_LOCAL_KB",
+      "AI_GGUF_LOCAL_LLM",
+      "MAX_AI_MODELS",
+      "MAX_AI_BATCH_JOBS"
+    ]
+  },
+  {
+    "code": "MOD_OT_CONTROL",
+    "name": "OT & Machine Control",
+    "description": "Kết nối & điều khiển thiết bị OT: Andon, device adapters (OPC-UA/Modbus/S7/...), recipes, interlock an toàn, command audit, BOM/material. Mọi lệnh ghi đi qua HITL + interlock + audit append-only.",
+    "isCore": false,
+    "navGroupId": "ot-control",
+    "routes": [
+      "/andon",
+      "/device-adapters",
+      "/recipes",
+      "/interlock-rules",
+      "/command-audit",
+      "/bom-management"
+    ],
+    "permissionCategories": [
+      "machine_control",
+      "andon",
+      "interlock",
+      "mes_bom"
+    ],
+    "featureCodes": [
+      "OT_ANDON",
+      "OT_DEVICE_ADAPTERS",
+      "OT_RECIPES",
+      "OT_INTERLOCK",
+      "OT_COMMAND_AUDIT",
+      "OT_MES_BOM",
+      "OT_DEVICE_WRITE",
+      "MAX_DEVICE_ADAPTERS"
+    ]
+  }
+]

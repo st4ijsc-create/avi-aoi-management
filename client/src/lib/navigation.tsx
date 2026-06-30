@@ -75,6 +75,12 @@
   ShieldAlert,
   ShieldQuestion,
   Zap,
+  User,
+  Monitor,
+  Inbox,
+  Sun,
+  Bot,
+  Network,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -104,35 +110,52 @@ export interface NavGroup {
 }
 
 /**
- * Navigation structure organized by functional categories.
- * Labels and descriptions use i18n translation keys (nav.*).
- * Components consuming these should use t(item.label) and t(item.description) to translate.
+ * Navigation structure — role-aware 8-group IA (doc 12 §7).
+ *
+ * The sidebar is reorganized into 8 top-level groups by the work people actually
+ * do (Overview · Production · Quality · Devices & OT · Analytics · AI · Admin ·
+ * Me). Every leaf maps to an EXISTING route. Group + item visibility is filtered
+ * by role/permission via getFilteredNavGroups (admin sees all; each group hides
+ * when none of its items are visible).
+ *
+ * Read-open everywhere (no permission gate so EVERY authenticated role — including
+ * viewer/user — can reach them): the AI Workspace (chat / inbox / today / copilot)
+ * and the personal "Me" group. This implements doc 12 §7's rule that chat/inbox/
+ * today are read-open for all roles (fixes P-F8 — decoupled from
+ * analytics_ai_performance). The pages themselves still enforce their own RBAC.
+ *
+ * Labels/descriptions are i18n keys (nav.*); consumers call t(item.label).
  */
 export const navGroups: NavGroup[] = [
-  // 1. DASHBOARD
+  // ──────────────────────────────────────────────────────────────────────────
+  // 1. OVERVIEW — Dashboard Center · War-Room (Ops Console) · drill-down.
+  //    Landing for viewer/user (read-only). defaultOpen so it's the first thing
+  //    every role sees.
+  // ──────────────────────────────────────────────────────────────────────────
   {
-    id: "dashboard",
-    label: "nav.dashboardGroup",
+    id: "overview",
+    label: "nav.overviewGroup",
     icon: <Gauge className="h-4 w-4" />,
-    description: "nav.dashboardGroupDesc",
+    description: "nav.overviewGroupDesc",
     defaultOpen: true,
     permissionCategory: "dashboard",
     items: [
-      { 
-        href: "/dashboard", 
-        label: "nav.dashboardMain", 
+      {
+        href: "/dashboard",
+        label: "nav.dashboardMain",
         icon: <BarChart3 className="h-4 w-4" />,
         description: "nav.dashboardMainDesc",
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
       },
-      { 
-        href: "/drill-down", 
-        label: "nav.drillDown", 
-        icon: <TrendingUp className="h-4 w-4" />,
-        description: "nav.drillDownDesc",
-        requiredPermission: "dashboard_drilldown",
-        permissionCategory: "dashboard",
+      {
+        // P1: unified War-Room / Ops Console (consolidates Andon + Predictive + alerts).
+        href: "/ops-console",
+        label: "nav.opsConsole",
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "nav.opsConsoleDesc",
+        requiredPermission: "andon",
+        permissionCategory: "andon",
       },
       {
         href: "/dashboard-center",
@@ -143,118 +166,14 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "admin_system",
         permissionCategory: "admin",
       },
-      // Orphan surfaced (P1): dashboard template marketplace.
       {
-        href: "/dashboard-marketplace",
-        label: "nav.dashboardMarketplace",
-        icon: <Store className="h-4 w-4" />,
-        description: "nav.dashboardMarketplaceDesc",
-        requiredPermission: "dashboard_view",
+        href: "/drill-down",
+        label: "nav.drillDown",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.drillDownDesc",
+        requiredPermission: "dashboard_drilldown",
         permissionCategory: "dashboard",
       },
-    ],
-  },
-
-  // 1b. AI ASSISTANT — top-level shortcut so technicians/operators reach the
-  // AI chat in ≤1 click (the full chat also stays under the AI Analytics group).
-  // No requiredRole / requiredPermission / permissionCategory → visible to every
-  // authenticated role (operator, maintenance, supervisor, …); the chat page
-  // itself enforces its own access. License gating still applies per-route.
-  {
-    id: "ai-assistant",
-    label: "nav.aiAssistantGroup",
-    icon: <Sparkles className="h-4 w-4" />,
-    description: "nav.aiAssistantGroupDesc",
-    defaultOpen: false,
-    items: [
-      // Simplified big-button floor shell — the operator's default landing.
-      // No requiredPermission → visible to every authenticated role (operator /
-      // maintenance / admin / …); the page itself is read-open and each action
-      // (scan, report, inbox) enforces its own RBAC.
-      {
-        href: "/operator",
-        label: "nav.operatorHome",
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "nav.operatorHomeDesc",
-      },
-      {
-        href: "/ai-chat",
-        label: "nav.aiAssistant",
-        icon: <MessageSquare className="h-4 w-4" />,
-        description: "nav.aiAssistantDesc",
-      },
-    ],
-  },
-
-  // 1c. QUALITY WORKSPACE — quality_inspector "inspection workspace" home.
-  // P1 (doc 07 §④): a dedicated QC landing + its review/analysis tools grouped
-  // together. Gated by the history/analytics view permissions the QC role holds;
-  // each page enforces its own access.
-  {
-    id: "quality",
-    label: "nav.qualityGroup",
-    icon: <ClipboardCheck className="h-4 w-4" />,
-    description: "nav.qualityGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "history",
-    items: [
-      {
-        href: "/quality-home",
-        label: "nav.qualityHome",
-        icon: <ClipboardCheck className="h-4 w-4" />,
-        description: "nav.qualityHomeDesc",
-        requiredPermission: "history_view",
-        permissionCategory: "history",
-      },
-      {
-        href: "/quality-gates",
-        label: "nav.qualityGates",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.qualityGatesDesc",
-        requiredPermission: "analytics_spc",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/spc-analysis",
-        label: "nav.spcAnalysis",
-        icon: <Brain className="h-4 w-4" />,
-        description: "nav.spcAnalysisDesc",
-        requiredPermission: "analytics_spc",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/pareto-analysis",
-        label: "nav.paretoAnalysis",
-        icon: <BarChart3 className="h-4 w-4" />,
-        description: "nav.paretoAnalysisDesc",
-        requiredPermission: "analytics_advanced",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/defect-heatmap",
-        label: "nav.defectHeatmap",
-        icon: <Map className="h-4 w-4" />,
-        description: "nav.defectHeatmapDesc",
-        requiredPermission: "analytics_defect_heatmap",
-        permissionCategory: "analytics",
-      },
-    ],
-  },
-
-  // 2. CORPORATE — multi-site / corporate read view.
-  // P1 (doc 07 §④): supervisors get a READ-ONLY corporate view. The group no
-  // longer carries requiredRole:'admin'; visibility is gated by the
-  // `dashboard_corporate` permission so supervisors with that permission can
-  // see corporate dashboards. Write/admin-only items (corporate management)
-  // keep their requiredRole:'admin'; the pages themselves also gate writes.
-  {
-    id: "corporate",
-    label: "nav.corporateGroup",
-    icon: <Building2 className="h-4 w-4" />,
-    description: "nav.corporateGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "dashboard",
-    items: [
       {
         href: "/corporate-dashboard",
         label: "nav.corporateDashboard",
@@ -263,33 +182,19 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "dashboard_corporate",
         permissionCategory: "dashboard",
       },
-      {
-        href: "/corporate-layout",
-        label: "nav.corporateStructure",
-        icon: <Building2 className="h-4 w-4" />,
-        description: "nav.corporateStructureDesc",
-        requiredPermission: "dashboard_corporate",
-        permissionCategory: "dashboard",
-      },
-      {
-        href: "/corporate-management",
-        label: "nav.corporateManagement",
-        icon: <Settings className="h-4 w-4" />,
-        description: "nav.corporateManagementDesc",
-        requiredRole: 'admin',
-        requiredPermission: "dashboard_corporate",
-        permissionCategory: "dashboard",
-      },
     ],
   },
 
-  // 3. PRODUCTION
+  // ──────────────────────────────────────────────────────────────────────────
+  // 2. PRODUCTION — MES (control tower / WIP / trace / twin) · Inspection
+  //    (history / AOI packages) · Orders / Schedule / Sessions · BOM.
+  // ──────────────────────────────────────────────────────────────────────────
   {
     id: "production",
     label: "nav.productionGroup",
     icon: <Factory className="h-4 w-4" />,
     description: "nav.productionGroupDesc",
-    defaultOpen: true,
+    defaultOpen: false,
     permissionCategory: "production",
     items: [
       {
@@ -300,249 +205,6 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
       },
-      { 
-        href: "/history", 
-        label: "nav.historyPage", 
-        icon: <History className="h-4 w-4" />,
-        description: "nav.historyPageDesc",
-        requiredPermission: "history_view",
-        permissionCategory: "history",
-      },
-      {
-        href: "/aoi-packages",
-        label: "nav.aoiPackages",
-        icon: <Camera className="h-4 w-4" />,
-        description: "nav.aoiPackagesDesc",
-        requiredPermission: "history_view",
-        permissionCategory: "history",
-      },
-      { 
-        href: "/history-export-scheduling", 
-        label: "nav.exportSchedule", 
-        icon: <Calendar className="h-4 w-4" />,
-        description: "nav.exportScheduleDesc",
-        requiredPermission: "reports_schedule",
-        permissionCategory: "reports",
-      },
-      { 
-        href: "/production-orders", 
-        label: "nav.productionOrdersPage", 
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "nav.productionOrdersDesc",
-        requiredPermission: "production_orders",
-        permissionCategory: "production",
-      },
-      {
-        href: "/production-scheduling",
-        label: "nav.productionScheduling",
-        icon: <Timer className="h-4 w-4" />,
-        description: "nav.productionSchedulingDesc",
-        requiredPermission: "production_orders",
-        permissionCategory: "production",
-      },
-      {
-        href: "/production-signoff",
-        label: "nav.productionSignoff",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.productionSignoffDesc",
-        requiredPermission: "production_orders",
-        permissionCategory: "production",
-      },
-    ],
-  },
-
-  // 3c. MAINTENANCE WORKSPACE (doc 10 U4) — a dedicated front door for the maintenance
-  //     role so its core surfaces aren't scattered across AI / Monitoring / Alerts.
-  //     These links also remain in their original groups (they serve other roles too).
-  {
-    id: "maintenance-workspace",
-    label: "nav.maintenanceGroup",
-    icon: <Wrench className="h-4 w-4" />,
-    description: "nav.maintenanceGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "machine_monitoring",
-    items: [
-      {
-        href: "/technician-copilot",
-        label: "nav.technicianCopilot",
-        icon: <Wrench className="h-4 w-4" />,
-        description: "nav.technicianCopilotDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      {
-        href: "/work-orders",
-        label: "nav.workOrders",
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "nav.workOrdersDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-      },
-      {
-        href: "/alerts",
-        label: "nav.alertsList",
-        icon: <Bell className="h-4 w-4" />,
-        description: "nav.alertsListDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-      },
-    ],
-  },
-
-  // 4. MONITORING — split from one 13-item mega group into 3 coherent groups
-  //    (P1 doc 07 §④): realtime status · OEE & health · MES & traceability.
-
-  // 4a. MONITORING — realtime machine/MQTT status + machine onboarding/registration.
-  {
-    id: "monitoring",
-    label: "nav.monitoringGroup",
-    icon: <Activity className="h-4 w-4" />,
-    description: "nav.monitoringGroupDesc",
-    defaultOpen: true,
-    permissionCategory: "machine_monitoring",
-    items: [
-      {
-        href: "/mqtt-dashboard",
-        label: "nav.mqttDashboard",
-        icon: <Radio className="h-4 w-4" />,
-        description: "nav.mqttDashboardDesc",
-        requiredPermission: "mqtt_monitoring",
-        permissionCategory: "mqtt",
-      },
-      {
-        href: "/mqtt-bulletin",
-        label: "nav.mqttBulletin",
-        icon: <Newspaper className="h-4 w-4" />,
-        description: "nav.mqttBulletinDesc",
-        requiredPermission: "mqtt_bulletin",
-        permissionCategory: "mqtt",
-      },
-      {
-        href: "/machine-status",
-        label: "nav.machineStatusPage",
-        icon: <MonitorCheck className="h-4 w-4" />,
-        description: "nav.machineStatusDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      {
-        href: "/machine-onboarding",
-        label: "nav.machineOnboarding",
-        icon: <Rocket className="h-4 w-4" />,
-        description: "nav.machineOnboardingDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      // Orphan surfaced (P1): machine registration.
-      {
-        href: "/machine-registration",
-        label: "nav.machineRegistration",
-        icon: <Plug className="h-4 w-4" />,
-        description: "nav.machineRegistrationDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      // Orphan surfaced (P1): MQTT client management (admin-only config).
-      {
-        href: "/mqtt-clients",
-        label: "nav.mqttClients",
-        icon: <Wifi className="h-4 w-4" />,
-        description: "nav.mqttClientsDesc",
-        requiredRole: 'admin',
-        requiredPermission: "mqtt_monitoring",
-        permissionCategory: "mqtt",
-      },
-      // Orphan surfaced (P1): MQTT replay (diagnostics).
-      {
-        href: "/mqtt-replay",
-        label: "nav.mqttReplay",
-        icon: <Play className="h-4 w-4" />,
-        description: "nav.mqttReplayDesc",
-        requiredPermission: "mqtt_monitoring",
-        permissionCategory: "mqtt",
-      },
-      {
-        href: "/monitoring-setting",
-        label: "nav.monitoringSetting",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.monitoringSettingDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      // Maintenance work-order management (CRUD + CLOSE→MTTR). Gated by the same
-      // machine_monitoring grant the RCA write-tool uses to create work-orders.
-      {
-        href: "/work-orders",
-        label: "nav.workOrders",
-        icon: <Wrench className="h-4 w-4" />,
-        description: "nav.workOrdersDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-      },
-    ],
-  },
-
-  // 4b. OEE & HEALTH — productivity + equipment health + energy/carbon.
-  {
-    id: "oee-health",
-    label: "nav.oeeHealthGroup",
-    icon: <Gauge className="h-4 w-4" />,
-    description: "nav.oeeHealthGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "analytics",
-    items: [
-      {
-        href: "/oee-dashboard",
-        label: "nav.oeeDashboard",
-        icon: <Timer className="h-4 w-4" />,
-        description: "nav.oeeDashboardDesc",
-        requiredPermission: "analytics_oee",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/machine-health",
-        label: "nav.machineHealth",
-        icon: <Heart className="h-4 w-4" />,
-        description: "nav.machineHealthDesc",
-        requiredPermission: "analytics_machine_health",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/realtime-report",
-        label: "nav.realtimeReport",
-        icon: <Activity className="h-4 w-4" />,
-        description: "nav.realtimeReportDesc",
-        requiredPermission: "analytics_oee",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/carbon-dashboard",
-        label: "nav.carbonDashboard",
-        icon: <Leaf className="h-4 w-4" />,
-        description: "nav.carbonDashboardDesc",
-        requiredPermission: "analytics_oee",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/energy-analytics",
-        label: "nav.energyAnalytics",
-        icon: <Zap className="h-4 w-4" />,
-        description: "nav.energyAnalyticsDesc",
-        requiredPermission: "energy",
-        permissionCategory: "analytics",
-      },
-    ],
-  },
-
-  // 4c. MES & TRACEABILITY — control tower, WIP, genealogy, digital twin.
-  {
-    id: "mes-trace",
-    label: "nav.mesTraceGroup",
-    icon: <GitMerge className="h-4 w-4" />,
-    description: "nav.mesTraceGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "analytics",
-    items: [
       {
         href: "/mes-control-tower",
         label: "nav.mesControlTower",
@@ -575,341 +237,254 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
       },
+      {
+        href: "/history",
+        label: "nav.historyPage",
+        icon: <History className="h-4 w-4" />,
+        description: "nav.historyPageDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        href: "/aoi-packages",
+        label: "nav.aoiPackages",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.aoiPackagesDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        href: "/production-orders",
+        label: "nav.productionOrdersPage",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "nav.productionOrdersDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
+      {
+        href: "/production-scheduling",
+        label: "nav.productionScheduling",
+        icon: <Timer className="h-4 w-4" />,
+        description: "nav.productionSchedulingDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
+      {
+        href: "/production-signoff",
+        label: "nav.productionSignoff",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.productionSignoffDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
+      {
+        href: "/history-export-scheduling",
+        label: "nav.exportSchedule",
+        icon: <Calendar className="h-4 w-4" />,
+        description: "nav.exportScheduleDesc",
+        requiredPermission: "reports_schedule",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/bom-management",
+        label: "nav.bomManagement",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.bomManagementDesc",
+        requiredPermission: "mes_bom",
+        permissionCategory: "mes_bom",
+      },
     ],
   },
 
-  // 5. ANALYTICS
+  // ──────────────────────────────────────────────────────────────────────────
+  // 3. QUALITY — Quality Cockpit (Home · Gates · Templates · SPC · Pareto ·
+  //    Heatmap · Annotation). Landing for quality_inspector.
+  // ──────────────────────────────────────────────────────────────────────────
   {
-    id: "analytics",
-    label: "nav.analyticsGroup",
-    icon: <LineChart className="h-4 w-4" />,
-    description: "nav.analyticsGroupDesc",
+    id: "quality",
+    label: "nav.qualityGroup",
+    icon: <ClipboardCheck className="h-4 w-4" />,
+    description: "nav.qualityGroupDesc",
     defaultOpen: false,
-    permissionCategory: "analytics",
+    permissionCategory: "history",
     items: [
-      { 
-        href: "/reports", 
-        label: "nav.reportsPage", 
-        icon: <FileBarChart className="h-4 w-4" />,
-        description: "nav.reportsPageDesc",
-        requiredPermission: "reports_view",
-        permissionCategory: "reports",
-      },
-      { 
-        href: "/category-analytics", 
-        label: "nav.categoryAnalytics", 
-        icon: <PieChart className="h-4 w-4" />,
-        description: "nav.categoryAnalyticsDesc",
-        requiredPermission: "analytics_category",
-        permissionCategory: "analytics",
-      },
-      { 
-        href: "/spc-analysis", 
-        label: "nav.spcAnalysis", 
-        icon: <Brain className="h-4 w-4" />,
-        description: "nav.spcAnalysisDesc",
+      {
+        // P3-W2: flagship Quality Cockpit — default QUALITY landing. SPC / Pareto /
+        // Heatmap / Gates / Annotation now live as tabs here (legacy routes redirect in).
+        href: "/quality-cockpit",
+        label: "nav.qualityCockpit",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
         requiredPermission: "analytics_spc",
         permissionCategory: "analytics",
       },
-      { 
-        href: "/defect-heatmap", 
-        label: "nav.defectHeatmap", 
+      {
+        href: "/quality-home",
+        label: "nav.qualityHome",
+        icon: <ClipboardCheck className="h-4 w-4" />,
+        description: "nav.qualityHomeDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        href: "/quality-gate-templates",
+        label: "nav.qualityGateTemplates",
+        icon: <LayoutTemplate className="h-4 w-4" />,
+        description: "nav.qualityGateTemplatesDesc",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+      },
+      {
+        // KEEP — factory-layout defect heatmap (distinct from the cockpit product heatmap tab).
+        href: "/defect-heatmap",
+        label: "nav.defectHeatmap",
         icon: <Map className="h-4 w-4" />,
         description: "nav.defectHeatmapDesc",
         requiredPermission: "analytics_defect_heatmap",
         permissionCategory: "analytics",
       },
-      {
-        href: "/pareto-analysis",
-        label: "nav.paretoAnalysis",
-        icon: <BarChart3 className="h-4 w-4" />,
-        description: "nav.paretoAnalysisDesc",
-        requiredPermission: "analytics_advanced",
-        permissionCategory: "analytics",
-      },
-      // Orphan surfaced (P1): cross-metric correlation analysis.
-      {
-        href: "/correlation-analysis",
-        label: "nav.correlationAnalysis",
-        icon: <GitCompare className="h-4 w-4" />,
-        description: "nav.correlationAnalysisDesc",
-        requiredPermission: "analytics_advanced",
-        permissionCategory: "analytics",
-      },
-      // Orphan surfaced (P1): report authoring + exports.
-      {
-        href: "/report-builder",
-        label: "nav.reportBuilder",
-        icon: <FileText className="h-4 w-4" />,
-        description: "nav.reportBuilderDesc",
-        requiredPermission: "reports_view",
-        permissionCategory: "reports",
-      },
-      {
-        href: "/pdf-reports",
-        label: "nav.pdfReports",
-        icon: <FileText className="h-4 w-4" />,
-        description: "nav.pdfReportsDesc",
-        requiredPermission: "reports_view",
-        permissionCategory: "reports",
-      },
-      {
-        href: "/powerpoint-export",
-        label: "nav.powerpointExport",
-        icon: <Presentation className="h-4 w-4" />,
-        description: "nav.powerpointExportDesc",
-        requiredPermission: "reports_view",
-        permissionCategory: "reports",
-      },
-      {
-        href: "/analytics-setting",
-        label: "nav.analyticsSetting",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.analyticsSettingDesc",
-        requiredPermission: "reports_view",
-        permissionCategory: "reports",
-      },
-      // Threshold suggestion approval review queue (manager workflow).
-      {
-        href: "/threshold-approvals",
-        label: "nav.thresholdApprovals",
-        icon: <ClipboardCheck className="h-4 w-4" />,
-        description: "nav.thresholdApprovalsDesc",
-        requiredPermission: "settings_alerts",
-        permissionCategory: "analytics",
-      },
     ],
   },
 
-  // 6. AI — split from one 18-item mega group into 3 coherent groups
-  //    (P1 doc 07 §④): AI assistant core · AI quality · AI models & ops.
-
-  // 6a. AI TRỢ LÝ (core) — the assistant surfaces everyone reaches for first.
+  // ──────────────────────────────────────────────────────────────────────────
+  // 4. DEVICES & OT — realtime status/health · device adapters / edge / MQTT ·
+  //    Engineering & Control (programming / interlock / recipe) · Maintenance.
+  //    Landing for maintenance.
+  // ──────────────────────────────────────────────────────────────────────────
   {
-    id: "ai-analytics",
-    label: "nav.aiAnalyticsGroup",
-    icon: <Brain className="h-4 w-4" />,
-    description: "nav.aiAnalyticsGroupDesc",
+    id: "devices",
+    label: "nav.devicesGroup",
+    icon: <Cpu className="h-4 w-4" />,
+    description: "nav.devicesGroupDesc",
     defaultOpen: false,
-    permissionCategory: "analytics",
+    permissionCategory: "machine_monitoring",
     items: [
+      // — Status & health —
       {
-        href: "/ai-hub",
-        label: "nav.aiHub",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.aiHubDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-chat",
-        label: "nav.aiChat",
-        icon: <MessageSquare className="h-4 w-4" />,
-        description: "nav.aiChatDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      // RCA Copilot (LUỒNG ③) — technician-facing one-tap fix approval.
-      // Scoped to machine access (maintenance/supervisor) + admin bypass.
-      {
-        href: "/technician-copilot",
-        label: "nav.technicianCopilot",
-        icon: <Wrench className="h-4 w-4" />,
-        description: "nav.technicianCopilotDesc",
+        // P3-W2: unified Device Monitor — default DEVICES & OT landing (machines +
+        // OT adapters + edge nodes in one live table; legacy /machine-status redirects here).
+        href: "/device-monitor",
+        label: "nav.deviceMonitor",
+        icon: <MonitorCheck className="h-4 w-4" />,
+        description: "nav.deviceMonitorDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
-      // Orphan surfaced (P1): manager-facing NL Q&A + exec summary.
       {
-        href: "/management-insight",
-        label: "nav.managementInsight",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.managementInsightDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      // Causal knowledge-graph editor — machine↔defect↔cause↔action used by RCA.
-      {
-        href: "/causal-graph",
-        label: "nav.causalGraph",
-        icon: <Workflow className="h-4 w-4" />,
-        description: "nav.causalGraphDesc",
-        requiredPermission: "analytics_root_cause",
-        permissionCategory: "analytics",
-      },
-    ],
-  },
-
-  // 6b. AI CHẤT LƯỢNG — AI-assisted quality gating, learning, annotation, search.
-  {
-    id: "ai-quality",
-    label: "nav.aiQualityGroup",
-    icon: <ShieldCheck className="h-4 w-4" />,
-    description: "nav.aiQualityGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "analytics",
-    items: [
-      {
-        href: "/ai-quality-gate",
-        label: "nav.aiQualityGate",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.aiQualityGateDesc",
-        requiredPermission: "analytics_ai_performance",
+        href: "/machine-health",
+        label: "nav.machineHealth",
+        icon: <Heart className="h-4 w-4" />,
+        description: "nav.machineHealthDesc",
+        requiredPermission: "analytics_machine_health",
         permissionCategory: "analytics",
       },
       {
-        href: "/ai-active-learning",
-        label: "nav.aiActiveLearning",
-        icon: <GraduationCap className="h-4 w-4" />,
-        description: "nav.aiActiveLearningDesc",
-        requiredPermission: "analytics_ai_performance",
+        href: "/oee-dashboard",
+        label: "nav.oeeDashboard",
+        icon: <Timer className="h-4 w-4" />,
+        description: "nav.oeeDashboardDesc",
+        requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
       },
       {
-        href: "/mask-annotation",
-        label: "nav.maskAnnotation",
-        icon: <Brush className="h-4 w-4" />,
-        description: "nav.maskAnnotationDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
+        href: "/factory-live-map",
+        label: "nav.factoryLiveMap",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.factoryLiveMapDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      // — MQTT / telemetry —
+      {
+        href: "/mqtt-dashboard",
+        label: "nav.mqttDashboard",
+        icon: <Radio className="h-4 w-4" />,
+        description: "nav.mqttDashboardDesc",
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
       },
       {
-        href: "/ai-image-search",
-        label: "nav.aiImageSearch",
-        icon: <Search className="h-4 w-4" />,
-        description: "nav.aiImageSearchDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-    ],
-  },
-
-  // 6c. AI MÔ HÌNH & VẬN HÀNH — models, versions, brain, monitoring, ops, reports.
-  {
-    id: "ai-models",
-    label: "nav.aiModelsGroup",
-    icon: <Cpu className="h-4 w-4" />,
-    description: "nav.aiModelsGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "analytics",
-    items: [
-      {
-        href: "/ai-models",
-        label: "nav.aiModelManagement",
-        icon: <Cpu className="h-4 w-4" />,
-        description: "nav.aiModelManagementDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
+        href: "/mqtt-bulletin",
+        label: "nav.mqttBulletin",
+        icon: <Newspaper className="h-4 w-4" />,
+        description: "nav.mqttBulletinDesc",
+        requiredPermission: "mqtt_bulletin",
+        permissionCategory: "mqtt",
       },
       {
-        href: "/model-versions",
-        label: "nav.modelVersions",
-        icon: <GitBranch className="h-4 w-4" />,
-        description: "nav.modelVersionsDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      // Orphan surfaced (P1): local AI brain dashboard.
-      {
-        href: "/ai-brain",
-        label: "nav.aiBrainDashboard",
-        icon: <Brain className="h-4 w-4" />,
-        description: "nav.aiBrainDashboardDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
+        href: "/mqtt-replay",
+        label: "nav.mqttReplay",
+        icon: <Play className="h-4 w-4" />,
+        description: "nav.mqttReplayDesc",
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
       },
       {
-        href: "/ai-monitoring",
-        label: "nav.aiMonitoring",
-        icon: <MonitorCheck className="h-4 w-4" />,
-        description: "nav.aiMonitoringDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-performance",
-        label: "nav.aiPerformance",
-        icon: <Activity className="h-4 w-4" />,
-        description: "nav.aiPerformanceDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-batch-jobs",
-        label: "nav.aiBatchJobs",
-        icon: <Layers className="h-4 w-4" />,
-        description: "nav.aiBatchJobsDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-time-series",
-        label: "nav.aiTimeSeries",
-        icon: <TrendingUp className="h-4 w-4" />,
-        description: "nav.aiTimeSeriesDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-data-processing",
-        label: "nav.aiDataProcessing",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.aiDataProcessingDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-reports",
-        label: "nav.aiReports",
-        icon: <FileBarChart className="h-4 w-4" />,
-        description: "nav.aiReportsDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      // Anomaly memory bank management (PatchCore) — rebuild/delete per scope.
-      // Admin ops; the page itself gates write actions on admin.
-      {
-        href: "/anomaly-banks",
-        label: "nav.anomalyBanks",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.anomalyBanksDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/ai-settings",
-        label: "nav.aiSettings",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.aiSettingsDesc",
+        href: "/mqtt-clients",
+        label: "nav.mqttClients",
+        icon: <Wifi className="h-4 w-4" />,
+        description: "nav.mqttClientsDesc",
         requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
       },
-    ],
-  },
-
-  // 6b. OT / MACHINE CONTROL (Sprint G2.2a — config + audit; no write-to-device path here)
-  {
-    id: "ot-control",
-    label: "nav.otGroup",
-    icon: <Cpu className="h-4 w-4" />,
-    description: "nav.otGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "machine_control",
-    items: [
+      // — Onboarding & adapters —
       {
-        href: "/andon",
-        label: "nav.andonBoard",
-        icon: <AlertTriangle className="h-4 w-4" />,
-        description: "nav.andonBoardDesc",
-        requiredPermission: "andon",
-        permissionCategory: "andon",
+        href: "/machine-onboarding",
+        label: "nav.machineOnboarding",
+        icon: <Rocket className="h-4 w-4" />,
+        description: "nav.machineOnboardingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        href: "/machine-registration",
+        label: "nav.machineRegistration",
+        icon: <Plug className="h-4 w-4" />,
+        description: "nav.machineRegistrationDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
       },
       {
         href: "/device-adapters",
         label: "nav.deviceAdapters",
         icon: <Plug className="h-4 w-4" />,
         description: "nav.deviceAdaptersDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      {
+        href: "/edge-nodes",
+        label: "nav.edgeNodes",
+        icon: <Cpu className="h-4 w-4" />,
+        description: "nav.edgeNodesDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      {
+        // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via HITL dispatcher)
+        href: "/robot-control",
+        label: "nav.robotControl",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.robotControlDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only)
+        href: "/control-plane",
+        label: "nav.controlPlane",
+        icon: <Network className="h-4 w-4" />,
+        description: "nav.controlPlaneDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
+      // — Engineering & Control —
+      {
+        href: "/engineering",
+        label: "nav.engineeringWorkspace",
+        icon: <Code2 className="h-4 w-4" />,
+        description: "nav.engineeringWorkspaceDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
@@ -938,22 +513,6 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_control",
       },
       {
-        href: "/engineering",
-        label: "nav.engineeringWorkspace",
-        icon: <Code2 className="h-4 w-4" />,
-        description: "nav.engineeringWorkspaceDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-      },
-      {
-        href: "/factory-live-map",
-        label: "nav.factoryLiveMap",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.factoryLiveMapDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-      },
-      {
         href: "/factory-floor-editor",
         label: "nav.factoryFloorEditor",
         icon: <Boxes className="h-4 w-4" />,
@@ -977,175 +536,357 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
+      // — Maintenance / predictive —
       {
-        href: "/command-audit",
-        label: "nav.commandAudit",
-        icon: <ScrollText className="h-4 w-4" />,
-        description: "nav.commandAuditDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-      },
-      {
-        href: "/edge-nodes",
-        label: "nav.edgeNodes",
-        icon: <Cpu className="h-4 w-4" />,
-        description: "nav.edgeNodesDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
+        href: "/technician-copilot",
+        label: "nav.technicianCopilot",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.technicianCopilotDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
       },
       {
-        href: "/bom-management",
-        label: "nav.bomManagement",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.bomManagementDesc",
-        requiredPermission: "mes_bom",
-        permissionCategory: "mes_bom",
-      },
-    ],
-  },
-
-  // 7. DATA MANAGEMENT
-  {
-    id: "data-management",
-    label: "nav.dataGroup",
-    icon: <Database className="h-4 w-4" />,
-    description: "nav.dataGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "settings",
-    items: [
-      { 
-        href: "/products", 
-        label: "nav.productsPage", 
-        icon: <Package className="h-4 w-4" />,
-        description: "nav.productsPageDesc",
-        requiredPermission: "settings_products",
-        permissionCategory: "settings",
-      },
-      { 
-        href: "/product-mapping", 
-        label: "nav.productMapping", 
-        icon: <Link className="h-4 w-4" />,
-        description: "nav.productMappingDesc",
-        requiredPermission: "settings_product_mapping",
-        permissionCategory: "settings",
-      },
-      { 
-        href: "/layout", 
-        label: "nav.factoryLayout", 
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "nav.factoryLayoutDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
+        href: "/work-orders",
+        label: "nav.workOrders",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "nav.workOrdersDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
       },
       {
-        href: "/datasettings",
-        label: "nav.dataSettingsPage",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.dataSettingsPageDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-      },
-      {
-        href: "/master-data",
-        label: "nav.masterData",
-        icon: <Tags className="h-4 w-4" />,
-        description: "nav.masterDataDesc",
-        requiredPermission: "masterdata",
-        permissionCategory: "settings",
-      },
-      // Orphan surfaced (P1): workstation + process master data.
-      {
-        href: "/workstation-management",
-        label: "nav.workstationManagement",
-        icon: <Warehouse className="h-4 w-4" />,
-        description: "nav.workstationManagementDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-      },
-      {
-        href: "/process-management",
-        label: "nav.processManagement",
-        icon: <Workflow className="h-4 w-4" />,
-        description: "nav.processManagementDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-      },
-    ],
-  },
-
-  // 8. ALERTS
-  {
-    id: "alerts",
-    label: "nav.alertsGroup",
-    icon: <Bell className="h-4 w-4" />,
-    description: "nav.alertsGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "mqtt",
-    items: [
-      { 
-        href: "/alerts", 
-        label: "nav.alertsList", 
+        href: "/alerts",
+        label: "nav.alertsList",
         icon: <Bell className="h-4 w-4" />,
         description: "nav.alertsListDesc",
         requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
       },
-      { 
-        href: "/mqtt-alerts", 
-        label: "nav.alertRules", 
+      {
+        href: "/mqtt-alerts",
+        label: "nav.alertRules",
         icon: <AlertTriangle className="h-4 w-4" />,
         description: "nav.alertRulesDesc",
         requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
       },
-      { 
-        href: "/predictive-alerts", 
-        label: "nav.predictiveAlerts", 
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.predictiveAlertsDesc",
-        requiredPermission: "analytics_predictive_alerts",
+      {
+        href: "/monitoring-setting",
+        label: "nav.monitoringSetting",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.monitoringSettingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+    ],
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 5. ANALYTICS — Reports / scheduled / builder · Category / Correlation /
+  //    Comparison · Energy / Carbon · realtime report · threshold approvals.
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: "analytics",
+    label: "nav.analyticsGroup",
+    icon: <LineChart className="h-4 w-4" />,
+    description: "nav.analyticsGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "analytics",
+    items: [
+      {
+        href: "/reports",
+        label: "nav.reportsPage",
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "nav.reportsPageDesc",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/scheduled-reports",
+        label: "nav.scheduledReports",
+        icon: <CalendarClock className="h-4 w-4" />,
+        description: "nav.scheduledReportsDesc",
+        requiredPermission: "reports_schedule",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/report-builder",
+        label: "nav.reportBuilder",
+        icon: <FileText className="h-4 w-4" />,
+        description: "nav.reportBuilderDesc",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/category-analytics",
+        label: "nav.categoryAnalytics",
+        icon: <PieChart className="h-4 w-4" />,
+        description: "nav.categoryAnalyticsDesc",
+        requiredPermission: "analytics_category",
         permissionCategory: "analytics",
       },
-      { 
-        href: "/oee-target-settings", 
-        label: "nav.oeeTargets", 
+      {
+        href: "/correlation-analysis",
+        label: "nav.correlationAnalysis",
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "nav.correlationAnalysisDesc",
+        requiredPermission: "analytics_advanced",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/data-comparison",
+        label: "nav.dataComparison",
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "nav.dataComparisonDesc",
+        requiredPermission: "analytics_advanced",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/realtime-report",
+        label: "nav.realtimeReport",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.realtimeReportDesc",
+        requiredPermission: "analytics_oee",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/energy-analytics",
+        label: "nav.energyAnalytics",
+        icon: <Zap className="h-4 w-4" />,
+        description: "nav.energyAnalyticsDesc",
+        requiredPermission: "energy",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/carbon-dashboard",
+        label: "nav.carbonDashboard",
+        icon: <Leaf className="h-4 w-4" />,
+        description: "nav.carbonDashboardDesc",
+        requiredPermission: "analytics_oee",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/pdf-reports",
+        label: "nav.pdfReports",
+        icon: <FileText className="h-4 w-4" />,
+        description: "nav.pdfReportsDesc",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/powerpoint-export",
+        label: "nav.powerpointExport",
+        icon: <Presentation className="h-4 w-4" />,
+        description: "nav.powerpointExportDesc",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+      },
+      {
+        href: "/threshold-approvals",
+        label: "nav.thresholdApprovals",
+        icon: <ClipboardCheck className="h-4 w-4" />,
+        description: "nav.thresholdApprovalsDesc",
+        requiredPermission: "settings_alerts",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/oee-target-settings",
+        label: "nav.oeeTargets",
         icon: <Target className="h-4 w-4" />,
         description: "nav.oeeTargetsDesc",
         requiredPermission: "analytics_oee_targets",
         permissionCategory: "analytics",
       },
+      {
+        href: "/analytics-setting",
+        label: "nav.analyticsSetting",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.analyticsSettingDesc",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+      },
     ],
   },
 
-  // 9. SETTINGS — General Settings
+  // ──────────────────────────────────────────────────────────────────────────
+  // 6. AI — AI Workspace (chat / copilot / management-insight) is READ-OPEN to
+  //    EVERY role (no requiredPermission). AI Control Plane / AI Ops / AI Vision
+  //    are admin-gated (requiredRole:'admin').
+  // ──────────────────────────────────────────────────────────────────────────
   {
-    id: "settings",
-    label: "nav.generalSettings",
-    icon: <Settings className="h-4 w-4" />,
-    description: "nav.generalSettingsDesc",
+    id: "ai",
+    label: "nav.aiGroup",
+    icon: <Sparkles className="h-4 w-4" />,
+    description: "nav.aiGroupDesc",
     defaultOpen: false,
-    permissionCategory: "settings",
+    // No permissionCategory → group is visible to every authenticated role; the
+    // AI Workspace items below are read-open. Admin-only items below still gate.
     items: [
+      // ─ AI Workspace (read-open, all roles) ─
       {
-        href: "/settings",
-        label: "nav.generalSettings",
-        icon: <Settings className="h-4 w-4" />,
-        description: "nav.generalSettingsDesc",
-        requiredPermission: "settings_view",
-        permissionCategory: "settings",
+        href: "/ai-chat",
+        label: "nav.aiChat",
+        icon: <MessageSquare className="h-4 w-4" />,
+        description: "nav.aiChatDesc",
       },
-      // Doc 10 U12 — any user can ask an admin for elevated access (no permission gate).
       {
-        href: "/request-role",
-        label: "nav.requestRole",
-        icon: <ShieldQuestion className="h-4 w-4" />,
-        description: "nav.requestRoleDesc",
-        permissionCategory: "settings",
+        href: "/ai-hub",
+        label: "nav.aiHub",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.aiHubDesc",
+      },
+      {
+        href: "/management-insight",
+        label: "nav.managementInsight",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.managementInsightDesc",
+      },
+      // ─ AI Control Plane (admin) ─
+      {
+        href: "/ai-brain",
+        label: "nav.aiBrainDashboard",
+        icon: <Brain className="h-4 w-4" />,
+        description: "nav.aiBrainDashboardDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-monitoring",
+        label: "nav.aiMonitoring",
+        icon: <MonitorCheck className="h-4 w-4" />,
+        description: "nav.aiMonitoringDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-performance",
+        label: "nav.aiPerformance",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.aiPerformanceDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-models",
+        label: "nav.aiModelManagement",
+        icon: <Cpu className="h-4 w-4" />,
+        description: "nav.aiModelManagementDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/model-versions",
+        label: "nav.modelVersions",
+        icon: <GitBranch className="h-4 w-4" />,
+        description: "nav.modelVersionsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-settings",
+        label: "nav.aiSettings",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.aiSettingsDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+      // ─ AI Ops (admin) ─
+      {
+        href: "/ai-active-learning",
+        label: "nav.aiActiveLearning",
+        icon: <GraduationCap className="h-4 w-4" />,
+        description: "nav.aiActiveLearningDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-batch-jobs",
+        label: "nav.aiBatchJobs",
+        icon: <Layers className="h-4 w-4" />,
+        description: "nav.aiBatchJobsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-data-processing",
+        label: "nav.aiDataProcessing",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.aiDataProcessingDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-time-series",
+        label: "nav.aiTimeSeries",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.aiTimeSeriesDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-reports",
+        label: "nav.aiReports",
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "nav.aiReportsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      // ─ AI Vision (admin) ─
+      {
+        href: "/ai-quality-gate",
+        label: "nav.aiQualityGate",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.aiQualityGateDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-image-search",
+        label: "nav.aiImageSearch",
+        icon: <Search className="h-4 w-4" />,
+        description: "nav.aiImageSearchDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/ai-advanced-vision-lab",
+        label: "nav.advancedVisionLab",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.advancedVisionLabDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/anomaly-banks",
+        label: "nav.anomalyBanks",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.anomalyBanksDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/mask-annotation",
+        label: "nav.maskAnnotation",
+        icon: <Brush className="h-4 w-4" />,
+        description: "nav.maskAnnotationDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
+      {
+        href: "/causal-graph",
+        label: "nav.causalGraph",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.causalGraphDesc",
+        requiredPermission: "analytics_root_cause",
+        permissionCategory: "analytics",
       },
     ],
   },
 
-  // 10. ADMIN — System Administration
+  // ──────────────────────────────────────────────────────────────────────────
+  // 7. ADMIN — Admin & Security (hub / users / roles / audit / license / backup
+  //    / api keys / sessions) · Master Data / Data Management. Landing for admin.
+  // ──────────────────────────────────────────────────────────────────────────
   {
     id: "admin",
     label: "nav.adminGroup",
@@ -1172,7 +913,6 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "admin_users",
         permissionCategory: "admin",
       },
-      // Orphans surfaced (P1): RBAC role builder, license, backup, audit.
       {
         href: "/role-builder",
         label: "nav.roleBuilder",
@@ -1180,6 +920,15 @@ export const navGroups: NavGroup[] = [
         description: "nav.roleBuilderDesc",
         requiredRole: 'admin',
         requiredPermission: "admin_users",
+        permissionCategory: "admin",
+      },
+      {
+        href: "/audit-logs?tab=enhanced",
+        label: "nav.enhancedAudit",
+        icon: <ScrollText className="h-4 w-4" />,
+        description: "nav.enhancedAuditDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
         permissionCategory: "admin",
       },
       {
@@ -1210,17 +959,153 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "admin",
       },
       {
-        href: "/enhanced-audit",
-        label: "nav.enhancedAudit",
-        icon: <ScrollText className="h-4 w-4" />,
-        description: "nav.enhancedAuditDesc",
+        href: "/sessions",
+        label: "nav.sessions",
+        icon: <Monitor className="h-4 w-4" />,
+        description: "nav.sessionsDesc",
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
       },
+      // — Master Data / Data Management —
+      {
+        href: "/master-data",
+        label: "nav.masterData",
+        icon: <Tags className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/products",
+        label: "nav.productsPage",
+        icon: <Package className="h-4 w-4" />,
+        description: "nav.productsPageDesc",
+        requiredPermission: "settings_products",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/product-mapping",
+        label: "nav.productMapping",
+        icon: <Link className="h-4 w-4" />,
+        description: "nav.productMappingDesc",
+        requiredPermission: "settings_product_mapping",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/layout",
+        label: "nav.factoryLayout",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.factoryLayoutDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/workstation-management",
+        label: "nav.workstationManagement",
+        icon: <Warehouse className="h-4 w-4" />,
+        description: "nav.workstationManagementDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/process-management",
+        label: "nav.processManagement",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.processManagementDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/datasettings",
+        label: "nav.dataSettingsPage",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/corporate-management",
+        label: "nav.corporateManagement",
+        icon: <Settings className="h-4 w-4" />,
+        description: "nav.corporateManagementDesc",
+        requiredRole: 'admin',
+        requiredPermission: "dashboard_corporate",
+        permissionCategory: "dashboard",
+      },
+      {
+        href: "/settings",
+        label: "nav.generalSettings",
+        icon: <Settings className="h-4 w-4" />,
+        description: "nav.generalSettingsDesc",
+        requiredPermission: "settings_view",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/admin-setting",
+        label: "nav.adminSetting",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.adminSettingDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+    ],
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 8. ME (self) — personal surfaces, READ-OPEN to every authenticated role
+  //    (no permission gate). Profile · Operator inbox/today shell · Request role
+  //    · User guide · About.
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: "me",
+    label: "nav.meGroup",
+    icon: <User className="h-4 w-4" />,
+    description: "nav.meGroupDesc",
+    defaultOpen: false,
+    items: [
+      {
+        // P3-W2: full-screen Action Inbox (read-open all roles).
+        href: "/inbox",
+        label: "nav.inbox",
+        icon: <Inbox className="h-4 w-4" />,
+        description: "nav.inboxDesc",
+      },
+      {
+        // P3-W2: full-screen Today Briefing (read-open all roles).
+        href: "/today",
+        label: "nav.today",
+        icon: <Sun className="h-4 w-4" />,
+        description: "nav.todayDesc",
+      },
+      {
+        href: "/operator",
+        label: "nav.operatorHome",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.operatorHomeDesc",
+      },
+      {
+        href: "/profile",
+        label: "nav.profile",
+        icon: <User className="h-4 w-4" />,
+        description: "nav.profileDesc",
+      },
+      {
+        href: "/change-password",
+        label: "nav.changePassword",
+        icon: <Lock className="h-4 w-4" />,
+        description: "nav.changePasswordDesc",
+      },
+      {
+        href: "/request-role",
+        label: "nav.requestRole",
+        icon: <ShieldQuestion className="h-4 w-4" />,
+        description: "nav.requestRoleDesc",
+      },
       {
         href: "/user-guide",
-        label: "nav.userGuide", 
+        label: "nav.userGuide",
         icon: <BookOpen className="h-4 w-4" />,
         description: "nav.userGuideDesc",
       },
@@ -1229,15 +1114,6 @@ export const navGroups: NavGroup[] = [
         label: "nav.aboutSystem",
         icon: <Building2 className="h-4 w-4" />,
         description: "nav.aboutSystemDesc",
-      },
-      { 
-        href: "/admin-setting", 
-        label: "nav.adminSetting", 
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.adminSettingDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
       },
     ],
   },

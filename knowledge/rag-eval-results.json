@@ -1,0 +1,144 @@
+{
+  "metric": "cosine",
+  "k": 5,
+  "overall": {
+    "hit": 151,
+    "total": 151,
+    "recall": 1
+  },
+  "cosineBaseline": {
+    "hit": 151,
+    "total": 151,
+    "recall": 1
+  },
+  "reranked": null,
+  "perDomain": {
+    "ai-copilot": {
+      "hit": 8,
+      "total": 8,
+      "recall": 1
+    },
+    "andon": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "anomaly": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "api-keys": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "audit-logs": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "dashboard": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "device-programming": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "edge-orchestration": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "energy": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "inspection-defects": {
+      "hit": 10,
+      "total": 10,
+      "recall": 1
+    },
+    "machine-status": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "maintenance-work-orders": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "master-data-bom": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "mqtt-alerts": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "oee": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "predictive-maintenance": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "production-orders": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "products-measurement-points": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "recipes": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "reports": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "self-description": {
+      "hit": 16,
+      "total": 16,
+      "recall": 1
+    },
+    "spc": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "thresholds": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    },
+    "traceability-genealogy": {
+      "hit": 5,
+      "total": 5,
+      "recall": 1
+    },
+    "users-permissions": {
+      "hit": 6,
+      "total": 6,
+      "recall": 1
+    }
+  },
+  "gate": null,
+  "timestamp": "2026-06-29T11:49:13.158Z"
+}

@@ -41,6 +41,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type AlgorithmType = "fifo" | "priority" | "edf";
 
@@ -220,10 +221,13 @@ export default function ProductionScheduling() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              <CalendarDays className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
-              {t("scheduling.title", "Lập lịch sản xuất")}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+                <CalendarDays className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
+                {t("scheduling.title", "Lập lịch sản xuất")}
+              </h1>
+              <ViewOnlyBadge module="production_orders" />
+            </div>
             <p className="text-muted-foreground mt-1">
               {t("scheduling.description", "Tối ưu hóa lịch sản xuất với thuật toán Priority/EDF/FIFO")}
             </p>
@@ -305,27 +309,31 @@ export default function ProductionScheduling() {
                 )}
               </div>
               <div className="flex flex-col items-end gap-1">
-                <Button
-                  size="lg"
-                  onClick={handleOptimize}
-                  disabled={optimizeMutation.isPending}
-                  className="min-w-[160px]"
-                >
-                  <Play className="h-4 w-4 mr-2" />
-                  {optimizeMutation.isPending
-                    ? t("scheduling.optimizing", "Đang tối ưu...")
-                    : t("scheduling.optimize", "Tối ưu lịch")}
-                </Button>
-                <div className="flex gap-2">
+                <PermissionGate module="production_orders" action="canEdit">
                   <Button
-                    variant="secondary"
-                    onClick={handleGenerateRun}
-                    disabled={generateRunMutation.isPending}
+                    size="lg"
+                    onClick={handleOptimize}
+                    disabled={optimizeMutation.isPending}
+                    className="min-w-[160px]"
                   >
-                    {generateRunMutation.isPending
-                      ? t("scheduling.generating", "Đang tạo...")
-                      : t("scheduling.autoScheduleRun", "Auto-schedule (run)")}
+                    <Play className="h-4 w-4 mr-2" />
+                    {optimizeMutation.isPending
+                      ? t("scheduling.optimizing", "Đang tối ưu...")
+                      : t("scheduling.optimize", "Tối ưu lịch")}
                   </Button>
+                </PermissionGate>
+                <div className="flex gap-2">
+                  <PermissionGate module="production_orders" action="canEdit">
+                    <Button
+                      variant="secondary"
+                      onClick={handleGenerateRun}
+                      disabled={generateRunMutation.isPending}
+                    >
+                      {generateRunMutation.isPending
+                        ? t("scheduling.generating", "Đang tạo...")
+                        : t("scheduling.autoScheduleRun", "Auto-schedule (run)")}
+                    </Button>
+                  </PermissionGate>
                   <Button
                     variant="outline"
                     onClick={handleWhatIf}
@@ -335,14 +343,16 @@ export default function ProductionScheduling() {
                   </Button>
                 </div>
                 {scheduleRun?.runId && (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => (applyRunMutation as any).mutate({ runId: scheduleRun.runId })}
-                    disabled={applyRunMutation.isPending}
-                  >
-                    {t("scheduling.applyRun", "Áp dụng run #{{id}}", { id: scheduleRun.runId })}
-                  </Button>
+                  <PermissionGate module="production_orders" action="canEdit">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => (applyRunMutation as any).mutate({ runId: scheduleRun.runId })}
+                      disabled={applyRunMutation.isPending}
+                    >
+                      {t("scheduling.applyRun", "Áp dụng run #{{id}}", { id: scheduleRun.runId })}
+                    </Button>
+                  </PermissionGate>
                 )}
                 {lastOptimizedAt && lastOptimizedAlgo && (
                   <div className="text-xs text-muted-foreground">
@@ -448,6 +458,7 @@ export default function ProductionScheduling() {
                           <TableCell>{new Date(s.suggestedEndDate).toLocaleString(getActiveLocale())}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{s.reason}</TableCell>
                           <TableCell className="text-right">
+                            <PermissionGate module="production_orders" action="canEdit">
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button
@@ -489,6 +500,7 @@ export default function ProductionScheduling() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            </PermissionGate>
                           </TableCell>
                         </TableRow>
                       ))}

@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
+import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
+import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
   Search, Download, Star, Eye, Upload, Grid3X3, LayoutDashboard,
@@ -45,7 +47,7 @@ interface DashboardTemplate {
   category: string;
   author: string;
   authorId: number;
-  rating: number;
+  rating: number | null;
   reviewCount: number;
   downloadCount: number;
   widgets: string[];
@@ -56,6 +58,20 @@ interface DashboardTemplate {
 }
 
 export default function DashboardMarketplace() {
+  return (
+    <DashboardLayout>
+      <DashboardMarketplaceContent />
+    </DashboardLayout>
+  );
+}
+
+/**
+ * Layout-less marketplace body. Used directly by the DashboardMarketplace page
+ * (wrapped in DashboardLayout) and embedded inside DashboardCenter's
+ * "marketplace" tab (which already provides the layout). This replaces the old
+ * mock EmbeddedDashboardMarketplace so there is a single, real marketplace.
+ */
+export function DashboardMarketplaceContent() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -68,11 +84,35 @@ export default function DashboardMarketplace() {
     category: 'custom',
   });
 
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: rawTemplates, isLoading, error } = trpc.dashboardWidget.getSharedTemplates.useQuery();
+
+  // Persist the downloaded template as a real user custom dashboard so it shows
+  // up on the main Dashboard "custom" tab and /custom-dashboard.
+  const createDashboardMutation = trpc.dashboardWidget.createCustomDashboard.useMutation();
+
   const applyMutation = trpc.dashboardWidget.applySharedTemplate.useMutation({
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       const tpl = templates.find(t => t.id === variables.id);
-      toast.success(t('dashboard.templateDownloadSuccess', { name: tpl?.name ?? '' }));
+      try {
+        await createDashboardMutation.mutateAsync({
+          name: tpl?.name ?? t('dashboard.customDashboard'),
+          description: tpl?.description || undefined,
+          widgets: templateToCustomDashboardWidgets({ widgets: tpl?.widgets ?? [] }),
+          gridCols: 4,
+          isPublic: false,
+        });
+        utils.dashboardWidget.listCustomDashboards.invalidate();
+      } catch {
+        // Usage count already incremented; surface a soft error below.
+      }
+      toast.success(t('dashboard.templateDownloadSuccess', { name: tpl?.name ?? '' }), {
+        action: {
+          label: t('common.view'),
+          onClick: () => setLocation('/custom-dashboard'),
+        },
+      });
       setSelectedTemplate(null);
     },
     onError: (err) => {
@@ -88,7 +128,7 @@ export default function DashboardMarketplace() {
       category: 'general',
       author: 'System',
       authorId: t.createdBy,
-      rating: 4.5,
+      rating: null, // Chưa có nguồn dữ liệu rating (review system chưa triển khai) — không bịa số
       reviewCount: 0,
       downloadCount: t.usageCount ?? 0,
       widgets: Array.isArray(t.widgets) ? t.widgets : [],
@@ -111,7 +151,7 @@ export default function DashboardMarketplace() {
       case 'popular':
         return b.downloadCount - a.downloadCount;
       case 'rating':
-        return b.rating - a.rating;
+        return (b.rating ?? 0) - (a.rating ?? 0);
       case 'newest':
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       default:
@@ -135,7 +175,11 @@ export default function DashboardMarketplace() {
     setPublishForm({ name: '', description: '', category: 'custom' });
   };
 
-  const renderStars = (rating: number) => {
+  const renderStars = (rating: number | null) => {
+    // Không bịa rating: khi chưa có nguồn dữ liệu đánh giá, hiển thị trạng thái trung thực
+    if (rating == null) {
+      return <span className="text-xs text-muted-foreground">{t('dashboard.noRating')}</span>;
+    }
     return (
       <div className="flex items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
@@ -150,8 +194,7 @@ export default function DashboardMarketplace() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -346,10 +389,20 @@ export default function DashboardMarketplace() {
                   <div className="grid grid-cols-3 gap-4">
                     <Card className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1 mb-1">
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-bold">{selectedTemplate.rating}</span>
+                        {selectedTemplate.rating == null ? (
+                          <span className="font-bold text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                            <span className="font-bold">{selectedTemplate.rating.toFixed(1)}</span>
+                          </>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">{selectedTemplate.reviewCount} {t('dashboard.reviews')}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedTemplate.rating == null
+                          ? t('dashboard.noRating')
+                          : `${selectedTemplate.reviewCount} ${t('dashboard.reviews')}`}
+                      </p>
                     </Card>
                     <Card className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1 mb-1">
@@ -459,7 +512,6 @@ export default function DashboardMarketplace() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }

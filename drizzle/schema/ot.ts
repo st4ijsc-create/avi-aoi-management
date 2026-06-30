@@ -5,8 +5,8 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, unique, primaryKey } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `primaryKey` for hypertable composite PK
-import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum } from "./enums";
+import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
+import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
 
 /**
  * Device Adapters — một kết nối OT đã cấu hình (protocol + endpoint) tới PLC/SCADA/thiết bị.
@@ -63,27 +63,49 @@ export type DeviceTag = typeof deviceTags.$inferSelect;
 export type InsertDeviceTag = typeof deviceTags.$inferInsert;
 
 /**
- * OT Telemetry — chuỗi thời gian các giá trị tag đã ingest.
- * Số → valueNumeric; bool/string/json → valueText (xem ingest.mapSampleToRow).
+ * OT Telemetry — THE single canonical telemetry sample store (doc 12 §5 / P2).
+ *
+ * Every device protocol (MQTT / OPC-UA / Modbus / S7 / EtherNet-IP / MTConnect /
+ * Sparkplug) AND the inspection pipeline write their normalized samples into THIS
+ * one table — no more per-protocol silos. One row = one (ts, machine/device,
+ * metric) observation. Numeric → numValue (double precision); bool → boolValue;
+ * string/json → textValue. `meta` carries the raw payload / extra fields.
+ *
+ * TIMESCALE-READY (not yet a hypertable): this is a plain table today. The
+ * DEFERRED migration drizzle/0133_*.sql converts it to a TimescaleDB hypertable
+ * on `ts` + continuous aggregates + compression/retention, to be applied by an
+ * operator ONCE the timescaledb extension is installed. We deliberately do NOT
+ * use native declarative partitioning (it would conflict with hypertable
+ * conversion). `id` is a plain bigserial PK now; 0133 widens the PK to (id, ts)
+ * so the hypertable partition key is part of the primary key.
  */
 export const otTelemetry = pgTable("ot_telemetry", {
-  // Composite PK (id, timestamp) — required for the TimescaleDB hypertable
-  // (see drizzle/0118_timescale_hypertables.sql). `id` keeps its serial default.
-  id: serial("id"),
-  adapterId: integer("adapterId").notNull(),
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  // Event time (source/device timestamp) — the hypertable partition column.
+  ts: timestamp("ts", { withTimezone: true }).notNull(),
+  // Soft ref to machines.id (nullable for not-yet-mapped devices). No FK so a
+  // high-volume insert path is never blocked by referential checks.
   machineId: integer("machineId"),
-  tagKey: varchar("tagKey", { length: 128 }).notNull(),
-  valueNumeric: decimal("valueNumeric", { precision: 18, scale: 6 }),
-  valueText: varchar("valueText", { length: 500 }),
-  quality: varchar("quality", { length: 16 }).default("good").notNull(),
-  timestamp: timestamp("timestamp").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // External/source device identifier (broker client id, OPC node, etc.).
+  deviceId: text("deviceId"),
+  protocol: telemetryProtocolEnum("protocol").notNull(),
+  // Normalized tag/metric name (e.g. "temperature", "spindle_speed").
+  metric: text("metric").notNull(),
+  // Exactly one of numValue / textValue / boolValue is typically set per row.
+  numValue: doublePrecision("numValue"),
+  textValue: text("textValue"),
+  boolValue: boolean("boolValue"),
+  unit: text("unit"),
+  quality: telemetryQualityEnum("quality").default("good").notNull(),
+  // Raw payload / extra fields that don't map to a typed column.
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  // Server receive time (vs `ts` = source event time) — defaults to now().
+  ingestedAt: timestamp("ingestedAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.id, table.timestamp] }),
-  index("idx_ot_telemetry_adapter").on(table.adapterId),
-  index("idx_ot_telemetry_machine").on(table.machineId),
-  index("idx_ot_telemetry_tag_time").on(table.tagKey, table.timestamp),
-  index("idx_ot_telemetry_timestamp").on(table.timestamp),
+  // High-volume read patterns: latest-per-machine, per-metric series, per-protocol.
+  index("idx_ot_telemetry_machine_ts").on(table.machineId, table.ts.desc()),
+  index("idx_ot_telemetry_metric_ts").on(table.metric, table.ts.desc()),
+  index("idx_ot_telemetry_protocol_ts").on(table.protocol, table.ts.desc()),
 ]);
 
 export type OtTelemetry = typeof otTelemetry.$inferSelect;

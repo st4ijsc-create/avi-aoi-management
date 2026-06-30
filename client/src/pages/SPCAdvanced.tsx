@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
-import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1179,13 +1178,5 @@ function DistributionBar({
         </span>
       </div>
     </div>
-  );
-}
-
-export default function SPCAdvanced() {
-  return (
-    <DashboardLayout>
-      <SPCAdvancedContent />
-    </DashboardLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import * as db from "../db";
@@ -1327,15 +1327,21 @@ export const defectCatalogRouter = router({
       return db.getDefectCatalogById(input.id);
     }),
 
-  create: adminProcedure
+  create: qualityProcedure
     .input(z.object({
       code: z.string().min(1).max(50),
       name: z.string().min(1).max(255),
       category: z.string().min(1).max(80),
       severity: z.enum(["critical", "major", "minor", "cosmetic"]),
       ipcReference: z.string().max(50).optional(),
+      ipcSection: z.string().max(20).optional(),
       acceptanceClass: z.enum(["1", "2", "3"]).optional(),
+      appliesTo: z.array(z.string()).optional(),
+      detectableBy: z.array(z.string()).optional(),
+      classRules: z.any().optional(),
       description: z.string().optional(),
+      nameVi: z.string().max(255).optional(),
+      descriptionVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
@@ -1355,7 +1361,7 @@ export const defectCatalogRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: qualityProcedure
     .input(z.object({
       id: z.number().int().positive(),
       code: z.string().min(1).max(50).optional(),
@@ -1363,8 +1369,14 @@ export const defectCatalogRouter = router({
       category: z.string().min(1).max(80).optional(),
       severity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
       ipcReference: z.string().max(50).optional(),
+      ipcSection: z.string().max(20).optional(),
       acceptanceClass: z.enum(["1", "2", "3"]).optional(),
+      appliesTo: z.array(z.string()).optional(),
+      detectableBy: z.array(z.string()).optional(),
+      classRules: z.any().optional(),
       description: z.string().optional(),
+      nameVi: z.string().max(255).optional(),
+      descriptionVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
@@ -1386,7 +1398,7 @@ export const defectCatalogRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: qualityProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       await db.softDeleteDefectCatalog(input.id);

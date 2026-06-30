@@ -54,6 +54,16 @@ type ChartType = 'xbar_r' | 'xbar_s' | 'individual_mr';
 
 export default function SPCAnalysis() {
   const { t } = useTranslation();
+  return (
+    <DashboardLayout title={t('spc.spcAnalysisTitle')}>
+      <SPCAnalysisContent />
+    </DashboardLayout>
+  );
+}
+
+// Embeddable content (no DashboardLayout) — reused by QualityCockpit's SPC tab.
+export function SPCAnalysisContent() {
+  const { t } = useTranslation();
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [selectedMP, setSelectedMP] = useState<string>("");
   const [selectedMachine, setSelectedMachine] = useState<string>("all");
@@ -249,7 +259,6 @@ export default function SPCAnalysis() {
   }, [chart]);
 
   return (
-    <DashboardLayout title={t('spc.spcAnalysisTitle')}>
       <div className="space-y-4">
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -639,7 +648,6 @@ export default function SPCAnalysis() {
           </>
         )}
       </div>
-    </DashboardLayout>
   );
 }
 

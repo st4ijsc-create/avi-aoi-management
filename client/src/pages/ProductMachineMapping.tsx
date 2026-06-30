@@ -20,6 +20,7 @@ import {
   XCircle
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { useState } from "react";
 
 export default function ProductMachineMapping() {
@@ -83,18 +84,23 @@ export default function ProductMachineMapping() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{t('products.assignProductToMachine')}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{t('products.assignProductToMachine')}</h1>
+              <ViewOnlyBadge module="settings_product_mapping" />
+            </div>
             <p className="text-muted-foreground">
               {t('products.assignDescription')}
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <PermissionGate module="settings_product_mapping" action="canCreate">
             <DialogTrigger asChild>
               <Button className="gap-2" disabled={!isAdmin}>
                 <Plus className="h-4 w-4" />
                 {t('products.addNewMapping')}
               </Button>
             </DialogTrigger>
+            </PermissionGate>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('products.assignProductToMachine')}</DialogTitle>
@@ -192,13 +198,14 @@ export default function ProductMachineMapping() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
+                              <PermissionGate module="settings_product_mapping" action="canEdit">
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                onClick={() => toggleActiveMutation.mutate({ 
-                                  id: mapping.id, 
-                                  isActive: !mapping.isActive 
+                                onClick={() => toggleActiveMutation.mutate({
+                                  id: mapping.id,
+                                  isActive: !mapping.isActive
                                 } as any)}
                                 disabled={!isAdmin}
                               >
@@ -208,7 +215,9 @@ export default function ProductMachineMapping() {
                                   <XCircle className="h-4 w-4 text-muted-foreground" />
                                 )}
                               </Button>
+                              </PermissionGate>
                               <AlertDialog>
+                                <PermissionGate module="settings_product_mapping" action="canDelete">
                                 <AlertDialogTrigger asChild>
                                   <Button
                                     variant="ghost"
@@ -219,6 +228,7 @@ export default function ProductMachineMapping() {
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </AlertDialogTrigger>
+                                </PermissionGate>
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>{t('products.confirmDeleteTitle')}</AlertDialogTitle>
@@ -245,9 +255,10 @@ export default function ProductMachineMapping() {
                       <p className="text-sm text-muted-foreground">
                         {t('products.noProductsAssigned')}
                       </p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <PermissionGate module="settings_product_mapping" action="canCreate">
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="mt-3 gap-2"
                         onClick={() => {
                           setSelectedMachineId(String(machine.id));
@@ -258,6 +269,7 @@ export default function ProductMachineMapping() {
                         <Link className="h-4 w-4" />
                         {t('products.assignProduct')}
                       </Button>
+                      </PermissionGate>
                     </div>
                   )}
                 </CardContent>

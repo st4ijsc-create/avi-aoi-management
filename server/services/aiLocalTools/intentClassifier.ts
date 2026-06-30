@@ -383,6 +383,131 @@ function extractArgsForTool(
       const metric = /\b(throughput|sản\s*lượng|năng\s*suất)\b/i.test(question) ? "throughput" : "yield";
       return { metric, days, horizon: 7, algorithm: "ewma" };
     }
+    // ─── Phase P2 (group A) — high-priority READ tools ────────────────────────
+    case "list_work_orders": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { limit: 10 };
+      if (/\b(đang\s*mở|chưa\s*xong|open)\b/i.test(question)) args.status = "open";
+      else if (/\b(đang\s*làm|in\s*progress|đang\s*xử\s*lý)\b/i.test(question)) args.status = "in_progress";
+      else if (/\b(đã\s*xong|hoàn\s*thành|done|completed)\b/i.test(question)) args.status = "done";
+      if (code) args.machineCode = code;
+      return args;
+    }
+    case "list_active_alerts": {
+      const args: Record<string, unknown> = { limit: 10 };
+      if (/\b(chưa\s*xác\s*nhận|chưa\s*ack|unacknowledged)\b/i.test(question)) args.acknowledged = false;
+      else if (/\b(đã\s*xác\s*nhận|đã\s*ack|acknowledged)\b/i.test(question)) args.acknowledged = true;
+      const sev = question.match(/\b(LOW|MEDIUM|HIGH|CRITICAL)\b/i)?.[1];
+      if (sev) args.severity = sev.toUpperCase();
+      return args;
+    }
+    case "list_thresholds": {
+      const args: Record<string, unknown> = { limit: 15 };
+      const mp = question.match(MP_ID_REGEX);
+      if (mp) {
+        // A named/coded point — pass the raw token so the ilike filter can match.
+        args.measurementPoint = mp[1];
+      }
+      return args;
+    }
+    case "list_recipes": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { limit: 15 };
+      if (code) args.machineCode = code;
+      return args;
+    }
+    // ─── Phase P2 (groups B & C) — additional READ tools ──────────────────────
+    case "list_products": {
+      const args: Record<string, unknown> = { limit: 15 };
+      // "BOM của <code>" / "BOM cho <code>" → include that product's BOM.
+      const bom = question.match(/\bbom\s*(?:của|cho|of)?\s*([A-Z0-9][A-Z0-9._-]{1,99})\b/i);
+      const code = bom?.[1] ?? question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedProductCode;
+      if (bom && code) {
+        args.productCode = code;
+      } else {
+        // Free-text search term after "sản phẩm"/"product".
+        const s = question.match(/\b(?:sản\s*phẩm|product)\s+([A-Za-z0-9][A-Za-z0-9._-]{1,99})\b/i)?.[1];
+        if (s) args.search = s;
+        else if (context?.selectedProductCode) args.search = context.selectedProductCode;
+      }
+      return args;
+    }
+    case "get_rca_history": {
+      const args: Record<string, unknown> = { limit: 10 };
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      if (code) args.machineCode = code;
+      // "nguyên nhân lỗi <X>" / "root cause of <X>" → defectType.
+      const dt = question.match(/\b(?:nguyên\s*nhân\s*lỗi|lỗi|defect|root\s*cause\s*(?:of|cho)?)\s+([A-Za-z0-9][A-Za-z0-9_-]{1,119})\b/i)?.[1];
+      if (dt && !args.machineCode) args.defectType = dt;
+      return args;
+    }
+    case "list_users_by_role": {
+      const args: Record<string, unknown> = { limit: 20 };
+      const role = question.match(/\b(admin|supervisor|operator|maintenance|viewer|manager|user|quality|engineer)\b/i)?.[1];
+      if (role) args.role = role.toLowerCase();
+      const factory = question.match(/\b(?:nhà\s*máy|factory)\s+([A-Za-z0-9][A-Za-z0-9_-]{1,49})\b/i)?.[1];
+      if (factory) args.factoryCode = factory;
+      return args;
+    }
+    case "list_api_keys": {
+      const args: Record<string, unknown> = { limit: 20 };
+      if (/\b(còn\s*hiệu\s*lực|đang\s*hoạt\s*động|active)\b/i.test(question)) args.active = true;
+      else if (/\b(thu\s*hồi|hết\s*hạn|revoked|inactive|vô\s*hiệu)\b/i.test(question)) args.active = false;
+      return args;
+    }
+    case "get_change_history": {
+      const args: Record<string, unknown> = { limit: 15 };
+      const m = question.match(DAYS_REGEX);
+      if (m) args.sinceDays = Math.max(1, Math.min(365, parseInt(m[1]!, 10)));
+      const et = question.match(/\b(?:đối\s*tượng|entity|loại)\s+([A-Za-z][A-Za-z_]{1,99})\b/i)?.[1];
+      if (et) args.entityType = et.toLowerCase();
+      return args;
+    }
+    case "get_machine_health": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { limit: 15 };
+      if (code) args.machineCode = code;
+      return args;
+    }
+    // ─── Phase P2 (group D) — anomalies, genealogy, energy, routing ───────────
+    case "list_anomalies": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { limit: 15 };
+      if (code) args.machineCode = code;
+      const sev = question.match(/\b(LOW|MEDIUM|HIGH|CRITICAL)\b/i)?.[1];
+      if (sev) args.severity = sev.toUpperCase();
+      return args;
+    }
+    case "trace_genealogy": {
+      const args: Record<string, unknown> = { limit: 20 };
+      const serial = question.match(SERIAL_REGEX)?.[1] ?? context?.selectedLot;
+      // "lô <code>" / "lot <code>" → lotId (use the ORDER_CODE regex family).
+      const lot =
+        question.match(/\b(?:lô|lot)\s*[:#-]?\s*([A-Z0-9][A-Z0-9_-]{2,79})\b/i)?.[1];
+      if (serial && /\b(?:serial|sn|s\/n)\b/i.test(question)) args.serialNumber = serial;
+      else if (lot) args.lotId = lot;
+      else if (serial) args.serialNumber = serial;
+      return args;
+    }
+    case "get_energy_metrics": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const m = question.match(DAYS_REGEX);
+      const sinceDays = m ? Math.max(1, Math.min(365, parseInt(m[1]!, 10))) : 7;
+      const args: Record<string, unknown> = { sinceDays, limit: 20 };
+      if (code) args.machineCode = code;
+      return args;
+    }
+    case "get_routing": {
+      const args: Record<string, unknown> = { limit: 20 };
+      const lineCode = question.match(LINE_CODE_REGEX)?.[1];
+      if (lineCode) args.lineCode = lineCode;
+      // "quy trình của <product>" / "routing of <product>" → productCode.
+      const prod =
+        question.match(/\b(?:sản\s*phẩm|product)\s+([A-Za-z0-9][A-Za-z0-9._-]{1,99})\b/i)?.[1] ??
+        context?.selectedProductCode;
+      if (!lineCode && prod) args.productCode = prod;
+      return args;
+    }
     case "get_today_stats":
     default:
       return {};

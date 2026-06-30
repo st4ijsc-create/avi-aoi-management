@@ -1,77 +1,82 @@
 /**
- * Sprint F1.1 — Ingest một OtSample vào `ot_telemetry` (và tuỳ chọn phát sang UNS).
+ * Sprint F1.1 / P2 — Ingest an OtSample through the UNIFIED TELEMETRY BUS.
  *
- * `mapSampleToRow` là hàm thuần (test được không cần DB): số → valueNumeric;
- * bool/string/json → valueText. `ingestSample` ghi DB qua lazy getDb(); nếu
- * OT_INGEST_TO_UNS==="true" && isUnsBridgeEnabled() thì publishNormalized (TÁI DÙNG
- * publisher hiện có, KHÔNG viết publisher mới) — bọc try/catch RIÊNG để lỗi UNS
- * không làm hỏng đường ghi telemetry.
+ * `sampleToCanonical` is a pure mapper (testable without DB): it turns an OtSample
+ * + its adapter into a protocol-agnostic `CanonicalSample` (OT protocol → canonical
+ * telemetryProtocolEnum; tagKey → metric; value is split into typed columns by the
+ * bus). `ingestSample` funnels that ONE sample into `ingestTelemetry()` — the single
+ * normalize → resolve machineId → bulk-insert(ot_telemetry) → broadcast(`telemetry:sample`)
+ * path shared by EVERY protocol — and additionally (optionally) republishes to UNS.
+ *
+ * The UNS bridge republish (OT_INGEST_TO_UNS) is UNCHANGED and wrapped in its own
+ * try/catch so a UNS error never breaks the canonical telemetry write.
  */
-import type { OtSample } from "./otDriver";
+import type { OtSample, OtProtocol } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
-import type { InsertOtTelemetry } from "../../../drizzle/schema";
+import { ingestTelemetry, type CanonicalSample, type TelemetryProtocol } from "../telemetryBus";
 
 /**
- * Map một sample sang hàng telemetry. Thuần, không I/O.
+ * Map an OT driver protocol → the canonical telemetryProtocolEnum value.
+ * 'mitsubishi-mc' and 'stub' have no dedicated enum member → 'other'.
+ * 'ethernet-ip' (driver) → 'ethernet_ip' (enum).
  */
-export function mapSampleToRow(
-  adapterId: number,
-  machineId: number | null,
-  sample: OtSample,
-): InsertOtTelemetry {
-  const row: InsertOtTelemetry = {
-    adapterId,
-    machineId: machineId ?? undefined,
-    tagKey: sample.tagKey,
-    valueNumeric: null,
-    valueText: null,
-    quality: sample.quality,
-    timestamp: sample.timestamp,
-  };
-
-  const v = sample.value;
-  if (typeof v === "number" && Number.isFinite(v)) {
-    row.valueNumeric = String(v);
-  } else if (typeof v === "boolean") {
-    row.valueText = v ? "true" : "false";
-  } else if (typeof v === "string") {
-    row.valueText = v.length > 500 ? v.slice(0, 500) : v;
-  } else if (v != null) {
-    // fallback cho json/object
-    const s = JSON.stringify(v);
-    row.valueText = s.length > 500 ? s.slice(0, 500) : s;
+export function otProtocolToCanonical(p: OtProtocol): TelemetryProtocol {
+  switch (p) {
+    case "opcua":
+      return "opcua";
+    case "modbus":
+      return "modbus";
+    case "s7":
+      return "s7";
+    case "ethernet-ip":
+      return "ethernet_ip";
+    case "mitsubishi-mc":
+    case "stub":
+    default:
+      return "other";
   }
-
-  return row;
 }
 
-/** UNS topic giả lập theo adapter/tag để tái dùng normalize → publishNormalized. */
+/**
+ * Pure: an OtSample (+ its adapter) → a CanonicalSample. No I/O.
+ * deviceId = adapter.code (lets the bus resolve machineId when adapter.machineId
+ * is null); machineId is passed straight through when the adapter already has it.
+ */
+export function sampleToCanonical(adapter: RuntimeAdapter, sample: OtSample): CanonicalSample {
+  return {
+    ts: sample.timestamp,
+    machineId: adapter.machineId ?? null,
+    deviceId: adapter.code,
+    protocol: otProtocolToCanonical(adapter.protocol),
+    metric: sample.tagKey,
+    value: sample.value,
+    quality: sample.quality,
+    meta: { adapterId: adapter.adapterId, tagKey: sample.tagKey },
+  };
+}
+
+/** UNS topic for an adapter/tag (unchanged) — reused for the optional republish. */
 function unsTopicFor(adapter: RuntimeAdapter, sample: OtSample): string {
   return `avi/0/workshop/ot/station/${adapter.code}/${sample.tagKey}`;
 }
 
 /**
- * Ghi một sample vào telemetry; tuỳ chọn phát bản chuẩn hoá sang UNS.
+ * Ingest ONE OT sample: funnel through the unified telemetry bus, then optionally
+ * republish to UNS. The bus owns persistence + broadcast; this only adds UNS.
  */
 export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): Promise<void> {
-  const { getDb } = await import("../../db/connection");
-  const db = await getDb();
-  if (db) {
-    const { otTelemetry } = await import("../../../drizzle/schema");
-    const row = mapSampleToRow(adapter.adapterId, adapter.machineId, sample);
-    await db.insert(otTelemetry).values(row);
-  }
+  // 1) Canonical path — ONE bus for every protocol (persist + broadcast).
+  await ingestTelemetry([sampleToCanonical(adapter, sample)]);
 
+  // 2) Optional UNS republish (UNCHANGED behaviour). Isolated so it can't break (1).
   if (process.env.OT_INGEST_TO_UNS === "true") {
     try {
       const { isUnsBridgeEnabled } = await import("../unsBridge");
       if (isUnsBridgeEnabled()) {
         if (process.env.UNS_SPARKPLUG_ENABLED === "true") {
-          // F3a — chiều Sparkplug-B: phát DDATA (lazy DBIRTH trong publisher).
-          // F4 HITL: chỉ PUBLISH telemetry — KHÔNG nhận/execute NCMD/DCMD.
+          // F3a — Sparkplug-B DDATA (lazy DBIRTH in publisher). PUBLISH only.
           const { publishSparkplugDData } = await import("../unsPublisher");
           const { otTypeToSparkplug } = await import("../uns/sparkplugEncoder");
-          // Suy kiểu Sparkplug: ưu tiên dataType của tag; nếu không có thì từ typeof value.
           const tagDef = adapter.tags.find((t) => t.tagKey === sample.tagKey);
           const type = tagDef
             ? otTypeToSparkplug(tagDef.dataType)
@@ -89,7 +94,7 @@ export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): P
             },
           ]);
         } else {
-          // Đường JSON cũ (backward-compat) — giữ nguyên.
+          // Legacy JSON path (backward-compat) — unchanged.
           const { publishNormalized } = await import("../unsPublisher");
           publishNormalized(unsTopicFor(adapter, sample), {
             adapterId: adapter.adapterId,

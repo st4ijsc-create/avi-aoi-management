@@ -11,10 +11,12 @@
  * (collapse). Optional-chains everything; never assumes a payload shape.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { getSharedSocket } from "@/lib/socketManager";
+import { RealtimeBadge, useSocketConnected } from "@/components/RealtimeBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -217,10 +219,30 @@ export function TodayBriefing({ className }: { className?: string }) {
   const [dismissed, setDismissed] = useState(false);
 
   const lang = (i18n.language?.slice(0, 2) as "vi" | "en" | "zh") ?? "vi";
+  const connected = useSocketConnected();
   const query = trpc.aiToday.get.useQuery(
     { lang },
     { refetchOnWindowFocus: false, retry: false, staleTime: 60_000 },
   );
+
+  // Realtime: the briefing summarizes today's state — refresh it when a relevant
+  // shop-floor event lands so the headline never goes stale on screen.
+  useEffect(() => {
+    const socket = getSharedSocket();
+    const refresh = () => void query.refetch();
+    const events = [
+      "andon:event",
+      "inspection:alert",
+      "ng:alert",
+      "yield:warning",
+      "machine:status_change",
+    ];
+    events.forEach((e) => socket.on(e, refresh));
+    return () => {
+      events.forEach((e) => socket.off(e, refresh));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (dismissed) return null;
 
@@ -277,6 +299,7 @@ export function TodayBriefing({ className }: { className?: string }) {
                 {t(`today.severity.${sev}`)}
               </Badge>
             )}
+            <RealtimeBadge connected={connected} pollingFallback={false} className="ml-1" />
           </div>
           <h2 className="mt-0.5 text-lg font-semibold leading-snug text-foreground break-words">
             {briefing?.headline ?? t("today.empty")}

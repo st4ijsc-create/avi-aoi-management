@@ -129,15 +129,16 @@ describe("mapReadings — routes readings to the right sink shape", () => {
   const readings = parseStreamsXml(CURRENT_XML);
   const { telemetry, events } = mapReadings(readings, { adapterId: 7, machineId: 42, machineCode: "M1" });
 
-  it("numeric SAMPLE → ot_telemetry row", () => {
+  it("numeric SAMPLE → CanonicalSample (protocol 'mtconnect')", () => {
     expect(telemetry.length).toBe(1); // only Xact is numeric SAMPLE
     const row = telemetry[0];
-    expect(row.adapterId).toBe(7);
+    expect(row.protocol).toBe("mtconnect");
     expect(row.machineId).toBe(42);
-    expect(row.tagKey).toBe("Xabs");
-    expect(row.valueNumeric).toBe("123.456");
-    expect(row.valueText).toBeNull();
+    expect(row.deviceId).toBe("M1");
+    expect(row.metric).toBe("Xabs");
+    expect(row.value).toBe(123.456);
     expect(row.quality).toBe("good");
+    expect((row.meta as any).adapterId).toBe(7);
   });
 
   it("EVENT + CONDITION + UNAVAILABLE sample → process_results rows", () => {

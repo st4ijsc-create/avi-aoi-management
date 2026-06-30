@@ -1,4 +1,4 @@
-﻿import { protectedProcedure, router } from "../_core/trpc";
+﻿import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
@@ -59,7 +59,7 @@ export const inspectionRouter = router({
       return { inspection, measurements, machine };
     }),
 
-  confirmNTF: protectedProcedure
+  confirmNTF: qualityProcedure
     .input(z.object({
       id: z.number(),
       reason: z.string().min(1),
@@ -576,7 +576,7 @@ Respond in JSON format:
       return { success: true, count: input.ids.length };
     }),
 
-  correctResult: protectedProcedure
+  correctResult: qualityProcedure
     .input(z.object({
       id: z.number(),
       result: z.enum(["OK", "NG", "NTF"]),
@@ -617,6 +617,66 @@ Respond in JSON format:
       }).where(eq(productInspections.id, result.inspectionId));
 
       return { success: true, newOverallResult: overallResult };
+    }),
+
+  // Classify an NG measurement result with an IPC-A-610 defect code.
+  // Sets measurement_results.defectCatalogId (+ denormalised severity) — the
+  // canonical NG→defect-code link, shared by BOTH ingest paths (direct API and
+  // AOI ZIP package) since both write into measurement_results.
+  // Pass defectCatalogId=null to clear an existing classification.
+  classifyDefect: qualityProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      defectCatalogId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { measurementResults } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      const result = await db.getMeasurementResultById(input.id);
+      if (!result) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+      }
+
+      // Only NG (or NTF) results should carry a defect classification.
+      if (input.defectCatalogId !== null && result.result === "OK") {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be classified with a defect code' });
+      }
+
+      // Resolve & validate the catalog entry; pull severity to denormalise.
+      let defectSeverity: string | null = null;
+      let defectCode: string | undefined;
+      if (input.defectCatalogId !== null) {
+        const entry = await db.getDefectCatalogById(input.defectCatalogId);
+        if (!entry) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Defect catalog code not found' });
+        }
+        defectSeverity = entry.severity ?? null;
+        defectCode = entry.code;
+      }
+
+      await dbInstance.update(measurementResults).set({
+        defectCatalogId: input.defectCatalogId,
+        defectSeverity,
+      }).where(eq(measurementResults.id, input.id));
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: input.defectCatalogId === null ? "measurementResult.clearDefect" : "measurementResult.classifyDefect",
+        entityType: "inspection",
+        entityId: input.id,
+        entityName: defectCode,
+        details: { defectCatalogId: input.defectCatalogId, defectSeverity, inspectionId: result.inspectionId },
+        status: "success",
+      });
+
+      return { success: true, defectCatalogId: input.defectCatalogId, defectSeverity };
     }),
 
   // Measurement point statistics by product with date range

@@ -1,0 +1,25 @@
+-- ============================================================================
+-- 0133 — DEPRECATED / NO-OP. (doc 12 §5 / P2 — corrected in ecosystem-redesign-p0)
+--
+-- This migration ORIGINALLY tried to `CREATE EXTENSION timescaledb` and convert
+-- ot_telemetry into a hypertable IN THE MAIN application DB. That is WRONG for
+-- this project's DUAL-DB architecture: the main DB runs the pgvector PG image,
+-- which cannot host the timescaledb extension.
+--
+-- The ot_telemetry hypertable now lives in the DEDICATED TimescaleDB
+-- (container avi-aoi-management-timescaledb-1, db avi_aoi_ts), mirroring
+-- energy_readings. See:  drizzle/timescale/0003_ot_telemetry_hypertable.sql
+--   (apply with: docker exec -i avi-aoi-management-timescaledb-1 psql -U tsdb
+--                  -d avi_aoi_ts < drizzle/timescale/0003_ot_telemetry_hypertable.sql)
+--
+-- Telemetry now routes through the TSDB connection (server/db/timescale.ts:
+-- insertOtTelemetryRows / queryOtTelemetryLatest / queryOtTelemetrySeries) with
+-- graceful fallback to the plain main-DB ot_telemetry table (from 0132) when TSDB
+-- is disabled/degraded.
+--
+-- DO NOT run this against the main DB. It is intentionally a no-op so the standard
+-- `drizzle migrate` pipeline applies it harmlessly. The main DB keeps the plain
+-- ot_telemetry table from 0132 as the fallback store — no hypertable, no extension.
+-- ============================================================================
+
+SELECT 1; -- intentional no-op

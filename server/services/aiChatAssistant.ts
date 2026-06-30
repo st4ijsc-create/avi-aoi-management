@@ -7,6 +7,24 @@
  * WS-G3: cloud LLM removed. Order = local GGUF (primary) → keyword offline
  * fallback. The GGUF path performs JSON-based tool selection (intent) then
  * narrates the tool results locally.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * ⚠️ DEPRECATED BACKEND — P1 (doc 11), 2026-06-29.
+ *
+ * `processChat` is the INFERIOR chat backend: 6 hard-coded SQL tools, NO RAG /
+ * knowledge-base retrieval. It is NO LONGER wired into production. The canonical
+ * path is now `aiLocalKnowledgeService` (RAG + tool registry), reached via:
+ *   • streaming → POST /api/ai/local-kb/stream (streamAnswer)
+ *   • non-stream → aiChatRouter.chat → answerQuestion()  ← was processChat
+ *
+ * `processChat` is retained ONLY because aiChatAssistant.ws-g3.test.ts pins its
+ * GGUF-ordering/offline behavior. The only LIVE export consumed by app code is
+ * `getAvailableTools` (UI tool-count footer on /ai-chat).
+ *
+ * WAVE 2 cleanup: once the UI tool footer is sourced from the aiLocalTools
+ * registry, delete `processChat` + its 6 tool impls + the ws-g3 test, and reduce
+ * this file to `getAvailableTools` (or drop it entirely). See report.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { getDb } from "../db/connection";
@@ -35,6 +53,8 @@ export interface ChatRequest {
   language?: "en" | "vi";
   /** Restrict functions available (e.g. limit to read-only) */
   allowedTools?: string[];
+  /** Caller user id — used by the AI Gateway for per-user rate-limit + metrics. */
+  userId?: number;
 }
 
 export interface ChatResponse {
@@ -157,6 +177,10 @@ const TOOLS: ChatTool[] = [
  * Process a user chat message with function calling.
  * The LLM decides which tools to call, we execute them,
  * and feed results back to get a final natural language response.
+ *
+ * @deprecated P1 (doc 11) — NO-RAG backend, no longer wired into production.
+ * Use `answerQuestion`/`streamAnswer` from aiLocalKnowledgeService instead.
+ * Kept only for the ws-g3 test; slated for deletion in Wave 2.
  */
 export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   // 1. Local GGUF model (primary). Offline-first: no cloud LLM.
@@ -264,10 +288,12 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
     // Step 1: Use GGUF to classify intent and select tools.
     // Model Router (Tier 1 fast) picks the model; keep low temp for deterministic classification.
     const { chatCompletion } = await import("./aiGgufEngine");
-    const { route } = await import("./aiModelRouter");
+    const { planInference } = await import("./aiGateway");
     const selectionPrompt = buildToolSelectionPrompt();
 
-    const selRoute = route({ task: "intent", text: request.userMessage });
+    // AI Gateway: plan (route + rate-limit + A/B + meter) the intent-classification call.
+    const selPlan = planInference({ task: "intent", text: request.userMessage, userId: request.userId });
+    const selStart = Date.now();
     const selectionResult = await chatCompletion({
       messages: [
         { role: "system", content: selectionPrompt },
@@ -275,7 +301,13 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       ],
       maxTokens: 256,
       temperature: 0.1, // Low temperature for deterministic classification
-    }, selRoute.modelId);
+    }, selPlan.decision.modelId);
+    selPlan.record({
+      tokensIn: selectionResult.tokensPrompt,
+      tokensOut: selectionResult.tokensGenerated,
+      latencyMs: Date.now() - selStart,
+      outcome: "ok",
+    });
 
     const selectedTools = parseToolSelection(selectionResult.text, startDate, endDate);
 
@@ -304,7 +336,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
   // Use GGUF to generate a natural language response from the tool results
   try {
     const { chatCompletion } = await import("./aiGgufEngine");
-    const { route } = await import("./aiModelRouter");
+    const { planInference } = await import("./aiGateway");
     const systemPrompt = buildSystemPrompt(request.language ?? "vi") +
       "\nYou have access to factory inspection data. Use the provided data to answer the user's question naturally.";
 
@@ -321,12 +353,20 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       { role: "user" as const, content: request.userMessage + dataContext },
     ];
 
-    // Model Router: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned decoding.
-    const ansRoute = route({ task: "chat", text: request.userMessage });
+    // AI Gateway: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned
+    // decoding, with per-user rate-limit + A/B + token/latency metering.
+    const ansPlan = planInference({ task: "chat", text: request.userMessage, userId: request.userId });
+    const ansStart = Date.now();
     const result = await chatCompletion(
-      { messages, maxTokens: ansRoute.maxTokens, temperature: ansRoute.temperature },
-      ansRoute.modelId,
+      { messages, maxTokens: ansPlan.decision.maxTokens, temperature: ansPlan.decision.temperature },
+      ansPlan.decision.modelId,
     );
+    ansPlan.record({
+      tokensIn: result.tokensPrompt,
+      tokensOut: result.tokensGenerated,
+      latencyMs: Date.now() - ansStart,
+      outcome: "ok",
+    });
 
     const footer = isVi
       ? `\n\n_Sử dụng local LLM (GGUF) — không cần API key._`

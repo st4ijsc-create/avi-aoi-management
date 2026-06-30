@@ -18,6 +18,8 @@ import {
   createAuditContext,
   logCrudOperation,
 } from "../auditTrailService";
+import { notifyOwner } from "../../_core/notification";
+import { sendAlertEmail } from "../emailService";
 
 export type AndonState = "green" | "yellow" | "red" | "call";
 export type AndonReason = "quality" | "material" | "maintenance" | "safety" | "setup" | "other";
@@ -64,6 +66,79 @@ function emit(row: AndonEvent, phase: "raised" | "acknowledged" | "resolved" | "
     raisedAt: row.raisedAt,
     event: phase,
   });
+}
+
+// Andons that warrant out-of-band notification (not just the on-screen signal):
+// red lights and safety/call reasons. Yellow/green and routine reasons stay
+// socket-only to avoid alert fatigue.
+function andonNeedsNotification(state: AndonState, reason: AndonReason): boolean {
+  return state === "red" || state === "call" || reason === "safety";
+}
+
+/**
+ * Bug #3 fix — fan an Andon out to notification + email + webhook in addition to
+ * the realtime socket emit, but only for severities that need attention beyond
+ * the floor display. Reuses existing senders (notifyOwner / sendAlertEmail /
+ * sendWebhookEvent); every channel is best-effort and isolated so one failing
+ * transport never blocks the others or the raise itself.
+ */
+async function dispatchAndonNotifications(row: AndonEvent): Promise<void> {
+  if (!andonNeedsNotification(row.state as AndonState, row.reason as AndonReason)) {
+    return;
+  }
+
+  const scope = row.machineId != null
+    ? `machine #${row.machineId}`
+    : row.stationId != null
+      ? `station #${row.stationId}`
+      : row.lineId != null
+        ? `line #${row.lineId}`
+        : "plant";
+  const headline = `[ANDON ${String(row.state).toUpperCase()}/${row.reason}] ${row.title}`;
+  const body = `${row.message ?? row.title}\nScope: ${scope}`;
+
+  // In-app / push notification to the owner.
+  try {
+    await notifyOwner({ title: headline, content: body });
+  } catch (err) {
+    console.error("[Andon] notifyOwner failed:", (err as Error).message);
+  }
+
+  // Email (reuses the alert-email transport; ALERT_EMAIL_TO recipient).
+  try {
+    await sendAlertEmail({
+      ruleName: row.title,
+      ruleType: `andon_${row.reason}`,
+      message: body,
+      currentValue: 0,
+      thresholdValue: 0,
+    });
+  } catch (err) {
+    console.error("[Andon] sendAlertEmail failed:", (err as Error).message);
+  }
+
+  // Webhook (fire-and-forget; subscribers to alert.triggered receive it).
+  // Lazily imported so andonService doesn't statically pull the webhook/db
+  // module graph into unit tests that mock the schema.
+  try {
+    const { sendWebhookEvent } = await import("../../routers/webhookRouter");
+    await sendWebhookEvent("alert.triggered", {
+      source: "andon",
+      andonId: row.id,
+      state: row.state,
+      reason: row.reason,
+      status: row.status,
+      title: row.title,
+      message: row.message,
+      lineId: row.lineId,
+      stationId: row.stationId,
+      machineId: row.machineId,
+      raisedBySystem: row.raisedBySystem,
+      raisedAt: row.raisedAt,
+    });
+  } catch (err) {
+    console.error("[Andon] sendWebhookEvent failed:", (err as Error).message);
+  }
 }
 
 async function audit(actor: AndonActor | undefined, action: string, row: AndonEvent, extra?: Record<string, unknown>) {
@@ -119,6 +194,7 @@ export async function raiseAndon(input: RaiseAndonInput, actor?: AndonActor): Pr
         .where(eq(andonEvents.id, existing.id))
         .returning();
       emit(updated, "raised");
+      await dispatchAndonNotifications(updated);
       await audit(actor, AUDIT_ACTIONS.UPDATE, updated, { idempotentRefresh: true });
       return updated;
     }
@@ -142,6 +218,7 @@ export async function raiseAndon(input: RaiseAndonInput, actor?: AndonActor): Pr
     .returning();
 
   emit(row, "raised");
+  await dispatchAndonNotifications(row);
   await audit(actor, AUDIT_ACTIONS.CREATE, row);
   return row;
 }

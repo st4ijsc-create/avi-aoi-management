@@ -11,7 +11,6 @@ import {
   FileText,
   LayoutTemplate,
   Presentation,
-  CalendarClock,
   Brain,
   Grid3X3,
   Shield,
@@ -44,7 +43,6 @@ import { PdfReportsContent } from "@/pages/PdfReports";
 import { DataComparisonContent } from "@/pages/DataComparison";
 import { ReportBuilderContent } from "@/pages/ReportBuilder";
 import { PowerPointExportContent } from "@/pages/PowerPointExport";
-import { EnhancedScheduledReportsContent } from "@/pages/EnhancedScheduledReports";
 
 export default function AnalyticsSettings() {
   const { t } = useTranslation();
@@ -141,7 +139,6 @@ export default function AnalyticsSettings() {
                       {sidebarButton("pdf-reports", <FileText className="h-4 w-4" />, t("analyticsSettings.sidebar.pdfReports"))}
                       {sidebarButton("report-builder", <LayoutTemplate className="h-4 w-4" />, t("analyticsSettings.sidebar.reportBuilder"))}
                       {sidebarButton("powerpoint-export", <Presentation className="h-4 w-4" />, t("analyticsSettings.sidebar.powerpointExport"))}
-                      {sidebarButton("enhanced-scheduled-reports", <CalendarClock className="h-4 w-4" />, t("analyticsSettings.sidebar.enhancedScheduledReports"))}
                     </div>
                   )}
                 </div>
@@ -250,9 +247,6 @@ export default function AnalyticsSettings() {
                 </TabsContent>
                 <TabsContent value="powerpoint-export" className="mt-0">
                   <ErrorBoundary><PowerPointExportContent /></ErrorBoundary>
-                </TabsContent>
-                <TabsContent value="enhanced-scheduled-reports" className="mt-0">
-                  <ErrorBoundary><EnhancedScheduledReportsContent /></ErrorBoundary>
                 </TabsContent>
               </div>
             </div>

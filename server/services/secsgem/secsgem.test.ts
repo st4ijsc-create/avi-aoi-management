@@ -279,7 +279,7 @@ describe("GEM mappers", () => {
     expect(clearRec.set).toBe(false);
   });
 
-  it("SV poll → ot_telemetry rows using the configured tagKey", () => {
+  it("SV poll → CanonicalSample[] using the configured tagKey as metric", () => {
     const model = makeModel();
     const rows = mapStatusVariablesToTelemetry(
       [
@@ -292,9 +292,10 @@ describe("GEM mappers", () => {
       123,
     );
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ adapterId: 777, machineId: 123, tagKey: "chamber_temp", valueNumeric: "23.5" });
-    expect(rows[1]).toMatchObject({ tagKey: "running", valueText: "true" });
-    expect(rows[2]).toMatchObject({ tagKey: "SVID_99", valueText: "x" });
+    expect(rows[0]).toMatchObject({ machineId: 123, protocol: "other", metric: "chamber_temp", value: 23.5 });
+    expect((rows[0].meta as any).adapterId).toBe(777);
+    expect(rows[1]).toMatchObject({ metric: "running", value: true });
+    expect(rows[2]).toMatchObject({ metric: "SVID_99", value: "x" });
   });
 
   it("GEM state transitions update comm/control state", () => {

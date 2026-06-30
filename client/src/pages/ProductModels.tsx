@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -2078,15 +2079,20 @@ export default function ProductModels() {
         <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
-              <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
+                <ViewOnlyBadge module="settings_products" />
+              </div>
               <CardDescription>{t("products.selectToManage")}</CardDescription>
             </div>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-1">
-                  <Plus className="h-4 w-4" />
-                  {t("common.add")}
-                </Button>
+                <PermissionGate module="settings_products" action="canCreate">
+                  <Button size="sm" className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    {t("common.add")}
+                  </Button>
+                </PermissionGate>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
@@ -2395,10 +2401,12 @@ export default function ProductModels() {
                       {isBatchMode ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                       {isBatchMode ? t("products.exitMode") : t("products.selectMode")}
                     </Button>
-                    <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
-                      <Edit className="h-4 w-4" />
-                      {t("common.edit")}
-                    </Button>
+                    <PermissionGate module="settings_products" action="canEdit">
+                      <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
+                        <Edit className="h-4 w-4" />
+                        {t("common.edit")}
+                      </Button>
+                    </PermissionGate>
                   </div>
                 )}
               </div>
@@ -3269,15 +3277,17 @@ export default function ProductModels() {
                                 </span>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 shrink-0"
-                              onClick={() => deleteDocumentMutation.mutate({ id: doc.id })}
-                              disabled={deleteDocumentMutation.isPending}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                            </Button>
+                            <PermissionGate module="settings_products" action="canDelete">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 shrink-0"
+                                onClick={() => deleteDocumentMutation.mutate({ id: doc.id })}
+                                disabled={deleteDocumentMutation.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              </Button>
+                            </PermissionGate>
                           </div>
                         ))}
                       </div>
@@ -3321,14 +3331,16 @@ export default function ProductModels() {
                       {(measurementInstruments || []).slice(0, 10).map((item: any) => (
                         <div key={item.id} className="flex items-center justify-between text-xs border rounded px-2 py-1">
                           <span className="truncate mr-2">{item.code} - {item.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 text-destructive"
-                            onClick={() => deleteInstrumentMutation.mutate({ id: item.id })}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <PermissionGate module="settings_products" action="canDelete">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-destructive"
+                              onClick={() => deleteInstrumentMutation.mutate({ id: item.id })}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </PermissionGate>
                         </div>
                       ))}
                     </div>
@@ -3368,14 +3380,16 @@ export default function ProductModels() {
                       {(samplingPlans || []).slice(0, 10).map((item: any) => (
                         <div key={item.id} className="flex items-center justify-between text-xs border rounded px-2 py-1">
                           <span className="truncate mr-2">{item.code} - {item.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 text-destructive"
-                            onClick={() => deleteSamplingPlanMutation.mutate({ id: item.id })}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <PermissionGate module="settings_products" action="canDelete">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-destructive"
+                              onClick={() => deleteSamplingPlanMutation.mutate({ id: item.id })}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </PermissionGate>
                         </div>
                       ))}
                     </div>
@@ -3417,14 +3431,16 @@ export default function ProductModels() {
                       {(productViews || []).slice(0, 10).map((item: any) => (
                         <div key={item.id} className="flex items-center justify-between text-xs border rounded px-2 py-1">
                           <span className="truncate mr-2">{item.code} - {item.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 text-destructive"
-                            onClick={() => deleteProductViewMutation.mutate({ id: item.id })}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <PermissionGate module="settings_products" action="canDelete">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-destructive"
+                              onClick={() => deleteProductViewMutation.mutate({ id: item.id })}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </PermissionGate>
                         </div>
                       ))}
                     </div>
@@ -4161,14 +4177,16 @@ export default function ProductModels() {
                             <Download className="h-3 w-3" />
                             {t("common.apply")}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deleteTemplateMutation.mutate({ id: template.id })}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <PermissionGate module="settings_products" action="canDelete">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => deleteTemplateMutation.mutate({ id: template.id })}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </PermissionGate>
                         </div>
                       </div>
                     ))}
