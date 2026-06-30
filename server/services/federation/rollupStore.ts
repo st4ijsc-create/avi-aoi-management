@@ -24,7 +24,7 @@ import type { SiteKpiSnapshot } from "./siteClient";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
-function kpiColumns(site: Site, snap: SiteKpiSnapshot) {
+function kpiColumns(site: Site, snap: SiteKpiSnapshot, source: "poll" | "uns" = "poll") {
   return {
     siteId: site.id,
     corporateCode: site.corporateCode ?? null,
@@ -39,7 +39,7 @@ function kpiColumns(site: Site, snap: SiteKpiSnapshot) {
     oee: snap.oee,
     avgCycleTime: snap.avgCycleTime,
     defectPareto: snap.defectPareto ?? null,
-    source: "poll" as const,
+    source,
     fetchedAt: new Date(),
     updatedAt: new Date(),
   };
@@ -50,9 +50,14 @@ function kpiColumns(site: Site, snap: SiteKpiSnapshot) {
  * site and append/replace a daily history row (window='day').
  * Returns the number of roll-up rows written.
  */
-export async function upsertSnapshot(db: Db, site: Site, snap: SiteKpiSnapshot): Promise<number> {
+export async function upsertSnapshot(
+  db: Db,
+  site: Site,
+  snap: SiteKpiSnapshot,
+  source: "poll" | "uns" = "poll",
+): Promise<number> {
   let written = 0;
-  const cols = kpiColumns(site, snap);
+  const cols = kpiColumns(site, snap, source);
 
   // 1) Snapshot row — find-then-update/insert (bucketStart is NULL).
   const [existingSnap] = await db

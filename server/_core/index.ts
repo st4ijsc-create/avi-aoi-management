@@ -4579,6 +4579,18 @@ async function startServer() {
     console.error("[Federation] aggregator init failed:", (err as any)?.message || err);
   }
 
+  // doc 13 · F3 — Federation UNS subscriber: SUBSCRIBE-ONLY MQTT to each enrolled
+  // site's UNS broker (sites.unsBrokerUrl), landing near-real-time KPIs in the
+  // roll-up store with source='uns'. Subscribe-only — the core NEVER publishes to
+  // a site broker. Disabled by default; opt in via FEDERATION_UNS_ENABLED=true.
+  // Safe no-op when OFF or no site has a broker; never blocks boot.
+  try {
+    const { startFederationUnsSubscriber } = await import("../services/federation/unsSubscriber");
+    await startFederationUnsSubscriber();
+  } catch (err) {
+    console.error("[Federation] UNS subscriber init failed:", (err as any)?.message || err);
+  }
+
   // P4 WS4.2 — AI orchestration watcher (event bus → local LLM advisory).
   // Disabled by default; opt in via AI_ORCHESTRATION_ENABLED=true. Advisory only.
   try {
@@ -4723,6 +4735,10 @@ async function startServer() {
     // doc 13 · F1 — stop federation aggregator (no-op if not running)
     import("../services/federation/aggregatorService")
       .then((m) => m.stopFederationAggregator())
+      .catch(() => {});
+    // doc 13 · F3 — stop federation UNS subscriber (close all per-site connections)
+    import("../services/federation/unsSubscriber")
+      .then((m) => m.stopFederationUnsSubscriber())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();

@@ -66,4 +66,25 @@ export const ENV = {
     const n = Number(process.env.FEDERATION_CONCURRENCY);
     return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8;
   })(),
+
+  // ── Federation (doc 13 / F3) — UNS subscribe-only streaming ─────────────────
+  // OFF by default. When enabled, the core opens a SUBSCRIBE-ONLY MQTT connection
+  // to each enrolled site that has unsBrokerUrl, listens on normalized Sparkplug
+  // DDATA/DBIRTH topics, and lands near-real-time KPIs in site_kpi_rollup with
+  // source='uns' (complementing F1's pull path). The core NEVER publishes to a
+  // site broker — there is no command/control direction. Safe no-op when OFF or
+  // when no site has a broker URL; never blocks boot, never fabricates data.
+  federationUnsEnabled: process.env.FEDERATION_UNS_ENABLED === "true",
+  // MQTT reconnect period (ms) for each per-site subscribe connection.
+  federationUnsReconnectMs: (() => {
+    const n = Number(process.env.FEDERATION_UNS_RECONNECT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 5_000;
+  })(),
+  // MQTT connect timeout (ms) for each per-site subscribe connection.
+  federationUnsConnectTimeoutMs: (() => {
+    const n = Number(process.env.FEDERATION_UNS_CONNECT_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 30_000;
+  })(),
+  // Sparkplug topic namespace the core subscribes under (must match sites' UNS).
+  federationUnsNamespace: clean(process.env.FEDERATION_UNS_NAMESPACE) || "spBv1.0",
 };
