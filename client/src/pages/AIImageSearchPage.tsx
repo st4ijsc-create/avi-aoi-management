@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import SimilarImageGrid, { type SearchMode, type EmbeddingSource } from "@/components/ai/SimilarImageGrid";
+import ProposeDefectButton from "@/components/ai/ProposeDefectButton";
 
 export default function AIImageSearchPage() {
   const { t } = useTranslation();
@@ -40,6 +41,11 @@ export default function AIImageSearchPage() {
   const [filterLabel, setFilterLabel] = useState("");
   const [filterDefectType, setFilterDefectType] = useState("");
   const [filterMinSimilarity, setFilterMinSimilarity] = useState(0);
+
+  // P4-F: close the loop — link the uploaded query image to inspection data.
+  const [defectInspectionId, setDefectInspectionId] = useState("");
+  const [defectPointDefId, setDefectPointDefId] = useState("");
+  const [defectMeasResultId, setDefectMeasResultId] = useState("");
 
   // Queries
   const { data: searchStats } = trpc.aiImageSearch.stats.useQuery({});
@@ -257,6 +263,43 @@ export default function AIImageSearchPage() {
                     searchMode={uploadSearchMode}
                     embeddingSource={uploadEmbeddingSource}
                   />
+
+                  {/* P4-F: close the loop — propose the query image as a defect (HITL). */}
+                  {uploadResults && uploadResults.length > 0 && (
+                    <div className="space-y-2 pt-3 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        {t("is.proposeHint", "Gắn ảnh tra cứu này thành bản ghi lỗi (cần tham chiếu inspection / measurement).")}
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 p-2 rounded border border-dashed bg-muted/20">
+                        <div className="space-y-1">
+                          <Label className="text-[11px]">Measurement result #</Label>
+                          <Input type="number" value={defectMeasResultId}
+                            onChange={(e) => setDefectMeasResultId(e.target.value)} placeholder={t("is.attach", "gắn vào")} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px]">Inspection #</Label>
+                          <Input type="number" value={defectInspectionId}
+                            onChange={(e) => setDefectInspectionId(e.target.value)} placeholder={t("is.createNew", "tạo mới")} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px]">Point def #</Label>
+                          <Input type="number" value={defectPointDefId}
+                            onChange={(e) => setDefectPointDefId(e.target.value)} placeholder={t("is.createNew", "tạo mới")} />
+                        </div>
+                      </div>
+                      <ProposeDefectButton
+                        finding={{
+                          source: "image_search",
+                          findingText: filterDefectType
+                            ? `Similar to known defect: ${filterDefectType}`
+                            : "Image-search match to existing NG image(s)",
+                          measurementResultId: defectMeasResultId ? Number(defectMeasResultId) : null,
+                          inspectionId: defectInspectionId ? Number(defectInspectionId) : null,
+                          pointDefId: defectPointDefId ? Number(defectPointDefId) : null,
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

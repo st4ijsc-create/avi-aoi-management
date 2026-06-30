@@ -111,6 +111,7 @@ import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step ag
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
+import { aiVisionRouter } from "./routers/aiVisionRouter"; // P4-F: vision-close-loop (propose defect → HITL) + vision-router consolidation
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
@@ -509,6 +510,10 @@ export const appRouter = router({
   aiAnomaly: aiAnomalyRouter,
   // AI Segmentation — defect mask (QC vẽ/model) + sub-pixel metrology (B7)
   aiSegmentation: aiSegmentationRouter,
+  // AI Vision (P4-F) — vision-close-loop: proposeDefect (HITL) + suggestDefectCodes
+  // + consolidated sub-namespaces (advanced/anomaly/segmentation/imageSearch/language).
+  // The original top-level vision namespaces above are kept for back-compat.
+  aiVision: aiVisionRouter,
 });
 
 export type AppRouter = typeof appRouter;

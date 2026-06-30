@@ -5,6 +5,7 @@ import {
   measurementResults, InsertMeasurementResult,
   measurementPointDefs,
   productModels,
+  defectCatalog,
   alertHistory,
   mqttAlertHistory,
   machines,
@@ -181,6 +182,12 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
     aiConfidence: measurementResults.aiConfidence,
     aiComparisonScore: measurementResults.aiComparisonScore,
     createdAt: measurementResults.createdAt,
+    // Defect classification (NG → defect-code link)
+    defectCatalogId: measurementResults.defectCatalogId,
+    defectSeverity: measurementResults.defectSeverity,
+    defectCode: defectCatalog.code,
+    defectName: defectCatalog.name,
+    defectNameVi: defectCatalog.nameVi,
     // Point def info
     pointCode: measurementPointDefs.code,
     pointName: measurementPointDefs.name,
@@ -191,6 +198,7 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
   }).from(measurementResults)
     .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
     .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
+    .leftJoin(defectCatalog, eq(measurementResults.defectCatalogId, defectCatalog.id))
     .where(eq(measurementResults.inspectionId, inspectionId))
     .orderBy(measurementResults.id);
 }

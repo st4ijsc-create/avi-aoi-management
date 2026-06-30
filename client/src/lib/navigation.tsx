@@ -79,6 +79,8 @@
   Monitor,
   Inbox,
   Sun,
+  Bot,
+  Network,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -458,6 +460,24 @@ export const navGroups: NavGroup[] = [
         description: "nav.edgeNodesDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+      },
+      {
+        // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via HITL dispatcher)
+        href: "/robot-control",
+        label: "nav.robotControl",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.robotControlDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only)
+        href: "/control-plane",
+        label: "nav.controlPlane",
+        icon: <Network className="h-4 w-4" />,
+        description: "nav.controlPlaneDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
       },
       // — Engineering & Control —
       {

@@ -193,10 +193,43 @@ export const aiGgufRouter = router({
   }),
 
   // ─── Model Router telemetry (tier distribution for "AI Brain" dashboard) ──
+  // Now DB-backed via the AI Gateway: tier distribution is aggregated from the
+  // persisted ai_gateway_metrics table (durable across restarts) and merged with the
+  // legacy in-memory router counter so pre-gateway callers still register. Shape is
+  // kept backward-compatible ({ total, byTier, fastModelConfigured }) for the frontend.
   routerStats: protectedProcedure.query(async () => {
-    const { getRouterStats } = await import("../services/aiModelRouter");
-    return getRouterStats();
+    const [{ getRouterStats }, { getGatewayStats }] = await Promise.all([
+      import("../services/aiModelRouter"),
+      import("../services/aiGateway"),
+    ]);
+    const mem = getRouterStats(); // legacy in-memory (route() callers not yet on the gateway)
+    const gw = await getGatewayStats(); // DB-backed (gateway callers)
+
+    // Merge tier distributions so the dashboard reflects ALL routed traffic.
+    const byTier: Record<number, number> = { ...mem.byTier };
+    for (const [tier, count] of Object.entries(gw.byTier)) {
+      byTier[Number(tier)] = (byTier[Number(tier)] ?? 0) + (count as number);
+    }
+    const total = Object.values(byTier).reduce((a, b) => a + b, 0);
+    return {
+      total,
+      byTier,
+      fastModelConfigured: mem.fastModelConfigured || gw.fastModelConfigured,
+      // Provenance so the UI can label whether numbers are durable (db) or volatile (memory).
+      source: gw.source,
+    };
   }),
+
+  // ─── AI Gateway stats (tokens / latency / rate-limit / A/B) — DB-backed ──
+  // Richer observability surface for the AI Gateway. Honest-empty (zeroes) when nothing
+  // has been routed yet; `source` reports whether numbers came from the durable table.
+  gatewayStats: protectedProcedure
+    .input(z.object({ sinceHours: z.number().min(1).max(720).optional() }).optional())
+    .query(async ({ input }) => {
+      const { getGatewayStats, isAbEnabled } = await import("../services/aiGateway");
+      const stats = await getGatewayStats(input?.sinceHours ?? 24);
+      return { ...stats, abEnabled: isAbEnabled() };
+    }),
 
   // ─── Embedding ──────────────────────────────────────
   embedding: protectedProcedure

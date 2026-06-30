@@ -37,6 +37,8 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
 import { AISuggestionsPanel } from "@/components/AISuggestionsPanel";
+import { useIsReadOnly, ViewOnlyBadge } from "@/components/PermissionGate";
+import { Tag } from "lucide-react";
 
 interface MeasurementPoint {
   id: number;
@@ -53,6 +55,11 @@ interface MeasurementPoint {
   productModelId?: number | null;
   productCode?: string | null;
   productName?: string | null;
+  defectCatalogId?: number | null;
+  defectSeverity?: string | null;
+  defectCode?: string | null;
+  defectName?: string | null;
+  defectNameVi?: string | null;
   x?: number;
   y?: number;
 }
@@ -73,6 +80,7 @@ export default function InspectionDetail() {
   const [correctReason, setCorrectReason] = useState("");
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+  const readOnly = useIsReadOnly();
 
   // Lightbox state
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -152,6 +160,23 @@ export default function InspectionDetail() {
       toast.error(t('common.error') + ': ' + error.message);
     },
   });
+
+  // IPC-A-610 defect catalog for NG classification
+  const { data: defectCatalog } = trpc.defectCatalog.list.useQuery({});
+
+  const classifyDefectMutation = trpc.measurementResult.classifyDefect.useMutation({
+    onSuccess: () => {
+      toast.success(t('inspection.defectClassifiedSuccess', 'Defect code assigned'));
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(t('common.error') + ': ' + error.message);
+    },
+  });
+
+  const handleClassifyDefect = (measurementId: number, defectCatalogId: number | null) => {
+    classifyDefectMutation.mutate({ id: measurementId, defectCatalogId });
+  };
 
   const analyzeWithAIMutation = trpc.measurementResult.analyzeWithAI.useMutation({
     onSuccess: () => {
@@ -615,6 +640,12 @@ export default function InspectionDetail() {
                               <p className="text-sm text-muted-foreground">
                                 {measurement.pointName || t('inspection.measurementPoint')}
                               </p>
+                              {measurement.defectCode && (
+                                <Badge variant="outline" className="mt-1 gap-1 text-[10px]">
+                                  <Tag className="h-3 w-3" />
+                                  {measurement.defectCode}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                           
@@ -751,6 +782,49 @@ export default function InspectionDetail() {
                   <p className="font-medium text-foreground">{selectedMeasurement.remark || "-"}</p>
                 </div>
               </div>
+
+              {/* Defect Classification (IPC-A-610) — only for NG / NTF results */}
+              {(selectedMeasurement.result === "NG" || selectedMeasurement.result === "NTF") && (
+                <div className="p-4 rounded-lg bg-secondary/30 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-foreground flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-primary" />
+                      {t('inspection.defectCode', 'Defect code (IPC-A-610)')}
+                    </p>
+                    <ViewOnlyBadge />
+                  </div>
+                  {readOnly ? (
+                    <p className="text-sm text-foreground">
+                      {selectedMeasurement.defectCode
+                        ? `${selectedMeasurement.defectCode} — ${selectedMeasurement.defectName ?? ''}`
+                        : t('inspection.noDefectCode', 'Not classified')}
+                    </p>
+                  ) : (
+                    <Select
+                      value={selectedMeasurement.defectCatalogId ? String(selectedMeasurement.defectCatalogId) : "none"}
+                      onValueChange={(v) =>
+                        handleClassifyDefect(selectedMeasurement.id, v === "none" ? null : parseInt(v))
+                      }
+                    >
+                      <SelectTrigger disabled={classifyDefectMutation.isPending}>
+                        <SelectValue placeholder={t('inspection.selectDefectCode', 'Select defect code')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('inspection.noDefectCode', 'Not classified')}</SelectItem>
+                        {(defectCatalog ?? []).map((d: { id: number; code: string; name: string; severity: string; category: string }) => (
+                          <SelectItem key={d.id} value={String(d.id)}>
+                            <span className="flex items-center gap-2">
+                              <span className="font-medium">{d.code}</span>
+                              <span className="text-muted-foreground">— {d.name}</span>
+                              <Badge variant="secondary" className="text-[10px]">{d.severity}</Badge>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
 
               {/* AI Analysis */}
               {selectedMeasurement.aiAnalysisResult && (

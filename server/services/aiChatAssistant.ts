@@ -53,6 +53,8 @@ export interface ChatRequest {
   language?: "en" | "vi";
   /** Restrict functions available (e.g. limit to read-only) */
   allowedTools?: string[];
+  /** Caller user id — used by the AI Gateway for per-user rate-limit + metrics. */
+  userId?: number;
 }
 
 export interface ChatResponse {
@@ -286,10 +288,12 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
     // Step 1: Use GGUF to classify intent and select tools.
     // Model Router (Tier 1 fast) picks the model; keep low temp for deterministic classification.
     const { chatCompletion } = await import("./aiGgufEngine");
-    const { route } = await import("./aiModelRouter");
+    const { planInference } = await import("./aiGateway");
     const selectionPrompt = buildToolSelectionPrompt();
 
-    const selRoute = route({ task: "intent", text: request.userMessage });
+    // AI Gateway: plan (route + rate-limit + A/B + meter) the intent-classification call.
+    const selPlan = planInference({ task: "intent", text: request.userMessage, userId: request.userId });
+    const selStart = Date.now();
     const selectionResult = await chatCompletion({
       messages: [
         { role: "system", content: selectionPrompt },
@@ -297,7 +301,13 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       ],
       maxTokens: 256,
       temperature: 0.1, // Low temperature for deterministic classification
-    }, selRoute.modelId);
+    }, selPlan.decision.modelId);
+    selPlan.record({
+      tokensIn: selectionResult.tokensPrompt,
+      tokensOut: selectionResult.tokensGenerated,
+      latencyMs: Date.now() - selStart,
+      outcome: "ok",
+    });
 
     const selectedTools = parseToolSelection(selectionResult.text, startDate, endDate);
 
@@ -326,7 +336,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
   // Use GGUF to generate a natural language response from the tool results
   try {
     const { chatCompletion } = await import("./aiGgufEngine");
-    const { route } = await import("./aiModelRouter");
+    const { planInference } = await import("./aiGateway");
     const systemPrompt = buildSystemPrompt(request.language ?? "vi") +
       "\nYou have access to factory inspection data. Use the provided data to answer the user's question naturally.";
 
@@ -343,12 +353,20 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       { role: "user" as const, content: request.userMessage + dataContext },
     ];
 
-    // Model Router: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned decoding.
-    const ansRoute = route({ task: "chat", text: request.userMessage });
+    // AI Gateway: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned
+    // decoding, with per-user rate-limit + A/B + token/latency metering.
+    const ansPlan = planInference({ task: "chat", text: request.userMessage, userId: request.userId });
+    const ansStart = Date.now();
     const result = await chatCompletion(
-      { messages, maxTokens: ansRoute.maxTokens, temperature: ansRoute.temperature },
-      ansRoute.modelId,
+      { messages, maxTokens: ansPlan.decision.maxTokens, temperature: ansPlan.decision.temperature },
+      ansPlan.decision.modelId,
     );
+    ansPlan.record({
+      tokensIn: result.tokensPrompt,
+      tokensOut: result.tokensGenerated,
+      latencyMs: Date.now() - ansStart,
+      outcome: "ok",
+    });
 
     const footer = isVi
       ? `\n\n_Sử dụng local LLM (GGUF) — không cần API key._`
