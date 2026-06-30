@@ -23,9 +23,19 @@ export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): 
       timestamp: state.timestamp ?? new Date(),
     });
     // Lightweight liveness update on the registry row.
+    const newStatus = state.estop ? "estop" : state.busy ? "busy" : "idle";
     await db.update(robots)
-      .set({ status: state.estop ? "estop" : state.busy ? "busy" : "idle", lastSeenAt: new Date() })
+      .set({ status: newStatus, lastSeenAt: new Date() })
       .where(eq(robots.id, robot.id));
+
+    // G1 (doc 16 Khối 2) — if the robot just hit a failed state (e-stop), hand its
+    // open tasks to another device. Fire-and-forget; the rebalancer is itself
+    // gated by FLEET_ORCH_ENABLED (no-op when off) and opens NO control path.
+    if (state.estop) {
+      void import("../fleet/taskAllocator")
+        .then((m) => m.rebalanceDeviceTasks(robot.id, "robot_estop"))
+        .catch((e) => console.error(`[Robot] rebalance hook failed for "${robot.code}":`, (e as Error)?.message ?? e));
+    }
   } catch (err) {
     console.error(`[Robot] ingest failed for "${robot.code}":`, (err as Error)?.message ?? err);
   }

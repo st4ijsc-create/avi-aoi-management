@@ -4409,6 +4409,17 @@ async function startServer() {
     console.error("[erpOutbox] worker start failed:", (err as any)?.message || err);
   }
 
+  // G1 (doc 16 Khối 2) — Fleet & Task Orchestration: subscribe to order.created on
+  // the eventBus → decompose orders into `tasks` + allocate. The subscriber is
+  // always registered (cheap) but its handler is a no-op unless FLEET_ORCH_ENABLED.
+  // Opens NO control path — dispatch stays with the gated robot/command dispatchers.
+  try {
+    const { installFleetOrchestrator } = await import("../services/fleet/fleetOrchestrator");
+    installFleetOrchestrator();
+  } catch (err) {
+    console.error("[Fleet] orchestrator install failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(
