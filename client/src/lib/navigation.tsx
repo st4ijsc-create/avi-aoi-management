@@ -77,6 +77,8 @@
   Zap,
   User,
   Monitor,
+  Inbox,
+  Sun,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -305,20 +307,22 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "history",
     items: [
       {
+        // P3-W2: flagship Quality Cockpit — default QUALITY landing. SPC / Pareto /
+        // Heatmap / Gates / Annotation now live as tabs here (legacy routes redirect in).
+        href: "/quality-cockpit",
+        label: "nav.qualityCockpit",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+      },
+      {
         href: "/quality-home",
         label: "nav.qualityHome",
         icon: <ClipboardCheck className="h-4 w-4" />,
         description: "nav.qualityHomeDesc",
         requiredPermission: "history_view",
         permissionCategory: "history",
-      },
-      {
-        href: "/quality-gates",
-        label: "nav.qualityGates",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.qualityGatesDesc",
-        requiredPermission: "analytics_spc",
-        permissionCategory: "analytics",
       },
       {
         href: "/quality-gate-templates",
@@ -329,43 +333,12 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
       },
       {
-        href: "/spc-analysis",
-        label: "nav.spcAnalysis",
-        icon: <Brain className="h-4 w-4" />,
-        description: "nav.spcAnalysisDesc",
-        requiredPermission: "analytics_spc",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/pareto-analysis",
-        label: "nav.paretoAnalysis",
-        icon: <BarChart3 className="h-4 w-4" />,
-        description: "nav.paretoAnalysisDesc",
-        requiredPermission: "analytics_advanced",
-        permissionCategory: "analytics",
-      },
-      {
+        // KEEP — factory-layout defect heatmap (distinct from the cockpit product heatmap tab).
         href: "/defect-heatmap",
         label: "nav.defectHeatmap",
         icon: <Map className="h-4 w-4" />,
         description: "nav.defectHeatmapDesc",
         requiredPermission: "analytics_defect_heatmap",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/annotation-statistics",
-        label: "nav.annotationStatistics",
-        icon: <Brush className="h-4 w-4" />,
-        description: "nav.annotationStatisticsDesc",
-        requiredPermission: "analytics_advanced",
-        permissionCategory: "analytics",
-      },
-      {
-        href: "/annotation-comparison",
-        label: "nav.annotationComparison",
-        icon: <GitCompare className="h-4 w-4" />,
-        description: "nav.annotationComparisonDesc",
-        requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
       },
     ],
@@ -386,10 +359,12 @@ export const navGroups: NavGroup[] = [
     items: [
       // — Status & health —
       {
-        href: "/machine-status",
-        label: "nav.machineStatusPage",
+        // P3-W2: unified Device Monitor — default DEVICES & OT landing (machines +
+        // OT adapters + edge nodes in one live table; legacy /machine-status redirects here).
+        href: "/device-monitor",
+        label: "nav.deviceMonitor",
         icon: <MonitorCheck className="h-4 w-4" />,
-        description: "nav.machineStatusDesc",
+        description: "nav.deviceMonitorDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
@@ -1070,6 +1045,20 @@ export const navGroups: NavGroup[] = [
     description: "nav.meGroupDesc",
     defaultOpen: false,
     items: [
+      {
+        // P3-W2: full-screen Action Inbox (read-open all roles).
+        href: "/inbox",
+        label: "nav.inbox",
+        icon: <Inbox className="h-4 w-4" />,
+        description: "nav.inboxDesc",
+      },
+      {
+        // P3-W2: full-screen Today Briefing (read-open all roles).
+        href: "/today",
+        label: "nav.today",
+        icon: <Sun className="h-4 w-4" />,
+        description: "nav.todayDesc",
+      },
       {
         href: "/operator",
         label: "nav.operatorHome",

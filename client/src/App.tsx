@@ -26,7 +26,6 @@ import Alerts from "./pages/Alerts";
 import Users from "./pages/Users";
 import ProductMachineMapping from "./pages/ProductMachineMapping";
 import ProductionOrders from "./pages/ProductionOrders";
-import MachineStatusMonitor from "./pages/MachineStatusMonitor";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
@@ -45,7 +44,6 @@ import SystemConfiguration from "./pages/SystemConfiguration";
 import ImportExport from "./pages/ImportExport";
 import UserAssignments from "./pages/UserAssignments";
 import ScheduledReports from "./pages/ScheduledReports";
-import SPCAnalysis from "./pages/SPCAnalysis";
 import ProcessManagement from "./pages/ProcessManagement";
 import WorkstationManagement from "./pages/WorkstationManagement";
 import CategoryAnalytics from "./pages/CategoryAnalytics";
@@ -63,8 +61,6 @@ import DigitalTwinDashboard from "./pages/DigitalTwinDashboard";
 import RealtimeReportView from "./pages/RealtimeReportView";
 import CarbonDashboard from "./pages/CarbonDashboard";
 import DrillDownDashboard from "./pages/DrillDownDashboard";
-import AnnotationStatistics from "./pages/AnnotationStatistics";
-import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
 import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 import DefectPredictionPage from "./pages/DefectPredictionPage";
 import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
@@ -117,16 +113,18 @@ const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")
 const CellTwinPlayer = React.lazy(() => import("./pages/CellTwinPlayer")); // Generic data-driven realtime twin playback for ANY orchestration workflow
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
+const UnifiedDeviceMonitor = React.lazy(() => import("./pages/UnifiedDeviceMonitor")); // P3-W2 (doc 12 §8): flagship unified device monitor — default DEVICES & OT landing
+const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
+const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
+const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
-import QualityGates from "./pages/QualityGates";
 import RoleBuilder from "./pages/RoleBuilder";
 import PdfReports from "./pages/PdfReports";
 import DataComparison from "./pages/DataComparison";
 import ReportBuilder from "./pages/ReportBuilder";
 import PowerPointExport from "./pages/PowerPointExport";
-import ParetoAnalysis from "./pages/ParetoAnalysis";
 import QualityGateTemplates from "./pages/QualityGateTemplates";
 import ProductionScheduling from "./pages/ProductionScheduling";
 import MachineRegistration from "./pages/MachineRegistration";
@@ -207,21 +205,28 @@ function Router() {
       <Route path="/station-analysis/:id"><RouteGuard requirePermission="analytics_spc"><StationAnalysis /></RouteGuard></Route>
 
       {/* ── QUALITY ──────────────────────────────────────────────────────── */}
+      {/* P3-W2: Quality Cockpit is the default QUALITY landing (SPC/Pareto/Heatmap/Gates/Annotation tabs). */}
+      <Route path="/quality-cockpit"><RouteGuard navHref="/quality-cockpit"><AIPageWrapper><QualityCockpit /></AIPageWrapper></RouteGuard></Route>
       <Route path="/quality-home"><RouteGuard navHref="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/quality-gates"><RouteGuard navHref="/quality-gates"><QualityGates /></RouteGuard></Route>
       <Route path="/quality-gate-templates"><RouteGuard navHref="/quality-gate-templates"><QualityGateTemplates /></RouteGuard></Route>
-      <Route path="/spc-analysis"><RouteGuard navHref="/spc-analysis"><SPCAnalysis /></RouteGuard></Route>
-      {/* /spc-advanced consolidated into /spc-analysis (redirect for backward-compat) */}
-      <Route path="/spc-advanced"><Redirect to="/spc-analysis" /></Route>
-      <Route path="/pareto-analysis"><RouteGuard navHref="/pareto-analysis"><ParetoAnalysis /></RouteGuard></Route>
+      {/* P3-W2 consolidation: legacy quality screens now live as Cockpit tabs (deep-link ?tab=). */}
+      <Route path="/quality-gates"><Redirect to="/quality-cockpit?tab=gates" /></Route>
+      <Route path="/spc-analysis"><Redirect to="/quality-cockpit?tab=spc" /></Route>
+      {/* /spc-advanced previously consolidated into /spc-analysis → now the cockpit SPC tab. */}
+      <Route path="/spc-advanced"><Redirect to="/quality-cockpit?tab=spc" /></Route>
+      <Route path="/pareto-analysis"><Redirect to="/quality-cockpit?tab=pareto" /></Route>
+      <Route path="/annotation-statistics"><Redirect to="/quality-cockpit?tab=annotation" /></Route>
+      <Route path="/annotation-comparison"><Redirect to="/quality-cockpit?tab=annotation" /></Route>
+      {/* KEEP — factory-layout defect heatmap (different concept from the cockpit product heatmap). */}
       <Route path="/defect-heatmap"><RouteGuard navHref="/defect-heatmap"><DefectHeatmapPage /></RouteGuard></Route>
       <Route path="/defect-prediction"><RouteGuard requirePermission="analytics_advanced"><DefectPredictionPage /></RouteGuard></Route>
       <Route path="/root-cause-analysis"><RouteGuard requirePermission="analytics_root_cause"><RootCauseAnalysisPage /></RouteGuard></Route>
-      <Route path="/annotation-statistics"><RouteGuard navHref="/annotation-statistics"><AnnotationStatistics /></RouteGuard></Route>
-      <Route path="/annotation-comparison"><RouteGuard navHref="/annotation-comparison"><AnnotationComparisonPage /></RouteGuard></Route>
 
       {/* ── DEVICES & OT ─────────────────────────────────────────────────── */}
-      <Route path="/machine-status"><RouteGuard navHref="/machine-status"><MachineStatusMonitor /></RouteGuard></Route>
+      {/* P3-W2: unified Device Monitor is the default device landing. */}
+      <Route path="/device-monitor"><RouteGuard navHref="/device-monitor"><AIPageWrapper><UnifiedDeviceMonitor /></AIPageWrapper></RouteGuard></Route>
+      {/* P3-W2 consolidation: legacy machine-status grid → unified Device Monitor. */}
+      <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><RouteGuard navHref="/machine-health"><MachineHealthMonitoring /></RouteGuard></Route>
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
       <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
@@ -325,6 +330,9 @@ function Router() {
       <Route path="/custom-dashboard"><RouteGuard requirePermission="dashboard_view"><CustomDashboard /></RouteGuard></Route>
 
       {/* ── ME (self) — read-open to every authenticated role ─────────────── */}
+      {/* P3-W2: full-screen Action Inbox + Today Briefing surfaces (read-open). */}
+      <Route path="/inbox"><AIPageWrapper><InboxPage /></AIPageWrapper></Route>
+      <Route path="/today"><AIPageWrapper><TodayPage /></AIPageWrapper></Route>
       <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
       <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
       <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearch } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -193,10 +194,21 @@ function RealtimeGateStatus() {
   );
 }
 
+// Valid cockpit tab ids (also the deep-link `?tab=` targets the redirects use).
+const VALID_TABS = ["spc", "pareto", "heatmap", "gates", "annotation"] as const;
+
 export default function QualityCockpit() {
   const { t } = useTranslation();
+  const search = useSearch();
+  // Honour an inbound `?tab=` (legacy /spc-analysis, /pareto-analysis,
+  // /quality-gates, /annotation-* redirect here with a tab param). Falls back
+  // to SPC when absent/invalid.
+  const initialTab = (() => {
+    const tab = new URLSearchParams(search).get("tab");
+    return tab && (VALID_TABS as readonly string[]).includes(tab) ? tab : "spc";
+  })();
   const [scope, setScope] = useState<CockpitScope>(() => getDefaultDateRange());
-  const [activeTab, setActiveTab] = useState("spc");
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const heatmapScope = useMemo(
     () => ({
