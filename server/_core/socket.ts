@@ -532,6 +532,9 @@ export function initializeSocket(server: HttpServer): Server {
   // G2.7 — start the WIP twin broadcaster (no-op unless TWIN_STREAM_ENABLED=true).
   startTwinBroadcaster();
 
+  // P2 follow-up — start the realtime OEE broadcaster (single oeeService source).
+  startOeeBroadcaster();
+
   console.log("[Socket.io] WebSocket server initialized");
   return io;
 }
@@ -733,6 +736,42 @@ export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void 
   for (const [machineId, arr] of byMachine) {
     io.to(`machine:${machineId}`).emit("telemetry:sample", { samples: arr });
   }
+}
+
+// ============ P2 follow-up — REALTIME OEE BROADCAST ============
+
+let oeeBroadcastTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * P2 follow-up — periodically broadcast canonical live OEE (the single oeeService
+ * source of truth) to the `global` room on `oee:update`. Restores realtime OEE
+ * after the legacy in-memory path was retired. Guarded: disable with
+ * OEE_BROADCAST_ENABLED=false; interval via OEE_BROADCAST_INTERVAL_SEC (default 60s,
+ * min 15s). Computes live on read, honest (omits machines without data). Fail-safe:
+ * errors are swallowed so the timer never dies. Dynamic import avoids an import cycle.
+ */
+export function startOeeBroadcaster(): void {
+  if (oeeBroadcastTimer) return; // guard double-start
+  if (process.env.OEE_BROADCAST_ENABLED === "false") return;
+  const intervalSec = Math.max(15, Number(process.env.OEE_BROADCAST_INTERVAL_SEC) || 60);
+  const tick = async () => {
+    try {
+      if (!io) return;
+      const { getAllMachinesOEELive } = await import("../services/oeeService");
+      const metrics = await getAllMachinesOEELive();
+      if (metrics.length === 0) return;
+      io.to("global").emit("oee:update", { metrics, at: new Date().toISOString() });
+    } catch (e) {
+      console.error("[Socket.io] OEE broadcast failed:", (e as any)?.message ?? e);
+    }
+  };
+  oeeBroadcastTimer = setInterval(() => { void tick(); }, intervalSec * 1000);
+  setTimeout(() => { void tick(); }, 5000); // first push shortly after boot
+  console.log(`[Socket.io] OEE broadcaster started (every ${intervalSec}s)`);
+}
+
+export function stopOeeBroadcaster(): void {
+  if (oeeBroadcastTimer) { clearInterval(oeeBroadcastTimer); oeeBroadcastTimer = null; }
 }
 
 // Emit dashboard stats update
