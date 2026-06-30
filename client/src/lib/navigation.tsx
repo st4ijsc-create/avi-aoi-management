@@ -632,8 +632,13 @@ export const navGroups: NavGroup[] = [
         label: "nav.factoryFloorEditor",
         icon: <Boxes className="h-4 w-4" />,
         description: "nav.factoryFloorEditorDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
+        // View-open like its sibling /factory-live-map: a machine_monitoring user
+        // can OPEN the floor editor; editing/saving positions stays gated to
+        // machine_control inside the page (<PermissionGate action="canEdit"> +
+        // ViewOnlyBadge). Previously this required machine_control to even view,
+        // which blocked monitoring users from reaching the page at all.
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
         section: "engineering",
       },
       {

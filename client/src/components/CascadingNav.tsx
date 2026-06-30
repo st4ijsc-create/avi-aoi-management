@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -45,8 +46,29 @@ interface CascadingNavProps {
 
 export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavProps) {
   const { t } = useTranslation();
-  const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
+  // The module that owns the current route. Used so the open (Level-2) module
+  // follows where you ARE — important because each page renders its own
+  // DashboardLayout, so this nav remounts on every navigation; without this the
+  // accordion would always reset to collapsed after navigating.
+  const moduleForPath = useMemo(
+    () => groups.find(g => g.items.some(i => i.href === currentPath))?.id ?? null,
+    [groups, currentPath],
+  );
+  // Open the current route's module by default (on mount / remount).
+  const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath);
   const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
+
+  // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
+  // when navigating within the same module. So when the route moves to a page in
+  // ANOTHER module, expand that module; otherwise leave the user's accordion state
+  // alone (so a manual collapse on the current page is respected).
+  const prevPathModule = useRef(moduleForPath);
+  useEffect(() => {
+    if (moduleForPath && moduleForPath !== prevPathModule.current) {
+      setActiveModuleId(moduleForPath);
+    }
+    prevPathModule.current = moduleForPath;
+  }, [moduleForPath]);
   // Touch devices (tablets/phones in landscape that still show the rail): switch
   // Level-2→3 from hover to tap and expand items INLINE in the Level-2 panel
   // (single-column drill) instead of opening a separate Level-3 side flyout — this
@@ -127,9 +149,13 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   const handleNavigate = useCallback(
     (href: string) => {
       onNavigate(href);
-      closeAll();
+      // Close ONLY the Level-3 flyout — keep the module (Level-2) expanded so it
+      // does not collapse when you pick a Level-3 page. The module stays open
+      // because the new route belongs to it (moduleForPath keeps it active).
+      cancelClose();
+      setHoverCategoryKey(null);
     },
-    [onNavigate, closeAll],
+    [onNavigate, cancelClose],
   );
 
   const openCategory = useCallback(
