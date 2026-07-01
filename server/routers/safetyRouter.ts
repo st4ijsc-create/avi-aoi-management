@@ -45,6 +45,21 @@ import {
 } from "../services/safety/safetyZoneService";
 import { workforceEnabled, assignOperator, reassignOperator, confirmAssignment, closeAssignment, getCurrentBoard } from "../services/workforce/workforceService";
 import { startCollaboration, signalHandshake, advancePhase, abortCollaboration } from "../services/workforce/collaborationService";
+// S2b — vision human-detection producer + safety-PLC status adapter (advisory).
+import {
+  safetyVisionEnabled,
+  listCalibrations,
+  upsertCalibration,
+  produce,
+} from "../services/safety/vision/humanDetectionProducer";
+import type { PersonDetection } from "../services/safety/vision/humanDetectionProducer";
+import {
+  safetyPlcAdapterEnabled,
+  listPlcConfigs,
+  upsertPlcConfig,
+  readConfigById,
+  SimSafetyPlcBackend,
+} from "../services/safety/plc/safetyPlcAdapter";
 
 async function db() {
   const d = await getDb();
@@ -65,6 +80,16 @@ function requireWorkforceFlag() {
 function requireSafetyZoneFlag() {
   if (!safetyZoneSwEnabled()) {
     throw new TRPCError({ code: "CONFLICT", message: "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL" });
+  }
+}
+function requireSafetyVisionFlag() {
+  if (!safetyVisionEnabled()) {
+    throw new TRPCError({ code: "CONFLICT", message: "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model" });
+  }
+}
+function requireSafetyPlcFlag() {
+  if (!safetyPlcAdapterEnabled()) {
+    throw new TRPCError({ code: "CONFLICT", message: "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself" });
   }
 }
 
@@ -98,6 +123,32 @@ const simRobotSchema = z.object({
 
 const EVENT_TYPES = ["estop", "collision", "intrusion", "zone_intrusion", "force_limit", "speed_violation", "near_miss"] as const;
 
+// S2b — a pixel-space person detection bbox (from any detector / test).
+const personDetectionSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+  confidence: z.number().min(0).max(1),
+  id: z.union([z.string(), z.number()]).optional(),
+});
+
+// S2b — a precomputed 3×3 homography (9 numbers, row-major).
+const homographySchema = z.array(z.number()).length(9);
+// S2b — an image↔floor correspondence pair (to solve a homography from ≥4).
+const calibrationPairSchema = z.object({
+  image: z.object({ u: z.number(), v: z.number() }),
+  floor: z.object({ x: z.number(), y: z.number() }),
+});
+
+// S2b — a safety-PLC status snapshot (sim-injected, for testing).
+const plcStatusSnapshotSchema = z.object({
+  estop: z.boolean().optional(),
+  zoneOccupied: z.boolean().optional(),
+  resetRequired: z.boolean().optional(),
+  muting: z.boolean().optional(),
+});
+
 export const safetyRouter = router({
   // ── status (UI gating hints) ───────────────────────────────────────────────
   status: protectedProcedure
@@ -106,6 +157,8 @@ export const safetyRouter = router({
       safetyAudit: safetyAuditEnabled(),
       workforce: workforceEnabled(),
       safetyZoneSw: safetyZoneSwEnabled(), // S2a — advisory 3-level zone evaluator
+      safetyVision: safetyVisionEnabled(), // S2b — vision human-detection producer
+      safetyPlcAdapter: safetyPlcAdapterEnabled(), // S2b — read-only safety-PLC adapter
       advisory: true, // explicit: this subsystem is advisory, not safety-rated
     })),
 
@@ -328,6 +381,193 @@ export const safetyRouter = router({
       const r = await updateZone(input);
       if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "update failed" });
       return r;
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // S2b — VISION HUMAN-DETECTION PRODUCER (advisory, flag SAFETY_VISION_ENABLED)
+  // ⚠ Turns pixel person-detections + a per-camera homography into FLOOR positions
+  //    → drives the S2a evaluator. NEVER fabricates a detection: no backend / no
+  //    calibration ⇒ produces NOTHING. yolo26n.pt is PyTorch → needs a one-time
+  //    ONNX export before the ONNX hook can run. ADVISORY, never a rated stop.
+  // ══════════════════════════════════════════════════════════════════════════
+  visionStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(() => ({
+      safetyVision: safetyVisionEnabled(),
+      advisory: true,
+      // honest: the model inference is a documented seam until yolo26n.pt→.onnx export.
+      onnxPersonModelWired: false,
+      note: "ADVISORY. Needs a real camera + per-camera homography calibration + an exported ONNX person model (yolo26n.pt is PyTorch — export to .onnx once). No fabricated detections.",
+    })),
+
+  /** List camera calibrations (read — always allowed). */
+  listCameraCalibrations: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          cameraId: z.string().max(128).optional(),
+          safetyZoneId: z.number().int().positive().optional(),
+          robotId: z.number().int().positive().optional(),
+          onlyEnabled: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => listCalibrations(input ?? {})),
+
+  /**
+   * Upsert a camera calibration (flag-gated). Provide a precomputed homography (9
+   * numbers) OR ≥4 image↔floor pairs to SOLVE it from. Returns the mean reprojection
+   * residual (mm) as a calibration-quality honesty metric.
+   */
+  upsertCameraCalibration: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        id: z.number().int().positive().optional(),
+        cameraId: z.string().min(1).max(128),
+        name: z.string().max(255).optional(),
+        homography: homographySchema.optional(),
+        pairs: z.array(calibrationPairSchema).min(4).optional(),
+        safetyZoneId: z.number().int().positive().optional(),
+        robotId: z.number().int().positive().optional(),
+        stationId: z.number().int().positive().optional(),
+        lineId: z.number().int().positive().optional(),
+        imageWidth: z.number().int().positive().optional(),
+        imageHeight: z.number().int().positive().optional(),
+        enabled: z.boolean().optional(),
+        notes: z.string().max(2000).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyVisionFlag();
+      const r = await upsertCalibration({
+        ...input,
+        homography: input.homography as
+          | [number, number, number, number, number, number, number, number, number]
+          | undefined,
+      });
+      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "calibration upsert failed" });
+      return r;
+    }),
+
+  /**
+   * Ingest a DETECTION FRAME (pixel person boxes) for a calibrated camera → project to
+   * floor positions → S2a evaluator (advisory reactions). For testing + external
+   * detectors. NEVER fabricates: empty detections ⇒ nothing produced.
+   */
+  ingestDetectionFrame: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        cameraId: z.string().min(1).max(128),
+        detections: z.array(personDetectionSchema).max(200),
+        robots: z.array(simRobotSchema).max(200).optional(),
+        minConfidence: z.number().min(0).max(1).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyVisionFlag();
+      return produce({
+        cameraId: input.cameraId,
+        detections: input.detections as PersonDetection[],
+        robots: input.robots,
+        minConfidence: input.minConfidence,
+        scope: input.scope ?? null,
+        corporateCode: input.corporateCode ?? null,
+        factoryId: input.factoryId ?? null,
+      });
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // S2b — SAFETY-PLC STATUS ADAPTER (READ-ONLY, flag SAFETY_PLC_ADAPTER_ENABLED)
+  // ⚠ Observes a certified Safety PLC's NON-safety-rated status (e-stop/zone/reset/
+  //    muting) over Modbus/OPC-UA (or a scripted sim) → advisory safety_events. NEVER
+  //    actuates a rated stop — the certified PLC performs that itself in hardware.
+  // ══════════════════════════════════════════════════════════════════════════
+  plcStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(() => ({
+      safetyPlcAdapter: safetyPlcAdapterEnabled(),
+      advisory: true,
+      readOnly: true,
+      note: "READ-ONLY monitoring. The certified Safety PLC performs the rated stop in hardware; this only OBSERVES status and LOGS advisory events. Default backend is a clearly-labelled sim.",
+    })),
+
+  listSafetyPlcConfigs: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          robotId: z.number().int().positive().optional(),
+          stationId: z.number().int().positive().optional(),
+          lineId: z.number().int().positive().optional(),
+          onlyEnabled: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => listPlcConfigs(input ?? {})),
+
+  upsertSafetyPlcConfig: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        id: z.number().int().positive().optional(),
+        code: z.string().min(1).max(64),
+        name: z.string().min(1).max(255),
+        vendor: z.enum(["pilz", "sick", "generic"]).optional(),
+        backend: z.enum(["sim", "modbus", "opcua"]).optional(),
+        endpoint: z.string().max(512).optional(),
+        statusMap: z
+          .object({
+            estop: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
+            zoneOccupied: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
+            resetRequired: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
+            muting: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
+            simScript: z.array(plcStatusSnapshotSchema).optional(),
+          })
+          .optional(),
+        robotId: z.number().int().positive().optional(),
+        stationId: z.number().int().positive().optional(),
+        lineId: z.number().int().positive().optional(),
+        enabled: z.boolean().optional(),
+        notes: z.string().max(2000).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyPlcFlag();
+      const r = await upsertPlcConfig(input);
+      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "safety-PLC config upsert failed" });
+      return r;
+    }),
+
+  /**
+   * Read one status snapshot from a safety-PLC config (sim or real) → advisory events.
+   * READ-ONLY. An optional `simStatus` injects a scripted status for testing (still a
+   * clearly-labelled sim). Never actuates.
+   */
+  readSafetyPlc: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        configId: z.number().int().positive(),
+        /** Optional scripted status to inject (test/sim) — a single snapshot. */
+        simStatus: plcStatusSnapshotSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyPlcFlag();
+      const override = input.simStatus ? new SimSafetyPlcBackend([input.simStatus]) : undefined;
+      return readConfigById(input.configId, override);
     }),
 
   // ══════════════════════════════════════════════════════════════════════════

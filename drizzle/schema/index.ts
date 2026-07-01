@@ -40,6 +40,7 @@ export * from "./fleetResource";
 export * from "./twin";
 export * from "./safetyWorkforce";
 export * from "./safetyZones";
+export * from "./safetyVision";
 export * from "./equipmentStandards";
 export * from "./equipmentIntegration";
 export * from "./fieldHealth";

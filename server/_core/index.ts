@@ -4773,6 +4773,28 @@ async function startServer() {
     console.error("[Interlock] init failed:", (err as any)?.message || err);
   }
 
+  // S2b (doc 20 §2/§5) — Vision human-detection producer + Safety-PLC status adapter.
+  // Both are ADVISORY and ON-DEMAND (driven by safety.ingestDetectionFrame /
+  // safety.readSafetyPlc), so there is NO persistent poller/socket to start — this
+  // block only ANNOUNCES the flag state honestly (no work, no control path). Disabled
+  // by default; opt in via SAFETY_VISION_ENABLED / SAFETY_PLC_ADAPTER_ENABLED.
+  // HONEST: SAFETY_VISION needs a real camera + calibration + an exported ONNX person
+  // model (yolo26n.pt is PyTorch → export to .onnx once); with no backend it produces
+  // NOTHING. SAFETY_PLC is READ-ONLY monitoring — the certified Safety PLC performs the
+  // rated stop itself in hardware; this only OBSERVES and LOGS advisory events.
+  try {
+    const { safetyVisionEnabled } = await import("../services/safety/vision/humanDetectionProducer");
+    const { safetyPlcAdapterEnabled } = await import("../services/safety/plc/safetyPlcAdapter");
+    if (safetyVisionEnabled()) {
+      console.log("[SafetyVision] SAFETY_VISION_ENABLED=true — ADVISORY producer ready (on-demand; needs real camera+calibration+ONNX person model; no fabricated detections).");
+    }
+    if (safetyPlcAdapterEnabled()) {
+      console.log("[SafetyPLC] SAFETY_PLC_ADAPTER_ENABLED=true — READ-ONLY status adapter ready (on-demand; sim backend by default; NEVER actuates a rated stop).");
+    }
+  } catch (err) {
+    console.error("[S2b] init failed:", (err as any)?.message || err);
+  }
+
   // G2/G7 — PdM closed-loop: tự sinh maintenance work-order từ predictedFailureRisk.
   // Disabled by default; opt in via PDM_WORKORDER_ENABLED=true.
   try {
