@@ -25,6 +25,7 @@ import {
   type GenealogyInput,
 } from "../utils/genealogyChain";
 import { raiseAndon } from "./andon/andonService";
+import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import type { InsertComponentInstallation } from "../../drizzle/schema";
 
 export interface RecordComponentInstallationInput {
@@ -142,6 +143,27 @@ export async function recordComponentInstallation(
       recordedAt,
     });
     genealogy = { id: inserted.id, prevHash, currHash };
+
+    // K0+-c: ADDITIVELY publish the genealogy (merge) record to the durable ERP
+    // outbox. Fire-and-forget + error-isolated (never blocks capture); gated by
+    // ERP_OUTBOX_ENABLED (no-op when off). Idempotent per genealogy row id.
+    publishToOutbox({
+      eventType: "genealogy-record",
+      payload: {
+        genealogyId: inserted.id,
+        installationId,
+        eventType: "merge",
+        serialNumber: input.serialNumber,
+        parentSerial: input.componentSerial ?? null,
+        componentCode: input.componentCode,
+        lotCode: input.lotCode ?? null,
+        currHash,
+        prevHash,
+        recordedAt: recordedAt.toISOString(),
+      },
+      idempotencyKey: `gen-${inserted.id}`,
+    });
+
     // Best-effort link the hash back onto the installation row.
     try {
       await db.updateComponentInstallationGenealogyHash(installationId, currHash);

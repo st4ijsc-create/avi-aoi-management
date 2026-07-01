@@ -34,6 +34,7 @@
  */
 import { getDb } from "../db/connection";
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import {
   wipTracking,
   stationDwellTime,
@@ -137,6 +138,30 @@ export async function ingestInspectionToWip(input: WipIngestInput): Promise<void
       await updateLineBalance(database, lineId, stationId, input.cycleTimeSec ?? null, at).catch((e) =>
         console.error("[wipIngest] line balance failed:", (e as any)?.message ?? e),
       );
+    }
+
+    // (e) K0+-c: ADDITIVELY publish a production-event to the durable ERP outbox
+    // (unit passed through a station). Fire-and-forget + error-isolated (this whole
+    // function already never blocks the inspection insert); gated by
+    // ERP_OUTBOX_ENABLED (no-op when off). Idempotent per serial+station+time.
+    if (input.serialNumber) {
+      publishToOutbox({
+        eventType: "production-event",
+        payload: {
+          kind: "wip-station-pass",
+          serialNumber: input.serialNumber,
+          lotNumber: input.lotNumber ?? null,
+          machineId: input.machineId,
+          stationId,
+          lineId,
+          productModelId: input.productModelId ?? null,
+          productCode: input.productCode ?? null,
+          overallResult: result || null,
+          cycleTimeSec: input.cycleTimeSec ?? null,
+          timestamp: at.toISOString(),
+        },
+        idempotencyKey: `pe-${input.serialNumber}-${stationId ?? "na"}-${at.getTime()}`,
+      });
     }
   } catch (e) {
     // Absolute last-resort guard — must never propagate to the inspection insert.

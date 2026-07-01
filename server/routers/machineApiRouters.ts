@@ -8,6 +8,7 @@ import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/soc
 import { statsCache, CACHE_KEYS } from "../_core/cache";
 import * as cachedStats from "../functions/cachedStatistics";
 import { publishPointsConfigChanged } from "../services/mqttService";
+import { publishToOutbox } from "../services/integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import * as aiAdvancedDb from "../db/aiAdvanced";
 import { confirmDeployment as svcConfirmDeployment, recordEdgeHeartbeat as svcRecordHeartbeat, syncEdgeResults as svcSyncEdgeResults } from "../services/aiEdgeEnhanced";
 import {
@@ -189,6 +190,25 @@ export const machineApiRouter = router({
         inspectionTime: localInspTime,
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
 
+      });
+
+      // K0+-c: ADDITIVELY publish the quality result to the durable ERP outbox.
+      // Fire-and-forget + error-isolated (never blocks/affects the ingest path);
+      // gated by ERP_OUTBOX_ENABLED (no-op when off). Idempotent per inspectionId.
+      publishToOutbox({
+        eventType: "quality-result",
+        payload: {
+          inspectionId,
+          serialNumber: input.serialNumber,
+          machineId: machine.id,
+          machineCode: machine.code,
+          overallResult: input.overallResult,
+          productModelId: productModelRecord?.id ?? null,
+          productionOrderCode: input.productionOrderCode ?? null,
+          inspectionTime: localInspTime.toISOString(),
+        },
+        idempotencyKey: `qr-${inspectionId}`,
+        corporateCode: input.companyCode ?? null,
       });
 
       // Update production order quantities if linked

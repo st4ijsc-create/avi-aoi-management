@@ -52,6 +52,7 @@
 
 import { getDb } from "../db/connection";
 import { and, eq, gte, lte, isNotNull, sql } from "drizzle-orm";
+import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import {
   downtimeEvents,
   oeeMetrics,
@@ -260,6 +261,32 @@ export async function persistOEEMetric(params: {
     notes: params.notes,
   };
   const [inserted] = await db.insert(oeeMetrics).values(row).returning({ id: oeeMetrics.id });
+
+  // K0+-c: ADDITIVELY publish the OEE metric to the durable ERP outbox.
+  // Fire-and-forget + error-isolated (never blocks OEE persist); gated by
+  // ERP_OUTBOX_ENABLED (no-op when off). Idempotent per machine+window+period.
+  if (inserted?.id) {
+    const periodType = params.periodType ?? "HOUR";
+    publishToOutbox({
+      eventType: "oee-metric",
+      payload: {
+        oeeMetricId: inserted.id,
+        machineId: b.machineId,
+        machineCode: params.machineCode,
+        timestamp: b.windowEnd.toISOString(),
+        periodType,
+        availability: row.availability,
+        performance: row.performance,
+        quality: row.quality,
+        oee: row.oee,
+        totalCount: b.totalCount,
+        goodCount: b.goodCount,
+        rejectCount: b.rejectCount,
+      },
+      idempotencyKey: `oee-${b.machineId}-${b.windowEnd.getTime()}-${periodType}`,
+    });
+  }
+
   return inserted?.id ?? null;
 }
 

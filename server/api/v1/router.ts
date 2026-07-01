@@ -26,6 +26,8 @@ import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
 import { registerErpIntakeRoutes } from "./erpIntake";
+import { registerErpOauthRoutes } from "./erpOauth";
+import { mtlsGuard } from "./erpMtls";
 import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
@@ -123,6 +125,11 @@ export function createV1Router(): Router {
   const r = Router();
   // The parent app may already parse JSON, but make this router self-contained.
   r.use(jsonBody({ limit: "25mb" }));
+
+  // mTLS HONEST SEAM (K0+-a): NO-OP unless REQUIRE_CLIENT_CERT is set. When set,
+  // fail-closed if the TLS-terminating layer did not present a verified client
+  // cert. Real mTLS is transport/deploy config (see erpMtls.ts) — never faked here.
+  r.use(mtlsGuard);
 
   // GET /equipment — list machines + resolved capabilities.
   r.get(
@@ -475,9 +482,16 @@ export function createV1Router(): Router {
     }),
   );
 
+  // ── OAuth2 client-credentials (K0+-a) — POST /oauth/token. ──────────────────
+  // ADDITIVE machine-to-machine auth for ERP partners; issues a short-lived signed
+  // JWT carrying scopes. Gated by ERP_OAUTH_ENABLED (off → structured 503). The
+  // issued token is accepted as an alternative Bearer on /orders /bom (auth.ts).
+  registerErpOauthRoutes(r);
+
   // ── Inbound ERP intake (R0 Khối 0) — POST /orders, POST /bom. ───────────────
   // Idempotent (X-Idempotency-Key), versioned (schemaVersion), erp:write scope,
   // gated by ERP_INBOUND_ENABLED (off → structured 503). Emits order.created.
+  // Accepts JSON or B2MML XML (K0+-b, ERP_B2MML_ENABLED) — same upsert path.
   registerErpIntakeRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).

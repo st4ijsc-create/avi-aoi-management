@@ -215,3 +215,56 @@ describe("R0-3 inbound order intake", () => {
     expect(body.error.code).toBe("validation_failed");
   });
 });
+
+// ── K0+-b: inbound B2MML XML path maps to the SAME upsert ──────────────────────
+describe("K0+-b inbound B2MML XML order intake", () => {
+  it("decodes a B2MML ProductionSchedule and upserts via the same path (201)", async () => {
+    process.env.ERP_B2MML_ENABLED = "true";
+    const { encodeOrderB2MML } = await import("../../services/integration/b2mmlCodec");
+    const xml = encodeOrderB2MML({
+      schemaVersion: "1.0",
+      orderCode: "WO-XML-1",
+      companyCode: "ACME",
+      factoryId: 1,
+      workshopId: 1,
+      lineId: 1,
+      productModelId: 1,
+      targetQuantity: 250,
+    });
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { Authorization: "Bearer MASTER", "Content-Type": "application/xml", "X-Idempotency-Key": "xml-1" },
+      body: xml,
+    });
+    expect(resp.status).toBe(201);
+    const body = await resp.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.orderCode).toBe("WO-XML-1");
+    // The SAME upsert path ran: a production_orders row was inserted.
+    expect(state.productionOrders.length).toBe(1);
+    delete process.env.ERP_B2MML_ENABLED;
+  });
+
+  it("refuses XML with 415 b2mml_disabled when ERP_B2MML_ENABLED is off", async () => {
+    delete process.env.ERP_B2MML_ENABLED;
+    const { encodeOrderB2MML } = await import("../../services/integration/b2mmlCodec");
+    const xml = encodeOrderB2MML({
+      schemaVersion: "1.0",
+      orderCode: "WO-XML-2",
+      companyCode: "ACME",
+      factoryId: 1,
+      workshopId: 1,
+      lineId: 1,
+      productModelId: 1,
+      targetQuantity: 10,
+    });
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { Authorization: "Bearer MASTER", "Content-Type": "application/xml", "X-Idempotency-Key": "xml-2" },
+      body: xml,
+    });
+    expect(resp.status).toBe(415);
+    const body = await resp.json();
+    expect(body.error.code).toBe("b2mml_disabled");
+  });
+});

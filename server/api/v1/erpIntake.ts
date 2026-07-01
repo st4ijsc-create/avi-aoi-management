@@ -25,17 +25,52 @@
  * scope for R0.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Router, Request, Response } from "express";
+import { text as textBody, type Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { requireScope } from "./auth";
 import { API_SCOPES } from "./scopes";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { eventBus } from "../../_core/eventBus";
+import { b2mmlEnabled, decodeOrderB2MML, decodeBomB2MML, looksLikeXml } from "../../services/integration/b2mmlCodec";
 
 /** True when inbound ERP intake is enabled (default OFF for safety). */
 export function erpInboundEnabled(): boolean {
   return process.env.ERP_INBOUND_ENABLED === "true" || process.env.ERP_INBOUND_ENABLED === "1";
+}
+
+/**
+ * Resolve the intake body to a plain JSON object. When the request carried B2MML
+ * XML (Content-Type: application/xml or a body that looks like B2MML) AND the
+ * codec flag is on, decode it via the appropriate ISA-95 decoder → the SAME shape
+ * the Zod schema validates. Otherwise the JSON body (already parsed by jsonBody)
+ * is used unchanged. `resource` selects the decoder ("orders" | "bom").
+ *
+ * HONEST SEAM: when a body looks like XML but ERP_B2MML_ENABLED is OFF, we throw a
+ * clear 415 rather than silently trying to treat XML as JSON.
+ */
+function resolveIntakeBody(req: Request, resource: "orders" | "bom"): Record<string, unknown> {
+  const contentType = (req.header("content-type") || "").toLowerCase();
+  const rawText = typeof req.body === "string" ? req.body : undefined;
+  const isXml = contentType.includes("xml") || (rawText !== undefined && looksLikeXml(rawText));
+
+  if (isXml) {
+    if (!b2mmlEnabled()) {
+      throw new ApiHttpError(415, "b2mml_disabled", "B2MML/XML intake is disabled (ERP_B2MML_ENABLED). Send application/json instead.");
+    }
+    const xml = rawText ?? (typeof req.body === "object" ? "" : String(req.body ?? ""));
+    if (!xml) {
+      throw new ApiHttpError(400, "empty_xml", "Empty XML body.");
+    }
+    try {
+      const decoded = resource === "orders" ? decodeOrderB2MML(xml) : decodeBomB2MML(xml);
+      return decoded as unknown as Record<string, unknown>;
+    } catch (err) {
+      throw new ApiHttpError(400, "b2mml_decode_failed", `Failed to decode B2MML ${resource}: ${(err as Error)?.message ?? err}`);
+    }
+  }
+
+  return (req.body ?? {}) as Record<string, unknown>;
 }
 
 /** Extract the idempotency key from header or body. Required for every POST. */
@@ -150,7 +185,7 @@ const bomIntakeSchema = z.object({
  */
 async function handleOrderIntake(req: Request, res: Response): Promise<void> {
   if (!ensureEnabled(res)) return;
-  const body = (req.body ?? {}) as Record<string, unknown>;
+  const body = resolveIntakeBody(req, "orders");
   const idempotencyKey = extractIdempotencyKey(req, body);
 
   // Idempotent replay BEFORE validation cost — a duplicate key returns the prior result.
@@ -216,7 +251,7 @@ async function handleOrderIntake(req: Request, res: Response): Promise<void> {
  */
 async function handleBomIntake(req: Request, res: Response): Promise<void> {
   if (!ensureEnabled(res)) return;
-  const body = (req.body ?? {}) as Record<string, unknown>;
+  const body = resolveIntakeBody(req, "bom");
   const idempotencyKey = extractIdempotencyKey(req, body);
 
   const prior = await findPriorResult("bom", idempotencyKey);
@@ -294,8 +329,13 @@ async function handleBomIntake(req: Request, res: Response): Promise<void> {
  * createV1Router so the surface stays additive.
  */
 export function registerErpIntakeRoutes(r: Router): void {
-  r.post("/orders", requireScope(API_SCOPES.ERP_WRITE), wrap(handleOrderIntake));
-  r.post("/bom", requireScope(API_SCOPES.ERP_WRITE), wrap(handleBomIntake));
+  // Capture B2MML XML bodies as raw text (K0+-b) — the parent router's json()
+  // parser ignores non-JSON content types, so an XML POST arrives with an empty
+  // body unless we also parse text/*+xml here. JSON POSTs are unaffected (this
+  // text parser only matches xml content types).
+  const xmlBody = textBody({ type: ["application/xml", "text/xml", "application/*+xml"], limit: "25mb" });
+  r.post("/orders", xmlBody, requireScope(API_SCOPES.ERP_WRITE), wrap(handleOrderIntake));
+  r.post("/bom", xmlBody, requireScope(API_SCOPES.ERP_WRITE), wrap(handleBomIntake));
 
   // TODO (R0 follow-up): POST /routing and GET /material-availability are NOT
   // exposed — no `routing`/`process_routing` master table exists in the schema,

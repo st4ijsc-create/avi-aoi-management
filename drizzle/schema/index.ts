@@ -34,6 +34,7 @@ export * from "./edge";
 export * from "./programming";
 export * from "./federation";
 export * from "./integrationOutbox";
+export * from "./erpOauth";
 export * from "./fleet";
 export * from "./fleetResource";
 export * from "./twin";

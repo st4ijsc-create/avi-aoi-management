@@ -71,6 +71,9 @@ function backoffDelayMs(attempts: number): number {
 
 // ── Producer helper ──────────────────────────────────────────────────────────
 
+/** Reserved payload key carrying the requested wire format (K0+-b). */
+const FORMAT_META_KEY = "__format";
+
 export interface EnqueueOutboxInput {
   eventType: OutboxEventType;
   payload: Record<string, unknown>;
@@ -78,6 +81,13 @@ export interface EnqueueOutboxInput {
   /** Optional dedup key — enqueue is idempotent on it (no double-publish). */
   idempotencyKey?: string;
   corporateCode?: string;
+  /**
+   * Requested outbound wire format (K0+-b). "json" (default) delivers the JSON
+   * envelope; "b2mml" delivers a B2MML ProductionPerformance XML — ONLY when
+   * ERP_B2MML_ENABLED is on (else it falls back to JSON). Stored inline in the
+   * payload under a reserved key so no schema change / new column is needed.
+   */
+  format?: "json" | "b2mml";
 }
 
 export interface EnqueueResult {
@@ -126,11 +136,18 @@ export async function enqueueOutbox(input: EnqueueOutboxInput): Promise<EnqueueR
       if (existing[0]) return { ok: true, id: existing[0].id, duplicate: true };
     }
 
+    // Carry the requested format inline in the payload (reserved key) so the
+    // worker can render B2MML at delivery time — no schema change required.
+    const payloadWithMeta =
+      input.format && input.format !== "json"
+        ? { ...input.payload, [FORMAT_META_KEY]: input.format }
+        : input.payload;
+
     const [row] = await db
       .insert(integrationOutbox)
       .values({
         eventType: input.eventType,
-        payload: input.payload as never,
+        payload: payloadWithMeta as never,
         targetEndpoint: input.targetEndpoint,
         status: "pending",
         attempts: 0,
@@ -227,24 +244,49 @@ export function _resetBreakers(): void {
 
 // ── Delivery ─────────────────────────────────────────────────────────────────
 
+/**
+ * Render the delivery body for a row. Default is the JSON envelope. When the row
+ * requested B2MML (reserved payload key) AND ERP_B2MML_ENABLED is on, render a
+ * B2MML ProductionPerformance XML instead. Fail-safe: any codec error falls back
+ * to JSON so delivery never breaks on formatting.
+ */
+async function renderBody(row: { id: number; eventType: string; payload: unknown }): Promise<{ body: string; contentType: string }> {
+  const timestamp = new Date().toISOString();
+  const payloadObj = (row.payload && typeof row.payload === "object" ? { ...(row.payload as Record<string, unknown>) } : {}) as Record<string, unknown>;
+  const requestedFormat = payloadObj[FORMAT_META_KEY];
+  delete payloadObj[FORMAT_META_KEY]; // never leak the meta key downstream
+
+  const jsonBody = () =>
+    JSON.stringify({ event: row.eventType, timestamp, outboxId: row.id, data: payloadObj });
+
+  if (requestedFormat === "b2mml") {
+    const b2mmlOn = process.env.ERP_B2MML_ENABLED === "true" || process.env.ERP_B2MML_ENABLED === "1";
+    if (b2mmlOn) {
+      try {
+        const { encodePerformanceB2MML } = await import("./b2mmlCodec");
+        const xml = encodePerformanceB2MML({ eventType: row.eventType, timestamp, data: payloadObj });
+        return { body: xml, contentType: "application/xml" };
+      } catch (err) {
+        console.error("[erpOutbox] B2MML render failed, falling back to JSON:", (err as Error)?.message ?? err);
+      }
+    }
+  }
+  return { body: jsonBody(), contentType: "application/json" };
+}
+
 /** POST one outbox row's payload to its endpoint. Resolves with the HTTP outcome. */
 async function deliver(row: { id: number; eventType: string; payload: unknown; targetEndpoint: string }): Promise<{
   ok: boolean;
   status?: number;
   error?: string;
 }> {
-  const body = JSON.stringify({
-    event: row.eventType,
-    timestamp: new Date().toISOString(),
-    outboxId: row.id,
-    data: row.payload,
-  });
+  const { body, contentType } = await renderBody(row);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
   try {
     const resp = await fetch(row.targetEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Outbox-Id": String(row.id), "X-Event-Type": row.eventType },
+      headers: { "Content-Type": contentType, "X-Outbox-Id": String(row.id), "X-Event-Type": row.eventType },
       body,
       signal: controller.signal,
     });
@@ -330,6 +372,61 @@ export async function drainOnce(now = new Date()): Promise<DrainResult> {
     console.error("[erpOutbox] drain failed:", (err as Error)?.message ?? err);
   }
   return result;
+}
+
+/**
+ * Requeue dead-lettered rows (status='dead') back to 'pending' for another
+ * delivery round (attempts reset, nextAttemptAt=now). Used by the admin
+ * retry-dead-letter action. Returns the number of rows requeued. Fail-safe.
+ * When `ids` is given, only those rows are requeued; otherwise ALL dead rows.
+ */
+export async function retryDeadLetters(ids?: number[]): Promise<{ requeued: number }> {
+  try {
+    const db = await getDb();
+    if (!db) return { requeued: 0 };
+    const setValues = { status: "pending", attempts: 0, nextAttemptAt: new Date(), lastError: null };
+    const rows =
+      ids && ids.length > 0
+        ? await db
+            .update(integrationOutbox)
+            .set(setValues)
+            .where(and(eq(integrationOutbox.status, "dead"), inArray(integrationOutbox.id, ids)))
+            .returning({ id: integrationOutbox.id })
+        : await db
+            .update(integrationOutbox)
+            .set(setValues)
+            .where(eq(integrationOutbox.status, "dead"))
+            .returning({ id: integrationOutbox.id });
+    return { requeued: rows.length };
+  } catch (err) {
+    console.error("[erpOutbox] retryDeadLetters failed:", (err as Error)?.message ?? err);
+    return { requeued: 0 };
+  }
+}
+
+/** List recent dead-letter rows for the admin surface. Fail-safe. */
+export async function listDeadLetters(limit = 50): Promise<Array<Record<string, unknown>>> {
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db
+      .select({
+        id: integrationOutbox.id,
+        eventType: integrationOutbox.eventType,
+        targetEndpoint: integrationOutbox.targetEndpoint,
+        attempts: integrationOutbox.attempts,
+        lastError: integrationOutbox.lastError,
+        idempotencyKey: integrationOutbox.idempotencyKey,
+        createdAt: integrationOutbox.createdAt,
+      })
+      .from(integrationOutbox)
+      .where(eq(integrationOutbox.status, "dead"))
+      .orderBy(integrationOutbox.id)
+      .limit(Math.min(Math.max(limit, 1), 500));
+    return rows as Array<Record<string, unknown>>;
+  } catch {
+    return [];
+  }
 }
 
 /** Lightweight outbox counts for a health/admin surface. */

@@ -125,6 +125,7 @@ import { edgeRuntimeRouter } from "./routers/edgeRuntimeRouter"; // E4: edge con
 import { programmingRouter } from "./routers/programmingRouter"; // Doc 09 / D0: Device Programming & Control (DPC_DEPLOY_ENABLED; build/sim safe, deploy gated)
 import { irRouter } from "./routers/irRouter"; // Doc 16 §11.1 / D1: IR programming layer (motion/IO block AST + semantic safety linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED; flows through the EXISTING programming gate)
 import { apiKeyRouter } from "./routers/apiKeyRouter"; // Control plane: scoped API-key admin CRUD (create-show-once + sha256 hash reuse)
+import { erpAdminRouter } from "./routers/erpAdminRouter"; // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth clients (create-show-once) + outbox status/dead-letter retry (ERP_OAUTH_ENABLED for client mutations)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
@@ -370,6 +371,7 @@ export const appRouter = router({
   programming: programmingRouter,
   ir: irRouter, // D1 (doc 16 §11.1 / Khối 6): IR programming layer (linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED)
   apiKey: apiKeyRouter,
+  erpAdmin: erpAdminRouter, // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth2 clients + outbox ops
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   robot: robotRouter,
