@@ -113,7 +113,7 @@ Gom theo chủ đề, ưu tiên theo **đòn bẩy** (G-1 mở khóa mọi thứ
 | **U4b** ✅ (registry) | **Registry data-driven (register-and-go)** — đóng **G-8** | 4 registry theo family (mirror `ot/driverRegistry`): **equipment adapter** (`registerEquipmentAdapter`), **capability profile** (`registerCapabilityProfile`, 17 class seed), **programming adapter** (`registerProgrammingAdapter`), **module** (`registerModule`, `SEED_MODULES` seed). Mọi kind/class/module hiện có **seed tại load → resolve y hệt** (behavior-preserving); union type giữ nguyên cho type-safety. Thêm vendor/kind/module = 1 lệnh `register…()`, không sửa core switch/array. Tests: `registryU4b.test.ts` (equipment 9 + programming 5) + `module-registry.test.ts` chứng minh parity + new-kind register-and-go + unknown vẫn báo lỗi trung thực; full equipment/programming/standards/fleet regression xanh (258 tests). Doc: `ADAPTER_SDK.md §8`. **API `/api/v1` phần U4 do agent song song.** | G-8 | — |
 | **U5** ✅ (BE) | **Federation Panorama** — đóng **G-7** | **Data-loss đã sửa:** `siteClient.fetchSiteKpis` **giữ `details[]`** (per-machine/station rows, trước bị fetch-rồi-vứt ở ~135) vào `SiteKpiSnapshot.detailRows`; **OEE thật** (không còn hard-code `oee:null` ở ~194) qua feed `/api/external/oee/summary` (units-weighted avg của live OEE), honest-null khi site cũ 404. **Rollup per-`category`** (dùng cột `category` sẵn có — KHÔNG cần cột mới cho nó): `rollupStore.upsertSnapshot` ghi hàng `overall`+`inspection`+`oee` (luôn) + `fleet`/`safety`/`pdm` (CHỈ khi feed trả lời → honest absence, không bịa hàng 0). **Alert roll-up:** feed `/api/external/alerts/summary` (andon chưa-resolve + safety non-near-miss=critical + near-miss) → `alertRollup` jsonb trên hàng `overall` → procedure `federation.alertRollup()` (tổng open/critical/nearMiss + top-N, `sitesWithAlertFeed` = cơ sở trung thực). **`site:` live layer:** room `site:{code}` + `sites:global`; aggregator emit `site:update` (freshness + headline KPI + alert counts) mỗi cycle poll thành công (gated bởi flag aggregator; error-isolated). **Tổng quát hoá:** `metrics` jsonb bag (fleet/safety/pdm) + 3 procedure mới `siteDetail({siteCode})` (drill station→device từ detailRows), `alertRollup()`, `categoryRollup({category})`. **Feeds site-side mới** (đọc-only, cùng auth `/api/external/*`): `oee`/`fleet`/`safety`/`pdm`/`alerts` summary. **Migration 0155** (additive/idempotent): 3 cột jsonb `detailRows`/`alertRollup`/`metrics` trên `site_kpi_rollup` (KHÔNG chạy). Giữ nguyên circuit-breaker/allSettled/staleness/read-only. Tests: `federationPanorama` (5) + `aggregatorSiteUpdate` (3) + `federationPanoramaRouter` (4) — details retained, per-category, real-OEE+honest-null, alert aggregate, Down/Stale honest, site:update emit, flag-off no-op; federation+ecosystem full xanh (57), `npm run check` xanh. **Còn lại (FE, U2):** Drill site→factory→device trong Command Center UI + subscribe `site:update`. | G-7 | U1, U2 |
 | **U6** | **Tenant + Scale hardening** | Backfill tenant cột + RLS cho `programming.ts`/`ai.ts`(anomaly)/`mes.ts`(PdM). Nối **Redis fan-out** sau eventBus/telemetryBus (bỏ trần 1-server). Cân nhắc FK thật hoặc contract soft-ref + integrity check cho asset↔task↔program↔genealogy. | G-9, G-10, G-12 | — |
-| **U7** | **Hợp nhất dashboard** | Dedupe: gộp 2 twin surface, OEE×3→1 nguồn, WIP×3→1, dọn 4–5 trang quản lý dashboard; redirect trang trùng về Command Center/cockpit (theo nguyên tắc doc 12). | G-11 | U2, U3 |
+| **U7** ✅ (§15) | **Hợp nhất dashboard** | Phân loại 16 surface (CANONICAL/REDIRECT/KEEP-DIFFERENTIATED). Chỉ redirect **true dup** (`/custom-dashboard` → hub `dashboard-center` đã embed sẵn); giữ mọi view khác-biệt (2 twin, OEE, WIP-dispatch vs MES hub, drill/corporate/production — router+audience riêng, KHÔNG mất what-if/dispatch) + **cross-link** chúng về Command Center/nhau. Bảo toàn 100% chức năng. | G-11 | U2, U3 |
 
 **Thứ tự khuyến nghị:** `U1` (backbone) → `U2` + `U3` (song song, đều tiêu thụ U1) → `U4`/`U5` → `U6`/`U7`.
 
@@ -448,3 +448,52 @@ Các link asset↔task↔program↔genealogy là `integer("...Id")`/`varchar("..
 - **Redis fan-out CẦN client + URL thật**: `ioredis` có sẵn nên chỉ cần set `REDIS_URL` + `EVENTBUS_REDIS_ENABLED=true` là chạy thật; thiếu URL → seam (log-once, in-process) — KHÔNG bịa cross-instance.
 - **FK cố ý KHÔNG force-add**: G-12 đóng bằng contract + integrity **visibility** (read-only), tránh rủi ro orphan làm fail migration. Cân nhắc FK thật chỉ sau khi integrity report sạch trên staging.
 - **Migration 0156 KHÔNG chạy** (additive/idempotent, áp bằng migrate step thường). Enforcement RLS vẫn cần app connect bằng role NON-owner + wrap query trong `runWithTenantScope` khi bật cờ (adoption incremental, như các pass RLS trước).
+
+---
+
+## 15. U7 — HỢP NHẤT DASHBOARD (đóng G-11) ✅
+
+**Nguyên tắc (bảo thủ + đảo ngược được, theo doc 12):** chỉ redirect **true duplicate** về canonical (dùng `<Redirect>` như `/andon`→`/ops-console`), **GIỮ** mọi view có dữ liệu/đối tượng riêng, và **cross-link** thay vì xoá khi còn phân vân. **KHÔNG xoá file page** — redirect route là đủ (đảo ngược 1 dòng). Không mất dữ liệu/logic. Bằng chứng đọc từ code (router tRPC + tab của từng trang).
+
+### 15.1 Bảng phân loại (16 surface)
+
+| Trang / route | Quyết định | Dữ liệu phục vụ (bằng chứng) | Lý do |
+|---|---|---|---|
+| **CommandCenter** `/command-center` | **CANONICAL** (flagship U2) | `commandCenter.*` (KPI strip OEE/WIP/alarms/fleet/sites/AI/energy + cây phân cấp live + twin nhúng + rail cảnh báo live U1) | Single-pane-of-glass "xem-tất-cả live" → đích cross-link chung. |
+| **Dashboard** `/dashboard` | **KEEP-DIFF** + cross-link | `getStatsWithComparison`/`getAllMachinesStats`/`getShiftStats`/`workstation.*`/live OEE socket; tab Overview/NG-Visual/Corporate/Custom | Landing vận hành OK/NG/NTF + NG-visual + shift; nặng, khác Command Center. Cross-link → command-center, ops-console. |
+| **DashboardCenter** `/dashboard-center` | **CANONICAL hub** | Nhúng `EmbeddedCustomDashboard` + `EmbeddedDashboardTemplates` + `EmbeddedDashboardMarketplace` (3 tab) | Đã là hub quản-lý-dashboard; templates/marketplace **đã** redirect vào đây (pha trước). |
+| **CustomDashboard** `/custom-dashboard` | **REDIRECT → `/dashboard-center?tab=custom-dashboard`** | `dashboardWidget.*` (builder layout người dùng) | Nội dung ĐÃ nhúng làm tab mặc định của hub; route standalone (không có trong nav) là dây thừa → redirect. File giữ + vẫn nhúng. |
+| **DashboardTemplates** / **DashboardMarketplace** | REDIRECT (đã có, pha trước) | — | `/dashboard-templates`, `/template-marketplace`, `/dashboard-marketplace` đã redirect vào hub. Không cần đụng. |
+| **DrillDownDashboard** `/drill-down` | **KEEP-DIFF** + cross-link | `drillDown.corporateStats/factoriesByCorporate/linesByFactory/machinesByLine` — drill corp→factory→line→machine + breadcrumb | UI drill tương tác riêng biệt; router riêng. Cross-link → command-center, corporate-dashboard. |
+| **CorporateDashboard** `/corporate-dashboard` | **KEEP-DIFF** + cross-link | `corporateFactoryStats.yieldRateBy*`/`factory.list`/trend 6-tháng/live OEE; tab Overview/Comparison/Details | Roll-up cấp tập đoàn cho lãnh đạo (trend dài hạn), khác phạm vi. Cross-link → drill-down, command-center. |
+| **ProductionDashboard** `/production-dashboard` | **KEEP-DIFF** + cross-link | `productionDashboard.getStationOverview/getDefectAnalysis/getTrendData/getSpcSummary` + `predictiveMaintenance.listRulForecast`; tab Station/Defect/Trend/SPC + Compare | Giám sát cấp trạm (FPY/retest/top-defect + RUL). Router riêng. Cross-link → mes-control-tower, command-center. |
+| **OEEDashboard** `/oee-dashboard` | **KEEP-DIFF** + cross-link | `mqttClient.getAllOEE/getMachineOEE/getActiveDowntime/getDowntimeHistory/getMachineHealth/semiE10Breakdown`; tab OEE/Downtime/Health | Chuyên OEE + downtime + SEMI E10/ISO 22400 + ghi downtime. Cross-link → command-center, device-monitor. |
+| **WipLineBalance** `/wip-dashboard` | **KEEP-DIFF** + cross-link | `wip.summary/dwellByStation/lineBalance/dispatch` — pie trạng thái + dwell/bottleneck + **pull-list điều phối** (reason FIFO/bottleneck/aging) | View WIP-dispatch **sâu** (recharts + sequencing). Router `wip.*` **khác** MES. **KHÔNG mất dispatch.** Cross-link ↔ mes-control-tower. |
+| **MESControlTower** `/mes-control-tower` | **KEEP-DIFF** + cross-link | `mesControlTower.wipSummary/listWip/lineBalance/serialTrace/…` + orders + sessions + work-orders (6 tab) | Hub MES tổng hợp (WIP + trace genealogy + orders/sessions/maint). Router `mesControlTower.*` khác `wip.*`. Cross-link ↔ wip-dashboard. |
+| **DigitalTwinDashboard** (2D) `/digital-twin` | **KEEP-DIFF** + cross-link | `digitalTwin.twinState/defectHeatmap/**whatIf**/stationLoadHeatmap/predictionOverlay` + `useTwinStream` | Có **what-if mô phỏng + WIP-flow + station-load + prediction** — **UNIQUE**, KHÔNG subsume bởi 3D. Cross-link → digital-twin-center, command-center. |
+| **DigitalTwinCenter** (3D) `/digital-twin-center` | **KEEP-DIFF** + cross-link | `twin.status/sceneGraph/replay` — cảnh 3D glTF live + replay TimescaleDB | Trực quan 3D thuần, không có what-if. Cross-link → digital-twin (2D what-if), command-center. |
+
+### 15.2 Thay đổi đã áp
+
+- **Redirect (App.tsx, đảo ngược được):** `/custom-dashboard` → `/dashboard-center?tab=custom-dashboard` (dùng `<Redirect>`; gỡ import `CustomDashboard` đã thừa; file page giữ nguyên & vẫn nhúng trong hub). Đây là **true dup duy nhất** an toàn để redirect.
+- **Nav cleanup (navigation.tsx):** KHÔNG cần gỡ mục — `/command-center` đã là item đầu/nổi bật của OVERVIEW (U2); `/custom-dashboard` vốn không có trong nav (chỉ reachable bằng URL trực tiếp). Mọi trang KEEP-DIFF vẫn reachable qua nav.
+- **Cross-link (component mới `RelatedViews.tsx`, thuần điều hướng wouter `<Link>`, i18n `related.title` en/vi/zh + default fallback):** thêm rail "Related views" vào 7 trang khác-biệt:
+  - `Dashboard` → command-center · ops-console
+  - `OEEDashboard` → command-center · device-monitor
+  - `DrillDownDashboard` → command-center · corporate-dashboard
+  - `CorporateDashboard` → drill-down · command-center
+  - `ProductionDashboard` → mes-control-tower · command-center
+  - `WipLineBalance` ↔ `MESControlTower` (mỗi bên link bên kia) + command-center
+  - `DigitalTwinDashboard` (2D) ↔ `DigitalTwinCenter` (3D) + command-center
+
+### 15.3 Bảo toàn chức năng (không mất gì)
+
+- **What-if / WIP-flow / station-load / prediction** của twin 2D → GIỮ (không redirect twin 2D về 3D).
+- **Pull-list dispatch** (`wip.dispatch`) → GIỮ (không gộp WIP vào MES hub — router khác nhau).
+- Mọi router tRPC riêng (drillDown/corporateFactoryStats/productionDashboard/mqttClient OEE) → GIỮ trang tương ứng.
+- Redirect duy nhất chỉ trỏ tới nội dung **đã** nhúng sẵn (custom dashboard builder) → 0 mất dữ liệu.
+
+### 15.4 Cổng chất lượng
+
+`npm run check` (tsc --noEmit) **PASS** (exit 0). `npx vite build` **PASS** (`✓ built` ~18.6s; chỉ warning chunk-size **có sẵn**, không lỗi). File mới: `client/src/components/RelatedViews.tsx`. File sửa: `client/src/App.tsx` (redirect + gỡ import thừa), `client/src/pages/{Dashboard,OEEDashboard,DrillDownDashboard,CorporateDashboard,ProductionDashboard,WipLineBalance,MESControlTower,DigitalTwinDashboard,DigitalTwinCenter}.tsx` (cross-link), `client/src/i18n/locales/{en,vi,zh}.json` (`related.title`), doc 21 (§15 + bảng §6). **KHÔNG commit** (theo yêu cầu). **KHÔNG xoá page**, **KHÔNG dep mới**, i18n nguyên vẹn.
+

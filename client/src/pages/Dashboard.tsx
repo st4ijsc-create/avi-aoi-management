@@ -56,6 +56,7 @@ import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
 import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
+import { RelatedViews } from "@/components/RelatedViews";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
@@ -1305,6 +1306,15 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* U7 (doc 21 §3 G-11) — this operational dashboard stays as a rich landing;
+            point "see everything live" at the Command Center single pane of glass. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
+          ]}
+        />
 
         {showNoTodayDataBanner && (
           <Card className="border-warning/40 bg-warning/5">

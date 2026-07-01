@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,14 @@ export default function MESControlTower() {
           icon={<Activity className="h-6 w-6" />}
           title={t("mesControlTower.titleHub", "MES Operations Hub")}
           description={t("mesControlTower.subtitleHub", "WIP · cân bằng chuyền · truy xuất serial · lệnh sản xuất · phiên sản xuất")}
+        />
+
+        {/* U7 cross-links to the deep WIP dispatch view + the panorama. */}
+        <RelatedViews
+          links={[
+            { href: "/wip-dashboard", labelKey: "nav.wipDashboard", labelDefault: "WIP & Line Balance (dispatch)" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
         />
 
         {/* KPI cards */}

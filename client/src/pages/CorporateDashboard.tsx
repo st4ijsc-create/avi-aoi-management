@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -176,6 +177,14 @@ export default function CorporateDashboard() {
             </Button>
           </div>
         </div>
+
+        {/* U7 cross-links — executive corporate roll-up; drill or go live. */}
+        <RelatedViews
+          links={[
+            { href: "/drill-down", labelKey: "nav.drillDown", labelDefault: "Drill-Down" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">

@@ -1,4 +1,7 @@
 {
+  "related": {
+    "title": "相关视图"
+  },
   "federation": {
     "dashboard": "联邦仪表板",
     "dashboardDescription": "只读跨站点汇总。核心聚合各站点的 KPI，绝不控制站点。",

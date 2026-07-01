@@ -1,4 +1,7 @@
 {
+  "related": {
+    "title": "Xem liên quan"
+  },
   "federation": {
     "dashboard": "Bảng điều khiển Federation",
     "dashboardDescription": "Tổng hợp cross-site chỉ đọc. Lõi tổng hợp KPI của từng site — không bao giờ điều khiển site.",

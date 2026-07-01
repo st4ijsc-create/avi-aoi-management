@@ -1,4 +1,7 @@
 {
+  "related": {
+    "title": "Related views"
+  },
   "federation": {
     "dashboard": "Federation Dashboard",
     "dashboardDescription": "Read-only cross-site roll-up. The core aggregates each site's KPIs — it never controls a site.",

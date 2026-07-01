@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -130,6 +131,15 @@ export default function WipLineBalance() {
             </Button>
           </div>
         </div>
+
+        {/* U7 cross-links — this is the deep WIP dispatch view; the MES Control
+            Tower folds WIP into a broader hub, Command Center gives the panorama. */}
+        <RelatedViews
+          links={[
+            { href: "/mes-control-tower", labelKey: "nav.mesControlTower", labelDefault: "MES Control Tower" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">

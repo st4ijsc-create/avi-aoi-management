@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -508,6 +509,15 @@ export default function OEEDashboard() {
             </Dialog>
           </div>
         </div>
+
+        {/* U7 cross-links — OEE-focused view; the Command Center KPI strip + the
+            device monitor give the wider live picture. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/device-monitor", labelKey: "nav.deviceMonitor", labelDefault: "Device Monitor" },
+          ]}
+        />
 
         {/* Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">

@@ -22,6 +22,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useTwinStream } from "@/hooks/useTwinStream";
+import { RelatedViews } from "@/components/RelatedViews";
 
 /** Màu nền semantic theo màu twin trả về từ server (status+health). */
 function twinDot(color?: string | null) {
@@ -129,6 +130,14 @@ export default function DigitalTwinDashboard() {
             </p>
           </div>
         </div>
+
+        {/* U7 cross-links to the differentiated twin/overview surfaces. */}
+        <RelatedViews
+          links={[
+            { href: "/digital-twin-center", labelKey: "nav.digitalTwinCenter", labelDefault: "3D Digital Twin Center" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* KPI */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

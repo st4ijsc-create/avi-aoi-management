@@ -39,7 +39,6 @@ import MqttAlertRules from "./pages/MqttAlertRules";
 import MqttClientManagement from "./pages/MqttClientManagement";
 import MqttProfileManagement from "./pages/MqttProfileManagement";
 import MqttTopicsMessages from "./pages/MqttTopicsMessages";
-import CustomDashboard from "./pages/CustomDashboard";
 import SystemConfiguration from "./pages/SystemConfiguration";
 import ImportExport from "./pages/ImportExport";
 import UserAssignments from "./pages/UserAssignments";
@@ -360,7 +359,10 @@ function Router() {
       <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>
       <Route path="/datasettings"><RouteGuard navHref="/datasettings"><DataSettings /></RouteGuard></Route>
       <Route path="/settings"><RouteGuard requirePermission="settings_view"><Settings /></RouteGuard></Route>
-      <Route path="/custom-dashboard"><RouteGuard requirePermission="dashboard_view"><CustomDashboard /></RouteGuard></Route>
+      {/* U7 (doc 21 §6 / §3 G-11) consolidation: the standalone Custom Dashboard is
+          already embedded as the default tab of the Dashboard Center hub — redirect
+          the loose route in (reversible; CustomDashboard.tsx retained + embedded). */}
+      <Route path="/custom-dashboard"><Redirect to="/dashboard-center?tab=custom-dashboard" /></Route>
 
       {/* ── ME (self) — read-open to every authenticated role ─────────────── */}
       {/* P3-W2: full-screen Action Inbox + Today Briefing surfaces (read-open). */}

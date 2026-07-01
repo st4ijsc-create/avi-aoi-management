@@ -32,6 +32,7 @@ import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -553,6 +554,14 @@ export default function DigitalTwinCenter() {
             </Button>
           </div>
         </div>
+
+        {/* U7 cross-links to the differentiated 2D what-if twin + panorama. */}
+        <RelatedViews
+          links={[
+            { href: "/digital-twin", labelKey: "nav.digitalTwin", labelDefault: "2D Twin (what-if / WIP flow)" },
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+          ]}
+        />
 
         {/* ── Honest flag / connection banner ── */}
         {mode === "live" && (

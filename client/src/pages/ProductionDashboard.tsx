@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { useLocaleDate, getActiveLocale } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -508,6 +509,17 @@ export default function ProductionDashboard() {
               {lowYieldFilter && <span className="ml-1 text-yellow-500">●</span>}
             </span>
           </button>
+        </div>
+
+        {/* U7 cross-links — station-level production view; MES Control Tower + the
+            Command Center give the broader hub / panorama. */}
+        <div className="bg-card border-b border-border px-3 sm:px-7 py-2">
+          <RelatedViews
+            links={[
+              { href: "/mes-control-tower", labelKey: "nav.mesControlTower", labelDefault: "MES Control Tower" },
+              { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            ]}
+          />
         </div>
 
         {/* ── Toolbar ── */}

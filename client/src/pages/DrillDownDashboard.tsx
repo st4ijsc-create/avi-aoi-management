@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -347,6 +348,15 @@ export default function DrillDownDashboard() {
       <div className="space-y-6">
         {/* Breadcrumb */}
         <Breadcrumb state={drillState} onNavigate={handleNavigate} />
+
+        {/* U7 cross-links — this is the interactive corp→machine drill; the Command
+            Center offers a live hierarchy tree + panorama of the same structure. */}
+        <RelatedViews
+          links={[
+            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
+            { href: "/corporate-dashboard", labelKey: "nav.corporateDashboard", labelDefault: "Corporate Dashboard" },
+          ]}
+        />
 
         {/* Back button */}
         {drillState.level !== "corporate" && (
