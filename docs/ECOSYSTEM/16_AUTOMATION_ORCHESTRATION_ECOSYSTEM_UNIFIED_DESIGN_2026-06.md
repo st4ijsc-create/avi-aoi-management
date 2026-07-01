@@ -7,6 +7,16 @@
 
 ---
 
+> ## ⓘ CẬP NHẬT TRẠNG THÁI THỰC THI — 2026-07-01
+> Kế hoạch trong tài liệu này **đã được thực thi** trên nhánh `automation-orchestration-r0` (**32 commit**, migrations 0141–0154 áp dụng dev DB, mọi flag OFF, full test suite **2408/0 xanh**).
+> - **Toàn bộ phần mềm hoàn thành:** R0·G1·G2 (Khối 2), T1 (Khối 7), S1 (Khối 3 sw), E1 (Khối 5), I1·X1 (Khối 1/1B), D1 (Khối 6), I2 (Khối 4), K0+ (Khối 0), F1+design-system 6-wave (Frontend, Storybook chạy), V1 seed+runbook, V3 CI-xanh.
+> - **Nhóm C pre-hardware (doc 20) hoàn thành 6/6:** T2b Kinematic Simulation Gate (cổng chặn THẬT thay stub) · I3a URSim/ROS2 harness · T2a URDF→glTF · S2a zone evaluator 3-cấp · S2b vision/safety-PLC · I3b MTConnect/Euromap field-map.
+> - **Maturity mới (TB ~53%→~85%):** K0 90 · K1 90 · K1B 70 · K2 85 · K3 60(sw) · K4 95 · K5 85 · K6 85 · K7 75 · Frontend 92.
+> - **Chỉ còn phần cứng bất khả-thay-bằng-phần-mềm:** rated-stop SIL + UWB/LiDAR (S2), FOCAS Fwlib32, EtherCAT real-time, commissioning + export YOLO .onnx + hiệu chuẩn camera.
+> - Chi tiết tiến độ: **doc 18** · Phân tích Nhóm C + runbook sim: **doc 20** · Design system: **doc 17** · Kích hoạt flag: **doc 19**.
+
+---
+
 ## 0. Cách đọc tài liệu này
 
 Tài liệu tham khảo (HeSinhThai_Robot_TuDongHoa.pdf) là **khung sườn kiến trúc tốt nhưng ở mức "greenfield"** — nó giả định xây mới từ đầu. Hệ thống AVI/AOI hiện tại **đã hiện thực ~60% khung đó**, phần lớn ở mức backend production hoặc framework-có-cờ-tắt. Vì vậy tài liệu này:

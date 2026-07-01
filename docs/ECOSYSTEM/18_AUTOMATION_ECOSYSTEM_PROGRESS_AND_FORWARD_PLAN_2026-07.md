@@ -1,8 +1,29 @@
 # 18 — Hệ sinh thái Tự động hóa: Tổng hợp Cải tiến, Đánh giá lại Module & Hướng Hoàn thiện
 
 > Báo cáo tiến độ + tái đánh giá + lộ trình hoàn thiện, tiếp nối doc 16 (thiết kế hợp nhất) và doc 17 (design system).
-> Ngày: 2026-07-01 · Nhánh: `automation-orchestration-r0` · Trạng thái: 13 commit, migrations 0141–0148 đã áp dụng dev DB, mọi flag OFF mặc định.
+> Ngày: 2026-07-01 · Nhánh: `automation-orchestration-r0` · Trạng thái: **32 commit**, migrations 0141–0154 đã áp dụng dev DB, mọi flag OFF, full suite **2408/0 xanh**.
 > Phạm vi: các Khối 0–7 của báo cáo tham khảo + Frontend + nợ kỹ thuật.
+> *(Tài liệu này khởi tạo ở mốc 13-commit; xem §0 CẬP NHẬT CUỐI cho trạng thái mới nhất.)*
+
+---
+
+## 0. CẬP NHẬT CUỐI — 2026-07-01 (sau khi hoàn thành toàn bộ phần mềm + pre-hardware)
+
+**Toàn bộ kế hoạch phần mềm + Nhóm C pre-hardware ĐÃ THỰC THI.** 32 commit, full test suite **2408 passed / 0 failed**, typecheck + `vite build` sạch, mọi flag OFF, không mở đường điều khiển mới.
+
+**Đã làm thêm so với bản gốc doc này (§2–§6 dưới là ảnh mốc 13-commit):**
+- **D1 (Khối 6):** IR + safety-linter semantic + transpiler URScript/ROS2 + Visual IR Editor → **K6 55→85%**.
+- **I2 (Khối 4):** robot-behavior anomaly + model auto-rollback + wire alarm hết adapter → **K4 90→95%**.
+- **K0+ (Khối 0):** OAuth2 + ISA-95/B2MML + producer→outbox → **K0 75→90%**.
+- **F1+Design-system 6-wave:** tokens + pattern components + ~36 trang migrate + a11y AA + **Storybook 10 chạy** → **Frontend 85→92%**.
+- **V1** seed dev DB + doc 19 runbook · **V3** dọn 6 test pre-existing → **CI xanh tuyệt đối (2408/0)**.
+- **Nhóm C pre-hardware (doc 20) 6/6:** **T2b** Kinematic Simulation Gate (thay stub `simulate()` D1 bằng cổng chặn THẬT) · **I3a** URSim/ROS2 validation harness · **T2a** URDF→glTF (đóng seam T2b) · **S2a** zone evaluator 3-cấp advisory · **S2b** vision homography + safety-PLC sim · **I3b** MTConnect/Euromap field-map thật vs sim.
+
+**Maturity mới (TB ~53% → ~85%):** K0 90 · K1 90 · K1B 70 · K2 85 · K3 60(sw) · K4 95 · K5 85 · K6 85 · K7 75 · Frontend 92.
+
+**Chỉ còn phần cứng bất-khả-thay-bằng-phần-mềm:** rated-stop SIL 2/3 + cảm biến UWB/LiDAR (S2), FOCAS Fwlib32 + Fanuc thật (I3), EtherCAT real-time, commissioning cuối, export `yolo26n.pt→.onnx` + hiệu chuẩn homography per-camera. Mọi thứ còn lại chạy được với sim miễn phí (URSim/ROS2/OPC-UA/MTConnect) bằng cách trỏ endpoint sim→thật.
+
+**Liên quan:** doc 17 (design system) · doc 19 (activation runbook) · doc 20 (Nhóm C re-analysis + sim runbook).
 
 ---
 
