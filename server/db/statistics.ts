@@ -1364,7 +1364,17 @@ export async function getNGTrendByDay(filters?: {
     const result = await db.execute(query);
     // PostgreSQL returns rows directly
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
+    // V3: postgres.js returns COUNT/SUM (bigint) and ROUND (numeric) as STRINGS. The API
+    // contract (and every consumer: charts, PDF/PPT reports, report builder) expects numbers,
+    // so coerce the numeric columns here at the source rather than in each caller.
+    return ((rows as any[]) ?? []).map((r) => ({
+      date: String(r.date),
+      totalCount: Number(r.totalCount),
+      okCount: Number(r.okCount),
+      ngCount: Number(r.ngCount),
+      ntfCount: Number(r.ntfCount),
+      ngRate: Number(r.ngRate),
+    })) as Array<{
       date: string;
       totalCount: number;
       okCount: number;

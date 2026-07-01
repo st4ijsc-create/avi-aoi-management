@@ -1,8 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import type { AddressInfo } from "net";
-import { createApiLimiter } from "./_core/rateLimitConfig";
 
+// V3: The default API limit is 300/min (RATE_LIMIT_PER_MINUTE), so a 100-request test was
+// non-deterministic (the 101st request was still under the cap → 200, not 429). Pin the cap
+// to a known 100 via env BEFORE the limiter module reads it, so the config the test drives is
+// exact and wall-clock-independent (we issue exactly max+1 requests synchronously in-window).
+process.env.RATE_LIMIT_PER_MINUTE = "100";
+const { createApiLimiter } = await import("./_core/rateLimitConfig");
+
+const RATE_LIMIT_MAX = 100;
 let server: ReturnType<express.Application["listen"]>;
 let baseUrl = "";
 const limiter = createApiLimiter();
@@ -33,13 +40,15 @@ afterAll(async () => {
 });
 
 describe("API rate limit policy", () => {
-  it("should block the 101st request in one minute window", async () => {
+  it("should block the request past the configured limit in one minute window", async () => {
     let lastStatus = 0;
 
-    for (let i = 0; i < 101; i++) {
+    // Issue exactly max+1 requests within the same 60s window. The first `max` are allowed
+    // (200); the one past the cap is rejected (429). No wall-clock dependence.
+    for (let i = 0; i < RATE_LIMIT_MAX + 1; i++) {
       const res = await fetch(`${baseUrl}/api/ping`);
       lastStatus = res.status;
-      if (i < 100) {
+      if (i < RATE_LIMIT_MAX) {
         expect(res.status).toBe(200);
       }
     }

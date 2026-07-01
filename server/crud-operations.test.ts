@@ -1,32 +1,37 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Pool } from 'pg';
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import postgres from 'postgres';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// V3: Rewritten off the `pg` driver (uninstallable in this sandbox) onto the repo's real
+// driver `postgres` (postgres.js). A tiny Pool-compatible shim keeps every test body
+// unchanged: `.query(text, params)` returns `{ rows }`, and `$1` positional params +
+// RETURNING all work via postgres.js `sql.unsafe(text, params)`.
+interface PoolLike {
+  query(text: string, params?: unknown[]): Promise<{ rows: any[] }>;
+  end(): Promise<void>;
+}
+
+function makePool(): PoolLike {
+  const sql = postgres(process.env.DATABASE_URL!, {
+    max: 5,
+    idle_timeout: 20,
+    connect_timeout: 30,
+  });
+  return {
+    async query(text: string, params: unknown[] = []) {
+      const rows = await sql.unsafe(text, params as any[]);
+      return { rows: rows as unknown as any[] };
+    },
+    async end() {
+      await sql.end({ timeout: 5 });
+    },
+  };
+}
 
 describe('PostgreSQL CRUD Operations', () => {
-  let pool: Pool;
+  let pool: PoolLike;
 
   beforeAll(async () => {
-    // Load SSL Certificate
-    const caCertPath = path.join(__dirname, 'certs', 'prod-ca-2021.crt');
-    let sslConfig: any = { rejectUnauthorized: false };
-    
-    if (fs.existsSync(caCertPath)) {
-      const caCert = fs.readFileSync(caCertPath, 'utf8');
-      sslConfig = {
-        rejectUnauthorized: true,
-        ca: caCert
-      };
-    }
-    
-    pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: sslConfig
-  });
+    pool = makePool();
   });
 
   afterAll(async () => {
