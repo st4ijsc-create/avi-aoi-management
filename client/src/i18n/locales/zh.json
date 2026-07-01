@@ -4226,6 +4226,8 @@
     "orchestrationStudioDesc": "可视化编排多设备工作流，在数字孪生上仿真，然后部署并运行",
     "engineeringWorkspace": "设备编程工作台",
     "engineeringWorkspaceDesc": "编写设备程序（Zmotion/PLC/机器人），校验、构建、仿真，然后签核并部署",
+    "irEditor": "可视化 IR 编辑器",
+    "irEditorDesc": "将运动/IO 设备程序编写为一等 IR 块，进行安全检查与转译（URScript/ROS2）；部署仍为独立的受控步骤",
     "factoryLiveMap": "工厂3D实时地图",
     "factoryLiveMapDesc": "3D工厂车间，设备按实时状态着色（数字镜像），点击下钻到单元",
     "fieldDevices": "现场与设备抽象",

@@ -1,0 +1,35 @@
+# URScript generated from IR flow "pick_and_place" v1
+# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+def pick_and_place():
+  # [IR move_joint #b1]
+  movej([0, -1.57, 1.57, 0, 1.57, 0], a=1.4, v=1.57)
+  # [IR move_linear #b2]
+  movel(p[0.3, 0.1, 0.2, 0, 3.14, 0], a=1.2, v=0.2, r=0.01)
+  # [IR grip #b3]
+  # tool "gripper_a" close, force<=40N, timeout=2000ms
+  set_tool_digital_out(0, True)
+  # [IR if_condition #b4]
+  if (get_digital_in(1) == True):
+    # [IR move_linear #b5]
+    movel(p[0.3, -0.1, 0.2, 0, 3.14, 0], a=1, v=0.15, r=0)
+  else:
+    # [IR wait #b6]
+    sleep(0.5)
+  end
+  # [IR loop #b7]
+  i = 0
+  while (i < 3):
+    # [IR set_output #b8]
+    set_digital_out(2, True)
+    # [IR wait #b9]
+    while (get_digital_in(3) == False):
+      sync()
+    end
+    i = i + 1
+  end
+  # [IR release #b10]
+  set_tool_digital_out(0, False)
+  # [IR set_output #b11]
+  set_digital_out(2, False)
+end

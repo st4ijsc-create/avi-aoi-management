@@ -368,6 +368,7 @@ export const programmingKindEnum = pgEnum("programmingkindenum", [
   "robot-tm",                // D4 — Techman teach/job-list (TMSCT)
   "iec61131-st",             // D5 — native Structured Text → OpenPLC
   "iec61131-ld",             // D5 — native Ladder → OpenPLC
+  "ir-flow",                 // D1 (doc 16 §11.1) — IR motion/IO Flow (JSON AST) → URScript/ROS2
 ]);
 // Lifecycle of a program ARTIFACT (one immutable source version on a branch).
 export const programArtifactStatusEnum = pgEnum("programartifactstatusenum", [

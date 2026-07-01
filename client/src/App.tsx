@@ -103,6 +103,7 @@ const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprova
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
+const IrEditor = React.lazy(() => import("./pages/IrEditor")); // D1 (doc 16 §11.1 Khối 6): Visual IR Editor — author motion/IO blocks, lint + transpile preview (mutations gated by DPC_IR_V2_ENABLED)
 const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Doc 10 U1: supervisor/manager briefing landing
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
@@ -264,6 +265,7 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ir-editor"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>

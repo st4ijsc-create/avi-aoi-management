@@ -123,6 +123,7 @@ import { orchestrationRouter } from "./routers/orchestrationRouter"; // E2: Fact
 import { aiOrchestrationRouter } from "./routers/aiOrchestrationRouter"; // E5: AI-assisted orchestration advisor (AI_ORCHESTRATION_ADVISOR_ENABLED; advisory, HITL)
 import { edgeRuntimeRouter } from "./routers/edgeRuntimeRouter"; // E4: edge control runtime coordinator (EDGE_RUNTIME_ENABLED)
 import { programmingRouter } from "./routers/programmingRouter"; // Doc 09 / D0: Device Programming & Control (DPC_DEPLOY_ENABLED; build/sim safe, deploy gated)
+import { irRouter } from "./routers/irRouter"; // Doc 16 §11.1 / D1: IR programming layer (motion/IO block AST + semantic safety linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED; flows through the EXISTING programming gate)
 import { apiKeyRouter } from "./routers/apiKeyRouter"; // Control plane: scoped API-key admin CRUD (create-show-once + sha256 hash reuse)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
@@ -366,6 +367,7 @@ export const appRouter = router({
   aiOrchestration: aiOrchestrationRouter,
   edgeRuntime: edgeRuntimeRouter,
   programming: programmingRouter,
+  ir: irRouter, // D1 (doc 16 §11.1 / Khối 6): IR programming layer (linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED)
   apiKey: apiKeyRouter,
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,

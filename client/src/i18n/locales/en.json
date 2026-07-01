@@ -4233,6 +4233,8 @@
     "orchestrationStudioDesc": "Visually author multi-machine workflows, simulate on the digital twin, then deploy & run",
     "engineeringWorkspace": "Engineering Workspace",
     "engineeringWorkspaceDesc": "Author device programs (Zmotion/PLC/robot), validate, build, simulate, then sign-off & deploy",
+    "irEditor": "Visual IR Editor",
+    "irEditorDesc": "Author motion/IO device programs as first-class IR blocks, lint & transpile (URScript/ROS2); deploy stays a separate gated step",
     "factoryLiveMap": "Factory 3D Live Map",
     "factoryLiveMapDesc": "3D factory floor, machines coloured by live status (digital shadow), click to drill down to a cell",
     "fieldDevices": "Field & Device Abstraction",

@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Migration 0149: IR-Flow program kind (Khối 6, doc 16 §11.1 / doc 18 §6 — D1)
+--
+-- Adds the "ir-flow" value to the existing `programmingkindenum` pg enum so an
+-- Intermediate-Representation (IR) motion/IO Flow (a JSON AST) can flow through the
+-- EXISTING device-programming pipeline as a program KIND. The IR JSON is stored in the
+-- EXISTING program_artifacts.content (TEXT) — NO new table is introduced. The IR runs
+-- through the SAME programmingService gate (validate → compile/transpile → simulate →
+-- HITL → gated deploy, flag DPC_DEPLOY_ENABLED); the IR-specific endpoints are
+-- additionally gated by DPC_IR_V2_ENABLED (default OFF).
+--
+--   • ONLY change: ADD VALUE IF NOT EXISTS 'ir-flow' to programmingkindenum.
+--   • ADDITIVE + IDEMPOTENT: re-running is a no-op. No table/column change, no new enum
+--     TYPE, no policy change. Existing rows/kinds are untouched.
+--
+-- ⚠ SAFETY: this migration adds a program-authoring KIND only. It opens NO device path —
+--   an IR program reaches hardware ONLY via the existing gated deploy (flag OFF by
+--   default + HITL 2-eyes + Simulation Gate). The semantic safety linter blocks transpile
+--   on any error before codegen.
+--
+-- NOTE: ALTER TYPE ... ADD VALUE cannot run inside a transaction block in older
+-- Postgres; run this file OUTSIDE an explicit transaction (the migration runner applies
+-- it standalone). The IF NOT EXISTS guard makes it safe to re-apply.
+-- ============================================================================
+
+ALTER TYPE "programmingkindenum" ADD VALUE IF NOT EXISTS 'ir-flow';

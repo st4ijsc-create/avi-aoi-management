@@ -55,6 +55,10 @@ const LANG_OF: Record<ProgrammingKind, string> = {
   "robot-tm": "tmscript",
   "iec61131-st": "st",
   "iec61131-ld": "ld",
+  // D1 (doc 16 §11.1): IR flows are authored in the visual IR editor, not the text
+  // copilot. The language token is the IR JSON kind; the copilot has no IR skeleton
+  // (falls through to the default no-op below) — IR authoring is the editor's job.
+  "ir-flow": "ir-json",
 };
 
 /** Deterministic skeleton per kind. A model can enrich behind the same validation gate. */

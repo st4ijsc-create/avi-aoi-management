@@ -1,0 +1,35 @@
+# ROS2 (rclpy) node generated from IR flow "pick_and_place" v1
+# NOTE: structural skeleton — bind to a concrete MoveIt config before use.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+import rclpy
+from rclpy.node import Node
+
+
+class PickAndPlaceNode(Node):
+    def __init__(self):
+        super().__init__("pick_and_place")
+
+    def run(self):
+        # [IR move_joint #b1]
+        self.send_joint_goal(positions=[0, -1.57, 1.57, 0, 1.57, 0], speed_pct=50)
+        # [IR move_linear #b2]
+        self.send_pose_goal(x=300, y=100, z=200, rx=0, ry=3.14, rz=0, speed_mms=200, accel=1.2, blend=10)
+        # [IR grip #b3]
+        self.grip(tool_id="gripper_a", force_limit_n=40, timeout_ms=2000)
+        # [IR if_condition #b4]
+        if self.read_io("1") == True:
+            # [IR move_linear #b5]
+            self.send_pose_goal(x=300, y=-100, z=200, rx=0, ry=3.14, rz=0, speed_mms=150, accel=1, blend=0)
+        else:
+            # [IR wait #b6]
+            self.wait_ms(500)
+        # [IR loop #b7]
+        for _ in range(3):
+            # [IR set_output #b8]
+            self.set_io("2", True)
+            # [IR wait #b9]
+            self.wait_signal("3")
+        # [IR release #b10]
+        self.release(tool_id="gripper_a")
+        # [IR set_output #b11]
+        self.set_io("2", False)

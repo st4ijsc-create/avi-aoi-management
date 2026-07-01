@@ -584,6 +584,18 @@ export const navGroups: NavGroup[] = [
         section: "engineering",
       },
       {
+        // D1 (doc 16 §11.1 Khối 6) — Visual IR Editor: author motion/IO device
+        // programs as first-class IR blocks, lint + transpile preview. Read-open
+        // (machine_monitoring); save/build gated by DPC_IR_V2_ENABLED + machine_control.
+        href: "/ir-editor",
+        label: "nav.irEditor",
+        icon: <Code2 className="h-4 w-4" />,
+        description: "nav.irEditorDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "engineering",
+      },
+      {
         // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
         // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
         href: "/fleet-orchestration",

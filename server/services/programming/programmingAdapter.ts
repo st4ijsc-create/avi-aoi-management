@@ -26,6 +26,7 @@ import { ZmotionBasicAdapter } from "./zmotion/zmotionBasicAdapter";
 import { MitsubishiEngineeringAdapter } from "./mitsubishi/mitsubishiEngineeringAdapter";
 import { RobotTmAdapter } from "./robot/robotTmAdapter";
 import { Iec61131StAdapter, Iec61131LdAdapter } from "./iec61131/iec61131Adapter";
+import { IrProgrammingAdapter } from "./ir/irAdapter";
 
 /** Target classes the DPC tier can address (1:1 onto programmingKindEnum). */
 export type ProgrammingKind =
@@ -35,7 +36,8 @@ export type ProgrammingKind =
   | "mitsubishi-engineering"
   | "robot-tm"
   | "iec61131-st"
-  | "iec61131-ld";
+  | "iec61131-ld"
+  | "ir-flow";
 
 export const PROGRAMMING_KINDS: ProgrammingKind[] = [
   "stub",
@@ -45,6 +47,7 @@ export const PROGRAMMING_KINDS: ProgrammingKind[] = [
   "robot-tm",
   "iec61131-st",
   "iec61131-ld",
+  "ir-flow",
 ];
 
 /** What an adapter can do (drives UI affordances + service guards). */
@@ -248,6 +251,7 @@ function build(kind: ProgrammingKind): ProgrammingAdapter {
   if (kind === "robot-tm") return new RobotTmAdapter();
   if (kind === "iec61131-st") return new Iec61131StAdapter();
   if (kind === "iec61131-ld") return new Iec61131LdAdapter();
+  if (kind === "ir-flow") return new IrProgrammingAdapter();
   throw new Error(`Programming adapter "${kind}" is not yet implemented (lands in a later DPC phase).`);
 }
 
