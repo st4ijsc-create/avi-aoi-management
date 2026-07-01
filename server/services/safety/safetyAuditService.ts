@@ -37,7 +37,10 @@ async function db() {
 }
 
 export type SafetyEventType =
-  | "estop" | "collision" | "intrusion" | "force_limit" | "speed_violation" | "near_miss";
+  // 'zone_intrusion' (S2a) is a distinct, more specific variant of 'intrusion': it is
+  // raised by the dynamic safety-zone evaluator (graduated 3-level reaction). The
+  // column is a free varchar, so this is additive with no migration.
+  | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss";
 export type SafetyDetectedBy = "vision" | "interlock" | "operator" | "telemetry";
 export type SafetyHandledBy = "interlock_engine" | "operator" | "advisory";
 export type SafetyOutcome = "stopped" | "reduced_speed" | "manual_override" | "logged_only";

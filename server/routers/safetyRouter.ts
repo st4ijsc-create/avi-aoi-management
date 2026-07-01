@@ -35,6 +35,14 @@ import {
   auditEvent,
 } from "../services/safety/safetyAuditService";
 import { processDetection } from "../services/safety/nearMissAdvisor";
+import {
+  safetyZoneSwEnabled,
+  listZones,
+  createZone,
+  updateZone,
+  evaluateAndRecord,
+  evaluateFromProximity,
+} from "../services/safety/safetyZoneService";
 import { workforceEnabled, assignOperator, reassignOperator, confirmAssignment, closeAssignment, getCurrentBoard } from "../services/workforce/workforceService";
 import { startCollaboration, signalHandshake, advancePhase, abortCollaboration } from "../services/workforce/collaborationService";
 
@@ -54,8 +62,41 @@ function requireWorkforceFlag() {
     throw new TRPCError({ code: "CONFLICT", message: "Workforce disabled (set WORKFORCE_ENABLED=true)" });
   }
 }
+function requireSafetyZoneFlag() {
+  if (!safetyZoneSwEnabled()) {
+    throw new TRPCError({ code: "CONFLICT", message: "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL" });
+  }
+}
 
-const EVENT_TYPES = ["estop", "collision", "intrusion", "force_limit", "speed_violation", "near_miss"] as const;
+// S2a geometry input: an AABB and/or a polygon (advisory, mm). Both optional.
+const zoneGeometrySchema = z
+  .object({
+    aabb: z
+      .object({
+        min: z.object({ x: z.number(), y: z.number(), z: z.number().optional() }),
+        max: z.object({ x: z.number(), y: z.number(), z: z.number().optional() }),
+      })
+      .optional(),
+    polygon: z.object({ points: z.array(z.tuple([z.number(), z.number()])).min(3) }).optional(),
+  })
+  .optional();
+
+// Simulated human/robot tracks for the evaluator (no real UWB/LiDAR — testing input).
+const simHumanSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  x: z.number(),
+  y: z.number(),
+  z: z.number().optional(),
+  confidence: z.number().min(0).max(1).default(1),
+});
+const simRobotSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  x: z.number(),
+  y: z.number(),
+  z: z.number().optional(),
+});
+
+const EVENT_TYPES = ["estop", "collision", "intrusion", "zone_intrusion", "force_limit", "speed_violation", "near_miss"] as const;
 
 export const safetyRouter = router({
   // ── status (UI gating hints) ───────────────────────────────────────────────
@@ -64,6 +105,7 @@ export const safetyRouter = router({
     .query(() => ({
       safetyAudit: safetyAuditEnabled(),
       workforce: workforceEnabled(),
+      safetyZoneSw: safetyZoneSwEnabled(), // S2a — advisory 3-level zone evaluator
       advisory: true, // explicit: this subsystem is advisory, not safety-rated
     })),
 
@@ -151,7 +193,141 @@ export const safetyRouter = router({
     )
     .mutation(async ({ input }) => {
       requireSafetyFlag();
-      return processDetection(input);
+      // S1 near-miss advisory (unchanged behaviour).
+      const nearMiss = await processDetection(input);
+      // S2a (ADDITIVE) — when SAFETY_ZONE_SW_ENABLED, ALSO drive the zone evaluator
+      // off this same proximity detection (3-level reaction). null when the flag is
+      // off → response shape is stable; S1 behaviour is never weakened.
+      const zone = await evaluateFromProximity(input);
+      return { ...nearMiss, zone };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SAFETY ZONES (S2a) — zones + 3-level intrusion evaluator (ADVISORY, flag-gated)
+  // ⚠ These DETECT/LOG/PROPOSE. rated_stop is LOGGED only — a certified Safety PLC
+  //    must perform the actual rated stop (S2 hardware). Software never actuates.
+  // ══════════════════════════════════════════════════════════════════════════
+  zoneStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(() => ({ safetyZoneSw: safetyZoneSwEnabled(), advisory: true, ratedStopIsHardware: true })),
+
+  listZones: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          robotId: z.number().int().positive().optional(),
+          stationId: z.number().int().positive().optional(),
+          lineId: z.number().int().positive().optional(),
+          onlyEnabled: z.boolean().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => listZones(input ?? {})),
+
+  /** Evaluate a given/simulated human+robot set against zones → 3-level reactions. */
+  evaluateZones: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        humans: z.array(simHumanSchema).max(200),
+        robots: z.array(simRobotSchema).min(1).max(200),
+        filter: z
+          .object({
+            robotId: z.number().int().positive().optional(),
+            stationId: z.number().int().positive().optional(),
+            lineId: z.number().int().positive().optional(),
+          })
+          .optional(),
+        minConfidence: z.number().min(0).max(1).optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      requireSafetyZoneFlag();
+      // READ-shaped evaluation. Recording is gated by SAFETY_AUDIT_ENABLED inside the
+      // service; when audit is off it returns reactions without persisting.
+      return evaluateAndRecord({ ...input, source: "sim" });
+    }),
+
+  /** Ingest a SIMULATED human track for testing → evaluate + record advisory events. */
+  ingestSimulatedHuman: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        humans: z.array(simHumanSchema).max(200),
+        robots: z.array(simRobotSchema).min(1).max(200),
+        filter: z
+          .object({
+            robotId: z.number().int().positive().optional(),
+            stationId: z.number().int().positive().optional(),
+            lineId: z.number().int().positive().optional(),
+          })
+          .optional(),
+        minConfidence: z.number().min(0).max(1).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyZoneFlag();
+      return evaluateAndRecord({ ...input, source: "sim" });
+    }),
+
+  createZone: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        code: z.string().min(1).max(64),
+        name: z.string().min(1).max(255),
+        robotId: z.number().int().positive().optional(),
+        deviceId: z.number().int().positive().optional(),
+        stationId: z.number().int().positive().optional(),
+        lineId: z.number().int().positive().optional(),
+        geometry: zoneGeometrySchema,
+        speedReduceDistanceMm: z.number().int().positive().optional(),
+        stopDistanceMm: z.number().int().positive().optional(),
+        ratedStopDistanceMm: z.number().int().positive().optional(),
+        reactionSpeedPct: z.number().int().min(0).max(100).optional(),
+        enabled: z.boolean().optional(),
+        notes: z.string().max(2000).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyZoneFlag();
+      const r = await createZone(input);
+      if (!r.ok && r.enabled) throw new TRPCError({ code: "BAD_REQUEST", message: r.message ?? "invalid safety zone" });
+      return r;
+    }),
+
+  updateZone: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        code: z.string().min(1).max(64).optional(),
+        name: z.string().min(1).max(255).optional(),
+        robotId: z.number().int().positive().nullable().optional(),
+        deviceId: z.number().int().positive().nullable().optional(),
+        stationId: z.number().int().positive().nullable().optional(),
+        lineId: z.number().int().positive().nullable().optional(),
+        geometry: zoneGeometrySchema,
+        speedReduceDistanceMm: z.number().int().positive().optional(),
+        stopDistanceMm: z.number().int().positive().optional(),
+        ratedStopDistanceMm: z.number().int().positive().optional(),
+        reactionSpeedPct: z.number().int().min(0).max(100).optional(),
+        enabled: z.boolean().optional(),
+        notes: z.string().max(2000).nullable().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireSafetyZoneFlag();
+      const r = await updateZone(input);
+      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "update failed" });
+      return r;
     }),
 
   // ══════════════════════════════════════════════════════════════════════════
