@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -269,18 +270,12 @@ export function BackupRestorePageContent() {
 
   return (
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Archive className="h-6 w-6" />
-              Backup & Restore
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('backup.description')}
-            </p>
-          </div>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Archive className="h-6 w-6" />}
+          title="Backup & Restore"
+          description={t('backup.description')}
+        />
 
         <Tabs defaultValue="backup" className="space-y-6">
           <TabsList>

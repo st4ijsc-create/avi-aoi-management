@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -142,37 +143,33 @@ export function EnhancedAuditLogsContent() {
   return (
     <>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Activity className="h-6 w-6 text-primary" />
-              {t('audit.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('audit.subtitle')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => exportMutation.mutate({
-                action: filters.action === "all" ? undefined : filters.action,
-                entityType: filters.entityType === "all" ? undefined : filters.entityType,
-                startDate: dateRange.from ? new Date(dateRange.from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-                endDate: dateRange.to ? new Date(dateRange.to) : new Date(),
-                userId: filters.userId ? parseInt(filters.userId) : undefined,
-              })}
-              disabled={exportMutation.isPending}
-            >
-              <Download className="h-4 w-4 mr-1" /> {t('audit.exportCsv')}
-            </Button>
-          </div>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t('audit.title')}
+          description={t('audit.subtitle')}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportMutation.mutate({
+                  action: filters.action === "all" ? undefined : filters.action,
+                  entityType: filters.entityType === "all" ? undefined : filters.entityType,
+                  startDate: dateRange.from ? new Date(dateRange.from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                  endDate: dateRange.to ? new Date(dateRange.to) : new Date(),
+                  userId: filters.userId ? parseInt(filters.userId) : undefined,
+                })}
+                disabled={exportMutation.isPending}
+              >
+                <Download className="h-4 w-4 mr-1" /> {t('audit.exportCsv')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary cards */}
         {statsData?.summary && (

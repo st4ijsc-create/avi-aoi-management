@@ -18,6 +18,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -201,26 +202,26 @@ export default function SitesRegistry() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Network className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Network className="h-6 w-6" />}
+          title={
+            <span className="flex items-center gap-2">
               {t("sites.title", "Sites Federation")}<ViewOnlyBadge module="admin_system" />
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("sites.subtitle", "Đăng ký các site (đa nhà máy) mà control-tower sẽ tổng hợp dữ liệu read-only. Core CHỈ đọc — không điều khiển site.")}
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => enrollM.mutate({})} disabled={!canCreate || enrollM.isPending}>
-            <ServerCog className="mr-1.5 h-4 w-4" /> {t("sites.enrollThis", "Đăng ký deployment này")}
-          </Button>
-          <Button onClick={openCreate} disabled={!canCreate}>
-            <Plus className="mr-1.5 h-4 w-4" /> {t("sites.add", "Thêm site")}
-          </Button>
-        </div>
+            </span>
+          }
+          description={t("sites.subtitle", "Đăng ký các site (đa nhà máy) mà control-tower sẽ tổng hợp dữ liệu read-only. Core CHỈ đọc — không điều khiển site.")}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => enrollM.mutate({})} disabled={!canCreate || enrollM.isPending}>
+                <ServerCog className="mr-1.5 h-4 w-4" /> {t("sites.enrollThis", "Đăng ký deployment này")}
+              </Button>
+              <Button onClick={openCreate} disabled={!canCreate}>
+                <Plus className="mr-1.5 h-4 w-4" /> {t("sites.add", "Thêm site")}
+              </Button>
+            </>
+          }
+        />
 
         <Card>
           <CardHeader className="pb-2">

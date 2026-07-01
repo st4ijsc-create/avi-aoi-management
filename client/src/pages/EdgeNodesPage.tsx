@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -145,22 +146,22 @@ export default function EdgeNodesPage() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Cpu className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">{t("edgeNodes.title", "Node biên (Edge)")}</h1>
-            <ViewOnlyBadge module="machine_control" />
-            <p className="text-sm text-muted-foreground">{t("edgeNodes.subtitle", "Đăng ký & theo dõi các runtime điều phối biên gần dây chuyền")}</p>
-          </div>
-          <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button onClick={openCreate} disabled={!canCreate || !enabled}>
-            <Plus className="mr-1.5 h-4 w-4" /> {t("edgeNodes.register", "Đăng ký node")}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Cpu className="h-6 w-6" />}
+          title={t("edgeNodes.title", "Node biên (Edge)")}
+          badge={<ViewOnlyBadge module="machine_control" />}
+          description={t("edgeNodes.subtitle", "Đăng ký & theo dõi các runtime điều phối biên gần dây chuyền")}
+          actions={
+            <>
+              <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button onClick={openCreate} disabled={!canCreate || !enabled}>
+                <Plus className="mr-1.5 h-4 w-4" /> {t("edgeNodes.register", "Đăng ký node")}
+              </Button>
+            </>
+          }
+        />
 
         {!statusQ.isLoading && !enabled && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">

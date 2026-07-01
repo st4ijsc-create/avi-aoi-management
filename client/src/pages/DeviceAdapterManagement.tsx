@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -177,21 +178,22 @@ export default function DeviceAdapterManagement() {
   return (
     <DashboardLayout title="Device Adapter (OT)" navItems={navItems} currentPath="/device-adapters">
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Plug className="h-6 w-6 text-rose-600" />
-          <h1 className="text-2xl font-bold">Device Adapter (OT)</h1>
-          <ViewOnlyBadge module="machine_control" />
-        </div>
-        {canCreate && (
-          <Button onClick={openCreateAdapter}>
-            <Plus className="h-4 w-4 mr-1" /> Thêm adapter
-          </Button>
-        )}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Quản lý CẤU HÌNH kết nối OT + định nghĩa tag. Trang này KHÔNG ghi lệnh xuống máy — lệnh ghi đi qua luồng HITL/interlock.
-      </p>
+      <PageHeader
+        icon={<Plug className="h-6 w-6" />}
+        title={
+          <span className="flex items-center gap-2">
+            Device Adapter (OT)<ViewOnlyBadge module="machine_control" />
+          </span>
+        }
+        description="Quản lý CẤU HÌNH kết nối OT + định nghĩa tag. Trang này KHÔNG ghi lệnh xuống máy — lệnh ghi đi qua luồng HITL/interlock."
+        actions={
+          canCreate ? (
+            <Button onClick={openCreateAdapter}>
+              <Plus className="h-4 w-4 mr-1" /> Thêm adapter
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Card>
         <CardHeader><CardTitle>Adapter ({adapters.length})</CardTitle></CardHeader>

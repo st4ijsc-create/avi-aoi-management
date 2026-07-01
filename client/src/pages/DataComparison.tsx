@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -125,21 +126,17 @@ export function DataComparisonContent() {
   return (
     <>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <GitCompare className="h-6 w-6 text-primary" />
-              {t('reports.dataComparison')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('reports.dataComparisonDesc')}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
-          </Button>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<GitCompare className="h-6 w-6" />}
+          title={t('reports.dataComparison')}
+          description={t('reports.dataComparisonDesc')}
+          actions={
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
+            </Button>
+          }
+        />
 
         {/* Filters */}
         <Card>

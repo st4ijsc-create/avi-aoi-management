@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -153,19 +154,21 @@ export default function ApiKeysPage() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <KeyRound className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">{t("apiKeys.title", "Khoá API")}<ViewOnlyBadge module="admin_system" /></h1>
-            <p className="text-sm text-muted-foreground">{t("apiKeys.subtitle", "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)")}</p>
-          </div>
-          <Button onClick={() => setCreateOpen(true)} disabled={!canCreate}>
-            <Plus className="mr-1.5 h-4 w-4" /> {t("apiKeys.create", "Tạo khoá")}
-          </Button>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<KeyRound className="h-6 w-6" />}
+          title={
+            <span className="flex items-center gap-2">
+              {t("apiKeys.title", "Khoá API")}<ViewOnlyBadge module="admin_system" />
+            </span>
+          }
+          description={t("apiKeys.subtitle", "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)")}
+          actions={
+            <Button onClick={() => setCreateOpen(true)} disabled={!canCreate}>
+              <Plus className="mr-1.5 h-4 w-4" /> {t("apiKeys.create", "Tạo khoá")}
+            </Button>
+          }
+        />
 
         <Card>
           <CardHeader className="pb-2">

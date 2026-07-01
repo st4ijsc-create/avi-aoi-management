@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -125,27 +126,21 @@ export default function ModulesMarketplace() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <LayoutGrid className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("modules.title", "Modules Marketplace")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "modules.subtitle",
-                "All platform modules and their licensed status for this deployment (read-only).",
-              )}
-            </p>
-          </div>
-          <Badge variant="outline" className="text-xs">
-            {licensedCount}/{(modulesWithStatus as unknown[]).length}{" "}
-            {t("modules.licensedCount", "licensed")}
-          </Badge>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<LayoutGrid className="h-6 w-6" />}
+          title={t("modules.title", "Modules Marketplace")}
+          description={t(
+            "modules.subtitle",
+            "All platform modules and their licensed status for this deployment (read-only).",
+          )}
+          actions={
+            <Badge variant="outline" className="text-xs">
+              {licensedCount}/{(modulesWithStatus as unknown[]).length}{" "}
+              {t("modules.licensedCount", "licensed")}
+            </Badge>
+          }
+        />
 
         {/* Honest license-state banner */}
         {(noLicenseKey || !isLicensed || isUsingCache) && (

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -229,24 +230,23 @@ export default function WorkstationManagement() {
   return (
     <DashboardLayout navItems={navItems}>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{t('machines.title')}</h1>
-              <ViewOnlyBadge module="settings_factory" />
-            </div>
-            <p className="text-muted-foreground">
-              {t('machines.subtitle')}
-            </p>
-          </div>
-          <PermissionGate module="settings_factory" action="canCreate">
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('machines.addWorkstation')}
-            </Button>
-          </PermissionGate>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              {t('machines.title')}<ViewOnlyBadge module="settings_factory" />
+            </span>
+          }
+          description={t('machines.subtitle')}
+          actions={
+            <PermissionGate module="settings_factory" action="canCreate">
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {t('machines.addWorkstation')}
+              </Button>
+            </PermissionGate>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

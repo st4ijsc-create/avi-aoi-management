@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -231,17 +232,20 @@ export default function InterlockRuleManagement() {
   return (
     <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6 text-rose-600" />
-          <h1 className="text-2xl font-bold">{t("interlockRules.title")}</h1>
-          <ViewOnlyBadge module="interlock" />
-        </div>
-        {canCreate && (
-          <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
-        )}
-      </div>
-      <p className="text-sm text-muted-foreground">{t("interlockRules.subtitle")}</p>
+      <PageHeader
+        icon={<ShieldAlert className="h-6 w-6" />}
+        title={
+          <span className="flex items-center gap-2">
+            {t("interlockRules.title")}<ViewOnlyBadge module="interlock" />
+          </span>
+        }
+        description={t("interlockRules.subtitle")}
+        actions={
+          canCreate ? (
+            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
+          ) : undefined
+        }
+      />
 
       <Tabs defaultValue="rules">
         <TabsList>

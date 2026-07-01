@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -606,13 +607,11 @@ export default function AuditLogs() {
   return (
     <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
       <div className="container py-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Activity className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{t('audit.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t('audit.title')}
+          description={t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}
+        />
 
         <Tabs defaultValue={defaultTab}>
           <TabsList>

@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -163,18 +164,21 @@ export default function RecipeManagement() {
   return (
     <DashboardLayout title={t("recipes.title")} navItems={navItems} currentPath="/recipes">
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="h-6 w-6 text-indigo-600" />
-          <h1 className="text-2xl font-bold">{t("recipes.title")}</h1>
-          <ViewOnlyBadge module="machine_control" />
-        </div>
-        {canCreate && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1" /> {t("recipes.newVersion")}
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        icon={<FlaskConical className="h-6 w-6" />}
+        title={
+          <span className="flex items-center gap-2">
+            {t("recipes.title")}<ViewOnlyBadge module="machine_control" />
+          </span>
+        }
+        actions={
+          canCreate ? (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1" /> {t("recipes.newVersion")}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* SAFETY banner — HITL */}
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,30 +87,28 @@ export default function SessionManagement() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{t('session.title')}</h1>
-            <p className="text-muted-foreground">
-              {t('session.description')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            {sessions && sessions.length > 1 && (
-              <Button 
-                variant="destructive" 
-                onClick={() => setShowRevokeAllDialog(true)}
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                {t('session.logoutAll')}
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          title={t('session.title')}
+          description={t('session.description')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
               </Button>
-            )}
-          </div>
-        </div>
+              {sessions && sessions.length > 1 && (
+                <Button
+                  variant="destructive"
+                  onClick={() => setShowRevokeAllDialog(true)}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  {t('session.logoutAll')}
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {/* Security Notice */}
         <Card className="border-blue-500/50 bg-blue-500/5">

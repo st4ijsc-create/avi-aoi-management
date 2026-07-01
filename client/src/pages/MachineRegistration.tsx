@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import {
   Card,
@@ -382,36 +383,32 @@ export function MachineRegistrationContent() {
   return (
     <>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <HardDrive className="h-6 w-6" />
-              {t('machineRegistration.pageTitle')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('machineRegistration.pageSubtitle')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => navigate("/machine-onboarding")}
-            >
-              <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                pendingQuery.refetch();
-                allMachinesQuery.refetch();
-              }}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" /> {t('machineRegistration.refresh')}
-            </Button>
-          </div>
-        </div>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<HardDrive className="h-6 w-6" />}
+          title={t('machineRegistration.pageTitle')}
+          description={t('machineRegistration.pageSubtitle')}
+          actions={
+            <>
+              <Button
+                size="sm"
+                onClick={() => navigate("/machine-onboarding")}
+              >
+                <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  pendingQuery.refetch();
+                  allMachinesQuery.refetch();
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-1" /> {t('machineRegistration.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

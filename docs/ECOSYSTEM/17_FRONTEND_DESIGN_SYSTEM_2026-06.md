@@ -238,7 +238,7 @@ Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traf
 | **Wave 0** | Ship tokens + components; adopt in 2 automation pages (Fleet, Safety) as reference. | ✅ done (F1b) |
 | **Wave 1 (F2)** | High-traffic core cockpits — swap clean-fit `PageHeader`; tokenize status-color literals; a11y (h1 / select labels / icon-button labels). See §7.3 for the exact page list. | ✅ done (F2) |
 | **Wave 2** | Remaining high-traffic cockpits + KPI strips: `DigitalTwinCenter`, `Dashboard`, `OEEDashboard`, `ProductionDashboard`, `MachineHealthMonitoring`, `CarbonDashboard`, `MESControlTower` KPI cards — swap KPIs to `MetricCard`, replace literal `text-amber-500`/`text-emerald-500` with `text-warning`/`text-success` (a11y #1). Includes the pages §7.2 skipped in W1. | ✅ done (W2) — see §7.6 |
-| **Wave 3** | List/detail/editor templates — define canonical templates (Dashboard, List+Filter, Detail, Editor split-pane, Wizard, Realtime-monitor, 3D-scene) from doc 16 §12.2 and migrate per module (WorkOrders header, MasterData, registries, MQTT/admin pages). | ▢ pending |
+| **Wave 3** | List/detail/editor/admin/registry headers → shared `<PageHeader>` (pixel-preserving) + tokenize obvious status literals on touched pages. Bounded batch — quality over quantity; NO abstract "template" components were built (deliberate, see §7.7). | ✅ done (W3) — see §7.7 |
 | **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` switch helpers (MES local `StatusBadge`, WorkOrders `statusVariant`, OpsConsole severity tiles) with the shared `<StatusBadge>` + per-page `map`. | ▢ pending |
 | **Wave 5** | A11y sweep — run axe/WAVE on ~15 core pages → WCAG AA; fix §5.4 + §7.4 findings. | ▢ pending |
 | **Wave 6** | Storybook + visual regression — install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs. | ▢ pending |
@@ -303,6 +303,50 @@ Because the shared `MetricCard` chip is fixed to `bg-primary/10 text-primary` an
 - `MESControlTower` / `OEEDashboard` overview KPI cards → **W3/W4** (label-above-value `text-3xl` shape needs a new "stat card" pattern variant before a pixel-safe swap).
 - Graded threshold-colour scales (FPY/NG-rate good→warn→bad, health 4-step, SEMI-E10 6-state) → **W5 a11y sweep** (need a tokenized graded-scale ramp, not the 3-tone status set).
 - `CarbonDashboard` / `MachineHealthMonitoring` branded & category-identity colours (Leaf green, EnPI blue, units violet, Heart red) → left indefinitely by design (brand accents, not status).
+
+---
+
+## 7.7 Wave 3 — migrated pages (list/detail/editor/admin/registry headers)
+
+Pixel-preserving header swaps to the shared `<PageHeader>` across registry / master-data / admin / analytics-list pages. Same discipline as W1–W2: the canonical **icon-chip** transform (inline icon → `bg-primary/10 text-primary` chip) and the **subtitle → `text-sm text-muted-foreground`** normalisation are the sanctioned pixel-parity deltas (identical to the W1 `MESControlTower`/`QualityCockpit` swaps). No data / logic / layout was restructured; all `t()` i18n + behaviour preserved. Where the title carried an inline `<ViewOnlyBadge>` (in the `h1`), it was preserved **inline** by passing the title as a `<span className="flex items-center gap-2">` node (NOT the under-title `badge` slot) so the layout is unchanged. `npm run check` + `vite build` both green.
+
+> **No abstract templates built.** The brief's tangible deliverable is header migration + status-literal tokenisation, explicitly *not* speculative "template" components (Dashboard/List/Detail/Editor/Wizard scaffolds). Those were **not** created — zero build risk, and the shared `PageHeader`/`MetricCard`/`SectionCard` primitives already are the reusable layer.
+
+| Page | What was swapped |
+|---|---|
+| `SitesRegistry` | Header → `PageHeader`. Was already the literal hand-rolled chip shape; title keeps the inline `ViewOnlyBadge` (title-span); enroll + add-site buttons → `actions`. |
+| `ModulesMarketplace` | Header → `PageHeader`; licensed-count `Badge` → `actions`. (Was already chip-shaped — near byte-identical.) |
+| `EdgeNodesPage` | Header → `PageHeader`; `ViewOnlyBadge` → `badge` slot (it already sat under the title); refresh + register buttons → `actions`. |
+| `ApiKeysPage` | Header → `PageHeader`; inline title `ViewOnlyBadge` preserved via title-span; create button → `actions`. |
+| `AuditLogs` | Header → `PageHeader` (icon+title+subtitle, no actions). `text-primary` icon → matching primary chip. |
+| `EnhancedAuditLogs` | Header → `PageHeader`; refresh + export-CSV buttons → `actions`. |
+| `DataComparison` | Header → `PageHeader`; refresh button → `actions`. |
+| `ReportBuilder` | Header → `PageHeader`; conditional (`activeTab==="list"`) create button → `actions` (undefined otherwise). |
+| `DeviceAdapterManagement` | Header → `PageHeader`; inline title `ViewOnlyBadge` preserved via title-span; separate sibling `<p>` description folded into `description`; create button → `actions` (guarded by `canCreate`). `text-rose-600` icon → primary chip. |
+| `RecipeManagement` | Header → `PageHeader`; inline title `ViewOnlyBadge` preserved via title-span; new-version button → `actions`. `text-indigo-600` icon → primary chip. |
+| `InterlockRuleManagement` | Header → `PageHeader`; inline title `ViewOnlyBadge` preserved via title-span; sibling `<p>` subtitle folded into `description`; new-rule button → `actions`. `text-rose-600` icon → primary chip. |
+| `WorkstationManagement` | Header → `PageHeader` (no icon → identical title block); inline `ViewOnlyBadge` preserved via title-span; `PermissionGate`-wrapped add button → `actions`. |
+| `MachineRegistration` | Header → `PageHeader`; open-wizard + refresh buttons → `actions`. Uncoloured `HardDrive` icon → primary chip. |
+| `BackupRestore` | Header → `PageHeader` (icon+title+subtitle, no actions). Uncoloured `Archive` icon → primary chip. |
+| `MachineOnboardingWizard` | Header → `PageHeader` (no icon, no actions — plain title+subtitle inside the centred `max-w-3xl` wrapper; block layout unchanged). |
+
+**Status-literal tokenisation (W3):** the W3 batch is registry/admin/list pages whose headers carried **no** raw status-colour literals (the coloured header glyphs are decorative icons, now the primary chip — not status signals; the only colours present are `ViewOnlyBadge`'s own themed styles). So no `text-*-500` → semantic-token swaps were needed on the migrated pages. (Graded/threshold-scale tokenisation remains a W5 concern.)
+
+**Evaluated but LEFT (with reason):**
+
+| Page | Reason left |
+|---|---|
+| `WorkOrdersPage` | §7.2 case — title is `text-2xl font-**semibold**` (not bold) and the icon/badges/summary/create-button all share one flex-wrap row; `PageHeader` forces `font-bold` → weight change, not pixel-preserving. (Native `<select>` a11y labels already fixed in W1.) → keep. |
+| `WipLineBalance` | §7.2 case — header + a labelled filter **input** share an `items-end justify-between` row; `PageHeader` is `items-center` → shifts the input's baseline. → keep. |
+| `ProcessManagement` | §7.2 case — `<ViewOnlyBadge>` inline in `h1` *and* the outer row is `flex-col md:flex-row md:justify-between` (stacks on mobile); `PageHeader`'s non-stacking `flex flex-wrap items-center` changes the responsive layout. → keep. |
+| `MasterDataManagement` | Title is `text-2xl font-**semibold**` + two inline badges (`MES/MOM` + `ViewOnlyBadge`) tightly coupled in the title row → weight change + badge-coupling, not a clean drop. → keep. |
+| `ThresholdApprovalsPage` | Title is `text-2xl font-**semibold**` with an inline queue `Badge` → weight change. → keep. |
+| `Users` | Header lives inside a `CardHeader` (`CardTitle`/`CardDescription`, responsive `flex-col md:flex-row`) — not a page-level `h1`; swapping would restructure the Card. → keep (W4/W5). |
+| `RoleBuilder`, `MqttAlertRules`, `ScheduledReports` | Header is otherwise clean, but the action row contains a **large inline `<Dialog>` (trigger + full DialogContent)**; relocating that whole block into `actions` is verbose/higher-risk for a marginal header gain (RoleBuilder also flips an *uncoloured* icon to a coloured primary chip; MqttAlertRules' `text-yellow-400` warning glyph is an intentional accent). → keep (revisit when the create-dialog is extracted). |
+| `MqttDashboard` | Responsive `text-xl sm:text-2xl` title (fixed-size mismatch, same class as the W1 `Dashboard`/`OEEDashboard` skips) → keep. |
+| `CategoryAnalytics`, `FederationDashboard` | Clean `text-2xl font-bold` titles but the outer row is responsive `flex-col md:flex-row md:justify-between` with compound action clusters (multiple `Select`s + buttons); `PageHeader`'s non-stacking flex changes the mobile layout → keep. |
+| `Reports` | No in-page header block — title is delegated to `DashboardLayout` → N/A. |
+| `CorrelationAnalysis` | The "header" is a `CardHeader`/`CardTitle` inside a setup Card, not a page-level header → N/A. |
 
 ---
 
