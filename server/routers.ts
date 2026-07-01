@@ -131,6 +131,7 @@ import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
+import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
 import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
 import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
 import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
@@ -377,6 +378,7 @@ export const appRouter = router({
   robot: robotRouter,
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
+  simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
   fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
   twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
   safety: safetyRouter, // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY ONLY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)

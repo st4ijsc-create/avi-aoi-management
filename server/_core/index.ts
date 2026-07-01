@@ -4724,6 +4724,18 @@ async function startServer() {
     console.error("[VDA5050] init failed:", (err as any)?.message || err);
   }
 
+  // I3a (doc 20 §3/§5) — ROS2 ↔ platform bridge over rosbridge WebSocket (pure JS, no
+  // native ROS2 dep). Subscribes ROS2 telemetry topics → telemetryBus; platform commands
+  // still route through robotCommandDispatcher (no new control path). Disabled by default;
+  // opt in via ROS2_BRIDGE_ENABLED=true + ROSBRIDGE_URL. HONEST: rosbridge unreachable →
+  // logged + connects nothing (never crashes the process, never fabricates a connection).
+  try {
+    const { startRos2Bridge } = await import("../services/ros2");
+    await startRos2Bridge();
+  } catch (err) {
+    console.error("[ROS2] bridge init failed:", (err as any)?.message || err);
+  }
+
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
   // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
   try {

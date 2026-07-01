@@ -118,3 +118,67 @@
 ## 6. Kết luận
 
 Nhóm C **không phải "khối chờ phần cứng"** — chỉ ~1/3 thực sự bị chặn (rated-stop SIL, cảm biến UWB/LiDAR, FOCAS, commissioning). Phần còn lại (**Simulation-Gate động học thật, URSim/ROS2 validation, model pipeline, zone evaluator, vision advisory, Euromap/MTConnect field-map**) đều làm + test được ngay bằng simulator/emulator miễn phí, biến hàng loạt "seam trung thực" hiện tại thành **năng lực chạy thật** — để khi thiết bị về chỉ còn đổi endpoint sim→thật và hiệu chuẩn/chứng nhận.
+
+---
+
+## 7. RUNBOOK — dựng simulator cho I3a (URSim + ROS2)
+
+> Cả hai harness **mock-backed** (test chạy xanh **không cần** sim). Để validate end-to-end thật, operator dựng sim **MIỄN PHÍ** trong Docker (một lần — là *hạ tầng*, không phải thiết bị) rồi trỏ endpoint qua ENV. Tất cả flag **mặc định OFF**; OFF = không mở socket. **TRUNG THỰC:** endpoint không reachable → harness trả lỗi rõ ràng, **không bao giờ** giả success.
+
+### 7.1 URSim (Universal Robots controller simulator — `URSIM_ENABLED`)
+
+Chạy firmware controller UR **thật** trong VM/Docker — validate toàn chuỗi `IR → lint → transpile → Simulation-Gate → deploy` trên controller UR **thật (ảo)**, **không cần cánh tay**.
+
+```bash
+# 1) Chạy URSim e-Series (UR5). Publish các cổng UR: dashboard 29999, primary/secondary
+#    30001/30002, RTDE 30003/30004; VNC 5900 + noVNC 6080 để xem teach-pendant.
+docker run --rm -it \
+  -e ROBOT_MODEL=UR5 \
+  -p 5900:5900 -p 6080:6080 \
+  -p 29999:29999 -p 30001-30004:30001-30004 \
+  universalrobots/ursim_e-series
+# 2) Mở http://localhost:6080/vnc.html → power on robot trên teach-pendant (hoặc để harness
+#    tự `power on` + `brake release` qua dashboard).
+```
+
+Trỏ harness qua ENV rồi bật flag:
+
+```bash
+URSIM_ENABLED=true
+URSIM_HOST=127.0.0.1          # host Docker
+# URSIM_PRIMARY_PORT=30001    # gửi URScript (primary; 30002 = secondary)
+# URSIM_DASHBOARD_PORT=29999  # load/play/stop/power/robotmode/programState
+```
+
+Chạy validation: tRPC `simTargets.validateUrscript({ urscript })` (hoặc gọi trực tiếp
+`validateUrscriptOnUrsim(urscript, endpoint)`). Kết quả `{ sent, accepted, running,
+robotMode, programState }` là **bằng chứng end-to-end**: `sent` = transport OK; `accepted`+`running`
+= controller UR **thật đã compile + chạy** code transpile ra (transpile hỏng cú pháp → UR runtime từ chối → `running=false`). Deploy-qua-URSim đi qua **đúng gate cũ** (`DPC_DEPLOY_ENABLED` + HITL), ghi vào `program_deployments` (`stage='staging'`, `detailJson.target='ursim'`) — URSim là **thiết bị ảo an toàn**, không mở control-path mới.
+
+### 7.2 ROS2 bridge (via `rosbridge_server` — `ROS2_BRIDGE_ENABLED`)
+
+Bridge ROS2↔platform bằng **JS thuần** qua rosbridge WebSocket (không cần rclnodejs/DDS native).
+
+```bash
+# 1) Cài + chạy rosbridge (trong môi trường có ROS2, ví dụ Humble). Mặc định ws://HOST:9090.
+sudo apt install ros-humble-rosbridge-suite   # một lần
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+# 2) Có node phát telemetry (Gazebo / robot_state_publisher / fake node) publish
+#    /joint_states, /odom, /tf để bridge subscribe.
+```
+
+Trỏ bridge qua ENV rồi bật flag:
+
+```bash
+ROS2_BRIDGE_ENABLED=true
+ROSBRIDGE_URL=ws://127.0.0.1:9090
+```
+
+Khi bật, bridge tự connect lúc startup (`_core/index.ts`) hoặc qua tRPC `simTargets.ros2Connect`.
+Telemetry vào: `/joint_states`,`/odom`,`/tf` → normalize → `telemetryBus.ingestTelemetry` (→ `ot_telemetry` + broadcast `telemetry:sample`, tái dùng field X1 nơi map được). Lệnh ra: **chỉ** qua `robotCommandDispatcher` (idempotency + HITL + dry-run) — dry-run (`ROBOT_CONTROL_ENABLED` off) → **không publish gì** lên ROS2. Bridge chỉ là **đường truyền**, gate ở nguyên chỗ cũ.
+
+### 7.3 Ghi chú trung thực
+
+- Không có sim đang chạy → **cả hai** harness trả lỗi reachable/connect rõ ràng; startup log cảnh báo & **không connect gì**; process **không** crash.
+- **Không migration**: URSim deploy dùng `program_deployments` sẵn có (`stage='staging'` + `detailJson.target='ursim'`); ROS2 telemetry dùng `ot_telemetry` với `protocol='other'` + `meta.source='ros2'`.
+- Không thêm dep native/nặng: URSim dùng `net` (built-in), ROS2 dùng `ws` (đã có).
