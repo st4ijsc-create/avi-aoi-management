@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { NavGroup, NavItem, buildModuleL2 } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useIsCoarsePointer } from "@/hooks/useMobile";
+import { BetaBadge } from "./BetaBadge";
 
 /**
  * R4 — Inline-accordion navigation with a floating Level-3 page menu.
@@ -407,11 +408,15 @@ interface ItemRowProps {
 
 function ItemRow({ item, isActive, onNavigate, variant = "default" }: ItemRowProps) {
   const { t } = useTranslation();
+  // Plain-language tooltip for jargon items (FOE, UNS, PackML, …). Shown as a
+  // native title and, for jargon rows, a muted subtitle under the label.
+  const hint = item.hint ? t(item.hint) : undefined;
   return (
     <button
       type="button"
       role="menuitem"
       onClick={() => onNavigate(item.href)}
+      title={hint}
       className={cn(
         "flex w-full items-center gap-2 text-sm transition-colors",
         variant === "pill" ? "gap-3 rounded-full px-3 py-2.5" : "rounded-lg px-2 py-2",
@@ -419,10 +424,20 @@ function ItemRow({ item, isActive, onNavigate, variant = "default" }: ItemRowPro
         isActive ? "bg-sidebar-accent text-primary font-medium" : "text-popover-foreground",
       )}
     >
-      <span className={isActive ? "text-primary" : "text-muted-foreground"}>{item.icon}</span>
-      <span className="flex-1 text-left">{t(item.label)}</span>
+      <span className={cn("shrink-0", isActive ? "text-primary" : "text-muted-foreground")}>{item.icon}</span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate">{t(item.label)}</span>
+          {item.beta && <BetaBadge />}
+        </span>
+        {hint && (
+          <span className="mt-0.5 block truncate text-[11px] font-normal leading-tight text-muted-foreground">
+            {hint}
+          </span>
+        )}
+      </span>
       {item.badge && (
-        <span className="ml-auto rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+        <span className="ml-auto shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
           {item.badge}
         </span>
       )}

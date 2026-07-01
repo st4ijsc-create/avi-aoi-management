@@ -85,6 +85,15 @@
 } from "lucide-react";
 import { ReactNode } from "react";
 
+/**
+ * Menu "tier" (doc 22 P4 — Simple vs Advanced mode).
+ *   - `simple`   → everyday surface shown to non-technical roles by default.
+ *   - `advanced` → engineering-heavy surface hidden behind the Advanced toggle.
+ * Untagged items/groups are treated as `simple` (visible in both modes) so nothing
+ * is ever hidden by accident — tagging is opt-IN to advanced-only.
+ */
+export type NavTier = 'simple' | 'advanced';
+
 export interface NavItem {
   href: string;
   label: string;
@@ -98,6 +107,24 @@ export interface NavItem {
   permissionCategory?: string;
   /** Cấp-2 section key; items sharing a key are grouped under one sub-header (i18n nav.section.<key>) */
   section?: string;
+  /**
+   * Menu tier (doc 22 P4). `advanced` → engineering-only; hidden in Simple mode.
+   * Absent → simple (always visible).
+   */
+  tier?: NavTier;
+  /**
+   * i18n key for a plain-language tooltip explaining an insider acronym/term
+   * (FOE, UNS, PackML, …). Rendered as a hover title + a subtitle in flyouts.
+   */
+  hint?: string;
+  /** Marks an engineer-oriented item (used to visually flag jargon rows). */
+  engineerOriented?: boolean;
+  /**
+   * Framework/flag-gated page that is not live yet → renders a small "Beta /
+   * Cần thiết lập" badge in the nav and a banner on the page so users don't hit
+   * a dead end expecting live data.
+   */
+  beta?: boolean;
 }
 
 export interface NavGroup {
@@ -112,6 +139,11 @@ export interface NavGroup {
   permissionCategory?: string;
   /** Ordered Cấp-2 sections for this group; absent → render flat (no sub-headers) */
   sections?: { key: string; label: string }[];
+  /**
+   * Menu tier (doc 22 P4). `advanced` groups (Devices & OT, AI ops internals,
+   * Federation lives under Admin) are hidden in Simple mode. Absent → simple.
+   */
+  tier?: NavTier;
 }
 
 /**
@@ -391,6 +423,8 @@ export const navGroups: NavGroup[] = [
     description: "nav.devicesGroupDesc",
     defaultOpen: false,
     permissionCategory: "machine_monitoring",
+    // doc 22 P4 — engineering-heavy module: hidden in Simple mode.
+    tier: "advanced",
     sections: [
       { key: "monitoring", label: "nav.section.monitoring" },
       { key: "telemetry", label: "nav.section.telemetry" },
@@ -449,6 +483,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
+        hint: "nav.hint.fieldDevices",
+        engineerOriented: true,
       },
       {
         // Automation Orchestration (Khối 7) — live 3D digital twin + replay.
@@ -460,6 +496,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
+        hint: "nav.hint.digitalTwinCenter",
+        engineerOriented: true,
+        beta: true,
       },
       // — MQTT / telemetry —
       {
@@ -479,6 +518,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "mqtt_bulletin",
         permissionCategory: "mqtt",
         section: "telemetry",
+        hint: "nav.hint.mqttBulletin",
+        engineerOriented: true,
       },
       {
         href: "/mqtt-replay",
@@ -488,6 +529,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
         section: "telemetry",
+        hint: "nav.hint.mqttReplay",
+        engineerOriented: true,
       },
       {
         href: "/mqtt-clients",
@@ -555,6 +598,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "onboarding",
+        hint: "nav.hint.controlPlane",
+        engineerOriented: true,
+        beta: true,
       },
       // — Engineering & Control —
       {
@@ -565,6 +611,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "engineering",
+        hint: "nav.hint.engineeringWorkspace",
+        engineerOriented: true,
       },
       {
         href: "/recipes",
@@ -583,6 +631,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "interlock",
         permissionCategory: "interlock",
         section: "engineering",
+        hint: "nav.hint.interlockRules",
+        engineerOriented: true,
       },
       {
         href: "/orchestration-studio",
@@ -592,6 +642,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "engineering",
+        hint: "nav.hint.orchestrationStudio",
+        engineerOriented: true,
+        beta: true,
       },
       {
         // D1 (doc 16 §11.1 Khối 6) — Visual IR Editor: author motion/IO device
@@ -604,6 +657,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "engineering",
+        hint: "nav.hint.irEditor",
+        engineerOriented: true,
+        beta: true,
       },
       {
         // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
@@ -615,6 +671,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "engineering",
+        hint: "nav.hint.fleetOrchestration",
+        engineerOriented: true,
+        beta: true,
       },
       {
         // Automation Orchestration (Khối 3) — advisory safety cockpit + workforce
@@ -626,6 +685,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "engineering",
+        hint: "nav.hint.safetyWorkforce",
+        engineerOriented: true,
+        beta: true,
       },
       {
         // Automation Orchestration (Khối 5) — equipment standards & governance:
@@ -637,6 +699,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "engineering",
+        hint: "nav.hint.equipmentStandards",
+        engineerOriented: true,
+        beta: true,
       },
       {
         // Equipment Integration (Khối 1B) — FOCAS/Euromap integration frameworks
@@ -648,6 +713,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
         section: "engineering",
+        hint: "nav.hint.equipmentIntegration",
+        engineerOriented: true,
+        beta: true,
       },
       {
         href: "/factory-floor-editor",
@@ -671,6 +739,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "engineering",
+        hint: "nav.hint.rfTestCell",
+        engineerOriented: true,
+        beta: true,
       },
       {
         href: "/cell-twin",
@@ -680,6 +751,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "engineering",
+        hint: "nav.hint.cellTwin",
+        engineerOriented: true,
+        beta: true,
       },
       // — Maintenance / predictive —
       {
@@ -888,6 +962,10 @@ export const navGroups: NavGroup[] = [
     icon: <Sparkles className="h-4 w-4" />,
     description: "nav.aiGroupDesc",
     defaultOpen: false,
+    // doc 22 P4 — AI Control Plane / Ops / Vision are engineering internals; the
+    // whole module is hidden in Simple mode. (The read-open AI Workspace chat/inbox
+    // stays reachable via /ai-chat + the Me group, which remain Simple.)
+    tier: "advanced",
     // No permissionCategory → group is visible to every authenticated role; the
     // AI Workspace items below are read-open. Admin-only items below still gate.
     sections: [
@@ -1104,6 +1182,8 @@ export const navGroups: NavGroup[] = [
     defaultOpen: false,
     requiredRole: 'admin',
     permissionCategory: "admin",
+    // doc 22 P4 — platform/governance internals (incl. Federation): Advanced-only.
+    tier: "advanced",
     sections: [
       { key: "securityAccess", label: "nav.section.securityAccess" },
       { key: "platform", label: "nav.section.platform" },
@@ -1189,6 +1269,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "admin_system",
         permissionCategory: "admin",
         section: "platform",
+        hint: "nav.hint.federationDashboard",
+        engineerOriented: true,
+        beta: true,
       },
       {
         href: "/modules",
@@ -1385,9 +1468,67 @@ export const navGroups: NavGroup[] = [
 // Flat navigation items for backward compatibility
 export const navItems: NavItem[] = navGroups.flatMap(group => group.items);
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Simple vs Advanced menu mode (doc 22 P4).
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type NavMode = 'simple' | 'advanced';
+
+/** Roles that DEFAULT to Advanced mode (see everything up-front). Everyone else
+ *  (operator/supervisor/viewer/user/quality_inspector/…) defaults to Simple. */
+const ADVANCED_DEFAULT_ROLES = new Set(['admin', 'it_admin', 'engineer']);
+
+/** The default menu mode for a role — technical roles start Advanced, the rest Simple. */
+export function defaultNavModeForRole(role?: string | null): NavMode {
+  return role && ADVANCED_DEFAULT_ROLES.has(role) ? 'advanced' : 'simple';
+}
+
+/** An item/group is "advanced" only when explicitly tagged; untagged → simple. */
+function isAdvancedGroup(group: NavGroup): boolean {
+  return group.tier === 'advanced';
+}
+function isAdvancedItem(item: NavItem): boolean {
+  return item.tier === 'advanced';
+}
+
+/**
+ * Does the given (already role/permission-filtered) group list contain anything
+ * that Simple mode would hide? Used to decide whether to SHOW the Advanced toggle
+ * at all (no point offering it to a role that has no advanced surface).
+ */
+export function hasAdvancedContent(groups: NavGroup[]): boolean {
+  return groups.some(g => isAdvancedGroup(g) || g.items.some(isAdvancedItem));
+}
+
+/**
+ * Filter nav groups by menu mode. In `advanced` mode nothing is removed. In
+ * `simple` mode, advanced groups are dropped entirely and advanced items are
+ * removed from the surviving groups (empty groups then drop out). Purely additive
+ * — this runs AFTER getFilteredNavGroups, so power-user (advanced) flows are
+ * untouched.
+ */
+export function filterNavGroupsByMode(groups: NavGroup[], mode: NavMode): NavGroup[] {
+  if (mode === 'advanced') return groups;
+  return groups
+    .filter(group => !isAdvancedGroup(group))
+    .map(group => ({ ...group, items: group.items.filter(item => !isAdvancedItem(item)) }))
+    .filter(group => group.items.length > 0);
+}
+
 // Helper to get group by item href
 export function getGroupByHref(href: string): NavGroup | undefined {
   return navGroups.find(group => group.items.some(item => item.href === href));
+}
+
+/** Look up a nav item by its href (ignoring any query string). */
+export function getNavItemByHref(href: string): NavItem | undefined {
+  const path = href.split("?")[0];
+  return navItems.find(item => item.href.split("?")[0] === path);
+}
+
+/** doc 22 P4 — is the given route a not-yet-live (beta) surface? Drives the page banner. */
+export function isBetaRoute(href: string): boolean {
+  return getNavItemByHref(href)?.beta === true;
 }
 
 /**

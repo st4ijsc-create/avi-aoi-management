@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, LayoutGrid } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, LayoutGrid, Layers, Sparkles } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
@@ -32,7 +32,9 @@ import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { navGroups, NavGroup, NavItem, getFilteredNavGroups } from "@/lib/navigation";
+import { navGroups, NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { useNavMode } from "@/hooks/useNavMode";
+import { BetaBanner } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
@@ -171,14 +173,23 @@ function DashboardLayoutContent({
   // License module gating - filter groups by allowed modules
   const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed } = useLicenseModules();
 
-  // Filter groups based on user role + granular permissions + license modules
-  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
+  // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
+  const { mode: navMode, toggleMode } = useNavMode(user?.role);
+
+  // Filter groups based on user role + granular permissions + license modules.
+  // `accessibleGroups` = everything this user COULD see; `visibleGroups` then also
+  // applies the Simple/Advanced mode filter (Simple hides engineering-heavy surface).
+  const accessibleGroups = getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
     .filter(group => isNavGroupAllowed(group.id))
     .map(group => ({
       ...group,
       items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
     }))
     .filter(group => group.items.length > 0);
+
+  // Only offer the Advanced toggle when the user actually has advanced surface to reveal.
+  const showModeToggle = hasAdvancedContent(accessibleGroups);
+  const visibleGroups = filterNavGroupsByMode(accessibleGroups, navMode);
 
   return (
     <>
@@ -241,6 +252,37 @@ function DashboardLayoutContent({
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-sidebar-border">
+            {/* doc 22 P4 — Simple / Advanced menu toggle. Only shown when the user
+                has advanced surface to reveal. Icon-only when the rail is collapsed. */}
+            {showModeToggle && (
+              <button
+                type="button"
+                onClick={toggleMode}
+                aria-pressed={navMode === "advanced"}
+                title={
+                  navMode === "simple"
+                    ? t("nav.showAdvanced", "Show advanced menu")
+                    : t("nav.showSimple", "Simple menu")
+                }
+                className="mb-2 flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {navMode === "simple" ? (
+                  <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                )}
+                <span className="flex-1 min-w-0 text-sm text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+                  {navMode === "simple"
+                    ? t("nav.showAdvanced", "Show advanced menu")
+                    : t("nav.showSimple", "Simple menu")}
+                </span>
+                <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {navMode === "simple"
+                    ? t("nav.modeSimple", "Simple")
+                    : t("nav.modeAdvanced", "Advanced")}
+                </span>
+              </button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -346,6 +388,9 @@ function DashboardLayoutContent({
         <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
         <main className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto", isMobile && "pb-20")}>
+          {/* doc 22 P4 — one-line "Beta / needs setup" banner on framework/flag-gated
+              routes so first-time users don't expect live data. Driven by the nav flag. */}
+          {isBetaRoute(currentPath || location) && <BetaBanner />}
           {children}
         </main>
       </SidebarInset>
