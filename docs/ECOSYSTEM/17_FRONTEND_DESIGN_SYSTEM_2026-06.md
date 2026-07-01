@@ -6,6 +6,8 @@
 
 Stack: shadcn/ui (new-york) + Radix + Tailwind v4 (`@theme` + oklch CSS vars) + Framer Motion + Recharts + lucide. Path alias `@/*` → `client/src/*`.
 
+> **Đính chính 2026-07-01 (theo doc 22 §C, P1):** một số con số/đường dẫn/tuyên bố đã được hiệu chỉnh cho khớp code thật — xem doc 22.
+
 ---
 
 ## 1. What F1b delivered (summary)
@@ -46,6 +48,8 @@ The theme is defined in `client/src/index.css`. Default (`:root`) is the **dark*
 | `--text-3` | `oklch(0.65 0.02 260)` (= muted-fg) | `oklch(0.45 0.02 260)` | `text-text-3` |
 
 `--error` is a deliberate **alias** of `--destructive` (shadcn already standardises on `destructive`); use `error`/`destructive` interchangeably — `error` simply completes the success/warning/error/info semantic set for readability.
+
+> **Reality note (doc 22 §C):** the color system is **OKLCH semantic tokens** (`--success`/`--warning`/`--error`/`--info` + their `-foreground`) plus the `--surface-1..3` / `--text-1..3` ramps above — verified in `client/src/index.css` and `client/src/components/patterns/tokens.ts`. A full **numeric 50–900 shade scale per role** (e.g. `--success-50 … --success-900`) is **NOT implemented** and is a **FUTURE** item; it is not required for the current semantic/tint utilities to work.
 
 Status tint utilities (in `@layer components`, completes the existing `.status-ok/.status-ng/.status-ntf` set): **`.status-info`** = `bg-info/20 text-info border-info/30`.
 
@@ -231,6 +235,8 @@ The **`DesignTokens` playground** (`Design System/Tokens`) renders swatches for 
 ## 7. Rollout plan (migrate the other pages over time)
 
 Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traffic + churn. Each migration is **pixel-preserving**: import from `@/components/patterns`, delete the local header/KPI/badge helper, pass the same props. A page is migrated ONLY if the existing header/KPI maps cleanly to the shared component — otherwise it is LEFT and noted (see §7.2).
+
+> **Adoption reality (doc 22 §C, 2026-07-01):** design-system uptake is still **early — ~24–25% of pages** currently import the patterns barrel (**~40/161** `client/src/pages/*.tsx` files import `@/components/patterns`; doc 22 measured 39/161 ≈ 24%). The remaining ~75% still use ad-hoc headers/KPIs; the waves below are the path to converge them.
 
 ### 7.1 Rollout waves + status
 

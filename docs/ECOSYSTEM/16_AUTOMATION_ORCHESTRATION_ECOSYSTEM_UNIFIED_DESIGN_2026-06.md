@@ -5,6 +5,8 @@
 > Ngày: 2026-06-30 · Đầu vào: báo cáo tham khảo (36 trang, Khối 0–7) + 6 báo cáo audit codebase (Khối 0/1/1B, 2, 3, 4, 5/6, 7+Frontend) + docs ECOSYSTEM 01–15.
 > Tác giả: Principal Systems Architect (orchestration ecosystem).
 
+> **Đính chính 2026-07-01 (theo doc 22 §C, P1):** một số con số/đường dẫn/tuyên bố đã được hiệu chỉnh cho khớp code thật — xem doc 22.
+
 ---
 
 > ## ⓘ CẬP NHẬT TRẠNG THÁI THỰC THI — 2026-07-01
@@ -65,7 +67,7 @@ Quy ước maturity: 🟢 production · 🟡 framework/flag-off/partial · 🔴 
 |---|---|---|---|---|
 | **0** | Cổng ERP/MES | 🟡 ~50% | `server/api/v1/router.ts`, `webhookRouter.ts`, `apiKeyRouter.ts`, `commandDispatcher.ts` (idempotency) | Inbound work-order/BOM/material; retry queue bền; circuit breaker; OAuth2/mTLS; genealogy export; ISA-95/B2MML |
 | **1** | Device Abstraction | 🟢 ~75% | `equipment/equipmentAdapter.ts`, `capabilityModel.ts`, `packml.ts`, `ot/drivers/*` (OPC-UA/Modbus/S7/MC/EIP), `uns/sparkplugNode.ts`, `telemetryBus.ts` | ROS2/DDS; EtherCAT; push-streaming (đang poll 5s); battery/joint_states/safety_zone trong UDM; hot-plug discovery; alarm dictionary; command-level authz |
-| **1B** | Equipment Integration | 🟡 ~45% | `secsgem/*` (framework), `mtconnect/*` (poller), `vda5050/*` (framework), `uns/*` | FOCAS, Euromap, OPC-UA Companion validate; alarm-code mapping; recipe versioning; production-counter audit |
+| **1B** | Equipment Integration | 🟡 ~30% | `mtconnect/*` (poller — tích hợp CHẠY THẬT duy nhất); `secsgem/hsmsClient.ts`, `focas/focasAdapter.ts`, `euromap/euromapAdapter.ts` (**framework skeleton — chưa nối thiết bị**: `readSnapshot()` trả `{connected:false}`, tự dán nhãn "not GEM compliance / no native library"); `vda5050/*` (framework), `uns/*` | FOCAS, Euromap, OPC-UA Companion validate; alarm-code mapping; recipe versioning; production-counter audit |
 | **2** | Fleet & Task Orchestration | 🟡 ~35% | `orchestration/foe/*` (FOE engine, flag `FOE_ENABLED` OFF), `robot/robotManager.ts`, `vda5050/*`, `dispatchingService.ts` (WIP ranking) | **Task entity + capability matching; Zone + traffic/path (occupancy grid, deadlock, reservation); Operation→Skill→Program; A/B; predictive charging; shared-resource registry** |
 | **3** | Human-Robot Collab | 🔴 ~20% | `andon/andonService.ts` (signal-only), `interlock/interlockEngine.ts` (line-level), `robot/robotCommandDispatcher.ts` (dry-run gate), `QuickIssueReport.tsx` | **Dynamic safety zoning; mixed-workforce scheduling; skill-handover; SIL safety-event audit; near-miss CV; physical button/light; E-stop PLC độc lập** |
 | **4** | AI/Analytics & Predictive | 🟢 ~85% | `predictiveMaintenanceService.ts`, `llamaVisionSidecar.ts`, `aiAnomalyDetection.ts`, `aiRcaCopilot.ts`, `aiModelRouter.ts`, MLOps (`aiDatasetBuilder/aiEvalHarness/aiSelfLearningScheduler`) | Wiring MQTT sensor→`machineSensorReadings`; robot-behavior anomaly; model auto-rollback; (Triton optional) |
@@ -153,7 +155,7 @@ ERP POST /orders (idem-key) → validate(Zod+schemaVersion) → upsert productio
 
 ## 6. Khối 1B — Equipment Integration (đa nhà cung cấp)
 
-**Hiện trạng (🟡):** SECS/GEM (HSMS+codec, framework chưa test thiết bị thật), MTConnect (poller, field-map TBD), VDA5050 (Order/InstantActions, framework), Sparkplug B (production).
+**Hiện trạng (🟡 ~30%):** chỉ **MTConnect** (`mtconnect/*`) là tích hợp **chạy thật** (poller, field-map). **SECS/GEM** (`secsgem/hsmsClient.ts`), **FOCAS** (`focas/focasAdapter.ts`), **Euromap** (`euromap/euromapAdapter.ts`) là **framework skeleton — chưa nối thiết bị**: `readSnapshot()` trả `{connected:false}`, code tự dán nhãn honesty ("NOT a production HSMS driver / no native library linked — honest"). VDA5050 (Order/InstantActions, framework), Sparkplug B (production).
 
 **Kiến trúc đích:**
 1. **Unified Equipment Model (UEM)** mở rộng UDM với trường máy tĩnh: `recipe_id`, `cycle_count`, `alarm_code`, `utilization_rate`, `production_counter`.
@@ -182,23 +184,25 @@ ERP POST /orders (idem-key) → validate(Zod+schemaVersion) → upsert productio
 
 **Kiến trúc đích — 4 thành phần:**
 
-**(a) Dynamic Task Allocation Engine** (`server/services/task/taskAllocator.ts` — MỚI)
+**(a) Dynamic Task Allocation Engine** (`server/services/fleet/taskAllocator.ts` — ĐÃ CÓ; cùng thư mục: `fleetOrchestrator.ts`, `skillRegistry.ts`, `variantPicker.ts`)
 - Entity `tasks` (MỚI): `task_id, source_work_order_id, required_capability, priority, status, assigned_device_id, location_start/end, estimated/actual_duration, retry_count, tenant_id`.
-- Thuật toán gán: capability-match (từ `capabilityModel`) → khoảng cách/vị trí → battery (robot di động) → độ dài hàng đợi → priority đơn hàng. Latency mục tiêu **<500ms**.
+- Thuật toán gán: capability-match (từ `capabilityModel`) → khoảng cách/vị trí → battery (robot di động) → độ dài hàng đợi → priority đơn hàng. Latency mục tiêu **<500ms**. *Lưu ý code thật:* allocator **đọc dòng `robot_telemetry` mới nhất mỗi ứng viên** (snapshot polled, `orderBy(desc(timestamp)).limit(1)`, best-effort) — **KHÔNG** subscribe live vào telemetryBus.
 - **Rebalancing động**: robot lỗi giữa chừng → task tự phân phối lại cho robot cùng capability.
 
-**(b) Traffic & Path Management** (`server/services/traffic/*` — MỚI)
+**(b) Traffic & Path Management** (`server/services/fleet/trafficManager.ts` — ĐÃ CÓ; A* planner nằm ở `server/services/twin/occupancyGrid.ts`)
 - Entity `zones` (MỚI): `zone_id, max_concurrent_robots, current_occupancy[], zone_type(production|transit|charging|human_shared), tenant_id`.
-- Occupancy grid map + **deadlock detection/avoidance** + "đèn giao thông ảo" tại giao cắt/cửa/thang máy + **reservation-based navigation** (đặt chỗ đoạn đường trước khi đi).
+- Occupancy grid map + **A\* path planning** (`occupancyGrid.ts` — 8-connected, octile/Manhattan heuristic; **chỉ A\***, chưa có D\*) + **deadlock detection/avoidance** + "đèn giao thông ảo" tại giao cắt/cửa/thang máy + **reservation-based navigation** (đặt chỗ đoạn đường trước khi đi).
 - Path planning **phân tán per-zone** (tránh nghẽn tập trung).
 
 **(c) Skill & Work Instruction Registry** (nâng `programming.*` + `masterdata.skills`)
 - `operation_codes` (MỚI): Operation Code (từ MES routing) → required Skill → Robot program/URDF. Versioned artifact (đã có git-like `program_artifacts`).
 - **A/B test** chương trình robot: `program_variants` (variant/traffic-split) trước khi roll toàn dây chuyền.
 
-**(d) Charging & Resource Management** (`server/services/resource/*` — MỚI)
+**(d) Charging & Resource Management** (`server/services/fleet/resourceManager.ts` + `server/services/fleet/chargingPlanner.ts` — ĐÃ CÓ)
 - Predictive charging (dự báo nhu cầu năng lượng/ca → lịch sạc). `charger_stations`, `battery_charging_plans`.
 - Shared resource: `shared_resources` (jig/gripper/fixture/tool-changer) + `resource_reservations` (claim/release).
+
+> **Trạng thái runtime (code thật):** trong `.env`, `FOE_ENABLED=true` nhưng **`FLEET_ORCH_ENABLED` / `FLEET_RESOURCE_ENABLED` không có** → stack allocator/traffic/resource đang **TẮT lúc chạy** (dù mã đã hiện thực). Bật các cờ này để chạy end-to-end.
 
 **Luồng (task end-to-end):**
 ```
@@ -300,10 +304,10 @@ CollaborativeRobot extends Robot: { force_limit_n, safety_rated_speed_mms, exten
 
 **Kiến trúc đích:**
 1. **IR Core Model v1 chuẩn hóa** (AST JSON/YAML): motion-block + I/O-block first-class (`move_linear`, `grip`, `if_condition`...) — hiện program lưu text, FOE IR chỉ ở orchestration level.
-2. **Visual IR Editor nâng cấp** (React Flow node-based): kéo-thả block, chỉnh tham số, **dry-run** ngay trong editor.
+2. **Visual IR Editor** (code thật: `client/src/pages/IrEditor.tsx` là **trình sửa IR dạng cây tùy biến (nested step-tree + inspector, kiểu OrchestrationStudio)** — **chưa phải node-graph React Flow**; repo không có dependency `reactflow`/`@xyflow`): kéo-thả/chỉnh block, chỉnh tham số, lint + transpile-preview ngay trong editor. *Nâng cấp tương lai:* chuyển sang node-graph React Flow thực thụ.
 3. **Safety Linter semantic** (MỚI, hiện chỉ syntax): kiểm tra speed limit / workspace bounds / torque limit trên IR — chặn trước transpile.
 4. **Transpiler đa target** (mở rộng theo độ phức tạp): URScript/ROS2 Action (dễ) → KUKA/ABB/Fanuc/IEC61131-PLCopen. Code sinh ra có **comment trỏ ngược block IR**.
-5. **Simulation Gate cứng** (đã có): không chương trình nào lên production nếu chưa pass sim (Khối 7) — hard constraint, không override kể cả admin.
+5. **Simulation Gate cứng** (đã ĐƯỢC THỰC THI — không chỉ nguyên tắc): tính đến **2026-07-01 (doc 22 P0)**, `programmingService.deployBuild` **bắt buộc** dòng `program_sim_runs` mới nhất của build có `ok===true` trước khi deploy thật (nếu chưa sim / sim fail → deployment `rejected`). Không chương trình nào lên production nếu chưa pass sim (Khối 7) — hard constraint, không override kể cả admin.
 6. **Pattern Library** flow đã duyệt + **escape hatch** code thủ công (vẫn phải qua Simulation Gate).
 
 **Luồng deploy (chi tiết, đã có khung):**
@@ -380,7 +384,7 @@ IR Editor (chọn Device Type) → save IR JSON + git commit → Safety Linter (
 | Message bus | Kafka + MQTT | **MQTT/Aedes (có) + Redis/BullMQ (có)** — Kafka *không cần* ở quy mô này |
 | Field/Robot | ROS2 + open62541 | **node-opcua/drivers hiện có** + ROS2 bridge *khi cần humanoid* |
 | Equipment 1B | secsgem/MTConnect SDK | **đã có framework** — hoàn thiện + thêm FOCAS/Euromap theo nhu cầu |
-| Fleet | Node/FastAPI + A*/D* | **Node/tRPC hiện có** + A*/D* trong `traffic/pathPlanner` |
+| Fleet | Node/FastAPI + A*/D* | **Node/tRPC hiện có** + **A\*** trong `twin/occupancyGrid.ts` (fleet: `server/services/fleet/*`; chỉ A\*, chưa có D\*) |
 | Safety | Pilz/Sick PLC + UWB | **Mua phần cứng** (không code thay thế được) |
 | AI | PyTorch/Triton/MLflow | **local-LLM Qwen3 brain (có)** — Triton optional |
 | Digital Twin | Omniverse/Unity + three.js | **three.js/fiber/drei (có)** + glTF pipeline; Isaac/RoboDK cho physics sim gate |
