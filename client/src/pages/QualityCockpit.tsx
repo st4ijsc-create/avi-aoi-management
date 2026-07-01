@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSearch } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -223,13 +224,11 @@ export default function QualityCockpit() {
   return (
     <DashboardLayout title={t("qualityCockpit.title")}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("qualityCockpit.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("qualityCockpit.subtitle")}</p>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("qualityCockpit.title")}
+          description={t("qualityCockpit.subtitle")}
+        />
 
         <ScopeSelector scope={scope} onChange={setScope} />
 

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,15 +89,11 @@ export default function MESControlTower() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("mesControlTower.titleHub", "MES Operations Hub")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("mesControlTower.subtitleHub", "WIP · cân bằng chuyền · truy xuất serial · lệnh sản xuất · phiên sản xuất")}
-          </p>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("mesControlTower.titleHub", "MES Operations Hub")}
+          description={t("mesControlTower.subtitleHub", "WIP · cân bằng chuyền · truy xuất serial · lệnh sản xuất · phiên sản xuất")}
+        />
 
         {/* KPI cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">

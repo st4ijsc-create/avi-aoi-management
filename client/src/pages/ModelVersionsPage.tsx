@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { navItems } from '@/lib/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -85,23 +86,19 @@ export default function ModelVersionsPage() {
     <DashboardLayout title="Model Version Registry" navItems={navItems} currentPath="/model-versions">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <GitBranch className="h-6 w-6 text-primary" />
-              Model Version Registry
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage, compare and activate model versions across your AI models
-            </p>
-          </div>
-          {selectedModelId && (
-            <Button variant="outline" size="sm" onClick={() => refetchVersions()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          )}
-        </div>
+        <PageHeader
+          icon={<GitBranch className="h-6 w-6" />}
+          title="Model Version Registry"
+          description="Manage, compare and activate model versions across your AI models"
+          actions={
+            selectedModelId ? (
+              <Button variant="outline" size="sm" onClick={() => refetchVersions()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            ) : undefined
+          }
+        />
 
         {/* Model Selector */}
         <Card>

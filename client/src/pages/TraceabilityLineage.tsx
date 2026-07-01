@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -61,15 +62,11 @@ export default function TraceabilityLineage() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <GitMerge className="h-6 w-6 text-primary" />
-            {t("trace.title", "Truy xuất nguồn gốc (Genealogy)")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("trace.subtitle", "Tra cứu lineage 2 chiều: nguyên vật liệu → serial → quyết định lô/khách hàng")}
-          </p>
-        </div>
+        <PageHeader
+          icon={<GitMerge className="h-6 w-6" />}
+          title={t("trace.title", "Truy xuất nguồn gốc (Genealogy)")}
+          description={t("trace.subtitle", "Tra cứu lineage 2 chiều: nguyên vật liệu → serial → quyết định lô/khách hàng")}
+        />
 
         <Tabs value={mode} onValueChange={(v) => setMode(v as "serial" | "lot")}>
           <TabsList>

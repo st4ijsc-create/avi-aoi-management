@@ -173,7 +173,7 @@ export default function WorkOrdersPage() {
         <div className="flex gap-3 flex-wrap items-end">
           <div className="grid gap-1">
             <Label>{t("workOrders.filterStatus")}</Label>
-            <select className="flex h-9 w-44 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            <select aria-label={t("workOrders.filterStatus")} className="flex h-9 w-44 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">{t("workOrders.all")}</option>
               {STATUSES.map((s) => <option key={s} value={s}>{t(`workOrders.status.${s}`)}</option>)}
@@ -181,7 +181,7 @@ export default function WorkOrdersPage() {
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.filterMachine")}</Label>
-            <select className="flex h-9 w-56 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            <select aria-label={t("workOrders.filterMachine")} className="flex h-9 w-56 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               value={machineFilter} onChange={(e) => setMachineFilter(e.target.value)}>
               <option value="">{t("workOrders.all")}</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.code}{m.name ? ` — ${m.name}` : ""}</option>)}

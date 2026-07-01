@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { navItems } from '@/lib/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -113,21 +114,17 @@ export default function ModelMonitoringPage() {
     <DashboardLayout title={t('modelMonitoring.title')} navItems={navItems} currentPath="/ai-monitoring">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Activity className="h-6 w-6 text-primary" />
-              {t('modelMonitoring.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('modelMonitoring.subtitle')}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {t('modelMonitoring.refresh')}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t('modelMonitoring.title')}
+          description={t('modelMonitoring.subtitle')}
+          actions={
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('modelMonitoring.refresh')}
+            </Button>
+          }
+        />
 
         {/* Model Selector */}
         <Card>

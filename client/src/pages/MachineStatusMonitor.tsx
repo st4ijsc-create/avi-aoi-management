@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -422,34 +423,34 @@ export default function MachineStatusMonitor() {
     <DashboardLayout title="Machine Status Monitor" navItems={navItems} currentPath="/machine-status">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{t('machines.statusMonitor')}</h1>
-            <p className="text-muted-foreground">{t('machines.trackConnectionStatus')}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setLocation("/factory-live-map")}>
-              <Boxes className="h-4 w-4 mr-2" />
-              {t('machines.view3dMap', 'Bản đồ 3D')}
-            </Button>
-            <Button variant="outline" onClick={() => setLocation("/factory-floor-editor")}>
-              <Move className="h-4 w-4 mr-2" />
-              {t('machines.editLayout', 'Sửa mặt bằng')}
-            </Button>
-            <Button variant="outline" onClick={() => setAlertConfigOpen(true)}>
-              <Settings2 className="h-4 w-4 mr-2" />
-              {t('machines.alertConfig')}
-            </Button>
-            <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('machines.exportReport')}
-            </Button>
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('machines.refresh')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title={t('machines.statusMonitor')}
+          description={t('machines.trackConnectionStatus')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => setLocation("/factory-live-map")}>
+                <Boxes className="h-4 w-4 mr-2" />
+                {t('machines.view3dMap', 'Bản đồ 3D')}
+              </Button>
+              <Button variant="outline" onClick={() => setLocation("/factory-floor-editor")}>
+                <Move className="h-4 w-4 mr-2" />
+                {t('machines.editLayout', 'Sửa mặt bằng')}
+              </Button>
+              <Button variant="outline" onClick={() => setAlertConfigOpen(true)}>
+                <Settings2 className="h-4 w-4 mr-2" />
+                {t('machines.alertConfig')}
+              </Button>
+              <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
+                <Download className="h-4 w-4 mr-2" />
+                {t('machines.exportReport')}
+              </Button>
+              <Button variant="outline" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('machines.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-4 gap-4">

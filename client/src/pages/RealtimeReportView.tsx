@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -109,15 +110,11 @@ export default function RealtimeReportView() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Activity className="h-6 w-6 text-primary" />
-            {t("rtReport.title", "Báo cáo realtime & drill-down")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("rtReport.subtitle", "Chuỗi sức khỏe máy (downsampled), EnPI/carbon và export theo chuẩn tuân thủ")}
-          </p>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("rtReport.title", "Báo cáo realtime & drill-down")}
+          description={t("rtReport.subtitle", "Chuỗi sức khỏe máy (downsampled), EnPI/carbon và export theo chuẩn tuân thủ")}
+        />
 
         {/* Bộ lọc */}
         <Card>

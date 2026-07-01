@@ -227,18 +227,61 @@ A **token/typography playground** story should render swatches for `bg-primary/s
 
 ---
 
-## 7. Rollout plan (migrate the other pages over time — NOT done now)
+## 7. Rollout plan (migrate the other pages over time)
 
-Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traffic + churn.
+Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traffic + churn. Each migration is **pixel-preserving**: import from `@/components/patterns`, delete the local header/KPI/badge helper, pass the same props. A page is migrated ONLY if the existing header/KPI maps cleanly to the shared component — otherwise it is LEFT and noted (see §7.2).
 
-1. **Wave 0 (done):** ship tokens + components; adopt in 2 new automation pages (Fleet, Safety) as the reference.
-2. **Wave 1 — new pages only:** every page added from now on MUST use `PageHeader` + `MetricCard` + `StatusBadge` + `SectionCard` + `<Heading>`. Enforce in review.
-3. **Wave 2 — high-traffic cockpits:** DigitalTwinCenter, dashboards, MES/Quality cockpits — swap headers/KPIs/status helpers to the shared components; replace literal `text-amber-500`/`text-emerald-500` with `text-warning`/`text-success` tokens (fixes a11y finding #1).
-4. **Wave 3 — list/detail/editor templates:** define the canonical templates (Dashboard, List+Filter, Detail, Editor split-pane, Wizard, Realtime-monitor, 3D-scene) from doc 16 §12.2 and migrate per module.
-5. **Wave 4 — a11y sweep:** run axe/WAVE on ~15 core pages → WCAG AA; fix the §5.4 findings.
-6. **Wave 5 — Storybook + visual regression:** install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs.
+### 7.1 Rollout waves + status
 
-**Migration is mechanical and low-risk per page:** import from `@/components/patterns`, delete the local `MetricCard`/header/badge helper, pass the same props. Each page is independent — no shared-state churn. Track with a checklist in the module registry.
+| Wave | Bucket | Status |
+|---|---|---|
+| **Wave 0** | Ship tokens + components; adopt in 2 automation pages (Fleet, Safety) as reference. | ✅ done (F1b) |
+| **Wave 1 (F2)** | High-traffic core cockpits — swap clean-fit `PageHeader`; tokenize status-color literals; a11y (h1 / select labels / icon-button labels). See §7.3 for the exact page list. | ✅ done (F2) |
+| **Wave 2** | Remaining high-traffic cockpits + KPI strips: `DigitalTwinCenter`, `Dashboard`, `OEEDashboard`, `ProductionDashboard`, `MachineHealthMonitoring`, `MESControlTower` KPI cards — swap KPIs to `MetricCard`, replace literal `text-amber-500`/`text-emerald-500` with `text-warning`/`text-success` (a11y #1). Includes the pages §7.2 skipped in W1. | ▢ pending |
+| **Wave 3** | List/detail/editor templates — define canonical templates (Dashboard, List+Filter, Detail, Editor split-pane, Wizard, Realtime-monitor, 3D-scene) from doc 16 §12.2 and migrate per module (WorkOrders header, MasterData, registries, MQTT/admin pages). | ▢ pending |
+| **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` switch helpers (MES local `StatusBadge`, WorkOrders `statusVariant`, OpsConsole severity tiles) with the shared `<StatusBadge>` + per-page `map`. | ▢ pending |
+| **Wave 5** | A11y sweep — run axe/WAVE on ~15 core pages → WCAG AA; fix §5.4 + §7.4 findings. | ▢ pending |
+| **Wave 6** | Storybook + visual regression — install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs. | ▢ pending |
+
+> **Convention (all waves):** every NEW page MUST use `PageHeader` + `MetricCard` + `StatusBadge` + `SectionCard` + `<Heading>`. Enforce in review.
+
+### 7.2 Wave-1-eval SKIPS (evaluated, deliberately NOT migrated — deferred to a later wave)
+
+| Page | Reason left |
+|---|---|
+| `Dashboard` | Responsive header (`text-xl sm:text-2xl`) with inline `RealtimeBadge` + mobile-only quick-action bar — does not map to `PageHeader`'s fixed `text-2xl` single-title shape. → W2. |
+| `OEEDashboard` | Responsive `text-xl sm:text-2xl` title — same fixed-size mismatch. → W2. |
+| `ProductionDashboard` | Bespoke horizontal "summary strip" (no `<h1>`, `text-lg font-mono` cells, uppercase micro-labels) — neither `PageHeader` nor `MetricCard` fits; intentional dense layout. → W2 (+ has no `<h1>`, a11y). |
+| `MachineHealthMonitoring` | Header icon is a **coloured inline** `Heart text-red-500` (not a chip) → `PageHeader`'s `bg-primary/10 text-primary` chip would change icon colour + add a chip; threshold-graded KPI colours are domain semantics, not simple status. → W2. |
+| `WorkOrdersPage` (header) | Header uses `text-2xl font-semibold` (not `font-bold`), inline non-chip icon, and badges/summary/create-button share the title flex row → not a clean drop-in. (Native `<select>` a11y labels WERE added in W1.) → W3. |
+| `WipLineBalance` | Header + a labelled filter input share a `items-end justify-between` row; `PageHeader` is `items-center` → would shift the input alignment. → W3. |
+| `ProcessManagement` | `<ViewOnlyBadge>` is inline **inside** the `<h1>`; `PageHeader.badge` renders under the title → layout change. → W3. |
+| `CarbonDashboard` | Header icon is a branded `Leaf text-emerald-600`; the primary chip would drop the intentional green accent. → W2/W3. |
+
+### 7.3 Wave 1 (F2) — migrated pages
+
+Pixel-preserving swaps; `npm run check` + `vite build` both green. Icon+title+subtitle headers gain the canonical DS icon **chip** (same transform as Fleet/Safety in W0).
+
+| Page | What was swapped |
+|---|---|
+| `OpsConsole` | Header → `PageHeader`; War-Room refresh/sound/TV actions moved to `actions` slot; **a11y**: `aria-label` on the icon-only sound toggle; local `Kpi` accent colours tokenized (`text-red-500`→`text-destructive`, `text-orange-500`/`text-yellow-500`→`text-warning`). Kpi card kept (label-above-value shape differs from `MetricCard`). |
+| `MESControlTower` | Header → `PageHeader`. (KPI cards `text-3xl` top-label shape differs from `MetricCard` → left; local `StatusBadge` name-clashes the pattern one → left for W4.) |
+| `QualityCockpit` | Header → `PageHeader`. |
+| `MachineStatusMonitor` | Header → `PageHeader` (no icon → identical); 5 toolbar buttons moved to `actions`. (Summary cards `text-3xl`/bordered shape differs from `MetricCard` → left.) |
+| `TraceabilityLineage` | Header → `PageHeader`. |
+| `ModelMonitoringPage` | Header → `PageHeader`; refresh → `actions`. |
+| `RealtimeReportView` | Header → `PageHeader`. |
+| `ModelVersionsPage` | Header → `PageHeader`; conditional refresh → `actions` (undefined when no model selected). |
+
+### 7.4 New a11y findings (W1 audit)
+
+6. **Native `<select>` without label association** — `WorkOrdersPage` status/machine filters had a visible `<Label>` but no `htmlFor`/`id` link. FIXED in W1 by adding `aria-label`. Same pattern likely exists on other list/filter pages (audit in W5).
+7. **Icon-only toggle buttons without accessible name** — OpsConsole sound toggle (Volume2/VolumeX) had no label. FIXED (`aria-label`). Sweep other icon-only toggles (fullscreen, etc.) in W5.
+8. **Pages with no `<h1>`** — `ProductionDashboard` renders a summary strip with no page-level heading → broken document outline. Add a visually-hidden `<h1>` or a `PageHeader` in W2.
+
+### 7.5 Storybook (F2 decision)
+
+Storybook remains **documented-only / not installed** (unchanged from §6). Re-confirmed in F2: installing `@storybook/react-vite` against Vite 7 + Tailwind v4 (`@theme`) + React 19 is still a heavy, flaky dev-dep tree and risks `npm run check`/`vite build`; the brief prioritises zero build risk, so it was not forced. See §6.1 for the exact adopt-later steps.
 
 ---
 

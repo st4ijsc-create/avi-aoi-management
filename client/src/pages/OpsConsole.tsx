@@ -29,6 +29,7 @@ import { trpc } from "@/lib/trpc";
 import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -405,34 +406,35 @@ export default function OpsConsole() {
         className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-red-950/40" : ""} ${isFs ? "min-h-screen bg-background" : ""}`}
       >
         {/* Header / KPI strip */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold">
-              <Activity className="h-7 w-7 text-primary" />
-              {t("opsConsole.title", "Ops Console")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={refreshAll}>
-              <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Refresh")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setSoundOn((s) => !s)}>
-              {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </Button>
-            <Button variant="outline" size="sm" onClick={toggleFs}>
-              {isFs ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
-              {t("opsConsole.tvMode", "TV mode")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("opsConsole.title", "Ops Console")}
+          description={t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={refreshAll}>
+                <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Refresh")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSoundOn((s) => !s)}
+                aria-label={soundOn ? t("opsConsole.soundOn", "Sound on") : t("opsConsole.soundOff", "Sound off")}
+              >
+                {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </Button>
+              <Button variant="outline" size="sm" onClick={toggleFs}>
+                {isFs ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
+                {t("opsConsole.tvMode", "TV mode")}
+              </Button>
+            </>
+          }
+        />
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-red-500" />
-          <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-orange-500" />
-          <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-yellow-500" />
+          <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-destructive" />
+          <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-warning" />
+          <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-warning" />
           <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={counts.total} />
           <Kpi label={t("opsConsole.kpiMtta", "MTTA (s, 24h)")} value={andonMetrics.data?.avgMttaSeconds ?? 0} />
         </div>
