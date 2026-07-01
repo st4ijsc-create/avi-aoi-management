@@ -26,6 +26,7 @@ import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
 import { registerErpIntakeRoutes } from "./erpIntake";
+import { registerModuleReadRoutes } from "./moduleReads";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
 import {
@@ -493,6 +494,13 @@ export function createV1Router(): Router {
   // gated by ERP_INBOUND_ENABLED (off → structured 503). Emits order.created.
   // Accepts JSON or B2MML XML (K0+-b, ERP_B2MML_ENABLED) — same upsert path.
   registerErpIntakeRoutes(r);
+
+  // ── U4a (doc 21 §6 U4 / §3 G-6) — open the NEW upper-layer modules to /api/v1. ──
+  // READ-ONLY, scope-gated (fleet/safety/twin/programs/pdm/anomaly/standards + the
+  // equipment:read-scoped ecosystem roll-up + cockpit). Each endpoint reuses the SAME
+  // service functions the corresponding tRPC router calls — no logic duplication, no
+  // new device-control path. Writes/actions stay behind the existing gated tRPC flow.
+  registerModuleReadRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

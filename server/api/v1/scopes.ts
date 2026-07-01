@@ -23,6 +23,16 @@ export const API_SCOPES = {
   EDGE_SYNC: "edge:sync",
   // R0 (doc 16 Khối 0) — inbound ERP intake (work orders / BOM master data).
   ERP_WRITE: "erp:write",
+  // U4a (doc 21 §6 U4 / §3 G-6) — open the NEW upper-layer modules to /api/v1 (READ).
+  // Each is least-privilege READ over an existing tRPC-internal service; no new
+  // device-control path is opened (all reads reuse the same service the tRPC router calls).
+  FLEET_READ: "fleet:read",
+  SAFETY_READ: "safety:read",
+  TWIN_READ: "twin:read",
+  PROGRAMS_READ: "programs:read",
+  PDM_READ: "pdm:read",
+  ANOMALY_READ: "anomaly:read",
+  STANDARDS_READ: "standards:read",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -39,6 +49,13 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "orchestration:write": "Create orchestration workflows and start runs (E2).",
   "edge:sync": "Sync edge run/step results back to central (E4 edge control runtime).",
   "erp:write": "Inbound ERP intake: create/upsert production orders and BOM master data (R0 Khối 0).",
+  "fleet:read": "Read fleet orchestration state: tasks and zones (occupancy) (U4a).",
+  "safety:read": "Read ADVISORY safety events and safety zones (U4a; advisory, not safety-rated).",
+  "twin:read": "Read digital-twin scene graph and equipment 3D model registry (U4a).",
+  "programs:read": "Read device programs (projects/artifacts) and their deployments (U4a).",
+  "pdm:read": "Read predictive-maintenance failure-risk for a machine (U4a).",
+  "anomaly:read": "Read ADVISORY robot-behaviour anomaly events (U4a).",
+  "standards:read": "Read equipment governance: device types, ISA-18.2 alarm taxonomy, compliance (U4a).",
 };
 
 /**

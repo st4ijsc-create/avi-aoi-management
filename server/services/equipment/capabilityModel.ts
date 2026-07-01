@@ -330,6 +330,11 @@ const AUTOMATION_TELEMETRY: TelemetryDescriptor[] = [T_RESULT, T_CYCLE, T_STATE,
 /**
  * DEFAULT capability profile per machineType — sensible, derived from the existing
  * write-tools / drivers. Override per machine via `machines.capabilities` jsonb.
+ *
+ * NOTE (U4b): this table is the SEED for the data-driven capability registry below.
+ * Every entry is registered via `registerCapabilityProfile` at module load, so
+ * resolution reads the registry — this is a behaviour-preserving refactor. A new
+ * equipment class registers its profile instead of editing this table (register-and-go).
  */
 const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   // ── Inspection cells (vision ingest + recipe select) ──
@@ -370,15 +375,51 @@ function fallbackProfile(equipmentClass: string): EquipmentCapability {
   };
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN capability-profile registry.
+ *
+ * `DEFAULT_PROFILES` is the SEED; every class is registered through
+ * `registerCapabilityProfile` at module load, so resolution reads the registry and
+ * is IDENTICAL to the old table lookup (behaviour-preserving). A new equipment class
+ * registers its profile instead of editing the table (register-and-go). The
+ * `EquipmentClass` union is retained for compile-time exhaustiveness.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+const profileRegistry = new Map<string, EquipmentCapability>();
+
+/**
+ * Register (or override) the DEFAULT capability profile for an equipment class.
+ * Register-and-go: a new class needs only this call — no edit to `DEFAULT_PROFILES`.
+ */
+export function registerCapabilityProfile(equipmentClass: EquipmentClass | string, profile: EquipmentCapability): void {
+  profileRegistry.set(equipmentClass, profile);
+}
+
+// ── Seed the registry with every existing class (parity with the old table). ──
+for (const cls of Object.keys(DEFAULT_PROFILES) as EquipmentClass[]) {
+  registerCapabilityProfile(cls, DEFAULT_PROFILES[cls]);
+}
+
+/** The registered default profile for a class, or undefined if none. */
+function lookupProfile(equipmentClass: string): EquipmentCapability | undefined {
+  return profileRegistry.get(equipmentClass);
+}
+
 /** The default profile for a machineType (deep-cloned so callers can't mutate the table). */
 export function getDefaultCapability(machineType: string): EquipmentCapability {
-  const base = DEFAULT_PROFILES[machineType as EquipmentClass];
+  const base = lookupProfile(machineType);
   return cloneCapability(base ?? fallbackProfile(machineType));
 }
 
 /** All machineType → default profiles (read-only view, for discovery/UI). */
 export function listDefaultProfiles(): EquipmentCapability[] {
-  return (Object.keys(DEFAULT_PROFILES) as EquipmentClass[]).map((k) => cloneCapability(DEFAULT_PROFILES[k]));
+  return [...profileRegistry.values()].map((c) => cloneCapability(c));
+}
+
+/** Every registered equipment class (register-and-go view). */
+export function listCapabilityClasses(): string[] {
+  return [...profileRegistry.keys()];
 }
 
 function cloneCapability(c: EquipmentCapability): EquipmentCapability {

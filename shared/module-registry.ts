@@ -58,12 +58,17 @@ export interface ExportModule {
 }
 
 /**
- * Danh sách tất cả system modules
- * 
+ * Danh sách seed (nguồn) của tất cả system modules.
+ *
  * Module `isCore: true` luôn hoạt động kể cả khi không có license.
  * Module `isCore: false` chỉ hoạt động khi license có chứa module code tương ứng.
+ *
+ * U4b (doc 21 §6 / G-8): đây là SEED cho registry data-driven bên dưới. Mỗi manifest
+ * được đăng ký qua `registerModule` khi load, nên `SYSTEM_MODULES` được DERIVE từ
+ * registry (backward-compatible). Một module mới `registerModule(manifest)` thay vì
+ * sửa mảng này (register-and-go). Thứ tự đăng ký == thứ tự khai báo ở đây.
  */
-export const SYSTEM_MODULES: SystemModule[] = [
+const SEED_MODULES: SystemModule[] = [
   // ─── CORE MODULES (luôn bao gồm) ──────────────────────
   {
     code: "CORE_AUTH",
@@ -369,6 +374,44 @@ export const SYSTEM_MODULES: SystemModule[] = [
 ];
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * U4b (doc 21 §6 / G-8) — DATA-DRIVEN module registry (mirrors ot/driverRegistry).
+ *
+ * `SEED_MODULES` is registered through `registerModule` at load; `SYSTEM_MODULES` is
+ * DERIVED from the registry so it stays backward-compatible (same array shape, same
+ * order). A new module registers its manifest instead of editing the seed array
+ * (register-and-go). Registering an existing `code` REPLACES that manifest in place
+ * (order preserved) so callers/derived lists never see duplicates.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+const moduleRegistry = new Map<string, SystemModule>();
+
+/**
+ * Register (or replace) a system-module manifest. Register-and-go: a new module needs
+ * only this call — no edit to the seed array. Replacing an existing `code` keeps its
+ * original position (Map preserves first-insertion order).
+ */
+export function registerModule(manifest: SystemModule): void {
+  moduleRegistry.set(manifest.code, manifest);
+}
+
+// ── Seed the registry with every declared module (parity with the old array). ──
+for (const m of SEED_MODULES) registerModule(m);
+
+/**
+ * Danh sách tất cả system modules (DERIVED từ registry — backward-compatible).
+ *
+ * LƯU Ý: đây là snapshot tại load-time để giữ nguyên hành vi cũ (một mảng const).
+ * Module đăng ký thêm sau load hiển thị qua `listModules()`.
+ */
+export const SYSTEM_MODULES: SystemModule[] = [...moduleRegistry.values()];
+
+/** Mọi module đã đăng ký (register-and-go view — phản ánh cả module thêm sau load). */
+export function listModules(): SystemModule[] {
+  return [...moduleRegistry.values()];
+}
+
+/**
  * Module codes cho tất cả core modules
  */
 export const CORE_MODULE_CODES = SYSTEM_MODULES
@@ -388,24 +431,24 @@ export const OPTIONAL_MODULE_CODES = SYSTEM_MODULES
 export const ALL_MODULE_CODES = SYSTEM_MODULES.map(m => m.code);
 
 /**
- * Tra cứu module theo route path
+ * Tra cứu module theo route path (đọc live từ registry → thấy cả module đăng ký thêm).
  */
 export function getModuleByRoute(routePath: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.routes.includes(routePath));
+  return listModules().find(m => m.routes.includes(routePath));
 }
 
 /**
- * Tra cứu module theo code
+ * Tra cứu module theo code (đọc trực tiếp từ registry Map — O(1)).
  */
 export function getModuleByCode(code: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.code === code);
+  return moduleRegistry.get(code);
 }
 
 /**
- * Tra cứu module theo nav group ID
+ * Tra cứu module theo nav group ID (đọc live từ registry).
  */
 export function getModuleByNavGroup(navGroupId: string): SystemModule | undefined {
-  return SYSTEM_MODULES.find(m => m.navGroupId === navGroupId);
+  return listModules().find(m => m.navGroupId === navGroupId);
 }
 
 /**
@@ -433,7 +476,7 @@ export function toExportFormat(productCode: string, appVersion: string = "1.0.0"
   return {
     productCode,
     version: appVersion,
-    modules: SYSTEM_MODULES.map(m => ({
+    modules: listModules().map(m => ({
       code: m.code,
       name: m.name,
       isCore: m.isCore,
