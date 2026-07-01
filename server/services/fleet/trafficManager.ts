@@ -76,52 +76,64 @@ export async function reserveZone(input: ReserveInput): Promise<ReserveResult> {
   const db = await getDb();
   if (!db) return { ok: false, enabled: true, status: "rejected", message: "db unavailable" };
 
-  const [zone] = await db.select().from(zones).where(eq(zones.id, input.zoneId)).limit(1);
-  if (!zone) return { ok: false, enabled: true, status: "rejected", message: `zone ${input.zoneId} not found` };
+  // ATOMIC (P0 — closes the TOCTOU over-fill race): serialize all reservers of THIS
+  // zone on the zone row (SELECT … FOR UPDATE) inside one transaction, so the occupancy
+  // count + capacity check + insert cannot interleave with a concurrent reserver. Two
+  // concurrent reservers of the same zone now block on the zone-row lock and are ordered.
+  return db.transaction(async (tx) => {
+    const [zone] = await tx.select().from(zones).where(eq(zones.id, input.zoneId)).for("update");
+    if (!zone) return { ok: false, enabled: true, status: "rejected", message: `zone ${input.zoneId} not found` };
 
-  // Idempotent re-entry: already holding an active claim → return it.
-  const [existing] = await db
-    .select()
-    .from(zoneReservations)
-    .where(
-      and(
-        eq(zoneReservations.zoneId, input.zoneId),
-        eq(zoneReservations.deviceId, input.deviceId),
-        eq(zoneReservations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    const occupancy = await getZoneOccupancy(input.zoneId);
-    return { ok: true, enabled: true, status: "active", reservationId: existing.id, occupancy, capacity: zone.maxConcurrentRobots };
-  }
+    // Idempotent re-entry: already holding an active claim → return it.
+    const [existing] = await tx
+      .select()
+      .from(zoneReservations)
+      .where(
+        and(
+          eq(zoneReservations.zoneId, input.zoneId),
+          eq(zoneReservations.deviceId, input.deviceId),
+          eq(zoneReservations.status, "active"),
+        ),
+      )
+      .limit(1);
 
-  const occupancy = await getZoneOccupancy(input.zoneId);
-  const queueIfFull = input.queueIfFull ?? true;
+    // Occupancy DERIVED from active reservations, counted inside the locked transaction.
+    const activeRows = await tx
+      .select()
+      .from(zoneReservations)
+      .where(and(eq(zoneReservations.zoneId, input.zoneId), eq(zoneReservations.status, "active")));
+    const occupancy = activeRows.length;
 
-  if (occupancy >= zone.maxConcurrentRobots) {
-    // Zone full — virtual red light.
-    if (!queueIfFull) {
-      const [row] = await db
-        .insert(zoneReservations)
-        .values({ ...baseRes(input), status: "rejected" })
-        .returning({ id: zoneReservations.id });
-      return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots, message: "zone at capacity" };
+    if (existing) {
+      return { ok: true, enabled: true, status: "active", reservationId: existing.id, occupancy, capacity: zone.maxConcurrentRobots };
     }
-    const [row] = await db
-      .insert(zoneReservations)
-      .values({ ...baseRes(input), status: "queued" })
-      .returning({ id: zoneReservations.id });
-    console.log(`[Fleet] zone ${input.zoneId} full (${occupancy}/${zone.maxConcurrentRobots}) → device ${input.deviceId} QUEUED`);
-    return { ok: true, enabled: true, status: "queued", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots };
-  }
 
-  // Green light — grant.
-  const [row] = await db
-    .insert(zoneReservations)
-    .values({ ...baseRes(input), status: "active" })
-    .returning({ id: zoneReservations.id });
-  return { ok: true, enabled: true, status: "active", reservationId: row?.id, occupancy: occupancy + 1, capacity: zone.maxConcurrentRobots };
+    const queueIfFull = input.queueIfFull ?? true;
+
+    if (occupancy >= zone.maxConcurrentRobots) {
+      // Zone full — virtual red light.
+      if (!queueIfFull) {
+        const [row] = await tx
+          .insert(zoneReservations)
+          .values({ ...baseRes(input), status: "rejected" })
+          .returning({ id: zoneReservations.id });
+        return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots, message: "zone at capacity" };
+      }
+      const [row] = await tx
+        .insert(zoneReservations)
+        .values({ ...baseRes(input), status: "queued" })
+        .returning({ id: zoneReservations.id });
+      console.log(`[Fleet] zone ${input.zoneId} full (${occupancy}/${zone.maxConcurrentRobots}) → device ${input.deviceId} QUEUED`);
+      return { ok: true, enabled: true, status: "queued", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots };
+    }
+
+    // Green light — grant.
+    const [row] = await tx
+      .insert(zoneReservations)
+      .values({ ...baseRes(input), status: "active" })
+      .returning({ id: zoneReservations.id });
+    return { ok: true, enabled: true, status: "active", reservationId: row?.id, occupancy: occupancy + 1, capacity: zone.maxConcurrentRobots };
+  });
 }
 
 function baseRes(input: ReserveInput) {

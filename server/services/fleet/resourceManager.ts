@@ -117,44 +117,53 @@ export async function claimResource(input: ClaimInput): Promise<ClaimResult> {
   const db = await getDb();
   if (!db) return { ok: false, enabled: true, status: "rejected", message: "db unavailable" };
 
-  const [res] = await db.select().from(sharedResources).where(eq(sharedResources.id, input.resourceId)).limit(1);
-  if (!res) return { ok: false, enabled: true, status: "rejected", message: `resource ${input.resourceId} not found` };
+  // ATOMIC (P0 — closes the TOCTOU double-claim race): serialize all claimers of THIS
+  // resource on the resource row (SELECT … FOR UPDATE) inside one transaction, so the
+  // single-owner check + insert cannot interleave with a concurrent claimer.
+  return db.transaction(async (tx) => {
+    const [res] = await tx.select().from(sharedResources).where(eq(sharedResources.id, input.resourceId)).for("update");
+    if (!res) return { ok: false, enabled: true, status: "rejected", message: `resource ${input.resourceId} not found` };
 
-  // Idempotent re-claim: this device already holds an active claim.
-  const [existing] = await db
-    .select()
-    .from(resourceReservations)
-    .where(
-      and(
-        eq(resourceReservations.resourceId, input.resourceId),
-        eq(resourceReservations.deviceId, input.deviceId),
-        eq(resourceReservations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (existing) return { ok: true, enabled: true, status: "active", reservationId: existing.id };
+    // Idempotent re-claim: this device already holds an active claim.
+    const [existing] = await tx
+      .select()
+      .from(resourceReservations)
+      .where(
+        and(
+          eq(resourceReservations.resourceId, input.resourceId),
+          eq(resourceReservations.deviceId, input.deviceId),
+          eq(resourceReservations.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (existing) return { ok: true, enabled: true, status: "active", reservationId: existing.id };
 
-  const activeCount = await getResourceActiveCount(input.resourceId);
-  const queueIfFull = input.queueIfFull ?? true;
+    const activeRows = await tx
+      .select()
+      .from(resourceReservations)
+      .where(and(eq(resourceReservations.resourceId, input.resourceId), eq(resourceReservations.status, "active")));
+    const activeCount = activeRows.length;
+    const queueIfFull = input.queueIfFull ?? true;
 
-  if (activeCount >= 1) {
-    // In use by another device.
-    if (!queueIfFull) {
-      const [row] = await db.insert(resourceReservations).values({ ...baseRes(input), status: "rejected" }).returning({ id: resourceReservations.id });
-      return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, message: "resource in use" };
+    if (activeCount >= 1) {
+      // In use by another device.
+      if (!queueIfFull) {
+        const [row] = await tx.insert(resourceReservations).values({ ...baseRes(input), status: "rejected" }).returning({ id: resourceReservations.id });
+        return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, message: "resource in use" };
+      }
+      const [row] = await tx.insert(resourceReservations).values({ ...baseRes(input), status: "queued" }).returning({ id: resourceReservations.id });
+      console.log(`[Fleet] resource ${input.resourceId} in use → device ${input.deviceId} QUEUED`);
+      return { ok: true, enabled: true, status: "queued", reservationId: row?.id };
     }
-    const [row] = await db.insert(resourceReservations).values({ ...baseRes(input), status: "queued" }).returning({ id: resourceReservations.id });
-    console.log(`[Fleet] resource ${input.resourceId} in use → device ${input.deviceId} QUEUED`);
-    return { ok: true, enabled: true, status: "queued", reservationId: row?.id };
-  }
 
-  // Free — grant + mark owner.
-  const [row] = await db.insert(resourceReservations).values({ ...baseRes(input), status: "active" }).returning({ id: resourceReservations.id });
-  await db
-    .update(sharedResources)
-    .set({ status: "in_use", currentOwnerDeviceId: input.deviceId, updatedAt: new Date() })
-    .where(eq(sharedResources.id, input.resourceId));
-  return { ok: true, enabled: true, status: "active", reservationId: row?.id };
+    // Free — grant + mark owner.
+    const [row] = await tx.insert(resourceReservations).values({ ...baseRes(input), status: "active" }).returning({ id: resourceReservations.id });
+    await tx
+      .update(sharedResources)
+      .set({ status: "in_use", currentOwnerDeviceId: input.deviceId, updatedAt: new Date() })
+      .where(eq(sharedResources.id, input.resourceId));
+    return { ok: true, enabled: true, status: "active", reservationId: row?.id };
+  });
 }
 
 export interface ReleaseResult {

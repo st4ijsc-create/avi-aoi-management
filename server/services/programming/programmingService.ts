@@ -209,6 +209,41 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
   const signedOff = req.hitl.confirmedBy != null;
   const realDeploy = dpcDeployEnabled() && signedOff;
 
+  // P0 — ENFORCE THE SIMULATION GATE. A real (hardware) deploy is refused unless the
+  // most-recent simulation run for this build PASSED (program_sim_runs.ok === true).
+  // Simulated / gate-closed deploys never touch a device, so they don't require it.
+  // This makes the Simulation Gate a HARD precondition for reaching hardware — a flow
+  // whose kinematic/one-scan sim failed (or was never simulated) can no longer deploy.
+  if (realDeploy) {
+    const [latestSim] = await d
+      .select()
+      .from(programSimRuns)
+      .where(eq(programSimRuns.buildId, req.buildId))
+      .orderBy(desc(programSimRuns.id))
+      .limit(1);
+    if (!latestSim || latestSim.ok !== true) {
+      const [row] = await d
+        .insert(programDeployments)
+        .values({
+          buildId: req.buildId,
+          projectId: art.projectId,
+          deviceId: req.deviceId ?? projectDeviceId,
+          stage: req.stage,
+          status: "rejected",
+          simulated: true,
+          signedOffBy: req.hitl.confirmedBy ?? null,
+          requestedBy: user.id,
+          idempotencyKey: req.idempotencyKey,
+          error: latestSim
+            ? "Simulation Gate not passed (latest sim run failed) — refusing real deploy."
+            : "Simulation Gate required — no simulation run recorded for this build. Refusing real deploy.",
+        })
+        .returning();
+      publishDeployed(row);
+      return row;
+    }
+  }
+
   let result: ProgDeployResult;
   if (realDeploy) {
     const adapter = programmingRegistry.getAdapter(b.adapterKind as ProgrammingKind);

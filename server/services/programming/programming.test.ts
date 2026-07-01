@@ -272,10 +272,11 @@ describe("programmingService", () => {
     expect(rows("program_deployments").length).toBe(1);
   });
 
-  it("DEPLOY GATE: flag ON + sign-off → adapter.deploy invoked (stub → simulated still)", async () => {
+  it("DEPLOY GATE: flag ON + sign-off + PASSING sim → adapter.deploy invoked (stub → simulated still)", async () => {
     process.env.DPC_DEPLOY_ENABLED = "true";
     seedArtifact("A\nB");
     const b = await buildArtifact(1, USER);
+    await simulateBuild(b.id, {}, USER); // P0: a PASSING Simulation Gate run is now required before a real deploy.
     const spy = vi.spyOn(programmingRegistry.getAdapter("stub"), "deploy");
     const dep = await deployBuild(
       { buildId: b.id, stage: "staging", idempotencyKey: "idem-4", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
@@ -283,6 +284,23 @@ describe("programmingService", () => {
     );
     expect(spy).toHaveBeenCalled();
     // stub still reports simulated (it has no device path) — the audit row reflects that.
+    expect(dep.simulated).toBe(true);
+  });
+
+  it("P0 SIM GATE: flag ON + sign-off but NO passing sim → rejected, adapter NOT invoked", async () => {
+    // The Simulation Gate is a HARD precondition for reaching hardware: without a
+    // passing program_sim_runs row, a real deploy is refused (recorded 'rejected') and
+    // the device path is never invoked — even with the flag on and a human sign-off.
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedArtifact("A\nB");
+    const b = await buildArtifact(1, USER); // ok build, but never simulated
+    const spy = vi.spyOn(programmingRegistry.getAdapter("stub"), "deploy");
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "staging", idempotencyKey: "idem-gate", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+      USER,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    expect(dep.status).toBe("rejected");
     expect(dep.simulated).toBe(true);
   });
 

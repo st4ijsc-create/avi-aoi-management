@@ -77,6 +77,7 @@ function makeFakeDb() {
         where: (p: any) => { pred = p; return q; },
         orderBy: (o: any) => { order = o; return q; },
         limit: async (n: number) => run().slice(0, n),
+        for: (_s?: any, _c?: any) => q, // SELECT … FOR UPDATE (row lock) — no-op in the fake, still thenable
         then: (resolve: any) => resolve(run()),
       };
       function run(): Row[] {
@@ -88,7 +89,7 @@ function makeFakeDb() {
       return q;
     },
   });
-  return {
+  const db: any = {
     select,
     insert: (t: any) => ({
       values: (vals: Row | Row[]) => {
@@ -109,6 +110,10 @@ function makeFakeDb() {
       }),
     }),
   };
+  // Reservation atomicity (P0): claimResource/reserveZone run inside db.transaction();
+  // the fake runs the callback synchronously against the same in-memory store.
+  db.transaction = async (cb: any) => cb(db);
+  return db;
 }
 
 vi.mock("../../db/connection", () => ({ getDb: async () => makeFakeDb() }));
