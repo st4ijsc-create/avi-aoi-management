@@ -18,6 +18,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,8 +44,9 @@ const EXAMPLE_QUESTIONS = [
   { key: "q3", default: "Máy nào sắp cần bảo trì?" },
 ] as const;
 
-// Severity → badge style for ai_insights.
-function severityVariant(sev?: string): { variant: "default" | "secondary" | "destructive" | "outline"; cls: string } {
+// Severity → shared <StatusBadge> entry for ai_insights (solid, W4). Preserves
+// the exact prior variant + amber-warning override class.
+function severityVariant(sev?: string): { variant: BadgeVariant; cls: string } {
   switch ((sev ?? "").toLowerCase()) {
     case "critical":
     case "error":
@@ -448,7 +450,7 @@ export default function ManagementInsight() {
                         {ins?.machineCode && (
                           <Badge variant="outline" className="text-[10px] py-0 h-4">{ins.machineCode}</Badge>
                         )}
-                        <Badge variant={sev.variant} className={sev.cls}>{ins?.severity ?? "info"}</Badge>
+                        <StatusBadge status={ins?.severity ?? "info"} variant={sev.variant} className={sev.cls} />
                       </div>
                     </div>
                     {ins?.body && <p className="text-sm text-muted-foreground">{ins.body}</p>}

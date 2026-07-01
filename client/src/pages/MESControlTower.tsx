@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,18 +31,18 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+// Domain status → solid shadcn <Badge> variant. Unified onto the shared
+// <StatusBadge> (W4): this thin wrapper keeps the `value` API + em-dash empty
+// state, delegating rendering to the pattern component (identical look).
+function mesStatusVariant(v: string): BadgeVariant {
+  if (v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "SIGNED_OFF") return "default";
+  if (v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "PAUSED") return "secondary";
+  if (v.includes("SCRAP") || v.includes("REJECT") || v === "BREAKDOWN") return "destructive";
+  return "outline";
+}
 function StatusBadge({ value }: { value?: string | null }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  const v = value.toUpperCase();
-  const variant =
-    v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "SIGNED_OFF"
-      ? "default"
-      : v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "PAUSED"
-        ? "secondary"
-        : v.includes("SCRAP") || v.includes("REJECT") || v === "BREAKDOWN"
-          ? "destructive"
-          : "outline";
-  return <Badge variant={variant as any}>{value}</Badge>;
+  return <PatternStatusBadge status={value} variant={mesStatusVariant(value.toUpperCase())} />;
 }
 
 /**

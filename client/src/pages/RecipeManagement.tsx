@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,11 +45,12 @@ import { toast } from "sonner";
 
 type RecipeStatus = "draft" | "active" | "archived";
 
-function statusVariant(status: string): "default" | "secondary" | "outline" {
-  if (status === "active") return "default";
-  if (status === "draft") return "secondary";
-  return "outline";
-}
+// Recipe status → solid shadcn <Badge> variant, unified onto the shared
+// <StatusBadge> (W4). active→primary, draft→secondary, archived→outline.
+const RECIPE_STATUS_MAP: Record<string, { variant: BadgeVariant }> = {
+  active: { variant: "default" },
+  draft: { variant: "secondary" },
+};
 
 interface NewVersionForm {
   code: string;
@@ -246,7 +247,7 @@ export default function RecipeManagement() {
                   <TableRow key={v.id}>
                     <TableCell className="font-medium">v{v.version}</TableCell>
                     <TableCell>{v.name}</TableCell>
-                    <TableCell><Badge variant={statusVariant(v.status)}>{v.status}</Badge></TableCell>
+                    <TableCell><StatusBadge status={v.status} variant={RECIPE_STATUS_MAP[v.status]?.variant ?? "outline"} /></TableCell>
                     <TableCell className="max-w-[140px] truncate font-mono text-xs" title={v.checksum ?? ""}>{v.checksum ?? "—"}</TableCell>
                     <TableCell className="text-right space-x-1">
                       {canEdit && (
@@ -303,7 +304,7 @@ export default function RecipeManagement() {
                   <TableCell>{d.recipeCode != null ? `${d.recipeCode} v${d.recipeVersion}` : `#${d.recipeId}`}</TableCell>
                   <TableCell>{d.deployedBy}</TableCell>
                   <TableCell className="text-xs">{d.deployedAt ? new Date(d.deployedAt).toLocaleString() : "—"}</TableCell>
-                  <TableCell><Badge variant={statusVariant(d.status)}>{d.status}</Badge></TableCell>
+                  <TableCell><StatusBadge status={d.status} variant={RECIPE_STATUS_MAP[d.status]?.variant ?? "outline"} /></TableCell>
                   <TableCell>{d.previousRecipeId ?? "—"}</TableCell>
                   <TableCell className="max-w-[200px] truncate" title={d.notes ?? ""}>{d.notes ?? "—"}</TableCell>
                   <TableCell className="text-right">

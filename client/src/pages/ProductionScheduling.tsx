@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -698,13 +699,15 @@ export default function ProductionScheduling() {
   );
 }
 
+// Schedule status → shared <StatusBadge> (solid shadcn variant, W4). Keeps the
+// exact prior variant + i18n label; thin wrapper preserves the `{status,t}` API.
 function StatusBadge({ status, t }: { status: string; t: any }) {
-  const config: Record<string, { variant: any; label: string }> = {
+  const config: Record<string, { variant: BadgeVariant; label: string }> = {
     planned: { variant: "secondary", label: t("scheduling.planned", "Lên KH") },
     in_progress: { variant: "default", label: t("scheduling.inProgress", "Đang SX") },
     completed: { variant: "outline", label: t("scheduling.completed", "Xong") },
     cancelled: { variant: "destructive", label: t("scheduling.cancelled", "Hủy") },
   };
-  const c = config[status] || { variant: "secondary", label: status };
-  return <Badge variant={c.variant}>{c.label}</Badge>;
+  const c = config[status] || { variant: "secondary" as BadgeVariant, label: status };
+  return <PatternStatusBadge status={status} variant={c.variant} label={c.label} />;
 }

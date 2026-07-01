@@ -53,31 +53,64 @@ function inferTone(status: string): Exclude<Tone, "accent"> {
   return "default";
 }
 
-export interface StatusBadgeProps {
-  status: string;
-  /** Force a tone, bypassing the heuristic. */
+/** shadcn <Badge> variants — used by the SOLID render path (W4). */
+export type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
+
+/** Per-page map entry. `tone` drives the tint path; `variant` (additive, W4)
+ *  drives the SOLID shadcn-<Badge> path so pages that historically used
+ *  `<Badge variant=…>` switch-helpers can unify here WITHOUT a visual change. */
+export interface StatusMapEntry {
   tone?: Exclude<Tone, "accent">;
-  /** Override the displayed label (defaults to `status`). */
-  label?: React.ReactNode;
-  /** Per-page override map: status → {tone,label}. Takes precedence. */
-  map?: Record<string, { tone: Exclude<Tone, "accent">; label?: string }>;
+  variant?: BadgeVariant;
+  label?: string;
+  /** Extra classes for this status (e.g. a literal `bg-amber-500/15 …` tint). */
   className?: string;
 }
 
-export function StatusBadge({ status, tone, label, map, className }: StatusBadgeProps) {
-  const entry = map?.[status];
-  const resolvedTone = tone ?? entry?.tone ?? inferTone(status);
-  const text = label ?? entry?.label ?? status;
+export interface StatusBadgeProps {
+  status: string;
+  /** Force a tone, bypassing the heuristic (tint render path). */
+  tone?: Exclude<Tone, "accent">;
+  /**
+   * Force a solid shadcn <Badge> variant (SOLID render path, additive W4).
+   * Takes precedence over `tone` — reproduces legacy `<Badge variant=…>` helpers
+   * pixel-for-pixel. When omitted, the original tint behaviour is unchanged.
+   */
+  variant?: BadgeVariant;
+  /** Override the displayed label (defaults to `status`). */
+  label?: React.ReactNode;
+  /** Per-page override map: status → {tone|variant,label,className}. Takes precedence. */
+  map?: Record<string, StatusMapEntry>;
+  className?: string;
+}
 
+export function StatusBadge({ status, tone, variant, label, map, className }: StatusBadgeProps) {
+  const entry = map?.[status];
+  const text = label ?? entry?.label ?? status;
+  const entryCls = entry?.className;
+
+  // SOLID render path (additive) — an explicit shadcn variant reproduces the
+  // pre-W4 `<Badge variant=…>` switch-helpers exactly (solid fill, not a tint).
+  const resolvedVariant = variant ?? entry?.variant;
+  if (resolvedVariant) {
+    return (
+      <Badge variant={resolvedVariant} className={cn(entryCls, className)}>
+        {text}
+      </Badge>
+    );
+  }
+
+  // TINT render path (original behaviour — unchanged).
+  const resolvedTone = tone ?? entry?.tone ?? inferTone(status);
   if (resolvedTone === "default") {
     return (
-      <Badge variant="outline" className={cn("text-muted-foreground", className)}>
+      <Badge variant="outline" className={cn("text-muted-foreground", entryCls, className)}>
         {text}
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className={cn(TONE_CLASS[resolvedTone], className)}>
+    <Badge variant="outline" className={cn(TONE_CLASS[resolvedTone], entryCls, className)}>
       {text}
     </Badge>
   );

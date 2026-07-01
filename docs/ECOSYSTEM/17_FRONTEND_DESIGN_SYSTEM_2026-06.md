@@ -239,7 +239,7 @@ Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traf
 | **Wave 1 (F2)** | High-traffic core cockpits — swap clean-fit `PageHeader`; tokenize status-color literals; a11y (h1 / select labels / icon-button labels). See §7.3 for the exact page list. | ✅ done (F2) |
 | **Wave 2** | Remaining high-traffic cockpits + KPI strips: `DigitalTwinCenter`, `Dashboard`, `OEEDashboard`, `ProductionDashboard`, `MachineHealthMonitoring`, `CarbonDashboard`, `MESControlTower` KPI cards — swap KPIs to `MetricCard`, replace literal `text-amber-500`/`text-emerald-500` with `text-warning`/`text-success` (a11y #1). Includes the pages §7.2 skipped in W1. | ✅ done (W2) — see §7.6 |
 | **Wave 3** | List/detail/editor/admin/registry headers → shared `<PageHeader>` (pixel-preserving) + tokenize obvious status literals on touched pages. Bounded batch — quality over quantity; NO abstract "template" components were built (deliberate, see §7.7). | ✅ done (W3) — see §7.7 |
-| **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` switch helpers (MES local `StatusBadge`, WorkOrders `statusVariant`, OpsConsole severity tiles) with the shared `<StatusBadge>` + per-page `map`. | ▢ pending |
+| **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` / `statusVariant` / `severity*` switch helpers with the shared `<StatusBadge>` + a per-page `map`/variant. `<StatusBadge>` extended **additively** with a solid shadcn-`variant` render path so the (mostly solid-`Badge`-variant) legacy helpers unify with **zero visual change**. See §7.8. | ✅ done (W4) — see §7.8 |
 | **Wave 5** | A11y sweep — run axe/WAVE on ~15 core pages → WCAG AA; fix §5.4 + §7.4 findings. | ▢ pending |
 | **Wave 6** | Storybook + visual regression — install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs. | ▢ pending |
 
@@ -347,6 +347,55 @@ Pixel-preserving header swaps to the shared `<PageHeader>` across registry / mas
 | `CategoryAnalytics`, `FederationDashboard` | Clean `text-2xl font-bold` titles but the outer row is responsive `flex-col md:flex-row md:justify-between` with compound action clusters (multiple `Select`s + buttons); `PageHeader`'s non-stacking flex changes the mobile layout → keep. |
 | `Reports` | No in-page header block — title is delegated to `DashboardLayout` → N/A. |
 | `CorrelationAnalysis` | The "header" is a `CardHeader`/`CardTitle` inside a setup Card, not a page-level header → N/A. |
+
+---
+
+## 7.8 Wave 4 — status-helper unification
+
+Replaced per-page status→badge switch helpers with the shared `<StatusBadge>` (`@/components/patterns`) + a tiny per-page `map`/`variant`. All `t()` i18n labels + the exact prior colour and fill are preserved — the unification is **rendering-path-identical**, not a re-style.
+
+### 7.8.1 `<StatusBadge>` additive extension (backward-compatible)
+
+The pre-W4 `<StatusBadge>` only rendered the **soft-tint outline** family (`tone` → `bg-*/15 text-* border-*/30`). But nearly all legacy page helpers rendered **solid** shadcn `<Badge variant="default|secondary|destructive|outline">` (solid fill) — a *different colour family*. A tint cannot reproduce a solid badge without a visible change, so `<StatusBadge>` was extended **additively**:
+
+- New optional prop **`variant?: BadgeVariant`** (`"default"|"secondary"|"destructive"|"outline"`) and a per-map-entry `variant` — when present, StatusBadge renders `<Badge variant={variant}>` (the **SOLID** path), reproducing the legacy helpers pixel-for-pixel.
+- New optional per-entry **`className`** (and the top-level `className` now merges on both paths) — lets a page carry a literal override tint (e.g. SPCAdvanced's `bg-yellow-500 text-white`, ManagementInsight's amber warning) unchanged.
+- New exported types `StatusMapEntry`, `BadgeVariant` (barrel `patterns/index.ts`).
+
+**Backward-compat proof:** the `tone`/`label`/`map:{tone,…}` API is unchanged. When no `variant` is resolved, the original **tint** path runs verbatim (same classes, same `default→outline+muted` fallback). `StatusMapEntry.tone` is optional but still accepted, so existing tint callers (`FieldDevices`, `EquipmentStandards`, `EquipmentIntegration`, `IrEditor`) compile and render identically. `npm run check` (which typechecks those callers) is clean.
+
+### 7.8.2 Pages unified
+
+| Page | Old helper (removed/rewired) | New shared render |
+|---|---|---|
+| `WorkOrdersPage` | `statusVariant(status)` switch → shadcn variant | `WO_STATUS_MAP` (status→`{variant}`) → `<StatusBadge variant label={t(...)} />`. Helper deleted. |
+| `MESControlTower` | local `StatusBadge({value})` w/ inline variant switch (the W1 name-clash) | switch extracted to `mesStatusVariant()`; the `{value}` wrapper (keeps em-dash empty-state) now delegates to pattern `<StatusBadge variant>`. Solid look identical. |
+| `TraceabilityLineage` | local `StatusBadge({value})` w/ inline variant switch | same pattern (`traceStatusVariant()` + delegating wrapper). Local `Badge` import dropped (was its only use). |
+| `RecipeManagement` | `statusVariant(status)` switch | `RECIPE_STATUS_MAP` → `<StatusBadge variant>` at both call sites. Helper deleted. |
+| `ThresholdApprovalsPage` | `statusVariant(s)` switch | `approvalStatusVariant()` (BadgeVariant) → `<StatusBadge variant label={t(...)} />` at both call sites. |
+| `BatchInferencePage` | `statusVariant` record | `STATUS_MAP` (status→`{variant}`) → `<StatusBadge variant>` at both call sites. Local `Badge` import dropped. |
+| `ProductionScheduling` | local `StatusBadge({status,t})` config-map (variant+label) | same config, now delegates to pattern `<StatusBadge variant label>`. i18n labels preserved. |
+| `SPCAdvanced` | `severityBadge()` returning ad-hoc `<Badge>`s (incl. literal amber warning) | each branch → `<StatusBadge variant label className>`; amber warning kept via `variant="default" + className="bg-yellow-500 text-white …"`. |
+| `ManagementInsight` | `severityVariant()` → `{variant,cls}` consumed by inline `<Badge variant className>` | `severityVariant` retyped to `BadgeVariant`; call site → `<StatusBadge variant className>` (amber-warning `cls` preserved). |
+
+### 7.8.3 Evaluated but LEFT (would be a visible change — deferred to W5 tokenisation)
+
+| Page / helper | Reason left |
+|---|---|
+| `OpsConsole` `SEVERITY_TILE` / `SEVERITY_DOT` | **Not badges.** `SEVERITY_TILE` colours a whole `rounded-md border-2 p-3` alert **tile**; `SEVERITY_DOT` is a coloured status **dot** beside a separate text label. `<StatusBadge>` is a small text pill — swapping would visibly change both. (Kpi accent colours were already tokenised in W1.) |
+| `AOIPackages` `StatusBadge` / `ResultBadge` | Bespoke **two-tone literal tints** (`bg-yellow-100 text-yellow-800 dark:bg-yellow-900 …`) — a distinct colour family from both the semantic tone-tints and the solid variants. Reproducing = passing raw literals through, which doesn't genuinely unify onto the tone system → W5 tokenisation. |
+| `LicenseManagement` `StatusBadge` | Each status carries a **leading icon** (`CheckCircle2`/`Clock`/`Ban`/`AlertTriangle`). `<StatusBadge>` has no icon slot; adding one is scope creep → left. |
+| `ControlPlane` `runStatusBadge` | Mixes **literal solids** (`bg-emerald-500`/`bg-blue-500`/`bg-amber-500 text-white`) with shadcn variants — the literal solids aren't the primary/secondary families → tokenise in W5. |
+| `AIPerformanceDashboard` `getStatusBadge` / `HistoryExportScheduling` `getStatusBadge` | Literal `/10` tints in green/blue/yellow/red — close to the tone tints but literal oklch families differ per mode → visible shift risk → W5 tokenisation. |
+| `MachineStatusMonitor` `getStatusColor` | Returns `{border,bg,pulse}` classes for a **whole Card** + an animated pulse dot, not a badge → out of scope. |
+| `FactoryFloor3D` `statusColor` (`FactoryLiveMap3D`/`FactoryFloorEditor`) | Returns **hex** for three.js/SVG fills, not a Tailwind badge → N/A. |
+| `Dashboard` / `Layout` `getStatusColor(fpy/yield)` | **Graded threshold** scales (numeric → colour), domain semantics, not the 3-tone status set → W5. |
+| `FleetOrchestration` `taskStatusBadge`/`resStatusBadge`/… (5 helpers) | The original multi-status `t`-taking helpers `<StatusBadge>` was *designed to replace*, but each renders a domain-specific **tint** set across many statuses; they were left in W0 and are a larger dedicated pass — bounded out of this batch (candidate for a follow-up). |
+
+### 7.8.4 Verification (W4)
+- `npm run check` (tsc --noEmit): **clean** ✔ (typechecks the extended `<StatusBadge>` + all existing tint callers).
+- `npx vite build`: **clean** (`✓ built in ~18s`; the only stderr is the pre-existing chunk-size advisory, wrapped by PowerShell). ✔
+- Visual: every unified badge keeps the **same label text** (identical `t()` calls) and an **equivalent colour family** — solid helpers now render through the additive solid `variant` path (byte-identical `<Badge variant=…>`), literal-tint overrides passed via `className`. No data / logic / layout changed. ✔
 
 ---
 

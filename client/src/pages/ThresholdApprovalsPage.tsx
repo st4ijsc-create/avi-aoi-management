@@ -22,6 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -54,7 +55,9 @@ type Approval = {
 
 const PENDING = "requested";
 
-function statusVariant(s: string): "default" | "secondary" | "destructive" | "outline" {
+// Approval status → solid shadcn <Badge> variant, unified onto the shared
+// <StatusBadge> (W4). Preserves the exact prior look.
+function approvalStatusVariant(s: string): BadgeVariant {
   if (s === "applied" || s === "approved") return "secondary";
   if (s === "rejected") return "destructive";
   if (s === "withdrawn") return "outline";
@@ -140,7 +143,7 @@ export default function ThresholdApprovalsPage() {
                 <TableCell>MP-{r.pointDefId}</TableCell>
                 <TableCell className="text-xs">[{num(r.currentLsl)}, {num(r.currentUsl)}]</TableCell>
                 <TableCell className="text-xs">[{num(r.proposedLsl)}, {num(r.proposedUsl)}]</TableCell>
-                <TableCell><Badge variant={statusVariant(r.status)}>{t(`thresholdApprovals.statusEnum.${r.status}`)}</Badge></TableCell>
+                <TableCell><StatusBadge status={r.status} variant={approvalStatusVariant(r.status)} label={t(`thresholdApprovals.statusEnum.${r.status}`)} /></TableCell>
                 <TableCell className="text-right">
                   <Button size="sm" variant="ghost" onClick={() => setDetail(r)}>{t("thresholdApprovals.review")}</Button>
                 </TableCell>
@@ -228,7 +231,7 @@ function ReviewDialog({
         <div className="grid gap-3 py-2 text-sm">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">MP-{item.pointDefId}</span>
-            <Badge variant={statusVariant(item.status)}>{t(`thresholdApprovals.statusEnum.${item.status}`)}</Badge>
+            <StatusBadge status={item.status} variant={approvalStatusVariant(item.status)} label={t(`thresholdApprovals.statusEnum.${item.status}`)} />
           </div>
 
           {/* current vs proposed */}

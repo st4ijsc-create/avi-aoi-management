@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type BadgeVariant } from "@/components/patterns";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -59,13 +60,14 @@ type WorkOrder = {
   resolutionNotes: string | null;
 };
 
-function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "COMPLETED") return "secondary";
-  if (status === "CANCELLED") return "outline";
-  if (status === "IN_PROGRESS") return "default";
-  if (status === "ON_HOLD") return "destructive";
-  return "default";
-}
+// Status → solid shadcn <Badge> variant (unified onto the shared <StatusBadge>,
+// W4). Preserves the exact prior look; unlisted statuses fall back to "default".
+const WO_STATUS_MAP: Record<string, { variant: BadgeVariant }> = {
+  COMPLETED: { variant: "secondary" },
+  CANCELLED: { variant: "outline" },
+  IN_PROGRESS: { variant: "default" },
+  ON_HOLD: { variant: "destructive" },
+};
 
 function ageLabel(openedAt: string | Date | null, closedAt: string | Date | null): string {
   if (!openedAt) return "—";
@@ -218,7 +220,7 @@ export default function WorkOrdersPage() {
                     <TableCell className="max-w-[20rem] truncate">{r.title}</TableCell>
                     <TableCell><Badge variant="outline">{t(`workOrders.type.${r.type}`)}</Badge></TableCell>
                     <TableCell><Badge variant={r.priority <= 2 ? "destructive" : "outline"}>P{r.priority}</Badge></TableCell>
-                    <TableCell><Badge variant={statusVariant(r.status)}>{t(`workOrders.status.${r.status}`)}</Badge></TableCell>
+                    <TableCell><StatusBadge status={r.status} variant={WO_STATUS_MAP[r.status]?.variant ?? "default"} label={t(`workOrders.status.${r.status}`)} /></TableCell>
                     <TableCell className="text-xs">{ageLabel(r.openedAt, r.closedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">

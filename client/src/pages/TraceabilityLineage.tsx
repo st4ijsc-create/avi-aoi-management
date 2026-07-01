@@ -2,9 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -20,18 +19,18 @@ import {
   PackageCheck,
 } from "lucide-react";
 
+// Domain status → solid shadcn <Badge> variant. Unified onto the shared
+// <StatusBadge> (W4): thin wrapper keeps the `value` API + em-dash empty state,
+// delegating rendering to the pattern component (identical solid look).
+function traceStatusVariant(v: string): BadgeVariant {
+  if (v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "OK") return "default";
+  if (v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "REWORK") return "secondary";
+  if (v.includes("SCRAP") || v.includes("REJECT") || v.includes("RETURN")) return "destructive";
+  return "outline";
+}
 function StatusBadge({ value }: { value?: string | null }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  const v = value.toUpperCase();
-  const variant =
-    v.includes("COMPLETED") || v === "RELEASE" || v === "APPROVED" || v === "OK"
-      ? "default"
-      : v.includes("HOLD") || v.includes("WAIT") || v === "QUARANTINE" || v === "REWORK"
-        ? "secondary"
-        : v.includes("SCRAP") || v.includes("REJECT") || v.includes("RETURN")
-          ? "destructive"
-          : "outline";
-  return <Badge variant={variant as any}>{value}</Badge>;
+  return <PatternStatusBadge status={value} variant={traceStatusVariant(value.toUpperCase())} />;
 }
 
 export default function TraceabilityLineage() {

@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,13 +31,13 @@ import { Layers, Plus, RefreshCw, XCircle, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-/** Colour mapping for job status badges */
-const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  PENDING: "outline",
-  RUNNING: "default",
-  COMPLETED: "secondary",
-  FAILED: "destructive",
-  CANCELLED: "outline",
+/** Job status → shared <StatusBadge> map (solid shadcn variant, W4). */
+const STATUS_MAP: Record<string, { variant: BadgeVariant }> = {
+  PENDING: { variant: "outline" },
+  RUNNING: { variant: "default" },
+  COMPLETED: { variant: "secondary" },
+  FAILED: { variant: "destructive" },
+  CANCELLED: { variant: "outline" },
 };
 
 export default function BatchInferencePage() {
@@ -227,7 +227,7 @@ export default function BatchInferencePage() {
                         >
                           <TableCell className="font-medium">{job.name}</TableCell>
                           <TableCell>
-                            <Badge variant={statusVariant[job.status] ?? "outline"}>{job.status}</Badge>
+                            <StatusBadge status={job.status} variant={STATUS_MAP[job.status]?.variant ?? "outline"} />
                           </TableCell>
                           <TableCell>{job.totalItems ?? "—"}</TableCell>
                           <TableCell className="text-muted-foreground text-xs">
@@ -266,7 +266,7 @@ export default function BatchInferencePage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex gap-2 items-center">
-                    <Badge variant={statusVariant[selectedJob.status] ?? "outline"}>{selectedJob.status}</Badge>
+                    <StatusBadge status={selectedJob.status} variant={STATUS_MAP[selectedJob.status]?.variant ?? "outline"} />
                     <span className="text-xs text-muted-foreground">ID #{selectedJob.id}</span>
                   </div>
 

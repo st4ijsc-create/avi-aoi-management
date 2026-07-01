@@ -12,7 +12,7 @@ export { MetricCard } from "./MetricCard";
 export type { MetricCardProps, MetricTone } from "./MetricCard";
 
 export { StatusBadge } from "./StatusBadge";
-export type { StatusBadgeProps } from "./StatusBadge";
+export type { StatusBadgeProps, StatusMapEntry, BadgeVariant } from "./StatusBadge";
 
 export { SectionCard } from "./SectionCard";
 export type { SectionCardProps } from "./SectionCard";
