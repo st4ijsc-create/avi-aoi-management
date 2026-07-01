@@ -436,6 +436,9 @@ export default function ProductionDashboard() {
   return (
     <DashboardLayout>
       <div className="flex flex-col min-h-0">
+        {/* a11y (doc 17 §7.4 #8): page-level heading for the document outline.
+            Visually hidden so the dense summary strip is unchanged. */}
+        <h1 className="sr-only">{t("productionDashboard.pageTitle", "Production Dashboard")}</h1>
         {/* ── Summary Strip ── */}
         <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex items-center gap-4 sm:gap-8 overflow-x-auto">
           {/* Live badge */}
@@ -1073,9 +1076,9 @@ function StationViewTab({
                   <span
                     className={`font-mono text-[15px] font-semibold leading-none flex items-center gap-1 ${
                       changeDir === "up"
-                        ? "text-emerald-500"
+                        ? "text-success"
                         : changeDir === "down"
-                          ? "text-red-500"
+                          ? "text-destructive"
                           : "text-muted-foreground/40"
                     }`}
                   >

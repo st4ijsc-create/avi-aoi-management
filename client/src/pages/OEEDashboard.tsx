@@ -565,7 +565,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
+                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
                 {t('oee.alerts')}
               </CardTitle>
             </CardHeader>
@@ -675,7 +675,7 @@ export default function OEEDashboard() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Downtime:</span>
-                            <span className="font-medium text-red-500">{machineOEE.details.downtime} {t('oee.minutes')}</span>
+                            <span className="font-medium text-destructive">{machineOEE.details.downtime} {t('oee.minutes')}</span>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -685,11 +685,11 @@ export default function OEEDashboard() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">{t('oee.goodProducts')}:</span>
-                            <span className="font-medium text-green-500">{machineOEE.details.goodCount}</span>
+                            <span className="font-medium text-success">{machineOEE.details.goodCount}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">{t('oee.rejects')}:</span>
-                            <span className="font-medium text-red-500">{machineOEE.details.rejectCount}</span>
+                            <span className="font-medium text-destructive">{machineOEE.details.rejectCount}</span>
                           </div>
                         </div>
                       </div>

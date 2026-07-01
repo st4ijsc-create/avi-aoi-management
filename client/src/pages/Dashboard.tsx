@@ -1517,12 +1517,12 @@ export default function Dashboard() {
                   <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
                   <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-emerald-500/10">
-                  <p className="text-lg font-bold text-emerald-500">{onlineMachines.size}</p>
+                <div className="flex flex-col items-center p-2 rounded-lg bg-success/10">
+                  <p className="text-lg font-bold text-success">{onlineMachines.size}</p>
                   <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-red-500/10">
-                  <p className="text-lg font-bold text-red-500">
+                <div className="flex flex-col items-center p-2 rounded-lg bg-destructive/10">
+                  <p className="text-lg font-bold text-destructive">
                     {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
                   </p>
                   <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
@@ -2022,7 +2022,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                           <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).current.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {(effectiveNGComparison as any).current.ngCount.toLocaleString()}</span>
+                          <span className="text-destructive">NG: {(effectiveNGComparison as any).current.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -2051,7 +2051,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                           <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).previous.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {(effectiveNGComparison as any).previous.ngCount.toLocaleString()}</span>
+                          <span className="text-destructive">NG: {(effectiveNGComparison as any).previous.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -2061,7 +2061,7 @@ export default function Dashboard() {
                 </Card>
 
                 {/* Change Indicator */}
-                <Card className={`${cardStyleProps.className} ${(effectiveNGComparison as any)?.changes?.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
+                <Card className={`${cardStyleProps.className} ${(effectiveNGComparison as any)?.changes?.isImproved ? 'border-success/50' : 'border-destructive/50'}`} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{t("dashboard.ngCompare")}</CardTitle>
                   </CardHeader>
@@ -2074,21 +2074,21 @@ export default function Dashboard() {
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
                           {(effectiveNGComparison as any).changes.isImproved ? (
-                            <TrendingDown className="h-6 w-6 text-green-500" />
+                            <TrendingDown className="h-6 w-6 text-success" />
                           ) : (
-                            <TrendingUp className="h-6 w-6 text-red-500" />
+                            <TrendingUp className="h-6 w-6 text-destructive" />
                           )}
-                          <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
+                          <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-success' : 'text-destructive'}`}>
                             {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{(effectiveNGComparison as any).changes.ngRateChange.toFixed(2)}%
                           </span>
                         </div>
                         <div className="text-sm">
                           {(effectiveNGComparison as any).changes.isImproved ? (
-                            <span className="text-green-500">{t("dashboard.improvedVsPrevious")}</span>
+                            <span className="text-success">{t("dashboard.improvedVsPrevious")}</span>
                           ) : (effectiveNGComparison as any).changes.ngRateChange === 0 ? (
                             <span className="text-muted-foreground">{t("dashboard.noChange")}</span>
                           ) : (
-                            <span className="text-red-500">{t("dashboard.increasedVsPrevious")}</span>
+                            <span className="text-destructive">{t("dashboard.increasedVsPrevious")}</span>
                           )}
                         </div>
                       </div>
@@ -2334,13 +2334,13 @@ export default function Dashboard() {
                   <SelectItem value="all">{t("common.all")}</SelectItem>
                   <SelectItem value="online">
                     <span className="flex items-center gap-2">
-                      <Wifi className="h-3 w-3 text-green-500" />
+                      <Wifi className="h-3 w-3 text-success" />
                       Online
                     </span>
                   </SelectItem>
                   <SelectItem value="offline">
                     <span className="flex items-center gap-2">
-                      <WifiOff className="h-3 w-3 text-red-500" />
+                      <WifiOff className="h-3 w-3 text-destructive" />
                       Offline
                     </span>
                   </SelectItem>
@@ -2969,15 +2969,15 @@ export default function Dashboard() {
                           <p className="text-xs text-muted-foreground">{t("common.total")}</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-green-500">{mp.okCount}</p>
+                          <p className="font-semibold text-success">{mp.okCount}</p>
                           <p className="text-xs text-muted-foreground">OK</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-red-500">{mp.ngCount}</p>
+                          <p className="font-semibold text-destructive">{mp.ngCount}</p>
                           <p className="text-xs text-muted-foreground">NG</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
-                          <p className="font-semibold text-yellow-500">{mp.ntfCount}</p>
+                          <p className="font-semibold text-warning">{mp.ntfCount}</p>
                           <p className="text-xs text-muted-foreground">NTF</p>
                         </div>
                       </div>
@@ -3071,18 +3071,18 @@ function MqttAlertWidget() {
   const hasCritical = (connectionAlerts?.critical || 0) > 0;
 
   return (
-    <Card className={`glass-card ${hasCritical ? 'border-red-500/50 bg-red-500/5' : 'border-yellow-500/50 bg-yellow-500/5'}`}>
+    <Card className={`glass-card ${hasCritical ? 'border-destructive/50 bg-destructive/5' : 'border-warning/50 bg-warning/5'}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-red-400' : 'text-yellow-400'}`} />
+            <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-destructive' : 'text-warning'}`} />
             {t("dashboard.mqttAlerts")}
             <div className="flex gap-1 ml-2">
               {(connectionAlerts?.critical || 0) > 0 && (
                 <Badge variant="destructive">{connectionAlerts?.critical} {t("dashboard.criticalLabel")}</Badge>
               )}
               {(connectionAlerts?.warning || 0) > 0 && (
-                <Badge variant="outline" className="border-yellow-500 text-yellow-500">{connectionAlerts?.warning} {t("dashboard.warningLabel")}</Badge>
+                <Badge variant="outline" className="border-warning text-warning">{connectionAlerts?.warning} {t("dashboard.warningLabel")}</Badge>
               )}
               {totalRuleAlerts > 0 && (
                 <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
@@ -3112,12 +3112,12 @@ function MqttAlertWidget() {
             <div
               key={alert.id}
               className={`flex items-start gap-3 p-3 rounded-lg bg-background/50 border ${
-                alert.severity === 'critical' ? 'border-red-500/20' : 'border-yellow-500/20'
+                alert.severity === 'critical' ? 'border-destructive/20' : 'border-warning/20'
               }`}
             >
               <div className="mt-0.5">
                 <AlertTriangle className={`w-4 h-4 ${
-                  alert.severity === 'critical' ? 'text-red-400' : 'text-yellow-400'
+                  alert.severity === 'critical' ? 'text-destructive' : 'text-warning'
                 }`} />
               </div>
               <div className="flex-1 min-w-0">

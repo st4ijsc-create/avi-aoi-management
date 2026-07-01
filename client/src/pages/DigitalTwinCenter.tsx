@@ -577,10 +577,10 @@ export default function DigitalTwinCenter() {
         <div className="grid grid-cols-3 md:grid-cols-7 gap-3">
           <Kpi label={t("twin.devices", "Devices")} value={String(kpi.total)} icon={<Cpu className="h-4 w-4" />} />
           <Kpi label={t("twin.robots", "Robots")} value={String(kpi.robots)} icon={<Bot className="h-4 w-4" />} />
-          <Kpi label={t("twin.running", "Running")} value={String(kpi.running)} cls="text-emerald-600" icon={<Activity className="h-4 w-4" />} />
-          <Kpi label={t("twin.idle", "Idle")} value={String(kpi.idle)} cls="text-amber-600" />
-          <Kpi label={t("twin.down", "Down/Off")} value={String(kpi.down)} cls="text-red-600" />
-          <Kpi label={t("twin.alarms", "Alarms")} value={String(kpi.alarms)} cls={kpi.alarms ? "text-red-600" : undefined} icon={<AlertTriangle className="h-4 w-4" />} />
+          <Kpi label={t("twin.running", "Running")} value={String(kpi.running)} cls="text-success" icon={<Activity className="h-4 w-4" />} />
+          <Kpi label={t("twin.idle", "Idle")} value={String(kpi.idle)} cls="text-warning" />
+          <Kpi label={t("twin.down", "Down/Off")} value={String(kpi.down)} cls="text-destructive" />
+          <Kpi label={t("twin.alarms", "Alarms")} value={String(kpi.alarms)} cls={kpi.alarms ? "text-destructive" : undefined} icon={<AlertTriangle className="h-4 w-4" />} />
           <Kpi label={t("twin.activeTasks", "Active tasks")} value={String(kpi.tasks)} icon={<ListChecks className="h-4 w-4" />} />
         </div>
 

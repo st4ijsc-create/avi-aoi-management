@@ -60,9 +60,9 @@ interface HealthScore {
 function HealthStatusBadge({ status }: { status: 'healthy' | 'warning' | 'critical' }) {
   const { t } = useTranslation();
   const config = {
-    healthy: { label: t('machines.healthy'), variant: "default" as const, icon: CheckCircle2, color: "text-green-500" },
-    warning: { label: t('machines.warning'), variant: "secondary" as const, icon: AlertTriangle, color: "text-yellow-500" },
-    critical: { label: t('machines.critical'), variant: "destructive" as const, icon: XCircle, color: "text-red-500" },
+    healthy: { label: t('machines.healthy'), variant: "default" as const, icon: CheckCircle2, color: "text-success" },
+    warning: { label: t('machines.warning'), variant: "secondary" as const, icon: AlertTriangle, color: "text-warning" },
+    critical: { label: t('machines.critical'), variant: "destructive" as const, icon: XCircle, color: "text-destructive" },
   };
   
   const { label, variant, icon: Icon, color } = config[status];
@@ -165,7 +165,7 @@ function FactorCard({
             </div>
           </div>
           {trend !== undefined && (
-            <div className={`flex items-center ${trend >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`flex items-center ${trend >= 0 ? 'text-success' : 'text-destructive'}`}>
               {trend >= 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
               <span className="text-sm">{Math.abs(trend).toFixed(1)}%</span>
             </div>
@@ -431,12 +431,12 @@ export default function MachineHealthMonitoring() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-green-500/10">
-                      <CheckCircle2 className="h-6 w-6 text-green-500" />
+                    <div className="p-3 rounded-lg bg-success/10">
+                      <CheckCircle2 className="h-6 w-6 text-success" />
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">{t('machines.healthyMachines')}</p>
-                      <p className="text-2xl font-bold text-green-500">
+                      <p className="text-2xl font-bold text-success">
                         {machineComparisonData.filter(m => m.healthScore >= 80).length}
                       </p>
                     </div>
@@ -446,12 +446,12 @@ export default function MachineHealthMonitoring() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-yellow-500/10">
-                      <AlertTriangle className="h-6 w-6 text-yellow-500" />
+                    <div className="p-3 rounded-lg bg-warning/10">
+                      <AlertTriangle className="h-6 w-6 text-warning" />
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">{t('machines.needAttention')}</p>
-                      <p className="text-2xl font-bold text-yellow-500">
+                      <p className="text-2xl font-bold text-warning">
                         {machineComparisonData.filter(m => m.healthScore >= 60 && m.healthScore < 80).length}
                       </p>
                     </div>
@@ -461,12 +461,12 @@ export default function MachineHealthMonitoring() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-red-500/10">
-                      <XCircle className="h-6 w-6 text-red-500" />
+                    <div className="p-3 rounded-lg bg-destructive/10">
+                      <XCircle className="h-6 w-6 text-destructive" />
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">{t('machines.needMaintenance')}</p>
-                      <p className="text-2xl font-bold text-red-500">
+                      <p className="text-2xl font-bold text-destructive">
                         {machineComparisonData.filter(m => m.healthScore < 60).length}
                       </p>
                     </div>
@@ -587,7 +587,7 @@ export default function MachineHealthMonitoring() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
-                        <p className="text-2xl font-bold text-red-500">{pmRisk?.failureRisk ?? 0}%</p>
+                        <p className="text-2xl font-bold text-destructive">{pmRisk?.failureRisk ?? 0}%</p>
                       </div>
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.confidence')}</p>
@@ -795,16 +795,16 @@ export default function MachineHealthMonitoring() {
                       <div 
                         key={machine.machineId}
                         className={`p-4 rounded-lg border ${
-                          machine.healthScore < 60 ? 'border-red-500 bg-red-500/10' :
-                          'border-yellow-500 bg-yellow-500/10'
+                          machine.healthScore < 60 ? 'border-destructive bg-destructive/10' :
+                          'border-warning bg-warning/10'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             {machine.healthScore < 60 ? (
-                              <XCircle className="h-6 w-6 text-red-500" />
+                              <XCircle className="h-6 w-6 text-destructive" />
                             ) : (
-                              <AlertTriangle className="h-6 w-6 text-yellow-500" />
+                              <AlertTriangle className="h-6 w-6 text-warning" />
                             )}
                             <div>
                               <p className="font-medium">{machine.name}</p>
@@ -842,7 +842,7 @@ export default function MachineHealthMonitoring() {
                     ))}
                   {machineComparisonData.filter(m => m.healthScore < 80).length === 0 && (
                     <div className="text-center py-8">
-                      <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-4" />
+                      <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
                       <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
                     </div>
                   )}
