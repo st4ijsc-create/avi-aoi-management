@@ -1413,6 +1413,10 @@ export const aiAnomalyMemoryBank = pgTable("ai_anomaly_memory_bank", {
   // "onnx" | "text-of-image" | "heuristic" — nguồn embedding (degrade trung thực).
   source: varchar("source", { length: 32 }).notNull(),
   imageUrl: text("imageUrl"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). NULL =
+  // unscoped (allow-all under the inert app_tenant_allows policy). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_anomaly_bank_scope").on(table.productModelId, table.machineId, table.modelCode),
@@ -1448,6 +1452,9 @@ export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
   // Nguồn embedding chủ đạo dùng khi build (cờ degrade trung thực).
   source: varchar("source", { length: 32 }).notNull(),
   degraded: boolean("degraded").default(false).notNull(),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   builtAt: timestamp("builtAt").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uq_anomaly_profile_scope").on(table.productModelId, table.machineId, table.modelCode),

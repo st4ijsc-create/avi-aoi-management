@@ -43,6 +43,10 @@ export const programProjects = pgTable("program_projects", {
   description: text("description"),
   defaultBranch: varchar("defaultBranch", { length: 64 }).default("main").notNull(),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). NULL =
+  // unscoped (allow-all under the inert app_tenant_allows policy until backfilled). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -66,6 +70,9 @@ export const programArtifacts = pgTable("program_artifacts", {
   /** Last validate() diagnostics (errors/warnings). */
   diagnosticsJson: jsonb("diagnosticsJson").$type<Record<string, unknown>>(),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_artifacts_project").on(table.projectId),
@@ -85,6 +92,9 @@ export const programBuilds = pgTable("program_builds", {
   outputRef: text("outputRef"),
   durationMs: integer("durationMs"),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_builds_artifact").on(table.artifactId),
@@ -101,6 +111,9 @@ export const programSimRuns = pgTable("program_sim_runs", {
   warningsJson: jsonb("warningsJson").$type<string[]>(),
   durationMs: integer("durationMs"),
   createdBy: integer("createdBy"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_sim_runs_build").on(table.buildId),
@@ -127,6 +140,9 @@ export const programDeployments = pgTable("program_deployments", {
   rolledBackFromId: integer("rolledBackFromId"),
   detailJson: jsonb("detailJson").$type<Record<string, unknown>>(),
   error: text("error"),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_prog_deploy_project").on(table.projectId),
@@ -145,6 +161,9 @@ export const programSymbols = pgTable("program_symbols", {
   comment: varchar("comment", { length: 500 }),
   watchable: boolean("watchable").default(true).notNull(),
   forceable: boolean("forceable").default(false).notNull(),
+  // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

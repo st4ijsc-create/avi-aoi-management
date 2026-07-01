@@ -22,6 +22,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type { InsertOtTelemetry, OtTelemetry } from "../../drizzle/schema";
+import { createBusFanout } from "../_core/busFanout";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
 export type TelemetryProtocol = NonNullable<OtTelemetry["protocol"]>;
@@ -137,6 +138,52 @@ async function resolveMachineId(deviceId: string | null | undefined): Promise<nu
   return resolved;
 }
 
+// ── U6-b (G-10) — optional cross-instance fan-out for telemetry ──────────────
+// Default OFF → pure in-process (mirrors eventBus). When EVENTBUS_REDIS_ENABLED
+// + REDIS_URL are set, each locally-INGESTED batch is published to remote
+// instances, and a batch from a REMOTE instance is RE-BROADCAST on this
+// instance's socket + fed to local taps (so this instance's clients/twin see
+// samples ingested elsewhere). It is NOT re-persisted (the origin instance
+// already inserted it) and NOT re-fanned-out (loopback-safe). The wire payload is
+// the already-normalized broadcast row array (JSON-safe, ISO ts).
+type BroadcastRow = ReturnType<typeof toBroadcast>;
+const telemetryFanout = createBusFanout("telemetry");
+telemetryFanout.onRemote((payload) => {
+  const rows = payload as BroadcastRow[];
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  // Re-broadcast remote samples locally (no DB write, no re-fan-out).
+  void broadcastAndTap(rows, /* remote */ true);
+});
+
+/** True when Redis cross-instance telemetry fan-out is actually active. */
+export function isTelemetryFanoutActive(): boolean {
+  return telemetryFanout.active;
+}
+
+/** Tear down the telemetry fan-out adapter (tests / graceful shutdown). */
+export async function closeTelemetryFanout(): Promise<void> {
+  await telemetryFanout.close();
+}
+
+/**
+ * Broadcast a batch on the ONE unified socket channel + fire in-process taps.
+ * Shared by the local ingest path and the remote-inject path. When `remote` is
+ * false (local ingest) the batch is ALSO published to remote instances. When
+ * `remote` is true (a batch received FROM Redis) it is NOT re-published
+ * (loopback-safe) and the tap payload is the already-broadcast shape.
+ */
+async function broadcastAndTap(rows: BroadcastRow[], remote: boolean): Promise<void> {
+  // Broadcast on the ONE unified channel (signal-only; no-op without io).
+  try {
+    const { emitTelemetrySamples } = await import("../_core/socket");
+    emitTelemetrySamples(rows);
+  } catch (err) {
+    console.error("[TelemetryBus] broadcast failed:", (err as Error)?.message || err);
+  }
+  // Fan out to remote instances ONLY for locally-ingested batches (not echoes).
+  if (!remote) telemetryFanout.publish(rows);
+}
+
 /** Convert a persisted/insert row to the socket broadcast shape (ts → ISO). */
 function toBroadcast(row: InsertOtTelemetry) {
   const ts = row.ts instanceof Date ? row.ts.toISOString() : new Date(row.ts as any).toISOString();
@@ -195,13 +242,10 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
     console.error("[TelemetryBus] insert failed:", (err as Error)?.message || err);
   }
 
-  // 4: broadcast on the ONE unified channel (signal-only; no-op without io).
-  try {
-    const { emitTelemetrySamples } = await import("../_core/socket");
-    emitTelemetrySamples(rows.map(toBroadcast));
-  } catch (err) {
-    console.error("[TelemetryBus] broadcast failed:", (err as Error)?.message || err);
-  }
+  // 4: broadcast on the ONE unified channel (signal-only; no-op without io) AND
+  //    fan out this locally-ingested batch to remote instances (U6-b; no-op unless
+  //    EVENTBUS_REDIS_ENABLED + REDIS_URL). Loopback-safe (remote=false here).
+  await broadcastAndTap(rows.map(toBroadcast), /* remote */ false);
 
   // 5: fan out to any registered in-process taps (T1-c twin gateway). Fault-isolated.
   if (taps.size > 0) {

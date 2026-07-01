@@ -191,3 +191,50 @@ migration is fully inert (fail-open).
    factory — admin bypasses the policy.
 4. **Rollback:** set `TENANT_RLS_ENABLED=false` (instant, no data loss) or run the
    per-table rollback block at the bottom of `0125_tenant_rls_hot_tables.sql`.
+
+---
+
+## U6-a — isolation-hole backfill (doc 21 §6 U6 / G-9, 2026-07)
+
+`drizzle/0156_tenant_scope_isolation_holes.sql` (auto-applied top-level migration,
+additive + idempotent) closes **G-9**: three table families that carried NO tenant
+columns and NO RLS — unlike the uniform Khối-2/3/7 tables — now reach the SAME
+inert-by-default isolation posture. **Schema + inert policy only; NO query
+behaviour changed.**
+
+### Tables backfilled (each gets `corporateCode` varchar(50) + `factoryId` int, nullable)
+| Family | Tables | Schema file |
+|---|---|---|
+| Device Programming / IR (G-9) | `program_projects`, `program_artifacts`, `program_builds`, `program_sim_runs`, `program_deployments`, `program_symbols` | `drizzle/schema/programming.ts` |
+| IMAGE anomaly banks/profiles (G-9) | `ai_anomaly_memory_bank`, `ai_anomaly_profiles` (note: `robot_behavior_anomalies` was already scoped in `aiLoop.ts`) | `drizzle/schema/ai.ts` |
+| Predictive / maintenance (G-9) | `maintenance_schedules`, `maintenance_work_orders` | `drizzle/schema/mes.ts` |
+
+### Pattern (mirrors 0145 / 0153 exactly)
+- `ADD COLUMN IF NOT EXISTS "corporateCode" varchar(50)` + `"factoryId" integer` on
+  each table (existing rows get `NULL` = unscoped = allow-all under the inert
+  policy — fully backward-compatible).
+- `ENABLE ROW LEVEL SECURITY` + `tenant_select` (FOR SELECT) + `tenant_modify`
+  (FOR ALL, WITH CHECK) policies, each composing the shared inert helper
+  `app_tenant_allows(NULL, "corporateCode")`. factory is passed `NULL` (these tables
+  scope by `corporateCode` + optional `factoryId` int, not a factory CODE string).
+- The whole RLS block is wrapped in a `DO` guard (skips a table if absent / helper
+  missing). `CREATE OR REPLACE FUNCTION` re-defines the inert helper so the
+  migration is self-contained + re-runnable.
+
+### Fail-open guarantee (identical to the earlier passes)
+WITHOUT the session GUC — flag `TENANT_RLS_ENABLED` OFF (default), or table owner,
+or any query not wrapped in `runWithTenantScope` — `app_tenant_allows()` returns
+TRUE = allow-all. So this migration is a **complete no-op by default**. Enforcement
+only takes effect for a query wrapped in `runWithTenantScope` when the flag is ON,
+exactly like the established Khối-2/3/7 tables. No data-layer call site is changed.
+
+### Rollback
+Set `TENANT_RLS_ENABLED=false` (instant, no data loss). To also drop the policies +
+disable RLS, run the commented rollback block at the bottom of
+`0156_tenant_scope_isolation_holes.sql` (the columns are harmless and can stay).
+
+### Test coverage
+`server/services/ecosystem/tenantScopeU6.test.ts` (11) asserts the schema TS was
+updated to match the migration — each of the 10 tables exposes `corporateCode` +
+`factoryId`, and `corporateCode` maps to the exact DB column name the RLS predicate
+uses.

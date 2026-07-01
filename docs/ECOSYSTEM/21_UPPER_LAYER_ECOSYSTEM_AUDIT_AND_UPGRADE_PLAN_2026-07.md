@@ -397,3 +397,54 @@ Không nối `site:update`/`siteDetail` vào `CommandCenter.tsx`: cây `commandC
 
 ### 13.7 Cổng chất lượng
 `npm run check` (tsc) **PASS** (exit 0) · `npx vite build` **PASS** (`✓ built in ~18s`, chunk `FederationDashboard-*.js` ~82 kB emit). KHÔNG commit (theo yêu cầu). File sửa duy nhất (FE): `client/src/pages/FederationDashboard.tsx` (additive) + doc 21 (§6 dòng G-7/U5 "còn lại FE" nay ✅, §13 này).
+
+---
+
+## 14. U6 — Tenant + Scale hardening (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. ADDITIVE + behavior-preserving: KHÔNG đổi bất kỳ query behavior nào, KHÔNG mở đường điều khiển mới, mọi cờ mặc định OFF. Migration 0156 additive/idempotent — **KHÔNG chạy**. KHÔNG commit (theo yêu cầu). KHÔNG thêm dep nặng (Redis adapter chỉ wire `ioredis` **đã có sẵn**).
+
+### 14.1 U6-a — Tenant scope + inert RLS cho 3 nhóm "lỗ tenant" (G-9)
+Audit tìm ra 3 nhóm bảng KHÔNG có cột tenant + KHÔNG có RLS (khác các bảng Khối-2/3/7 đồng nhất). Migration `0156_tenant_scope_isolation_holes.sql` backfill **cột tenant + inert RLS** theo đúng pattern 0145/0153:
+
+| Nhóm | Bảng | File schema |
+|---|---|---|
+| Device Programming / IR | `program_projects`, `program_artifacts`, `program_builds`, `program_sim_runs`, `program_deployments`, `program_symbols` | `drizzle/schema/programming.ts` |
+| IMAGE anomaly (bank/profile) | `ai_anomaly_memory_bank`, `ai_anomaly_profiles` (`robot_behavior_anomalies` đã scope ở `aiLoop.ts`) | `drizzle/schema/ai.ts` |
+| Predictive / maintenance (PdM) | `maintenance_schedules`, `maintenance_work_orders` | `drizzle/schema/mes.ts` |
+
+- Mỗi bảng: `ADD COLUMN IF NOT EXISTS "corporateCode" varchar(50)` + `"factoryId" integer` (nullable) → hàng cũ = `NULL` = unscoped = allow-all dưới policy inert (backward-compatible).
+- `ENABLE RLS` + `tenant_select`/`tenant_modify` policy dùng helper chung `app_tenant_allows(NULL, "corporateCode")` — **no-op** trừ khi `TENANT_RLS_ENABLED=true` set GUC. Block RLS bọc `DO` guard (bỏ qua bảng vắng / helper thiếu). Idempotent (`IF NOT EXISTS`/`DROP POLICY IF EXISTS`, không pg enum mới).
+- Schema TS cập nhật khớp migration. Tracking ở `docs/ECOSYSTEM/PHASE1_TENANT_RLS_ROLLOUT.md` (mục "U6-a").
+- **KHÔNG đổi query behavior** — thuần schema + inert policy.
+
+### 14.2 U6-b — Redis fan-out abstraction sau eventBus + telemetryBus (G-10)
+`eventBus.ts` + `telemetryBus.ts` là EventEmitter in-process (trần 1 server). Thêm abstraction pub/sub nhỏ `server/_core/busFanout.ts`:
+- **Mặc định (flag OFF): thuần in-process** — KHÔNG tạo client Redis, `publish()` no-op, zero overhead. Hành vi cũ giữ nguyên 100%.
+- **Opt-in** (`EVENTBUS_REDIS_ENABLED=true` + `REDIS_URL`): mỗi event/telemetry batch **phát sinh cục bộ** được publish lên Redis channel; event từ instance KHÁC được subscribe lại và inject vào bus cục bộ → multi-instance chia sẻ event.
+- **`ioredis` ĐÃ có sẵn** trong repo (package.json) → khi có `REDIS_URL` là fan-out THẬT (không phải seam). Không cài thêm dep.
+- **Honest seam**: flag ON nhưng không có client (thiếu `REDIS_URL`/dep/kết nối fail) → log **một lần** + ở lại in-process, KHÔNG giả lập cross-instance.
+- **Loopback-safe**: mỗi message mang `origin` = id process này; message nhận từ Redis có `origin` trùng → drop (đã deliver cục bộ); message inject từ Redis KHÔNG re-publish lên Redis (đường inject tách khỏi đường publish). eventBus: inject qua `emitLocal` (không fan-out lại). telemetryBus: `broadcastAndTap(rows, remote=true)` chỉ re-broadcast socket (KHÔNG re-insert DB, KHÔNG re-fan-out).
+- API mới nhỏ: `eventBus.fanoutActive`/`eventBus.close()`, `isTelemetryFanoutActive()`/`closeTelemetryFanout()`.
+
+### 14.3 U6-c — Soft-ref contract + integrity check (G-12)
+Các link asset↔task↔program↔genealogy là `integer("...Id")`/`varchar("...Code")` soft-ref (không `.references()` FK). **KHÔNG** bulk-add FK (rủi ro hàng mồ côi làm fail migration). Thay bằng:
+1. **Soft-ref contract** (ghi ở đây §14.3): các cột reference bảng nào (app-enforced):
+   - `tasks.assignedDeviceId` → `robots.id` (chỉ khi `assignedDeviceKind='robot'`)
+   - `program_projects.deviceId` → `machines.id` ∪ `robots.id` (bound device, một trong hai registry)
+   - `genealogy_chain.stationCode` → `stations.code` (varchar soft-ref)
+   - `safety_events.robotId` → `robots.id`
+2. **`server/services/ecosystem/integrityCheck.ts`** (READ-ONLY): quét 4 soft-ref trên, báo cáo orphan (soft-ref non-null trỏ vào hàng không tồn tại) + sample. SELECT-only, không mutate, DB-absent → honest empty, lỗi 1 rule → skip rule đó (cô lập).
+3. Procedure admin đọc: `ecosystemAdmin.softRefIntegrity` (`server/routers/ecosystemAdminRouter.ts`, gated `protectedProcedure` + `requirePermission("admin_system","canView")`) → cho VISIBILITY integrity mà không cần FK migration rủi ro.
+
+### 14.4 Cờ + docs
+- `.env.example`: thêm `EVENTBUS_REDIS_ENABLED` (+ note `REDIS_URL`; `ioredis` sẵn có). `TENANT_RLS_ENABLED` đã có sẵn.
+- `PHASE1_TENANT_RLS_ROLLOUT.md`: thêm mục U6-a (bảng + pattern + fail-open + rollback + test).
+
+### 14.5 Cổng chất lượng
+`npm run check` (tsc) **PASS** (exit 0). Test mới: `busFanout.test.ts` (5 — in-process default / opt-in publish+subscribe / remote inject / loopback-safe / honest-seam) + `integrityCheck.test.ts` (4 — planted orphan / clean / DB-absent skipped / per-rule error isolated) + `tenantScopeU6.test.ts` (11 — schema có cột tenant khớp migration). Regression: ecosystem + programming full **xanh** (182/182 gồm test mới). Full suite 2522 passed (1 fail `productionScheduling.ws4` là test stochastic **có sẵn**, xanh khi chạy riêng — không liên quan U6). File mới: `drizzle/0156_tenant_scope_isolation_holes.sql`, `server/_core/busFanout.ts`, `server/services/ecosystem/integrityCheck.ts`, `server/routers/ecosystemAdminRouter.ts` + 3 test. File sửa: `drizzle/schema/{programming,ai,mes}.ts`, `server/_core/eventBus.ts`, `server/services/telemetryBus.ts`, `server/routers.ts`, `.env.example`, `PHASE1_TENANT_RLS_ROLLOUT.md`, doc 21 (§14 này).
+
+### 14.6 Ghi chú trung thực
+- **Redis fan-out CẦN client + URL thật**: `ioredis` có sẵn nên chỉ cần set `REDIS_URL` + `EVENTBUS_REDIS_ENABLED=true` là chạy thật; thiếu URL → seam (log-once, in-process) — KHÔNG bịa cross-instance.
+- **FK cố ý KHÔNG force-add**: G-12 đóng bằng contract + integrity **visibility** (read-only), tránh rủi ro orphan làm fail migration. Cân nhắc FK thật chỉ sau khi integrity report sạch trên staging.
+- **Migration 0156 KHÔNG chạy** (additive/idempotent, áp bằng migrate step thường). Enforcement RLS vẫn cần app connect bằng role NON-owner + wrap query trong `runWithTenantScope` khi bật cờ (adoption incremental, như các pass RLS trước).
