@@ -27,6 +27,7 @@ import { getDb } from "../db/connection";
 import { tasks, zones, zoneReservations } from "../../drizzle/schema";
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks } from "../services/fleet/taskAllocator";
+import { publishTaskEvent } from "../services/ecosystem/ecosystemEvents";
 import { reserveZone, releaseZone, getZoneOccupancy, detectDeadlocks } from "../services/fleet/trafficManager";
 // G2 (doc 16 §7 c&d / §15 G2) — Skill/Resource/Charging. Flag: FLEET_RESOURCE_ENABLED.
 import { fleetResourceEnabled, resolveOperation } from "../services/fleet/skillRegistry";
@@ -208,6 +209,64 @@ export const fleetRouter = router({
         .update(tasks)
         .set({ status: "assigned", assignedDeviceId: input.deviceId, assignedDeviceKind: "robot", assignedAt: new Date(), updatedAt: new Date() })
         .where(eq(tasks.id, input.taskId));
+      // U1-a — publish task.assigned for the manual (re)assign path too.
+      publishTaskEvent("assigned", {
+        taskId: input.taskId,
+        taskKey: t.taskKey,
+        requiredCapability: t.requiredCapability,
+        assignedDeviceId: input.deviceId,
+        robotId: input.deviceId,
+        status: "assigned",
+        priority: t.priority,
+        corporateCode: t.corporateCode,
+        factoryId: t.factoryId,
+      });
+      return { ok: true };
+    }),
+
+  /**
+   * Mark a task terminal — `completed` (default) or `failed`. This is the explicit
+   * completion transition a FOE workflow / scheduler calls when a task's device work
+   * finishes. Publishes task.completed / task.failed on the eventBus (U1-a).
+   */
+  completeTask: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        taskId: z.number().int().positive(),
+        outcome: z.enum(["completed", "failed"]).default("completed"),
+        error: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireFlag();
+      const d = await db();
+      const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
+      if (!t) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.taskId} not found` });
+      if (["completed", "cancelled", "failed"].includes(t.status)) {
+        throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} already terminal (${t.status})` });
+      }
+      await d
+        .update(tasks)
+        .set({
+          status: input.outcome,
+          lastError: input.outcome === "failed" ? (input.error ?? "task failed") : null,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, input.taskId));
+      publishTaskEvent(input.outcome, {
+        taskId: input.taskId,
+        taskKey: t.taskKey,
+        requiredCapability: t.requiredCapability,
+        assignedDeviceId: t.assignedDeviceId,
+        robotId: t.assignedDeviceId,
+        status: input.outcome,
+        priority: t.priority,
+        corporateCode: t.corporateCode,
+        factoryId: t.factoryId,
+        error: input.outcome === "failed" ? (input.error ?? null) : null,
+      });
       return { ok: true };
     }),
 

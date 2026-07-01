@@ -369,4 +369,21 @@ export async function runAnomalyAndEscalation(params: AnomalyEscalationParams): 
   } catch (e) {
     console.warn(`[aoiEmbed] persist anomaly meta emb#${params.embeddingId} failed:`, (e as Error)?.message ?? e);
   }
+
+  // U1-a — publish anomaly.detected for a positive image anomaly (fire-and-forget;
+  // never throws into the embedding worker). Feeds the unified alert stream + subscribers.
+  if (result.isAnomaly) {
+    try {
+      const { publishAnomalyDetected } = await import("./ecosystem/ecosystemEvents");
+      publishAnomalyDetected({
+        kind: "image_anomaly",
+        severity: result.degraded ? "low" : "high",
+        source: "image",
+        machineId: params.machineId,
+        productModelId: params.productModelId,
+        score: Number(result.score.toFixed(6)),
+        message: `Image anomaly detected (score ${result.score.toFixed(4)}, source ${result.source})${visionDescription ? `: ${visionDescription}` : ""}`,
+      }, "imageAnomaly");
+    } catch { /* best-effort */ }
+  }
 }

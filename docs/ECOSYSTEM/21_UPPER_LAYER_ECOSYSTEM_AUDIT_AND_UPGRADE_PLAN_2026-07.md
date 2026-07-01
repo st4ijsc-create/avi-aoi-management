@@ -105,7 +105,7 @@ Gom theo chủ đề, ưu tiên theo **đòn bẩy** (G-1 mở khóa mọi thứ
 
 | Pha | Tên | Nội dung | Đóng gap | Phụ thuộc |
 |---|---|---|---|---|
-| **U1** | **Event Backbone hợp nhất** *(đòn bẩy cao nhất)* | Cho fleet (`task.assigned/completed`), PdM (`workorder.created`), anomaly (`anomaly.detected`), IR (`program.deployed`), twin (derived state) **phát domain event**. Thêm subscriber cho `SAFETY_EVENT` + `quality_gate.breach` (webhook fan-out + rulesEngine + KB ingest). **Re-broadcast eventBus → client** dưới 1 event chuẩn hóa `alerts:stream` + `ecosystem:event`. Sửa bug socket dead-code (dup socket, machineCode/id mismatch). | G-1, G-2, G-12 | — |
+| **U1** ✅ | **Event Backbone hợp nhất** *(đòn bẩy cao nhất)* | Cho fleet (`task.assigned/completed`), PdM (`workorder.created`), anomaly (`anomaly.detected`), IR (`program.deployed`), twin (derived state) **phát domain event**. Thêm subscriber cho `SAFETY_EVENT` + `quality_gate.breach` (webhook fan-out + rulesEngine + KB ingest). **Re-broadcast eventBus → client** dưới 1 event chuẩn hóa `alerts:stream` + `ecosystem:event`. Sửa bug socket dead-code (dup socket, machineCode/id mismatch). | G-1, G-2, G-12 | — |
 | **U2** | **Ecosystem Command Center** (`/command-center`) | 1 màn hình toàn cảnh: **cây phân cấp live** site→factory→line→station→machine→robot (định nghĩa node lái bởi `deviceTypeRegistry`/capability → device type mới tự xuất hiện; site lái bởi federation rollup) · **twin 3D** factory chọn (nhúng DigitalTwinCenter, overlay fleet task + safety zone) · **rail cảnh báo live hợp nhất** (từ U1 `alerts:stream`) · **KPI strip** (oee:update/WIP/energy/AI insight). Thay 5 query polled của OpsConsole bằng 1 feed live. | G-3, G-2 | U1 |
 | **U3** | **Machine & Robot Cockpit** | `/machine/:id` — gộp identity+capability resolved, live UDM+PackML, health/PdM, OEE, alarm chuẩn hóa per-máy (query mỏng mới), recipe+version+deploy per-máy, genealogy, 3D model, control gated, timeline. `/robot/:id` — telemetry+UDM đầy đủ (joint/battery/estop/zone), **joint/pose viz + per-robot twin**, job+task, IR robot-selectable, **teach/jog nối gate thật** (thay preview local), safety zone, anomaly. **Wire robot telemetry lên socket**; sửa redirect dead-end + QR→`/machine/:code`; mọi list/scene navigate mang id + back. | G-4, G-5 | U1 (live), (T2a/T2b cho joint viz đã có) |
 | **U4** | **Mở nền tảng (API + registry data-driven)** | Extend `/api/v1` + scopes cho fleet/safety/twin/IR/PdM/anomaly/governance (ít nhất read). Chuyển `ADAPTER_KINDS`/`PROGRAMMING_KINDS`/`SYSTEM_MODULES` sang **manifest register-and-go** (như `driverRegistry`) → thêm vendor/kind/module không sửa core. | G-6, G-8 | — |
@@ -124,3 +124,52 @@ Gom theo chủ đề, ưu tiên theo **đòn bẩy** (G-1 mở khóa mọi thứ
 Bạn **review §6** → chọn phạm vi + thứ tự (làm hết, hay bắt đầu U1→U2→U3, hay chỉ một phần) → tôi gọi các agent chuyên môn thực thi từng pha (flag OFF, commit từng pha, cổng test+build, không đụng phần cứng).
 
 **Điểm mạnh cần giữ nguyên khi nâng cấp:** capability/PackML model, unified telemetry bus, governance conformance, bất biến HITL/dry-run, kỷ luật tenant Khối 2/3/7 — mọi nâng cấp phải nâng phần yếu LÊN ngang các chuẩn này, không hạ chuẩn.
+
+---
+
+## 8. U1 — Unified Event Backbone (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. ADDITIVE + backward-compatible: mọi event name / subscriber cũ giữ nguyên; publish mới là fire-and-forget error-isolated; luồng client là NEW event, không thay thế. Redis fan-out vẫn để lại cho U6. `twin.derived` để lại optional (chưa nối producer).
+
+### 8.1 Taxonomy — envelope chuẩn hóa (`EcosystemEvent`)
+Một envelope gọn duy nhất mọi event class map vào (server: `server/services/ecosystem/ecosystemEvents.ts`; client mirror: `client/src/hooks/useEcosystemEvents.ts`):
+```
+{ id, ts, kind, severity, source, scope:{siteCode?,factoryId?,machineId?,robotId?,lineId?}, title, detail? }
+```
+- **severity**: `info | low | medium | high | critical`.
+- **kind**: `inspection | andon | safety | spc | quality_gate | escalation | maintenance | downtime | oee | task | workorder | anomaly | program | twin | ng | yield | event`.
+- **alert-class** (đẩy thêm lên `alerts:stream`): inspection, andon, safety, spc, quality_gate, escalation, maintenance, anomaly, ng, yield.
+
+### 8.2 Producers phát gì (U1-a)
+| Module | Event mới | Điểm phát |
+|---|---|---|
+| Fleet | `task.assigned` | `taskAllocator.allocateTask` (success) + `fleetRouter.assign` |
+| Fleet | `task.completed` / `task.failed` | `fleetRouter.completeTask` (mutation MỚI) + `task.failed` trong `rebalanceDeviceTasks` |
+| PdM | `workorder.created` | `pdmAutoWorkOrderService.maybeCreatePredictiveWorkOrder` (sau insert) |
+| Anomaly | `anomaly.detected` | `robotBehaviorAnomalyService.persistAndRaise` (robot) + `aoiImageEmbeddingWorker.runAnomalyAndEscalation` (image, chỉ khi isAnomaly) |
+| IR/Programming | `program.deployed` | `programmingService.deployBuild` (mọi deployment: deployed/simulated/rejected) |
+| Twin | `twin.derived` | helper `publishTwinDerived` sẵn sàng — **chưa nối producer** (optional) |
+
+Publish qua helper typed fire-and-forget (`publishTaskEvent/publishWorkOrderCreated/publishAnomalyDetected/publishProgramDeployed`) — không bao giờ ném vào producer.
+
+### 8.3 Subscribers cho event mồ côi + mới (U1-b)
+- **Webhook fan-out**: `installEcosystemEventBridge` subscribe `safety.event`, `quality_gate.breach`, `anomaly.detected`, `workorder.created`, `task.*`, `program.deployed` → forward `ecosystem.<kind>` qua `webhookBridge.emit` (vẫn gated `WEBHOOKS_ENABLED`).
+- **KB ingest**: các kind "significant" (safety/workorder/program/quality_gate/anomaly) → `ingestKnowledgeRecordAsync` (vẫn gated `RAG_AUTO_INGEST_ENABLED`) để AI "biết".
+- **Orchestration (HITL)**: `rulesEngine` thêm advisory trigger cho `safety.event` + `anomaly.detected` (chỉ high/critical) → audit + notify + republish `orchestration.triggered` (aiWatcher sinh advisory). **KHÔNG BAO GIỜ lệnh thiết bị tự động** — bất biến HITL giữ nguyên.
+- **Cờ**: toàn bộ side-effect OUTBOUND của U1 gated `ECOSYSTEM_EVENTS_ENABLED` (mặc định OFF) + cờ riêng của mỗi sink. Đăng ký in-process luôn bật (vô hại).
+
+### 8.4 Luồng client chuẩn hóa (U1-c)
+- `socket.ts::installEcosystemSocketBridge` subscribe eventBus (per-type, ~19 tên — legacy + U1) → chuẩn hóa → emit `ecosystem:event` (mọi class) + `alerts:stream` (alert class) tới `global` + room scoped (`factory:/line:/machine:`) đúng room model cũ (không rò tenant).
+- Legacy emit-only (`alert:escalation`, `maintenance:alert`, `downtime:*`) nay CŨNG publish lên bus → vào luồng hợp nhất.
+- Client: hook mới `useEcosystemEvents()` + `NotificationCenter` nghe `alerts:stream` → MỌI class cảnh báo (safety/andon/SPC/escalation/maintenance/anomaly/quality-gate) tới notifier toàn cục (trước chỉ `inspection:alert`).
+
+### 8.5 Bug socket đã sửa (U1-d)
+- `useRealtimeAlerts` (dead hook: socket THỨ HAI + nghe `yield:warning`/`ng:alert`/`qualityGate:triggered` server không phát) → viết lại dùng SHARED socket + `alerts:stream`.
+- `emitMqttMessage` room mismatch `machine:${machineCode}` → resolve numeric `machineId` từ online-map, emit đúng room.
+- `alert:escalation` (emit-only dead end) → nối vào luồng hợp nhất qua bus publish.
+
+### 8.6 Không migration
+U1 thuần runtime event (không bảng mới). Không dùng số migration nào.
+
+### 8.7 Cổng chất lượng
+`npm run check` (tsc) PASS · `npx vite build` PASS · test mới `ecosystemEvents.test.ts` 11/11 · fleet+programming+anomaly 75/75 · orchestration 46/46 — tất cả xanh.

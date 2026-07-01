@@ -202,6 +202,7 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
         error: "Build is not ok — refusing to deploy.",
       })
       .returning();
+    publishDeployed(row);
     return row;
   }
 
@@ -250,7 +251,31 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
       error: result.error ?? null,
     })
     .returning();
+  publishDeployed(row);
   return row;
+}
+
+/**
+ * U1-a — publish program.deployed on the eventBus (fire-and-forget; never throws
+ * into the deploy path). Records EVERY deployment attempt (deployed / simulated /
+ * rejected) so the ecosystem knows an IR/program change was recorded.
+ */
+function publishDeployed(row: typeof programDeployments.$inferSelect | undefined): void {
+  if (!row) return;
+  void import("../ecosystem/ecosystemEvents")
+    .then(({ publishProgramDeployed }) =>
+      publishProgramDeployed({
+        deploymentId: row.id,
+        projectId: row.projectId ?? null,
+        buildId: row.buildId,
+        deviceId: row.deviceId ?? null,
+        stage: row.stage,
+        status: row.status,
+        simulated: row.simulated,
+        signedOffBy: row.signedOffBy ?? null,
+      }),
+    )
+    .catch(() => { /* best-effort */ });
 }
 
 /**

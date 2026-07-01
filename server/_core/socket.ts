@@ -4,7 +4,8 @@ import { nanoid } from "nanoid";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { attachRedisAdapter } from "./socketRedisAdapter";
-import { eventBus, EventTypes } from "./eventBus";
+import { eventBus, EventTypes, type DomainEvent } from "./eventBus";
+import { toEcosystemEvent, isAlertKind, type EcosystemEvent } from "../services/ecosystem/ecosystemEvents";
 
 let io: Server | null = null;
 
@@ -559,6 +560,94 @@ export function getIO(): Server | null {
   return io;
 }
 
+// ============ U1-c — UNIFIED NORMALIZED EVENT/ALERT STREAM (client) ============
+//
+// ONE re-broadcast: subscribe to the server eventBus, normalize each domain event
+// into the compact `EcosystemEvent` envelope, and emit it to the client on a single
+// `ecosystem:event` channel (plus a filtered `alerts:stream` for alert-class events).
+// This is ADDITIVE — the existing per-event socket emits (inspection:alert,
+// andon:event, …) are untouched; this is a NEW stream the Command Center (U2) +
+// cockpits (U3) + the global NotificationCenter consume.
+//
+// RBAC / tenant isolation: routed to `global` PLUS the scoped rooms the client
+// already joins (factory:/line:/machine:) — so a client only receives events for
+// scopes it subscribed to. Cross-tenant leakage is bounded by the same room model
+// the legacy emits use. (Redis cross-instance fan-out is still U6.)
+let ecosystemBridgeInstalled = false;
+let ecosystemBridgeUnsub: (() => void) | null = null;
+
+/** Which bus event types feed the unified client stream (legacy + new U1 events). */
+const UNIFIED_STREAM_TYPES: string[] = [
+  EventTypes.INSPECTION_ALERT,
+  EventTypes.NG_ALERT,
+  EventTypes.YIELD_WARNING,
+  EventTypes.SPC_VIOLATION,
+  EventTypes.ANDON,
+  EventTypes.SAFETY_EVENT,
+  "quality_gate.breach",
+  "alert.escalation",
+  "maintenance.alert",
+  "downtime.start",
+  "downtime.end",
+  "oee.update",
+  // new U1 domain events
+  "task.assigned",
+  "task.completed",
+  "task.failed",
+  "workorder.created",
+  "anomaly.detected",
+  "program.deployed",
+  "twin.derived",
+];
+
+function broadcastEcosystemEvent(evt: EcosystemEvent): void {
+  if (!io) return;
+  // Global room — every subscribed client (the NotificationCenter joins global).
+  io.to("global").emit("ecosystem:event", evt);
+  if (isAlertKind(evt.kind)) io.to("global").emit("alerts:stream", evt);
+
+  // Scoped fan-out — mirror to the specific rooms the client may have joined so a
+  // machine/line/factory dashboard receives its own slice without the global noise.
+  const rooms: string[] = [];
+  if (evt.scope.factoryId != null) rooms.push(`factory:${evt.scope.factoryId}`);
+  if (evt.scope.lineId != null) rooms.push(`line:${evt.scope.lineId}`);
+  if (evt.scope.machineId != null) rooms.push(`machine:${evt.scope.machineId}`);
+  for (const room of rooms) {
+    io.to(room).emit("ecosystem:event", evt);
+    if (isAlertKind(evt.kind)) io.to(room).emit("alerts:stream", evt);
+  }
+}
+
+/**
+ * Install the eventBus→socket re-broadcast. Idempotent + safe at startup. No-op emit
+ * when io is not initialized (the handler still runs but broadcastEcosystemEvent
+ * guards on io). Subscribes per-type (not the wildcard) so bus-internal events like
+ * `orchestration.triggered` / `ai.insight` never reach the client.
+ */
+export function installEcosystemSocketBridge(): void {
+  if (ecosystemBridgeInstalled) return;
+  ecosystemBridgeInstalled = true;
+  const unsubs: Array<() => void> = [];
+  const handle = (e: DomainEvent) => {
+    try {
+      const evt = toEcosystemEvent(e);
+      if (evt) broadcastEcosystemEvent(evt);
+    } catch (err) {
+      console.error("[U1] ecosystem socket re-broadcast failed:", (err as Error)?.message ?? err);
+    }
+  };
+  for (const t of UNIFIED_STREAM_TYPES) unsubs.push(eventBus.subscribe(t, handle));
+  ecosystemBridgeUnsub = () => { while (unsubs.length) unsubs.pop()!(); };
+  console.log(`[U1] ecosystem socket bridge installed (${UNIFIED_STREAM_TYPES.length} event types → ecosystem:event / alerts:stream)`);
+}
+
+/** Tear down the re-broadcast (tests / shutdown). */
+export function uninstallEcosystemSocketBridge(): void {
+  if (ecosystemBridgeUnsub) ecosystemBridgeUnsub();
+  ecosystemBridgeUnsub = null;
+  ecosystemBridgeInstalled = false;
+}
+
 // Test manual connection to a machine via IP:Port
 export async function testManualConnection(
   ipAddress: string,
@@ -1101,6 +1190,9 @@ export interface AlertEscalationEvent {
 }
 
 export function emitAlertEscalation(event: AlertEscalationEvent): void {
+  // U1 — also publish on the bus so the unified stream (alerts:stream) + subscribers
+  // see escalations (previously emit-only / a dead end per the audit).
+  eventBus.publish("alert.escalation", event, "socket");
   if (!io) return;
   io.to("global").emit("alert:escalation", event);
   if (event.machineId) {
@@ -1121,10 +1213,17 @@ export function emitMqttMessage(event: MqttMessageEvent): void {
   
   // Emit to global room
   io.to("global").emit("mqtt:message", event);
-  
-  // If machine code is known, emit to machine-specific room
+
+  // If machine code is known, emit to the machine-specific room. U1-d BUGFIX: rooms
+  // are keyed by NUMERIC machineId (see subscribe: `machine:${machineId}`), NOT the
+  // machineCode — the previous `machine:${machineCode}` targeted a room no client
+  // ever joins. Resolve the id from the online-machines map and emit to the id room.
   if (event.machineCode) {
-    io.to(`machine:${event.machineCode}`).emit("mqtt:message", event);
+    let machineId: number | undefined;
+    for (const [id, code] of onlineMachineCodesMap) {
+      if (code === event.machineCode) { machineId = id; break; }
+    }
+    if (machineId != null) io.to(`machine:${machineId}`).emit("mqtt:message", event);
   }
 }
 
@@ -1413,12 +1512,14 @@ export function startDowntime(
     }
   })();
   
+  // U1 — publish on the bus so downtime feeds the unified stream.
+  eventBus.publish("downtime.start", event, "socket");
   // Emit downtime start event
   if (io) {
     io.to("global").emit("downtime:start", event);
     io.to(`machine:${machineId}`).emit("downtime:start", event);
   }
-  
+
   return event;
 }
 
@@ -1460,12 +1561,14 @@ export function endDowntime(machineId: number, notes?: string): DowntimeEvent | 
     }
   })();
   
+  // U1 — publish on the bus so downtime feeds the unified stream.
+  eventBus.publish("downtime.end", event, "socket");
   // Emit downtime end event
   if (io) {
     io.to("global").emit("downtime:end", event);
     io.to(`machine:${machineId}`).emit("downtime:end", event);
   }
-  
+
   return event;
 }
 
@@ -1591,12 +1694,14 @@ export function calculateMachineHealth(
       timestamp: new Date(),
     };
     
+    // U1 — publish on the bus so the maintenance alert reaches the unified stream.
+    eventBus.publish("maintenance.alert", alert, "socket");
     if (io) {
       io.to("global").emit("maintenance:alert", alert);
       io.to(`machine:${machineId}`).emit("maintenance:alert", alert);
     }
   }
-  
+
   return healthScore;
 }
 

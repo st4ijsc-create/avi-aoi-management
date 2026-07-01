@@ -4398,6 +4398,21 @@ async function startServer() {
     console.error("[ControlPlane] /api/v1 mount failed:", (err as any)?.message || err);
   }
 
+  // U1 (doc 21 §6) — Unified Event Backbone: (a) subscribe the ecosystem bridge so
+  // the orphaned (safety.event, quality_gate.breach) + new (anomaly/workorder/task/
+  // program) domain events fan out to webhooks + KB — OUTBOUND gated by
+  // ECOSYSTEM_EVENTS_ENABLED (default OFF); in-process registration is harmless.
+  // (b) attach the eventBus→socket re-broadcast so ALL event classes reach the
+  // client on ONE normalized `ecosystem:event` / `alerts:stream` (U1-c).
+  try {
+    const { installEcosystemEventBridge } = await import("../services/ecosystem/ecosystemEvents");
+    installEcosystemEventBridge();
+    const { installEcosystemSocketBridge } = await import("./socket");
+    installEcosystemSocketBridge();
+  } catch (err) {
+    console.error("[U1] ecosystem event backbone install failed:", (err as any)?.message || err);
+  }
+
   // R0 (doc 16 Khối 0) — ERP integration gateway: durable OUTBOUND publishing.
   // Starts the integration_outbox drain worker ONLY when ERP_OUTBOX_ENABLED=true
   // (the worker is a safe no-op otherwise). Inbound intake (POST /orders,/bom) is

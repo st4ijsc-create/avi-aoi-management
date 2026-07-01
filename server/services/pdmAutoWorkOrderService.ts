@@ -105,6 +105,20 @@ export async function maybeCreatePredictiveWorkOrder(
       { machineId: machine.id, machineCode: code, woNumber, risk: risk.failureRisk },
       "[PdmAutoWorkOrder] created predictive work order",
     );
+
+    // U1-a — publish workorder.created (fire-and-forget; never throws into the PdM cycle).
+    try {
+      const { publishWorkOrderCreated } = await import("./ecosystem/ecosystemEvents");
+      publishWorkOrderCreated({
+        workOrderNumber: woNumber,
+        machineId: machine.id,
+        machineCode: machine.code ?? null,
+        type: "PREDICTIVE",
+        priority: mapUrgencyToPriority(risk.maintenanceUrgency),
+        failureRisk: risk.failureRisk,
+        predictedTimeframe: risk.predictedTimeframe ?? null,
+      });
+    } catch { /* event publish is best-effort */ }
     return true;
   } catch (err) {
     logger.error(

@@ -94,13 +94,41 @@ function onSpcViolation(e: DomainEvent): void {
   eventBus.publish("orchestration.triggered", { rule: "spc_critical", machine: p.machineCode }, "orchestration");
 }
 
+// U1-b — ADVISORY triggers for the new/orphaned events. NOTIFY/AUDIT only; each
+// re-publishes `orchestration.triggered` so the aiWatcher can generate an advisory.
+// NEVER an autonomous device command — the HITL invariant is preserved.
+function onAnomalyDetected(e: DomainEvent): void {
+  const p = (e.payload ?? {}) as { kind?: string; severity?: string; robotId?: number; machineId?: number };
+  // Only escalate the significant bands so we don't spam the single inference slot.
+  if (p.severity !== "high" && p.severity !== "critical") return;
+  const machine = String(p.machineId ?? (p.robotId != null ? `robot:${p.robotId}` : "unknown"));
+  const message = `Anomaly (${p.severity}): ${p.kind ?? "?"} at ${machine}`;
+  console.warn(`[Orchestration] ${message}`);
+  void audit("orchestration.anomaly", { kind: p.kind, severity: p.severity, machine });
+  void notifyConfigured("Anomaly detected", message);
+  eventBus.publish("orchestration.triggered", { rule: "anomaly", machine, kind: p.kind }, "orchestration");
+}
+
+function onSafetyEvent(e: DomainEvent): void {
+  const p = (e.payload ?? {}) as { eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
+  const machine = String(p.robotId != null ? `robot:${p.robotId}` : p.lineId != null ? `line:${p.lineId}` : "unknown");
+  const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
+  console.warn(`[Orchestration] ${message}`);
+  void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
+  void notifyConfigured("Safety event", message);
+  eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
+}
+
 export function startOrchestration(): void {
   if (process.env.ORCHESTRATION_ENABLED !== "true") return; // safe default off
   if (enabled) return;
   enabled = true;
   unsubscribers.push(eventBus.subscribe(EventTypes.NG_ALERT, onNgAlert));
   unsubscribers.push(eventBus.subscribe(EventTypes.SPC_VIOLATION, onSpcViolation));
-  console.log("[Orchestration] rules engine started (NG burst, SPC critical)");
+  // U1-b — new/orphaned advisory triggers (anomaly + safety). NOTIFY/AUDIT only.
+  unsubscribers.push(eventBus.subscribe(EventTypes.SAFETY_EVENT, onSafetyEvent));
+  unsubscribers.push(eventBus.subscribe("anomaly.detected", onAnomalyDetected));
+  console.log("[Orchestration] rules engine started (NG burst, SPC critical, anomaly, safety)");
 }
 
 export function stopOrchestration(): void {

@@ -36,6 +36,7 @@ import { getDb } from "../../db/connection";
 import { tasks, robots, robotTelemetry } from "../../../drizzle/schema";
 import type { Task } from "../../../drizzle/schema/fleet";
 import { getDefaultCapability, type EquipmentCapability } from "../equipment/capabilityModel";
+import { publishTaskEvent } from "../ecosystem/ecosystemEvents";
 
 /** Flag — default OFF (mirrors foeEnabled / erpInboundEnabled). */
 export function fleetOrchEnabled(): boolean {
@@ -297,6 +298,18 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
     })
     .where(eq(tasks.id, taskId));
   console.log(`[Fleet] task ${taskId} → device ${decision.best.deviceId} (score ${decision.best.score})`);
+  // U1-a — publish task.assigned (fire-and-forget; never throws into the allocator).
+  publishTaskEvent("assigned", {
+    taskId,
+    taskKey: task.taskKey,
+    requiredCapability: task.requiredCapability,
+    assignedDeviceId: decision.best.deviceId,
+    robotId: decision.best.deviceId,
+    status: "assigned",
+    priority: task.priority,
+    corporateCode: task.corporateCode,
+    factoryId: task.factoryId,
+  });
   return { ok: true, enabled: true, assignedDeviceId: decision.best.deviceId, decision };
 }
 
@@ -351,6 +364,20 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
         updatedAt: new Date(),
       })
       .where(eq(tasks.id, t.id));
+    // U1-a — publish task.failed (the device dropped this task mid-work; it will be
+    // re-queued below). Fire-and-forget; the re-allocation may then emit task.assigned.
+    publishTaskEvent("failed", {
+      taskId: t.id,
+      taskKey: t.taskKey,
+      requiredCapability: t.requiredCapability,
+      assignedDeviceId: deviceId,
+      robotId: deviceId,
+      status: "failed",
+      priority: t.priority,
+      corporateCode: t.corporateCode,
+      factoryId: t.factoryId,
+      error: reason,
+    });
   }
 
   // Re-allocate each (now pending) task to a DIFFERENT eligible device.

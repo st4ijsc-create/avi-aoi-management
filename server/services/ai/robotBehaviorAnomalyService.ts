@@ -165,4 +165,19 @@ async function persistAndRaise(anomaly: RobotAnomaly): Promise<void> {
     status: "raised",
   };
   await db.insert(robotBehaviorAnomalies).values(row);
+
+  // U1-a — publish anomaly.detected on the eventBus (fire-and-forget; never throws
+  // into the ingest path). Feeds the unified alert stream + webhook/KB subscribers.
+  try {
+    const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
+    publishAnomalyDetected({
+      kind: anomaly.kind,
+      severity: anomaly.severity,
+      source: "robot",
+      robotId: anomaly.robotId,
+      score: anomaly.score,
+      confidence: anomaly.confidence ?? null,
+      message: `Robot ${anomaly.robotId} behaviour anomaly: ${anomaly.kind} (score ${anomaly.score})`,
+    }, "robotAnomaly");
+  } catch { /* best-effort */ }
 }
