@@ -103,7 +103,7 @@
 | GĐ | Tên | Nội dung | Phụ thuộc | Cờ |
 |---|---|---|---|---|
 | **T2b** | Kinematic Simulation Gate | URDF FK + geometric collision + joint-limit + cycle-time → thay `simulate()` stub của D1 bằng cổng chặn THẬT (Node/TS, engine swappable) | D1, T1 | `SIM_KINEMATIC_ENABLED` |
-| **T2a** | Model pipeline | URDF→glTF (Node) điền model registry `ready`; STEP→glTF pha sau | T1 | — |
+| **T2a** ✅ **DONE** | Model pipeline | ✅ URDF→glTF THẬT (hand-rolled emitter box/cylinder/sphere → POSITION/NORMAL/indices + node hierarchy từ joint tree) điền `equipment_3d_models` với `conversionStatus='ready'` → twin render model thật. ✅ Cùng parse feed T2b: `urdfToChainStub` giờ trả **chuỗi động học THẬT** (rest transform + axis + limits + BV từ URDF) → sim gate chạy trên hình học robot thật. External `<mesh>` không phải ASCII-STL → placeholder box (ghi nhận, không bịa). **STEP/IGES→glTF = seam pha-2** (cần CAD kernel occt-import-js WASM / assimp) → đăng ký `pending`, KHÔNG bịa. Reuse `equipment_3d_models` (không cần migration). | T1 | `MODEL_PIPELINE_ENABLED` |
 | **I3a** | URSim + ROS2 harness | Deploy URScript(D1)→**URSim** validate end-to-end; ROS2/DDS bridge↔UNS vs Gazebo | D1, X1 | `ROS2_BRIDGE_ENABLED` |
 | **S2a** | Zone geometry + 3-level evaluator | Schema vùng + evaluator intrusion (pure) + trực quan hoá trong twin | S1, T1 | `SAFETY_ZONE_SW_ENABLED` |
 | **S2b** | Vision human-detect + safety-PLC adapter(sim) | YOLO-pose producer→near-miss advisor (advisory); safety-PLC read-path adapter sim | S1, S2a | reuse `SAFETY_AUDIT` |

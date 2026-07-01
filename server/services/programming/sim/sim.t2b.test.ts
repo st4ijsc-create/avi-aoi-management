@@ -236,8 +236,23 @@ describe("T2b · no-model honesty", () => {
     expect(r.note).toMatch(/structural-only/i);
   });
 
-  it("urdfToChainStub returns null (T2a seam, not faked)", () => {
-    expect(urdfToChainStub("<robot/>")).toBeNull();
+  it("urdfToChainStub returns null for empty/link-less URDF (honest fallback)", () => {
+    expect(urdfToChainStub("")).toBeNull();
+    expect(urdfToChainStub("   ")).toBeNull();
+    expect(urdfToChainStub("<robot/>")).toBeNull(); // no <link> → nothing to solve
+    expect(urdfToChainStub("<not-urdf/>")).toBeNull(); // wrong root → parse throws → null
+  });
+
+  it("urdfToChainStub returns a REAL chain when a URDF with links is given (T2a seam closed)", () => {
+    const chain = urdfToChainStub(
+      `<robot name="t"><link name="a"/><link name="b"/>` +
+        `<joint name="j" type="revolute"><parent link="a"/><child link="b"/>` +
+        `<origin xyz="0 0 0.1" rpy="0 0 0"/><axis xyz="0 0 1"/>` +
+        `<limit lower="-1" upper="1" effort="1" velocity="1"/></joint></robot>`,
+    );
+    expect(chain).not.toBeNull();
+    expect(chain!.dof).toBe(1);
+    expect(chain!.joints.some((j) => j.type === "revolute")).toBe(true);
   });
 });
 

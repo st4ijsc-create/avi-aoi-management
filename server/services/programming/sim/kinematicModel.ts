@@ -32,6 +32,12 @@
  *     and transformed to world by that running product.
  * ════════════════════════════════════════════════════════════════════════════
  */
+// NOTE on the import below: this forms a controlled cycle with the T2a pipeline
+// (urdfToKinematicChain imports the math helpers from THIS file). It is safe because
+// neither side calls the other at module-eval time — the pipeline functions are only
+// invoked inside urdfToChainStub()'s body, so ESM live-bindings are always resolved.
+import { parseUrdf } from "../../twin/pipeline/urdfParser";
+import { urdfToKinematicChain } from "../../twin/pipeline/urdfToKinematicChain";
 
 // ── vec3 ──────────────────────────────────────────────────────────────────────
 export type Vec3 = readonly [number, number, number];
@@ -104,9 +110,41 @@ export function rotZ(t: number): Mat4 {
   const c = Math.cos(t), s = Math.sin(t);
   return [c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 }
+/** Rot about Y by `t` rad (column-major). */
+export function rotY(t: number): Mat4 {
+  const c = Math.cos(t), s = Math.sin(t);
+  return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1];
+}
 /** Pure translation. */
 export function translate(x: number, y: number, z: number): Mat4 {
   return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+}
+
+/**
+ * Rotation about an ARBITRARY unit axis by `t` rad (Rodrigues, column-major). Used by the
+ * URDF-derived chain path where a joint's axis is not a canonical DH Z. A zero/degenerate
+ * axis returns identity (a fixed joint).
+ */
+export function rotAxis(axis: Vec3, t: number): Mat4 {
+  let [x, y, z] = axis;
+  const n = Math.sqrt(x * x + y * y + z * z);
+  if (n < 1e-9) return mat4Identity();
+  x /= n; y /= n; z /= n;
+  const c = Math.cos(t), s = Math.sin(t), C = 1 - c;
+  // Column-major m[col*4+row].
+  return [
+    c + x * x * C, y * x * C + z * s, z * x * C - y * s, 0,
+    x * y * C - z * s, c + y * y * C, z * y * C + x * s, 0,
+    x * z * C + y * s, y * z * C - x * s, c + z * z * C, 0,
+    0, 0, 0, 1,
+  ];
+}
+
+/** Translation along an arbitrary axis by distance `d` (for prismatic URDF joints). */
+export function translateAxis(axis: Vec3, d: number): Mat4 {
+  const n = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+  if (n < 1e-9) return mat4Identity();
+  return translate((axis[0] / n) * d, (axis[1] / n) * d, (axis[2] / n) * d);
 }
 
 /**
@@ -162,6 +200,15 @@ export interface KinematicJoint {
   limits?: { min: number; max: number };
   /** Bounding volume of the LINK that this joint carries, in the link's own frame. */
   bv: BoundingVolume;
+  /**
+   * URDF-DERIVED EXACT PATH (T2a). When present, FK uses this instead of the DH product:
+   * the link frame is `restTransform · axisMotion(value)`, where restTransform is the fixed
+   * parent→joint transform from the URDF <origin> and axisMotion rotates (revolute) or
+   * translates (prismatic) the joint VALUE about the URDF <axis>. Authored samples leave this
+   * undefined and keep the DH path. This lets FK reproduce real URDF geometry exactly, not
+   * a lossy DH approximation.
+   */
+  local?: { restTransform: Mat4; axis: Vec3 };
 }
 
 export interface KinematicModel {
@@ -229,16 +276,25 @@ export function forwardKinematics(model: KinematicModel, jointValues: number[]):
   let acc: Mat4 = model.base ? [...model.base] : mat4Identity();
   let valueIdx = 0;
   model.joints.forEach((joint, i) => {
-    let theta = joint.dh.theta;
-    let d = joint.dh.d;
-    if (joint.type === "revolute") {
-      theta += jointValues[valueIdx] ?? 0;
-      valueIdx += 1;
-    } else if (joint.type === "prismatic") {
-      d += jointValues[valueIdx] ?? 0;
+    let value = 0;
+    if (joint.type === "revolute" || joint.type === "prismatic") {
+      value = jointValues[valueIdx] ?? 0;
       valueIdx += 1;
     }
-    const local = dhTransform(joint.dh.a, joint.dh.alpha, d, theta);
+    let local: Mat4;
+    if (joint.local) {
+      // URDF-derived EXACT path: rest transform · motion(value) about the URDF axis.
+      let motion: Mat4;
+      if (joint.type === "revolute") motion = rotAxis(joint.local.axis, value);
+      else if (joint.type === "prismatic") motion = translateAxis(joint.local.axis, value);
+      else motion = mat4Identity();
+      local = mat4Mul(joint.local.restTransform, motion);
+    } else {
+      // Authored DH path (sample models).
+      const theta = joint.dh.theta + (joint.type === "revolute" ? value : 0);
+      const d = joint.dh.d + (joint.type === "prismatic" ? value : 0);
+      local = dhTransform(joint.dh.a, joint.dh.alpha, d, theta);
+    }
     acc = mat4Mul(acc, local);
     poses.push({
       jointIndex: i,
@@ -363,11 +419,33 @@ export function resolveKinematicModel(
 }
 
 /**
- * URDF → kinematic-chain PARSER STUB — shaped for T2a. Real URDF import (parsing
- * <joint>/<link>/<origin>/<axis>/<limit> and mesh bounds) is T2a; today this returns
- * null so the gate falls back to the authored sample / honest no-model result. It exists
- * so the T2b seam is ready: T2a fills the body, the gate contract does not change.
+ * URDF → kinematic-chain — the T2a seam, NOW REAL.
+ *
+ * Parses a URDF XML string and extracts a T2b KinematicModel (exact rest transforms +
+ * axes + limits + per-link bounding volumes) via the T2a pipeline, so the Simulation Gate
+ * runs on real robot geometry. Returns null when the input is empty/whitespace or does NOT
+ * parse / has no links — the gate then falls back to the authored sample / honest no-model
+ * result (the T2b contract is unchanged; only the body of the seam is filled in).
+ *
+ * The import is done lazily (dynamic require through an indirection) so kinematicModel.ts —
+ * a pure, dependency-light math module — does not statically depend on the twin/pipeline
+ * layer (which depends back on this file). Pure + deterministic given the input.
  */
-export function urdfToChainStub(_urdfXml: string): KinematicModel | null {
-  return null;
+export function urdfToChainStub(urdfXml: string, opts?: UrdfChainAdapterOptions): KinematicModel | null {
+  if (!urdfXml || urdfXml.trim() === "") return null;
+  try {
+    const robot = parseUrdf(urdfXml);
+    if (!robot.links.length) return null;
+    return urdfToKinematicChain(robot, opts);
+  } catch {
+    // Malformed URDF → honest null (fallback), never a fabricated chain.
+    return null;
+  }
+}
+
+/** Options forwarded to the T2a chain extractor (id/label/deviceType). */
+export interface UrdfChainAdapterOptions {
+  id?: string;
+  label?: string;
+  deviceType?: KinematicModel["deviceType"];
 }

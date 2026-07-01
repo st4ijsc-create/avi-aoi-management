@@ -34,11 +34,24 @@ import {
 import { buildSceneGraph } from "../services/twin/sceneGraph";
 import { runReplay } from "../services/twin/twinReplay";
 import { buildFactoryGrid, planPathOnGrid } from "../services/twin/occupancyGrid";
+import {
+  modelPipelineEnabled,
+  convertUrdfModel,
+  convertStepModel,
+} from "../services/twin/pipeline/modelConversionService";
+import { SAMPLE_URDF_3DOF_ARM, SAMPLE_URDF_2DOF_PLANAR } from "../services/twin/pipeline/sampleUrdfs";
 
 /** Guard mutating actions behind the flag (matches fleetRouter.requireFlag). */
 function requireFlag() {
   if (!twinLiveEnabled()) {
     throw new TRPCError({ code: "CONFLICT", message: "Digital twin live disabled (set TWIN_LIVE_ENABLED=true)" });
+  }
+}
+
+/** Guard T2a model-pipeline mutations behind MODEL_PIPELINE_ENABLED. */
+function requireModelPipelineFlag() {
+  if (!modelPipelineEnabled()) {
+    throw new TRPCError({ code: "CONFLICT", message: "Model pipeline disabled (set MODEL_PIPELINE_ENABLED=true)" });
   }
 }
 
@@ -106,6 +119,83 @@ export const twinRouter = router({
       .mutation(async ({ input }) => {
         requireFlag();
         return archiveModel(input.id);
+      }),
+  }),
+
+  // ── T2a MODEL PIPELINE (URDF→glTF conversion → registry 'ready') ───────────
+  //   reads → machine_monitoring/canView ; mutations → machine_control/canCreate
+  //   + requireFlag(MODEL_PIPELINE_ENABLED). Opens NO device path (pure conversion).
+  pipeline: router({
+    /** UI gating hint — is the model pipeline flag on? */
+    status: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .query(() => ({ enabled: modelPipelineEnabled() })),
+
+    /** List the built-in convertible URDF sample sources (name + kind). */
+    sampleSources: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .query(() => [
+        { key: "sample-3dof-arm", name: "sample_3dof_arm", format: "urdf", dof: 3 },
+        { key: "sample-2dof-planar", name: "sample_2dof_planar", format: "urdf", dof: 2 },
+      ]),
+
+    /** Convert a URDF source → glTF asset + registry 'ready' row. Gated. */
+    convertUrdf: protectedProcedure
+      .use(requirePermission("machine_control", "canCreate"))
+      .input(
+        z.object({
+          modelKey: z.string().min(1).max(128),
+          // Either paste URDF XML directly, or pick a built-in sample by key.
+          urdfSource: z.string().min(1).optional(),
+          sample: z.enum(["sample-3dof-arm", "sample-2dof-planar"]).optional(),
+          machineId: z.number().int().positive().optional(),
+          equipmentId: z.string().max(128).optional(),
+          equipmentClass: z.string().max(64).optional(),
+          scope: z.string().max(64).optional(),
+          corporateCode: z.string().max(50).optional(),
+          factoryId: z.number().int().positive().optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        requireModelPipelineFlag();
+        const urdfSource =
+          input.urdfSource ??
+          (input.sample === "sample-3dof-arm"
+            ? SAMPLE_URDF_3DOF_ARM
+            : input.sample === "sample-2dof-planar"
+              ? SAMPLE_URDF_2DOF_PLANAR
+              : undefined);
+        if (!urdfSource) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Provide urdfSource or a sample key." });
+        }
+        return convertUrdfModel({
+          urdfSource,
+          modelKey: input.modelKey,
+          machineId: input.machineId ?? null,
+          equipmentId: input.equipmentId ?? null,
+          equipmentClass: input.equipmentClass ?? null,
+          scope: input.scope ?? null,
+          corporateCode: input.corporateCode ?? null,
+          factoryId: input.factoryId ?? null,
+          createdBy: (ctx as any).user?.id ?? null,
+        });
+      }),
+
+    /** STEP/IGES seam — registers 'pending' (phase-2), never fakes geometry. Gated. */
+    convertStep: protectedProcedure
+      .use(requirePermission("machine_control", "canCreate"))
+      .input(
+        z.object({
+          modelKey: z.string().min(1).max(128),
+          sourceFormat: z.enum(["step", "iges"]),
+          machineId: z.number().int().positive().optional(),
+          equipmentId: z.string().max(128).optional(),
+          equipmentClass: z.string().max(64).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        requireModelPipelineFlag();
+        return convertStepModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
       }),
   }),
 
