@@ -46,6 +46,22 @@ describe("U4b — module registry (parity)", () => {
     expect(isRouteAllowed("/machine-status", ["MOD_MONITORING"])).toBe(true);
   });
 
+  it("doc 22 P3 — previously-unregistered automation routes now resolve to a module (license-gated)", () => {
+    // OT-control cockpits.
+    for (const r of ["/fleet-orchestration", "/safety-workforce", "/engineering", "/orchestration-studio", "/rf-test-cell", "/cell-twin"]) {
+      expect(getModuleByRoute(r)?.code).toBe("MOD_OT_CONTROL");
+      // No longer bypasses licensing: denied without the module, allowed with it.
+      expect(isRouteAllowed(r, [])).toBe(false);
+      expect(isRouteAllowed(r, ["MOD_OT_CONTROL"])).toBe(true);
+    }
+    // AI cockpits.
+    for (const r of ["/anomaly-banks", "/causal-graph"]) {
+      expect(getModuleByRoute(r)?.code).toBe("MOD_AI");
+      expect(isRouteAllowed(r, [])).toBe(false);
+      expect(isRouteAllowed(r, ["MOD_AI"])).toBe(true);
+    }
+  });
+
   it("core/optional/all code partitions are consistent", () => {
     expect(ALL_MODULE_CODES.length).toBe(CORE_MODULE_CODES.length + OPTIONAL_MODULE_CODES.length);
     expect(CORE_MODULE_CODES).toContain("CORE_AUTH");

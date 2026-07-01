@@ -104,6 +104,7 @@ import {
   scoreCandidates,
   rebalanceDeviceTasks,
   allocateTask,
+  drainPendingTasks,
   _clearProfileCache,
   type AllocCandidate,
 } from "./taskAllocator";
@@ -242,6 +243,52 @@ describe("allocateTask + rebalanceDeviceTasks (flag-gated)", () => {
     expect(a.ok).toBe(true);
     expect(a.assignedDeviceId).toBe(1);
     expect(store.tasks[0].status).toBe("assigned");
+  });
+
+  it("flag ON → allocator reads the LATEST telemetry per robot (batched, no N+1)", async () => {
+    // doc 22 P3 — loadCandidatesFromDb now does ONE telemetry query ordered timestamp-DESC
+    // and keeps first-per-robot. Prove the LATEST snapshot (not an older one) is used: an
+    // AGV whose latest battery is below the 20% floor must be excluded even though it also
+    // has an older healthy-battery row.
+    process.env.FLEET_ORCH_ENABLED = "true";
+    seedRobot(1, "agv", "idle");
+    seedRobot(2, "arm", "idle");
+    // robot 1: OLD healthy row + NEW depleted row → latest wins → excluded (battery floor).
+    store.robot_telemetry.push({ id: 1, robotId: 1, timestamp: 100, poseJson: { battery: { charge: 90 } } });
+    store.robot_telemetry.push({ id: 2, robotId: 1, timestamp: 200, poseJson: { battery: { charge: 5 } } });
+    store.tasks.push({ id: 1, taskKey: "t1", requiredCapability: "run_job", priority: 3, status: "pending", retryCount: 0 });
+    const a = await allocateTask(1);
+    expect(a.ok).toBe(true);
+    // robot 1 excluded on latest (5% < floor) → robot 2 wins.
+    expect(a.assignedDeviceId).toBe(2);
+    const r1 = a.decision?.ranked.find((r) => r.deviceId === 1);
+    expect(r1?.eligible).toBe(false);
+    expect(r1?.reasons).toContain("battery_too_low");
+  });
+
+  it("flag OFF → drainPendingTasks is a no-op", async () => {
+    seedRobot(1);
+    store.tasks.push({ id: 1, taskKey: "t1", requiredCapability: "run_job", priority: 3, status: "pending", retryCount: 0 });
+    const d = await drainPendingTasks();
+    expect(d.enabled).toBe(false);
+    expect(store.tasks[0].status).toBe("pending");
+  });
+
+  it("flag ON → drainPendingTasks re-allocates stuck pending tasks (highest priority first)", async () => {
+    process.env.FLEET_ORCH_ENABLED = "true";
+    seedRobot(1, "arm", "idle");
+    // Two stuck pending tasks + one already-assigned (must be ignored by the drain).
+    store.tasks.push({ id: 1, taskKey: "t1", requiredCapability: "run_job", priority: 2, status: "pending", retryCount: 0 });
+    store.tasks.push({ id: 2, taskKey: "t2", requiredCapability: "run_job", priority: 5, status: "pending", retryCount: 0 });
+    store.tasks.push({ id: 3, taskKey: "t3", requiredCapability: "run_job", priority: 3, status: "assigned", assignedDeviceId: 1, retryCount: 0 });
+    const d = await drainPendingTasks();
+    expect(d.enabled).toBe(true);
+    expect(d.scanned).toBe(2); // only the two pending rows were scanned
+    expect(d.assigned).toBe(2);
+    expect(store.tasks.find((t) => t.id === 1)!.status).toBe("assigned");
+    expect(store.tasks.find((t) => t.id === 2)!.status).toBe("assigned");
+    // the already-assigned task was untouched by the drain
+    expect(store.tasks.find((t) => t.id === 3)!.status).toBe("assigned");
   });
 
   it("flag ON → rebalancing reassigns an offline robot's tasks to a peer", async () => {

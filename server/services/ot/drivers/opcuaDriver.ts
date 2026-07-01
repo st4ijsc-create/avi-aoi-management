@@ -27,6 +27,32 @@ import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
 
+/**
+ * doc 22 P3 — flag for the REAL OPC-UA monitored-item PUSH path. Default OFF: when off,
+ * subscribe() keeps its original setInterval poll behaviour unchanged. Turn on with
+ * OT_OPCUA_MONITORED_ITEMS=true|1 to prefer server-driven change notifications (with an
+ * automatic fall back to poll when the endpoint/package can't support subscriptions).
+ */
+function monitoredItemsEnabled(): boolean {
+  return (
+    process.env.OT_OPCUA_MONITORED_ITEMS === "true" ||
+    process.env.OT_OPCUA_MONITORED_ITEMS === "1"
+  );
+}
+
+/**
+ * Read an OPTIONAL named export from a (possibly strict-mocked) module namespace.
+ * A vitest ESM mock throws on access to an undefined export; a plain object just
+ * yields undefined. Either way we return null so the caller treats it as absent.
+ */
+function optionalExport(pkg: any, name: string): any {
+  try {
+    return pkg?.[name] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Chạy promise với timeout; quá hạn → reject. */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -46,6 +72,12 @@ export class OpcuaDriver extends NotImplementedDriver {
   private AttributeIds: any = null;
   private DataType: any = null;
   private Variant: any = null;
+  // doc 22 P3 — node-opcua subscription/monitored-item symbols (best-effort; may be
+  // absent in a minimal/mocked package → the push path is skipped, poll is used).
+  private ClientSubscription: any = null;
+  private ClientMonitoredItem: any = null;
+  private TimestampsToReturn: any = null;
+  private MonitoringMode: any = null;
   private connected = false;
   private connectedAt: Date | null = null;
   private lastOkAt: Date | undefined;
@@ -61,6 +93,14 @@ export class OpcuaDriver extends NotImplementedDriver {
     this.AttributeIds = AttributeIds;
     this.DataType = DataType;
     this.Variant = Variant;
+    // doc 22 P3 — capture subscription symbols if the package exposes them (real
+    // node-opcua does; a minimal/mocked package may not → we fall back to poll).
+    // optionalExport tolerates a strict ESM mock namespace that throws on access to
+    // an undefined named export (vitest) → treated as "not available".
+    this.ClientSubscription = optionalExport(pkg, "ClientSubscription");
+    this.ClientMonitoredItem = optionalExport(pkg, "ClientMonitoredItem");
+    this.TimestampsToReturn = optionalExport(pkg, "TimestampsToReturn");
+    this.MonitoringMode = optionalExport(pkg, "MonitoringMode");
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
     const client = OPCUAClient.create({
@@ -171,6 +211,23 @@ export class OpcuaDriver extends NotImplementedDriver {
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new Error("OpcuaDriver: not connected");
 
+    // doc 22 P3 — real OPC-UA PUSH via ClientMonitoredItem, gated by
+    // OT_OPCUA_MONITORED_ITEMS (default OFF → unchanged poll behaviour). When the flag
+    // is on we try to create a subscription + monitored items; if that fails or the
+    // package/session lacks subscription support we fall back to the poll loop below.
+    if (monitoredItemsEnabled()) {
+      try {
+        const handle = await this.trySubscribeMonitored(tags, onSample, intervalMs);
+        if (handle) return handle;
+      } catch (e) {
+        // Subscription unsupported/failed → transparently fall back to polling.
+        console.error(
+          "[OPCUA] monitored-item subscribe failed, falling back to poll:",
+          (e as Error)?.message ?? e,
+        );
+      }
+    }
+
     const tick = async () => {
       try {
         const samples = await this.readTags(tags);
@@ -194,6 +251,106 @@ export class OpcuaDriver extends NotImplementedDriver {
     return {
       close: async () => {
         clearInterval(timer);
+      },
+    };
+  }
+
+  /**
+   * doc 22 P3 — REAL push path via node-opcua ClientSubscription + ClientMonitoredItem.
+   * Returns a handle on success, or `null` when the package/session cannot support
+   * subscriptions (so the caller falls back to polling). READ-ONLY (monitors Value
+   * attribute changes) — opens NO control path. Each change notification is normalized
+   * through the SAME normalizeOpcuaValue used by readTags so the emitted OtSample shape
+   * is identical to the poll path.
+   */
+  private async trySubscribeMonitored(
+    tags: OtTagAddress[],
+    onSample: OnOtSample,
+    intervalMs: number,
+  ): Promise<OtSubscriptionHandle | null> {
+    if (!this.session) return null;
+    // Need either the ClientSubscription helper or a session.createSubscription2.
+    const canCreate =
+      typeof this.session.createSubscription2 === "function" || this.ClientSubscription;
+    if (!canCreate || !this.ClientMonitoredItem) return null;
+    if (tags.length === 0) {
+      // Nothing to monitor — return a trivial handle so we don't spin a poll timer.
+      return { close: async () => {} };
+    }
+
+    const publishingInterval = intervalMs > 0 ? intervalMs : 1000;
+    const subParams = {
+      requestedPublishingInterval: publishingInterval,
+      requestedLifetimeCount: 100,
+      requestedMaxKeepAliveCount: 10,
+      maxNotificationsPerPublish: 100,
+      publishingEnabled: true,
+      priority: 10,
+    };
+
+    const subscription =
+      typeof this.session.createSubscription2 === "function"
+        ? await this.session.createSubscription2(subParams)
+        : await this.ClientSubscription.create(this.session, subParams);
+
+    const tsToReturn = this.TimestampsToReturn?.Both ?? 2; // Both = 2 by spec
+    const monitoredItems: any[] = [];
+
+    for (const tag of tags) {
+      let nodeId: string;
+      try {
+        nodeId = parseOpcuaAddress(tag.address).nodeId;
+      } catch (e) {
+        // Bad address → skip this tag (do NOT tear down the whole subscription).
+        console.error(`[OPCUA] monitored-item skip bad address "${tag.address}":`, (e as Error)?.message ?? e);
+        continue;
+      }
+      const itemToMonitor = { nodeId, attributeId: this.AttributeIds.Value };
+      const params = { samplingInterval: publishingInterval, discardOldest: true, queueSize: 10 };
+      const mi = await this.ClientMonitoredItem.create(subscription, itemToMonitor, params, tsToReturn);
+      mi.on("changed", (dataValue: any) => {
+        try {
+          const raw = dataValue?.value?.value;
+          const sc = dataValue?.statusCode;
+          const scVal = typeof sc?.value === "number" ? sc.value : 0;
+          const scGood = scVal === 0;
+          const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
+          const quality = scGood ? norm.quality : "bad";
+          const timestamp: Date =
+            dataValue?.sourceTimestamp instanceof Date ? dataValue.sourceTimestamp : new Date();
+          this.lastOkAt = new Date();
+          void Promise.resolve(
+            onSample({
+              tagKey: tag.tagKey,
+              raw,
+              value: quality === "good" ? norm.value : null,
+              quality,
+              timestamp,
+            } satisfies OtSample),
+          ).catch(() => {
+            // swallow per-sample callback errors so one bad handler can't kill the push
+          });
+        } catch (e) {
+          this.lastError = (e as Error)?.message || String(e);
+        }
+      });
+      monitoredItems.push(mi);
+    }
+
+    // If every tag had an unparseable address there is nothing monitored → let the
+    // caller poll instead (terminate the empty subscription first).
+    if (monitoredItems.length === 0) {
+      try { await subscription.terminate(); } catch { /* ignore */ }
+      return null;
+    }
+
+    return {
+      close: async () => {
+        try {
+          await subscription.terminate();
+        } catch {
+          // ignore
+        }
       },
     };
   }

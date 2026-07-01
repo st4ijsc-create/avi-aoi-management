@@ -212,15 +212,25 @@ async function loadCandidatesFromDb(): Promise<AllocCandidate[]> {
     if (t.assignedDeviceId != null) queueByDevice.set(t.assignedDeviceId, (queueByDevice.get(t.assignedDeviceId) ?? 0) + 1);
   }
 
+  // doc 22 P3 — SINGLE batched "latest telemetry per robot" read (was N+1: one query
+  // per candidate). Pull every candidate robot's telemetry in ONE query ordered by
+  // timestamp DESC, then keep the first (= latest) row seen per robotId. This is one
+  // round-trip and yields the identical per-robot latest snapshot the old loop did.
+  const robotIds = robotRows.map((r) => r.id);
+  const telRows = await db
+    .select()
+    .from(robotTelemetry)
+    .where(inArray(robotTelemetry.robotId, robotIds))
+    .orderBy(desc(robotTelemetry.timestamp)); // latest snapshots first (global order)
+  const latestTelByRobot = new Map<number, (typeof telRows)[number]>();
+  for (const tel of telRows) {
+    // First occurrence per robotId is its latest row (rows are timestamp-DESC ordered).
+    if (!latestTelByRobot.has(tel.robotId)) latestTelByRobot.set(tel.robotId, tel);
+  }
+
   const candidates: AllocCandidate[] = [];
   for (const r of robotRows) {
-    // Latest telemetry row for pose/battery (best-effort).
-    const [tel] = await db
-      .select()
-      .from(robotTelemetry)
-      .where(eq(robotTelemetry.robotId, r.id))
-      .orderBy(desc(robotTelemetry.timestamp)) // latest snapshot first
-      .limit(1);
+    const tel = latestTelByRobot.get(r.id);
     const pose = (tel?.poseJson ?? null) as Record<string, unknown> | null;
     const position = extractPosition(pose);
     const batteryPct = extractBattery(pose);
@@ -404,6 +414,79 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
   }
   console.log(`[Fleet] rebalance device ${deviceId}: ${reassigned} reassigned, ${unassigned} left pending (${reason})`);
   return { ok: true, enabled: true, reassigned, unassigned };
+}
+
+export interface DrainResult {
+  ok: boolean;
+  enabled: boolean;
+  scanned: number;
+  assigned: number;
+  message?: string;
+}
+
+/**
+ * doc 22 P3 — PENDING-DRAIN sweep. Nothing else currently drains the `pending` queue:
+ * a task can land in `pending` (order decomposition, a rebalance that found no peer at
+ * the time, a manual insert) and sit there forever if no order.created event re-fires.
+ * This re-attempts allocation for every currently-pending task, so once a device frees
+ * up / comes online the stuck work is picked up.
+ *
+ * Reuses `allocateTask` per task (which is itself flag-gated + assigns STATE only, never
+ * a device command). No-op (enabled:false) unless FLEET_ORCH_ENABLED. Bounded by
+ * `limit` so a huge backlog can't monopolise a sweep tick.
+ */
+export async function drainPendingTasks(limit = 100): Promise<DrainResult> {
+  if (!fleetOrchEnabled()) return { ok: false, enabled: false, scanned: 0, assigned: 0, message: "FLEET_ORCH_ENABLED off" };
+  const db = await getDb();
+  if (!db) return { ok: false, enabled: true, scanned: 0, assigned: 0, message: "db unavailable" };
+
+  const pending = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.status, "pending"))
+    .orderBy(desc(tasks.priority)); // drain highest-priority stuck work first
+  const slice = pending.slice(0, Math.max(0, limit));
+  let assigned = 0;
+  for (const t of slice) {
+    const res = await allocateTask(t.id);
+    if (res.ok && res.assignedDeviceId != null) assigned++;
+  }
+  if (assigned > 0) console.log(`[Fleet] pending-drain: ${assigned}/${slice.length} pending task(s) assigned`);
+  return { ok: true, enabled: true, scanned: slice.length, assigned };
+}
+
+// ── pending-drain sweep timer (mirrors fleet charging / field-health sweeps) ──
+let drainTimer: ReturnType<typeof setInterval> | null = null;
+let draining = false;
+
+/**
+ * Start the periodic pending-drain sweep. NO-OP (logs why) unless FLEET_ORCH_ENABLED.
+ * Unref'd (never blocks shutdown) + non-overlapping. Interval via FLEET_DRAIN_SWEEP_MS
+ * (default 60s, min 10s). Self-gating: `drainPendingTasks` re-checks the flag each tick,
+ * so flipping the flag off at runtime makes the sweep a no-op without a restart.
+ */
+export function startFleetRebalanceSweep(): void {
+  if (drainTimer) return; // guard double-start
+  if (!fleetOrchEnabled()) {
+    console.log("[Fleet] pending-drain sweep NOT started (FLEET_ORCH_ENABLED off)");
+    return;
+  }
+  const intervalMs = Math.max(10_000, Number(process.env.FLEET_DRAIN_SWEEP_MS ?? 60_000));
+  drainTimer = setInterval(() => {
+    if (draining) return; // no overlap
+    draining = true;
+    void drainPendingTasks()
+      .catch((err) => console.error("[Fleet] pending-drain sweep error:", (err as Error)?.message ?? err))
+      .finally(() => { draining = false; });
+  }, intervalMs);
+  if (typeof (drainTimer as any)?.unref === "function") (drainTimer as any).unref();
+  console.log(`[Fleet] pending-drain sweep started (every ${intervalMs}ms)`);
+}
+
+/** Stop the pending-drain sweep (tests / shutdown). */
+export function stopFleetRebalanceSweep(): void {
+  if (drainTimer) { clearInterval(drainTimer); drainTimer = null; }
+  draining = false;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

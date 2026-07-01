@@ -11,6 +11,9 @@ import type { RobotState } from "./robotDriver";
 // TRANSITION into e-stop (not on every poll while it stays asserted). In-process,
 // best-effort; a process restart simply re-arms (a fresh estop is then logged once).
 const lastEstop = new Map<number, boolean>();
+// doc 22 P3 — per-robot last-observed fault flag, so a fault-triggered fleet rebalance
+// fires only on the TRANSITION into a faulted state (not on every poll while faulted).
+const lastFaulted = new Map<number, boolean>();
 
 export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): Promise<void> {
   const db = await getDb();
@@ -77,14 +80,27 @@ export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): 
       .then((m) => m.recordHeartbeat({ deviceKey: `robot:${robot.id}`, deviceKind: "robot", robotId: robot.id, at: state.timestamp ?? now }))
       .catch((e) => console.error(`[Robot] heartbeat record failed for "${robot.code}":`, (e as Error)?.message ?? e));
 
-    // G1 (doc 16 Khối 2) — if the robot just hit a failed state (e-stop), hand its
-    // open tasks to another device. Fire-and-forget; the rebalancer is itself
-    // gated by FLEET_ORCH_ENABLED (no-op when off) and opens NO control path.
+    // G1 (doc 16 Khối 2) — if the robot just hit a failed state, hand its open tasks
+    // to another device. Fire-and-forget; the rebalancer is itself gated by
+    // FLEET_ORCH_ENABLED (no-op when off) and opens NO control path.
+    //   • e-stop            → always rebalance.
+    //   • doc 22 P3 fault   → a robot reporting an error/fault can no longer service its
+    //                         work → rebalance on the TRANSITION into a faulted state
+    //                         (mirrors the estop transition guard to avoid re-firing).
+    // (robot offline / heartbeat-timeout is separately covered by the field-health
+    //  stale sweep → reactToLostConnection → rebalanceDeviceTasks.)
+    const wasFaulted = lastFaulted.get(robot.id) ?? false;
+    const isFaulted = !!state.error;
     if (state.estop) {
       void import("../fleet/taskAllocator")
         .then((m) => m.rebalanceDeviceTasks(robot.id, "robot_estop"))
         .catch((e) => console.error(`[Robot] rebalance hook failed for "${robot.code}":`, (e as Error)?.message ?? e));
+    } else if (isFaulted && !wasFaulted) {
+      void import("../fleet/taskAllocator")
+        .then((m) => m.rebalanceDeviceTasks(robot.id, "robot_fault"))
+        .catch((e) => console.error(`[Robot] fault-rebalance hook failed for "${robot.code}":`, (e as Error)?.message ?? e));
     }
+    lastFaulted.set(robot.id, isFaulted);
 
     // S1-b (doc 16 Khối 3) — ADVISORY safety audit on the e-stop TRANSITION only.
     // Fire-and-forget + lazily imported + self-gated by SAFETY_AUDIT_ENABLED → no-op

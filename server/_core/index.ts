@@ -4435,6 +4435,19 @@ async function startServer() {
     console.error("[Fleet] orchestrator install failed:", (err as any)?.message || err);
   }
 
+  // doc 22 P3 — Fleet pending-drain sweep. Nothing else drains the `pending` task queue,
+  // so a task stuck pending (rebalance found no peer, manual insert, missed event) sits
+  // forever. This periodically re-attempts allocation for pending tasks. NO-OP unless
+  // FLEET_ORCH_ENABLED (startFleetRebalanceSweep self-gates), so the timer is cheap when
+  // off. Unref'd + non-overlapping (mirrors the fleet charging / field-health sweeps).
+  // Opens NO device-control path: it only assigns task STATE via the gated allocator.
+  try {
+    const { startFleetRebalanceSweep } = await import("../services/fleet/taskAllocator");
+    startFleetRebalanceSweep();
+  } catch (err) {
+    console.error("[Fleet] pending-drain sweep start failed:", (err as any)?.message || err);
+  }
+
   // G2 (doc 16 Khối 2 c&d) — Predictive charging sweep. Periodically projects mobile
   // robots' end-of-queue battery and schedules a preemptive charge before they cross
   // the G1 floor. No-op unless FLEET_RESOURCE_ENABLED (sweepChargingPlans self-gates),

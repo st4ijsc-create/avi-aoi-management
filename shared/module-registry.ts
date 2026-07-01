@@ -313,6 +313,8 @@ const SEED_MODULES: SystemModule[] = [
       "/ai-models", "/model-versions", "/ai-settings",
       "/ai-inspection-analytics", "/ai-advanced-vision-lab",
       "/ai-gguf-models", "/ai-local-kb", "/mask-annotation",
+      // doc 22 P3 — AI cockpits that previously escaped the registry (license bypass).
+      "/anomaly-banks", "/causal-graph",
     ],
     permissionCategories: ["analytics"],
     features: [
@@ -328,6 +330,9 @@ const SEED_MODULES: SystemModule[] = [
       { code: "AI_MONITORING", name: "Giám sát Model (drift)", featureType: "boolean", defaultValue: "true" },
       { code: "AI_LOCAL_KB", name: "Knowledge Base cục bộ (RAG)", featureType: "boolean", defaultValue: "true" },
       { code: "AI_GGUF_LOCAL_LLM", name: "Local LLM (GGUF)", featureType: "boolean", defaultValue: "true" },
+      // doc 22 P3 — feature entries clarifying the newly-gated AI cockpits.
+      { code: "AI_ANOMALY_BANKS", name: "Anomaly Banks", featureType: "boolean", defaultValue: "true" },
+      { code: "AI_CAUSAL_GRAPH", name: "Causal Graph Editor", featureType: "boolean", defaultValue: "true" },
       // Limits
       { code: "MAX_AI_MODELS", name: "Giới hạn Model AI", featureType: "limit", defaultValue: "999" },
       { code: "MAX_AI_BATCH_JOBS", name: "Giới hạn Batch Job", featureType: "limit", defaultValue: "100" },
@@ -340,7 +345,14 @@ const SEED_MODULES: SystemModule[] = [
     description: "Kết nối & điều khiển thiết bị OT: Andon, device adapters (OPC-UA/Modbus/S7/...), recipes, interlock an toàn, command audit, BOM/material. Mọi lệnh ghi đi qua HITL + interlock + audit append-only.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/andon", "/device-adapters", "/recipes", "/interlock-rules", "/command-audit", "/bom-management"],
+    routes: [
+      "/andon", "/device-adapters", "/recipes", "/interlock-rules", "/command-audit", "/bom-management",
+      // doc 22 P3 — automation/OT-control cockpits that previously escaped the registry
+      // (isRouteAllowed returned true because they belonged to no module → license bypass).
+      // Grouped under OT-control (fleet/safety/engineering/orchestration/twin-cell/rf-test).
+      "/fleet-orchestration", "/safety-workforce", "/engineering",
+      "/orchestration-studio", "/rf-test-cell", "/cell-twin",
+    ],
     permissionCategories: ["machine_control", "andon", "interlock", "mes_bom"],
     features: [
       { code: "OT_ANDON", name: "Andon Board", featureType: "boolean", defaultValue: "true" },
@@ -349,6 +361,12 @@ const SEED_MODULES: SystemModule[] = [
       { code: "OT_INTERLOCK", name: "Interlock Rules", featureType: "boolean", defaultValue: "true" },
       { code: "OT_COMMAND_AUDIT", name: "Command Audit Log", featureType: "boolean", defaultValue: "true" },
       { code: "OT_MES_BOM", name: "BOM/Material Management", featureType: "boolean", defaultValue: "true" },
+      // doc 22 P3 — feature entries clarifying the newly-gated automation cockpits.
+      { code: "OT_FLEET_ORCHESTRATION", name: "Fleet Orchestration", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_SAFETY_WORKFORCE", name: "Safety & Workforce", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_ENGINEERING_WORKSPACE", name: "Engineering Workspace", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_ORCHESTRATION_STUDIO", name: "Orchestration Studio", featureType: "boolean", defaultValue: "true" },
+      { code: "OT_CELL_TWIN", name: "Cell Twin / RF Test Cell", featureType: "boolean", defaultValue: "true" },
       // OT control là quyền nhạy cảm — mặc định TẮT, license phải bật tường minh
       { code: "OT_DEVICE_WRITE", name: "Cho phép ghi lệnh thiết bị (nhạy cảm)", featureType: "boolean", defaultValue: "false" },
       { code: "MAX_DEVICE_ADAPTERS", name: "Giới hạn Device Adapter", featureType: "limit", defaultValue: "500" },
