@@ -173,12 +173,13 @@ Guidance:
 - [ ] Text contrast ≥ AA (4.5:1 body, 3:1 large) in **both** light and dark.
 - [ ] Touch targets ≥ 44px on mobile (the global mobile CSS enforces this).
 
-### 5.4 Top findings for key pages (audit, NOT fixed here — backlog)
-1. **Low-contrast tinted text widely uses literal `text-amber-500` / `text-emerald-500`** for "warning/good" tones (Fleet, Safety, Twin KPIs). On the light theme these can dip near the AA threshold on white. *Recommendation:* migrate to `text-warning`/`text-success` tokens (tuned per-mode) during rollout. (The shared `MetricCard` intentionally preserves the literals today to stay pixel-identical; switch when the page is migrated.)
-2. **Inline `<select>` elements** (Fleet task-status filter, etc.) are native and unlabeled-by-`<Label>` in a couple of places — add `aria-label` or wire to a visible `<Label htmlFor>`.
-3. **Status conveyed by badge color** is fine (text present), but a few **progress bars** signal "at capacity" by color tint only (Fleet zones) — add a text/aria note for SR users.
-4. **DigitalTwinCenter** 3D canvas has no text alternative for the live scene — provide a tabular fallback/summary (the KPI strip partially covers this) and ensure layer toggles are keyboard-operable.
-5. **Heading levels**: a few cockpit pages use `text-2xl font-bold` on a `<div>` rather than a heading element — migrate to `PageHeader`/`<Heading>` for outline correctness.
+### 5.4 Top findings for key pages (audit)
+> Status legend: ✅ addressed in W2/W5 · ▢ still open (reason noted). Per-page W5 detail is in §7.9.
+1. ✅ **Low-contrast tinted text widely uses literal `text-amber-500` / `text-emerald-500`** for "warning/good" tones (Fleet, Safety, Twin KPIs). On the light theme these can dip near the AA threshold on white. Tokenized to `text-warning`/`text-success` on the migrated cockpits (W2) and on the W5 tint-family pages (AOIPackages / ControlPlane / AIPerformanceDashboard / HistoryExportScheduling). (The shared `MetricCard` still preserves the literals to stay pixel-identical; switch when a page is migrated.)
+2. ✅ **Inline `<select>` elements** native and unlabeled-by-`<Label>` — `aria-label` added on WorkOrdersPage's 3 create/detail `<select>`s (W5; the 2 filter selects were already labeled in W1) and the native date/number/text `<Input>`s on QualityCockpit / MachineStatusMonitor / MESControlTower.
+3. ▢ **Status conveyed by badge color** is fine (text present); a few **progress bars** signal "at capacity" by color tint only (Fleet zones) — still open (Fleet not in the W5 page set). AOIPackages disk-usage bar tokenized to `bg-destructive`/`bg-info` (still bar-only for SR — noted).
+4. ▢ **DigitalTwinCenter** 3D canvas has no text alternative for the live scene — provide a tabular fallback/summary and ensure layer toggles are keyboard-operable. Out of the W5 static-sweep scope (needs a data/markup change, not an additive a11y attr) — deferred.
+5. ✅ **Heading levels**: pages using `text-2xl font-bold` on a `<div>` / a `CardTitle` rather than a heading — `Users` got a `sr-only <h1>` (W5); all other W5 pages already render a real `<h1>` (direct or via `PageHeader`). ProductionDashboard got its `sr-only <h1>` in W2.
 
 ---
 
@@ -240,7 +241,7 @@ Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traf
 | **Wave 2** | Remaining high-traffic cockpits + KPI strips: `DigitalTwinCenter`, `Dashboard`, `OEEDashboard`, `ProductionDashboard`, `MachineHealthMonitoring`, `CarbonDashboard`, `MESControlTower` KPI cards — swap KPIs to `MetricCard`, replace literal `text-amber-500`/`text-emerald-500` with `text-warning`/`text-success` (a11y #1). Includes the pages §7.2 skipped in W1. | ✅ done (W2) — see §7.6 |
 | **Wave 3** | List/detail/editor/admin/registry headers → shared `<PageHeader>` (pixel-preserving) + tokenize obvious status literals on touched pages. Bounded batch — quality over quantity; NO abstract "template" components were built (deliberate, see §7.7). | ✅ done (W3) — see §7.7 |
 | **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` / `statusVariant` / `severity*` switch helpers with the shared `<StatusBadge>` + a per-page `map`/variant. `<StatusBadge>` extended **additively** with a solid shadcn-`variant` render path so the (mostly solid-`Badge`-variant) legacy helpers unify with **zero visual change**. See §7.8. | ✅ done (W4) — see §7.8 |
-| **Wave 5** | A11y sweep — run axe/WAVE on ~15 core pages → WCAG AA; fix §5.4 + §7.4 findings. | ▢ pending |
+| **Wave 5** | A11y sweep — static WCAG-AA pass over ~15 core/high-traffic pages; fix §5.4 + §7.4 findings (form-control labels, icon-only button names, missing `<h1>`, color-only status) + tokenize the W4-deferred literal tint families. | ✅ done (W5) — see §7.9 |
 | **Wave 6** | Storybook + visual regression — install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs. | ▢ pending |
 
 > **Convention (all waves):** every NEW page MUST use `PageHeader` + `MetricCard` + `StatusBadge` + `SectionCard` + `<Heading>`. Enforce in review.
@@ -396,6 +397,47 @@ The pre-W4 `<StatusBadge>` only rendered the **soft-tint outline** family (`tone
 - `npm run check` (tsc --noEmit): **clean** ✔ (typechecks the extended `<StatusBadge>` + all existing tint callers).
 - `npx vite build`: **clean** (`✓ built in ~18s`; the only stderr is the pre-existing chunk-size advisory, wrapped by PowerShell). ✔
 - Visual: every unified badge keeps the **same label text** (identical `t()` calls) and an **equivalent colour family** — solid helpers now render through the additive solid `variant` path (byte-identical `<Badge variant=…>`), literal-tint overrides passed via `className`. No data / logic / layout changed. ✔
+
+---
+
+## 7.9 Wave 5 — a11y sweep (static WCAG-AA)
+
+Static WCAG-AA audit + fix over the high-traffic core pages. **No browser/axe tooling in this environment**, so this is a source-level sweep of the four §5.4/§7.4 finding classes. Every change is **additive a11y attributes** (`aria-label`, `aria-hidden`, `sr-only <h1>`) or **equivalent-appearance token swaps** (literal Tailwind color families → the `success`/`warning`/`error`(`destructive`)/`info` semantic tokens, which pair with the already-present text). **No layout, behaviour, data, or dependency change.** All new aria text uses existing i18n keys or the `t("key","default")` fallback. `npm run check` + `npx vite build` both green.
+
+### 7.9.1 Per-page fixes
+
+| Page | Icon-only button labels | Form-control labels | `<h1>` | Color-only / tint tokenization |
+|---|---|---|---|---|
+| **AOIPackages** | pagination prev/next (2) + image-viewer prev/next raw `<button>`s (2) → `aria-label` + icon `aria-hidden`. (View/Download already had `title`.) | Serial + Machine-code + 2 date filter `<Input>`s → `aria-label`. | already `<h1>`. | `StatusBadge`/`ResultBadge` two-tone literal tints (`bg-*-100 text-*-800 dark:*`) → `bg-{success/warning/info/destructive}/15 text-* border-*/30`; committed/failed stat icons; queue metric icons (Clock/Activity/Check/X); disk-usage bar; NG-count text; per-machine stats `text-green/red-600`; error-alert block `border-red-300 bg-red-50 …` → `border-destructive/30 bg-destructive/10 text-destructive`; failed-tab pulse dot; NG image border; timeline `levelColors` + dot + `WARN` badge. **Left:** total/images/size KPI icons (blue/purple/orange = category identity) + timeline per-event `eventConfig` palette (per-event-type identity, not status). |
+| **ControlPlane** | refresh already had `title`; added `aria-hidden` to the FlagPill glyphs. | none native (Radix). | already `<h1>`. | `FlagPill` + `runStatusBadge` literal solids (`bg-emerald/blue/amber-500 text-white`) → `bg-{success/info/warning} text-{…}-foreground` (solid, equivalent); 3 safety/disabled banners `border-amber-500/40 bg-amber-500/10 text-amber-600` → `border-warning/40 bg-warning/10 text-warning`. |
+| **AIPerformanceDashboard** | (refresh has text) | none native (Radix + `<Label>` on shadcn inputs). | already `<h1>`. | `getStatusBadge` + `getFeedbackBadge` `/10` tints (green/blue/yellow/red/gray) → `bg-{success/info/warning/destructive}/10 text-*` (+ UNSURE → `bg-muted text-muted-foreground`); Accuracy-card graded threshold chip/icon (`green/yellow-500` → `success/warning`). **Left:** precision/recall/F1 card icon chips (blue/purple/orange = metric identity), feedback-distribution big numbers + progress bars (`green/red/yellow-500` — already paired with visible OK/NG/partial text; graded/identity), confusion-matrix TP/TN/FP/FN tiles + chart hex (domain viz). |
+| **HistoryExportScheduling** | schedule Run/Edit/Delete (3) + recipient-remove `×` → `aria-label` + icon `aria-hidden`. | none native (Radix + shadcn `<Input>`). | already `<h1>`. | `getStatusBadge` `bg-*-500/20 text-*-400 border-*-500/30` (success/failed/running/pending) → `bg-{success/destructive/info/warning}/20 text-* border-*/30`; 3 stat-card numbers (active/success/failed → `text-{success/info/destructive}`); active-schedule icon chip `bg-green-500/20` → `bg-success/20`; error-state icon + error-cell text (`text-red-400/500` → `text-destructive`); email-preview OK/NG/rate sample tiles. |
+| **Users** | Edit/ChangePassword/Delete (3) → `aria-label` + icon `aria-hidden`; delete `text-red-500` → `text-destructive`. | none native (Radix + shadcn `<Input>`). | **NONE** → added `sr-only <h1>` (page title lived only in a `CardTitle`). | delete-button tint tokenized. |
+| **Dashboard** | mobile refresh + alerts-bell + desktop refresh (3) → `aria-label` + icon `aria-hidden`. | none native. | already `<h1>`. | (status literals already tokenized in W2.) |
+| **WorkOrdersPage** | table Edit/Delete (2) → `aria-label` + icon `aria-hidden`. | 3 native `<select>` (create machine/type, detail status) → `aria-label` (filter selects were labeled in W1). | already `<h1>`. | — (WO status uses the W4 `StatusBadge`; no raw literals). |
+| **MqttDashboard** | copy-JSON button → `aria-label`; expand chevrons → `aria-hidden`. | none native. | already `<h1>`. | — |
+| **QualityCockpit** | (all buttons carry text) | start/end date `<Input>`s → `aria-label`. | already `<h1>` (PageHeader). | — |
+| **MachineStatusMonitor** | (all toolbar buttons carry text) | offline-threshold number + from/to date `<Input>`s → `aria-label`. | already `<h1>` (PageHeader). | — |
+| **MESControlTower** | (all buttons carry text) | serial + lot + quantity + reason `<Input>`s → `aria-label`. | already `<h1>` (PageHeader). | — |
+| **OpsConsole / AuditLogs** | already clean (W1/W3). | none native. | already `<h1>` (PageHeader). | — |
+| **MachineHealthMonitoring** | none | none native. | already `<h1>`. | (status literals tokenized in W2; branded `Heart text-red-500` header kept by design.) |
+
+**Totals:** icon-only button accessible names added on **7 pages** (~18 buttons); native/`<Input>` form-control `aria-label`s added on **5 pages** (~14 controls, incl. 3 true native `<select>`s); **1 `sr-only <h1>`** added (Users); status/tint **tokenization on the 4 tint-family pages** (AOIPackages, ControlPlane, AIPerformanceDashboard, HistoryExportScheduling) + delete-button on Users.
+
+### 7.9.2 Noted-but-NOT-fixed (reason)
+
+- **Category/brand-identity colours** — AOIPackages total/images/size KPI icons (blue/purple/orange) + timeline per-event palette; AIPerformanceDashboard precision/recall/F1 metric-card icon chips (blue/purple/orange). These are **identity accents, not the 3-tone status set** — tokenizing would flatten intentional per-category colour and isn't an equivalent-appearance swap. Left by design (consistent with W2/W4 discipline).
+- **Graded threshold / domain-viz colours** — AIPerformanceDashboard confusion-matrix TP/TN/FP/FN tiles + Recharts hex; AOIPackages/etc. chart fills. Domain semantics / non-Tailwind (svg/three.js) — out of the status-token scope.
+- **`<Label>`-without-`htmlFor` on shadcn `<Select>` (Radix)** — Radix Select already exposes an accessible name via its trigger/value; wiring `htmlFor`/`id` through the Radix trigger is non-trivial and not additive. Left (Radix a11y is adequate); only the *native* `<select>`/`<Input>` gaps were fixed.
+- **DigitalTwinCenter 3D canvas** (§5.4 #4) — needs a tabular text alternative + keyboard-operable layer toggles, i.e. a markup/data change, not an additive attribute. Deferred (out of the pixel-preserving static-sweep scope).
+- **Progress bars signalling capacity by tint** (§5.4 #3, Fleet zones; AOIPackages disk bar) — colour was tokenized but the bar is still colour+width only (no SR text). Adding an `aria-valuenow`/text note is a follow-up; Fleet itself wasn't in the W5 page set.
+- **Low-contrast literals** — no additional risky contrast bumps were forced; the token swaps above already raise the tinted-text pairs onto the tuned per-mode `*-foreground` tokens. No `text-*-400`-on-light meaningful-text cases remained after tokenization on the swept pages.
+- **shadcn `<Input>` (non-date) with adjacent unlinked `<Label>`** (e.g. WorkOrders priority/assignee) — visually adjacent label; left as low-risk/low-value (the label is spatially associated), not a native-control gap.
+
+### 7.9.3 Verification (W5)
+- `npm run check` (tsc --noEmit): **clean** ✔
+- `npx vite build`: **clean** (`✓ built in ~18s`; only stderr is the pre-existing chunk-size advisory wrapped by PowerShell as NativeCommandError — benign, same as W4). ✔
+- Visual: additive aria attrs are invisible; token swaps are equivalent-appearance (`success≈green`, `warning≈amber/yellow`, `destructive≈red`, `info≈blue` — tuned per light/dark) and every tokenized signal still carries its adjacent text/label. **No layout / behaviour / data / dependency change.** ✔
 
 ---
 

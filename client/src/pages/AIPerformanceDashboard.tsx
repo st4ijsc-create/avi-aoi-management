@@ -108,13 +108,13 @@ export default function AIPerformanceDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'COMPLETED':
-        return <Badge className="bg-green-500/10 text-green-500">{t('common.completed')}</Badge>;
+        return <Badge className="bg-success/10 text-success">{t('common.completed')}</Badge>;
       case 'PROCESSING':
-        return <Badge className="bg-blue-500/10 text-blue-500">{t('common.processing')}</Badge>;
+        return <Badge className="bg-info/10 text-info">{t('common.processing')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('common.pending')}</Badge>;
+        return <Badge className="bg-warning/10 text-warning">{t('common.pending')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/10 text-red-500">{t('common.failed')}</Badge>;
+        return <Badge className="bg-destructive/10 text-destructive">{t('common.failed')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -123,13 +123,13 @@ export default function AIPerformanceDashboard() {
   const getFeedbackBadge = (feedback: string) => {
     switch (feedback) {
       case 'CORRECT':
-        return <Badge className="bg-green-500/10 text-green-500">{t('reports.correct')}</Badge>;
+        return <Badge className="bg-success/10 text-success">{t('reports.correct')}</Badge>;
       case 'INCORRECT':
-        return <Badge className="bg-red-500/10 text-red-500">{t('reports.incorrect')}</Badge>;
+        return <Badge className="bg-destructive/10 text-destructive">{t('reports.incorrect')}</Badge>;
       case 'PARTIAL':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('reports.partial')}</Badge>;
+        return <Badge className="bg-warning/10 text-warning">{t('reports.partial')}</Badge>;
       case 'UNSURE':
-        return <Badge className="bg-gray-500/10 text-gray-500">{t('reports.unsure')}</Badge>;
+        return <Badge className="bg-muted text-muted-foreground">{t('reports.unsure')}</Badge>;
       default:
         return <Badge variant="outline">{feedback}</Badge>;
     }
@@ -181,11 +181,11 @@ export default function AIPerformanceDashboard() {
                 </div>
                 <div className={cn(
                   "p-3 rounded-full",
-                  (metrics?.accuracy || 0) >= 80 ? "bg-green-500/10" : "bg-yellow-500/10"
+                  (metrics?.accuracy || 0) >= 80 ? "bg-success/10" : "bg-warning/10"
                 )}>
                   <Target className={cn(
                     "h-6 w-6",
-                    (metrics?.accuracy || 0) >= 80 ? "text-green-500" : "text-yellow-500"
+                    (metrics?.accuracy || 0) >= 80 ? "text-success" : "text-warning"
                   )} />
                 </div>
               </div>

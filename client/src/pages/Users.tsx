@@ -314,6 +314,7 @@ export default function Users() {
   return (
     <DashboardLayout title={t('users.management')} navItems={navItems}>
       <div className="space-y-6">
+        <h1 className="sr-only">{t('users.management')}</h1>
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
@@ -508,9 +509,10 @@ export default function Users() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                aria-label={t("common.edit", "Edit")}
                                 onClick={() => handleEdit(user)}
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil aria-hidden="true" className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
                             {user.loginMethod === "local" && (
@@ -518,9 +520,10 @@ export default function Users() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  aria-label={t("users.changePassword", "Change password")}
                                   onClick={() => handleChangePassword(user)}
                                 >
-                                  <Key className="h-4 w-4" />
+                                  <Key aria-hidden="true" className="h-4 w-4" />
                                 </Button>
                               </PermissionGate>
                             )}
@@ -528,11 +531,12 @@ export default function Users() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-red-500 hover:text-red-600"
+                                aria-label={t("common.delete", "Delete")}
+                                className="text-destructive hover:text-destructive/80"
                                 onClick={() => handleDelete(user)}
                                 disabled={user.id === currentUser?.id}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 aria-hidden="true" className="h-4 w-4" />
                               </Button>
                             </PermissionGate>
                           </div>

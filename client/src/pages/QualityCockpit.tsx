@@ -112,6 +112,7 @@ function ScopeSelector({
             <Label>{t("common.startDate")}</Label>
             <Input
               type="date"
+              aria-label={t("common.startDate")}
               value={scope.startDate}
               onChange={(e) => onChange({ ...scope, startDate: e.target.value })}
             />
@@ -120,6 +121,7 @@ function ScopeSelector({
             <Label>{t("common.endDate")}</Label>
             <Input
               type="date"
+              aria-label={t("common.endDate")}
               value={scope.endDate}
               onChange={(e) => onChange({ ...scope, endDate: e.target.value })}
             />

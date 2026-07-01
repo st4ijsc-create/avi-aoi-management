@@ -415,6 +415,7 @@ function SerialTracePanel({ names }: { names: Names }) {
           <div className="flex-1 max-w-sm">
             <Label>{t("mesControlTower.serial", "Serial")}</Label>
             <Input
+              aria-label={t("mesControlTower.serial", "Serial")}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) setSerial(input.trim()); }}
@@ -757,7 +758,7 @@ function MaterialFlowPanel() {
         <CardContent className="flex flex-wrap items-end gap-2">
           <div>
             <Label>{t("mesControlTower.lot", "Lô")}</Label>
-            <Input value={d.lotNumber} onChange={(e) => setD({ ...d, lotNumber: e.target.value })} className="w-40" placeholder="LOT-..." />
+            <Input aria-label={t("mesControlTower.lot", "Lô")} value={d.lotNumber} onChange={(e) => setD({ ...d, lotNumber: e.target.value })} className="w-40" placeholder="LOT-..." />
           </div>
           <div>
             <Label>{t("mesControlTower.disposition", "Quyết định")}</Label>
@@ -772,11 +773,11 @@ function MaterialFlowPanel() {
           </div>
           <div>
             <Label>{t("mesControlTower.quantity", "Số lượng")}</Label>
-            <Input value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value })} className="w-24" />
+            <Input aria-label={t("mesControlTower.quantity", "Số lượng")} value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value })} className="w-24" />
           </div>
           <div className="flex-1 min-w-40">
             <Label>{t("mesControlTower.reason", "Lý do")}</Label>
-            <Input value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} placeholder="..." />
+            <Input aria-label={t("mesControlTower.reason", "Lý do")} value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} placeholder="..." />
           </div>
           <Button
             disabled={!d.lotNumber || createDisp.isPending}

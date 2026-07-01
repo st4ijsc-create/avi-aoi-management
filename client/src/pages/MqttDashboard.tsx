@@ -1020,15 +1020,16 @@ export default function MqttDashboard() {
                       variant="ghost"
                       size="sm"
                       className="h-6 px-2"
+                      aria-label={t('common.copy', 'Copy')}
                       onClick={(e) => {
                         e.stopPropagation();
                         navigator.clipboard.writeText(JSON.stringify(lastTestResult, null, 2));
                         toast.info('Đã copy JSON');
                       }}
                     >
-                      <Copy className="w-3 h-3" />
+                      <Copy aria-hidden="true" className="w-3 h-3" />
                     </Button>
-                    {jsonExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    {jsonExpanded ? <ChevronUp aria-hidden="true" className="w-4 h-4" /> : <ChevronDown aria-hidden="true" className="w-4 h-4" />}
                   </div>
                 </button>
                 {jsonExpanded && (

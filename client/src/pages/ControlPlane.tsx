@@ -40,19 +40,19 @@ function fmt(v?: string | Date | null): string {
 
 function FlagPill({ enabled, t }: { enabled: boolean; t: (k: string, f: string) => string }) {
   return enabled
-    ? <Badge className="bg-emerald-500 text-white"><CheckCircle2 className="mr-1 h-3 w-3" />{t("controlPlane.flagOn", "Đã bật")}</Badge>
-    : <Badge variant="outline" className="text-muted-foreground"><CircleSlash className="mr-1 h-3 w-3" />{t("controlPlane.flagOff", "Chưa bật")}</Badge>;
+    ? <Badge className="bg-success text-success-foreground"><CheckCircle2 aria-hidden="true" className="mr-1 h-3 w-3" />{t("controlPlane.flagOn", "Đã bật")}</Badge>
+    : <Badge variant="outline" className="text-muted-foreground"><CircleSlash aria-hidden="true" className="mr-1 h-3 w-3" />{t("controlPlane.flagOff", "Chưa bật")}</Badge>;
 }
 
 function runStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "completed":
-      return <Badge className="bg-emerald-500 text-white">{t("controlPlane.runCompleted", "Hoàn tất")}</Badge>;
+      return <Badge className="bg-success text-success-foreground">{t("controlPlane.runCompleted", "Hoàn tất")}</Badge>;
     case "running":
-      return <Badge className="bg-blue-500 text-white">{t("controlPlane.runRunning", "Đang chạy")}</Badge>;
+      return <Badge className="bg-info text-info-foreground">{t("controlPlane.runRunning", "Đang chạy")}</Badge>;
     case "held":
     case "awaiting_confirm":
-      return <Badge className="bg-amber-500 text-white">{t("controlPlane.runHeld", "Chờ HITL")}</Badge>;
+      return <Badge className="bg-warning text-warning-foreground">{t("controlPlane.runHeld", "Chờ HITL")}</Badge>;
     case "failed":
     case "aborted":
       return <Badge variant="destructive">{status}</Badge>;
@@ -140,8 +140,8 @@ export default function ControlPlane() {
         </div>
 
         {/* Safety banner */}
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
             {t(
               "controlPlane.safetyBanner",
@@ -264,8 +264,8 @@ export default function ControlPlane() {
           {/* ── ORCHESTRATION / FOE ── */}
           <TabsContent value="foe" className="space-y-4">
             {!foeStatusQ.isLoading && !foeEnabled && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <span>{t("controlPlane.foeDisabledBanner", "FOE chưa bật (FOE_ENABLED) — vẫn xem được workflow/run, nhưng deploy/start/resume/abort sẽ trả kết quả 'disabled'. Phát động từ Orchestration Studio.")}</span>
               </div>
             )}
@@ -331,8 +331,8 @@ export default function ControlPlane() {
           {/* ── EDGE RUNTIME ── */}
           <TabsContent value="edge" className="space-y-4">
             {!edgeStatusQ.isLoading && !edgeEnabled && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                 <span>{t("controlPlane.edgeDisabledBanner", "Edge runtime chưa bật (EDGE_RUNTIME_ENABLED). Quản lý chi tiết tại trang Edge Nodes.")}</span>
               </div>
             )}

@@ -660,6 +660,7 @@ export default function MachineStatusMonitor() {
                 <Label>{t('machines.offlineThresholdMinutes')}</Label>
                 <Input
                   type="number"
+                  aria-label={t('machines.offlineThresholdMinutes')}
                   min={1}
                   max={60}
                   value={alertConfig?.thresholdMinutes || 5}
@@ -730,6 +731,7 @@ export default function MachineStatusMonitor() {
                   <Label>{t('machines.fromDate')}</Label>
                   <Input
                     type="date"
+                    aria-label={t('machines.fromDate')}
                     value={exportDateRange.start}
                     onChange={(e) => setExportDateRange(prev => ({ ...prev, start: e.target.value }))}
                   />
@@ -738,6 +740,7 @@ export default function MachineStatusMonitor() {
                   <Label>{t('machines.toDate')}</Label>
                   <Input
                     type="date"
+                    aria-label={t('machines.toDate')}
                     value={exportDateRange.end}
                     onChange={(e) => setExportDateRange(prev => ({ ...prev, end: e.target.value }))}
                   />

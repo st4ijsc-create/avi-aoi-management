@@ -1141,13 +1141,13 @@ export default function Dashboard() {
             
             {/* Quick actions - visible on mobile */}
             <div className="flex items-center gap-2 sm:hidden">
-              <Button variant="outline" size="icon" onClick={handleRefresh} className="h-9 w-9">
-                <RefreshCw className="h-4 w-4" />
+              <Button variant="outline" size="icon" aria-label={t('common.refresh')} onClick={handleRefresh} className="h-9 w-9">
+                <RefreshCw aria-hidden="true" className="h-4 w-4" />
               </Button>
               {(activeAlertsCount as number) > 0 && (
                 <Link href="/alerts">
-                  <Button variant="outline" size="icon" className="relative h-9 w-9">
-                    <Bell className="h-4 w-4" />
+                  <Button variant="outline" size="icon" aria-label={t('nav.alerts', 'Alerts')} className="relative h-9 w-9">
+                    <Bell aria-hidden="true" className="h-4 w-4" />
                     <Badge variant="destructive" className="absolute -top-2 -right-2 h-4 w-4 p-0 flex items-center justify-center text-[10px]">
                       {activeAlertsCount as number}
                     </Badge>
@@ -1292,8 +1292,8 @@ export default function Dashboard() {
             </div>
 
             {/* Refresh button - hidden on mobile (shown in quick actions) */}
-            <Button variant="outline" size="icon" onClick={handleRefresh} className="hidden sm:flex shrink-0">
-              <RefreshCw className="h-4 w-4" />
+            <Button variant="outline" size="icon" aria-label={t('common.refresh')} onClick={handleRefresh} className="hidden sm:flex shrink-0">
+              <RefreshCw aria-hidden="true" className="h-4 w-4" />
             </Button>
             
             {/* Widget Style Presets - hidden on mobile */}

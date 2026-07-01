@@ -207,13 +207,13 @@ export default function HistoryExportScheduling() {
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'SUCCESS':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" />{t('reports.success')}</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.success')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />{t('reports.failed')}</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.failed')}</Badge>;
       case 'RUNNING':
-        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><RefreshCw className="w-3 h-3 mr-1 animate-spin" />{t('reports.running')}</Badge>;
+        return <Badge className="bg-info/20 text-info border-info/30"><RefreshCw aria-hidden="true" className="w-3 h-3 mr-1 animate-spin" />{t('reports.running')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />{t('reports.pending')}</Badge>;
+        return <Badge className="bg-warning/20 text-warning border-warning/30"><Clock aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.pending')}</Badge>;
       default:
         return <Badge variant="outline">-</Badge>;
     }
@@ -377,7 +377,7 @@ export default function HistoryExportScheduling() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>{t('reports.active')}</CardDescription>
-              <CardTitle className="text-2xl text-green-500">
+              <CardTitle className="text-2xl text-success">
                 {schedules.filter(s => s.isActive).length}
               </CardTitle>
             </CardHeader>
@@ -385,7 +385,7 @@ export default function HistoryExportScheduling() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>{t('reports.success7days')}</CardDescription>
-              <CardTitle className="text-2xl text-blue-500">
+              <CardTitle className="text-2xl text-info">
                 {logs.filter(l => l.status === 'SUCCESS').length}
               </CardTitle>
             </CardHeader>
@@ -393,7 +393,7 @@ export default function HistoryExportScheduling() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>{t('reports.failed7days')}</CardDescription>
-              <CardTitle className="text-2xl text-red-500">
+              <CardTitle className="text-2xl text-destructive">
                 {logs.filter(l => l.status === 'FAILED').length}
               </CardTitle>
             </CardHeader>
@@ -420,7 +420,7 @@ export default function HistoryExportScheduling() {
               </Card>
             ) : schedulesQuery.isError ? (
               <Card className="p-12 text-center">
-                <AlertTriangle className="h-12 w-12 mx-auto text-red-400 mb-4" />
+                <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
                 <h3 className="text-lg font-medium mb-2">{t('reports.loadError')}</h3>
                 <p className="text-muted-foreground mb-4">{schedulesQuery.error?.message}</p>
                 <Button onClick={() => schedulesQuery.refetch()} variant="outline">
@@ -447,7 +447,7 @@ export default function HistoryExportScheduling() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${schedule.isActive ? 'bg-green-500/20' : 'bg-muted'}`}>
+                          <div className={`p-2 rounded-lg ${schedule.isActive ? 'bg-success/20' : 'bg-muted'}`}>
                             {getFormatIcon(schedule.exportFormat)}
                           </div>
                           <div>
@@ -468,23 +468,26 @@ export default function HistoryExportScheduling() {
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('reports.runNow', 'Run now')}
                             onClick={() => handleRunNow(schedule)}
                           >
-                            <Play className="h-4 w-4" />
+                            <Play aria-hidden="true" className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('common.edit', 'Edit')}
                             onClick={() => openEditDialog(schedule)}
                           >
-                            <Edit className="h-4 w-4" />
+                            <Edit aria-hidden="true" className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={t('common.delete', 'Delete')}
                             onClick={() => handleDelete(schedule.id)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 aria-hidden="true" className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
@@ -560,7 +563,7 @@ export default function HistoryExportScheduling() {
                         {log.deliveredCount}/{log.recipientCount}
                       </TableCell>
                       <TableCell>{formatDate(log.startedAt)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate text-red-400">
+                      <TableCell className="max-w-[200px] truncate text-destructive">
                         {log.errorMessage || '-'}
                       </TableCell>
                     </TableRow>
@@ -787,6 +790,8 @@ export default function HistoryExportScheduling() {
                       <Mail className="h-3 w-3" />
                       {email}
                       <button
+                        type="button"
+                        aria-label={t('common.remove', 'Remove')}
                         onClick={() => handleRemoveRecipient(email)}
                         className="ml-1 hover:text-destructive"
                       >
@@ -921,16 +926,16 @@ export default function HistoryExportScheduling() {
                           <div className="text-2xl font-bold">1,234</div>
                           <div className="text-xs text-muted-foreground">{t('reports.total')}</div>
                         </div>
-                        <div className="bg-green-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-green-500">1,180</div>
+                        <div className="bg-success/10 rounded p-3">
+                          <div className="text-2xl font-bold text-success">1,180</div>
                           <div className="text-xs text-muted-foreground">OK</div>
                         </div>
-                        <div className="bg-red-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-red-500">54</div>
+                        <div className="bg-destructive/10 rounded p-3">
+                          <div className="text-2xl font-bold text-destructive">54</div>
                           <div className="text-xs text-muted-foreground">NG</div>
                         </div>
-                        <div className="bg-blue-500/10 rounded p-3">
-                          <div className="text-2xl font-bold text-blue-500">95.6%</div>
+                        <div className="bg-info/10 rounded p-3">
+                          <div className="text-2xl font-bold text-info">95.6%</div>
                           <div className="text-xs text-muted-foreground">{t('reports.okRate')}</div>
                         </div>
                       </div>

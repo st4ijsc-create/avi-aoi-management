@@ -225,13 +225,13 @@ export default function WorkOrdersPage() {
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
                         {canEdit && (
-                          <Button size="sm" variant="ghost" onClick={() => setDetail(r)}>
-                            <Pencil className="h-4 w-4" />
+                          <Button size="sm" variant="ghost" aria-label={t("common.edit", "Edit")} onClick={() => setDetail(r)}>
+                            <Pencil aria-hidden="true" className="h-4 w-4" />
                           </Button>
                         )}
                         {canDelete && (
-                          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                          <Button size="sm" variant="ghost" aria-label={t("common.delete", "Delete")} onClick={() => setConfirmDelete(r)}>
+                            <Trash2 aria-hidden="true" className="h-4 w-4 text-destructive" />
                           </Button>
                         )}
                       </div>
@@ -325,7 +325,7 @@ function CreateDialog({
         <div className="grid gap-3 py-2">
           <div className="grid gap-1">
             <Label>{t("workOrders.col.machine")} *</Label>
-            <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            <select aria-label={t("workOrders.col.machine")} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               value={machineId} onChange={(e) => setMachineId(e.target.value)}>
               <option value="">--</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.code}{m.name ? ` — ${m.name}` : ""}</option>)}
@@ -338,7 +338,7 @@ function CreateDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">
               <Label>{t("workOrders.col.type")}</Label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <select aria-label={t("workOrders.col.type")} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                 value={type} onChange={(e) => setType(e.target.value)}>
                 {TYPES.map((s) => <option key={s} value={s}>{t(`workOrders.type.${s}`)}</option>)}
               </select>
@@ -405,7 +405,7 @@ function DetailDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">
               <Label>{t("workOrders.col.status")}</Label>
-              <select disabled={!canEdit || isClosed}
+              <select aria-label={t("workOrders.col.status")} disabled={!canEdit || isClosed}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm disabled:opacity-60"
                 value={status} onChange={(e) => setStatus(e.target.value)}>
                 {STATUSES.map((s) => <option key={s} value={s}>{t(`workOrders.status.${s}`)}</option>)}
