@@ -14,6 +14,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   forwardKinematics,
+  tcpPosition,
   checkJointLimits,
   dhTransform,
   mat4Mul,
@@ -25,6 +26,7 @@ import {
   SAMPLE_SCARA,
   type KinematicModel,
 } from "./kinematicModel";
+import { solveIk } from "./ik";
 import { bvDistance, checkCollisionsAtWaypoint, type Obstacle } from "./collision";
 import {
   runKinematicSimGate,
@@ -132,6 +134,49 @@ describe("T2b · collision (geometric bounding volumes)", () => {
   });
 });
 
+// ── Inverse kinematics (P5) ────────────────────────────────────────────────────
+
+describe("P5 · inverse kinematics (numerical DLS)", () => {
+  it("solves a REACHABLE target within tolerance (round-trips a known FK pose)", () => {
+    // Take a known joint config, compute its TCP via FK, then IK back to that TCP.
+    const knownQ = [0.3, -0.5, 0.7, 0.1, 0.2, 0.0];
+    const target = tcpPosition(SAMPLE_ARM_6DOF, knownQ);
+    const r = solveIk(SAMPLE_ARM_6DOF, target, { positionToleranceMm: 1 });
+    expect(r.reached).toBe(true);
+    expect(r.errorMm).toBeLessThanOrEqual(1);
+    // The solved joints reproduce the target TCP within tolerance.
+    const back = tcpPosition(SAMPLE_ARM_6DOF, r.joints);
+    expect(Math.hypot(back[0] - target[0], back[1] - target[1], back[2] - target[2])).toBeLessThanOrEqual(1);
+  });
+
+  it("solves a MIXED prismatic+revolute chain (SCARA) from the home seed", () => {
+    const scaraQ = [0.4, -0.3, 50, 0.1];
+    const target = tcpPosition(SAMPLE_SCARA, scaraQ);
+    const r = solveIk(SAMPLE_SCARA, target, { positionToleranceMm: 1 });
+    expect(r.reached).toBe(true);
+    expect(r.joints[2]).toBeGreaterThan(0); // prismatic Z was actuated to reach the target
+  });
+
+  it("reports UNREACHABLE for an out-of-reach target (no fabricated solution)", () => {
+    const r = solveIk(SAMPLE_ARM_6DOF, [3000, 3000, 3000], { positionToleranceMm: 1 });
+    expect(r.reached).toBe(false);
+    expect(r.errorMm).toBeGreaterThan(1);
+  });
+
+  it("is DETERMINISTIC (same inputs → identical result)", () => {
+    const t = tcpPosition(SAMPLE_ARM_6DOF, [0.2, -0.4, 0.6, 0.0, 0.1, 0.0]);
+    const a = solveIk(SAMPLE_ARM_6DOF, t, {});
+    const b = solveIk(SAMPLE_ARM_6DOF, t, {});
+    expect(a.joints).toEqual(b.joints);
+    expect(a.errorMm).toBe(b.errorMm);
+  });
+
+  it("never returns joints that violate declared limits (clamped)", () => {
+    const r = solveIk(SAMPLE_SCARA, [400, 100, 150], {});
+    expect(checkJointLimits(SAMPLE_SCARA, r.joints)).toHaveLength(0);
+  });
+});
+
 // ── Full gate ────────────────────────────────────────────────────────────────
 
 function jointFlow(joints: number[], speedPct = 50): Flow {
@@ -205,6 +250,76 @@ describe("T2b · kinematic simulation gate", () => {
     const r = runKinematicSimGate(flow, SAMPLE_ARM_6DOF, { obstacles: [], safetyZones: [] }, {});
     expect(r.pass).toBe(false);
     expect(r.joint_limit_violations.some((v) => v.joint.startsWith("<workspace"))).toBe(true);
+  });
+
+  it("move_linear now runs FULL-ARM checks via IK — a clear reachable Cartesian move PASSES", () => {
+    // [-50,120,300] IK-solves the 6-DOF arm to a non-self-colliding config (probed).
+    const flow: Flow = {
+      flow_id: "lin_clear",
+      target_device_type: "universal-robots",
+      version: 1,
+      blocks: [{ type: "move_linear", target_pose: { x: -50, y: 120, z: 300, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 500, blend_radius: 0 }],
+    };
+    const r = runKinematicSimGate(flow, SAMPLE_ARM_6DOF, { obstacles: [], safetyZones: [] }, { selfCollision: true });
+    expect(r.pass).toBe(true);
+    expect(r.waypointsChecked).toBeGreaterThan(0);
+    expect(r.note).toMatch(/numerical IK/i);
+  });
+
+  it("move_linear that IK-solves into a SELF-COLLISION is caught (pass:false)", () => {
+    // [50,100,200] IK-solves into a folded config where non-adjacent links overlap (probed).
+    const flow: Flow = {
+      flow_id: "lin_self",
+      target_device_type: "universal-robots",
+      version: 1,
+      blocks: [{ type: "move_linear", target_pose: { x: 50, y: 100, z: 200, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 500, blend_radius: 0 }],
+    };
+    const r = runKinematicSimGate(flow, SAMPLE_ARM_6DOF, { obstacles: [], safetyZones: [] }, { selfCollision: true });
+    expect(r.pass).toBe(false);
+    // The full-arm self-collision (not just the TCP point) is what fails it.
+    expect(r.collision_events.some((e) => e.isObstacle === false)).toBe(true);
+  });
+
+  it("move_linear drives the FULL ARM into an obstacle → collision caught (not just the TCP point)", () => {
+    // An obstacle placed along the arm's body (away from the TCP endpoint) is caught because
+    // IK gives the whole chain, so mid-arm links are collided — impossible with TCP-only.
+    const target = { x: -50, y: 120, z: 300, rx: 0, ry: 0, rz: 0 };
+    // Solve to learn where a mid-arm link (elbow) sits, then box it.
+    const ik = solveIk(SAMPLE_ARM_6DOF, [target.x, target.y, target.z], {});
+    const poses = forwardKinematics(SAMPLE_ARM_6DOF, ik.joints);
+    const elbow = poses[2].origin; // a body link, not the TCP
+    const box = 60;
+    const obstacles: Obstacle[] = [{
+      id: "beam",
+      volume: { kind: "aabb", min: [elbow[0] - box, elbow[1] - box, elbow[2] - box], max: [elbow[0] + box, elbow[1] + box, elbow[2] + box] },
+    }];
+    const flow: Flow = {
+      flow_id: "lin_body_hit",
+      target_device_type: "universal-robots",
+      version: 1,
+      blocks: [{ type: "move_linear", target_pose: target, speed_mms: 100, acceleration: 500, blend_radius: 0 }],
+    };
+    const r = runKinematicSimGate(flow, SAMPLE_ARM_6DOF, { obstacles, safetyZones: [] }, {});
+    expect(r.pass).toBe(false);
+    expect(r.collision_events.some((e) => e.isObstacle && e.linkB === "beam")).toBe(true);
+  });
+
+  it("move_linear inside the workspace AABB but beyond the arm's actual reach → UNREACHABLE, never a silent pass", () => {
+    // [850,850,1250] sits INSIDE the declared workspace box yet ~1780 mm from the base — far
+    // beyond the ~830 mm link reach, so IK cannot converge even with path-continuity seeding.
+    // Must fail as a reachability (blocking) violation, distinct from the workspace-bound check.
+    const flow: Flow = {
+      flow_id: "lin_unreach",
+      target_device_type: "universal-robots",
+      version: 1,
+      blocks: [{ type: "move_linear", target_pose: { x: 850, y: 850, z: 1250, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 500, blend_radius: 0 }],
+    };
+    const r = runKinematicSimGate(flow, SAMPLE_ARM_6DOF, { obstacles: [], safetyZones: [] }, {});
+    expect(r.pass).toBe(false);
+    expect(r.joint_limit_violations.some((v) => v.joint.startsWith("<unreachable"))).toBe(true);
+    // It is NOT flagged as a workspace-bound violation (it's inside the AABB) — proving the IK
+    // reachability check adds coverage the old TCP-point/workspace test could not.
+    expect(r.joint_limit_violations.some((v) => v.joint.startsWith("<workspace"))).toBe(false);
   });
 
   it("returns EXACTLY the contract shape", () => {

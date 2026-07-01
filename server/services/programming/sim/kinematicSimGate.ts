@@ -21,11 +21,13 @@
  * ── HONEST scope / seams ────────────────────────────────────────────────────
  *   • KINEMATIC, not full contact dynamics — swappable engine (PyBullet/Isaac later).
  *   • move_joint drives REAL FK (joint values → link poses → collision). move_linear
- *     carries a Cartesian target and there is NO inverse-kinematics solver yet, so a
- *     move_linear is checked for WORKSPACE bound + Cartesian TCP zone/obstacle proximity
- *     of the tool point and contributes to cycle-time; its full-arm collision needs IK
- *     (a later phase). This is stated in the result note, never silently passed.
- *   • Sample models until real URDF (T2a). No hardware, no device path.
+ *     carries a Cartesian target; the gate now SAMPLES waypoints along the Cartesian path
+ *     and solves NUMERICAL INVERSE KINEMATICS (ik.ts, DLS) at each, seeded from the previous
+ *     solution for path continuity, then runs the SAME full-arm collision / joint-limit /
+ *     workspace / safety-zone checks as move_joint. If IK cannot reach a waypoint it is a
+ *     REACHABILITY failure (pass:false) — never a silent pass.
+ *   • IK is numerical, single-arm, position-target, no redundancy resolution beyond seeding
+ *     (documented in ik.ts). Sample models until real URDF (T2a). No hardware, no device path.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { walkBlocks, type Flow, type IrBlock, type Pose } from "../ir/irModel";
@@ -36,6 +38,7 @@ import {
   checkJointLimits,
   resolveKinematicModel,
 } from "./kinematicModel";
+import { solveIk } from "./ik";
 import {
   type Obstacle,
   type CollisionEvent,
@@ -146,16 +149,6 @@ function pointInAabb(p: Vec3, min: Vec3, max: Vec3): boolean {
   return p[0] >= min[0] && p[0] <= max[0] && p[1] >= min[1] && p[1] <= max[1] && p[2] >= min[2] && p[2] <= max[2];
 }
 
-/** Signed-ish distance of a point to an AABB (0 inside, positive outside). */
-function pointAabbDist(p: Vec3, min: Vec3, max: Vec3): number {
-  let sq = 0;
-  for (let i = 0; i < 3; i++) {
-    if (p[i] < min[i]) sq += (min[i] - p[i]) ** 2;
-    else if (p[i] > max[i]) sq += (p[i] - max[i]) ** 2;
-  }
-  return Math.sqrt(sq);
-}
-
 /**
  * Estimate the time (seconds) for one motion segment under a trapezoidal velocity model:
  * accelerate to cruise, cruise, decelerate. distance in mm, vMax mm/s, accel mm/s².
@@ -183,6 +176,10 @@ export interface RunGateOptions {
   selfCollision?: boolean;
   /** Joint speed (%) → joint angular rate scale (rad/s at 100%). Default 3.14 (~180°/s). */
   jointRateAt100?: number;
+  /** IK convergence tolerance on TCP position error (mm) for move_linear waypoints. Default 2. */
+  ikPositionToleranceMm?: number;
+  /** IK iteration cap per move_linear waypoint (determinism). Default 200. */
+  ikMaxIterations?: number;
 }
 
 /**
@@ -205,11 +202,15 @@ export function runKinematicSimGate(
   const safety_zone_violations: SafetyZoneViolation[] = [];
   let cycle_time_actual = 0;
   let waypointsChecked = 0;
-  let linearNeedsIk = false;
+  let linearSolvedWithIk = false;
 
   // Track the running joint state so consecutive move_joint segments interpolate from the
-  // previous target. Start at all-zero (home).
+  // previous target. Also SEEDS the IK for move_linear (path continuity). Start at all-zero (home).
   let jointState = new Array<number>(model.dof).fill(0);
+
+  // IK tunables (read at call time; conservative defaults suited to the mm-length models).
+  const ikTolerance = opts.ikPositionToleranceMm ?? num("SIM_IK_TOLERANCE_MM", 2);
+  const ikMaxIter = opts.ikMaxIterations ?? Math.round(num("SIM_IK_MAX_ITERATIONS", 200));
 
   const checkPose = (atWaypoint: number, jointValues: number[]) => {
     waypointsChecked += 1;
@@ -251,52 +252,78 @@ export function runKinematicSimGate(
       }
       jointState = lerpJoints(jointState, target, 1);
     } else {
-      // move_linear: Cartesian target. No IK yet → check WORKSPACE + TCP point proximity.
-      linearNeedsIk = true;
-      const p: Vec3 = [seg.pose.x, seg.pose.y, seg.pose.z];
-      waypointsChecked += 1;
-      // Workspace bound (world AABB of the model).
+      // move_linear: Cartesian target → SAMPLE the straight-line TCP path and solve IK at
+      // each waypoint, then run the SAME full-arm checks as move_joint. The path START is the
+      // current TCP (FK of jointState); the END is the target pose. IK is seeded from the
+      // previous solution for continuity, so consecutive waypoints track one branch.
+      linearSolvedWithIk = true;
+      const startTcp = forwardKinematics(model, jointState);
+      const from: Vec3 = startTcp.length
+        ? startTcp[startTcp.length - 1].origin
+        : [0, 0, 0];
+      const to: Vec3 = [seg.pose.x, seg.pose.y, seg.pose.z];
       const ws = model.workspace;
-      if (!pointInAabb(p, ws.min, ws.max)) {
-        // A move outside the reachable workspace is treated as a joint-limit-class
-        // violation (unreachable) so it BLOCKS — honest: it fails the gate.
-        joint_limit_violations.push({
-          atWaypoint: waypointIdx,
-          joint: `<workspace:${seg.block}>`,
-          value: 0,
-          min: 0,
-          max: 0,
+
+      // Cycle-time from the straight-line Cartesian distance.
+      cycle_time_actual += segmentTime(
+        Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]),
+        seg.speedMms,
+        seg.accel,
+      );
+
+      let seed = jointState.slice();
+      for (let s = 1; s <= res; s++) {
+        const t = s / res;
+        const p: Vec3 = [
+          from[0] + (to[0] - from[0]) * t,
+          from[1] + (to[1] - from[1]) * t,
+          from[2] + (to[2] - from[2]) * t,
+        ];
+        const atWaypoint = waypointIdx++;
+
+        // Workspace bound first (cheap gate; also flags targets IK could never reach).
+        if (!pointInAabb(p, ws.min, ws.max)) {
+          waypointsChecked += 1;
+          joint_limit_violations.push({
+            atWaypoint,
+            joint: `<workspace:${seg.block}>`,
+            value: 0,
+            min: 0,
+            max: 0,
+          });
+          continue; // outside workspace → do not attempt IK for this waypoint
+        }
+
+        // Solve IK for this Cartesian waypoint, seeded from the previous solution.
+        const ik = solveIk(model, p, {
+          seed,
+          positionToleranceMm: ikTolerance,
+          maxIterations: ikMaxIter,
         });
-      }
-      // TCP point vs obstacles (proximity of the tool point only — full-arm needs IK).
-      for (const obs of scene.obstacles) {
-        const bv = obs.volume;
-        let dist = Infinity;
-        if (bv.kind === "sphere") dist = Math.hypot(p[0] - bv.center[0], p[1] - bv.center[1], p[2] - bv.center[2]) - bv.radius;
-        else if (bv.kind === "aabb") dist = pointAabbDist(p, bv.min, bv.max);
-        else {
-          // capsule: distance to segment
-          const ab: Vec3 = [bv.b[0] - bv.a[0], bv.b[1] - bv.a[1], bv.b[2] - bv.a[2]];
-          const denom = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-          let tt = denom > 0 ? ((p[0] - bv.a[0]) * ab[0] + (p[1] - bv.a[1]) * ab[1] + (p[2] - bv.a[2]) * ab[2]) / denom : 0;
-          tt = Math.max(0, Math.min(1, tt));
-          const cp: Vec3 = [bv.a[0] + ab[0] * tt, bv.a[1] + ab[1] * tt, bv.a[2] + ab[2] * tt];
-          dist = Math.hypot(p[0] - cp[0], p[1] - cp[1], p[2] - cp[2]) - bv.radius;
+        if (!ik.reached) {
+          // Reachability failure — the arm cannot achieve this pose (out of reach, or a
+          // joint-limit-locked configuration). Treat as a joint-limit-class violation so it
+          // BLOCKS. NEVER a silent pass.
+          waypointsChecked += 1;
+          joint_limit_violations.push({
+            atWaypoint,
+            joint: `<unreachable:${seg.block}>`,
+            value: Math.round(ik.errorMm),
+            min: 0,
+            max: 0,
+          });
+          // Keep the best-effort config as the next seed to preserve continuity.
+          seed = ik.joints;
+          continue;
         }
-        if (dist <= margin) {
-          collision_events.push({ atWaypoint: waypointIdx, linkA: `<tcp:${seg.block}>`, linkB: obs.id, isObstacle: true, distance: dist });
-        }
+        seed = ik.joints;
+        // Run the EXISTING full-arm checks (joint limits + FK collision + workspace links +
+        // safety zones) on the SOLVED joint config — identical to a move_joint waypoint.
+        checkPose(atWaypoint, ik.joints);
       }
-      // TCP vs safety zones.
-      for (const z of scene.safetyZones) {
-        if (pointInAabb(p, z.min, z.max)) {
-          safety_zone_violations.push({ atWaypoint: waypointIdx, link: `<tcp:${seg.block}>`, zoneId: z.id, zoneType: z.zoneType, distance: 0 });
-        }
-      }
-      // Cycle-time from Cartesian distance (from previous TCP, approx from origin if first).
-      const dist = Math.hypot(p[0], p[1], p[2]); // conservative: distance from base origin
-      cycle_time_actual += segmentTime(dist, seg.speedMms, seg.accel);
-      waypointIdx += 1;
+      // Advance the running joint state to the final solved config (path continuity into any
+      // subsequent segment).
+      jointState = seed;
     }
   }
 
@@ -308,9 +335,9 @@ export function runKinematicSimGate(
   const notes: string[] = [
     `kinematic-simgate engine=self-contained-FK model=${model.id} (${model.label})`,
   ];
-  if (linearNeedsIk) {
+  if (linearSolvedWithIk) {
     notes.push(
-      "move_linear checked for workspace + TCP-point proximity only (no inverse-kinematics yet — full-arm collision for Cartesian moves is a later phase).",
+      "move_linear paths sampled + solved via numerical IK (DLS, position-target, single-arm, seed-continuity); full-arm collision/limits/zones checked at each waypoint. IK non-convergence is reported as an unreachable (blocking) violation, never a silent pass.",
     );
   }
   if (segs.length === 0) notes.push("flow has no motion blocks — trivially passes kinematics.");

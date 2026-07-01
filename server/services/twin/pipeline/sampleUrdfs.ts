@@ -73,6 +73,104 @@ export const SAMPLE_URDF_3DOF_ARM = `<?xml version="1.0"?>
   </joint>
 </robot>`;
 
+/**
+ * A parametric AOI inspection machine: a cabinet base, a conveyor deck, a gantry bridge
+ * spanning the deck, and an inspection head that rides the bridge. Authored with primitive
+ * geometry (box/cylinder) so the pipeline converts it end-to-end into a real, renderable
+ * glTF (no external mesh files). Prismatic joints model the real gantry/head travel so the
+ * kinematic + bounds are honest. Units are METRES / RADIANS. Approx footprint ~1.2×0.9×1.6 m.
+ */
+export const SAMPLE_URDF_AOI_MACHINE = `<?xml version="1.0"?>
+<robot name="aoi_inspection_machine">
+  <link name="cabinet">
+    <visual>
+      <origin xyz="0 0 0.45" rpy="0 0 0"/>
+      <geometry><box size="1.2 0.9 0.9"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.45" rpy="0 0 0"/>
+      <geometry><box size="1.2 0.9 0.9"/></geometry>
+    </collision>
+  </link>
+  <link name="conveyor">
+    <visual>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <geometry><box size="1.2 0.35 0.06"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <geometry><box size="1.2 0.35 0.06"/></geometry>
+    </collision>
+  </link>
+  <link name="column_left">
+    <visual>
+      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.08 0.6"/></geometry>
+    </visual>
+  </link>
+  <link name="column_right">
+    <visual>
+      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <geometry><box size="0.08 0.08 0.6"/></geometry>
+    </visual>
+  </link>
+  <link name="bridge">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.05" length="1.0"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.05" length="1.0"/></geometry>
+    </collision>
+  </link>
+  <link name="inspection_head">
+    <visual>
+      <origin xyz="0 0 -0.1" rpy="0 0 0"/>
+      <geometry><box size="0.18 0.18 0.22"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.1" rpy="0 0 0"/>
+      <geometry><box size="0.18 0.18 0.22"/></geometry>
+    </collision>
+  </link>
+  <link name="lens">
+    <visual>
+      <origin xyz="0 0 -0.02" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.06"/></geometry>
+    </visual>
+  </link>
+
+  <joint name="deck" type="fixed">
+    <parent link="cabinet"/><child link="conveyor"/>
+    <origin xyz="0 0 0.9" rpy="0 0 0"/>
+  </joint>
+  <joint name="post_left" type="fixed">
+    <parent link="cabinet"/><child link="column_left"/>
+    <origin xyz="0 -0.42 0.9" rpy="0 0 0"/>
+  </joint>
+  <joint name="post_right" type="fixed">
+    <parent link="cabinet"/><child link="column_right"/>
+    <origin xyz="0 0.42 0.9" rpy="0 0 0"/>
+  </joint>
+  <joint name="gantry_x" type="prismatic">
+    <parent link="cabinet"/><child link="bridge"/>
+    <origin xyz="0 0 1.5" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.5" upper="0.5" effort="200" velocity="0.8"/>
+  </joint>
+  <joint name="head_z" type="prismatic">
+    <parent link="bridge"/><child link="inspection_head"/>
+    <origin xyz="0 0 -0.12" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.3" upper="0.0" effort="120" velocity="0.5"/>
+  </joint>
+  <joint name="optic" type="fixed">
+    <parent link="inspection_head"/><child link="lens"/>
+    <origin xyz="0 0 -0.22" rpy="0 0 0"/>
+  </joint>
+</robot>`;
+
 /** A minimal 2-DOF planar arm (both revolute about Z) — tiny fixture for parser tests. */
 export const SAMPLE_URDF_2DOF_PLANAR = `<?xml version="1.0"?>
 <robot name="sample_2dof_planar">

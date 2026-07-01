@@ -9,16 +9,38 @@
  *   over `node:net`. It is FAIL-SAFE and LAZY (no socket is opened unless the
  *   caller explicitly invokes connect()).
  *
+ * A full, round-trippable SECS-II ITEM codec now exists (see secs2Codec.ts) and a
+ * small set of standard S1 messages are built on it (see s1Messages.ts). The
+ * client can therefore send a REAL S1F1 and parse a REAL S1F2 (probeOnline() — a
+ * strictly read/monitor liveness+model probe; NO equipment-control/write path).
+ *
  * What still needs validation against real equipment (or a vetted library):
- *   - the FULL SECS-II binary codec (see secsMessages.ts header),
  *   - the complete GEM state machine (SEMI E30): control-state model, dynamic
  *     event/report linking (S2F33/F35/F37), spooling, timers T3–T8,
  *   - data-message correlation by System Bytes, retries, and multi-block.
  * Do NOT treat testConnection() success as GEM compliance — it proves only that
- * a TCP peer answered HSMS Select + Linktest.
+ * a TCP peer answered HSMS Select + Linktest (probeOnline() additionally proves a
+ * SECS-II S1F1/S1F2 round-trip, still NOT full E30 GEM compliance).
  */
 import net from "node:net";
 import { encodeItem, decodeItem, type SecsMessage, type SecsItem } from "./secsMessages";
+import { decodeItem as decodeSecs2Item, type Secs2Item } from "./secs2Codec";
+import {
+  encodeBody as encodeSecs2Body,
+  s1f1,
+  parseS1F2,
+  type Secs2Message,
+  type OnlineData,
+} from "./s1Messages";
+
+/**
+ * Master flag (default OFF). Read inline (not imported from secsGemRegistry) to
+ * avoid a value-level import cycle hsmsClient ⇄ secsGemRegistry. Kept identical to
+ * secsGemRegistry.isSecsGemEnabled() so gating stays consistent.
+ */
+function isSecsGemEnabled(): boolean {
+  return process.env.SECS_GEM_ENABLED === "true";
+}
 
 /** HSMS connection states (SEMI E37). */
 export type HsmsState = "NOT_CONNECTED" | "CONNECTED" | "SELECTED" | "SEPARATED";
@@ -119,6 +141,28 @@ export function frameDataMessage(sessionId: number, msg: SecsMessage): Buffer {
   return frameHsms(header, body);
 }
 
+/**
+ * Frame a SECS-II DATA message over HSMS from a `Secs2Message` (new codec).
+ * HSMS data-header layout: byte2 = W-bit(0x80) | Stream(0x7f), byte3 = Function.
+ */
+export function frameSecs2Message(sessionId: number, msg: Secs2Message): Buffer {
+  const body = encodeSecs2Body(msg);
+  const byte2 = (msg.wbit ? 0x80 : 0x00) | (msg.stream & 0x7f);
+  const header = buildHeader({
+    sessionId,
+    byte2,
+    byte3: msg.streamFunction & 0xff,
+    sType: SType.DATA,
+    systemBytes: nextSystemBytes(),
+  });
+  return frameHsms(header, body);
+}
+
+/** Extract Stream / Function / W-bit from a parsed DATA frame's header bytes. */
+export function frameStreamFunction(frame: ParsedHsmsFrame): { stream: number; function: number; wbit: boolean } {
+  return { stream: frame.byte2 & 0x7f, function: frame.byte3 & 0xff, wbit: (frame.byte2 & 0x80) !== 0 };
+}
+
 /** A decoded inbound HSMS frame. */
 export interface ParsedHsmsFrame {
   sessionId: number;
@@ -159,11 +203,25 @@ export function parseHsmsFrames(buf: Buffer): { frames: ParsedHsmsFrame[]; rest:
   return { frames, rest: Buffer.from(buf.subarray(offset)) };
 }
 
-/** Decode the SECS-II body of a DATA frame into a SecsItem tree (skeleton codec). */
+/** Decode the SECS-II body of a DATA frame into a SecsItem tree (legacy skeleton codec). */
 export function decodeFrameBody(frame: ParsedHsmsFrame): SecsItem | null {
   if (frame.sType !== SType.DATA || frame.body.length === 0) return null;
   try {
     return decodeItem(frame.body);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode the SECS-II body of a DATA frame into a `Secs2Item` tree using the full
+ * SECS-II codec (secs2Codec). Returns null for control frames, empty bodies, or a
+ * body that fails to decode (fail-safe — never throws to callers).
+ */
+export function decodeFrameBodySecs2(frame: ParsedHsmsFrame): Secs2Item | null {
+  if (frame.sType !== SType.DATA || frame.body.length === 0) return null;
+  try {
+    return decodeSecs2Item(frame.body);
   } catch {
     return null;
   }
@@ -268,6 +326,37 @@ export class HsmsClient {
     const sessionId = this.cfg.deviceId ?? 0;
     this.send(frameControl(sessionId, SType.LINKTEST_REQ));
     await this.waitFrame((f) => f.sType === SType.LINKTEST_RSP, this.cfg.controlTimeoutMs ?? 5000);
+  }
+
+  /**
+   * READ/MONITOR ONLY — send S1F1 (Are You There) and parse the S1F2 (On Line
+   * Data) reply, using the full SECS-II codec. This is a liveness + model probe;
+   * it opens NO equipment-control/write path (no S2F41 host command, no recipe or
+   * parameter write). Requires SELECTED. Flag-gated: throws if SECS/GEM is
+   * disabled, so no real S1F1 is ever emitted with the flag OFF.
+   *
+   * Returns the equipment's { modelName, softRev } on success. On some equipment
+   * S1F2 carries an empty list; the strings are then empty but the probe still
+   * succeeds (the point is that the peer answered a real SECS-II data message).
+   */
+  async probeOnline(): Promise<OnlineData> {
+    if (!isSecsGemEnabled()) {
+      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+    }
+    if (this._state !== "SELECTED") throw new Error(`probeOnline() requires SELECTED, got ${this._state}`);
+    const sessionId = this.cfg.deviceId ?? 0;
+    // Send a real, codec-encoded S1F1 (empty-list body, W-bit set).
+    this.send(frameSecs2Message(sessionId, s1f1()));
+    // Await the S1F2 reply (Stream 1, Function 2, DATA sType).
+    const reply = await this.waitFrame((f) => {
+      if (f.sType !== SType.DATA) return false;
+      const sf = frameStreamFunction(f);
+      return sf.stream === 1 && sf.function === 2;
+    }, this.cfg.controlTimeoutMs ?? 5000);
+    const body = decodeFrameBodySecs2(reply);
+    const online = body ? parseS1F2(body) : null;
+    if (!online) throw new Error("probeOnline: S1F2 body was not a decodable list");
+    return online;
   }
 
   /** Send Separate.req and close (no reply expected). Always fail-safe. */

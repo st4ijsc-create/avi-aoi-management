@@ -19,6 +19,37 @@ registerSecsGem("secsgem", createSkeletonSecsGem);
 export * from "./secsMessages";
 export * from "./hsmsClient";
 export * from "./gemModel";
+// Full SECS-II item codec (all standard format codes) + the standard S1 messages
+// built on it. `encodeItem`/`decodeItem` are aliased to avoid colliding with the
+// legacy skeleton codec re-exported from ./secsMessages.
+export {
+  Secs2Format,
+  I as Secs2ItemFactory,
+  encodeItem as encodeSecs2Item,
+  decodeItem as decodeSecs2Item,
+  decodeItemWithLength as decodeSecs2ItemWithLength,
+  type Secs2Item,
+  type Secs2FormatCode,
+} from "./secs2Codec";
+// S1 builders/parsers on the new codec. The s1f* builders here return the new
+// `Secs2Message` type; they are exported under `secs2`-prefixed names to avoid
+// colliding with the legacy `secsMessages.ts` s1f* factories (which return the
+// legacy `SecsMessage`). Parsers keep their own unambiguous names.
+export {
+  s1f1 as secs2S1F1,
+  s1f2 as secs2S1F2,
+  s1f13 as secs2S1F13,
+  s1f14 as secs2S1F14,
+  parseS1F2,
+  parseS1F13,
+  parseS1F14,
+  encodeBody as encodeSecs2Body,
+  decodeBody as decodeSecs2Body,
+  COMMACK,
+  type Secs2Message,
+  type OnlineData,
+  type EstablishCommsAck,
+} from "./s1Messages";
 export {
   isSecsGemEnabled,
   registerSecsGem,

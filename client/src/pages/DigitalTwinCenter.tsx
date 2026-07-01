@@ -22,8 +22,8 @@
  * device control. SCOPE: this page only; route added in App.tsx; no nav/i18n edits.
  */
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Environment, Grid, Text, Gltf } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { OrbitControls, PerspectiveCamera, Environment, Grid, Text, Gltf, Center, Resize } from "@react-three/drei";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { useTranslation } from "react-i18next";
 import { Socket } from "socket.io-client";
@@ -124,11 +124,51 @@ interface RenderState {
   state: string;
 }
 
+// A primitive coloured block — the ALWAYS-WORKS body used both for unmodeled devices
+// and as the Suspense/error fallback while/if a glTF is loading or fails to load.
+function PrimitiveBody({
+  isRobot, color, meshRef,
+}: {
+  isRobot: boolean;
+  color: string;
+  meshRef?: React.RefObject<THREE.Mesh | null>;
+}) {
+  return (
+    <mesh ref={meshRef} castShadow>
+      {isRobot ? <cylinderGeometry args={[0.45, 0.55, 1.1, 16]} /> : <boxGeometry args={[1.5, 1, 1.5]} />}
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.22} metalness={0.4} roughness={0.5} />
+    </mesh>
+  );
+}
+
+// Fall back GRACEFULLY when a registered model 404s / is malformed: a load error must
+// not blank the whole Canvas — this device just renders its coloured block instead.
+class ModelErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
 // ── One device: glTF when available (Suspense), else a coloured block ─────────
-function GltfModel({ src }: { src: string }) {
-  // <Gltf> caches the loaded document by src under the hood (drei useGLTF cache),
-  // so the same model URI is not re-fetched per instance.
-  return <Gltf src={src} />;
+// Real assets come from the T1-a registry (equipment_3d_models). Our seeded glTFs are
+// URDF-derived, so they are Z-up (URDF convention) and authored in METRES at true size.
+// The scene is Y-up and each device occupies roughly a ~1.5-unit slot, so we (a) rotate
+// −90° about X to map Z-up → Y-up and (b) Center + Resize the loaded document into a fixed
+// height so ANY registered model — whatever its native scale — sits cleanly on the floor.
+// `robot` models are stood up a touch smaller than machines. Purely presentational.
+function GltfModel({ src, isRobot }: { src: string; isRobot: boolean }) {
+  const fit = isRobot ? 1.1 : 1.6; // target height in scene units
+  return (
+    // <Gltf> caches the loaded document by src under the hood (drei useGLTF cache),
+    // so the same model URI is not re-fetched per instance.
+    <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
+      <Resize height scale={fit}>
+        <Center bottom>
+          <Gltf src={src} />
+        </Center>
+      </Resize>
+    </group>
+  );
 }
 
 function DeviceObject({
@@ -165,25 +205,21 @@ function DeviceObject({
 
   return (
     <group ref={groupRef}>
-      {/* Body: glTF if a model is registered, else a primitive block (always works). */}
+      {/* Body: glTF if a model is registered, else a primitive block (always works).
+          A load error (404 / malformed) degrades to the block via ModelErrorBoundary,
+          so an unresolved model never blanks the scene — unmodeled devices are unaffected. */}
       {node.modelUri ? (
         <group onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
-          <Suspense
-            fallback={
-              <mesh>
-                <boxGeometry args={isRobot ? [0.8, 0.8, 0.8] : [1.5, 1, 1.5]} />
-                <meshStandardMaterial color={rs.color} emissive={rs.color} emissiveIntensity={0.25} wireframe />
-              </mesh>
-            }
-          >
-            <GltfModel src={node.modelUri} />
-          </Suspense>
+          <ModelErrorBoundary fallback={<PrimitiveBody isRobot={isRobot} color={rs.color} meshRef={meshRef} />}>
+            <Suspense fallback={<PrimitiveBody isRobot={isRobot} color={rs.color} meshRef={meshRef} />}>
+              <GltfModel src={node.modelUri} isRobot={isRobot} />
+            </Suspense>
+          </ModelErrorBoundary>
         </group>
       ) : (
-        <mesh ref={meshRef} castShadow onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
-          {isRobot ? <cylinderGeometry args={[0.45, 0.55, 1.1, 16]} /> : <boxGeometry args={[1.5, 1, 1.5]} />}
-          <meshStandardMaterial color={rs.color} emissive={rs.color} emissiveIntensity={0.22} metalness={0.4} roughness={0.5} />
-        </mesh>
+        <group onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
+          <PrimitiveBody isRobot={isRobot} color={rs.color} meshRef={meshRef} />
+        </group>
       )}
 
       {/* status beacon */}
