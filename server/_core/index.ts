@@ -4508,6 +4508,21 @@ async function startServer() {
     console.error("[modelAutoRollback] sweep start failed:", (err as any)?.message || err);
   }
 
+  // doc 22 P2 — Model performance snapshot producer. Periodically materializes a
+  // model_performance_snapshots row (live accuracy + confidence distribution) per
+  // model version from ai_feedback ⋈ ai_suggestions, giving the auto-rollback
+  // monitor a live signal (it was reading a table nothing wrote). NO-OP unless
+  // AI_MODEL_PERF_SNAPSHOTS_ENABLED (startModelPerfSnapshotSweep self-gates), so the
+  // timer is cheap when off. Unref'd + non-overlapping. ADVISORY ONLY — it writes an
+  // append-only telemetry row; it NEVER rolls back a model (that stays with the
+  // separately-flagged modelAutoRollback). Opens NO device-control path.
+  try {
+    const { startModelPerfSnapshotSweep } = await import("../services/ai/modelPerfSnapshotProducer");
+    startModelPerfSnapshotSweep();
+  } catch (err) {
+    console.error("[modelPerfSnapshots] sweep start failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(
@@ -4701,6 +4716,20 @@ async function startServer() {
     console.error("[Federation] UNS subscriber init failed:", (err as any)?.message || err);
   }
 
+  // doc 22 · P2 (Khối 3) — SIMULATED safety-track publisher: periodically synthesises
+  // person↔robot proximity tracks and drives them through the EXISTING advisory ingest
+  // path (nearMissAdvisor + safety-zone evaluator) so the 3-tier zone evaluator +
+  // 'safety:event' socket + Safety Cockpit are exercised end-to-end. Every track is
+  // SIMULATED (source 'test'), clearly labelled — NOT a real sensor. Commands NO device,
+  // actuates NO stop. Disabled by default; opt in via SAFETY_SIM_TRACKS_ENABLED=true.
+  // Advisory events only persist when SAFETY_AUDIT_ENABLED is also on. Safe no-op OFF.
+  try {
+    const { startSimTrackPublisher } = await import("../services/safety/simTrackPublisher");
+    startSimTrackPublisher();
+  } catch (err) {
+    console.error("[SafetySim] init failed:", (err as any)?.message || err);
+  }
+
   // P4 WS4.2 — AI orchestration watcher (event bus → local LLM advisory).
   // Disabled by default; opt in via AI_ORCHESTRATION_ENABLED=true. Advisory only.
   try {
@@ -4883,6 +4912,10 @@ async function startServer() {
     // doc 13 · F3 — stop federation UNS subscriber (close all per-site connections)
     import("../services/federation/unsSubscriber")
       .then((m) => m.stopFederationUnsSubscriber())
+      .catch(() => {});
+    // doc 22 · P2 — stop SIMULATED safety-track publisher (no-op if not running)
+    import("../services/safety/simTrackPublisher")
+      .then((m) => m.stopSimTrackPublisher())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();

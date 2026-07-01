@@ -8,14 +8,14 @@
  * occupied, reset-required, muting. This adapter OBSERVES that status and maps each
  * observed flag → an ADVISORY safety_event (via safetyAuditService.record):
  *
- *   estop=true         → eventType 'estop'         (detectedBy 'telemetry'*, logged_only)
+ *   estop=true         → eventType 'estop'         (detectedBy 'plc'/'sim'*, logged_only)
  *   zoneOccupied=true  → eventType 'zone_intrusion'
  *   resetRequired=true → eventType 'intrusion'     (note: reset required)
  *   muting=true        → eventType 'speed_violation' (note: muting active)
  *
- *   (* safety_events.detectedBy is a fixed set {vision|interlock|operator|telemetry};
- *      'plc' has no column value, so we record detectedBy='telemetry' — the software
- *      merely READ the status — and note the true source 'plc' in the free-text notes.)
+ *   (* safety_events.detectedBy carries the HONEST provenance: 'plc' for a real
+ *      certified Safety PLC status read, 'sim' for the clearly-labelled sim backend
+ *      (varchar, additive — no migration). The true source is ALSO restated in notes.)
  *
  * BACKENDS (honest):
  *   • 'sim' (default) — a SCRIPTED status stream (statusMap.simScript). Clearly a sim;
@@ -357,9 +357,10 @@ export async function readAndRecord(
       robotId: cfg.robotId ?? null,
       stationId: cfg.stationId ?? null,
       lineId: cfg.lineId ?? null,
-      // detectedBy is a fixed set — 'telemetry' (we READ the PLC's status); true
-      // source ('plc'/'sim') is stated in the notes.
-      detectedBy: "telemetry",
+      // Honest provenance: 'plc' when we READ a real certified Safety PLC's status,
+      // 'sim' for the clearly-labelled scripted sim backend. (The true source is ALSO
+      // restated in the notes.) Still READ-ONLY — the PLC performs the rated stop itself.
+      detectedBy: source,
       handledBy: "advisory",
       outcome: "logged_only",
       humanPosition: { plcFlag: f.flag, backend: backend.kind, source },

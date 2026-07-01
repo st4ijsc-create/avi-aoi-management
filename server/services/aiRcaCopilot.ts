@@ -145,12 +145,11 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       const { getAnomalyStats } = await import("./aiAnomalyDetection");
       return (await getAnomalyStats({ machineId: input.machineId })) as Record<string, unknown>;
     })(),
-    // (d) vision description of a suspect image — optional; skipped when no image source.
-    (async () => {
-      // No deterministic suspect-image fetch wired here; left null unless a future
-      // hook supplies a buffer. describeDefect requires a Buffer we don't fabricate.
-      return null as string | null;
-    })(),
+    // (d) vision description of a suspect image — optional; null when no image source.
+    // doc 22 P2: wire the most-recent anomaly/NG defect image through the VL model so
+    // vision evidence actually contributes. Fail-safe + honest: returns null (no
+    // fabrication) when no defect image is available or vision degrades.
+    fetchSuspectImageDescription(input.machineId, input.defectType),
     // (e) recent config changes from audit
     (async () => {
       return await fetchRecentConfigChanges(input.machineId, start);
@@ -230,6 +229,73 @@ async function fetchRecentConfigChanges(
     return out;
   } catch {
     return [];
+  }
+}
+
+/**
+ * doc 22 P2 — find the most-recent NG/suspect defect image for this machine and feed
+ * it to the VL model so vision evidence actually contributes to RCA hypotheses.
+ *
+ * HONEST-DEGRADE: returns null (never a fabricated description) whenever there is no
+ * stored defect image, storage can't produce a buffer, or the VL model degrades to
+ * its non-vision fallback. Fully fail-safe — never throws (runs inside allSettled).
+ *
+ * Source: the newest measurement_results row (for an inspection on this machine) that
+ * has an imageKey AND an NG result — i.e. an actual suspect image, not a golden/OK
+ * capture. The buffer is read via the shared readStorageBuffer helper (local-disk +
+ * object-store aware) and passed to describeDefect (routes to the local VL sidecar).
+ */
+async function fetchSuspectImageDescription(
+  machineId: number | undefined,
+  defectType: string | undefined,
+): Promise<string | null> {
+  try {
+    if (machineId == null) return null;
+    const db = await getDb();
+    if (!db) return null;
+
+    const { measurementResults } = await import("../../drizzle/schema");
+    const { productInspections } = await import("../../drizzle/schema");
+    const { isNotNull } = await import("drizzle-orm");
+
+    // Newest NG measurement WITH an image, on an inspection for this machine.
+    const [row] = await db
+      .select({
+        imageKey: measurementResults.imageKey,
+        imageUrl: measurementResults.imageUrl,
+      })
+      .from(measurementResults)
+      .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+      .where(
+        and(
+          eq(productInspections.machineId, machineId),
+          eq(measurementResults.result, "NG"),
+          isNotNull(measurementResults.imageKey),
+        ),
+      )
+      .orderBy(desc(measurementResults.id))
+      .limit(1);
+
+    const storageKey = row?.imageKey || row?.imageUrl;
+    if (!storageKey) return null; // no suspect image on record → honest null
+
+    const { readStorageBuffer } = await import("./aiEdgeEnhanced");
+    const buffer = await readStorageBuffer(storageKey);
+    if (!buffer || buffer.length === 0) return null;
+
+    const { describeDefect } = await import("./aiVisionLanguage");
+    const result = await describeDefect(buffer, {
+      machineCode: `machine ${machineId}`,
+      inspectionPoint: defectType ?? undefined,
+      existingLabels: defectType ? [defectType] : undefined,
+    });
+    const visionDesc = result?.description?.trim();
+    // describeDefect degrades to a static "VLM unavailable" string when no vision is
+    // configured — treat that as no evidence rather than fabricated vision.
+    if (!visionDesc || /VLM analysis unavailable|Detailed VLM description unavailable/i.test(visionDesc)) return null;
+    return visionDesc;
+  } catch {
+    return null; // fail-safe: no vision evidence rather than a throw
   }
 }
 

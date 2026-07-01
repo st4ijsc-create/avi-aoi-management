@@ -400,8 +400,8 @@ describe("safety-PLC adapter (service)", () => {
     expect(r.backend).toMatch(/sim/);
     expect(r.findings.map((f) => f.eventType).sort()).toEqual(["estop", "zone_intrusion"]);
     expect(r.recorded).toBe(2);
-    // detectedBy telemetry (we READ status); notes carry the true 'sim' source.
-    expect(store.safety_events.every((e) => e.detectedBy === "telemetry")).toBe(true);
+    // detectedBy 'sim' (honest provenance — scripted sim backend); notes ALSO carry it.
+    expect(store.safety_events.every((e) => e.detectedBy === "sim")).toBe(true);
     expect(store.safety_events.some((e) => /source sim/.test(e.notes))).toBe(true);
   });
 

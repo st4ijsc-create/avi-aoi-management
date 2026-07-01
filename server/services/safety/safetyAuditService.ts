@@ -41,7 +41,12 @@ export type SafetyEventType =
   // raised by the dynamic safety-zone evaluator (graduated 3-level reaction). The
   // column is a free varchar, so this is additive with no migration.
   | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss";
-export type SafetyDetectedBy = "vision" | "interlock" | "operator" | "telemetry";
+// Provenance of the OBSERVATION. `plc` = read from a certified Safety PLC's (non-
+// safety-rated) status interface; `sim` = a clearly-labelled SIMULATED track/status
+// (never a real sensor). Both are additive — the column is a free varchar, so no
+// migration is needed. They exist so PLC/sim-observed events are labelled HONESTLY
+// instead of being mislabelled `telemetry`/`operator`.
+export type SafetyDetectedBy = "vision" | "interlock" | "operator" | "telemetry" | "plc" | "sim";
 export type SafetyHandledBy = "interlock_engine" | "operator" | "advisory";
 export type SafetyOutcome = "stopped" | "reduced_speed" | "manual_override" | "logged_only";
 

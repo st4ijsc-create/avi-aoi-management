@@ -9,8 +9,8 @@
  *       - eventType 'zone_intrusion'  for none-crossing 'stop'/'rated_stop'
  *       - eventType 'speed_violation' for 'speed_reduce'
  *       outcome reflects the level (reduced_speed / stopped / logged_only),
- *       detectedBy = 'vision' | 'sim' → mapped to the safety_events domain
- *       ('vision' as-is; anything else → 'operator' since the column is a fixed set),
+ *       detectedBy = 'vision' | 'sim' recorded HONESTLY (both additive varchar values),
+ *       responseTimeMs = ms from detection → reaction proposal (ADVISORY latency, not SIL),
  *   • for 'speed_reduce'/'stop' attaches a PROPOSAL describing whether the EXISTING
  *     interlock/commandDispatcher gate would even permit a write — it NEVER dispatches
  *     here (identical honesty to nearMissAdvisor.buildProposal),
@@ -228,6 +228,11 @@ export interface ZoneReactionRecord extends ZoneReaction {
   proposal?: SpeedReductionProposal | null;
   /** True only for rated_stop: explicitly documents LOG-not-actuate. */
   ratedStopLoggedNotActuated?: boolean;
+  /**
+   * ADVISORY software latency (ms) from detection → this reaction PROPOSAL, mirrored
+   * onto safety_events.responseTimeMs. NOT a safety-rated stopping-time guarantee.
+   */
+  responseTimeMs?: number;
 }
 
 export interface EvaluateAndRecordInput {
@@ -240,6 +245,14 @@ export interface EvaluateAndRecordInput {
   /** Provenance of the human set — 'sim' by default (honest: no real tracker). */
   source?: "vision" | "sim";
   minConfidence?: number;
+  /**
+   * When the detection was OBSERVED (epoch ms). Used to populate the ADVISORY
+   * safety_events.responseTimeMs = (reaction-proposal recorded) − (detected) for
+   * ISO/TS 15066 PDCA latency reporting. This is a SOFTWARE detection→reaction-proposal
+   * latency measurement — NOT a safety-rated stopping-time guarantee. Defaults to "now"
+   * (⇒ ~0ms) when the caller has no upstream detection timestamp.
+   */
+  detectedAtMs?: number;
   scope?: string | null;
   corporateCode?: string | null;
   factoryId?: number | null;
@@ -290,12 +303,14 @@ export async function evaluateAndRecord(input: EvaluateAndRecordInput): Promise<
     specs = rows.map(toSpec);
   }
 
+  // Detection time (epoch ms) — the moment the track was OBSERVED. Defaults to now.
+  const detectedAtMs = input.detectedAtMs ?? Date.now();
   const reactions = evaluateZones(input.humans, input.robots, specs, { minConfidence: input.minConfidence });
   const source = input.source ?? "sim";
-  // safety_events.detectedBy is a fixed set (vision|interlock|operator|telemetry).
-  // 'sim' has no column value → map to 'operator' (honest: a human/test drove it),
-  // and note the true provenance in the free-text notes.
-  const detectedBy = source === "vision" ? ("vision" as const) : ("operator" as const);
+  // Honest provenance: 'vision' for a real vision producer, 'sim' for a SIMULATED
+  // track (both are additive varchar values — no migration; the true source is ALSO
+  // restated in the free-text notes).
+  const detectedBy = source === "vision" ? ("vision" as const) : ("sim" as const);
 
   const out: ZoneReactionRecord[] = [];
   let recorded = 0;
@@ -307,6 +322,10 @@ export async function evaluateAndRecord(input: EvaluateAndRecordInput): Promise<
     if (mapping) {
       // Record the advisory event (self-gated by SAFETY_AUDIT_ENABLED).
       const robotIdNum = typeof r.robotId === "number" ? r.robotId : Number(r.robotId);
+      // ADVISORY latency: ms from detection → this reaction proposal. Clamped ≥0 so a
+      // clock skew never yields a negative. Software measurement only, not SIL timing.
+      const responseTimeMs = Math.max(0, Date.now() - detectedAtMs);
+      rec.responseTimeMs = responseTimeMs;
       const res = await record({
         eventType: mapping.eventType,
         robotId: Number.isFinite(robotIdNum) ? robotIdNum : null,
@@ -316,6 +335,7 @@ export async function evaluateAndRecord(input: EvaluateAndRecordInput): Promise<
           level: r.level,
           source,
         },
+        responseTimeMs,
         detectedBy,
         handledBy: "advisory",
         outcome: mapping.outcome,
@@ -367,6 +387,8 @@ export async function evaluateFromProximity(det: {
   distance: number;
   confidence: number;
   source: "vision" | "manual" | "test";
+  /** When the detection was observed (epoch ms) — for responseTimeMs. Defaults to now. */
+  detectedAtMs?: number;
   scope?: string | null;
   corporateCode?: string | null;
   factoryId?: number | null;
@@ -382,6 +404,7 @@ export async function evaluateFromProximity(det: {
     robots,
     filter: { robotId, stationId: det.stationId ?? undefined, lineId: det.lineId ?? undefined },
     source: det.source === "vision" ? "vision" : "sim",
+    detectedAtMs: det.detectedAtMs,
     scope: det.scope ?? null,
     corporateCode: det.corporateCode ?? null,
     factoryId: det.factoryId ?? null,

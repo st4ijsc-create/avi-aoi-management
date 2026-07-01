@@ -196,7 +196,7 @@ export const safetyRouter = router({
         lineId: z.number().int().positive().optional(),
         stationId: z.number().int().positive().optional(),
         responseTimeMs: z.number().int().min(0).optional(),
-        detectedBy: z.enum(["vision", "interlock", "operator", "telemetry"]).optional(),
+        detectedBy: z.enum(["vision", "interlock", "operator", "telemetry", "plc", "sim"]).optional(),
         outcome: z.enum(["stopped", "reduced_speed", "manual_override", "logged_only"]).optional(),
         isNearMiss: z.boolean().optional(),
         notes: z.string().max(2000).optional(),

@@ -42,6 +42,14 @@ export interface AndonDispatchResult {
   taskId?: number;
   assignedDeviceId?: number;
   reason?: string;
+  /**
+   * ADVISORY software latency (ms) from the Andon being raised (detection) → this
+   * assist-task dispatch PROPOSAL, for ISO/TS 15066 PDCA reporting. Mirrored onto the
+   * advisory safety_events.responseTimeMs. This is a monitoring measurement of the
+   * orchestration reaction — NOT a safety-rated response-time guarantee; the dispatch
+   * commands no device (it only creates a `tasks` row).
+   */
+  responseTimeMs?: number;
 }
 
 /**
@@ -93,5 +101,35 @@ export async function maybeDispatchRobotForAndon(andon: AndonEvent): Promise<And
 
   // Let the EXISTING allocator pick an idle capable robot (self-gated, no control path).
   const decision = await allocateTask(taskId);
-  return { ok: true, enabled: true, taskId, assignedDeviceId: decision.assignedDeviceId };
+
+  // ADVISORY latency: ms from the Andon being raised (detection) → this dispatch
+  // proposal. Clamped ≥0 so clock skew never yields a negative. Software/orchestration
+  // measurement only — NOT a safety-rated response time.
+  const raisedAtMs = andon.raisedAt instanceof Date ? andon.raisedAt.getTime() : Date.parse(String(andon.raisedAt ?? ""));
+  const responseTimeMs = Number.isFinite(raisedAtMs) ? Math.max(0, Date.now() - raisedAtMs) : undefined;
+
+  // Record an ADVISORY safety_event stamping the response latency (PDCA). Self-gated by
+  // SAFETY_AUDIT_ENABLED (record() no-ops when off) + lazily imported so this module
+  // keeps no static dependency on the safety graph. Fire-and-forget: never blocks or
+  // fails the dispatch, and opens NO control path (this only LOGS).
+  void import("../safety/safetyAuditService")
+    .then((m) =>
+      m.record({
+        eventType: "intrusion",
+        robotId: decision.assignedDeviceId ?? null,
+        lineId: andon.lineId ?? null,
+        stationId: andon.stationId ?? null,
+        responseTimeMs: responseTimeMs ?? null,
+        // Honest provenance: the andon→robot dispatch is an ADVISORY orchestration
+        // reaction, not a real sensor observation → 'operator' (a human raised the Andon).
+        detectedBy: "operator",
+        handledBy: "advisory",
+        outcome: "logged_only",
+        isNearMiss: false,
+        notes: `ADVISORY andon→robot assist dispatch (andon #${andon.id}, reason ${andon.reason}, task #${taskId}). responseTimeMs=raise→dispatch-proposal. NOT a safety-rated stop — orchestration only.`,
+      }),
+    )
+    .catch((e) => console.error("[Andon] safety-event stamp failed:", (e as Error)?.message ?? e));
+
+  return { ok: true, enabled: true, taskId, assignedDeviceId: decision.assignedDeviceId, responseTimeMs };
 }
