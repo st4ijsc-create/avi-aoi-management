@@ -15,7 +15,7 @@ Stack: shadcn/ui (new-york) + Radix + Tailwind v4 (`@theme` + oklch CSS vars) + 
 | **Tokens** | New semantic colors (`--info`, `--error` alias, surface/text ramps), typography scale utilities, motion/spacing/radius/elevation constants | `client/src/index.css`, `client/src/components/patterns/tokens.ts` |
 | **Components** | `PageHeader`, `MetricCard`, `StatusBadge`, `SectionCard`, `Heading`/`Text`; re-export of existing `EmptyState`; single barrel | `client/src/components/patterns/*`, `index.ts` |
 | **Adoption** | `FleetOrchestration` + `SafetyWorkforce` now import shared `MetricCard` + `PageHeader` (pixel-identical swap). `DigitalTwinCenter` left as-is (different header/KPI shape) | the 3 pages |
-| **Storybook** | **Documented-only** (not installed) — see §6 | this doc |
+| **Storybook** | **INSTALLED (Wave 6, 2026-07)** — Storybook 10.4.6 (`@storybook/react-vite`), 7 story files, `build-storybook` green — see §6 | `.storybook/*`, `client/src/components/patterns/*.stories.tsx` |
 | **A11y** | Static audit + fixes baked into the new components; checklist + top findings | §5 |
 
 **Hard rule honoured:** the values of existing tokens (`--background`, `--foreground`, `--primary`, `--secondary`, `--muted`, `--border`, `--destructive`, `--success`, `--warning`, …) are unchanged. Everything below is *new*.
@@ -183,30 +183,33 @@ Guidance:
 
 ---
 
-## 6. Storybook decision: **documented-only (not installed)**
+## 6. Storybook: **INSTALLED (Wave 6, 2026-07)**
 
-**Decision:** Storybook was **not installed**. Rationale (honest):
-- The repo is on **Vite 7 + Tailwind v4 (`@theme` CSS-first) + React 19**. Storybook's `@storybook/react-vite` (v8/v9) and the Tailwind/PostCSS integration are still maturing against this exact combo; a clean, non-flaky install that also keeps `npm run check` green is not guaranteed and pulls a large dev-dep tree (`storybook`, `@storybook/*`, addons).
-- The brief says: if integration is heavy/risky/flaky, do **not** force it — document the setup + a sample story instead. We chose that path. No deps were added; `npm run check` and `vite build` stay clean.
-- `.stories.tsx` files cannot be committed yet either: tsconfig globs `client/src/**/*`, so a story importing `@storybook/react` would break `tsc --noEmit` until the dev-dep is installed.
+**Outcome (definitive):** Storybook is now **installed and building**. Deferred twice (F1b §6, F2 §7.5) as build-risky against **Vite 7 + Tailwind v4 (`@theme`) + React 19** — that risk is now **resolved**: **Storybook 10.4.6** ships first-class Vite 7 + React 19 support (the old blocker was SB 8/9, which predated Vite 7). A clean install passes all three gates.
 
-### 6.1 Exact setup steps (when adopted later)
+**What was installed / added:**
+- Dev-deps (pnpm — the repo's actual package manager; `packageManager: pnpm@…`, `node_modules/.pnpm`): `storybook@10.4.6` + `@storybook/react-vite@10.4.6`. **No peer-dep errors** — `@storybook/react-vite@10.4.6` declares `vite: ^5||^6||^7||^8`, `react/react-dom: …||^19.0.0`. No addons needed (backgrounds + theme toolbar are core in SB 10).
+- `.storybook/main.ts` — framework `@storybook/react-vite`; stories glob scoped to `client/src/components/patterns/**/*.stories.@(ts|tsx)` only (not the whole app); `@`/`@shared`/`@assets` aliases re-declared in `viteFinal` (SB loads its own Vite config); telemetry disabled. Uses `fileURLToPath(import.meta.url)` for `__dirname` (config is ESM).
+- `.storybook/preview.ts` — imports `../client/src/index.css` (Tailwind v4 + `@theme` tokens + `.ds-*` type scale) and `../client/src/i18n` (so `EmptyState`'s `useTranslation()` resolves); dark/light `backgrounds` + a **Theme** toolbar toggle that toggles the app's `.dark` class on the story root.
+- 7 story files in `client/src/components/patterns/*.stories.tsx`: `PageHeader`, `MetricCard`, `StatusBadge` (tones + auto-heuristic + solid variants + `map`), `SectionCard`, `Heading`/`Text` (Typography), `EmptyState`, and **`DesignTokens`** (color swatches for the semantic tokens + surface/text ramps + one row per `.ds-*` type class — the token playground).
+- Scripts: `"storybook": "storybook dev -p 6006"`, `"build-storybook": "storybook build"`. `storybook-static/` added to `.gitignore`.
+
+**Gates (all green):**
+- `npm run check` (`tsc --noEmit`) — clean. The `.stories.tsx` files ARE typechecked (tsconfig globs `client/src/**/*`); they use `import type { Meta, StoryObj } from "@storybook/react-vite"` (SB 10 re-exports these from the framework pkg) and pass. No tsconfig `exclude` was needed — stories typecheck cleanly, the preferred outcome.
+- `npx vite build` (app build) — clean, ~18s, unchanged.
+- `npm run build-storybook` — **completed successfully**, ~39s, static output to `storybook-static/` (git-ignored).
+
+### 6.1 How to run
 ```bash
-# 1. scaffold (uses the existing vite config)
-pnpm dlx storybook@latest init --builder vite --type react
-# 2. ensure dev-deps only (storybook, @storybook/react-vite, addons) — they land in devDependencies
-# 3. import the app CSS so tokens/utilities are available in stories:
-#    in .storybook/preview.ts:  import "../client/src/index.css";
-# 4. add a theme toggle: render stories inside a wrapper that toggles the `.light` class
-# 5. exclude stories from tsc OR add @storybook types:
-#    add "**/*.stories.tsx" to tsconfig "exclude", or install @storybook/react types before committing stories
-# 6. scripts:  "storybook": "storybook dev -p 6006",  "build-storybook": "storybook build"
-# 7. verify:  pnpm run check  &&  pnpm build-storybook   (must both pass before merge)
+pnpm run storybook          # dev server on http://localhost:6006
+pnpm run build-storybook    # static build → storybook-static/ (git-ignored)
+pnpm run check              # stories are part of tsc --noEmit — must stay green
 ```
+Add new stories under `client/src/components/patterns/*.stories.tsx` (the glob). Import types from `@storybook/react-vite`. Use the **Theme** toolbar (top toolbar) to check dark/light token resolution.
 
-### 6.2 Sample story (drop into `patterns/MetricCard.stories.tsx` after install)
+### 6.2 Sample story pattern
 ```tsx
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Activity } from "lucide-react";
 import { MetricCard } from "./MetricCard";
 
@@ -220,11 +223,8 @@ type Story = StoryObj<typeof MetricCard>;
 
 export const Default: Story = {};
 export const Warning: Story = { args: { tone: "warning", value: 3 } };
-export const Danger: Story = { args: { tone: "danger", value: 1 } };
-export const Good: Story = { args: { tone: "good", value: 8 } };
-export const WithDelta: Story = { args: { tone: "info", delta: "+2 today" } };
 ```
-A **token/typography playground** story should render swatches for `bg-primary/secondary/muted/success/warning/info/destructive`, the `--surface-1..3` / `--text-1..3` ramps, and one row per `.ds-*` type class, wrapped in a light/dark toggle.
+The **`DesignTokens` playground** (`Design System/Tokens`) renders swatches for `bg-primary/secondary/muted/success/warning/info/destructive`, the `--surface-1..3` / `--text-1..3` ramps, and one row per `.ds-*` type class — toggle the Theme toolbar for dark/light.
 
 ---
 
@@ -242,7 +242,7 @@ Goal: converge the 151 pages onto the DS without a risky big-bang. Order by traf
 | **Wave 3** | List/detail/editor/admin/registry headers → shared `<PageHeader>` (pixel-preserving) + tokenize obvious status literals on touched pages. Bounded batch — quality over quantity; NO abstract "template" components were built (deliberate, see §7.7). | ✅ done (W3) — see §7.7 |
 | **Wave 4** | Status-helper unification — replace per-page `*StatusBadge` / `statusVariant` / `severity*` switch helpers with the shared `<StatusBadge>` + a per-page `map`/variant. `<StatusBadge>` extended **additively** with a solid shadcn-`variant` render path so the (mostly solid-`Badge`-variant) legacy helpers unify with **zero visual change**. See §7.8. | ✅ done (W4) — see §7.8 |
 | **Wave 5** | A11y sweep — static WCAG-AA pass over ~15 core/high-traffic pages; fix §5.4 + §7.4 findings (form-control labels, icon-only button names, missing `<h1>`, color-only status) + tokenize the W4-deferred literal tint families. | ✅ done (W5) — see §7.9 |
-| **Wave 6** | Storybook + visual regression — install per §6, add stories for the 53 shadcn components + patterns + token playground; optional Chromatic/Playwright visual diffs. | ▢ pending |
+| **Wave 6** | Storybook + visual regression — install per §6, add stories for patterns + token playground; optional Chromatic/Playwright visual diffs. | ✅ **installed** (Wave 6, 2026-07) — Storybook **10.4.6** (`@storybook/react-vite`), 7 story files (6 patterns + `DesignTokens` playground), `build-storybook` **green**, all 3 gates pass (`npm run check` + `vite build` + `build-storybook`). See §6. shadcn-component stories + Chromatic/Playwright visual diffs remain a future add-on (not blocking). |
 
 > **Convention (all waves):** every NEW page MUST use `PageHeader` + `MetricCard` + `StatusBadge` + `SectionCard` + `<Heading>`. Enforce in review.
 
@@ -280,9 +280,9 @@ Pixel-preserving swaps; `npm run check` + `vite build` both green. Icon+title+su
 7. **Icon-only toggle buttons without accessible name** — OpsConsole sound toggle (Volume2/VolumeX) had no label. FIXED (`aria-label`). Sweep other icon-only toggles (fullscreen, etc.) in W5.
 8. **Pages with no `<h1>`** — `ProductionDashboard` renders a summary strip with no page-level heading → broken document outline. Add a visually-hidden `<h1>` or a `PageHeader` in W2.
 
-### 7.5 Storybook (F2 decision)
+### 7.5 Storybook (F2 decision → SUPERSEDED by Wave 6)
 
-Storybook remains **documented-only / not installed** (unchanged from §6). Re-confirmed in F2: installing `@storybook/react-vite` against Vite 7 + Tailwind v4 (`@theme`) + React 19 is still a heavy, flaky dev-dep tree and risks `npm run check`/`vite build`; the brief prioritises zero build risk, so it was not forced. See §6.1 for the exact adopt-later steps.
+F2 kept Storybook documented-only, judging `@storybook/react-vite` against Vite 7 + Tailwind v4 + React 19 too flaky to force. **Wave 6 (2026-07) revisited and installed it:** Storybook **10.4.6** now supports Vite 7 + React 19 as first-class peers (the F1b/F2 blocker was SB 8/9, pre-Vite-7). Clean install, all three gates green. See §6 for the full outcome.
 
 ### 7.6 Wave 2 — migrated pages
 
