@@ -4507,6 +4507,8 @@
     "opsConsoleDesc": "统一作战室 + 告警中心",
     "overviewGroup": "概览",
     "overviewGroupDesc": "仪表盘与运营作战室",
+    "commandCenter": "生态系统指挥中心",
+    "commandCenterDesc": "单一视图：实时层级树、工厂数字孪生、KPI 与统一告警栏",
     "devicesGroup": "设备与OT",
     "devicesGroupDesc": "机器状态、适配器、工程与维护",
     "aiGroup": "AI",

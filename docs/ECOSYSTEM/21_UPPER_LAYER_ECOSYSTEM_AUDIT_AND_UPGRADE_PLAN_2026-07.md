@@ -106,7 +106,7 @@ Gom theo chủ đề, ưu tiên theo **đòn bẩy** (G-1 mở khóa mọi thứ
 | Pha | Tên | Nội dung | Đóng gap | Phụ thuộc |
 |---|---|---|---|---|
 | **U1** ✅ | **Event Backbone hợp nhất** *(đòn bẩy cao nhất)* | Cho fleet (`task.assigned/completed`), PdM (`workorder.created`), anomaly (`anomaly.detected`), IR (`program.deployed`), twin (derived state) **phát domain event**. Thêm subscriber cho `SAFETY_EVENT` + `quality_gate.breach` (webhook fan-out + rulesEngine + KB ingest). **Re-broadcast eventBus → client** dưới 1 event chuẩn hóa `alerts:stream` + `ecosystem:event`. Sửa bug socket dead-code (dup socket, machineCode/id mismatch). | G-1, G-2, G-12 | — |
-| **U2** | **Ecosystem Command Center** (`/command-center`) | 1 màn hình toàn cảnh: **cây phân cấp live** site→factory→line→station→machine→robot (định nghĩa node lái bởi `deviceTypeRegistry`/capability → device type mới tự xuất hiện; site lái bởi federation rollup) · **twin 3D** factory chọn (nhúng DigitalTwinCenter, overlay fleet task + safety zone) · **rail cảnh báo live hợp nhất** (từ U1 `alerts:stream`) · **KPI strip** (oee:update/WIP/energy/AI insight). Thay 5 query polled của OpsConsole bằng 1 feed live. | G-3, G-2 | U1 |
+| **U2** ✅ | **Ecosystem Command Center** (`/command-center`) | 1 màn hình toàn cảnh: **cây phân cấp live** site→factory→line→station→machine→robot (định nghĩa node lái bởi `deviceTypeRegistry`/capability → device type mới tự xuất hiện; site lái bởi federation rollup) · **twin 3D** factory chọn (nhúng DigitalTwinCenter, overlay fleet task + safety zone) · **rail cảnh báo live hợp nhất** (từ U1 `alerts:stream`) · **KPI strip** (oee:update/WIP/energy/AI insight). Thay 5 query polled của OpsConsole bằng 1 feed live. | G-3, G-2 | U1 |
 | **U3** | **Machine & Robot Cockpit** | `/machine/:id` — gộp identity+capability resolved, live UDM+PackML, health/PdM, OEE, alarm chuẩn hóa per-máy (query mỏng mới), recipe+version+deploy per-máy, genealogy, 3D model, control gated, timeline. `/robot/:id` — telemetry+UDM đầy đủ (joint/battery/estop/zone), **joint/pose viz + per-robot twin**, job+task, IR robot-selectable, **teach/jog nối gate thật** (thay preview local), safety zone, anomaly. **Wire robot telemetry lên socket**; sửa redirect dead-end + QR→`/machine/:code`; mọi list/scene navigate mang id + back. | G-4, G-5 | U1 (live), (T2a/T2b cho joint viz đã có) |
 | **U4** | **Mở nền tảng (API + registry data-driven)** | Extend `/api/v1` + scopes cho fleet/safety/twin/IR/PdM/anomaly/governance (ít nhất read). Chuyển `ADAPTER_KINDS`/`PROGRAMMING_KINDS`/`SYSTEM_MODULES` sang **manifest register-and-go** (như `driverRegistry`) → thêm vendor/kind/module không sửa core. | G-6, G-8 | — |
 | **U5** | **Federation Panorama** | `siteClient` **giữ `details[]`** + rollup per-`category` (schema đã có cột) + tiêu thụ endpoint `events` per-site (alert roll-up) + `site:` socket room; tổng quát roll-up sang fleet/safety/twin/PdM. Drill site→factory→device trong Command Center (U2). | G-7 | U1, U2 |
@@ -173,3 +173,77 @@ U1 thuần runtime event (không bảng mới). Không dùng số migration nào
 
 ### 8.7 Cổng chất lượng
 `npm run check` (tsc) PASS · `npx vite build` PASS · test mới `ecosystemEvents.test.ts` 11/11 · fleet+programming+anomaly 75/75 · orchestration 46/46 — tất cả xanh.
+
+---
+
+## 9. U2 — Ecosystem Command Center: BACKEND aggregation (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. READ-ONLY, KHÔNG migration, KHÔNG flag (thuần aggregation). Đây là tầng **AGGREGATION MỎNG** trên các service ĐÃ CÓ — không nhân đôi data path, không thêm data thiết bị, không mở đường điều khiển. FE (trang `/command-center`) do một agent khác dựng, tiêu thụ router này. `commandCenter.*` gọi các helper trong `server/services/ecosystem/commandCenterService.ts`.
+
+### 9.1 Router `commandCenter` (register trong `server/routers.ts`)
+RBAC: mọi procedure `protectedProcedure` + `requirePermission("machine_monitoring","canView")` (giống twin/fleet/safety). Tenant scope qua `scope.corporateCode` / `scope.factoryId` (tùy chọn). Mọi procedure gắn thêm `status` (live-vs-poll).
+
+| Procedure | Input | Output (shape) |
+|---|---|---|
+| `status` | — | `{ liveAlertsEnabled:boolean, mode:"live"\|"polling" }` — bật khi `ECOSYSTEM_EVENTS_ENABLED` (U1) ON → FE subscribe `alerts:stream`; tắt → FE poll `recentAlerts`. |
+| `hierarchy` | `{ scope?:{factoryId?,corporateCode?} }` | `{ sites: HierarchyNode[], status }` |
+| `kpiSummary` | `{ scope? }` | `{ oee,wip,alarms,energy,aiInsights,sites,fleet, status }` — mỗi field `KpiField<T>={value,source,available}` |
+| `recentAlerts` | `{ scope?, limit?≤200 }` | `{ alerts: SeedAlert[], status }` (seed cho rail; delta live qua U1 `alerts:stream`) |
+
+**`HierarchyNode`**: `{ id, kind:"site"\|"factory"\|"line"\|"station"\|"machine"\|"robot", code, name, deviceType?(resolved), status:"ok"\|"warn"\|"down"\|"idle"\|"unknown", counts:{activeAlarms,activeTasks,offline}, refId, children? }`. Cây: `sites[] → factories[] → lines[] → stations[] → {machines[],robots[]}`.
+
+**`SeedAlert`** = envelope U1 `EcosystemEvent`: `{ id, ts, kind, severity, source, scope:{siteCode?,factoryId?,machineId?,robotId?,lineId?}, title, detail? }`.
+
+### 9.2 Nguồn mỗi field (BẰNG CHỨNG không nhân đôi)
+| Field | Aggregates from (hàm ĐÃ CÓ) |
+|---|---|
+| Cây per-factory (line→station→device + state/task) | `twin/sceneGraph.buildSceneGraph` (REUSE làm xương sống — chỉ PROJECT + roll-up) |
+| `deviceType` mỗi máy | `standards/deviceTypeRegistry.resolveForMachineType` (seed từ `capabilityModel` DEFAULT_PROFILES) → **type mới tự xuất hiện** |
+| `oee` | `oeeService.getAllMachinesOEELive` (mean các factor live; KHÔNG tính lại OEE) |
+| `wip` | `wip_tracking` (data path MES Control Tower) đếm unit chưa exit |
+| `alarms` | `andon_events` (chưa resolve, bucket theo state) + `safety_events` (non-near-miss = critical) |
+| `energy` | **HONEST null** (`available:false`) — chưa có hàm rollup tổng-kwh/co2 toàn estate (energyRouter chỉ per-recipe/peak/forecast). KHÔNG bịa số 0. |
+| `aiInsights` | `aiActionInbox.countInbox(user)` (scoped theo user) |
+| `sites` | federation `site_kpi_rollup` + freshness (reporting/stale/down) |
+| `fleet` | `tasks` (pending/assigned/running) + `robots` (online) — đếm trạng thái, KHÔNG chạy lại allocation |
+| Seed alerts | `andon_events` + `safety_events` → map vào envelope U1 (`andonToSeed`/`safetyToSeed`) |
+
+### 9.3 Status roll-UP + registry-driven
+- `deviceStatus`: running→ok, idle→idle, held/stopped→warn, aborted/estop/offline→down, else unknown.
+- `rollUpStatus`: **WORST-of-children** (rank down>warn>unknown>idle>ok) → 1 máy `down` làm station/line/factory `down`; alarm active nâng leaf lên ≥`warn`. Counts cộng dồn mọi tầng.
+- Device type **registry-driven**: resolve qua seed (capabilityModel) → thêm machineType/type mới KHÔNG sửa router; unknown → fallback `Equipment` (không ném).
+
+### 9.4 Honest seams / caveats
+- **Federation depth = U5**: roll-up site hiện single-KPI; site LOCAL expand đầy đủ factory, site REMOTE là leaf roll-up (chưa drill site→factory→device — để U5). Tiêu thụ đúng những gì aggregator đã landed.
+- **Energy** null trung thực (chưa có rollup tổng).
+- **Perf**: `hierarchy` fan-out 1 `buildSceneGraph`/factory (mỗi cái vài select có index + 1 telemetry select/robot). Map machineType + alarm-count đã HOIST ra ngoài vòng lặp factory. Narrow bằng `scope.factoryId` cho estate lớn. Read-only + fail-safe (no-DB → cây rỗng / null, không ném).
+- **Live-vs-poll**: `status.mode` cho FE biết seed (`recentAlerts`) + subscribe live (`alerts:stream`, U1) hay chỉ poll.
+
+### 9.5 Cổng chất lượng
+`npm run check` (tsc) PASS · test mới `commandCenterService.test.ts` 23/23 · twin+fleet+ecosystem+standards+equipment 202/202 — tất cả xanh. KHÔNG commit (theo yêu cầu). BACKEND-only.
+
+---
+
+## 10. U2 — Ecosystem Command Center: FRONTEND (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. Trang `/command-center` — single pane of glass, tiêu thụ router `commandCenter.*` (§9) + luồng live U1 (`useEcosystemEvents`). ADDITIVE + read-only, KHÔNG commit. File chính: `client/src/pages/CommandCenter.tsx`.
+
+### 10.1 Layout 3-pane (responsive) + KPI strip
+- **TOP · KPI STRIP** — 7 `MetricCard` (DS F1b): OEE (mean), WIP/bottleneck, Alarms (crit/high), Fleet (tasks/robots online), Sites (reporting/stale/down), AI insights, Energy. **Energy honest "—"** khi `available:false` (không bịa 0). Badge **LIVE** (xanh, khi `status.mode==="live"` = `ECOSYSTEM_EVENTS_ENABLED` ON) vs **POLLING** (hổ phách).
+- **LEFT · CÂY PHÂN CẤP LIVE** — tree đệ quy `site→factory→line→station→machine→robot`: status-dot theo token ngữ nghĩa (ok=success / warn=warning / down=destructive / idle+unknown=muted), icon theo kind, `deviceType` chip cho leaf, badge đếm alarms/tasks/offline. **Chọn node** → lọc center + rail theo scope subtree. Leaf máy/robot có nút **"Open cockpit"** → `/machine/:refId` hoặc `/robot/:refId` (route do **U3** giao — wire sẵn, resolve khi U3 land). Poll `hierarchy` **10s** cho roll-up freshness.
+- **CENTER · TWIN/OVERVIEW** — twin 3D **compact** cho factory đang chọn: query `twin.sceneGraph` RIÊNG cho factory đó (không import phá `DigitalTwinCenter`; TÁI DÙNG cách tiếp cận three.js của twin — Canvas/OrbitControls/Grid/blocks tô màu theo state). **Fallback status-grid** (line→station→device tô màu theo hierarchy) khi scene rỗng HOẶC WebGL không có → KHÔNG bao giờ vỡ build/trang.
+- **RIGHT · ALARM RAIL HỢP NHẤT** — seed từ `recentAlerts`, LIVE-append từ `useEcosystemEvents({alertsOnly:true})` (dedupe theo `id`, cap 100, mới nhất trước). Mỗi alert: `StatusBadge` severity (critical/high→error, medium→warning, else info), kind, title, source, thời gian tương đối, click → điều hướng tới asset cockpit (machine/robot) hoặc trang nguồn (andon→`/ops-console`, safety→`/safety-workforce`). Rail lọc theo scope node đang chọn.
+
+### 10.2 Live-vs-poll
+- `commandCenter.status.mode` lái badge + hành vi rail: **live** → subscribe `alerts:stream` (U1); **polling** → CŨNG poll `recentAlerts` mỗi **15s** làm fallback (khi live, tắt poll để tránh trùng). Hierarchy + KPI luôn poll (10s / 15s) vì là aggregate chậm, không phải delta live.
+
+### 10.3 Trạng thái rỗng/degraded trung thực
+- Không site → "No sites reporting"; federation off/single-site → 1 site LOCAL (từ backend); energy null → "—"; scene rỗng/WebGL off → status-grid; không factory layout → "No line/station layout".
+
+### 10.4 Wire-up
+- **Route**: `/command-center` trong `client/src/App.tsx` (lazy, `RouteGuard requirePermission="machine_monitoring"`, `AIPageWrapper`).
+- **Nav**: item ĐẦU TIÊN/nổi bật của module OVERVIEW trong `client/src/lib/navigation.tsx` (icon Gauge, gated machine_monitoring).
+- **i18n nav**: `nav.commandCenter` / `nav.commandCenterDesc` thêm en/vi/zh (VI: "Trung tâm Điều hành Hệ sinh thái"). In-page qua `t("cmd.*","English default")` fallback (không sửa locale cho nội dung trang).
+
+### 10.5 Cổng chất lượng
+`npm run check` (tsc) **PASS** · `npx vite build` **PASS** (chunk `CommandCenter-*.js` emit, code-split). KHÔNG commit (theo yêu cầu). Twin: **embed compact 3D** (tái dùng cách của DigitalTwinCenter, query scene-graph riêng) với **status-grid fallback** — chọn hướng này để an toàn build (không phụ thuộc internals non-export của DigitalTwinCenter, không rủi ro WebGL). File sửa: `client/src/pages/CommandCenter.tsx` (mới), `client/src/App.tsx`, `client/src/lib/navigation.tsx`, `client/src/i18n/locales/{en,vi,zh}.json`, doc 21 (§6/§10).

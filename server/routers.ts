@@ -145,6 +145,7 @@ import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: ro
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
 import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
+import { commandCenterRouter } from "./routers/commandCenterRouter"; // Doc 21 / U2: Ecosystem Command Center aggregation (hierarchy tree + KPI strip + seed alerts; read-only)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -395,6 +396,8 @@ export const appRouter = router({
   sites: sitesRouter,
   // Federation (doc 13 / F1) — roll-up read API over the core aggregator (read-only)
   federation: federationRouter,
+  // Ecosystem Command Center (doc 21 / U2) — whole-ecosystem hierarchy + KPI aggregation (read-only)
+  commandCenter: commandCenterRouter,
 
   // Process & SPC
   process: processRouter,

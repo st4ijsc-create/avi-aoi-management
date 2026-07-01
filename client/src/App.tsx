@@ -113,6 +113,7 @@ const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); /
 const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
 const CellTwinPlayer = React.lazy(() => import("./pages/CellTwinPlayer")); // Generic data-driven realtime twin playback for ANY orchestration workflow
 const DigitalTwinCenter = React.lazy(() => import("./pages/DigitalTwinCenter")); // T1 (doc 16 Khối 7): 3D Digital Twin Center — scene-graph + glTF + live deltas + replay (TWIN_LIVE_ENABLED)
+const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
 const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 13 / F0: Multi-site Federation sites registry (admin)
 const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
@@ -272,6 +273,7 @@ function Router() {
       <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>
       <Route path="/digital-twin-center"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><DigitalTwinCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/command-center"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       <Route path="/technician-copilot"><RouteGuard navHref="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
       <Route path="/alerts"><RouteGuard navHref="/alerts"><Alerts /></RouteGuard></Route>

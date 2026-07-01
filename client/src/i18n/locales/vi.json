@@ -4537,6 +4537,8 @@
     "opsConsoleDesc": "War-Room + Trung tâm cảnh báo hợp nhất",
     "overviewGroup": "Tổng quan",
     "overviewGroupDesc": "Bảng điều khiển & phòng chỉ huy vận hành",
+    "commandCenter": "Trung tâm Điều hành Hệ sinh thái",
+    "commandCenterDesc": "Một màn hình: cây phân cấp trực tiếp, twin nhà máy, KPI & rail cảnh báo hợp nhất",
     "devicesGroup": "Thiết bị & OT",
     "devicesGroupDesc": "Trạng thái máy, adapter, kỹ thuật & bảo trì",
     "aiGroup": "AI",

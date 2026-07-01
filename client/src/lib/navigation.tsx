@@ -146,6 +146,16 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "dashboard",
     items: [
       {
+        // U2 (doc 21 §6 G-3) — flagship single pane of glass: hierarchy tree +
+        // factory twin + KPI strip + unified live alarm rail. First/prominent item.
+        href: "/command-center",
+        label: "nav.commandCenter",
+        icon: <Gauge className="h-4 w-4" />,
+        description: "nav.commandCenterDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
+      {
         href: "/dashboard",
         label: "nav.dashboardMain",
         icon: <BarChart3 className="h-4 w-4" />,

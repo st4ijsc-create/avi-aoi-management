@@ -4514,6 +4514,8 @@
     "opsConsoleDesc": "Unified War-Room + Alert Center",
     "overviewGroup": "Overview",
     "overviewGroupDesc": "Dashboards & operations war-room",
+    "commandCenter": "Ecosystem Command Center",
+    "commandCenterDesc": "Single pane: live hierarchy, factory twin, KPIs & unified alarm rail",
     "devicesGroup": "Devices & OT",
     "devicesGroupDesc": "Machine status, adapters, engineering & maintenance",
     "aiGroup": "AI",
