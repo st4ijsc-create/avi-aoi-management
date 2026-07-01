@@ -30,6 +30,7 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -136,6 +137,7 @@ function evidenceSummary(evidence: Record<string, unknown> | null | undefined): 
 
 export default function RobotModelHealth() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canEdit");
@@ -381,10 +383,15 @@ export default function RobotModelHealth() {
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="text-xs">
-                          <span className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                            title={t("robotHealth.openCockpit", "Open robot cockpit")}
+                            onClick={() => setLocation(`/robot/${a.robotId}`)}
+                          >
                             <Bot className="h-3 w-3" />
-                            {robot ? <span className="font-mono">{robot.code}</span> : <span className="text-muted-foreground">#{a.robotId}</span>}
-                          </span>
+                            {robot ? <span className="font-mono">{robot.code}</span> : <span>#{a.robotId}</span>}
+                          </button>
                         </TableCell>
                         <TableCell>{kindBadge(a.kind, t)}</TableCell>
                         <TableCell className="text-xs tabular-nums">{fmtNum(a.score)}</TableCell>

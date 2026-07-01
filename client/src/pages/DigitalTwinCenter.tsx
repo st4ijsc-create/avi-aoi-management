@@ -35,6 +35,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useLocation } from "wouter";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -42,6 +43,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Box, Factory, Cpu, Bot, Activity, AlertTriangle, ListChecks, RefreshCw, Info,
   Radio, History, Play, Pause, RotateCcw, Wifi, WifiOff, Eye, Tag, Boxes, Layers,
+  ExternalLink,
 } from "lucide-react";
 
 // ── Typesafe shapes inferred from the twin router output ──────────────────────
@@ -319,6 +321,7 @@ function toLocalInput(d: Date): string {
 
 export default function DigitalTwinCenter() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
 
   // ── Flag + scene-graph data ──
   const statusQ = trpc.twin.status.useQuery();
@@ -728,6 +731,15 @@ export default function DigitalTwinCenter() {
                     <div className="text-[11px] text-muted-foreground break-all">
                       <span className="font-medium text-foreground">{t("twin.modelUri", "Model URI")}:</span> {selected.modelUri}
                     </div>
+                  )}
+                  {typeof selected.refId === "number" && (
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setLocation(selected.kind === "robot" ? `/robot/${selected.refId}` : `/machine/${selected.refId}`)}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-1" /> {t("twin.openCockpit", "Open cockpit")}
+                    </Button>
                   )}
                 </>
               )}

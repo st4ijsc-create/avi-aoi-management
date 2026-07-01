@@ -147,6 +147,13 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`device:${(data as any).deviceStreamId}`);
         console.log(`[Socket.io] ${socket.id} joined device:${(data as any).deviceStreamId}`);
       }
+      // U3-live (doc 21 §6 / G-5) — Robot live-telemetry room (per robot). The Robot
+      // Cockpit joins `robot:{robotId}` to receive compact live UDM deltas emitted by
+      // robotIngest on every polled snapshot (previously robot pages were poll/static).
+      if ((data as any).robotId) {
+        socket.join(`robot:${(data as any).robotId}`);
+        console.log(`[Socket.io] ${socket.id} joined robot:${(data as any).robotId}`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -158,6 +165,8 @@ export function initializeSocket(server: HttpServer): Server {
       if (data.lineId) socket.leave(`line:${data.lineId}`);
       if ((data as any).twinFactoryId) socket.leave(`twin:${(data as any).twinFactoryId}`);
       if ((data as any).deviceStreamId) socket.leave(`device:${(data as any).deviceStreamId}`);
+      // U3-live — leave the per-robot live-telemetry room.
+      if ((data as any).robotId) socket.leave(`robot:${(data as any).robotId}`);
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -1175,6 +1184,44 @@ export function emitDeviceDeltas(deltas: DeviceStreamDelta[]): void {
   for (const d of deltas) {
     io.to(`device:${d.deviceId}`).emit("device:state", d);
   }
+}
+
+// ============ U3-live — ROBOT LIVE TELEMETRY (doc 21 §6 / G-5) =================
+
+/**
+ * A compact live snapshot of a robot's UDM, pushed to the per-robot room
+ * `robot:{robotId}` on every polled ingest. Carries only the small, UI-relevant
+ * fields the Robot Cockpit renders live (mode/busy/estop/speed/pose/joints/battery/
+ * safetyZone/firmware/heartbeat) — NOT the full DB row. SIGNAL ONLY: robotIngest has
+ * already persisted the robot_telemetry row; this is a thin transport with NO gate of
+ * its own (safe to emit — telemetry is not a control path). When io is not initialized
+ * (tests / headless) it is a no-op, so the FE simply keeps its existing poll.
+ */
+export interface RobotTelemetryLive {
+  robotId: number;
+  robotCode?: string;
+  mode?: string | null;
+  busy?: boolean | null;
+  estop?: boolean | null;
+  speedPct?: number | null;
+  pose?: Record<string, unknown> | null;
+  jointStates?: Array<Record<string, unknown>> | null;
+  batteryPct?: number | null;
+  safetyZoneId?: number | null;
+  firmwareVersion?: string | null;
+  error?: string | null;
+  status?: string | null;
+  ts: number;
+}
+
+/**
+ * Push one robot's live UDM snapshot to its per-robot room. No-op when io is not
+ * initialized. Additive + error-isolated at the call site (robotIngest wraps it in a
+ * try/catch so a socket failure can never break the ingest/persist path).
+ */
+export function emitRobotTelemetry(evt: RobotTelemetryLive): void {
+  if (!io) return;
+  io.to(`robot:${evt.robotId}`).emit("robot:telemetry", evt);
 }
 
 // Emit alert escalation event

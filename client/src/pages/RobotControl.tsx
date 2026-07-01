@@ -17,6 +17,7 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -29,7 +30,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Bot, RefreshCw, ShieldAlert, Plug, Activity, AlertTriangle, Lock, CheckCircle2, CircleSlash,
+  Bot, RefreshCw, ShieldAlert, Plug, Activity, AlertTriangle, Lock, CheckCircle2, CircleSlash, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +74,7 @@ function jobStatusBadge(status: string, t: (k: string, f: string) => string) {
 
 export default function RobotControl() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -193,6 +195,13 @@ export default function RobotControl() {
                     <TableCell className="text-xs">{fmt(r.lastSeenAt)}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-3">
+                        <Button
+                          size="sm" variant="ghost" className="h-7"
+                          onClick={() => setLocation(`/robot/${r.id}`)}
+                          title={t("robot.openCockpit", "Mở cockpit robot")}
+                        >
+                          <ExternalLink className="mr-1 h-3.5 w-3.5" />{t("robot.cockpit", "Cockpit")}
+                        </Button>
                         <div className="flex items-center gap-1.5" title={!isAdmin ? t("robot.adminOnly", "Chỉ admin") : undefined}>
                           <Switch
                             checked={r.isEnabled}

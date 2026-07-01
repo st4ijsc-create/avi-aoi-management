@@ -146,6 +146,7 @@ import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvect
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
 import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
 import { commandCenterRouter } from "./routers/commandCenterRouter"; // Doc 21 / U2: Ecosystem Command Center aggregation (hierarchy tree + KPI strip + seed alerts; read-only)
+import { assetCockpitRouter } from "./routers/assetCockpitRouter"; // Doc 21 / U3: Machine & Robot Cockpit aggregation (machineDetail/robotDetail/machineAlarms; read-only)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -398,6 +399,7 @@ export const appRouter = router({
   federation: federationRouter,
   // Ecosystem Command Center (doc 21 / U2) — whole-ecosystem hierarchy + KPI aggregation (read-only)
   commandCenter: commandCenterRouter,
+  assetCockpit: assetCockpitRouter,
 
   // Process & SPC
   process: processRouter,

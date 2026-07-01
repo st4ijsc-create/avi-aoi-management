@@ -484,7 +484,7 @@ export default function UnifiedDeviceMonitor() {
                               {t("deviceMonitor.test", "Test")}
                             </Button>
                           ) : r.source === "machine" ? (
-                            <Button size="sm" variant="ghost" onClick={() => setLocation("/machine-status")}>
+                            <Button size="sm" variant="ghost" onClick={() => setLocation(`/machine/${r.id}`)}>
                               {t("deviceMonitor.details", "Chi tiết")}
                             </Button>
                           ) : (

@@ -23,6 +23,7 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -187,6 +188,7 @@ const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as
 
 export default function FleetOrchestration() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -559,7 +561,12 @@ export default function FleetOrchestration() {
                       <TableCell>{taskStatusBadge(tk.status, t)}</TableCell>
                       <TableCell className="text-xs">
                         {tk.assignedDeviceId != null
-                          ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{tk.assignedDeviceId}</span>
+                          ? <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
+                              title={t("fleet.openRobotCockpit", "Open robot cockpit")}
+                              onClick={() => setLocation(`/robot/${tk.assignedDeviceId}`)}
+                            ><Bot className="h-3 w-3" />#{tk.assignedDeviceId}</button>
                           : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="text-xs whitespace-nowrap">

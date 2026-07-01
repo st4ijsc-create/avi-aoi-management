@@ -107,7 +107,7 @@ Gom theo chủ đề, ưu tiên theo **đòn bẩy** (G-1 mở khóa mọi thứ
 |---|---|---|---|---|
 | **U1** ✅ | **Event Backbone hợp nhất** *(đòn bẩy cao nhất)* | Cho fleet (`task.assigned/completed`), PdM (`workorder.created`), anomaly (`anomaly.detected`), IR (`program.deployed`), twin (derived state) **phát domain event**. Thêm subscriber cho `SAFETY_EVENT` + `quality_gate.breach` (webhook fan-out + rulesEngine + KB ingest). **Re-broadcast eventBus → client** dưới 1 event chuẩn hóa `alerts:stream` + `ecosystem:event`. Sửa bug socket dead-code (dup socket, machineCode/id mismatch). | G-1, G-2, G-12 | — |
 | **U2** ✅ | **Ecosystem Command Center** (`/command-center`) | 1 màn hình toàn cảnh: **cây phân cấp live** site→factory→line→station→machine→robot (định nghĩa node lái bởi `deviceTypeRegistry`/capability → device type mới tự xuất hiện; site lái bởi federation rollup) · **twin 3D** factory chọn (nhúng DigitalTwinCenter, overlay fleet task + safety zone) · **rail cảnh báo live hợp nhất** (từ U1 `alerts:stream`) · **KPI strip** (oee:update/WIP/energy/AI insight). Thay 5 query polled của OpsConsole bằng 1 feed live. | G-3, G-2 | U1 |
-| **U3** | **Machine & Robot Cockpit** | `/machine/:id` — gộp identity+capability resolved, live UDM+PackML, health/PdM, OEE, alarm chuẩn hóa per-máy (query mỏng mới), recipe+version+deploy per-máy, genealogy, 3D model, control gated, timeline. `/robot/:id` — telemetry+UDM đầy đủ (joint/battery/estop/zone), **joint/pose viz + per-robot twin**, job+task, IR robot-selectable, **teach/jog nối gate thật** (thay preview local), safety zone, anomaly. **Wire robot telemetry lên socket**; sửa redirect dead-end + QR→`/machine/:code`; mọi list/scene navigate mang id + back. | G-4, G-5 | U1 (live), (T2a/T2b cho joint viz đã có) |
+| **U3** ✅ (BE §11 · FE §12) | **Machine & Robot Cockpit** | `/machine/:id` — gộp identity+capability resolved, live UDM+PackML, health/PdM, OEE, alarm chuẩn hóa per-máy (query mỏng mới), recipe+version+deploy per-máy, genealogy, 3D model, control gated, timeline. `/robot/:id` — telemetry+UDM đầy đủ (joint/battery/estop/zone), **joint/pose viz + per-robot twin**, job+task, IR robot-selectable, **teach/jog nối gate thật** (thay preview local), safety zone, anomaly. **Wire robot telemetry lên socket**; sửa redirect dead-end + QR→`/machine/:code`; mọi list/scene navigate mang id + back. | G-4, G-5 | U1 (live), (T2a/T2b cho joint viz đã có) |
 | **U4** | **Mở nền tảng (API + registry data-driven)** | Extend `/api/v1` + scopes cho fleet/safety/twin/IR/PdM/anomaly/governance (ít nhất read). Chuyển `ADAPTER_KINDS`/`PROGRAMMING_KINDS`/`SYSTEM_MODULES` sang **manifest register-and-go** (như `driverRegistry`) → thêm vendor/kind/module không sửa core. | G-6, G-8 | — |
 | **U5** | **Federation Panorama** | `siteClient` **giữ `details[]`** + rollup per-`category` (schema đã có cột) + tiêu thụ endpoint `events` per-site (alert roll-up) + `site:` socket room; tổng quát roll-up sang fleet/safety/twin/PdM. Drill site→factory→device trong Command Center (U2). | G-7 | U1, U2 |
 | **U6** | **Tenant + Scale hardening** | Backfill tenant cột + RLS cho `programming.ts`/`ai.ts`(anomaly)/`mes.ts`(PdM). Nối **Redis fan-out** sau eventBus/telemetryBus (bỏ trần 1-server). Cân nhắc FK thật hoặc contract soft-ref + integrity check cho asset↔task↔program↔genealogy. | G-9, G-10, G-12 | — |
@@ -247,3 +247,118 @@ RBAC: mọi procedure `protectedProcedure` + `requirePermission("machine_monitor
 
 ### 10.5 Cổng chất lượng
 `npm run check` (tsc) **PASS** · `npx vite build` **PASS** (chunk `CommandCenter-*.js` emit, code-split). KHÔNG commit (theo yêu cầu). Twin: **embed compact 3D** (tái dùng cách của DigitalTwinCenter, query scene-graph riêng) với **status-grid fallback** — chọn hướng này để an toàn build (không phụ thuộc internals non-export của DigitalTwinCenter, không rủi ro WebGL). File sửa: `client/src/pages/CommandCenter.tsx` (mới), `client/src/App.tsx`, `client/src/lib/navigation.tsx`, `client/src/i18n/locales/{en,vi,zh}.json`, doc 21 (§6/§10).
+
+---
+
+## 11. U3 — Machine & Robot Cockpit: BACKEND aggregation + robot live socket (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. Đóng **G-4** (không có cockpit `/machine/:id` & `/robot/:id`) + **G-5** (robot/fleet không live) ở tầng backend. **Thuần AGGREGATION** trên các service đã có + **một** wiring socket cho robot telemetry. **Không mở đường điều khiển mới** (control vẫn qua gated dispatcher hiện hữu). **Không migration.** ADDITIVE, read-only, KHÔNG commit. Trang cockpit do một agent FE riêng dựng — phần này chỉ cung cấp API + live feed.
+
+### 11.1 Router `assetCockpit` (đăng ký trong `server/routers.ts`)
+File mới: `server/routers/assetCockpitRouter.ts` (mỏng) + `server/services/ecosystem/assetCockpitService.ts` (assembly, giống mẫu `commandCenterService` của U2). Mọi procedure gated `machine_monitoring/canView`, read-only, tenant surface qua `identity.corporateCode` (lấy từ factory của máy):
+
+- **`machineDetail({ machineId })`** → `NOT_FOUND` nếu máy không tồn tại; ngược lại 1 object gồm các section, **mỗi section honest-null khi nguồn vắng/tắt/lỗi** (`{ value, source, available }`):
+  - `identity` — code/name/machineType/model/manufacturer + đường phân cấp station→line→(workshop)→factory + `corporateCode`. *(join hierarchy schema)*
+  - `resolvedCapability` — `{ equipmentClass, adapterKind, deviceType, commands[], telemetryTags[], packmlStates[] }`. *(`capabilityModel.getCapabilitiesForMachine` ⊕ `deviceTypeRegistry.resolveForMachineType`)*
+  - `liveState` — `{ status, lastStatusChange, heartbeatStatus, lastHeartbeat, connected }`. *(`db/machine.getLatestMachineStatus` + `getLatestMachineHeartbeat` — UDM/PackML/connection)*
+  - `health` — `{ failureRisk, maintenanceUrgency, predictedTimeframeHours, recommendedMaintenanceDate, mtbfHours, mttrHours, rulHours }`. *(`predictiveMaintenanceService.computeFailureRisk` + `computeReliabilityStats`)* — `rulHours` = horizon dự báo của PdM (honest: chưa có RUL regressor riêng).
+  - `oee` — `{ availability, performance, quality, oee }`. *(`oeeService.getMachineOEELive`)* — honest-null khi không có uptime/production data (không bịa 0).
+  - `alarms` — danh sách chuẩn hoá per-máy (xem §11.3). *(`assetCockpitService.machineAlarms`)*
+  - `recipes` — `{ loadHistory[] }`. *(`recipeVersioningService.listLoadHistory`)*
+  - `programs` — `{ projects[], deployments[] }`. *(`program_projects.deviceId` + `program_deployments` theo `projectId`)*
+  - `genealogy` — traceability gần đây theo `stationCode`. *(`genealogy_chain`)*
+  - `model3d` — `{ modelUri, modelKind, conversionStatus }` hoặc null. *(`twin/modelRegistry.resolveModel({ machineId })`)*
+  - `gatedActions[]` — **METADATA ONLY**: `{ name, label, riskLevel, requiredPermission, packmlCommand?, paramsSchema[] }` từ capability commands. Đây chỉ là các lệnh user *được phép đề xuất*; **thực thi vẫn qua gated dispatcher** — router này KHÔNG chạy lệnh.
+
+- **`robotDetail({ robotId })`** → `NOT_FOUND` nếu robot không tồn tại; ngược lại:
+  - `identity` — `{ id, code, name, vendor, kind, model, status, lineId, stationId, isEnabled, lastSeenAt }`. *(robots row)*
+  - `liveTelemetry` — `{ mode, busy, estop, speedPct, pose, jointStates, batteryPct, safetyZoneId, firmwareVersion, lastHeartbeat, ts }`. *(robot_telemetry mới nhất — UDM đầy đủ)*
+  - `capability` + `gatedActions[]` — `capabilityModel.getDefaultCapability("ROBOT")` (có `e_stop`/`run_job`/`abort` — metadata).
+  - `jobs` — robot_jobs gần đây. `tasks` — fleet `tasks` (assignedDeviceId + assignedDeviceKind='robot'). `programs` — `program_projects.deviceId` (IR/robot flows). `safety` — `safety_events` (robotId). `anomalies` — **đọc** `robot_behavior_anomalies` gần đây (KHÔNG re-detect). `alarms` — feed chuẩn hoá per-robot từ safety (§11.3). `model3d` — `resolveModel({ equipmentId:"robot:{id}" })`.
+  - `kinematicModel` — `{ model, isSample, note }` từ `sim/kinematicModel.resolveKinematicModel` (theo kind: arm/cobot→UR-ish 6-DOF `SAMPLE_ARM_6DOF`; scara/agv→`SAMPLE_SCARA` 4-DOF). **HONEST: đây là SAMPLE chain (chưa có URDF thật — import URDF thật là T2a)**, gắn cờ `isSample:true` + note.
+
+- **`machineAlarms({ machineId, limit? })`** → `{ alarms[] }` — query mỏng per-máy (xem §11.3).
+
+**Chứng minh không trùng lặp:** service này KHÔNG tự tính health/oee/alarm/kinematic — mỗi section GỌI hàm đã có rồi PROJECT kết quả vào shape cockpit. Mỗi section ghi kèm `source` (chuỗi tên hàm nguồn) để kiểm chứng.
+
+### 11.2 Robot telemetry LIVE (đóng G-5)
+- **Room + emit** trong `server/_core/socket.ts`: thêm join/leave `robot:{robotId}` vào `subscribe`/`unsubscribe` (giống room `twin:`/`device:`), và helper `emitRobotTelemetry(evt)` phát `robot:telemetry` vào room đó (no-op khi `io` chưa init — tests/headless).
+- **Điểm phát**: trong `server/services/robot/robotIngest.ts` (`ingestRobotState`), **sau khi persist** row robot_telemetry + cập nhật registry, gọi `emitRobotTelemetry` **fire-and-forget + error-isolated** (try/catch riêng — lỗi socket KHÔNG bao giờ vỡ persist path) mang UDM gọn (`mode/busy/estop/speedPct/pose/jointStates/batteryPct/safetyZoneId/firmwareVersion/status/ts`). → Robot Cockpit LIVE (trước đây robot pages là poll/static).
+- **Flag**: emit telemetry là **transport-only, KHÔNG phải đường điều khiển** ⇒ không thêm gate mới (an toàn — như `emitDeviceDeltas`/`emitTwinDeviceDeltas`). Producer (robotIngest) đã tự gated bởi `ROBOT_GATEWAY_ENABLED` ở tầng manager; khi off thì ingest không chạy → không phát → FE giữ poll (backward-compatible). *(Optional U1 ecosystem-stream emit trên state-change đáng chú ý: bỏ qua ở pha này — bus đã nhận e-stop qua safety-audit hook; giữ diff tối thiểu.)*
+
+### 11.3 Feed alarm chuẩn hoá per-asset (query audit báo thiếu)
+`machineAlarms(machineId, limit)` + `robotAlarms(robotId, vendor, limit)` → mỗi phần tử `{ standardCode, severity, description, recommendedAction, ts, source, raw }` theo ISA-18.2:
+- **Máy**: kéo `andon_events` gần đây của máy → map `reason`→`standardCode` (safety→SAFETY_STOP, quality→QUALITY_ALARM, material→MATERIAL_STARVE, maintenance→MAINTENANCE_REQUIRED, setup→SETUP_CHANGEOVER) + `state`→severity (red/call→critical, yellow→high). **HONEST**: `andon_events` KHÔNG lưu `nativeCode` thô của vendor — một raw device alarm đã được `alarmNormalizer` chuẩn hoá THÀNH andon ở upstream (I1/N-6), nên tại đây ta map tín-hiệu-đã-chuẩn-hoá vào envelope taxonomy theo `reason`. *(OT ingest hiện chưa có alarm surface → không có thêm nguồn raw; ghi nhận trung thực.)*
+- **Robot**: kéo `safety_events` (robotId) → thử `alarmTaxonomy.mapAlarm(vendor, eventType)` trước (khớp code chuẩn nếu có), else suy ra `SAFETY_{EVENTTYPE}` + severity (near-miss→high, else→critical).
+
+### 11.4 Test (mock service nền)
+File: `server/services/ecosystem/assetCockpitService.test.ts` (11) + `server/services/robot/robotIngest.test.ts` (3) — **tất cả xanh**:
+- `machineDetail` ráp đủ section + honest-null nguồn bị disable/throw (health), honest-null OEE khi không có data, `NOT_FOUND` (null) khi máy vắng, `gatedActions` chỉ metadata.
+- `robotDetail` ráp đủ + resolve kinematic **SAMPLE** (cobot→6-DOF, agv→SCARA 4-DOF), honest-null telemetry khi vắng, `NOT_FOUND`.
+- `machineAlarms`/`robotAlarms` chuẩn hoá raw→ISA-18.2 (thứ tự newest-first, shape contract).
+- robot telemetry emit **fires** on ingest (mock socket) + **error-isolated** (throwing emit không vỡ ingest) + phản ánh e-stop trong status.
+- **Regression**: chạy lại robot/fleet/equipment/safety/programming/ecosystem = **342/342 xanh** (25 files, gồm commandCenter U2).
+
+### 11.5 Cổng chất lượng
+`npm run check` (tsc) **PASS** (exit 0). KHÔNG commit (theo yêu cầu). File sửa/mới: `server/routers/assetCockpitRouter.ts` (mới), `server/services/ecosystem/assetCockpitService.ts` (mới), `server/services/ecosystem/assetCockpitService.test.ts` (mới), `server/services/robot/robotIngest.test.ts` (mới), `server/routers.ts` (đăng ký `assetCockpit`), `server/_core/socket.ts` (room `robot:{id}` + `emitRobotTelemetry`), `server/services/robot/robotIngest.ts` (emit wiring), doc 21 (§6/§11).
+
+### 11.6 Ghi chú trung thực (honest-null + sample)
+- **kinematic = SAMPLE, chưa phải URDF thật** (T2a). `isSample:true` + note nói rõ; khi T2a land, `resolveKinematicModel` trả chain resolve-từ-registry thay cho sample.
+- **model3d** honest-null khi chưa đăng ký model cho máy/robot.
+- **health/oee** honest-null khi không có uptime/production/PdM data (không bịa 0). **rulHours** = PdM horizon (không phải RUL regressor riêng).
+- **genealogy** là traceability sản phẩm theo `stationCode` (không phải "machine health genealogy").
+- **anomalies** ĐỌC rows gần đây (không gọi `detectAndRaiseForRobot` — hàm đó có side-effect raise alert).
+
+---
+
+## 12. U3 — Machine & Robot Cockpit: FRONTEND + drill/QR fixes (ĐÃ THỰC THI — 2026-07-01)
+
+> Nhánh `automation-orchestration-r0`. Hai trang cockpit hợp nhất per-asset tiêu thụ `assetCockpit.*` (§11) + live socket, cộng sửa mọi drill/cross-link/QR gãy (G-4). ADDITIVE + read-only, KHÔNG mở đường điều khiển mới, KHÔNG commit. F1b patterns (PageHeader/MetricCard/StatusBadge/SectionCard/EmptyState) + shadcn Tabs + three.js/drei (no new deps). Typesafe qua `inferRouterOutputs<AppRouter>["assetCockpit"][...]`. i18n `t("cockpit.*","English default")` fallback.
+
+### 12.1 `MachineCockpit.tsx` (route `/machine/:id`)
+Tabbed cockpit trên `machineDetail(id)` (một call). Tabs + nội dung tổng hợp:
+- **Overview** — KPI strip (OEE · failure-risk · active-alarms · connection) + 3 card: identity + đường phân cấp (station→line→factory→corporate) · resolvedCapability (equipmentClass/adapterKind/deviceType + PackML states chips + telemetry-tag chips) · liveState (status/PackML/heartbeat/connection).
+- **Health/PdM** — RadialGauge failure-risk + MetricCards MTBF/MTTR/RUL(PdM horizon)/predicted-timeframe + recommended-maintenance date. Honest empty khi `available:false`.
+- **OEE** — 4 RadialGauge (availability/performance/quality/OEE) — thay cho việc import OEEDashboard (viz vẽ lại gọn bằng SVG, không Recharts).
+- **Alarms** — danh sách ISA-18.2 chuẩn hoá per-máy (`machineDetail.alarms`; cùng nguồn `machineAlarms`).
+- **Recipes** — recipe load/deploy history. **Programs** — projects + deployments. **Genealogy** — traceability theo station. Mỗi tab honest-empty.
+- **3D** — drei `<Gltf src={modelUri}>` (Suspense) khi có model, else primitive block; WebGL-guard → thông báo trung thực khi không có WebGL (giống DigitalTwinCenter).
+- **Actions** — list `gatedActions` (label + riskLevel badge + requiredPermission + packmlCommand). **METADATA ONLY** — nút "Propose" điều hướng `/control-plane?machineId=…&command=…` (gated surface hiện hữu). KHÔNG chạy lệnh; banner cảnh báo read-only.
+- **Live**: subscribe shared socket room máy + `telemetry:sample` → nudge refetch `machineDetail` (poll 10s nền).
+
+### 12.2 `RobotCockpit.tsx` (route `/robot/:id`) — LIVE
+Tabbed trên `robotDetail(id)`, LIVE qua room `robot:{id}` / event `robot:telemetry` (đóng G-5): overlay UDM gọn đè lên section polled (socket thắng per-field), badge **LIVE/POLLING** + **E-STOP** khi estop. Tabs:
+- **Overview** — KPI (mode/speed/estop/battery) + identity + liveTelemetry đầy đủ (mode/busy/estop/speed/zone/firmware/heartbeat/sample-ts) + battery progress + capability summary.
+- **Joints** — **viz 2D joint-bar** (xem §12.4): mỗi joint (non-fixed) của kinematic chain vẽ thanh vị-trí-live vs limit band + đơn vị °/mm theo joint type + cảnh báo near-limit; hiện `isSample` note; TCP pose từ live telemetry (không FK client).
+- **Jobs** · **Tasks** (fleet) · **Programs** (IR, nút Open IR→`/ir-editor`) · **Safety** (zone reactions) · **Anomalies** (đọc) · **Alarms** (ISA-18.2 per-robot) — mỗi tab honest-empty.
+- **3D** — `<Gltf>` else primitive cylinder (WebGL-guard).
+- **Teach/Jog** — **promote `<TeachJogPanel>`** (import từ `components/engineering`, self-contained `{value,onChange}`) + hiển thị buffer tmscript. **Gated honest**: banner "PREVIEW/GATED — jog chỉ đổi pose preview local; chạy robot thật cần `robotCommandDispatcher` (ROBOT_CONTROL_ENABLED + HITL)". Panel KHÔNG dispatch gì.
+- **Actions** — `gatedActions` metadata; "Propose"→`/robot-control?robotId=…&command=…`. KHÔNG chạy lệnh.
+
+### 12.3 Gated / teach-jog KHÔNG chạy trực tiếp (bất biến giữ nguyên)
+- `gatedActions` là **METADATA từ capability** (backend §11.1). Cockpit chỉ HIỂN THỊ + nút "Propose" → **điều hướng** tới control surface gated hiện hữu (`/control-plane` cho máy, `/robot-control` cho robot) mang query `?…&command=…`. KHÔNG có tRPC mutation dispatch nào gọi từ cockpit (audit xác nhận RobotControl cố tình read-only; motion đi qua `robotCommandDispatcher` nội bộ + HITL/dry-run). Cockpit tôn trọng seam đó.
+- **TeachJogPanel** tạo tmscript buffer LOCAL — không có đường execute; giữ nguyên bản chất preview (component tự khai báo honest).
+
+### 12.4 Lựa chọn joint viz: **2D readout** (không 3D FK arm)
+FK solver + DH chain nằm SERVER-SIDE (`sim/kinematicModel.ts`), KHÔNG export xuống client; port FK để lái arm 3D thêm rủi ro build/regression mà lợi ích thấp so với data trung thực đang có (live `jointStates` + per-joint limits của sample chain). ⇒ Joints vẽ **thanh 2D** giá-trị-live vs limit — chính xác, không phụ thuộc, luôn build. Tab **3D** vẫn render glTF thật của model registry qua `<Gltf>`. (Nếu/khi T2a có URDF thật + export FK client, có thể nâng lên 3D arm sau — seam để mở.)
+
+### 12.5 Sửa drill / cross-link / QR gãy (G-4) — file · before→after
+- **`App.tsx`** — đăng ký `/machine/:id` + `/robot/:id` (lazy, `RouteGuard requirePermission="machine_monitoring"`, `AIPageWrapper`). KHÔNG thêm top-nav (đây là :id detail, tới bằng drill).
+- **`MachineQuickScan.tsx`** — QR/scan: *before* `→ /ai-chat?machine=<code>`; *after* resolve code→numeric id từ `machine.list` → `→ /machine/:id` (primary). Fallback `/ai-chat?machine=<code>` khi chưa resolve được id; thêm helper `goAiChat` (AI-chat vẫn là lựa chọn secondary).
+- **`UnifiedDeviceMonitor.tsx`** (nút "Chi tiết" máy) — *before* `→ /machine-status` (dead-end); *after* `→ /machine/${r.id}`.
+- **`FleetOrchestration.tsx`** (`assignedDeviceId`) — *before* text `#id` không click; *after* button `→ /robot/${tk.assignedDeviceId}` (thêm import `useLocation`).
+- **`DigitalTwinCenter.tsx`** (inspector) — *before* chỉ hiển thị device; *after* nút "Open cockpit" `→ /robot|/machine/${selected.refId}` theo `selected.kind` (thêm `useLocation` + `ExternalLink`).
+- **`FactoryLiveMap3D.tsx`** (nút "Giám sát chi tiết") — *before* `→ /machine-status`; *after* `→ /machine/${selected.id}` (label→"Mở cockpit máy").
+- **`RobotControl.tsx`** (row robot) — *before* row chỉ select local; *after* thêm nút "Cockpit" `→ /robot/${r.id}` (thêm `useLocation`).
+- **`RobotModelHealth.tsx`** (cell robot trong bảng anomaly) — *before* text không click; *after* button `→ /robot/${a.robotId}` (thêm `useLocation`).
+- **CommandCenter** (U2) đã link `/machine|robot/:refId` — **nay resolve** (route đã đăng ký).
+- **`/machine-status`** redirect vẫn giữ (→`/device-monitor`); rich per-machine detail nay tới được qua `/machine/:id` (drill từ device-monitor / twin / live-map / command-center / QR).
+
+### 12.6 Cổng chất lượng
+`npm run check` (tsc) **PASS** (exit 0) · `npx vite build` **PASS** (`✓ built in ~17s`, code-split chunk `MachineCockpit-*.js` ~65 kB + `RobotCockpit-*.js` ~72 kB emit). KHÔNG commit (theo yêu cầu). File mới: `client/src/pages/MachineCockpit.tsx`, `client/src/pages/RobotCockpit.tsx`. File sửa: `client/src/App.tsx`, `client/src/components/MachineQuickScan.tsx`, `client/src/pages/UnifiedDeviceMonitor.tsx`, `client/src/pages/FleetOrchestration.tsx`, `client/src/pages/DigitalTwinCenter.tsx`, `client/src/pages/FactoryLiveMap3D.tsx`, `client/src/pages/RobotControl.tsx`, `client/src/pages/RobotModelHealth.tsx`, doc 21 (§6/§12).
+
+### 12.7 Ghi chú trung thực
+- **Joint viz = 2D** (không 3D FK) — lý do §12.4 (FK server-side, không export client).
+- **kinematic = SAMPLE** (isSample note hiển thị) cho tới URDF thật (T2a).
+- **model3d/health/oee/alarms/recipes/programs/genealogy** honest-empty ("—" / EmptyState) khi section `available:false` — không bịa số.
+- **Gated actions + teach/jog** KHÔNG execute từ cockpit — chỉ propose/preview, điều hướng tới gated surface (§12.3).

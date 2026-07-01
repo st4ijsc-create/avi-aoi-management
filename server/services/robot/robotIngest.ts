@@ -43,6 +43,33 @@ export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): 
       .set({ status: newStatus, lastSeenAt: now })
       .where(eq(robots.id, robot.id));
 
+    // U3-live (doc 21 §6 / G-5) — fire-and-forget LIVE socket emit of the compact UDM
+    // to the per-robot room `robot:{id}` so the Robot Cockpit renders live (robot pages
+    // were poll/static before). Transport-only (telemetry is NOT a control path), so it
+    // is ungated; error-isolated so a socket failure can NEVER break the persist path.
+    // No-op when io is not initialized (tests / headless) → FE simply keeps its poll.
+    try {
+      const { emitRobotTelemetry } = await import("../../_core/socket");
+      emitRobotTelemetry({
+        robotId: robot.id,
+        robotCode: robot.code,
+        mode: state.mode ?? null,
+        busy: state.busy ?? null,
+        estop: state.estop ?? null,
+        speedPct: state.speedPct ?? null,
+        pose: (state.pose ?? null) as Record<string, unknown> | null,
+        jointStates: state.jointStates ?? null,
+        batteryPct: state.batteryPct ?? null,
+        safetyZoneId: state.safetyZoneId ?? null,
+        firmwareVersion: state.firmwareVersion ?? null,
+        error: state.error ?? null,
+        status: newStatus,
+        ts: (state.timestamp ?? now).getTime(),
+      });
+    } catch (e) {
+      console.error(`[Robot] telemetry emit failed for "${robot.code}":`, (e as Error)?.message ?? e);
+    }
+
     // X1-b (doc 16 §5) — record the heartbeat into the field-health ledger so the
     // stale sweep can detect lost connections. Fire-and-forget + self-gated by
     // FIELD_V2_ENABLED (no-op when off) → zero cost on the default path.

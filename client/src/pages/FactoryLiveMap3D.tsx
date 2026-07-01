@@ -144,8 +144,8 @@ export default function FactoryLiveMap3D() {
                     <Button size="sm" className="w-full" onClick={() => setLocation("/rf-test-cell")}>
                       <FlaskConical className="h-4 w-4 mr-1" /> {t("flm.openTwin", "Mở mô phỏng cụm (twin)")}
                     </Button>
-                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation("/machine-status")}>
-                      <Activity className="h-4 w-4 mr-1" /> {t("flm.openMonitor", "Giám sát chi tiết")}
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation(`/machine/${selected.id}`)}>
+                      <Activity className="h-4 w-4 mr-1" /> {t("flm.openCockpit", "Mở cockpit máy")}
                     </Button>
                     <Button size="sm" variant="outline" className="w-full" onClick={() => setLocation("/orchestration-studio")}>
                       <Box className="h-4 w-4 mr-1" /> {t("flm.openStudio", "Lập trình quy trình")}
