@@ -38,6 +38,8 @@ import type {
 import { parseFlowJson, countBlocks, assignIds, walkBlocks, type Flow, type IrBlock } from "./irModel";
 import { lintFlow, type LintDiagnostic } from "./irSafetyLinter";
 import { transpileFlow, defaultTargetFor, type TranspileTarget } from "./transpilers/registry";
+import { simKinematicEnabled, runGateForFlow, type SimScene, type SimGateResult } from "../sim/kinematicSimGate";
+import { EMPTY_SCENE } from "../sim/sceneAdapter";
 
 const IR_CAPS: ProgrammingCapability = {
   canCompile: true,
@@ -114,16 +116,37 @@ export class IrProgrammingAdapter implements ProgrammingAdapter {
         irCommentMap: result.irCommentMap,
         blocks: countBlocks(flow),
         flowId: flow.flow_id,
+        // Carry the parsed flow so simulate() can run the kinematic gate (T2b) without
+        // re-fetching the artifact. Kept small — it is the same JSON the build was made from.
+        flow,
+        targetDeviceType: flow.target_device_type,
         checksum,
       },
     };
   }
 
-  async simulate(build: BuildResult, _scenario: ProgSimScenario): Promise<ProgSimResult> {
-    // HONEST structural preview — a per-block timeline, NOT a physics run. Full physics
-    // simulation (collision/joint-limit/cycle-time) is T2 (SIM_PHYSICS), out of D1 scope.
+  async simulate(build: BuildResult, scenario: ProgSimScenario): Promise<ProgSimResult> {
     const flowId = String(build.meta?.flowId ?? "");
     const total = Number(build.meta?.blocks ?? 0);
+
+    // ── T2b KINEMATIC SIMULATION GATE (flag-gated) ────────────────────────────
+    // When SIM_KINEMATIC_ENABLED is on AND the build carries the parsed flow, run the
+    // REAL kinematic gate (FK + collision + joint-limit + workspace + safety-zone +
+    // cycle-time). When off — or the flow/model is unavailable — fall back to the honest
+    // structural preview below. Deploy stays gated separately (unchanged).
+    if (simKinematicEnabled() && build.meta?.flow) {
+      const flow = build.meta.flow as Flow;
+      // Scenario may supply a scene (obstacles + safety zones from the T1 scene graph via
+      // sceneFromGraph). Absent → EMPTY_SCENE (still checks joint-limit + workspace).
+      const scene = ((scenario as { scene?: SimScene }).scene) ?? EMPTY_SCENE;
+      const gate: SimGateResult = runGateForFlow(flow, scene, {
+        selfCollision: (scenario as { selfCollision?: boolean }).selfCollision,
+      });
+      return this.gateToSimResult(build, flowId, gate);
+    }
+
+    // HONEST structural preview — a per-block timeline, NOT a physics run. This is the
+    // fallback when the kinematic gate is OFF (default) — today's D1 behavior, unchanged.
     const timeline: ProgSimStep[] = Array.from({ length: Math.max(1, total) }, (_, i) => ({
       index: i,
       label: `block ${i + 1}`,
@@ -136,9 +159,39 @@ export class IrProgrammingAdapter implements ProgrammingAdapter {
       timeline,
       warnings: [
         `IR simulation for "${flowId}" is a STRUCTURAL preview (block order). ` +
-          `Full physics simulation (collision / joint-limit / cycle-time) is the T2 Simulation Gate, not D1.`,
+          `Full physics simulation (collision / joint-limit / cycle-time) is the T2 Simulation Gate ` +
+          `(SIM_KINEMATIC_ENABLED, off by default).`,
       ],
       totalDurationMs: Math.max(1, total),
+    };
+  }
+
+  /**
+   * Map the T2b SimGateResult onto the shared ProgSimResult shape. The gate is the source
+   * of `ok`: a program that collides / exceeds a joint limit / intrudes a safety zone is
+   * NOT ok (it FAILS the gate → cannot proceed). The full gate contract is carried in
+   * warnings + a machine-readable field on the timeline note for callers that want it.
+   */
+  private gateToSimResult(build: BuildResult, flowId: string, gate: SimGateResult): ProgSimResult {
+    const cycleMs = Math.round(gate.cycle_time_actual * 1000);
+    const timeline: ProgSimStep[] = [
+      { index: 0, label: `kinematic sim (${gate.waypointsChecked} waypoints)`, startMs: 0, endMs: Math.max(1, cycleMs), note: "ir-kinematic-simgate" },
+    ];
+    const warnings: string[] = [];
+    if (!gate.pass) {
+      if (gate.collision_events.length) warnings.push(`COLLISION: ${gate.collision_events.length} event(s) — e.g. ${gate.collision_events[0].linkA} vs ${gate.collision_events[0].linkB} (sep ${gate.collision_events[0].distance.toFixed(1)}mm).`);
+      if (gate.joint_limit_violations.length) warnings.push(`JOINT-LIMIT: ${gate.joint_limit_violations.length} violation(s) — e.g. ${gate.joint_limit_violations[0].joint}.`);
+      if (gate.safety_zone_violations.length) warnings.push(`SAFETY-ZONE: ${gate.safety_zone_violations.length} intrusion(s) — e.g. link ${gate.safety_zone_violations[0].link} in ${gate.safety_zone_violations[0].zoneId}.`);
+    }
+    if (gate.note) warnings.push(gate.note);
+    return {
+      ok: build.ok && gate.pass,
+      timeline,
+      warnings,
+      totalDurationMs: Math.max(1, cycleMs),
+      // Attach the exact Simulation-Gate contract for callers/persistence (extra field —
+      // ProgSimResult is structurally typed; consumers that don't read it are unaffected).
+      ...( { simGate: gate } as Record<string, unknown> ),
     };
   }
 
