@@ -72,6 +72,30 @@ export async function raiseFromMtconnectCondition(input: {
   return normalizeAndRaise(raw);
 }
 
+/**
+ * I3b-2 — Route a Euromap (63/77/83) native alarm through the SAME E1 taxonomy + Andon
+ * path. `nativeCode` is the Euromap/vendor fault code; vendor defaults to 'euromap' but
+ * a machine's actual manufacturer can be threaded so mapAlarm resolves per-vendor rows.
+ * NO-OP passthrough when the flag is off.
+ */
+export async function raiseFromEuromapAlarm(input: {
+  nativeCode: string;
+  message?: string | null;
+  machineId?: number | null;
+  vendor?: string;
+}): Promise<NormalizedAlarmResult> {
+  const vendor = input.vendor ?? "euromap";
+  if (!isEqIntegEnabled()) return noop(vendor, input.nativeCode);
+  const raw: RawVendorAlarm = {
+    vendor,
+    nativeCode: input.nativeCode,
+    message: input.message ?? null,
+    machineId: input.machineId ?? null,
+    adapterKind: "euromap",
+  };
+  return normalizeAndRaise(raw);
+}
+
 /** The subset of a gemModel.GemAlarmRecord this bridge consumes (avoids a hard dep). */
 export interface GemAlarmLike {
   machineCode?: string;

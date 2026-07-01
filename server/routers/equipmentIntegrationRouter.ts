@@ -105,6 +105,52 @@ export const equipmentIntegrationRouter = router({
       return adapter.readSnapshot();
     }),
 
+  /**
+   * I3b-2 — LIVE Euromap 77 snapshot over OPC-UA (read-only). Reuses the platform's real
+   * opcuaDriver via a configured node-map (EUROMAP_OPCUA_ENDPOINT / _NODEMAP / _VENDOR, or
+   * per-call overrides). Honest: no endpoint/node-map → a BAD_REQUEST with a clear reason;
+   * an unreachable server surfaces the driver error. NEVER fabricates telemetry; NEVER
+   * writes. Alarm→Andon inside pollOverOpcua is self-gated by EQ_INTEG_ENABLED.
+   */
+  euromapOpcuaSnapshot: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        machineCode: z.string().min(1).max(64),
+        machineId: z.number().int().positive().optional(),
+        endpoint: z.string().min(1).optional(),
+        nodeMapJson: z.string().min(1).optional(),
+        vendor: z.string().min(1).max(64).optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const { parseNodeMap } = await import("../services/euromap/euromapOpcuaReader");
+      const endpoint = input.endpoint ?? process.env.EUROMAP_OPCUA_ENDPOINT ?? "";
+      const nodeMap = parseNodeMap(input.nodeMapJson ?? process.env.EUROMAP_OPCUA_NODEMAP);
+      if (!endpoint.trim()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No Euromap OPC-UA endpoint (set EUROMAP_OPCUA_ENDPOINT)" });
+      }
+      if (!nodeMap) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No Euromap OPC-UA node-map (set EUROMAP_OPCUA_NODEMAP)" });
+      }
+      const { createDriver } = await import("../services/ot/driverRegistry");
+      const driver = createDriver("opcua");
+      const adapter = new EuromapAdapter(input.machineCode, undefined, input.machineId ?? null);
+      try {
+        const uem = await adapter.pollOverOpcua(driver, {
+          endpoint: endpoint.trim(),
+          nodeMap,
+          transport: "euromap77",
+          vendor: input.vendor ?? process.env.EUROMAP_OPCUA_VENDOR,
+        });
+        return { ...adapter.readSnapshot(), ...uem, connected: true, source: "live" as const };
+      } catch (err) {
+        // Honest: report the failure; serve the last cache (source:'cache'|'none'), no fabrication.
+        const snap = adapter.readSnapshot();
+        return { ...snap, error: err instanceof Error ? err.message : String(err) };
+      }
+    }),
+
   // ── I1-b — recipe versioning genealogy (reads) ───────────────────────────────
   /** List recipe versions for a recipe code (newest first, projected to design status). */
   listRecipeVersions: protectedProcedure

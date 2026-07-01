@@ -28,6 +28,11 @@ export interface MtcSource {
   agentUrl: string;
   machineCode: string;
   pollMs: number;
+  /**
+   * I3b-1 — optional device manufacturer / vendor key for per-vendor alarm-taxonomy
+   * resolution (mapAlarm). When absent the alarm bridge defaults to 'mtconnect'.
+   */
+  vendor?: string;
 }
 
 interface MtcSourceStats {
@@ -41,6 +46,16 @@ interface MtcSourceStats {
   lastError: string | null;
   telemetryRows: number;
   eventRows: number;
+  /** I3b-1 — last derived Unified Equipment Model projection (read-only, for status). */
+  lastUem: {
+    recipeId: string | null;
+    cycleCount: number | null;
+    productionCounter: number | null;
+    utilizationRate: number | null;
+    execState: string | null;
+    controllerMode: string | null;
+    alarmCode: string | null;
+  } | null;
 }
 
 let running = false;
@@ -69,14 +84,16 @@ export function parseSources(raw: string | undefined): MtcSource[] {
   const text = raw.trim();
   const out: MtcSource[] = [];
 
-  const push = (agentUrl: unknown, machineCode: unknown, pollMs: unknown) => {
+  const push = (agentUrl: unknown, machineCode: unknown, pollMs: unknown, vendor?: unknown) => {
     if (typeof agentUrl !== "string" || !agentUrl.trim()) return;
     if (typeof machineCode !== "string" || !machineCode.trim()) return;
     const n = Number(pollMs);
+    const v = typeof vendor === "string" && vendor.trim() ? vendor.trim() : undefined;
     out.push({
       agentUrl: agentUrl.trim(),
       machineCode: machineCode.trim(),
       pollMs: Number.isFinite(n) && n >= 500 ? n : DEFAULT_POLL_MS,
+      vendor: v,
     });
   };
 
@@ -86,7 +103,7 @@ export function parseSources(raw: string | undefined): MtcSource[] {
       const arr = Array.isArray(parsed) ? parsed : [parsed];
       for (const it of arr) {
         if (it && typeof it === "object") {
-          push((it as any).agentUrl, (it as any).machineCode, (it as any).pollMs);
+          push((it as any).agentUrl, (it as any).machineCode, (it as any).pollMs, (it as any).vendor);
         }
       }
       return out;
@@ -95,12 +112,12 @@ export function parseSources(raw: string | undefined): MtcSource[] {
     }
   }
 
-  // CSV fallback: items separated by ';' or newline; fields by '|'.
+  // CSV fallback: items separated by ';' or newline; fields by '|' (4th = vendor, optional).
   for (const item of text.split(/[;\n]+/)) {
     const trimmed = item.trim();
     if (!trimmed) continue;
-    const [agentUrl, machineCode, pollMs] = trimmed.split("|").map((s) => s.trim());
-    push(agentUrl, machineCode, pollMs);
+    const [agentUrl, machineCode, pollMs, vendor] = trimmed.split("|").map((s) => s.trim());
+    push(agentUrl, machineCode, pollMs, vendor);
   }
   return out;
 }
@@ -118,26 +135,33 @@ export function stateToResult(reading: MtcReading): "pass" | "fail" | "warn" | "
 }
 
 /**
- * N-6 — route CONDITION readings in FAULT/WARNING through the E1 alarm normalizer →
- * Andon. Best-effort + self-gated by EQ_INTEG_ENABLED inside the bridge (no-op when
- * off). The condition's native code = its dataItemName|dataItemId (a shop maps these
- * to a standard code via the alarm_taxonomy for vendor 'mtconnect'). Non-fault/warn
- * readings are skipped. Never throws (a failed alarm never breaks the poll loop).
+ * N-6 / I3b-1 — route CONDITION readings in FAULT/WARNING through the E1 alarm
+ * normalizer → Andon. Best-effort + self-gated by EQ_INTEG_ENABLED inside the bridge
+ * (no-op when off). I3b-1 UPGRADE: the alarm is lifted via the field-map so it carries
+ * the Condition's OWN `nativeCode` (falling back to dataItemName|dataItemId|type) AND
+ * the device manufacturer as the vendor so mapAlarm resolves per-vendor taxonomy rows
+ * (rather than always 'mtconnect'). Never throws (a failed alarm never breaks the poll).
+ *
+ * @param vendor per-device manufacturer key (from probe / source config); defaults to
+ *   'mtconnect' inside the bridge.
  */
-async function raiseConditionAlarms(readings: MtcReading[], machineId: number | null): Promise<void> {
+async function raiseConditionAlarms(
+  readings: MtcReading[],
+  machineId: number | null,
+  vendor?: string,
+): Promise<void> {
   try {
-    const faults = readings.filter((r) => {
-      const res = stateToResult(r);
-      return r.category === "CONDITION" && (res === "fail" || res === "warn");
-    });
-    if (faults.length === 0) return;
+    const { extractConditionAlarms } = await import("./mtconnectFieldMap");
+    const alarms = extractConditionAlarms(readings);
+    if (alarms.length === 0) return;
     const { raiseFromMtconnectCondition } = await import("../equipment/adapterAlarmBridge");
-    for (const r of faults) {
-      const nativeCode = (r.dataItemName || r.dataItemId || r.type).slice(0, 128);
-      const message = `${r.type} ${r.conditionState ?? r.value}`.trim();
-      await raiseFromMtconnectCondition({ nativeCode, message, machineId }).catch((err) =>
-        log(`alarm normalize failed for "${nativeCode}"`, err),
-      );
+    for (const a of alarms) {
+      await raiseFromMtconnectCondition({
+        nativeCode: a.nativeCode,
+        message: a.nativeSeverity ? `${a.message} (severity ${a.nativeSeverity})` : a.message,
+        machineId,
+        vendor,
+      }).catch((err) => log(`alarm normalize failed for "${a.nativeCode}"`, err));
     }
   } catch (err) {
     log("condition-alarm routing failed", err);
@@ -326,10 +350,32 @@ async function pollOnce(source: MtcSource): Promise<void> {
       st.lastError = null;
     }
 
-    // N-6 (doc 18 §5) — ADDITIVELY route FAULT/WARNING CONDITION readings through the
-    // E1 alarm normalizer → Andon. Fire-and-forget + self-gated by EQ_INTEG_ENABLED
-    // inside the bridge (a complete no-op when off → mtconnect/andon tests unchanged).
-    void raiseConditionAlarms(readings, sink.machineId);
+    // I3b-1 — derive the Unified Equipment Model projection from the same readings so
+    // the poller status exposes recipe_id/cycle_count/production_counter/utilization
+    // (read-only; nothing fabricated — absent fields stay null).
+    try {
+      const { mapMtconnectToUem } = await import("./mtconnectFieldMap");
+      const uem = mapMtconnectToUem(readings, { vendor: source.vendor });
+      if (st) {
+        st.lastUem = {
+          recipeId: uem.recipeId,
+          cycleCount: uem.cycleCount,
+          productionCounter: uem.productionCounter,
+          utilizationRate: uem.utilizationRate,
+          execState: uem.execState,
+          controllerMode: uem.controllerMode,
+          alarmCode: uem.alarmCode,
+        };
+      }
+    } catch (err) {
+      log("UEM projection failed", err);
+    }
+
+    // N-6 / I3b-1 (doc 18 §5 / doc 20 §3) — ADDITIVELY route FAULT/WARNING CONDITION
+    // readings through the E1 alarm normalizer → Andon, carrying the Condition's own
+    // nativeCode/nativeSeverity + the device vendor. Fire-and-forget + self-gated by
+    // EQ_INTEG_ENABLED inside the bridge (a complete no-op when off).
+    void raiseConditionAlarms(readings, sink.machineId, source.vendor);
   } catch (err) {
     log(`poll ${source.machineCode} failed`, err);
     if (st) st.lastError = err instanceof Error ? err.message : String(err);
@@ -366,6 +412,7 @@ export async function startMtconnectPoller(): Promise<boolean> {
       lastError: null,
       telemetryRows: 0,
       eventRows: 0,
+      lastUem: null,
     });
     // Kick once immediately, then on the interval. Errors stay inside pollOnce.
     void pollOnce(source);

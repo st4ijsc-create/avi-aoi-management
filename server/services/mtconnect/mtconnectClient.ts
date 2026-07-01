@@ -41,6 +41,10 @@ export interface MtcReading {
   timestamp: Date;
   /** For CONDITION observations the element name is the state (Normal/Warning/Fault/Unavailable). */
   conditionState?: string;
+  /** Vendor's native alarm code (the `nativeCode` attribute, present on CONDITION/EVENT). */
+  nativeCode?: string;
+  /** Vendor's native severity string (the `nativeSeverity` attribute, CONDITION). */
+  nativeSeverity?: string;
 }
 
 /** A DataItem definition from /probe. */
@@ -238,6 +242,8 @@ export function parseStreamsXml(xml: string): MtcReading[] {
         numericValue: numeric,
         timestamp: parseTimestamp(a.timestamp),
         conditionState: isCondition ? rawName : undefined,
+        nativeCode: a.nativeCode || undefined,
+        nativeSeverity: a.nativeSeverity || undefined,
       });
     }
   } catch (err) {

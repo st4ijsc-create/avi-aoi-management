@@ -161,6 +161,8 @@ export class EuromapAdapter {
   constructor(
     public readonly machineCode: string,
     private readonly entries?: AlarmMapping[],
+    /** Platform machineId for Andon attribution (I3b-2); optional. */
+    private readonly machineId?: number | null,
   ) {}
 
   /** Feed a native readout from a connector. Updates the local cache. Returns the UEM. */
@@ -204,5 +206,46 @@ export class EuromapAdapter {
   /** Honest connectivity probe — no transport is connected, so never ok. */
   testConnection(): { ok: false; vendor: string; readOnly: true; caveat: string } {
     return { ok: false, vendor: EUROMAP_VENDOR_DEFAULT, readOnly: true, caveat: EUROMAP_CAVEAT };
+  }
+
+  /**
+   * I3b-2 — poll a Euromap-77 machine over OPC-UA once, REUSING the platform's real
+   * opcuaDriver via `euromapOpcuaReader.readEuromapOverOpcua`, then:
+   *   1. ingest the native readout → updates the local cache + returns the UEM, and
+   *   2. route each ACTIVE alarm through the E1 normalizer → Andon (flag-gated inside
+   *      the bridge; a complete no-op when EQ_INTEG_ENABLED is off).
+   *
+   * READ-ONLY. A `driver` is injected (the OT registry's opcua driver in production, a
+   * mock in tests) so this adapter carries no hard OPC-UA dependency. Honest failure:
+   * an unreachable endpoint / empty node-map throws — the cache is left untouched and
+   * NOTHING is fabricated.
+   *
+   * @returns the UEM snapshot derived from the fresh readout.
+   */
+  async pollOverOpcua(
+    driver: import("../ot/otDriver").OtDriver,
+    cfg: import("./euromapOpcuaReader").EuromapOpcuaConfig,
+  ): Promise<UnifiedEquipmentSnapshot> {
+    const { readEuromapOverOpcua } = await import("./euromapOpcuaReader");
+    const readout = await readEuromapOverOpcua(driver, cfg);
+    const uem = this.ingest(readout);
+
+    // Route ACTIVE alarms → Andon (self-gated; no-op when the flag is off).
+    const vendor = readout.vendor?.trim() || EUROMAP_VENDOR_DEFAULT;
+    const active = (readout.alarms ?? []).filter((a) => a.active && a.code?.trim());
+    if (active.length > 0) {
+      const { raiseFromEuromapAlarm } = await import("../equipment/adapterAlarmBridge");
+      for (const a of active) {
+        await raiseFromEuromapAlarm({
+          nativeCode: a.code.trim(),
+          message: a.message ?? null,
+          machineId: this.machineId,
+          vendor,
+        }).catch((err) =>
+          console.warn(`[Euromap] alarm normalize failed for "${a.code}":`, (err as Error)?.message ?? err),
+        );
+      }
+    }
+    return uem;
   }
 }
