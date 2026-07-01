@@ -4480,6 +4480,19 @@ async function startServer() {
     console.error("[Fleet] charging planner start failed:", (err as any)?.message || err);
   }
 
+  // I2-b (doc 16 Khối 4) — Model auto-rollback sweep. Periodically checks each ACTIVE
+  // model version's live accuracy/drift vs its eval baseline and auto-rolls back to the
+  // previous stable version when it regresses. NO-OP unless AI_MODEL_AUTOROLLBACK_ENABLED
+  // (startModelAutoRollbackSweep self-gates), so the timer is cheap when off. Unref'd +
+  // non-overlapping (mirrors the fleet charging sweep). Opens NO device-control path: it
+  // only flips a model_versions.status flag (the SAME op manual activation performs).
+  try {
+    const { startModelAutoRollbackSweep } = await import("../services/ai/modelAutoRollback");
+    startModelAutoRollbackSweep();
+  } catch (err) {
+    console.error("[modelAutoRollback] sweep start failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(

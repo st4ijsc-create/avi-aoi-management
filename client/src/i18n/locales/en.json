@@ -4488,6 +4488,8 @@
     "aiMonitoringDesc": "Real-time AI model health monitoring",
     "modelVersions": "Model Versions",
     "modelVersionsDesc": "AI model version registry",
+    "robotModelHealth": "Robot & Model Health",
+    "robotModelHealthDesc": "Advisory robot-behaviour anomalies + AI model rollback audit (Khối 4)",
     "aiModelManagement": "AI Models",
     "aiModelManagementDesc": "Register, manage and deploy AI models",
     "aiSettings": "AI Settings",

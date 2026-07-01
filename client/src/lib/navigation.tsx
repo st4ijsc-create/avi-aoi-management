@@ -956,6 +956,19 @@ export const navGroups: NavGroup[] = [
         section: "aiControlPlane",
       },
       {
+        // Automation Orchestration (Khối 4, I2) — advisory robot-behaviour anomaly
+        // monitoring + AI model rollback audit. AI-observability, read-mostly cockpit;
+        // reads gated on machine_monitoring (like robot-control / fleet-orchestration),
+        // mutations gated on machine_control/canEdit inside the page + I2 flags.
+        href: "/robot-model-health",
+        label: "nav.robotModelHealth",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.robotModelHealthDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "aiControlPlane",
+      },
+      {
         href: "/ai-settings",
         label: "nav.aiSettings",
         icon: <Cog className="h-4 w-4" />,

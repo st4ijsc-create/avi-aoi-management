@@ -4511,6 +4511,8 @@
     "aiMonitoringDesc": "Giám sát sức khỏe mô hình AI theo thời gian thực",
     "modelVersions": "Phiên bản mô hình",
     "modelVersionsDesc": "Kho đăng ký phiên bản mô hình AI",
+    "robotModelHealth": "Sức khỏe Robot & Mô hình",
+    "robotModelHealthDesc": "Giám sát bất thường hành vi robot (tư vấn) + nhật ký khôi phục phiên bản mô hình AI (Khối 4)",
     "aiModelManagement": "Quản Lý Mô Hình AI",
     "aiModelManagementDesc": "Đăng ký, quản lý và triển khai mô hình AI",
     "aiSettings": "Cài Đặt AI",

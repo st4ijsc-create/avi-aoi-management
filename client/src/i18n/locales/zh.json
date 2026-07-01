@@ -4481,6 +4481,8 @@
     "aiMonitoringDesc": "实时 AI 模型健康监控",
     "modelVersions": "模型版本",
     "modelVersionsDesc": "AI 模型版本注册表",
+    "robotModelHealth": "机器人与模型健康",
+    "robotModelHealthDesc": "机器人行为异常（建议性）监控 + AI 模型回滚审计（模块 4）",
     "aiModelManagement": "AI模型管理",
     "aiModelManagementDesc": "注册、管理和部署AI模型",
     "aiSettings": "AI 设置",

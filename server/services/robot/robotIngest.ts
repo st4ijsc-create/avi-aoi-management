@@ -78,6 +78,15 @@ export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): 
         .catch((e) => console.error(`[Robot] safety-audit hook failed for "${robot.code}":`, (e as Error)?.message ?? e));
     }
     lastEstop.set(robot.id, !!state.estop);
+
+    // I2-a (doc 16 Khối 4) — ADVISORY robot-behaviour anomaly scan (trajectory /
+    // grip-force / cycle-time drift). Fire-and-forget + lazily imported + self-gated
+    // by AI_ROBOT_ANOMALY_ENABLED (no-op when off) → zero cost on the default path.
+    // Opens NO control path: it raises a smart alert + writes an advisory ledger row,
+    // NEVER a robot command.
+    void import("../ai/robotBehaviorAnomalyService")
+      .then((m) => m.detectAndRaiseForRobot(robot.id))
+      .catch((e) => console.error(`[Robot] anomaly-scan hook failed for "${robot.code}":`, (e as Error)?.message ?? e));
   } catch (err) {
     console.error(`[Robot] ingest failed for "${robot.code}":`, (err as Error)?.message ?? err);
   }

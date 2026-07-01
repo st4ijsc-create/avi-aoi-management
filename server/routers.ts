@@ -136,6 +136,7 @@ import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): 
 import { equipmentStandardsRouter } from "./routers/equipmentStandardsRouter"; // E1 (doc 16 Khối 5): Equipment standardization governance — device type registry/alarm taxonomy/CR workflow/conformance/compliance (EQ_GOVERN_ENABLED)
 import { equipmentIntegrationRouter } from "./routers/equipmentIntegrationRouter"; // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks (read-only) + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
 import { fieldRouter } from "./routers/fieldRouter"; // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
+import { aiRobotAnomalyRouter } from "./routers/aiRobotAnomalyRouter"; // I2 (doc 16 Khối 4): robot-behaviour anomaly (advisory) + model auto-rollback history/trigger (AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
@@ -380,6 +381,7 @@ export const appRouter = router({
   equipmentStandards: equipmentStandardsRouter, // E1 (doc 16 Khối 5): Equipment standardization governance (EQ_GOVERN_ENABLED)
   equipmentIntegration: equipmentIntegrationRouter, // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
   field: fieldRouter, // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
+  aiRobotAnomaly: aiRobotAnomalyRouter, // I2 (doc 16 Khối 4): robot-behaviour anomaly (advisory) + model auto-rollback history/trigger (AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,

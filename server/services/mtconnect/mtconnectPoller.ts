@@ -118,6 +118,33 @@ export function stateToResult(reading: MtcReading): "pass" | "fail" | "warn" | "
 }
 
 /**
+ * N-6 — route CONDITION readings in FAULT/WARNING through the E1 alarm normalizer →
+ * Andon. Best-effort + self-gated by EQ_INTEG_ENABLED inside the bridge (no-op when
+ * off). The condition's native code = its dataItemName|dataItemId (a shop maps these
+ * to a standard code via the alarm_taxonomy for vendor 'mtconnect'). Non-fault/warn
+ * readings are skipped. Never throws (a failed alarm never breaks the poll loop).
+ */
+async function raiseConditionAlarms(readings: MtcReading[], machineId: number | null): Promise<void> {
+  try {
+    const faults = readings.filter((r) => {
+      const res = stateToResult(r);
+      return r.category === "CONDITION" && (res === "fail" || res === "warn");
+    });
+    if (faults.length === 0) return;
+    const { raiseFromMtconnectCondition } = await import("../equipment/adapterAlarmBridge");
+    for (const r of faults) {
+      const nativeCode = (r.dataItemName || r.dataItemId || r.type).slice(0, 128);
+      const message = `${r.type} ${r.conditionState ?? r.value}`.trim();
+      await raiseFromMtconnectCondition({ nativeCode, message, machineId }).catch((err) =>
+        log(`alarm normalize failed for "${nativeCode}"`, err),
+      );
+    }
+  } catch (err) {
+    log("condition-alarm routing failed", err);
+  }
+}
+
+/**
  * Pure mapper: split normalized readings into the two storage shapes.
  *   - numeric SAMPLE → a CanonicalSample (protocol 'mtconnect') for the bus.
  *   - EVENT / CONDITION → process_results row (state in metrics).
@@ -298,6 +325,11 @@ async function pollOnce(source: MtcSource): Promise<void> {
       st.eventRows += eventRows;
       st.lastError = null;
     }
+
+    // N-6 (doc 18 §5) — ADDITIVELY route FAULT/WARNING CONDITION readings through the
+    // E1 alarm normalizer → Andon. Fire-and-forget + self-gated by EQ_INTEG_ENABLED
+    // inside the bridge (a complete no-op when off → mtconnect/andon tests unchanged).
+    void raiseConditionAlarms(readings, sink.machineId);
   } catch (err) {
     log(`poll ${source.machineCode} failed`, err);
     if (st) st.lastError = err instanceof Error ? err.message : String(err);
