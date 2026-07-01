@@ -150,6 +150,15 @@ function buildSnapshot(conn: SiteConnection): SiteKpiSnapshot | null {
     oee: l.get("oee") ?? null,
     avgCycleTime: l.get("avgCycleTime") ?? null,
     defectPareto: null, // pareto is not streamed via UNS; F1 pull supplies it
+    // U5 — the UNS (Sparkplug) stream carries only inspection KPIs, so the deepened
+    // categories are honest-null here; the F1 pull path supplies detail/fleet/safety/
+    // pdm/alerts. Leaving these null means upsertSnapshot won't overwrite a richer
+    // pull-landed row's detail with nulls beyond the "overall" KPI it refreshes.
+    detailRows: null,
+    fleet: null,
+    safety: null,
+    pdm: null,
+    alertRollup: null,
     endpointsHit: [],
   };
 }

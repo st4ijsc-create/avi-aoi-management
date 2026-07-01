@@ -83,6 +83,143 @@ export function registerExternalInspectionRoutes(
   });
 
   // ================================================================
+  // U5 (doc 21 §6 / G-7) — FEDERATION PER-CATEGORY FEEDS
+  //
+  // Read-only aggregate summaries a SITE serves so the core aggregator can build a
+  // per-category cross-site roll-up (fleet/safety/pdm/oee) + an alert roll-up. Same
+  // x-master-key/bearer auth as the rest of /api/external/*. Each returns
+  // { success, data } and is HONEST — a metric that cannot be computed is null (never
+  // fabricated). A site that predates these feeds simply 404s and the core keeps the
+  // category null-honest. NO device-control path is opened here (read-only SELECTs).
+  // ================================================================
+
+  // GET /api/external/oee/summary — estate OEE (units-weighted average of live OEE).
+  app.get("/api/external/oee/summary", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getAllMachinesOEELive } = await import("../services/oeeService");
+      const metrics = await getAllMachinesOEELive();
+      // Units-weighted average across machines that actually have an OEE value.
+      let wSum = 0;
+      let wTot = 0;
+      for (const m of metrics as any[]) {
+        const oee = m?.oee;
+        const units = m?.totalCount ?? m?.details?.totalCount ?? null;
+        if (typeof oee === "number" && Number.isFinite(oee)) {
+          const w = typeof units === "number" && units > 0 ? units : 1;
+          wSum += oee * w;
+          wTot += w;
+        }
+      }
+      const oee = wTot > 0 ? Number((wSum / wTot).toFixed(2)) : null; // honest null if no OEE data
+      res.json({ success: true, data: { oee, machinesWithOee: (metrics as any[]).filter((m) => typeof m?.oee === "number").length } });
+    } catch (error: any) {
+      console.error("[External] oee/summary error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get OEE summary" });
+    }
+  });
+
+  // GET /api/external/fleet/summary — task + robot counts (NOT re-running allocation).
+  app.get("/api/external/fleet/summary", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.json({ success: true, data: { tasksPending: null, tasksRunning: null, robotsOnline: null, robotsTotal: null } });
+      const { tasks, robots } = await import("../../drizzle/schema");
+      const taskRows = await db.select({ status: tasks.status }).from(tasks);
+      let tasksPending = 0;
+      let tasksRunning = 0;
+      for (const t of taskRows) {
+        if (t.status === "pending" || t.status === "assigned") tasksPending++;
+        else if (t.status === "running") tasksRunning++;
+      }
+      const robotRows = await db.select({ status: robots.status }).from(robots);
+      const robotsOnline = robotRows.filter((r) => r.status !== "offline").length;
+      res.json({ success: true, data: { tasksPending, tasksRunning, robotsOnline, robotsTotal: robotRows.length } });
+    } catch (error: any) {
+      console.error("[External] fleet/summary error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get fleet summary" });
+    }
+  });
+
+  // GET /api/external/safety/summary — open safety events / near-misses (ADVISORY).
+  app.get("/api/external/safety/summary", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.json({ success: true, data: { openEvents: null, nearMisses: null, critical: null } });
+      const { safetyEvents } = await import("../../drizzle/schema");
+      const rows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents);
+      const nearMisses = rows.filter((r) => r.isNearMiss === true).length;
+      const critical = rows.filter((r) => r.isNearMiss === false).length; // advisory: non-near-miss ≈ critical
+      res.json({ success: true, data: { advisory: true, openEvents: rows.length, nearMisses, critical } });
+    } catch (error: any) {
+      console.error("[External] safety/summary error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get safety summary" });
+    }
+  });
+
+  // GET /api/external/pdm/summary — open predictive work orders.
+  app.get("/api/external/pdm/summary", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.json({ success: true, data: { openPredictiveWos: null, highRiskMachines: null } });
+      const { maintenanceWorkOrders } = await import("../../drizzle/schema");
+      const rows = await db
+        .select({ status: maintenanceWorkOrders.status, type: maintenanceWorkOrders.type })
+        .from(maintenanceWorkOrders);
+      const openPredictiveWos = rows.filter(
+        (r) => r.type === "PREDICTIVE" && r.status !== "COMPLETED" && r.status !== "CANCELLED",
+      ).length;
+      res.json({ success: true, data: { openPredictiveWos, highRiskMachines: null } });
+    } catch (error: any) {
+      console.error("[External] pdm/summary error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get PdM summary" });
+    }
+  });
+
+  // GET /api/external/alerts/summary — compact open-alert roll-up (andon + safety).
+  app.get("/api/external/alerts/summary", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.json({ success: true, data: { open: 0, critical: 0, nearMiss: null, top: [] } });
+      const { andonEvents, safetyEvents } = await import("../../drizzle/schema");
+      const andonRows = await db
+        .select({ state: andonEvents.state, status: andonEvents.status, title: andonEvents.title, raisedAt: andonEvents.raisedAt })
+        .from(andonEvents);
+      const openAndon = andonRows.filter((a) => a.status !== "resolved");
+      let critical = 0;
+      for (const a of openAndon) if (a.state === "red" || a.state === "call") critical++;
+      const safetyRows = await db.select({ isNearMiss: safetyEvents.isNearMiss }).from(safetyEvents);
+      const nearMiss = safetyRows.filter((s) => s.isNearMiss === true).length;
+      const safetyCritical = safetyRows.filter((s) => s.isNearMiss === false).length;
+      critical += safetyCritical;
+      const open = openAndon.length + safetyRows.length;
+      const top: Array<{ kind: string; severity: string; count: number; title: string; at?: string | null }> = [];
+      if (openAndon.length > 0) {
+        const latest = openAndon.reduce(
+          (m, a) => ((a.raisedAt?.getTime?.() ?? 0) > (m.raisedAt?.getTime?.() ?? 0) ? a : m),
+          openAndon[0],
+        );
+        top.push({
+          kind: "andon",
+          severity: critical > 0 ? "critical" : "high",
+          count: openAndon.length,
+          title: latest?.title || "Andon events",
+          at: latest?.raisedAt ? new Date(latest.raisedAt as any).toISOString() : null,
+        });
+      }
+      if (safetyCritical > 0) top.push({ kind: "safety", severity: "critical", count: safetyCritical, title: "Safety events (advisory)", at: null });
+      if (nearMiss > 0) top.push({ kind: "safety", severity: "medium", count: nearMiss, title: "Near-misses", at: null });
+      res.json({ success: true, data: { open, critical, nearMiss, top } });
+    } catch (error: any) {
+      console.error("[External] alerts/summary error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get alert summary" });
+    }
+  });
+
+  // ================================================================
   // GET /api/external/inspections/summary
   // Tổng hợp kết quả kiểm tra theo station/product/khoảng thời gian
   // ================================================================

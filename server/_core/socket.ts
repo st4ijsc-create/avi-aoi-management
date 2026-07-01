@@ -154,6 +154,19 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`robot:${(data as any).robotId}`);
         console.log(`[Socket.io] ${socket.id} joined robot:${(data as any).robotId}`);
       }
+      // U5-live (doc 21 §6 / G-7) — Federation SITE room. The Command Center /
+      // Federation tree joins `site:{siteCode}` (a specific site) and/or `sites:global`
+      // (all sites) to receive `site:update` when the aggregator refreshes a site's
+      // roll-up — so the site level is live, not just 30s-polled. Producer-gated by the
+      // aggregator flag; no gate here (a room join is harmless).
+      if ((data as any).siteCode) {
+        socket.join(`site:${(data as any).siteCode}`);
+        console.log(`[Socket.io] ${socket.id} joined site:${(data as any).siteCode}`);
+      }
+      if ((data as any).sitesGlobal) {
+        socket.join("sites:global");
+        console.log(`[Socket.io] ${socket.id} joined sites:global`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -167,6 +180,9 @@ export function initializeSocket(server: HttpServer): Server {
       if ((data as any).deviceStreamId) socket.leave(`device:${(data as any).deviceStreamId}`);
       // U3-live — leave the per-robot live-telemetry room.
       if ((data as any).robotId) socket.leave(`robot:${(data as any).robotId}`);
+      // U5-live — leave the federation site room(s).
+      if ((data as any).siteCode) socket.leave(`site:${(data as any).siteCode}`);
+      if ((data as any).sitesGlobal) socket.leave("sites:global");
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -1222,6 +1238,42 @@ export interface RobotTelemetryLive {
 export function emitRobotTelemetry(evt: RobotTelemetryLive): void {
   if (!io) return;
   io.to(`robot:${evt.robotId}`).emit("robot:telemetry", evt);
+}
+
+// ============ U5-live — FEDERATION SITE ROLL-UP LIVE (doc 21 §6 / G-7) =========
+
+/**
+ * A compact live projection of a site's refreshed roll-up, pushed to the per-site
+ * room `site:{siteCode}` + `sites:global` on each aggregator cycle that lands new
+ * data for the site. Carries only the small, UI-relevant fields the Federation tree
+ * / Command Center site level renders live (freshness + headline KPIs + alert
+ * counts) — NOT the full roll-up rows (those stay behind the federationRouter reads).
+ * SIGNAL ONLY: the aggregator has already persisted the roll-up; this is a thin
+ * transport with NO gate of its own (the PRODUCER — the aggregator — is gated by
+ * FEDERATION_AGGREGATOR_ENABLED, so when off it is simply never called and the FE
+ * keeps its 30s poll, backward-compatible). No-op when io is not initialized.
+ */
+export interface SiteUpdateEvent {
+  siteCode: string;
+  siteId: number;
+  status: string; // active | error | ...
+  freshness?: "ok" | "stale" | "down";
+  asOf?: string | null; // ISO
+  fetchedAt?: string | null; // ISO
+  kpi?: {
+    yieldRate?: number | null;
+    ngRate?: number | null;
+    throughput?: number | null;
+    oee?: number | null;
+  } | null;
+  alerts?: { open: number; critical: number } | null;
+  ts: number;
+}
+
+export function emitSiteUpdate(evt: SiteUpdateEvent): void {
+  if (!io) return;
+  io.to(`site:${evt.siteCode}`).emit("site:update", evt);
+  io.to("sites:global").emit("site:update", evt);
 }
 
 // Emit alert escalation event

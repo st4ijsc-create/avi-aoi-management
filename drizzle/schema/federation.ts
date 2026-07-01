@@ -87,7 +87,10 @@ export const siteKpiRollup = pgTable("site_kpi_rollup", {
     .notNull()
     .references(() => sites.id, { onDelete: "cascade" }),
   corporateCode: varchar("corporateCode", { length: 50 }), // denormalized from sites for cross-corporate rollups/RLS
-  category: varchar("category", { length: 50 }).notNull().default("overall"), // overall | <station/product code> — keeps room for per-line KPIs later
+  // U5 (doc 21 §6): the roll-up is now PER-CATEGORY, not only "overall". A site
+  // gets one snapshot row per category — inspection|oee|fleet|safety|pdm (+ the
+  // legacy "overall") — so fleet/safety/PdM aggregate across sites too.
+  category: varchar("category", { length: 50 }).notNull().default("overall"), // overall | inspection | oee | fleet | safety | pdm | <station/product code>
   window: varchar("window", { length: 20 }).notNull().default("snapshot"), // snapshot | hour | shift | day
   bucketStart: timestamp("bucketStart", { withTimezone: true }), // null for window='snapshot'
   asOf: timestamp("asOf", { withTimezone: true }).notNull(), // the period the KPIs describe
@@ -102,6 +105,16 @@ export const siteKpiRollup = pgTable("site_kpi_rollup", {
   oee: doublePrecision("oee"), // %, null until a site exposes OEE
   avgCycleTime: doublePrecision("avgCycleTime"), // seconds
   defectPareto: jsonb("defectPareto"), // top-N {pointCode,name,ngCount,pct} — null if not fetched
+  // --- U5 (doc 21 §6 / G-7): deepened roll-up (all nullable, honest) ---
+  // detailRows: the site's per-machine/station summary rows (PREVIOUSLY fetched-
+  //   then-DISCARDED). Retained so a drill site → factory → device can be assembled.
+  detailRows: jsonb("detailRows"), // SiteDetailRow[] | null
+  // alertRollup: compact per-site alert summary (open/critical counts + top-N) so
+  //   the FederationDashboard + Command Center can show cross-site alerts.
+  alertRollup: jsonb("alertRollup"), // SiteAlertRollup | null
+  // metrics: generalized per-category metric bag (fleet/safety/pdm) — honest null
+  //   when a remote site cannot provide the category.
+  metrics: jsonb("metrics"), // Record<string, number|null> | null
   // --- provenance / staleness ---
   source: varchar("source", { length: 20 }).notNull().default("poll"), // poll | uns
   fetchedAt: timestamp("fetchedAt", { withTimezone: true }).notNull().defaultNow(),
@@ -115,6 +128,55 @@ export const siteKpiRollup = pgTable("site_kpi_rollup", {
 
 export type SiteKpiRollup = typeof siteKpiRollup.$inferSelect;
 export type InsertSiteKpiRollup = typeof siteKpiRollup.$inferInsert;
+
+/**
+ * U5 — the canonical per-category roll-up keys. "overall" is kept for backward
+ * compatibility (existing dashboard grid); the aggregator now ALSO writes one row
+ * per module category so fleet/safety/PdM aggregate cross-site. A category a remote
+ * site cannot provide is simply absent (honest) — never fabricated with zeros.
+ */
+export const ROLLUP_CATEGORIES = ["overall", "inspection", "oee", "fleet", "safety", "pdm"] as const;
+export type RollupCategory = (typeof ROLLUP_CATEGORIES)[number];
+
+/**
+ * One retained per-machine/station detail row (from the site's summary feed).
+ * PREVIOUSLY fetched-then-discarded; now persisted on the "overall" snapshot's
+ * `detailRows` so the Command Center can drill site → factory/station → device.
+ */
+export interface SiteDetailRow {
+  machineId: number | null;
+  machineCode: string;
+  machineName: string;
+  stationId: number | null;
+  stationCode: string;
+  stationName: string;
+  productModelId?: number | null;
+  productCode?: string;
+  productName?: string;
+  totalInspections: number | null;
+  okCount: number | null;
+  ngCount: number | null;
+  ntfCount: number | null;
+  yieldRate: number | null;
+  avgCycleTime: number | null;
+}
+
+/** One aggregated cross-site alert entry (compact — no full DB rows). */
+export interface SiteAlertEntry {
+  kind: string; // andon | safety | ng | yield | ...
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  count: number;
+  title: string;
+  at?: string | null; // ISO of the most recent occurrence, if known
+}
+
+/** Compact per-site alert summary landed on the "overall" snapshot row. */
+export interface SiteAlertRollup {
+  open: number; // total open/active alerts
+  critical: number; // subset that are critical/high
+  nearMiss?: number | null; // safety near-misses (honest null if not provided)
+  top: SiteAlertEntry[]; // small top-N by severity/count
+}
 
 /** Allowed values for site_sync_log.status / lastSyncStatus. */
 export const SYNC_STATUSES = ["ok", "partial", "failed", "skipped"] as const;
