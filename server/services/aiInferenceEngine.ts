@@ -179,6 +179,29 @@ export async function runInference(
   if (!model) throw new Error(`Model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
 
+  // ── AOI-C — flag-gated embedding-head dispatch (doc 24 Wave-3) ──────────────
+  // When the ACTIVE model is a first-party embedding-head classifier and
+  // AOI_DL_HEAD_ENABLED is on, serve it via the head path (image → DINOv2 embedding
+  // → logreg head) instead of ONNX. EVERY caller of runInference (quality gate,
+  // ensemble, A/B canary, active-learning auto-label) inherits this transparently.
+  // The env-flag gate keeps the hot ONNX path free of the head import when off.
+  const headFlag = String(process.env.AOI_DL_HEAD_ENABLED ?? "false").toLowerCase();
+  if (headFlag === "true" || headFlag === "1") {
+    const { isEmbeddingHeadModel, runEmbeddingHeadInference } = await import("./ai/embeddingHead");
+    if (isEmbeddingHeadModel(model)) {
+      const r = await runEmbeddingHeadInference(model, imageBuffer, options);
+      return {
+        modelCode: r.modelCode,
+        modelVersion: r.modelVersion,
+        predictions: r.predictions,
+        topLabel: r.topLabel,
+        confidence: r.confidence,
+        processingTimeMs: r.processingTimeMs,
+        status: "COMPLETED" as const,
+      };
+    }
+  }
+
   try {
     const session = await getSession(model);
 

@@ -26,6 +26,7 @@ const IMPLEMENTED: ProgrammingKind[] = [
   "robot-tm",
   "iec61131-st",
   "iec61131-ld",
+  "iec61131-pou", // P4 (doc 24 Wave-3) — structured graphical POU (LAD/FBD/SFC) + PLCopen XML
   "ir-flow",
 ];
 

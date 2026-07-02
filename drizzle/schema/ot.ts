@@ -19,6 +19,12 @@ export const deviceAdapters = pgTable("device_adapters", {
   name: varchar("name", { length: 255 }).notNull(),
   protocol: otProtocolEnum("protocol").notNull(),
   endpoint: varchar("endpoint", { length: 500 }).notNull(),
+  // Free-form driver options. doc 24 Wave-3 / C3: the OPTIONAL secondary
+  // (hot-standby) endpoint for connection HA/failover lives ADDITIVELY inside
+  // this json under `ha` — connectionOptions.ha.secondaryEndpoint (string)
+  // [+ optional .secondaryOptions] — so no schema migration is needed and older
+  // rows without it remain single-endpoint (backward-compatible). Consumed only
+  // when OT_CONN_HA_ENABLED === "true" (see connectionSupervisor.ts).
   connectionOptions: json("connectionOptions").$type<Record<string, unknown>>(),
   pollIntervalMs: integer("pollIntervalMs").default(5000).notNull(),
   status: otAdapterStatusEnum("status").default("disabled").notNull(),

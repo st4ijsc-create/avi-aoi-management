@@ -25,7 +25,7 @@
 import { ZmotionBasicAdapter } from "./zmotion/zmotionBasicAdapter";
 import { MitsubishiEngineeringAdapter } from "./mitsubishi/mitsubishiEngineeringAdapter";
 import { RobotTmAdapter } from "./robot/robotTmAdapter";
-import { Iec61131StAdapter, Iec61131LdAdapter } from "./iec61131/iec61131Adapter";
+import { Iec61131StAdapter, Iec61131LdAdapter, Iec61131PouAdapter } from "./iec61131/iec61131Adapter";
 import { IrProgrammingAdapter } from "./ir/irAdapter";
 
 /** Target classes the DPC tier can address (1:1 onto programmingKindEnum). */
@@ -37,6 +37,7 @@ export type ProgrammingKind =
   | "robot-tm"
   | "iec61131-st"
   | "iec61131-ld"
+  | "iec61131-pou"
   | "ir-flow";
 
 /**
@@ -53,6 +54,7 @@ export const PROGRAMMING_KINDS: ProgrammingKind[] = [
   "robot-tm",
   "iec61131-st",
   "iec61131-ld",
+  "iec61131-pou",
   "ir-flow",
 ];
 
@@ -283,6 +285,7 @@ registerProgrammingAdapter("mitsubishi-engineering", () => new MitsubishiEnginee
 registerProgrammingAdapter("robot-tm", () => new RobotTmAdapter());
 registerProgrammingAdapter("iec61131-st", () => new Iec61131StAdapter());
 registerProgrammingAdapter("iec61131-ld", () => new Iec61131LdAdapter());
+registerProgrammingAdapter("iec61131-pou", () => new Iec61131PouAdapter());
 registerProgrammingAdapter("ir-flow", () => new IrProgrammingAdapter());
 
 export const programmingRegistry = {

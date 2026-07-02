@@ -19,8 +19,27 @@ registerDriver("s7", createS7Driver);
 registerDriver("mitsubishi-mc", createMitsubishiMcDriver);
 registerDriver("ethernet-ip", createEthernetIpDriver);
 
-export { startOt, stopOt, isOtRunning } from "./otManager";
-export { loadEnabledAdapters } from "./deviceAdapter";
+export {
+  startOt,
+  stopOt,
+  isOtRunning,
+  // C3 — connection HA / failover accessors + status getters (additive).
+  isConnHaEnabled,
+  getActiveAdapter,
+  getActiveDriver,
+  listActiveAdapters,
+  getSupervisorStatus,
+  listSupervisorStatuses,
+} from "./otManager";
+export { loadEnabledAdapters, parseBackupConnection } from "./deviceAdapter";
 export type { RuntimeAdapter } from "./deviceAdapter";
+export { ConnectionSupervisor, DEFAULT_BACKOFF } from "./connectionSupervisor";
+export type {
+  SupervisorState,
+  SupervisorStatus,
+  SupervisorOptions,
+  EndpointConfig,
+  BackoffConfig,
+} from "./connectionSupervisor";
 export { registerDriver, createDriver, listProtocols } from "./driverRegistry";
 export * from "./otDriver";

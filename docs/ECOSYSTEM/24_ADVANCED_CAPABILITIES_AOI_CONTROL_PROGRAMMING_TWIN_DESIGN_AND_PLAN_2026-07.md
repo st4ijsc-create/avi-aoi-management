@@ -262,4 +262,14 @@ Also fixed a pre-existing missing dep (`@zxing/library@^0.22.0`) that would brea
 
 **To fully "prove" on hardware later:** run migration `0157`; drop a real DINOv2 ONNX at `AI_DINOV2_MODEL_PATH`; enable the relevant flags per cell; sign a commissioning record before any live write; feed a robot's joint vector onto the telemetry bus to light the twin's live-articulation path end-to-end.
 
-### Waves 2–4 — pending (per §6 roadmap).
+### Wave 2 — DONE & GREEN + committed (2026-07-02)
+Commit `549242b`. TSC 0 · build OK · tests pass (IR 49, registration 10, golden 3).
+- **AOI-B** — sub-pixel reference alignment: Lucas-Kanade/ECC affine(/homography) over a Gaussian pyramid + confidence gate (low-confidence ⇒ `aligned=false`, no fake pass); golden-sample store (migration `0158`, `goldenSampleService.ts`, `imageRegistration.ts`); wired under `ALIGN_BEFORE_DIFF`.
+- **P3** — IR depth: safe typed-expression model (no eval, `irExpr.ts`) + new blocks `set_variable`/`counter`/`wait_until`/`set_analog`/`pid_control` through schema→lint→URScript+ROS2 transpile→tree+react-flow editor. (Reusable function-blocks/POUs deferred to a later slice.)
+- **Note:** P2 (drag-drop canvas) + T2 (Rapier physics) were front-loaded into Wave 1.
+
+### Commits (branch `automation-orchestration-r0`)
+`89cdf1b` doc-23 frontend redesign · `d617560` doc-24 Wave 1 · `549242b` doc-24 Wave 2.
+
+### Waves 3–4 — PENDING (paused for owner review, 2026-07-02).
+Remaining per §6: **W3** AOI-C (first-party DL round-trip) · C3 (connection HA/failover) · C4 (robot-vendor breadth) · P4 (IEC-61131 graphical + PLCopen) · T3 (DTDL twin schema + USD) · T4 (CAD/STEP import); **W4** AOI-F (vision→control closed loop) · T5 (DES→scheduling) · T6 (Isaac sim-to-real) · C5 (companion specs + UNS-first) · P5 (version diff/merge + collab).

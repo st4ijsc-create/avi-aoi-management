@@ -55,6 +55,9 @@ const LANG_OF: Record<ProgrammingKind, string> = {
   "robot-tm": "tmscript",
   "iec61131-st": "st",
   "iec61131-ld": "ld",
+  // P4 (doc 24 Wave-3): structured POUs are authored in the graphical POU editor / imported
+  // from PLCopen XML, not the text copilot (no skeleton — falls through to the default no-op).
+  "iec61131-pou": "pou-json",
   // D1 (doc 16 §11.1): IR flows are authored in the visual IR editor, not the text
   // copilot. The language token is the IR JSON kind; the copilot has no IR skeleton
   // (falls through to the default no-op below) — IR authoring is the editor's job.

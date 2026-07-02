@@ -18,6 +18,32 @@ export interface RuntimeAdapter {
   pollIntervalMs: number;
   tags: OtTagAddress[];
   driver: OtDriver;
+  /**
+   * doc 24 Wave-3 / C3 — OPTIONAL secondary (hot-standby) endpoint for connection
+   * HA/failover. Declared ADDITIVELY inside `connectionOptions.ha` (a schemaless
+   * json column — no migration, no schema drift, so backward-compatible): set
+   *   connectionOptions.ha.secondaryEndpoint (string) [+ optional .secondaryOptions].
+   * Undefined ⇒ single-endpoint adapter (today's behaviour). Only consumed by the
+   * connection supervisor when OT_CONN_HA_ENABLED === "true".
+   */
+  backupConnection?: OtConnectionConfig;
+}
+
+/**
+ * Parse the optional HA secondary endpoint from an adapter's `connectionOptions`
+ * json. Returns undefined unless `connectionOptions.ha.secondaryEndpoint` is a
+ * non-empty string. Falls back to the primary's options when `secondaryOptions`
+ * is absent. Pure + defensive (never throws on malformed config).
+ */
+export function parseBackupConnection(
+  connectionOptions: Record<string, unknown> | null | undefined,
+  timeoutMs?: number,
+): OtConnectionConfig | undefined {
+  const ha = connectionOptions?.ha as Record<string, unknown> | undefined;
+  const raw = ha && typeof ha.secondaryEndpoint === "string" ? ha.secondaryEndpoint.trim() : "";
+  if (!raw) return undefined;
+  const secondaryOptions = (ha?.secondaryOptions as Record<string, unknown> | undefined) ?? connectionOptions ?? undefined;
+  return { endpoint: raw, options: secondaryOptions, timeoutMs };
 }
 
 /**
@@ -54,6 +80,7 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
       }));
 
     const protocol = a.protocol as OtProtocol;
+    const connectionOptions = (a.connectionOptions as Record<string, unknown> | null) ?? undefined;
     runtime.push({
       adapterId: a.id,
       code: a.code,
@@ -61,12 +88,13 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
       protocol,
       connection: {
         endpoint: a.endpoint,
-        options: (a.connectionOptions as Record<string, unknown> | null) ?? undefined,
+        options: connectionOptions,
         timeoutMs: undefined,
       },
       pollIntervalMs: a.pollIntervalMs ?? 5000,
       tags,
       driver: createDriver(protocol),
+      backupConnection: parseBackupConnection(connectionOptions),
     });
   }
 

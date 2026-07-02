@@ -1,0 +1,25 @@
+-- ============================================================================
+-- Migration 0150: IEC 61131-3 structured-POU program kind (doc 24 Wave-3 / P4)
+--
+-- Adds the "iec61131-pou" value to the existing `programmingkindenum` pg enum so a
+-- STRUCTURED graphical POU (a LAD / FBD / SFC / ST program-organisation-unit, stored as a
+-- JSON model in the EXISTING program_artifacts.content) can flow through the EXISTING
+-- device-programming pipeline as a program KIND. NO new table is introduced. The POU runs
+-- through the SAME programmingService gate (validate → compile/transpile-to-ST → simulate →
+-- HITL → gated deploy, flag DPC_DEPLOY_ENABLED). PLCopen TC6 XML import/export are exposed
+-- as PURE transforms on the programming router (no device path).
+--
+--   • ONLY change: ADD VALUE IF NOT EXISTS 'iec61131-pou' to programmingkindenum.
+--   • ADDITIVE + IDEMPOTENT: re-running is a no-op. No table/column change, no new enum
+--     TYPE, no policy change. Existing rows/kinds (incl. iec61131-st / iec61131-ld) untouched.
+--
+-- ⚠ SAFETY: this migration adds a program-authoring KIND only. It opens NO device path — a
+--   POU compiles to and deploys on an OPEN runtime ONLY (OpenPLC); it is NEVER auto-pushed
+--   to a certified vendor PLC and NEVER authors E-stop / SIL safety logic (that stays on the
+--   certified L1 controller). The semantic linter blocks transpile on any error before codegen.
+--
+-- NOTE: ALTER TYPE ... ADD VALUE cannot run inside a transaction block in older Postgres;
+-- run this file OUTSIDE an explicit transaction. The IF NOT EXISTS guard makes it re-appliable.
+-- ============================================================================
+
+ALTER TYPE "programmingkindenum" ADD VALUE IF NOT EXISTS 'iec61131-pou';

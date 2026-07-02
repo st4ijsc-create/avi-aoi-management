@@ -49,6 +49,11 @@ import {
   explainProgram,
   copilotEnabled,
 } from "../services/programming/aiProgrammingCopilot";
+// ── P4 (doc 24 Wave-3) — structured IEC 61131-3 POU (LAD/FBD/SFC) + PLCopen XML round-trip ──
+import { pouProjectSchema } from "../services/programming/iec61131/pouModel";
+import { lintPouProject } from "../services/programming/iec61131/pouLinter";
+import { previewPouTranspile, summarisePouProject } from "../services/programming/iec61131/iec61131Adapter";
+import { exportPlcopenXml, importPlcopenXml } from "../services/programming/iec61131/plcopenXml";
 
 const KIND = z.enum(PROGRAMMING_KINDS as [ProgrammingKind, ...ProgrammingKind[]]);
 
@@ -392,4 +397,52 @@ export const programmingRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ kind: KIND, source: z.string().max(2_000_000) }))
     .query(({ input }) => explainProgram(input.kind, input.source)),
+
+  // ── IEC 61131-3 structured POU (LAD/FBD/SFC) — P4 (doc 24 Wave-3) ──
+  //
+  // All four procedures are PURE transforms over an in-request POU model / PLCopen XML —
+  // NO persistence, NO device path (the same safety posture as ir.transpilePreview). A POU
+  // is persisted + built + deployed through the EXISTING gated pipeline by creating an
+  // artifact of kind "iec61131-pou" (content = POU JSON) and calling buildArtifact /
+  // deployBuild above. Read-gated (machine_monitoring / canView).
+
+  /** Run the SEMANTIC linter on an ad-hoc POU project (undeclared var / type mismatch / unreachable step). */
+  pouLint: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ project: pouProjectSchema }))
+    .query(({ input }) => lintPouProject(input.project)),
+
+  /**
+   * Lint + lower a POU project → Structured Text (with `(* [IEC ...] *)` provenance markers).
+   * The linter is the HARD GATE: any error blocks codegen (ok:false, code null). Pure.
+   */
+  pouTranspilePreview: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ project: pouProjectSchema }))
+    .query(({ input }) => ({ ...previewPouTranspile(input.project), summary: summarisePouProject(input.project) })),
+
+  /** Export a POU project → PLCopen TC6 XML (the vendor-neutral interchange format). Pure. */
+  plcopenExport: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ project: pouProjectSchema }))
+    .query(({ input }) => ({ xml: exportPlcopenXml(input.project) })),
+
+  /**
+   * Import PLCopen TC6 XML → the POU model, then lint it. Pure (no persistence): the client
+   * reviews the model + diagnostics and may save it as an "iec61131-pou" artifact via
+   * createArtifact (content = JSON.stringify(project)).
+   */
+  plcopenImport: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ xml: z.string().min(1).max(5_000_000) }))
+    .query(({ input }) => {
+      const res = importPlcopenXml(input.xml);
+      if (!res.ok) return { ok: false as const, errors: res.errors };
+      return {
+        ok: true as const,
+        project: res.project,
+        summary: summarisePouProject(res.project),
+        lint: lintPouProject(res.project),
+      };
+    }),
 });

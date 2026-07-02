@@ -23,6 +23,9 @@
  */
 import { createHash } from "node:crypto";
 import { evalBool } from "./boolEval";
+import { parsePouProjectJson, countNetworks, type PouProject } from "./pouModel";
+import { lintPouProject, type PouLintDiagnostic } from "./pouLinter";
+import { transpilePouProject } from "./pouToSt";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -115,6 +118,137 @@ export class Iec61131StAdapter implements ProgrammingAdapter {
   async deploy(_b: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
     return openplcDeployGuard(opts);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Structured POU adapter (P4) — graphical LAD / FBD / SFC + PLCopen XML round-trip.
+//
+// The artifact `content` (TEXT) holds a POU PROJECT as JSON (pouModel.ts). This adapter
+// flows through the IDENTICAL ProgrammingAdapter contract as the ST/LD adapters:
+//   • validate() = shape-validate the POU JSON + run the SEMANTIC linter (undeclared var /
+//                  type mismatch / unreachable SFC step). Linter errors → ok:false.
+//   • compile()  = the HARD GATE: lint, then lower LAD/FBD/SFC → ST (with `(* [IEC ...] *)`
+//                  provenance markers). A linter error BLOCKS codegen (no ST produced).
+//   • simulate() = an HONEST structural preview (per-network timeline; full execution needs
+//                  the OpenPLC runtime — never faked here).
+//   • deploy()   = the SAME open-runtime guard as ST/LD (OpenPLC only; certified PLC never;
+//                  E-stop/SIL stays on the certified L1 controller).
+// PLCopen XML import/export is exposed as pure transforms (plcopenXml.ts) via the router.
+// ════════════════════════════════════════════════════════════════════════════
+function toPouProgDiagnostic(d: PouLintDiagnostic): ProgDiagnostic {
+  return {
+    severity: d.severity === "error" ? "error" : "warning",
+    message: `[${d.rule}] ${d.pou}/${d.ref}: ${d.message}`,
+    symbol: `${d.pou}:${d.ref}`,
+  };
+}
+
+export class Iec61131PouAdapter implements ProgrammingAdapter {
+  readonly kind = "iec61131-pou" as const;
+  readonly capabilities: ProgrammingCapability = { ...OPENPLC_CAPS, languages: ["pou-json"] };
+
+  private parse(src: ProgramSource):
+    | { ok: true; project: PouProject }
+    | { ok: false; diags: ProgDiagnostic[] } {
+    const content = src.content ?? "";
+    if (!content.trim()) {
+      return { ok: false, diags: [{ severity: "error", message: "Empty POU project — nothing to build." }] };
+    }
+    const parsed = parsePouProjectJson(content);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        diags: parsed.errors.map((e) => ({ severity: "error" as const, message: `POU shape error at "${e.path || "<root>"}": ${e.message}` })),
+      };
+    }
+    return { ok: true, project: parsed.project };
+  }
+
+  async validate(src: ProgramSource): Promise<Diagnostics> {
+    const p = this.parse(src);
+    if (!p.ok) return { ok: false, diagnostics: p.diags };
+    const lint = lintPouProject(p.project);
+    return { ok: lint.ok, diagnostics: lint.diagnostics.map(toPouProgDiagnostic) };
+  }
+
+  async compile(src: ProgramSource): Promise<BuildResult> {
+    const p = this.parse(src);
+    if (!p.ok) return { ok: false, diagnostics: p.diags, bytes: (src.content ?? "").length };
+    const lint = lintPouProject(p.project);
+    const diagnostics = lint.diagnostics.map(toPouProgDiagnostic);
+    // HARD GATE: a linter error blocks codegen — no ST emitted.
+    if (!lint.ok) {
+      return { ok: false, diagnostics, bytes: (src.content ?? "").length, meta: { blocked: true, target: "openplc" } };
+    }
+    const { code, iecCommentMap } = transpilePouProject(p.project);
+    const checksum = createHash("sha256").update(code).digest("hex").slice(0, 16);
+    return {
+      ok: true,
+      diagnostics,
+      outputRef: `openplc://pou/${checksum}`,
+      bytes: code.length,
+      meta: {
+        target: "openplc",
+        st: code,
+        iecCommentMap,
+        networks: countNetworks(p.project),
+        pous: p.project.pous.length,
+        checksum,
+      },
+    };
+  }
+
+  async simulate(build: BuildResult, _scenario: ProgSimScenario): Promise<ProgSimResult> {
+    // Honest: POU logic is not fully executed here. Surface the network structure as a preview.
+    const networks = Number((build.meta?.networks as number) ?? 0);
+    const timeline: ProgSimStep[] = Array.from({ length: Math.max(1, networks) }, (_, i) => ({
+      index: i, label: `network ${i + 1}`, startMs: i, endMs: i + 1, note: "pou-preview",
+    }));
+    return {
+      ok: build.ok,
+      timeline,
+      warnings: ["POU simulation is a STRUCTURAL preview — a full scan-cycle run needs the OpenPLC runtime."],
+      totalDurationMs: Math.max(1, networks),
+    };
+  }
+
+  async deploy(_b: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    return openplcDeployGuard(opts);
+  }
+}
+
+/**
+ * PREVIEW helper for the router's POU transpile-preview: lint + (if clean) transpile a POU
+ * project → ST + diagnostics + iecCommentMap. PURE — no persistence, no device I/O. The
+ * linter is the HARD GATE: an error → ok:false, code:null (no ST emitted).
+ */
+export function previewPouTranspile(project: PouProject): {
+  ok: boolean;
+  code: string | null;
+  diagnostics: PouLintDiagnostic[];
+  iecCommentMap: Record<string, string>;
+} {
+  const lint = lintPouProject(project);
+  if (!lint.ok) {
+    return { ok: false, code: null, diagnostics: lint.diagnostics, iecCommentMap: {} };
+  }
+  const { code, iecCommentMap } = transpilePouProject(project);
+  return { ok: true, code, diagnostics: lint.diagnostics, iecCommentMap };
+}
+
+/** Summarise a POU project for a list view (POU names + body languages + network counts). */
+export function summarisePouProject(project: PouProject): {
+  name: string;
+  pouCount: number;
+  networks: number;
+  pous: Array<{ name: string; pouType: string; language: string }>;
+} {
+  return {
+    name: project.name,
+    pouCount: project.pous.length,
+    networks: countNetworks(project),
+    pous: project.pous.map((p) => ({ name: p.name, pouType: p.pouType, language: p.body.language })),
+  };
 }
 
 // ── Ladder DSL adapter (one rung per line: OUT := <bool expr>) ──

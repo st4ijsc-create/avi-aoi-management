@@ -63,6 +63,7 @@
   GitBranch,
   Cpu,
   Code2,
+  FileCode2,
   Layers,
   Clock,
   Lock,
@@ -729,6 +730,21 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "engineering",
         hint: "nav.hint.irEditor",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // P4 (doc 24 Wave-3) — IEC 61131 POU Studio: structured LAD/FBD/SFC POUs with
+        // PLCopen TC6 XML import/export, semantic lint, and transpile-to-ST preview.
+        // Read-open (machine_monitoring); all pure previews (open runtime only, no device path).
+        href: "/pou-studio",
+        label: "nav.pouStudio",
+        icon: <FileCode2 className="h-4 w-4" />,
+        description: "nav.pouStudioDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "engineering",
+        hint: "nav.hint.pouStudio",
         engineerOriented: true,
         beta: true,
       },
