@@ -17,9 +17,10 @@
  * real controller is deferred (needs hardware / a ROS2 stack → T2 physics-sim territory).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, CompareOperator } from "../irModel";
+import type { Flow, IrBlock, CompareOperator, NumericOrExpr } from "../irModel";
 import { assignIds } from "../irModel";
 import { irComment, type TranspileResult } from "./irToUrscript";
+import { isExpr, renderSlot, sanitizeVar } from "../irExpr";
 
 const PY_OPS: Record<CompareOperator, string> = {
   eq: "==",
@@ -38,6 +39,11 @@ function litPy(v: number | boolean | string): string {
   if (typeof v === "boolean") return v ? "True" : "False";
   if (typeof v === "number") return fmt(v);
   return `"${v}"`;
+}
+
+/** Render a value slot (literal or expression) to a Python token. */
+function slotPy(v: NumericOrExpr): string {
+  return renderSlot(v, fmt, litPy);
 }
 
 export function transpileToRos2(flowIn: Flow): TranspileResult {
@@ -74,7 +80,7 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         break;
       }
       case "set_output": {
-        lines.push(`${indent}self.set_io("${block.signal}", ${litPy(block.value)})`);
+        lines.push(`${indent}self.set_io("${block.signal}", ${slotPy(block.value)})`);
         break;
       }
       case "wait": {
@@ -82,8 +88,37 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
           lines.push(`${indent}self.wait_signal("${block.signal_ref}")`);
         }
         if (block.ms !== undefined) {
-          lines.push(`${indent}self.wait_ms(${block.ms})`);
+          lines.push(`${indent}self.wait_ms(${isExpr(block.ms) ? renderSlot(block.ms, fmt, litPy) : block.ms})`);
         }
+        break;
+      }
+      case "set_variable": {
+        lines.push(`${indent}${sanitizeVar(block.name)} = ${slotPy(block.expr)}`);
+        break;
+      }
+      case "counter": {
+        const v = sanitizeVar(block.name);
+        if (block.op === "reset") {
+          lines.push(`${indent}${v} = ${fmt(block.amount ?? 0)}`);
+        } else {
+          lines.push(`${indent}${v} = ${v} + ${fmt(block.amount ?? 1)}`);
+        }
+        break;
+      }
+      case "wait_until": {
+        // Bounded polling wait against a helper on the node.
+        lines.push(`${indent}self.wait_until(lambda: ${slotPy(block.condition)}, timeout_ms=${block.timeout_ms}, poll_ms=${block.poll_ms})`);
+        break;
+      }
+      case "set_analog": {
+        const unit = block.unit ? `, unit="${block.unit}"` : "";
+        lines.push(`${indent}self.set_analog("${block.channel}", ${slotPy(block.value)}${unit})`);
+        break;
+      }
+      case "pid_control": {
+        // ROS2 side delegates to a bounded PID helper on the node (setpoint + gains +
+        // output clamp). Structural skeleton — bind a concrete controller before use.
+        lines.push(`${indent}self.pid_control(output_channel="${block.output_channel}", input_channel="${block.input_channel}", setpoint=${slotPy(block.setpoint)}, kp=${fmt(block.kp)}, ki=${fmt(block.ki)}, kd=${fmt(block.kd)}, output_min=${fmt(block.output_min)}, output_max=${fmt(block.output_max)})`);
         break;
       }
       case "if_condition": {

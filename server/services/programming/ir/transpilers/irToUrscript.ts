@@ -18,8 +18,9 @@
  * mm/s → m/s.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, CompareOperator } from "../irModel";
+import type { Flow, IrBlock, CompareOperator, NumericOrExpr } from "../irModel";
 import { assignIds } from "../irModel";
+import { isExpr, renderSlot, sanitizeVar } from "../irExpr";
 
 /** The IR↔source comment marker for one block (also surfaced in the irCommentMap). */
 export function irComment(block: IrBlock): string {
@@ -51,6 +52,19 @@ function litUr(v: number | boolean | string): string {
   if (typeof v === "boolean") return v ? "True" : "False";
   if (typeof v === "number") return fmt(v);
   return `"${v}"`;
+}
+
+/** Render a value slot (literal or expression) to a URScript token. */
+function slotUr(v: NumericOrExpr): string {
+  return renderSlot(v, fmt, litUr);
+}
+
+/** Emit a min/max saturation of `expr` to a bounded output (safety clamp). */
+function clampUr(expr: string, min: number, max: number): string {
+  // URScript has no min/max builtins we can rely on — expand to a deterministic ternary-free
+  // clamp used inline: max(min, ...) then min(max, ...). Emitted as nested if via helper
+  // math so it stays a single expression the reviewer can read.
+  return `${fmt(min)} if (${expr} < ${fmt(min)}) else (${fmt(max)} if (${expr} > ${fmt(max)}) else ${expr})`;
 }
 
 export function transpileToUrscript(flowIn: Flow): TranspileResult {
@@ -91,7 +105,8 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
         break;
       }
       case "set_output": {
-        const val = typeof block.value === "boolean" ? (block.value ? "True" : "False") : fmt(block.value);
+        // value may be a literal (backward-compatible) or a safe expression.
+        const val = slotUr(block.value);
         lines.push(`${indent}set_digital_out(${block.signal}, ${val})`);
         break;
       }
@@ -102,8 +117,60 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
           lines.push(`${indent}end`);
         }
         if (block.ms !== undefined) {
-          lines.push(`${indent}sleep(${fmt(block.ms / 1000)})`);
+          // Literal ms → sleep(seconds); an expression yields ms → divide by 1000 in-script.
+          if (isExpr(block.ms)) {
+            lines.push(`${indent}sleep((${renderSlot(block.ms, fmt, litUr)}) / 1000.0)`);
+          } else {
+            lines.push(`${indent}sleep(${fmt(block.ms / 1000)})`);
+          }
         }
+        break;
+      }
+      case "set_variable": {
+        lines.push(`${indent}${sanitizeVar(block.name)} = ${renderSlot(block.expr, fmt, litUr)}`);
+        break;
+      }
+      case "counter": {
+        const v = sanitizeVar(block.name);
+        if (block.op === "reset") {
+          lines.push(`${indent}${v} = ${fmt(block.amount ?? 0)}`);
+        } else {
+          lines.push(`${indent}${v} = ${v} + ${fmt(block.amount ?? 1)}`);
+        }
+        break;
+      }
+      case "wait_until": {
+        // Bounded busy-wait: poll the condition, sync each poll, give up at the timeout.
+        const cond = renderSlot(block.condition, fmt, litUr);
+        const pollS = fmt(block.poll_ms / 1000);
+        lines.push(`${indent}wu_elapsed = 0.0`);
+        lines.push(`${indent}while (not (${cond})) and (wu_elapsed < ${fmt(block.timeout_ms / 1000)}):`);
+        lines.push(`${indent}${IND}sleep(${pollS})`);
+        lines.push(`${indent}${IND}wu_elapsed = wu_elapsed + ${pollS}`);
+        lines.push(`${indent}end`);
+        break;
+      }
+      case "set_analog": {
+        const val = slotUr(block.value);
+        const unit = block.unit ? ` # unit=${block.unit}` : "";
+        lines.push(`${indent}set_analog_out(${block.channel}, ${val})${unit}`);
+        break;
+      }
+      case "pid_control": {
+        // URScript has no native PID primitive — emit a clearly-marked, deterministic
+        // skeleton discrete-PID step (still under the # [IR pid_control #id] provenance
+        // marker) that saturates to the safety-bounded output. A concrete controller binds
+        // this on the target; the block stays first-class + reviewable.
+        const sp = slotUr(block.setpoint);
+        lines.push(`${indent}# PID skeleton (URScript has no native PID) — bounded, deterministic step.`);
+        lines.push(`${indent}pid_sp = ${sp}`);
+        lines.push(`${indent}pid_pv = get_standard_analog_in(${block.input_channel})`);
+        lines.push(`${indent}pid_err = pid_sp - pid_pv`);
+        lines.push(`${indent}pid_out = ${fmt(block.kp)} * pid_err + ${fmt(block.ki)} * pid_i_${sanitizeVar(block.output_channel)} + ${fmt(block.kd)} * (pid_err - pid_prev_${sanitizeVar(block.output_channel)})`);
+        lines.push(`${indent}pid_out = ${clampUr("pid_out", block.output_min, block.output_max)}`);
+        lines.push(`${indent}set_analog_out(${block.output_channel}, pid_out)`);
+        lines.push(`${indent}pid_i_${sanitizeVar(block.output_channel)} = pid_i_${sanitizeVar(block.output_channel)} + pid_err`);
+        lines.push(`${indent}pid_prev_${sanitizeVar(block.output_channel)} = pid_err`);
         break;
       }
       case "if_condition": {

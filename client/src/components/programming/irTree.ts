@@ -17,6 +17,7 @@
 import type { TFunction } from "i18next";
 import {
   Move, Rotate3d, Hand, HandMetal, ToggleRight, Hourglass, GitBranch, Repeat,
+  Variable, Sigma, TimerReset, Gauge, SlidersHorizontal,
 } from "lucide-react";
 
 // ── Local IR types (mirror the server irModel input shape) ────────────────────
@@ -24,18 +25,62 @@ export type Pose = { x: number; y: number; z: number; rx: number; ry: number; rz
 export type CompareOp = "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
 export type SignalCondition = { signal_ref: string; operator: CompareOp; value: number | boolean | string };
 
+// ── P3: safe typed expression AST (mirrors server irExpr.ts) ──────────────────
+export type ExprBinOp =
+  | "add" | "sub" | "mul" | "div" | "mod"
+  | "eq" | "neq" | "lt" | "lte" | "gt" | "gte"
+  | "and" | "or";
+export type Expr =
+  | { kind: "lit"; value: number | boolean }
+  | { kind: "var"; name: string }
+  | { kind: "binop"; op: ExprBinOp; left: Expr; right: Expr };
+/** A value slot: a bare literal (backward-compatible) OR a first-class expression. */
+export type NumericOrExpr = number | boolean | Expr;
+
+export const EXPR_BINOPS: ExprBinOp[] = [
+  "add", "sub", "mul", "div", "mod", "eq", "neq", "lt", "lte", "gt", "gte", "and", "or",
+];
+/** Human infix label for a binop (used by the mini expression editor). */
+export const EXPR_OP_LABEL: Record<ExprBinOp, string> = {
+  add: "+", sub: "-", mul: "*", div: "/", mod: "%",
+  eq: "==", neq: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=", and: "and", or: "or",
+};
+
+/** Type guard: is this value slot an Expr node (vs a bare literal)? */
+export function isExpr(v: unknown): v is Expr {
+  return typeof v === "object" && v !== null && "kind" in (v as Record<string, unknown>)
+    && (["lit", "var", "binop"] as const).includes((v as { kind: unknown }).kind as never);
+}
+
+/** Render an expression / value slot to a compact human string (for summaries). */
+export function exprToText(v: NumericOrExpr): string {
+  if (!isExpr(v)) return String(v);
+  switch (v.kind) {
+    case "lit": return String(v.value);
+    case "var": return v.name;
+    case "binop": return `(${exprToText(v.left)} ${EXPR_OP_LABEL[v.op]} ${exprToText(v.right)})`;
+  }
+}
+
 export type MoveLinearBlock = { id?: string; type: "move_linear"; target_pose: Pose; speed_mms: number; acceleration: number; blend_radius: number };
 export type MoveJointBlock = { id?: string; type: "move_joint"; joints: number[]; speed_pct: number };
 export type GripBlock = { id?: string; type: "grip"; tool_id: string; force_limit_n: number; timeout_ms: number };
 export type ReleaseBlock = { id?: string; type: "release"; tool_id?: string };
-export type SetOutputBlock = { id?: string; type: "set_output"; signal: string; value: boolean | number };
-export type WaitBlock = { id?: string; type: "wait"; signal_ref?: string; ms?: number };
+export type SetOutputBlock = { id?: string; type: "set_output"; signal: string; value: NumericOrExpr };
+export type WaitBlock = { id?: string; type: "wait"; signal_ref?: string; ms?: number | Expr };
 export type IfConditionBlock = { id?: string; type: "if_condition"; signal_ref: string; operator: CompareOp; value: number | boolean | string; true_branch: IrBlock[]; false_branch: IrBlock[] };
 export type LoopBlock = { id?: string; type: "loop"; count?: number; while?: SignalCondition; body: IrBlock[] };
+// P3 additions (all leaf blocks)
+export type SetVariableBlock = { id?: string; type: "set_variable"; name: string; expr: Expr };
+export type CounterBlock = { id?: string; type: "counter"; name: string; op: "increment" | "reset"; amount: number };
+export type WaitUntilBlock = { id?: string; type: "wait_until"; condition: Expr; timeout_ms: number; poll_ms: number };
+export type SetAnalogBlock = { id?: string; type: "set_analog"; channel: string; value: NumericOrExpr; unit?: string };
+export type PidControlBlock = { id?: string; type: "pid_control"; output_channel: string; input_channel: string; setpoint: NumericOrExpr; kp: number; ki: number; kd: number; output_min: number; output_max: number };
 
 export type IrBlock =
   | MoveLinearBlock | MoveJointBlock | GripBlock | ReleaseBlock
-  | SetOutputBlock | WaitBlock | IfConditionBlock | LoopBlock;
+  | SetOutputBlock | WaitBlock | IfConditionBlock | LoopBlock
+  | SetVariableBlock | CounterBlock | WaitUntilBlock | SetAnalogBlock | PidControlBlock;
 export type BlockType = IrBlock["type"];
 
 export type TargetDeviceType = "universal-robots" | "ros2" | "generic";
@@ -58,6 +103,12 @@ export const BLOCK_ICON: Record<BlockType, typeof Move> = {
   wait: Hourglass,
   if_condition: GitBranch,
   loop: Repeat,
+  // P3
+  set_variable: Variable,
+  counter: Sigma,
+  wait_until: TimerReset,
+  set_analog: Gauge,
+  pid_control: SlidersHorizontal,
 };
 
 export const BLOCK_LABEL: Record<BlockType, { key: string; def: string }> = {
@@ -69,12 +120,19 @@ export const BLOCK_LABEL: Record<BlockType, { key: string; def: string }> = {
   wait: { key: "ir.block.wait", def: "Wait" },
   if_condition: { key: "ir.block.if_condition", def: "If condition" },
   loop: { key: "ir.block.loop", def: "Loop" },
+  // P3
+  set_variable: { key: "ir.block.set_variable", def: "Set variable" },
+  counter: { key: "ir.block.counter", def: "Counter" },
+  wait_until: { key: "ir.block.wait_until", def: "Wait until" },
+  set_analog: { key: "ir.block.set_analog", def: "Set analog" },
+  pid_control: { key: "ir.block.pid_control", def: "PID control" },
 };
 
 export const PALETTE_GROUPS: Array<{ label: { key: string; def: string }; types: BlockType[] }> = [
   { label: { key: "ir.group.motion", def: "Motion" }, types: ["move_linear", "move_joint"] },
-  { label: { key: "ir.group.io", def: "I/O" }, types: ["grip", "release", "set_output", "wait"] },
-  { label: { key: "ir.group.control", def: "Control" }, types: ["if_condition", "loop"] },
+  { label: { key: "ir.group.io", def: "I/O" }, types: ["grip", "release", "set_output", "set_analog", "wait"] },
+  { label: { key: "ir.group.data", def: "Data & timing" }, types: ["set_variable", "counter", "wait_until"] },
+  { label: { key: "ir.group.control", def: "Control" }, types: ["if_condition", "loop", "pid_control"] },
 ];
 
 export const COMPARE_OPS: CompareOp[] = ["eq", "neq", "lt", "lte", "gt", "gte"];
@@ -106,6 +164,17 @@ export function newBlock(type: BlockType): IrBlock {
       return { id, type, signal_ref: "DI1", operator: "eq", value: true, true_branch: [], false_branch: [] };
     case "loop":
       return { id, type, count: 3, body: [] };
+    // P3 defaults — all lint-clean under the default ceilings.
+    case "set_variable":
+      return { id, type, name: "x", expr: { kind: "lit", value: 0 } };
+    case "counter":
+      return { id, type, name: "counter", op: "increment", amount: 1 };
+    case "wait_until":
+      return { id, type, condition: { kind: "lit", value: true }, timeout_ms: 5000, poll_ms: 50 };
+    case "set_analog":
+      return { id, type, channel: "AO1", value: 0, unit: "V" };
+    case "pid_control":
+      return { id, type, output_channel: "AO1", input_channel: "AI1", setpoint: 0, kp: 1, ki: 0, kd: 0, output_min: 0, output_max: 10 };
   }
 }
 
@@ -253,12 +322,23 @@ export function summarize(b: IrBlock, t: TFunction): string {
     case "release":
       return b.tool_id ?? t("ir.sum.releaseAny", "release tool");
     case "set_output":
-      return `${b.signal} = ${String(b.value)}`;
+      return `${b.signal} = ${exprToText(b.value)}`;
     case "wait":
-      return [b.signal_ref ? `signal ${b.signal_ref}` : null, b.ms != null ? `${b.ms} ms` : null].filter(Boolean).join(" · ") || "—";
+      return [b.signal_ref ? `signal ${b.signal_ref}` : null, b.ms != null ? `${exprToText(b.ms)} ms` : null].filter(Boolean).join(" · ") || "—";
     case "if_condition":
       return `${b.signal_ref} ${b.operator} ${String(b.value)}`;
     case "loop":
       return b.count != null ? `${t("ir.sum.count", "count")} ${b.count}` : t("ir.sum.while", "while condition");
+    // P3
+    case "set_variable":
+      return `${b.name} = ${exprToText(b.expr)}`;
+    case "counter":
+      return b.op === "reset" ? `${b.name} := ${b.amount}` : `${b.name} += ${b.amount}`;
+    case "wait_until":
+      return `until ${exprToText(b.condition)} · ≤${b.timeout_ms} ms`;
+    case "set_analog":
+      return `${b.channel} = ${exprToText(b.value)}${b.unit ? ` ${b.unit}` : ""}`;
+    case "pid_control":
+      return `PID ${b.output_channel} · Kp ${b.kp} Ki ${b.ki} Kd ${b.kd} · [${b.output_min}, ${b.output_max}]`;
   }
 }

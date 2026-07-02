@@ -30,7 +30,7 @@ ENABLE_GPU=true                         # DirectML trên Windows (KHÔNG cần C
 # --- Tính năng Tier 2 (degrade-safe, bật khi có model) ---
 # ANOMALY_DETECTION_ENABLED=true         # B3 anomaly (cần model ONNX embedding + memory bank)
 # IMAGE_EMBEDDING_DEFAULT=onnx           # B4 visual embedding (cần model ONNX + re-embed)
-# ALIGN_BEFORE_DIFF=true                 # B4.2 golden-sample alignment
+# ALIGN_BEFORE_DIFF=true                 # B4.2/AOI-B golden-sample SUB-PIXEL registration (affine + confidence gate)
 
 # --- Deep training Tier-2 (B8) ---
 # LOCAL_TRAINER_CMD=python tools/trainer/train.py
@@ -60,7 +60,7 @@ ENABLE_GPU=true                         # DirectML trên Windows (KHÔNG cần C
 | GPU ONNX inference | `ENABLE_GPU=true` | (đã verify DirectML trên RTX 4050) |
 | Anomaly không nhãn (B3) | `ANOMALY_DETECTION_ENABLED=true` | model ONNX embedding + build memory bank |
 | Visual embedding (B4) | `IMAGE_EMBEDDING_DEFAULT=onnx` | model ONNX embedding + re-embed lịch sử |
-| Golden alignment (B4.2) | `ALIGN_BEFORE_DIFF=true` | (thuần JS, dùng ngay) |
+| Golden alignment (B4.2 → AOI-B) | `ALIGN_BEFORE_DIFF=true` | (thuần JS/sharp, dùng ngay) — nay là **sub-pixel affine** (LK/ECC pyramid) + **confidence/residual gate**; low-confidence → aligned:false (không diff bừa). Golden reference lưu ở bảng `golden_sample_references` (mig 0158, service `goldenSampleService`). |
 | XAI heatmap (B5) | (tự động) | model expose feature-map → Score-CAM; không thì occlusion/pixel-diff |
 | Calibration confidence (B2) | (tab Calibration) | đủ mẫu Quality Gate đã review |
 | A/B canary (B6) | gán `activeExperimentId` cho config | 2 model + đủ feedback review |

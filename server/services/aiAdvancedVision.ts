@@ -18,9 +18,9 @@
 
 import sharp from "sharp";
 import { describeImage } from "./aiProviderRouter";
-import { alignToReference, type GrayImage, type AlignmentResult } from "./imageAlignment";
+import { registerToReference, type GrayImage } from "./imageRegistration";
 
-// B4.2 — căn golden-sample trước pixel-diff. Opt-in, default OFF (trung thực).
+// B4.2 / AOI-B — align golden-sample before pixel-diff. Opt-in, default OFF (honest).
 const ALIGN_BEFORE_DIFF = (process.env.ALIGN_BEFORE_DIFF ?? "false").toLowerCase() === "true";
 
 export interface AlignmentInfo {
@@ -29,6 +29,13 @@ export interface AlignmentInfo {
   dy: number;
   angle: number;
   confidence: number;
+  // AOI-B — richer sub-pixel registration diagnostics (present on the affine path).
+  method?: "subpixel-affine" | "subpixel-homography" | "none";
+  scale?: number;
+  rmsResidual?: number;
+  overlap?: number;
+  /** Reason when aligned=false (e.g. low confidence / high residual) — honest gate. */
+  reason?: string;
 }
 
 // ─── Types ────────────────────────────────────────────────────
@@ -160,11 +167,16 @@ function meanStd(buf: Buffer): { mean: number; std: number } {
 }
 
 /**
- * B4.2 — Thử căn `candidate` (grayscale raw) về `reference` trước khi diff.
- * Chỉ chạy khi cờ ALIGN_BEFORE_DIFF bật. Khi confidence < ngưỡng → aligned:false,
- * trả candidate NGUYÊN (caller dùng diff cũ) → degrade trung thực.
+ * AOI-B — Register `candidate` (grayscale raw) onto `reference` before diff.
  *
- * `ref`/`cand` đã resize về cùng W×H (grayscale raw 1-channel).
+ * Only runs when ALIGN_BEFORE_DIFF is on. Uses SUB-PIXEL affine registration
+ * (imageRegistration.registerToReference: inverse-compositional / ECC-style
+ * Gauss–Newton on a Gaussian pyramid) with a CONFIDENCE + RESIDUAL GATE. When the
+ * gate fails (low confidence / high residual / insufficient overlap) it returns the
+ * candidate UNCHANGED (caller diffs the raw pair) and reports aligned:false with a
+ * reason — honest degradation, never a fake pass on a bad alignment.
+ *
+ * `ref`/`cand` are already resized to the same W×H (grayscale raw 1-channel).
  */
 async function maybeAlign(
   ref: { data: Buffer; width: number; height: number },
@@ -173,26 +185,34 @@ async function maybeAlign(
   if (!ALIGN_BEFORE_DIFF) {
     return {
       candData: cand.data,
-      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0 },
+      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0, method: "none" },
     };
   }
   try {
     const refImg: GrayImage = ref;
     const testImg: GrayImage = cand;
-    const res: AlignmentResult = await alignToReference(refImg, testImg, {});
+    const res = await registerToReference(refImg, testImg, {});
     const info: AlignmentInfo = {
       aligned: res.aligned,
-      dx: res.dx,
-      dy: res.dy,
-      angle: res.angle,
+      dx: Math.round(res.dx),
+      dy: Math.round(res.dy),
+      angle: res.rotationDeg,
       confidence: res.confidence,
+      method: res.model === "homography" ? "subpixel-homography" : "subpixel-affine",
+      scale: res.scale,
+      rmsResidual: res.rmsResidual,
+      overlap: res.overlap,
+      reason: res.reason,
     };
-    // confidence thấp → dùng candidate gốc (không align) nhưng vẫn báo cờ thật.
+    // Gate fails → use the raw candidate (no warp) but report the honest flag/reason.
     return { candData: res.aligned ? Buffer.from(res.alignedBuffer) : cand.data, info };
-  } catch {
+  } catch (err) {
     return {
       candData: cand.data,
-      info: { aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0 },
+      info: {
+        aligned: false, dx: 0, dy: 0, angle: 0, confidence: 0, method: "none",
+        reason: `registration error: ${err instanceof Error ? err.message : String(err)}`,
+      },
     };
   }
 }

@@ -26,9 +26,19 @@
  *   • wait          — wait on a signal and/or a duration.
  *   • if_condition  — branch on a signal comparison (true_branch / false_branch).
  *   • loop          — repeat a body a fixed count OR while a condition holds.
+ *
+ * Doc 24 Wave-2 P3 — richer vocabulary (variables/expressions, timer/counter, analog/PID):
+ *   • set_variable  — assign a named variable from a safe typed EXPRESSION (irExpr.ts).
+ *   • counter       — increment/reset a named counter handle (a variable specialisation).
+ *   • wait_until    — wait until a boolean EXPRESSION holds, bounded by a timeout.
+ *   • set_analog    — write an analog channel from a literal OR an expression.
+ *   • pid_control   — a first-class PID block (setpoint, Kp/Ki/Kd, bounded output channel).
+ * Existing param slots (wait.ms, set_output.value) may now ALSO carry an expression
+ * (numericOrExprSchema) — additive + backward-compatible (bare literals parse unchanged).
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
+import { exprSchema, numericOrExprSchema, type Expr, type NumericOrExpr } from "./irExpr";
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -98,7 +108,8 @@ export const setOutputBlockSchema = z.object({
   ...baseBlockFields,
   type: z.literal("set_output"),
   signal: z.string().min(1),
-  value: z.union([z.boolean(), z.number()]),
+  // P3: a bare boolean|number literal (backward-compatible) OR a safe typed expression.
+  value: numericOrExprSchema,
 });
 
 export const waitBlockSchema = z
@@ -106,10 +117,79 @@ export const waitBlockSchema = z
     ...baseBlockFields,
     type: z.literal("wait"),
     signal_ref: z.string().min(1).optional(),
-    ms: z.number().int().nonnegative().optional(),
+    // P3: duration may be a plain integer (backward-compatible) OR an expression yielding ms.
+    ms: z.union([z.number().int().nonnegative(), exprSchema]).optional(),
   })
   .refine((b) => b.signal_ref !== undefined || b.ms !== undefined, {
     message: "wait needs at least one of { signal_ref, ms }",
+  });
+
+// ── P3: Variables / expressions ───────────────────────────────────────────────
+
+/** Assign a named variable from a safe typed expression (declares the var into scope). */
+export const setVariableBlockSchema = z.object({
+  ...baseBlockFields,
+  type: z.literal("set_variable"),
+  name: z.string().min(1),
+  expr: exprSchema,
+});
+
+/** Increment or reset a named counter handle (a specialised numeric variable). */
+export const counterBlockSchema = z.object({
+  ...baseBlockFields,
+  type: z.literal("counter"),
+  name: z.string().min(1),
+  op: z.enum(["increment", "reset"]),
+  /** amount to add on increment (default 1) / value to reset to (default 0). */
+  amount: z.number().default(1),
+});
+
+// ── P3: Timer-style wait_until (condition + bounded timeout) ───────────────────
+
+/** Wait until a boolean expression holds, bounded by a timeout (fail-safe on timeout). */
+export const waitUntilBlockSchema = z.object({
+  ...baseBlockFields,
+  type: z.literal("wait_until"),
+  condition: exprSchema,
+  timeout_ms: z.number().int().positive(),
+  /** poll interval used by the emitted busy-wait loop (ms). */
+  poll_ms: z.number().int().positive().default(50),
+});
+
+// ── P3: Analog output ──────────────────────────────────────────────────────────
+
+/** Write an analog channel from a literal OR an expression. */
+export const setAnalogBlockSchema = z.object({
+  ...baseBlockFields,
+  type: z.literal("set_analog"),
+  channel: z.string().min(1),
+  value: numericOrExprSchema,
+  /** optional physical unit label for provenance (e.g. "V", "mA", "%"). */
+  unit: z.string().min(1).optional(),
+});
+
+// ── P3: PID control (first-class, bounded output) ──────────────────────────────
+
+/** A first-class PID control block. Gains must be sane; output is bounded (safety). */
+export const pidControlBlockSchema = z
+  .object({
+    ...baseBlockFields,
+    type: z.literal("pid_control"),
+    /** channel the loop writes its bounded output to. */
+    output_channel: z.string().min(1),
+    /** process-variable input channel (the measured value). */
+    input_channel: z.string().min(1),
+    /** target the loop drives the process value toward (literal or expression). */
+    setpoint: numericOrExprSchema,
+    kp: z.number(),
+    ki: z.number(),
+    kd: z.number(),
+    /** hard output clamp (safety — the emitted loop saturates here). */
+    output_min: z.number(),
+    output_max: z.number(),
+  })
+  .refine((b) => b.output_min < b.output_max, {
+    message: "pid_control output_min must be < output_max",
   });
 
 // if_condition + loop nest a body of blocks → recursive union via z.lazy.
@@ -150,6 +230,12 @@ export const irBlockSchema: z.ZodType<IrBlock> = z.lazy(() =>
     waitBlockSchema,
     ifConditionBlockSchema,
     loopBlockSchema,
+    // P3 additions
+    setVariableBlockSchema,
+    counterBlockSchema,
+    waitUntilBlockSchema,
+    setAnalogBlockSchema,
+    pidControlBlockSchema,
   ]),
 );
 
@@ -160,6 +246,11 @@ export type GripBlock = z.infer<typeof gripBlockSchema>;
 export type ReleaseBlock = z.infer<typeof releaseBlockSchema>;
 export type SetOutputBlock = z.infer<typeof setOutputBlockSchema>;
 export type WaitBlock = z.infer<typeof waitBlockSchema>;
+export type SetVariableBlock = z.infer<typeof setVariableBlockSchema>;
+export type CounterBlock = z.infer<typeof counterBlockSchema>;
+export type WaitUntilBlock = z.infer<typeof waitUntilBlockSchema>;
+export type SetAnalogBlock = z.infer<typeof setAnalogBlockSchema>;
+export type PidControlBlock = z.infer<typeof pidControlBlockSchema>;
 export interface IfConditionBlock {
   id?: string;
   type: "if_condition";
@@ -184,9 +275,18 @@ export type IrBlock =
   | SetOutputBlock
   | WaitBlock
   | IfConditionBlock
-  | LoopBlock;
+  | LoopBlock
+  // P3 additions (all leaf blocks — no child slots)
+  | SetVariableBlock
+  | CounterBlock
+  | WaitUntilBlock
+  | SetAnalogBlock
+  | PidControlBlock;
 
 export type IrBlockType = IrBlock["type"];
+
+// Re-export the expression types so consumers import them from the IR model surface.
+export type { Expr, NumericOrExpr } from "./irExpr";
 
 // ── Flow (the top-level program) ────────────────────────────────────────────────
 

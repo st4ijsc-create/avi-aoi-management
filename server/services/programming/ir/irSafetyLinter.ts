@@ -17,6 +17,18 @@
  *   • no unreachable / empty branches  (if_condition with two empty branches; a loop
  *     with an empty body; a `count: 0` — caught by shape too but re-stated as semantic).
  *
+ * P3 (Doc 24 Wave-2) — richer-vocabulary checks:
+ *   • undefined-variable use          (any expression `var` leaf, or a counter op, that
+ *     references a name never assigned by a prior set_variable/counter → ERROR). Scope is a
+ *     conservative program-order approximation (a var declared in a branch is treated as in
+ *     scope afterward) — it NEVER false-errors a genuinely-declared var; a later slice can
+ *     tighten it to true lexical/branch scope. It reliably catches use-before-declare.
+ *   • pid gains sane                  (Kp/Ki/Kd finite + non-negative; not absurdly large).
+ *   • pid output bounded              (output_min < output_max; both finite).
+ *   • wait_until timeout bounded      (0 < timeout_ms ≤ ceiling; poll < timeout).
+ *   • set_analog value present        (bare literal or a valid expression — shape already
+ *     enforces the type; the linter flags an unresolved variable inside it).
+ *
  * The speed/force ceilings come from a resolved LimitProfile: (1) a per-device-type
  * default, (2) overridden by env tunables, (3) overridden by an explicit caller profile
  * (e.g. from a robot class's safety-rated speed when the capability model exposes it).
@@ -28,8 +40,9 @@
  * profile, no rule change needed.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, Pose, TargetDeviceType } from "./irModel";
+import type { Flow, IrBlock, Pose, TargetDeviceType, NumericOrExpr } from "./irModel";
 import { assignIds, walkBlocks } from "./irModel";
+import { slotFreeVars } from "./irExpr";
 
 /** One linter finding. `error` blocks transpile; `warn` is advisory. */
 export interface LintDiagnostic {
@@ -62,6 +75,10 @@ export interface LimitProfile {
   maxBlendRadiusMm: number;
   /** Declared reachable workspace AABB (mm); poses outside → error. */
   workspace: WorkspaceAABB;
+  /** P3: max absolute PID gain (Kp/Ki/Kd) — guards against a runaway loop. */
+  maxPidGain: number;
+  /** P3: max wait_until timeout (ms) — an unbounded busy-wait is a hazard. */
+  maxWaitTimeoutMs: number;
 }
 
 // ── Env tunables (read at call time so ops/tests can toggle) ──────────────────
@@ -100,6 +117,10 @@ export function resolveLimits(
         z: num("DPC_IR_WORKSPACE_MAX_Z", 1500),
       },
     },
+    // P3: a PID gain over ~1000 is almost never physical for a normalised loop — flag it.
+    maxPidGain: num("DPC_IR_MAX_PID_GAIN", 1000),
+    // P3: a 5-minute ceiling on a bounded wait_until busy-wait.
+    maxWaitTimeoutMs: num("DPC_IR_MAX_WAIT_TIMEOUT_MS", 300_000),
   };
   if (!override) return base;
   return {
@@ -108,6 +129,8 @@ export function resolveLimits(
     maxGripTimeoutMs: override.maxGripTimeoutMs ?? base.maxGripTimeoutMs,
     maxBlendRadiusMm: override.maxBlendRadiusMm ?? base.maxBlendRadiusMm,
     workspace: override.workspace ?? base.workspace,
+    maxPidGain: override.maxPidGain ?? base.maxPidGain,
+    maxWaitTimeoutMs: override.maxWaitTimeoutMs ?? base.maxWaitTimeoutMs,
   };
 }
 
@@ -130,6 +153,20 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
   const diags: LintDiagnostic[] = [];
   const push = (blockId: string | undefined, severity: LintDiagnostic["severity"], rule: string, message: string) =>
     diags.push({ blockId: blockId ?? "?", severity, rule, message });
+
+  // P3 — variable SCOPE. `walkBlocks` visits parent-before-children in program order, so a
+  // running set of declared names approximates lexical/program scope: a var used before it
+  // is ever assigned (by set_variable / counter) is UNDEFINED → error. Fail-closed: unknown
+  // names are surfaced, never silently defaulted.
+  const declared = new Set<string>();
+  const checkSlotVars = (blockId: string | undefined, slotName: string, value: NumericOrExpr) => {
+    for (const name of slotFreeVars(value)) {
+      if (!declared.has(name)) {
+        push(blockId, "error", "undefined-variable",
+          `${slotName} references variable "${name}" which is not assigned by any prior set_variable/counter.`);
+      }
+    }
+  };
 
   const inspect = (block: IrBlock) => {
     switch (block.type) {
@@ -188,7 +225,72 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
         }
         break;
       }
-      // release / set_output / wait carry no motion-safety hazard to check statically.
+      case "set_output": {
+        // value may be an expression referencing variables.
+        checkSlotVars(block.id, "set_output value", block.value);
+        break;
+      }
+      case "wait": {
+        if (block.ms !== undefined) checkSlotVars(block.id, "wait duration", block.ms);
+        break;
+      }
+      // ── P3 blocks ──────────────────────────────────────────────────────────
+      case "set_variable": {
+        // The RHS may reference PRIOR variables (self-reference is allowed for accumulators
+        // only if the name was already declared — checked before declaring below).
+        checkSlotVars(block.id, "set_variable expression", block.expr);
+        declared.add(block.name); // now in scope for subsequent blocks
+        break;
+      }
+      case "counter": {
+        // increment reads the prior value → the counter must exist before increment; a reset
+        // DECLARES it. This keeps "increment before first reset/set" an undefined-variable error.
+        if (block.op === "increment" && !declared.has(block.name)) {
+          push(block.id, "error", "undefined-variable",
+            `counter "${block.name}" is incremented before it is ever reset/assigned.`);
+        }
+        declared.add(block.name);
+        break;
+      }
+      case "wait_until": {
+        checkSlotVars(block.id, "wait_until condition", block.condition);
+        if (block.timeout_ms > limits.maxWaitTimeoutMs) {
+          push(block.id, "error", "wait-timeout",
+            `wait_until timeout_ms ${block.timeout_ms} exceeds ceiling ${limits.maxWaitTimeoutMs} ms.`);
+        }
+        if (block.poll_ms >= block.timeout_ms) {
+          push(block.id, "warn", "wait-poll",
+            `wait_until poll_ms ${block.poll_ms} is ≥ timeout_ms ${block.timeout_ms} (the loop polls at most once).`);
+        }
+        break;
+      }
+      case "set_analog": {
+        checkSlotVars(block.id, "set_analog value", block.value);
+        break;
+      }
+      case "pid_control": {
+        checkSlotVars(block.id, "pid_control setpoint", block.setpoint);
+        for (const [g, v] of [["kp", block.kp], ["ki", block.ki], ["kd", block.kd]] as const) {
+          if (!Number.isFinite(v)) {
+            push(block.id, "error", "pid-gain", `pid_control ${g} must be a finite number.`);
+          } else if (v < 0) {
+            push(block.id, "error", "pid-gain", `pid_control ${g} ${v} is negative (positive gains only for a standard loop).`);
+          } else if (v > limits.maxPidGain) {
+            push(block.id, "error", "pid-gain", `pid_control ${g} ${v} exceeds the sane ceiling ${limits.maxPidGain} — a runaway-loop hazard.`);
+          }
+        }
+        if (!(block.output_min < block.output_max)) {
+          push(block.id, "error", "pid-output-bounds",
+            `pid_control output_min ${block.output_min} must be < output_max ${block.output_max}.`);
+        } else if (!Number.isFinite(block.output_min) || !Number.isFinite(block.output_max)) {
+          push(block.id, "error", "pid-output-bounds", "pid_control output bounds must be finite.");
+        }
+        if (block.kp === 0 && block.ki === 0 && block.kd === 0) {
+          push(block.id, "warn", "pid-inert", "pid_control has all-zero gains (the loop produces no control action).");
+        }
+        break;
+      }
+      // release carries no motion-safety hazard to check statically.
       default:
         break;
     }

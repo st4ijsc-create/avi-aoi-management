@@ -1,0 +1,33 @@
+# URScript generated from IR flow "p3_demo" v1
+# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+def p3_demo():
+  # [IR counter #b1]
+  cycles = 0
+  # [IR set_variable #b2]
+  target = 5
+  # [IR set_analog #b3]
+  set_analog_out(AO1, (target + 1)) # unit=V
+  # [IR counter #b4]
+  cycles = cycles + 1
+  # [IR wait #b5]
+  sleep(((target * 100)) / 1000.0)
+  # [IR wait_until #b6]
+  wu_elapsed = 0.0
+  while (not ((cycles >= target))) and (wu_elapsed < 5):
+    sleep(0.1)
+    wu_elapsed = wu_elapsed + 0.1
+  end
+  # [IR set_output #b7]
+  set_digital_out(DO2, (cycles > 0))
+  # [IR pid_control #b8]
+  # PID skeleton (URScript has no native PID) — bounded, deterministic step.
+  pid_sp = target
+  pid_pv = get_standard_analog_in(AI1)
+  pid_err = pid_sp - pid_pv
+  pid_out = 2 * pid_err + 0.5 * pid_i_AO2 + 0.1 * (pid_err - pid_prev_AO2)
+  pid_out = 0 if (pid_out < 0) else (10 if (pid_out > 10) else pid_out)
+  set_analog_out(AO2, pid_out)
+  pid_i_AO2 = pid_i_AO2 + pid_err
+  pid_prev_AO2 = pid_err
+end

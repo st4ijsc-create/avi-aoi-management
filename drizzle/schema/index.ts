@@ -45,3 +45,4 @@ export * from "./equipmentStandards";
 export * from "./equipmentIntegration";
 export * from "./fieldHealth";
 export * from "./aiLoop";
+export * from "./goldenSample";

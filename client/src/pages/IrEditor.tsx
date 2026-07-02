@@ -50,10 +50,11 @@ import { toast } from "sonner";
 import {
   // Shared IR model + pure helpers (ONE source of truth for tree AND graph views).
   BLOCK_ICON, BLOCK_LABEL, PALETTE_GROUPS, COMPARE_OPS, TARGET_DEVICE_TYPES,
+  EXPR_BINOPS, EXPR_OP_LABEL, isExpr,
   newBlock, findBlock, updateBlock, deleteBlock, moveBlock, addChild, cloneBlocks,
   reorderRelativeToSibling, childSlots, getChildren, summarize,
   type Pose, type CompareOp, type IrBlock, type BlockType, type Slot, type Flow,
-  type TargetDeviceType,
+  type TargetDeviceType, type Expr, type ExprBinOp, type NumericOrExpr,
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 
@@ -223,6 +224,104 @@ function NumField({ label, value, onChange, unit }: { label: string; value: numb
   );
 }
 
+// ── P3: a SAFE mini expression editor (no free-text eval — dropdowns + numbers only) ──
+// The value is EITHER a literal (number/boolean) OR a typed Expr AST node ({lit|var|binop}).
+// This mirrors server irExpr.ts exactly, so what the author builds here is exactly what the
+// linter scopes and the transpiler renders. No string is ever eval'd.
+type ExprMode = "literal" | "variable" | "binop";
+function exprMode(v: NumericOrExpr): ExprMode {
+  if (!isExpr(v)) return "literal";
+  if (v.kind === "var") return "variable";
+  if (v.kind === "binop") return "binop";
+  return "literal";
+}
+function litValue(v: NumericOrExpr): number {
+  if (typeof v === "number") return v;
+  if (isExpr(v) && v.kind === "lit" && typeof v.value === "number") return v.value;
+  return 0;
+}
+function ExprField({
+  label, value, onChange, t, allowBool,
+}: {
+  label: string;
+  value: NumericOrExpr;
+  onChange: (v: NumericOrExpr) => void;
+  t: TFunction;
+  allowBool?: boolean;
+}) {
+  const mode = exprMode(value);
+  const setMode = (m: ExprMode) => {
+    if (m === "literal") onChange(0);
+    else if (m === "variable") onChange({ kind: "var", name: "x" } as Expr);
+    else onChange({ kind: "binop", op: "add", left: { kind: "var", name: "x" }, right: { kind: "lit", value: 1 } } as Expr);
+  };
+  return (
+    <div className="space-y-1 rounded-md border border-dashed border-border/70 p-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-[11px]">{label}</Label>
+        <Select value={mode} onValueChange={(m) => setMode(m as ExprMode)}>
+          <SelectTrigger className="h-6 w-28 text-[11px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="literal">{t("ir.expr.literal", "literal")}</SelectItem>
+            <SelectItem value="variable">{t("ir.expr.variable", "variable")}</SelectItem>
+            <SelectItem value="binop">{t("ir.expr.binop", "expression")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {mode === "literal" && (
+        allowBool ? (
+          <Select
+            value={typeof value === "boolean" ? (value ? "true" : "false") : (isExpr(value) && value.kind === "lit" && typeof value.value === "boolean" ? (value.value ? "true" : "false") : "num")}
+            onValueChange={(v) => onChange(v === "true" ? true : v === "false" ? false : 0)}
+          >
+            <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true">true</SelectItem>
+              <SelectItem value="false">false</SelectItem>
+              <SelectItem value="num">{t("ir.field.numeric", "numeric…")}</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input className="h-8 text-sm" type="number" value={litValue(value)}
+            onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))} />
+        )
+      )}
+
+      {mode === "variable" && isExpr(value) && value.kind === "var" && (
+        <Input className="h-8 text-sm font-mono" value={value.name}
+          placeholder="var name"
+          onChange={(e) => onChange({ kind: "var", name: e.target.value } as Expr)} />
+      )}
+
+      {mode === "binop" && isExpr(value) && value.kind === "binop" && (
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
+          <Input className="h-8 text-sm font-mono" placeholder="left"
+            value={value.left.kind === "var" ? value.left.name : value.left.kind === "lit" ? String(value.left.value) : "…"}
+            onChange={(e) => onChange({ ...value, left: parseLeaf(e.target.value) } as Expr)} />
+          <Select value={value.op} onValueChange={(op) => onChange({ ...value, op: op as ExprBinOp } as Expr)}>
+            <SelectTrigger className="h-8 w-16 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>{EXPR_BINOPS.map((o) => <SelectItem key={o} value={o}>{EXPR_OP_LABEL[o]}</SelectItem>)}</SelectContent>
+          </Select>
+          <Input className="h-8 text-sm font-mono" placeholder="right"
+            value={value.right.kind === "var" ? value.right.name : value.right.kind === "lit" ? String(value.right.value) : "…"}
+            onChange={(e) => onChange({ ...value, right: parseLeaf(e.target.value) } as Expr)} />
+        </div>
+      )}
+      <p className="text-[10px] text-muted-foreground">{t("ir.expr.hint", "Safe typed expression — no code is evaluated. Variables must be set by a prior Set variable / Counter block.")}</p>
+    </div>
+  );
+}
+/** Turn a text field into an Expr LEAF: a bare number → lit; true/false → lit bool; else a var ref. */
+function parseLeaf(raw: string): Expr {
+  const s = raw.trim();
+  if (s === "true") return { kind: "lit", value: true };
+  if (s === "false") return { kind: "lit", value: false };
+  const n = Number(s);
+  if (s !== "" && !Number.isNaN(n)) return { kind: "lit", value: n };
+  return { kind: "var", name: s };
+}
+
 function Inspector({ block, onPatch, t }: { block: IrBlock; onPatch: (patch: Partial<IrBlock>) => void; t: TFunction }) {
   const patchPose = (k: keyof Pose, v: number) => {
     if (block.type !== "move_linear") return;
@@ -292,23 +391,7 @@ function Inspector({ block, onPatch, t }: { block: IrBlock; onPatch: (patch: Par
             <Label className="text-[11px]">{t("ir.field.signal", "Signal")}</Label>
             <Input className="h-8 text-sm" value={block.signal} onChange={(e) => onPatch({ signal: e.target.value } as Partial<IrBlock>)} />
           </div>
-          <div className="space-y-1">
-            <Label className="text-[11px]">{t("ir.field.value", "Value")}</Label>
-            <Select
-              value={typeof block.value === "boolean" ? (block.value ? "true" : "false") : "num"}
-              onValueChange={(v) => onPatch({ value: v === "true" ? true : v === "false" ? false : 0 } as Partial<IrBlock>)}
-            >
-              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="true">true</SelectItem>
-                <SelectItem value="false">false</SelectItem>
-                <SelectItem value="num">{t("ir.field.numeric", "numeric…")}</SelectItem>
-              </SelectContent>
-            </Select>
-            {typeof block.value === "number" && (
-              <Input className="h-8 text-sm" type="number" value={block.value} onChange={(e) => onPatch({ value: Number(e.target.value) } as Partial<IrBlock>)} />
-            )}
-          </div>
+          <ExprField label={t("ir.field.value", "Value")} value={block.value} allowBool onChange={(v) => onPatch({ value: v } as Partial<IrBlock>)} t={t} />
         </>
       )}
 
@@ -318,8 +401,92 @@ function Inspector({ block, onPatch, t }: { block: IrBlock; onPatch: (patch: Par
             <Label className="text-[11px]">{t("ir.field.signalRef", "Signal ref (optional)")}</Label>
             <Input className="h-8 text-sm" value={block.signal_ref ?? ""} onChange={(e) => onPatch({ signal_ref: e.target.value || undefined } as Partial<IrBlock>)} />
           </div>
-          <NumField label={t("ir.field.ms", "Duration")} unit="ms" value={block.ms ?? 0} onChange={(v) => onPatch({ ms: v } as Partial<IrBlock>)} />
+          <ExprField label={t("ir.field.ms", "Duration (ms)")} value={block.ms ?? 0} onChange={(v) => onPatch({ ms: (typeof v === "boolean" ? 0 : v) } as Partial<IrBlock>)} t={t} />
           <p className="text-[10px] text-muted-foreground">{t("ir.field.waitHint", "wait needs at least one of { signal ref, duration }.")}</p>
+        </>
+      )}
+
+      {block.type === "set_variable" && (
+        <>
+          <div className="space-y-1">
+            <Label className="text-[11px]">{t("ir.field.varName", "Variable name")}</Label>
+            <Input className="h-8 text-sm font-mono" value={block.name} onChange={(e) => onPatch({ name: e.target.value } as Partial<IrBlock>)} />
+          </div>
+          <ExprField label={t("ir.field.expr", "Expression")} value={block.expr} onChange={(v) => onPatch({ expr: (isExpr(v) ? v : { kind: "lit", value: typeof v === "boolean" ? v : Number(v) }) as Expr } as Partial<IrBlock>)} t={t} allowBool />
+        </>
+      )}
+
+      {block.type === "counter" && (
+        <>
+          <div className="space-y-1">
+            <Label className="text-[11px]">{t("ir.field.varName", "Counter name")}</Label>
+            <Input className="h-8 text-sm font-mono" value={block.name} onChange={(e) => onPatch({ name: e.target.value } as Partial<IrBlock>)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("ir.field.counterOp", "Operation")}</Label>
+              <Select value={block.op} onValueChange={(v) => onPatch({ op: v as "increment" | "reset" } as Partial<IrBlock>)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="increment">{t("ir.field.counterInc", "increment")}</SelectItem>
+                  <SelectItem value="reset">{t("ir.field.counterReset", "reset")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <NumField label={block.op === "reset" ? t("ir.field.resetTo", "Reset to") : t("ir.field.by", "By")} value={block.amount} onChange={(v) => onPatch({ amount: v } as Partial<IrBlock>)} />
+          </div>
+        </>
+      )}
+
+      {block.type === "wait_until" && (
+        <>
+          <ExprField label={t("ir.field.condition", "Condition (holds → continue)")} value={block.condition} onChange={(v) => onPatch({ condition: (isExpr(v) ? v : { kind: "lit", value: typeof v === "boolean" ? v : Boolean(v) }) as Expr } as Partial<IrBlock>)} t={t} allowBool />
+          <div className="grid grid-cols-2 gap-2">
+            <NumField label={t("ir.field.timeout", "Timeout")} unit="ms" value={block.timeout_ms} onChange={(v) => onPatch({ timeout_ms: Math.max(1, Math.round(v)) } as Partial<IrBlock>)} />
+            <NumField label={t("ir.field.poll", "Poll")} unit="ms" value={block.poll_ms} onChange={(v) => onPatch({ poll_ms: Math.max(1, Math.round(v)) } as Partial<IrBlock>)} />
+          </div>
+        </>
+      )}
+
+      {block.type === "set_analog" && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("ir.field.channel", "Channel")}</Label>
+              <Input className="h-8 text-sm" value={block.channel} onChange={(e) => onPatch({ channel: e.target.value } as Partial<IrBlock>)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("ir.field.unit", "Unit (optional)")}</Label>
+              <Input className="h-8 text-sm" value={block.unit ?? ""} onChange={(e) => onPatch({ unit: e.target.value || undefined } as Partial<IrBlock>)} />
+            </div>
+          </div>
+          <ExprField label={t("ir.field.value", "Value")} value={block.value} onChange={(v) => onPatch({ value: v } as Partial<IrBlock>)} t={t} />
+        </>
+      )}
+
+      {block.type === "pid_control" && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("ir.field.pidIn", "Input channel (PV)")}</Label>
+              <Input className="h-8 text-sm" value={block.input_channel} onChange={(e) => onPatch({ input_channel: e.target.value } as Partial<IrBlock>)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("ir.field.pidOut", "Output channel")}</Label>
+              <Input className="h-8 text-sm" value={block.output_channel} onChange={(e) => onPatch({ output_channel: e.target.value } as Partial<IrBlock>)} />
+            </div>
+          </div>
+          <ExprField label={t("ir.field.setpoint", "Setpoint")} value={block.setpoint} onChange={(v) => onPatch({ setpoint: v } as Partial<IrBlock>)} t={t} />
+          <div className="grid grid-cols-3 gap-2">
+            <NumField label="Kp" value={block.kp} onChange={(v) => onPatch({ kp: v } as Partial<IrBlock>)} />
+            <NumField label="Ki" value={block.ki} onChange={(v) => onPatch({ ki: v } as Partial<IrBlock>)} />
+            <NumField label="Kd" value={block.kd} onChange={(v) => onPatch({ kd: v } as Partial<IrBlock>)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumField label={t("ir.field.outMin", "Output min")} value={block.output_min} onChange={(v) => onPatch({ output_min: v } as Partial<IrBlock>)} />
+            <NumField label={t("ir.field.outMax", "Output max")} value={block.output_max} onChange={(v) => onPatch({ output_max: v } as Partial<IrBlock>)} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">{t("ir.field.pidHint", "Gains must be finite & non-negative; output is hard-clamped to [min, max]. URScript emits a bounded PID skeleton (no native PID).")}</p>
         </>
       )}
 
