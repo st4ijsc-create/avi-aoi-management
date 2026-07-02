@@ -22,8 +22,11 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import fs from "node:fs";
+import path from "node:path";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { validateUpload } from "../_core/uploadValidation";
 import {
   twinLiveEnabled,
   registerModel,
@@ -111,6 +114,70 @@ export const twinRouter = router({
       .mutation(async ({ input, ctx }) => {
         requireFlag();
         return registerModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
+      }),
+
+    /**
+     * UPLOAD a .glb/.gltf from the UI and register it for a machine in ONE call.
+     * Reuses the RBAC middleware (machine_control/canCreate); intentionally NOT gated by
+     * TWIN_LIVE_ENABLED — registering a viewer asset is a management op, independent of
+     * live-twin streaming. Requires STORAGE_MODE=local so /uploads is served at runtime
+     * (no rebuild). Stores a model URI ONLY — opens no device-control path.
+     */
+    uploadAndRegister: protectedProcedure
+      .use(requirePermission("machine_control", "canCreate"))
+      .input(
+        z.object({
+          machineId: z.number().int().positive(),
+          filename: z.string().min(1).max(256),
+          // base64 of the .glb/.gltf bytes (decoded size is capped by validateUpload → 100MB).
+          contentBase64: z.string().min(1).max(180_000_000),
+          equipmentClass: z.string().max(64).optional(),
+          notes: z.string().max(2000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (process.env.STORAGE_MODE !== "local") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Local storage is off — set STORAGE_MODE=local to upload & serve 3D models.",
+          });
+        }
+        let buf: Buffer;
+        try {
+          buf = Buffer.from(input.contentBase64, "base64");
+        } catch {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 content." });
+        }
+        const v = validateUpload(buf, "model3d");
+        if (!v.ok) {
+          throw new TRPCError({
+            code: v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
+            message: v.error ?? "Invalid 3D model file.",
+          });
+        }
+        const ext = v.detectedMime === "model/gltf-binary" ? ".glb" : ".gltf";
+        const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+          ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+          : path.join(process.cwd(), "uploads");
+        const modelsDir = path.join(uploadsRoot, "models");
+        fs.mkdirSync(modelsDir, { recursive: true });
+        // Timestamped filename → each upload is a fresh URI (cache-safe; the registry row
+        // is updated in place with the new URI + a bumped version).
+        const fileName = `machine-${input.machineId}-${Date.now()}${ext}`;
+        fs.writeFileSync(path.join(modelsDir, fileName), buf);
+        const modelUri = `/uploads/models/${fileName}`;
+        const res = await registerModel({
+          modelKey: `machine-${input.machineId}`,
+          modelUri,
+          machineId: input.machineId,
+          equipmentClass: input.equipmentClass ?? null,
+          modelKind: "gltf",
+          sourceFormat: "gltf",
+          conversionStatus: "ready",
+          notes: input.notes ?? null,
+          createdBy: (ctx as any).user?.id ?? null,
+        });
+        return { ok: res.ok, modelUri, id: res.id, version: res.version, sizeBytes: v.size ?? buf.length };
       }),
 
     archive: protectedProcedure

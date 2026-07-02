@@ -7,7 +7,7 @@
  * Dùng cho các route `express.raw(...)` (req.body là Buffer). Không phụ thuộc package ngoài.
  */
 
-export type UploadKind = "apk" | "zip" | "image" | "gguf" | "any";
+export type UploadKind = "apk" | "zip" | "image" | "gguf" | "model3d" | "any";
 
 /** Ngưỡng size mặc định theo loại (byte). Có thể override qua ENV. */
 const DEFAULT_MAX_BYTES: Record<UploadKind, number> = {
@@ -15,6 +15,7 @@ const DEFAULT_MAX_BYTES: Record<UploadKind, number> = {
   zip: 500 * 1024 * 1024,
   image: 25 * 1024 * 1024,
   gguf: 8 * 1024 * 1024 * 1024,
+  model3d: 100 * 1024 * 1024,
   any: 200 * 1024 * 1024,
 };
 
@@ -46,6 +47,8 @@ export function sniffMime(buf: Buffer): string | null {
   if (b[0] === 0x50 && b[1] === 0x4b && (b[2] === 0x03 || b[2] === 0x05 || b[2] === 0x07)) return "application/zip";
   // GGUF (model file): magic "GGUF"
   if (b[0] === 0x47 && b[1] === 0x47 && b[2] === 0x55 && b[3] === 0x46) return "application/x-gguf";
+  // glTF binary (GLB): magic "glTF" (0x67 0x6C 0x54 0x46)
+  if (b[0] === 0x67 && b[1] === 0x6c && b[2] === 0x54 && b[3] === 0x46) return "model/gltf-binary";
   return null;
 }
 
@@ -55,6 +58,7 @@ const ALLOWED_MIME: Record<UploadKind, string[]> = {
   zip: ["application/zip"],
   image: ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"],
   gguf: ["application/x-gguf"],
+  model3d: ["model/gltf-binary", "model/gltf+json"],
   any: [],
 };
 
@@ -89,6 +93,21 @@ export function validateUpload(buf: Buffer, kind: UploadKind): UploadValidationR
   }
 
   if (kind === "any") return { ok: true, size, detectedMime: sniffMime(buf) };
+
+  // glTF 2.0: accept a GLB (binary, magic "glTF") OR a JSON glTF (text that starts with
+  // '{' and declares an "asset"). No fabrication — anything else is rejected 400.
+  if (kind === "model3d") {
+    if (sniffMime(buf) === "model/gltf-binary") return { ok: true, detectedMime: "model/gltf-binary", size };
+    const head = buf.subarray(0, 512).toString("utf8").replace(/^﻿/, "").trimStart();
+    if (head.startsWith("{") && head.includes('"asset"')) return { ok: true, detectedMime: "model/gltf+json", size };
+    return {
+      ok: false,
+      status: 400,
+      error: "Loại file không hợp lệ cho 'model3d'. Cần glTF 2.0 (.glb nhị phân hoặc .gltf JSON có \"asset\").",
+      detectedMime: sniffMime(buf),
+      size,
+    };
+  }
 
   const detected = sniffMime(buf);
   const allowed = ALLOWED_MIME[kind];

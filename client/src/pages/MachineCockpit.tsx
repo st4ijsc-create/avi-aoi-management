@@ -34,7 +34,7 @@
  * i18n via t("cockpit.*","English default") fallbacks.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useRoute } from "wouter";
 import { Canvas } from "@react-three/fiber";
@@ -43,6 +43,8 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/patterns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -54,7 +56,7 @@ import { cn } from "@/lib/utils";
 import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
   Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
-  ScrollText, Radio,
+  ScrollText, Radio, Upload,
 } from "lucide-react";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -158,12 +160,16 @@ function KV({ k, v, mono }: { k: React.ReactNode; v: React.ReactNode; mono?: boo
 // ════════════════════════════════════════════════════════════════════════════
 
 function Model3DPane({
-  model3d, name, t,
+  model3d, name, t, canRegister, uploading, onUploadFile,
 }: {
   model3d: MachineDetail["model3d"];
   name: string;
   t: (k: string, f: string) => string;
+  canRegister?: boolean;
+  uploading?: boolean;
+  onUploadFile?: (file: File) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [webglOk, setWebglOk] = useState(true);
   useEffect(() => {
     try {
@@ -187,6 +193,24 @@ function Model3DPane({
         <div className="mb-2 flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-2 py-1 text-[11px] text-info">
           <Info className="h-3.5 w-3.5 shrink-0" />
           {t("cockpit.no3dModel", "No 3D model registered for this machine — showing a placeholder block.")}
+        </div>
+      )}
+      {canRegister && onUploadFile && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadFile(f); e.currentTarget.value = ""; }}
+          />
+          <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            <Upload className={cn("mr-1 h-4 w-4", uploading && "animate-pulse")} />
+            {uploading ? t("cockpit.model3dUploading", "Uploading…") : t("cockpit.model3dUpload", "Upload & register 3D model")}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {t("cockpit.model3dHint", ".glb or .gltf (glTF 2.0) — becomes this machine's model")}
+          </span>
         </div>
       )}
       <div className="h-[440px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
@@ -251,6 +275,28 @@ export default function MachineCockpit() {
     { enabled: validId, refetchInterval: 10_000, staleTime: 5_000, retry: false },
   );
   const d = detailQ.data;
+
+  // ── 3D model upload & register (management action; RBAC-gated, not flag-gated). ──
+  const { hasPermission, isAdmin } = usePermissions();
+  const canRegisterModel = isAdmin === true || hasPermission("machine_control", "canCreate");
+  const uploadModelMut = trpc.twin.models.uploadAndRegister.useMutation({
+    onSuccess: () => {
+      toast.success(t("cockpit.model3dUploaded", "3D model uploaded & registered."));
+      detailQ.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const handleModelFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result ?? "");
+      const b64 = raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw; // strip data: prefix
+      if (!b64) { toast.error(t("cockpit.model3dReadErr", "Could not read the file.")); return; }
+      uploadModelMut.mutate({ machineId, filename: file.name, contentBase64: b64 });
+    };
+    reader.onerror = () => toast.error(t("cockpit.model3dReadErr", "Could not read the file."));
+    reader.readAsDataURL(file);
+  };
 
   // ── LIVE status via the shared socket (machine room / telemetry:sample). When a
   // sample lands for THIS machine, nudge a refetch so the live state + KPIs refresh. ──
@@ -607,7 +653,14 @@ export default function MachineCockpit() {
             {/* ── 3D ── */}
             <TabsContent value="model3d">
               <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")} description={d.model3d.source}>
-                <Model3DPane model3d={d.model3d} name={d.identity.name} t={t} />
+                <Model3DPane
+                  model3d={d.model3d}
+                  name={d.identity.name}
+                  t={t}
+                  canRegister={canRegisterModel}
+                  uploading={uploadModelMut.isPending}
+                  onUploadFile={handleModelFile}
+                />
               </SectionCard>
             </TabsContent>
 
