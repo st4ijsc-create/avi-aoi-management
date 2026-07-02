@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/patterns';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -199,27 +200,23 @@ export function AnnotationStatisticsContent() {
     <>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <BarChart3 className="h-6 w-6 text-primary" />
-              {t('reports.annotationStatistics')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.annotationStatsDesc')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!stats}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('common.exportCSV')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<BarChart3 className="h-6 w-6 text-primary" />}
+          title={t('reports.annotationStatistics')}
+          description={t('reports.annotationStatsDesc')}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!stats}>
+                <Download className="h-4 w-4 mr-2" />
+                {t('common.exportCSV')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Filters */}
         <Card>
@@ -305,8 +302,8 @@ export function AnnotationStatisticsContent() {
               <Card>
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-500/10">
-                      <Image className="h-5 w-5 text-blue-500" />
+                    <div className="p-2 rounded-lg bg-info/10">
+                      <Image className="h-5 w-5 text-info" />
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.totalImages.toLocaleString()}</p>
@@ -319,8 +316,8 @@ export function AnnotationStatisticsContent() {
               <Card>
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-orange-500/10">
-                      <Cpu className="h-5 w-5 text-orange-500" />
+                    <div className="p-2 rounded-lg bg-warning/10">
+                      <Cpu className="h-5 w-5 text-warning" />
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.byMachine.length}</p>
@@ -333,8 +330,8 @@ export function AnnotationStatisticsContent() {
               <Card>
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-green-500/10">
-                      <Package className="h-5 w-5 text-green-500" />
+                    <div className="p-2 rounded-lg bg-success/10">
+                      <Package className="h-5 w-5 text-success" />
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.byProduct.length}</p>

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -148,35 +149,31 @@ export default function CorporateDashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-primary" />
-              {t('corporate.dashboard')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('corporate.dashboardDescription')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-              <SelectTrigger className="w-[150px]">
-                <Calendar className="h-4 w-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="week">{t('corporate.thisWeek')}</SelectItem>
-                <SelectItem value="month">{t('corporate.thisMonth')}</SelectItem>
-                <SelectItem value="quarter">{t('corporate.thisQuarter')}</SelectItem>
-                <SelectItem value="year">{t('corporate.thisYear')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm">
-              <FileDown className="h-4 w-4 mr-2" />
-              {t('corporate.exportReport')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Building2 className="h-6 w-6" />}
+          title={t('corporate.dashboard')}
+          description={t('corporate.dashboardDescription')}
+          actions={
+            <>
+              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                <SelectTrigger className="w-[150px]">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">{t('corporate.thisWeek')}</SelectItem>
+                  <SelectItem value="month">{t('corporate.thisMonth')}</SelectItem>
+                  <SelectItem value="quarter">{t('corporate.thisQuarter')}</SelectItem>
+                  <SelectItem value="year">{t('corporate.thisYear')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm">
+                <FileDown className="h-4 w-4 mr-2" />
+                {t('corporate.exportReport')}
+              </Button>
+            </>
+          }
+        />
 
         {/* U7 cross-links — executive corporate roll-up; drill or go live. */}
         <RelatedViews

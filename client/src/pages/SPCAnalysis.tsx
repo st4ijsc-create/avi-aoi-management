@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AdvancedSection } from "@/components/AdvancedSection";
+import { PageHeader } from "@/components/patterns";
 import {
   ComposedChart, Line, Scatter, Bar, BarChart, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer, Legend, Cell,
@@ -35,9 +36,9 @@ function getDefaultDateRange() {
 
 function cpkColor(v: number | null | undefined): string {
   if (v == null) return "text-muted-foreground";
-  if (v >= 1.33) return "text-green-600";
-  if (v >= 1.0) return "text-yellow-600";
-  return "text-red-600";
+  if (v >= 1.33) return "text-success";
+  if (v >= 1.0) return "text-warning";
+  return "text-destructive";
 }
 
 function downloadFile(filename: string, content: string, type: string) {
@@ -261,24 +262,24 @@ export function SPCAnalysisContent() {
   return (
       <div className="space-y-4">
         {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{t('spc.spcAnalysisTitle')}</h1>
-            <p className="text-muted-foreground">{t('spc.spcAnalysisFullDesc')}</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={!mpId}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${(isFetching || isCtrlFetching) ? 'animate-spin' : ''}`} />
-              {t('common.refresh')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!ctrl?.chart}>
-              <Download className="h-4 w-4 mr-2" />CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleExportJSON} disabled={!data}>
-              <Download className="h-4 w-4 mr-2" />JSON
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title={t('spc.spcAnalysisTitle')}
+          description={t('spc.spcAnalysisFullDesc')}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetch()} disabled={!mpId}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${(isFetching || isCtrlFetching) ? 'animate-spin' : ''}`} />
+                {t('common.refresh')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!ctrl?.chart}>
+                <Download className="h-4 w-4 mr-2" />CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportJSON} disabled={!data}>
+                <Download className="h-4 w-4 mr-2" />JSON
+              </Button>
+            </>
+          }
+        />
 
         {/* Sticky Filters */}
         <Card className="sticky top-0 z-10">
@@ -486,7 +487,7 @@ export function SPCAnalysisContent() {
                     </Button>
                   </div>
                   {cap?.cpk == null && spec?.usl == null && spec?.lsl == null && (
-                    <p className="text-xs text-amber-600 mb-2">{t('spc.enterSpecToComputeCpk')}</p>
+                    <p className="text-xs text-warning mb-2">{t('spc.enterSpecToComputeCpk')}</p>
                   )}
 
                   <ResponsiveContainer width="100%" height={240}>
@@ -546,7 +547,7 @@ export function SPCAnalysisContent() {
                     </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
-                      <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                      <CheckCircle className="h-10 w-10 text-success mx-auto mb-2" />
                       {t('spc.noViolationsDetected')}
                     </div>
                   )}

@@ -508,15 +508,15 @@ export default function Reports() {
             <DropdownMenuLabel>{t('reports.selectFormat')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
-              <FileText className="h-4 w-4 mr-2 text-red-500" />
+              <FileText className="h-4 w-4 mr-2 text-destructive" />
               {t('reports.exportPDF')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
-              <FileSpreadsheet className="h-4 w-4 mr-2 text-green-500" />
+              <FileSpreadsheet className="h-4 w-4 mr-2 text-success" />
               {t('reports.exportExcel')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
-              <File className="h-4 w-4 mr-2 text-blue-500" />
+              <File className="h-4 w-4 mr-2 text-info" />
               {t('reports.exportCSV')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -544,10 +544,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.okProducts')}</p>
-                <p className="text-2xl font-bold text-green-500">{aggregatedStats.okCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-success">{aggregatedStats.okCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-green-500/10">
-                <CheckCircle2 className="h-6 w-6 text-green-500" />
+              <div className="p-3 rounded-full bg-success/10">
+                <CheckCircle2 className="h-6 w-6 text-success" />
               </div>
             </div>
           </CardContent>
@@ -558,10 +558,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.ngProducts')}</p>
-                <p className="text-2xl font-bold text-red-500">{aggregatedStats.ngCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-destructive">{aggregatedStats.ngCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-red-500/10">
-                <XCircle className="h-6 w-6 text-red-500" />
+              <div className="p-3 rounded-full bg-destructive/10">
+                <XCircle className="h-6 w-6 text-destructive" />
               </div>
             </div>
           </CardContent>
@@ -572,10 +572,10 @@ export default function Reports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{t('reports.ntfProducts')}</p>
-                <p className="text-2xl font-bold text-amber-500">{aggregatedStats.ntfCount.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-warning">{aggregatedStats.ntfCount.toLocaleString()}</p>
               </div>
-              <div className="p-3 rounded-full bg-amber-500/10">
-                <AlertTriangle className="h-6 w-6 text-amber-500" />
+              <div className="p-3 rounded-full bg-warning/10">
+                <AlertTriangle className="h-6 w-6 text-warning" />
               </div>
             </div>
           </CardContent>
@@ -632,7 +632,7 @@ export default function Reports() {
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-success to-success rounded-full transition-all duration-500"
                         style={{ width: `${Math.min(aggregatedStats.yieldRate, 100)}%` }}
                       />
                     </div>
@@ -647,11 +647,11 @@ export default function Reports() {
                   <h4 className="font-medium text-muted-foreground">{t('reports.vsPreviousPeriod')}</h4>
                   <div className="flex items-center gap-2">
                     {aggregatedStats.trend >= 0 ? (
-                      <TrendingUp className="h-6 w-6 text-green-500" />
+                      <TrendingUp className="h-6 w-6 text-success" />
                     ) : (
-                      <TrendingDown className="h-6 w-6 text-red-500" />
+                      <TrendingDown className="h-6 w-6 text-destructive" />
                     )}
-                    <span className={`text-2xl font-bold ${aggregatedStats.trend >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    <span className={`text-2xl font-bold ${aggregatedStats.trend >= 0 ? "text-success" : "text-destructive"}`}>
                       {aggregatedStats.trend >= 0 ? "+" : ""}{aggregatedStats.trend.toFixed(2)}%
                     </span>
                   </div>
@@ -664,15 +664,15 @@ export default function Reports() {
                   <h4 className="font-medium text-muted-foreground">{t('reports.resultDistribution')}</h4>
                   <div className="space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="text-green-500">OK</span>
+                      <span className="text-success">OK</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.okCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-red-500">NG</span>
+                      <span className="text-destructive">NG</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ngCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-amber-500">NTF</span>
+                      <span className="text-warning">NTF</span>
                       <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ntfCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
                     </div>
                   </div>
@@ -712,9 +712,9 @@ export default function Reports() {
                         </TableCell>
                         <TableCell>
                           {machine.yieldRate >= 95 ? (
-                            <Badge className="bg-green-500">{t('reports.excellent')}</Badge>
+                            <Badge className="bg-success">{t('reports.excellent')}</Badge>
                           ) : machine.yieldRate >= 90 ? (
-                            <Badge className="bg-amber-500">{t('reports.pass')}</Badge>
+                            <Badge className="bg-warning">{t('reports.pass')}</Badge>
                           ) : (
                             <Badge variant="destructive">{t('reports.needsImprovement')}</Badge>
                           )}
@@ -736,28 +736,28 @@ export default function Reports() {
             <CardContent>
               <div className="space-y-3">
                 {aggregatedStats.yieldRate < 95 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-warning/10 border border-warning/20">
+                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
                     <div>
-                      <p className="font-medium text-amber-600">{t('reports.yieldBelowTarget')}</p>
+                      <p className="font-medium text-warning">{t('reports.yieldBelowTarget')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.yieldBelowTargetDesc')}</p>
                     </div>
                   </div>
                 )}
                 {aggregatedStats.trend < 0 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <TrendingDown className="h-5 w-5 text-red-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <TrendingDown className="h-5 w-5 text-destructive mt-0.5" />
                     <div>
-                      <p className="font-medium text-red-600">{t('reports.downTrendVsPrevious')}</p>
+                      <p className="font-medium text-destructive">{t('reports.downTrendVsPrevious')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.downTrendVsPreviousDesc')}</p>
                     </div>
                   </div>
                 )}
                 {aggregatedStats.yieldRate >= 95 && aggregatedStats.trend >= 0 && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                    <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
+                    <CheckCircle2 className="h-5 w-5 text-success mt-0.5" />
                     <div>
-                      <p className="font-medium text-green-600">{t('reports.goodPerformance')}</p>
+                      <p className="font-medium text-success">{t('reports.goodPerformance')}</p>
                       <p className="text-sm text-muted-foreground">{t('reports.goodPerformanceDesc')}</p>
                     </div>
                   </div>
@@ -931,9 +931,9 @@ export default function Reports() {
                     <TableRow key={row.fullDate}>
                       <TableCell>{row.fullDate}</TableCell>
                       <TableCell className="text-right">{row.total.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-green-500">{row.ok.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-red-500">{row.ng.toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-amber-500">{row.ntf.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-success">{row.ok.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-destructive">{row.ng.toLocaleString()}</TableCell>
+                      <TableCell className="text-right text-warning">{row.ntf.toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         <Badge variant={row.yieldRate >= 95 ? "default" : row.yieldRate >= 90 ? "secondary" : "destructive"}>
                           {row.yieldRate}%
@@ -1007,14 +1007,14 @@ export default function Reports() {
                           {machine.yieldRate.toFixed(2)}%
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-red-500">{machine.ngRate.toFixed(2)}%</TableCell>
+                      <TableCell className="text-right text-destructive">{machine.ngRate.toFixed(2)}%</TableCell>
                       <TableCell>
                         {machine.yieldRate >= 95 ? (
-                          <Badge variant="outline" className="text-green-500 border-green-500">{t('reports.good')}</Badge>
+                          <Badge variant="outline" className="text-success border-success">{t('reports.good')}</Badge>
                         ) : machine.yieldRate >= 90 ? (
-                          <Badge variant="outline" className="text-amber-500 border-amber-500">{t('reports.needsImprovement')}</Badge>
+                          <Badge variant="outline" className="text-warning border-warning">{t('reports.needsImprovement')}</Badge>
                         ) : (
-                          <Badge variant="outline" className="text-red-500 border-red-500">{t('reports.warning')}</Badge>
+                          <Badge variant="outline" className="text-destructive border-destructive">{t('reports.warning')}</Badge>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1167,21 +1167,21 @@ export default function Reports() {
                   <div className="space-y-4">
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800">
-                        <div className="text-sm text-red-600 dark:text-red-400">Tổng COPQ</div>
-                        <div className="text-xl font-bold text-red-700 dark:text-red-300">{totalCOPQ.toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                        <div className="text-sm text-destructive">Tổng COPQ</div>
+                        <div className="text-xl font-bold text-destructive">{totalCOPQ.toLocaleString()} đ</div>
                       </div>
                       <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800">
                         <div className="text-sm text-orange-600 dark:text-orange-400">Chi phí NG</div>
                         <div className="text-xl font-bold text-orange-700 dark:text-orange-300">{(totalNG * reworkCostNG).toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800">
-                        <div className="text-sm text-yellow-600 dark:text-yellow-400">Chi phí NTF</div>
-                        <div className="text-xl font-bold text-yellow-700 dark:text-yellow-300">{(totalNTF * reworkCostNTF).toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                        <div className="text-sm text-warning">Chi phí NTF</div>
+                        <div className="text-xl font-bold text-warning">{(totalNTF * reworkCostNTF).toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
-                        <div className="text-sm text-blue-600 dark:text-blue-400">Tổng sản phẩm lỗi</div>
-                        <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{(totalNG + totalNTF).toLocaleString()}</div>
+                      <div className="p-4 rounded-lg bg-info/10 border border-info/20">
+                        <div className="text-sm text-info">Tổng sản phẩm lỗi</div>
+                        <div className="text-xl font-bold text-info">{(totalNG + totalNTF).toLocaleString()}</div>
                       </div>
                     </div>
 
@@ -1226,8 +1226,8 @@ export default function Reports() {
                           <TableRow key={row.week}>
                             <TableCell>{row.week}</TableCell>
                             <TableCell className="text-right">{row.totalCount.toLocaleString()}</TableCell>
-                            <TableCell className="text-right text-red-600">{row.ngCount.toLocaleString()}</TableCell>
-                            <TableCell className="text-right text-yellow-600">{row.ntfCount.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-destructive">{row.ngCount.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-warning">{row.ntfCount.toLocaleString()}</TableCell>
                             <TableCell className="text-right">{row.copqNG.toLocaleString()} đ</TableCell>
                             <TableCell className="text-right">{row.copqNTF.toLocaleString()} đ</TableCell>
                             <TableCell className="text-right font-medium">{row.copqTotal.toLocaleString()} đ</TableCell>

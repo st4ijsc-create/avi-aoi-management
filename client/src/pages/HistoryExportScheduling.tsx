@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -350,21 +351,17 @@ export default function HistoryExportScheduling() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Calendar className="h-6 w-6" />
-              {t('reports.autoExportSchedule')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.autoExportDescription')}
-            </p>
-          </div>
-          <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('reports.createNewSchedule')}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Calendar className="h-6 w-6" />}
+          title={t('reports.autoExportSchedule')}
+          description={t('reports.autoExportDescription')}
+          actions={
+            <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('reports.createNewSchedule')}
+            </Button>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

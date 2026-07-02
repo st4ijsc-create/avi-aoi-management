@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -376,14 +377,12 @@ export default function OEEDashboard() {
     <DashboardLayout>
       <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">OEE Dashboard</h1>
-            <p className="text-sm sm:text-base text-muted-foreground">
-              {t('oee.subtitle')}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+        <PageHeader
+          icon={<Gauge className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title="OEE Dashboard"
+          description={t('oee.subtitle')}
+          actions={
+            <>
             <Button variant="outline" onClick={exportToCSV}>
               <Download className="h-4 w-4 mr-2" />
               {t('oee.exportCsv')}
@@ -507,8 +506,9 @@ export default function OEEDashboard() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* U7 cross-links — OEE-focused view; the Command Center KPI strip + the
             device monitor give the wider live picture. */}
@@ -524,7 +524,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
+                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
                 <span className="hidden sm:inline">{t('oee.avgOee')}</span>
                 <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
               </CardTitle>
@@ -541,7 +541,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-500" />
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
                 <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
                 <span className="sm:hidden">{t('oee.machinesShort')}</span>
               </CardTitle>

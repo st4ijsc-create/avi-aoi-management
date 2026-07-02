@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,11 +102,11 @@ export function MqttTopicsMessagesContent() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "DELIVERED":
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        return <CheckCircle className="w-4 h-4 text-success" />;
       case "FAILED":
-        return <XCircle className="w-4 h-4 text-red-500" />;
+        return <XCircle className="w-4 h-4 text-destructive" />;
       case "PENDING":
-        return <Clock className="w-4 h-4 text-yellow-500" />;
+        return <Clock className="w-4 h-4 text-warning" />;
       default:
         return <AlertTriangle className="w-4 h-4 text-muted-foreground" />;
     }
@@ -165,24 +166,23 @@ export function MqttTopicsMessagesContent() {
     <>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">MQTT Topics & Messages</h1>
-            <p className="text-muted-foreground">
-              {t('mqtt.topicsMessages.pageDesc')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => refetchMessages()}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            <Button variant="outline" onClick={handleExportMessages}>
-              <Download className="w-4 h-4 mr-2" />
-              {t('mqtt.topicsMessages.exportJson')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<MessageSquare className="w-6 h-6" />}
+          title="MQTT Topics & Messages"
+          description={t('mqtt.topicsMessages.pageDesc')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refetchMessages()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <Button variant="outline" onClick={handleExportMessages}>
+                <Download className="w-4 h-4 mr-2" />
+                {t('mqtt.topicsMessages.exportJson')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -213,7 +213,7 @@ export function MqttTopicsMessagesContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-500">
+              <div className="text-2xl font-bold text-success">
                 {messageLogs.filter((m: any) => m.deliveryStatus === "DELIVERED").length}
               </div>
             </CardContent>
@@ -225,7 +225,7 @@ export function MqttTopicsMessagesContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-500">
+              <div className="text-2xl font-bold text-destructive">
                 {messageLogs.filter((m: any) => m.deliveryStatus === "FAILED").length}
               </div>
             </CardContent>

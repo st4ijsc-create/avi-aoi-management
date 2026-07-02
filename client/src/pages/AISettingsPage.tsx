@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -58,9 +59,9 @@ interface ApiKeyEntry {
 }
 
 const PROVIDER_INFO: Record<ApiKeyProvider, { label: string; icon: React.ReactNode; color: string }> = {
-  openai: { label: 'OpenAI', icon: <Brain className="h-4 w-4" />, color: 'bg-green-500/10 text-green-600' },
-  azure_openai: { label: 'Azure OpenAI', icon: <Globe className="h-4 w-4" />, color: 'bg-blue-500/10 text-blue-600' },
-  huggingface: { label: 'Hugging Face', icon: <Cpu className="h-4 w-4" />, color: 'bg-yellow-500/10 text-yellow-700' },
+  openai: { label: 'OpenAI', icon: <Brain className="h-4 w-4" />, color: 'bg-success/10 text-success' },
+  azure_openai: { label: 'Azure OpenAI', icon: <Globe className="h-4 w-4" />, color: 'bg-info/10 text-info' },
+  huggingface: { label: 'Hugging Face', icon: <Cpu className="h-4 w-4" />, color: 'bg-warning/10 text-warning' },
   custom: { label: 'Custom', icon: <Server className="h-4 w-4" />, color: 'bg-purple-500/10 text-purple-600' },
 };
 
@@ -79,17 +80,11 @@ export default function AISettingsPage() {
     <DashboardLayout>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Settings2 className="h-6 w-6" />
-              {t('aiSettings.title', 'AI Settings')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('aiSettings.description', 'Manage AI model configurations, API keys, and system settings')}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Settings2 className="h-6 w-6" />}
+          title={t('aiSettings.title', 'AI Settings')}
+          description={t('aiSettings.description', 'Manage AI model configurations, API keys, and system settings')}
+        />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -856,7 +851,7 @@ function HybridProviderSection() {
                     </div>
                     <div className="flex items-center gap-2">
                       {b.lastError && (
-                        <span className="text-xs text-red-600 truncate max-w-xs" title={b.lastError}>
+                        <span className="text-xs text-destructive truncate max-w-xs" title={b.lastError}>
                           {b.lastError}
                         </span>
                       )}
@@ -926,7 +921,7 @@ function HybridProviderSection() {
                       </td>
                       <td className="p-2 text-right">{e.totalTimeMs}</td>
                       <td className="p-2 text-right">{e.tokensPerSecond?.toFixed(1) ?? '—'}</td>
-                      <td className="p-2 text-red-600 truncate max-w-50" title={e.error}>{e.error || ''}</td>
+                      <td className="p-2 text-destructive truncate max-w-50" title={e.error}>{e.error || ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1088,8 +1083,8 @@ function MonitoringSection() {
                   <tr key={p} className="border-b">
                     <td className="p-2 font-mono">{p}</td>
                     <td className="p-2 text-right">{s.total}</td>
-                    <td className="p-2 text-right text-green-600">{s.ok}</td>
-                    <td className="p-2 text-right text-red-600">{s.fail}</td>
+                    <td className="p-2 text-right text-success">{s.ok}</td>
+                    <td className="p-2 text-right text-destructive">{s.fail}</td>
                     <td className="p-2 text-right">{s.total > 0 ? Math.round((s.ok / s.total) * 100) : 0}%</td>
                     <td className="p-2 text-right">{s.total > 0 ? Math.round(s.totalMs / s.total) : 0}</td>
                   </tr>
@@ -1180,8 +1175,8 @@ function MonitoringSection() {
           {rcaStatus?.lastRunStats ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div><div className="text-xs text-muted-foreground">Machines</div><div className="font-bold">{rcaStatus.lastRunStats.machinesProcessed}</div></div>
-              <div><div className="text-xs text-muted-foreground">Succeeded</div><div className="font-bold text-green-600">{rcaStatus.lastRunStats.succeeded}</div></div>
-              <div><div className="text-xs text-muted-foreground">Failed</div><div className="font-bold text-red-600">{rcaStatus.lastRunStats.failed}</div></div>
+              <div><div className="text-xs text-muted-foreground">Succeeded</div><div className="font-bold text-success">{rcaStatus.lastRunStats.succeeded}</div></div>
+              <div><div className="text-xs text-muted-foreground">Failed</div><div className="font-bold text-destructive">{rcaStatus.lastRunStats.failed}</div></div>
               <div><div className="text-xs text-muted-foreground">Duration</div><div className="font-bold">{rcaStatus.lastRunStats.durationMs} ms</div></div>
             </div>
           ) : (

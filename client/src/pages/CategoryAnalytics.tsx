@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/patterns";
 import { Loader2, PieChart, BarChart3, TrendingUp, Package, RefreshCw, Download, Calendar } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -191,57 +192,52 @@ export default function CategoryAnalytics() {
     <DashboardLayout title={t('dashboard.aviAoiManagement')} currentPath="/category-analytics">
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <PieChart className="h-6 w-6 text-primary" />
-              {t('reports.categoryAnalytics')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.categoryAnalyticsDesc')}
-            </p>
-          </div>
+        <PageHeader
+          icon={<PieChart className="h-6 w-6 text-primary" />}
+          title={t('reports.categoryAnalytics')}
+          description={t('reports.categoryAnalyticsDesc')}
+          actions={
+            <>
+              {/* Time Range */}
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={timeRange} onValueChange={(v: any) => setTimeRange(v)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">{t('common.today')}</SelectItem>
+                    <SelectItem value="week">{t('common.sevenDays')}</SelectItem>
+                    <SelectItem value="month">{t('common.thirtyDays')}</SelectItem>
+                    <SelectItem value="quarter">{t('common.ninetyDays')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="flex items-center gap-3">
-            {/* Time Range */}
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Select value={timeRange} onValueChange={(v: any) => setTimeRange(v)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
+              {/* Factory Filter */}
+              <Select value={selectedFactory} onValueChange={setSelectedFactory}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={t('common.allFactories')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="today">{t('common.today')}</SelectItem>
-                  <SelectItem value="week">{t('common.sevenDays')}</SelectItem>
-                  <SelectItem value="month">{t('common.thirtyDays')}</SelectItem>
-                  <SelectItem value="quarter">{t('common.ninetyDays')}</SelectItem>
+                  <SelectItem value="all">{t('common.allFactories')}</SelectItem>
+                  {factories?.map(f => (
+                    <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            {/* Factory Filter */}
-            <Select value={selectedFactory} onValueChange={setSelectedFactory}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('common.allFactories')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('common.allFactories')}</SelectItem>
-                {factories?.map(f => (
-                  <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Button variant="outline" size="icon" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
 
-            <Button variant="outline" size="icon" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-
-            <Button variant="outline" onClick={handleExport} disabled={!analyticsData}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('common.exportCSV')}
-            </Button>
-          </div>
-        </div>
+              <Button variant="outline" onClick={handleExport} disabled={!analyticsData}>
+                <Download className="h-4 w-4 mr-2" />
+                {t('common.exportCSV')}
+              </Button>
+            </>
+          }
+        />
 
         {isLoading ? (
           <div className="flex items-center justify-center h-96">
@@ -267,19 +263,19 @@ export default function CategoryAnalytics() {
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-green-500">{analyticsData.totals.ok.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-success">{analyticsData.totals.ok.toLocaleString()}</div>
                   <p className="text-sm text-muted-foreground">OK</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-red-500">{analyticsData.totals.ng.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-destructive">{analyticsData.totals.ng.toLocaleString()}</div>
                   <p className="text-sm text-muted-foreground">NG</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <div className="text-2xl font-bold text-orange-500">{analyticsData.totals.ntf.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-warning">{analyticsData.totals.ntf.toLocaleString()}</div>
                   <p className="text-sm text-muted-foreground">NTF</p>
                 </CardContent>
               </Card>
@@ -423,9 +419,9 @@ export default function CategoryAnalytics() {
                             </div>
                           </td>
                           <td className="text-right py-3 px-4 font-medium">{cat.total.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-green-500">{cat.ok.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-red-500">{cat.ng.toLocaleString()}</td>
-                          <td className="text-right py-3 px-4 text-orange-500">{cat.ntf.toLocaleString()}</td>
+                          <td className="text-right py-3 px-4 text-success">{cat.ok.toLocaleString()}</td>
+                          <td className="text-right py-3 px-4 text-destructive">{cat.ng.toLocaleString()}</td>
+                          <td className="text-right py-3 px-4 text-warning">{cat.ntf.toLocaleString()}</td>
                           <td className="text-right py-3 px-4">
                             <Badge 
                               variant={cat.yieldRate >= 95 ? 'default' : cat.yieldRate >= 90 ? 'secondary' : 'destructive'}

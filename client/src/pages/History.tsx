@@ -53,6 +53,7 @@ import {
   SquareCheck
 } from "lucide-react";
 import { LayoutGrid, List } from "lucide-react";
+import { PageHeader } from "@/components/patterns";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
@@ -895,10 +896,11 @@ export default function History() {
     >
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t("history.title")}</h1>
-          <p className="text-muted-foreground">{t("history.subtitle")}</p>
-        </div>
+        <PageHeader
+          icon={<HistoryIcon className="h-6 w-6" />}
+          title={t("history.title")}
+          description={t("history.subtitle")}
+        />
 
         {/* Recent Searches Chips */}
         {recentSearches.length > 0 && (
@@ -1388,13 +1390,13 @@ export default function History() {
                                   <td className="p-3 text-muted-foreground">{(inspection as any).stageCode || '-'}</td>
                                 )}
                                 {visibleColumns.okCount && (
-                                  <td className="p-3 text-right text-green-600">{(inspection as any).okCount ?? '-'}</td>
+                                  <td className="p-3 text-right text-success">{(inspection as any).okCount ?? '-'}</td>
                                 )}
                                 {visibleColumns.ngCount && (
-                                  <td className="p-3 text-right text-red-600">{(inspection as any).ngCount ?? '-'}</td>
+                                  <td className="p-3 text-right text-destructive">{(inspection as any).ngCount ?? '-'}</td>
                                 )}
                                 {visibleColumns.ntfCount && (
-                                  <td className="p-3 text-right text-yellow-600">{(inspection as any).ntfCount ?? '-'}</td>
+                                  <td className="p-3 text-right text-warning">{(inspection as any).ntfCount ?? '-'}</td>
                                 )}
                                 <td className="p-3 text-right">
                                   <Link href={`/inspection/${inspection.id}`}>
@@ -1813,10 +1815,10 @@ export default function History() {
           <TabsContent value="workstation">
             <div className="space-y-6">
               {/* Workstation Header */}
-              <Card className="glass-card bg-linear-to-r from-blue-500/10 to-cyan-500/10">
+              <Card className="glass-card bg-linear-to-r from-info/10 to-info/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
-                    <Factory className="h-6 w-6 text-blue-500" />{t("history.workstationAnalysis")}</CardTitle>
+                    <Factory className="h-6 w-6 text-info" />{t("history.workstationAnalysis")}</CardTitle>
                   <CardDescription>
                     {t("history.workstationAnalysisDesc")}
                   </CardDescription>
@@ -1940,19 +1942,19 @@ export default function History() {
                                   <div className="grid grid-cols-2 gap-2 text-xs mt-3">
                                     <div>
                                       <div className="text-muted-foreground">OK</div>
-                                      <div className="font-semibold text-green-600">{ws.okCount || 0}</div>
+                                      <div className="font-semibold text-success">{ws.okCount || 0}</div>
                                     </div>
                                     <div>
                                       <div className="text-muted-foreground">NG</div>
-                                      <div className="font-semibold text-red-600">{ws.ngCount || 0}</div>
+                                      <div className="font-semibold text-destructive">{ws.ngCount || 0}</div>
                                     </div>
                                     <div>
                                       <div className="text-muted-foreground">NTF</div>
-                                      <div className="font-semibold text-yellow-600">{ws.ntfCount || 0}</div>
+                                      <div className="font-semibold text-warning">{ws.ntfCount || 0}</div>
                                     </div>
                                     <div>
                                       <div className="text-muted-foreground">Yield</div>
-                                      <div className="font-semibold text-blue-600">{yieldRate.toFixed(2)}%</div>
+                                      <div className="font-semibold text-info">{yieldRate.toFixed(2)}%</div>
                                     </div>
                                   </div>
                                 </div>
@@ -2021,7 +2023,7 @@ export default function History() {
                       (topNGByWorkstation as any[]).map((point: any, index: number) => (
                         <div key={`${point.workstationId}-${point.measurementPointId}`} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                           <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-sm font-semibold text-red-600">
+                            <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center text-sm font-semibold text-destructive">
                               {index + 1}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -2031,11 +2033,11 @@ export default function History() {
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-red-600">{point.ngCount || 0}</div>
+                              <div className="text-sm font-semibold text-destructive">{point.ngCount || 0}</div>
                               <div className="text-xs text-muted-foreground">NG</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-yellow-600">{point.ntfCount || 0}</div>
+                              <div className="text-sm font-semibold text-warning">{point.ntfCount || 0}</div>
                               <div className="text-xs text-muted-foreground">NTF</div>
                             </div>
                           </div>
@@ -2093,10 +2095,10 @@ export default function History() {
                                 <td className="py-2 px-2">{ws.workstationName || t('common.unknown')}</td>
                                 <td className="py-2 px-2 text-xs text-muted-foreground">{ws.workstationCode}</td>
                                 <td className="text-center py-2 px-2">{ws.pointCount || 0}</td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">{ws.okCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">{ws.ngCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">{ws.ntfCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge className="bg-green-600">{yieldRate.toFixed(1)}%</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-success/10">{ws.okCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-destructive/10">{ws.ngCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-warning/10">{ws.ntfCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge className="bg-success">{yieldRate.toFixed(1)}%</Badge></td>
                               </tr>
                             );
                           })
@@ -2755,7 +2757,7 @@ export default function History() {
                     <Card className="glass-card">
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
-                          <Lightbulb className="h-5 w-5 text-yellow-500" />{t("history.improvementRecommendations")}</CardTitle>
+                          <Lightbulb className="h-5 w-5 text-warning" />{t("history.improvementRecommendations")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-3">
@@ -2905,7 +2907,7 @@ export default function History() {
                         <div className="space-y-2">
                           <p className="text-sm text-muted-foreground">{t("history.avgNtfYield")}</p>
                           <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-bold text-cyan-500">
+                            <span className="text-3xl font-bold text-info">
                               {((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%
                             </span>
                             <span className={`text-sm ${((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100) <= 1.0 ? 'text-success' : 'text-warning'}`}>

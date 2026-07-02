@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -734,12 +735,11 @@ export default function CorporateLayout() {
     <DashboardLayout title={t('corporate.corporateLayout')} navItems={navItems} currentPath="/corporate-layout">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{t('corporate.corporateVisualization')}</h1>
-            <p className="text-muted-foreground">{t('corporate.mapOverview')}</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageHeader
+          icon={<Building2 className="h-6 w-6" />}
+          title={t('corporate.corporateVisualization')}
+          description={t('corporate.mapOverview')}
+          actions={
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "2D" | "3D" | "MAP")}>
               <TabsList>
                 <TabsTrigger value="2D" className="gap-1">
@@ -756,8 +756,8 @@ export default function CorporateLayout() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-          </div>
-        </div>
+          }
+        />
 
         {/* Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -777,8 +777,8 @@ export default function CorporateLayout() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-500/10">
-                  <Warehouse className="h-5 w-5 text-cyan-500" />
+                <div className="p-2 rounded-lg bg-info/10">
+                  <Warehouse className="h-5 w-5 text-info" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{workshops?.length || 0}</p>
@@ -790,8 +790,8 @@ export default function CorporateLayout() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-500/10">
-                  <TrendingUp className="h-5 w-5 text-emerald-500" />
+                <div className="p-2 rounded-lg bg-success/10">
+                  <TrendingUp className="h-5 w-5 text-success" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
@@ -1076,21 +1076,21 @@ export default function CorporateLayout() {
                       <p className="text-2xl font-bold text-foreground">{selectedFactory.stats.total.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">{t('corporate.totalProducts')}</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-emerald-500/10">
-                      <p className="text-2xl font-bold text-emerald-500">{selectedFactory.stats.yieldRate.toFixed(1)}%</p>
+                    <div className="p-3 rounded-lg bg-success/10">
+                      <p className="text-2xl font-bold text-success">{selectedFactory.stats.yieldRate.toFixed(1)}%</p>
                       <p className="text-xs text-muted-foreground">{t('corporate.yieldRate')}</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-emerald-500/10">
+                    <div className="p-3 rounded-lg bg-success/10">
                       <div className="flex items-center gap-1">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                        <span className="text-lg font-bold text-emerald-500">{selectedFactory.stats.ok.toLocaleString()}</span>
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                        <span className="text-lg font-bold text-success">{selectedFactory.stats.ok.toLocaleString()}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">OK</p>
                     </div>
-                    <div className="p-3 rounded-lg bg-red-500/10">
+                    <div className="p-3 rounded-lg bg-destructive/10">
                       <div className="flex items-center gap-1">
-                        <XCircle className="h-4 w-4 text-red-500" />
-                        <span className="text-lg font-bold text-red-500">{selectedFactory.stats.ng.toLocaleString()}</span>
+                        <XCircle className="h-4 w-4 text-destructive" />
+                        <span className="text-lg font-bold text-destructive">{selectedFactory.stats.ng.toLocaleString()}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">NG</p>
                     </div>
@@ -1101,17 +1101,17 @@ export default function CorporateLayout() {
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
                       <span>{t('corporate.yieldRate')}</span>
                       <span className={
-                        selectedFactory.stats.yieldRate >= 95 ? "text-emerald-500" : 
-                        selectedFactory.stats.yieldRate >= 90 ? "text-amber-500" : "text-red-500"
+                        selectedFactory.stats.yieldRate >= 95 ? "text-success" :
+                        selectedFactory.stats.yieldRate >= 90 ? "text-warning" : "text-destructive"
                       }>
                         {selectedFactory.stats.yieldRate.toFixed(1)}%
                       </span>
                     </div>
                     <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
-                      <div 
+                      <div
                         className={`h-full rounded-full transition-all ${
-                          selectedFactory.stats.yieldRate >= 95 ? "bg-emerald-500" : 
-                          selectedFactory.stats.yieldRate >= 90 ? "bg-amber-500" : "bg-red-500"
+                          selectedFactory.stats.yieldRate >= 95 ? "bg-success" :
+                          selectedFactory.stats.yieldRate >= 90 ? "bg-warning" : "bg-destructive"
                         }`}
                         style={{ width: `${selectedFactory.stats.yieldRate}%` }}
                       />
@@ -1122,14 +1122,14 @@ export default function CorporateLayout() {
                   {alertSummary?.[selectedFactory.id] && alertSummary[selectedFactory.id].length > 0 && (
                     <div>
                       <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
                         {t('corporate.activeAlerts', 'Active Alerts')} ({alertSummary[selectedFactory.id].length})
                       </h4>
                       <div className="space-y-2 max-h-40 overflow-y-auto">
                         {alertSummary[selectedFactory.id].map((alert: any) => (
-                          <div key={alert.id} className="p-2 rounded-lg border border-red-500/20 bg-red-500/5 text-sm">
+                          <div key={alert.id} className="p-2 rounded-lg border border-destructive/20 bg-destructive/5 text-sm">
                             <div className="flex items-center justify-between">
-                              <span className="font-medium text-red-500">{alert.alertName}</span>
+                              <span className="font-medium text-destructive">{alert.alertName}</span>
                               <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
                                 {alert.alertType}
                               </Badge>
@@ -1152,7 +1152,7 @@ export default function CorporateLayout() {
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <Warehouse className="h-4 w-4 text-cyan-500" />
+                              <Warehouse className="h-4 w-4 text-info" />
                               <span className="font-medium text-sm group-hover:text-primary transition-colors">{ws.name}</span>
                             </div>
                             <Badge variant={(ws.stats?.yieldRate ?? 0) >= 95 ? "default" : "secondary"}>
@@ -1235,15 +1235,15 @@ export default function CorporateLayout() {
                       <p className="text-xs text-muted-foreground">Total</p>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-emerald-500">{factory.stats.ok.toLocaleString()}</p>
+                      <p className="text-sm font-semibold text-success">{factory.stats.ok.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">OK</p>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-red-500">{factory.stats.ng.toLocaleString()}</p>
+                      <p className="text-sm font-semibold text-destructive">{factory.stats.ng.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">NG</p>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-amber-500">{factory.stats.ntf.toLocaleString()}</p>
+                      <p className="text-sm font-semibold text-warning">{factory.stats.ntf.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">NTF</p>
                     </div>
                   </div>
@@ -1252,8 +1252,8 @@ export default function CorporateLayout() {
                     <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
                       <div 
                         className={`h-full rounded-full ${
-                          factory.stats.yieldRate >= 95 ? "bg-emerald-500" : 
-                          factory.stats.yieldRate >= 90 ? "bg-amber-500" : "bg-red-500"
+                          factory.stats.yieldRate >= 95 ? "bg-success" :
+                          factory.stats.yieldRate >= 90 ? "bg-warning" : "bg-destructive"
                         }`}
                         style={{ width: `${factory.stats.yieldRate}%` }}
                       />

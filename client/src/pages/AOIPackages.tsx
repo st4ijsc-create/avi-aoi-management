@@ -5,6 +5,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -134,36 +135,32 @@ export default function AOIPackages() {
     <DashboardLayout>
       <div className="space-y-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Camera className="h-8 w-8 text-primary" />
-              {t('packages.title')}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t('packages.description')}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              packagesQuery.refetch();
-              statsQuery.refetch();
-              queueQuery.refetch();
-            }}
-          >
-            <RefreshCcw className="h-4 w-4 mr-2" />
-            {t('common.refresh')}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Camera className="h-6 w-6" />}
+          title={t('packages.title')}
+          description={t('packages.description')}
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                packagesQuery.refetch();
+                statsQuery.refetch();
+                queueQuery.refetch();
+              }}
+            >
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              {t('common.refresh')}
+            </Button>
+          }
+        />
 
         {/* Stats Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <Package className="h-8 w-8 text-blue-500" />
+                <Package className="h-8 w-8 text-info" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalPackages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.total || 0}</p>
@@ -444,7 +441,7 @@ export default function AOIPackages() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {queueQuery.data.map((metric, i) => (
-                      <Card key={i} className="border-l-4 border-l-blue-500">
+                      <Card key={i} className="border-l-4 border-l-info">
                         <CardContent className="p-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <Badge variant="outline" className="font-mono">

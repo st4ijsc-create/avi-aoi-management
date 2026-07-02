@@ -11,10 +11,13 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { PageHeader, MetricCard } from "@/components/patterns";
+import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   Eye, LayoutDashboard, FileText, History as HistoryIcon, Gauge, BarChart3, Factory,
+  Boxes, CheckCircle2, XCircle, TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,6 +46,17 @@ export default function ViewerHome() {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
 
+  // Read-only "today at a glance" — reuses the SAME dashboard.getStats query the
+  // other role homes/dashboards use (role-scoped on the server). Never writes.
+  const statsQuery = trpc.dashboard.getStats.useQuery(
+    {},
+    { refetchOnWindowFocus: false, retry: false, staleTime: 60_000 },
+  );
+  const stats = statsQuery.data as
+    | { total?: number; ok?: number; ng?: number; ntf?: number; yieldRate?: number }
+    | undefined;
+  const loadingStats = statsQuery.isLoading;
+
   const tiles: Tile[] = [
     { icon: LayoutDashboard, label: t("viewer.tiles.dashboard", "Bảng điều khiển"), description: t("viewer.tiles.dashboardDesc", "Tổng quan KPI"), accent: "border-sky-500/30 text-sky-600 dark:text-sky-400", to: "/dashboard" },
     { icon: Gauge, label: t("viewer.tiles.oee", "OEE"), description: t("viewer.tiles.oeeDesc", "Năng suất thiết bị"), accent: "border-emerald-500/30 text-emerald-600 dark:text-emerald-400", to: "/oee-dashboard" },
@@ -55,18 +69,45 @@ export default function ViewerHome() {
   return (
     <DashboardLayout>
       <div className="mx-auto w-full max-w-5xl space-y-6 p-2 sm:p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <Eye className="h-7 w-7" />
+        <PageHeader
+          icon={<Eye className="h-6 w-6" />}
+          title={t("viewer.title", "Trang xem nhanh")}
+          description={t("viewer.subtitle", "Truy cập nhanh các bảng & báo cáo (chỉ xem)")}
+          actions={
+            <Badge variant="secondary" className="gap-1"><Eye className="h-3 w-3" />{t("common.viewOnly", "Chỉ xem")}</Badge>
+          }
+        />
+
+        {/* Read-only "today at a glance" strip (existing dashboard.getStats query) */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("viewer.glanceTitle", "Hôm nay")}</h2>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <MetricCard
+              icon={<TrendingUp className="h-5 w-5" />}
+              label={t("viewer.glance.yield", "Tỷ lệ đạt")}
+              value={loadingStats ? "…" : stats?.yieldRate != null ? `${stats.yieldRate.toFixed(1)}%` : "—"}
+              tone="success"
+            />
+            <MetricCard
+              icon={<Boxes className="h-5 w-5" />}
+              label={t("viewer.glance.total", "Tổng sản phẩm")}
+              value={loadingStats ? "…" : (stats?.total ?? 0).toLocaleString()}
+              tone="info"
+            />
+            <MetricCard
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label={t("viewer.glance.ok", "Đạt (OK)")}
+              value={loadingStats ? "…" : (stats?.ok ?? 0).toLocaleString()}
+              tone="success"
+            />
+            <MetricCard
+              icon={<XCircle className="h-5 w-5" />}
+              label={t("viewer.glance.ng", "Lỗi (NG)")}
+              value={loadingStats ? "…" : (stats?.ng ?? 0).toLocaleString()}
+              tone="error"
+            />
           </div>
-          <div className="flex-1">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
-              {t("viewer.title", "Trang xem nhanh")}
-              <Badge variant="secondary" className="gap-1"><Eye className="h-3 w-3" />{t("common.viewOnly", "Chỉ xem")}</Badge>
-            </h1>
-            <p className="text-sm text-muted-foreground">{t("viewer.subtitle", "Truy cập nhanh các bảng & báo cáo (chỉ xem)")}</p>
-          </div>
-        </div>
+        </section>
 
         <TodayBriefing />
 

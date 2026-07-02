@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -145,10 +146,10 @@ function FactorCard({
   trend?: number;
 }) {
   const getColor = (value: number) => {
-    if (value >= 80) return "text-green-500";
-    if (value >= 60) return "text-yellow-500";
+    if (value >= 80) return "text-success";
+    if (value >= 60) return "text-warning";
     if (value >= 40) return "text-orange-500";
-    return "text-red-500";
+    return "text-destructive";
   };
 
   return (
@@ -355,27 +356,23 @@ export default function MachineHealthMonitoring() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Heart className="h-6 w-6 text-red-500" />
-              Machine Health Monitoring
-            </h1>
-            <p className="text-muted-foreground">
-              {t('machines.trackHealthAndMaintenance')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={exportHealthReport}>
-              <Download className="h-4 w-4 mr-2" />
-              {t('machines.exportReport')}
-            </Button>
-            <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); }}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('machines.refresh')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Heart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title="Machine Health Monitoring"
+          description={t('machines.trackHealthAndMaintenance')}
+          actions={
+            <>
+              <Button variant="outline" onClick={exportHealthReport}>
+                <Download className="h-4 w-4 mr-2" />
+                {t('machines.exportReport')}
+              </Button>
+              <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); }}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('machines.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Machine Selection */}
         <Card>
@@ -476,12 +473,12 @@ export default function MachineHealthMonitoring() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-blue-500/10">
-                      <Activity className="h-6 w-6 text-blue-500" />
+                    <div className="p-3 rounded-lg bg-info/10">
+                      <Activity className="h-6 w-6 text-info" />
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Health TB</p>
-                      <p className="text-2xl font-bold text-blue-500">
+                      <p className="text-2xl font-bold text-info">
                         {machineComparisonData.length > 0 
                           ? (machineComparisonData.reduce((sum, m) => sum + m.healthScore, 0) / machineComparisonData.length).toFixed(0)
                           : 0}%

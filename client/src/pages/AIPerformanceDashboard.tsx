@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -139,34 +140,30 @@ export default function AIPerformanceDashboard() {
     <DashboardLayout>
       <div className="container py-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Brain className="h-6 w-6" />
-              {t('reports.aiModelPerformanceDashboard')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('reports.aiModelPerformanceDesc')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | 'all') => setDateRange(v)}>
-              <SelectTrigger className="w-37.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">{t('common.sevenDays')}</SelectItem>
-                <SelectItem value="30d">{t('common.thirtyDays')}</SelectItem>
-                <SelectItem value="90d">{t('common.ninetyDays')}</SelectItem>
-                <SelectItem value="all">{t('common.all')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={() => refetchStats()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Brain className="h-6 w-6" />}
+          title={t('reports.aiModelPerformanceDashboard')}
+          description={t('reports.aiModelPerformanceDesc')}
+          actions={
+            <>
+              <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | 'all') => setDateRange(v)}>
+                <SelectTrigger className="w-37.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">{t('common.sevenDays')}</SelectItem>
+                  <SelectItem value="30d">{t('common.thirtyDays')}</SelectItem>
+                  <SelectItem value="90d">{t('common.ninetyDays')}</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => refetchStats()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -204,8 +201,8 @@ export default function AIPerformanceDashboard() {
                     {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.precision || 0).toFixed(1)}%`}
                   </div>
                 </div>
-                <div className="p-3 rounded-full bg-blue-500/10">
-                  <Zap className="h-6 w-6 text-blue-500" />
+                <div className="p-3 rounded-full bg-info/10">
+                  <Zap className="h-6 w-6 text-info" />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -283,19 +280,19 @@ export default function AIPerformanceDashboard() {
                     <div className="space-y-4">
                       <div className="flex items-center justify-center gap-8">
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-green-500">
+                          <div className="text-3xl font-bold text-success">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'CORRECT').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.correct')}</div>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-red-500">
+                          <div className="text-3xl font-bold text-destructive">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'INCORRECT').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.incorrect')}</div>
                         </div>
                         <div className="text-center">
-                          <div className="text-3xl font-bold text-yellow-500">
+                          <div className="text-3xl font-bold text-warning">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'PARTIAL').length || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">{t('reports.partial')}</div>
@@ -314,21 +311,21 @@ export default function AIPerformanceDashboard() {
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.correct')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-green-500 transition-all" style={{ width: `${total ? (correct / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-success transition-all" style={{ width: `${total ? (correct / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((correct / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.incorrect')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-red-500 transition-all" style={{ width: `${total ? (incorrect / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-destructive transition-all" style={{ width: `${total ? (incorrect / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((incorrect / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="w-20 text-sm">{t('reports.partial')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-yellow-500 transition-all" style={{ width: `${total ? (partial / total) * 100 : 0}%` }} />
+                                  <div className="h-full bg-warning transition-all" style={{ width: `${total ? (partial / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((partial / total) * 100).toFixed(0) : 0}%</span>
                               </div>
@@ -565,11 +562,11 @@ export default function AIPerformanceDashboard() {
                                 </div>
                                 <div>
                                   <div className="text-sm text-muted-foreground">{t('reports.correctSamples')}</div>
-                                  <div className="font-medium text-green-600">{batch.correctSamples}</div>
+                                  <div className="font-medium text-success">{batch.correctSamples}</div>
                                 </div>
                                 <div>
                                   <div className="text-sm text-muted-foreground">{t('reports.incorrectSamples')}</div>
-                                  <div className="font-medium text-red-600">{batch.incorrectSamples}</div>
+                                  <div className="font-medium text-destructive">{batch.incorrectSamples}</div>
                                 </div>
                                 <div className="col-span-2">
                                   <div className="text-sm text-muted-foreground">{t('reports.createdDate')}</div>
@@ -637,12 +634,12 @@ export default function AIPerformanceDashboard() {
                             <div className="flex items-center gap-3">
                               <div className={cn(
                                 "p-2 rounded-lg",
-                                suggestion.suggestedResult === 'NG' ? "bg-red-500/10" : "bg-green-500/10"
+                                suggestion.suggestedResult === 'NG' ? "bg-destructive/10" : "bg-success/10"
                               )}>
                                 {suggestion.suggestedResult === 'NG' ? (
-                                  <XCircle className="h-4 w-4 text-red-500" />
+                                  <XCircle className="h-4 w-4 text-destructive" />
                                 ) : (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                  <CheckCircle2 className="h-4 w-4 text-success" />
                                 )}
                               </div>
                               <div>
@@ -827,9 +824,9 @@ function EvalBeforeAfterSection() {
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               {report.gate.pass ? (
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <CheckCircle2 className="h-5 w-5 text-success" />
               ) : (
-                <XCircle className="h-5 w-5 text-red-500" />
+                <XCircle className="h-5 w-5 text-destructive" />
               )}
               <div className="flex-1">
                 <p className="font-medium">

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
+import { PageHeader } from "@/components/patterns";
 import { toast } from "sonner";
 import { ArrowRight, Plus, Minus } from "lucide-react";
 
@@ -53,12 +54,10 @@ export function ProductComparison() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">{t('products.comparison')}</h1>
-          <p className="text-muted-foreground mt-2">
-            {t('products.comparisonDescription')}
-          </p>
-        </div>
+        <PageHeader
+          title={t('products.comparison')}
+          description={t('products.comparisonDescription')}
+        />
 
         {/* Product Selection */}
         <Card>
@@ -126,7 +125,7 @@ export function ProductComparison() {
                   <CardTitle className="text-sm font-medium">{t('products.commonPoints')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-600">{comparison.common.length}</div>
+                  <div className="text-2xl font-bold text-success">{comparison.common.length}</div>
                   <p className="text-xs text-muted-foreground">{t('products.identical')}</p>
                 </CardContent>
               </Card>
@@ -148,7 +147,7 @@ export function ProductComparison() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Minus className="h-4 w-4 text-red-500" />
+                    <Minus className="h-4 w-4 text-destructive" />
                     {t('products.onlyIn')} {product1?.code}
                   </CardTitle>
                   <CardDescription>
@@ -161,7 +160,7 @@ export function ProductComparison() {
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct1.map((point) => (
-                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-red-200">
+                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-destructive/30">
                           <p className="font-medium text-sm">{point.code} - {point.name}</p>
                           <p className="text-xs text-muted-foreground">{point.measurementType}</p>
                         </div>
@@ -175,7 +174,7 @@ export function ProductComparison() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Plus className="h-4 w-4 text-blue-500" />
+                    <Plus className="h-4 w-4 text-info" />
                     {t('products.onlyIn')} {product2?.code}
                   </CardTitle>
                   <CardDescription>
@@ -188,7 +187,7 @@ export function ProductComparison() {
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct2.map((point) => (
-                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-blue-200">
+                        <div key={point.id} className="p-2 bg-muted/50 rounded border border-info/30">
                           <p className="font-medium text-sm">{point.code} - {point.name}</p>
                           <p className="text-xs text-muted-foreground">{point.measurementType}</p>
                         </div>

@@ -29,6 +29,7 @@ import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import DeviceOnboardingWizard from "@/components/DeviceOnboardingWizard";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -135,10 +136,10 @@ function Sparkline({ points }: { points: number[] }) {
 
 function ConnChip({ state, t }: { state: ConnState; t: (k: string, f: string) => string }) {
   if (state === "online")
-    return <Badge className="bg-emerald-500 text-white"><Wifi className="mr-1 h-3 w-3" />{t("deviceMonitor.online", "Trực tuyến")}</Badge>;
+    return <Badge className="bg-success text-white"><Wifi className="mr-1 h-3 w-3" />{t("deviceMonitor.online", "Trực tuyến")}</Badge>;
   if (state === "offline")
     return <Badge variant="outline" className="text-muted-foreground"><WifiOff className="mr-1 h-3 w-3" />{t("deviceMonitor.offline", "Ngoại tuyến")}</Badge>;
-  return <Badge variant="outline" className="border-amber-400 text-amber-600"><HelpCircle className="mr-1 h-3 w-3" />{t("deviceMonitor.unknown", "Chưa rõ")}</Badge>;
+  return <Badge variant="outline" className="border-warning text-warning"><HelpCircle className="mr-1 h-3 w-3" />{t("deviceMonitor.unknown", "Chưa rõ")}</Badge>;
 }
 
 function SourceIcon({ source }: { source: SourceKind }) {
@@ -332,25 +333,21 @@ export default function UnifiedDeviceMonitor() {
     <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
       <div className="space-y-6 p-4 md:p-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold">
-              <Activity className="h-6 w-6 text-primary" />
-              {t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("deviceMonitor.subtitle", "Mọi thiết bị (máy · adapter OT · node biên) trong một bảng — trạng thái kết nối, telemetry trực tiếp & test kết nối")}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setWizardOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" />{t("deviceMonitor.onboard", "Kết nối thiết bị mới")}
-            </Button>
-            <Button variant="outline" onClick={refetchAll}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />{t("common.refresh", "Làm mới")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")}
+          description={t("deviceMonitor.subtitle", "Mọi thiết bị (máy · adapter OT · node biên) trong một bảng — trạng thái kết nối, telemetry trực tiếp & test kết nối")}
+          actions={
+            <>
+              <Button onClick={() => setWizardOpen(true)}>
+                <Plus className="mr-1.5 h-4 w-4" />{t("deviceMonitor.onboard", "Kết nối thiết bị mới")}
+              </Button>
+              <Button variant="outline" onClick={refetchAll}>
+                <RefreshCw className="mr-1.5 h-4 w-4" />{t("common.refresh", "Làm mới")}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -358,17 +355,17 @@ export default function UnifiedDeviceMonitor() {
             <Server className="h-7 w-7 text-muted-foreground" />
             <div><p className="text-2xl font-bold">{counts.total}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.totalDevices", "Tổng thiết bị")}</p></div>
           </CardContent></Card>
-          <Card className="border-emerald-500/40"><CardContent className="flex items-center gap-3 pt-4">
-            <Wifi className="h-7 w-7 text-emerald-500" />
-            <div><p className="text-2xl font-bold text-emerald-500">{counts.online}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.online", "Trực tuyến")}</p></div>
+          <Card className="border-success/40"><CardContent className="flex items-center gap-3 pt-4">
+            <Wifi className="h-7 w-7 text-success" />
+            <div><p className="text-2xl font-bold text-success">{counts.online}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.online", "Trực tuyến")}</p></div>
           </CardContent></Card>
-          <Card className="border-red-500/40"><CardContent className="flex items-center gap-3 pt-4">
-            <WifiOff className="h-7 w-7 text-red-500" />
-            <div><p className="text-2xl font-bold text-red-500">{counts.offline}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.offline", "Ngoại tuyến")}</p></div>
+          <Card className="border-destructive/40"><CardContent className="flex items-center gap-3 pt-4">
+            <WifiOff className="h-7 w-7 text-destructive" />
+            <div><p className="text-2xl font-bold text-destructive">{counts.offline}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.offline", "Ngoại tuyến")}</p></div>
           </CardContent></Card>
-          <Card className="border-amber-400/40"><CardContent className="flex items-center gap-3 pt-4">
-            <HelpCircle className="h-7 w-7 text-amber-500" />
-            <div><p className="text-2xl font-bold text-amber-500">{counts.unknown}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.unknown", "Chưa rõ")}</p></div>
+          <Card className="border-warning/40"><CardContent className="flex items-center gap-3 pt-4">
+            <HelpCircle className="h-7 w-7 text-warning" />
+            <div><p className="text-2xl font-bold text-warning">{counts.unknown}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.unknown", "Chưa rõ")}</p></div>
           </CardContent></Card>
         </div>
 
@@ -541,10 +538,10 @@ function FrameworkChip({
   onClick?: () => void;
   t: (k: string, f: string) => string;
 }) {
-  let cls = "border-amber-400 text-amber-600";
+  let cls = "border-warning text-warning";
   let txt = t("deviceMonitor.flagUnknown", "chưa rõ");
   if (loading) { txt = "…"; }
-  else if (enabled === true) { cls = "border-emerald-500 text-emerald-600"; txt = t("deviceMonitor.flagOn", "bật"); }
+  else if (enabled === true) { cls = "border-success text-success"; txt = t("deviceMonitor.flagOn", "bật"); }
   else if (enabled === false) { cls = "border-muted-foreground/40 text-muted-foreground"; txt = t("deviceMonitor.flagOff", "tắt"); }
   const inner = <>{label}<span className="opacity-70">· {txt}</span></>;
   const base = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${cls}`;

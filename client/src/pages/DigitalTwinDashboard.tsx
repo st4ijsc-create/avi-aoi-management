@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/patterns";
 import {
   Boxes,
   Activity,
@@ -119,17 +120,11 @@ export default function DigitalTwinDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <Boxes className="h-7 w-7 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("nav.digitalTwin", "Digital Twin")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("digitalTwin.subtitle", "Trạng thái máy realtime · heatmap lỗi · mô phỏng what-if")}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Boxes className="h-6 w-6" />}
+          title={t("nav.digitalTwin", "Digital Twin")}
+          description={t("digitalTwin.subtitle", "Trạng thái máy realtime · heatmap lỗi · mô phỏng what-if")}
+        />
 
         {/* U7 cross-links to the differentiated twin/overview surfaces. */}
         <RelatedViews
@@ -153,28 +148,28 @@ export default function DigitalTwinDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.running", "Đang chạy")}</CardTitle>
-              <Activity className="h-4 w-4 text-emerald-500" />
+              <Activity className="h-4 w-4 text-success" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">{kpis.running}</div>
+              <div className="text-2xl font-bold text-success">{kpis.running}</div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.atRisk", "Nguy cơ hỏng")}</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4 text-warning" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-600">{kpis.atRisk}</div>
+              <div className="text-2xl font-bold text-warning">{kpis.atRisk}</div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t("digitalTwin.lowHealth", "Health thấp")}</CardTitle>
-              <Heart className="h-4 w-4 text-rose-500" />
+              <Heart className="h-4 w-4 text-destructive" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-rose-600">{kpis.lowHealth}</div>
+              <div className="text-2xl font-bold text-destructive">{kpis.lowHealth}</div>
             </CardContent>
           </Card>
         </div>

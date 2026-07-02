@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/patterns";
 import {
   BarChart3,
   RefreshCw,
@@ -119,21 +120,17 @@ export function ParetoAnalysisContent() {
   return (
       <div className="space-y-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <BarChart3 className="h-8 w-8 text-primary" />
-              {t("pareto.title", "Phân tích Pareto")}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t("pareto.description", "Phân tích 80/20 - xác định nguyên nhân chính gây lỗi")}
-            </p>
-          </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {t("common.refresh", "Làm mới")}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<BarChart3 className="h-8 w-8 text-primary" />}
+          title={t("pareto.title", "Phân tích Pareto")}
+          description={t("pareto.description", "Phân tích 80/20 - xác định nguyên nhân chính gây lỗi")}
+          actions={
+            <Button onClick={handleRefresh} variant="outline" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t("common.refresh", "Làm mới")}
+            </Button>
+          }
+        />
 
         {/* Filters */}
         <Card>
@@ -360,7 +357,7 @@ function ParetoTabContent({
             <div className="text-sm text-muted-foreground">
               {t("pareto.pareto80Categories", "Top 80% danh mục")}
             </div>
-            <div className="text-2xl font-bold text-orange-500">
+            <div className="text-2xl font-bold text-warning">
               {data.pareto80Categories?.join(", ") || "-"}
             </div>
           </CardContent>

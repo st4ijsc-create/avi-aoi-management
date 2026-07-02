@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,10 +46,10 @@ import {
 import { toast } from "sonner";
 
 const decisionColors: Record<string, string> = {
-  AUTO_OK: "bg-green-500",
-  AUTO_NG: "bg-red-500",
-  NEEDS_REVIEW: "bg-yellow-500",
-  MANUAL: "bg-blue-500",
+  AUTO_OK: "bg-success",
+  AUTO_NG: "bg-destructive",
+  NEEDS_REVIEW: "bg-warning",
+  MANUAL: "bg-info",
 };
 
 export default function AIQualityGatePage() {
@@ -117,29 +118,23 @@ export default function AIQualityGatePage() {
     <DashboardLayout>
       <div className="flex flex-col gap-6 p-4 md:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-              <ShieldCheck className="h-6 w-6 text-green-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("qg.title", "AI Quality Gate")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("qg.subtitle", "Quản lý cổng chất lượng tự động - Tự động phân loại OK/NG/Cần đánh giá")}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { refetchConfigs(); refetchResults(); }}>
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              {t("common.refresh", "Làm mới")}
-            </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              {t("qg.createConfig", "Tạo cấu hình")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<ShieldCheck className="h-6 w-6" />}
+          title={t("qg.title", "AI Quality Gate")}
+          description={t("qg.subtitle", "Quản lý cổng chất lượng tự động - Tự động phân loại OK/NG/Cần đánh giá")}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => { refetchConfigs(); refetchResults(); }}>
+                <RefreshCw className="h-4 w-4 mr-1.5" />
+                {t("common.refresh", "Làm mới")}
+              </Button>
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                {t("qg.createConfig", "Tạo cấu hình")}
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
         {stats && (
@@ -147,7 +142,7 @@ export default function AIQualityGatePage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <CheckCircle className="h-4 w-4 text-success" />
                   <span className="text-sm text-muted-foreground">{t("qg.autoOk", "Auto OK")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.autoOk ?? 0}</p>
@@ -156,7 +151,7 @@ export default function AIQualityGatePage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <XCircle className="h-4 w-4 text-red-500" />
+                  <XCircle className="h-4 w-4 text-destructive" />
                   <span className="text-sm text-muted-foreground">{t("qg.autoNg", "Auto NG")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.autoNg ?? 0}</p>
@@ -165,7 +160,7 @@ export default function AIQualityGatePage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                  <AlertTriangle className="h-4 w-4 text-warning" />
                   <span className="text-sm text-muted-foreground">{t("qg.needsReview", "Cần đánh giá")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.needsReview ?? 0}</p>
@@ -174,7 +169,7 @@ export default function AIQualityGatePage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-blue-500" />
+                  <BarChart3 className="h-4 w-4 text-info" />
                   <span className="text-sm text-muted-foreground">{t("qg.total", "Tổng cộng")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">{stats.total ?? 0}</p>
@@ -225,8 +220,8 @@ export default function AIQualityGatePage() {
                           <TableCell className="font-medium">{cfg.name}</TableCell>
                           <TableCell>
                             <div className="flex gap-1.5 text-xs">
-                              <Badge variant="outline" className="text-green-600">OK≥{cfg.autoOkThreshold}</Badge>
-                              <Badge variant="outline" className="text-red-600">NG≥{cfg.autoNgThreshold}</Badge>
+                              <Badge variant="outline" className="text-success">OK≥{cfg.autoOkThreshold}</Badge>
+                              <Badge variant="outline" className="text-destructive">NG≥{cfg.autoNgThreshold}</Badge>
                             </div>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
@@ -321,7 +316,7 @@ export default function AIQualityGatePage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-green-600 h-7 text-xs"
+                                  className="text-success h-7 text-xs"
                                   onClick={() => reviewDecision.mutate({ resultId: r.id, reviewDecision: "OK" })}
                                 >
                                   OK
@@ -329,7 +324,7 @@ export default function AIQualityGatePage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-red-600 h-7 text-xs"
+                                  className="text-destructive h-7 text-xs"
                                   onClick={() => reviewDecision.mutate({ resultId: r.id, reviewDecision: "NG" })}
                                 >
                                   NG

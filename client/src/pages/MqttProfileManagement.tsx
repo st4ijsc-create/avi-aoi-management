@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -369,64 +370,63 @@ export function MqttProfileManagementContent() {
     <>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{t('mqtt.profileMgmt.title')}</h1>
-            <p className="text-muted-foreground">
-              {t('mqtt.profileMgmt.pageDesc')}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={async () => {
-              const result = await refetchExport();
-              if (result.data) {
-                const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `mqtt-profiles-${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success(t('mqtt.profileMgmt.exportProfilesSuccess'));
-              }
-            }}>
-              <Download className="h-4 w-4 mr-2" />
-              Export Profiles
-            </Button>
-            <Button variant="outline" onClick={async () => {
-              const result = await refetchAssignmentReport();
-              if (result.data) {
-                const csvData = typeof result.data.data === 'string' ? result.data.data : JSON.stringify(result.data.data);
-                const blob = new Blob([csvData], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `mqtt-assignments-${new Date().toISOString().split('T')[0]}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success(t('mqtt.profileMgmt.exportAssignmentsSuccess', { total: result.data.total }));
-              }
-            }}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Assignments
-            </Button>
-            <Button variant="outline" onClick={() => setShowImportDialog(true)}>
-              <Upload className="h-4 w-4 mr-2" />
-              Import
-            </Button>
-            <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('mqtt.profileMgmt.createProfile')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Server className="h-6 w-6" />}
+          title={t('mqtt.profileMgmt.title')}
+          description={t('mqtt.profileMgmt.pageDesc')}
+          actions={
+            <>
+              <Button variant="outline" onClick={async () => {
+                const result = await refetchExport();
+                if (result.data) {
+                  const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `mqtt-profiles-${new Date().toISOString().split('T')[0]}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success(t('mqtt.profileMgmt.exportProfilesSuccess'));
+                }
+              }}>
+                <Download className="h-4 w-4 mr-2" />
+                Export Profiles
+              </Button>
+              <Button variant="outline" onClick={async () => {
+                const result = await refetchAssignmentReport();
+                if (result.data) {
+                  const csvData = typeof result.data.data === 'string' ? result.data.data : JSON.stringify(result.data.data);
+                  const blob = new Blob([csvData], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `mqtt-assignments-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success(t('mqtt.profileMgmt.exportAssignmentsSuccess', { total: result.data.total }));
+                }
+              }}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export Assignments
+              </Button>
+              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import
+              </Button>
+              <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
+                <Plus className="h-4 w-4 mr-2" />
+                {t('mqtt.profileMgmt.createProfile')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Connection Health Overview */}
         {connectionHealth && (
           <Card className={`border-l-4 ${
-            connectionHealth.overall.status === 'healthy' ? 'border-l-green-500' :
-            connectionHealth.overall.status === 'warning' ? 'border-l-yellow-500' :
-            connectionHealth.overall.status === 'error' ? 'border-l-red-500' : 'border-l-gray-500'
+            connectionHealth.overall.status === 'healthy' ? 'border-l-success' :
+            connectionHealth.overall.status === 'warning' ? 'border-l-warning' :
+            connectionHealth.overall.status === 'error' ? 'border-l-destructive' : 'border-l-muted-foreground'
           }`}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -446,25 +446,25 @@ export function MqttProfileManagementContent() {
                   <p className="text-xs text-muted-foreground">Total Profiles</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-500 flex items-center justify-center gap-1">
+                  <div className="text-2xl font-bold text-success flex items-center justify-center gap-1">
                     <Wifi className="h-4 w-4" />
                     {connectionHealth.overall.healthy}
                   </div>
                   <p className="text-xs text-muted-foreground">Healthy</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-yellow-500">{connectionHealth.overall.warning}</div>
+                  <div className="text-2xl font-bold text-warning">{connectionHealth.overall.warning}</div>
                   <p className="text-xs text-muted-foreground">Warning</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-red-500 flex items-center justify-center gap-1">
+                  <div className="text-2xl font-bold text-destructive flex items-center justify-center gap-1">
                     <WifiOff className="h-4 w-4" />
                     {connectionHealth.overall.error}
                   </div>
                   <p className="text-xs text-muted-foreground">Error</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-500">{connectionHealth.overall.unknown}</div>
+                  <div className="text-2xl font-bold text-muted-foreground">{connectionHealth.overall.unknown}</div>
                   <p className="text-xs text-muted-foreground">Unknown</p>
                 </div>
               </div>
@@ -476,10 +476,10 @@ export function MqttProfileManagementContent() {
                     {connectionHealth.profiles.map((profile) => (
                       <div key={profile.profileId} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
                         <div className="flex items-center gap-2">
-                          {profile.status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                          {profile.status === 'warning' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
-                          {profile.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
-                          {profile.status === 'unknown' && <Activity className="h-4 w-4 text-gray-500" />}
+                          {profile.status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-success" />}
+                          {profile.status === 'warning' && <AlertCircle className="h-4 w-4 text-warning" />}
+                          {profile.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
+                          {profile.status === 'unknown' && <Activity className="h-4 w-4 text-muted-foreground" />}
                           <span className="font-medium">{profile.profileName}</span>
                           <span className="text-xs text-muted-foreground">({profile.brokerUrl}:{profile.port})</span>
                         </div>
@@ -531,7 +531,7 @@ export function MqttProfileManagementContent() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Errors (24h)</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-500">{dashboardStats?.errorsLast24h || 0}</div>
+              <div className="text-2xl font-bold text-destructive">{dashboardStats?.errorsLast24h || 0}</div>
               <p className="text-xs text-muted-foreground">Connection errors</p>
             </CardContent>
           </Card>
@@ -577,7 +577,7 @@ export function MqttProfileManagementContent() {
               <Bell className="h-4 w-4 mr-2" />
               Alerts
               {alertSummary && alertSummary.unacknowledged > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-destructive text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                   {alertSummary.unacknowledged}
                 </span>
               )}
@@ -601,9 +601,9 @@ export function MqttProfileManagementContent() {
                           <Badge variant="secondary">Default</Badge>
                         )}
                         {profile.isActive ? (
-                          <Badge variant="outline" className="text-green-500 border-green-500">Active</Badge>
+                          <Badge variant="outline" className="text-success border-success">Active</Badge>
                         ) : (
-                          <Badge variant="outline" className="text-gray-500">Inactive</Badge>
+                          <Badge variant="outline" className="text-muted-foreground">Inactive</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -639,10 +639,10 @@ export function MqttProfileManagementContent() {
                         >
                           <Server className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-red-500"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
                           onClick={() => {
                             if (confirm(t('mqtt.profileMgmt.confirmDeleteProfile'))) {
                               deleteProfile.mutate({ id: profile.id });
@@ -730,10 +730,10 @@ export function MqttProfileManagementContent() {
                         {new Date(assignment.assignedAt).toLocaleString("vi-VN")}
                       </td>
                       <td className="p-3">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
-                          className="text-red-500"
+                          className="text-destructive"
                           onClick={() => removeAssignment.mutate({ id: assignment.id })}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -869,31 +869,31 @@ export function MqttProfileManagementContent() {
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
-                    <div className="text-2xl font-bold text-green-500">{connectionStatusSummary.connected}</div>
+                    <div className="text-2xl font-bold text-success">{connectionStatusSummary.connected}</div>
                     <p className="text-xs text-muted-foreground">Connected</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
-                    <div className="text-2xl font-bold text-gray-500">{connectionStatusSummary.disconnected}</div>
+                    <div className="text-2xl font-bold text-muted-foreground">{connectionStatusSummary.disconnected}</div>
                     <p className="text-xs text-muted-foreground">Disconnected</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
-                    <div className="text-2xl font-bold text-yellow-500">{connectionStatusSummary.connecting}</div>
+                    <div className="text-2xl font-bold text-warning">{connectionStatusSummary.connecting}</div>
                     <p className="text-xs text-muted-foreground">Connecting</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
-                    <div className="text-2xl font-bold text-red-500">{connectionStatusSummary.error}</div>
+                    <div className="text-2xl font-bold text-destructive">{connectionStatusSummary.error}</div>
                     <p className="text-xs text-muted-foreground">Error</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
-                    <div className="text-2xl font-bold text-gray-400">{connectionStatusSummary.unknown}</div>
+                    <div className="text-2xl font-bold text-muted-foreground">{connectionStatusSummary.unknown}</div>
                     <p className="text-xs text-muted-foreground">Unknown</p>
                   </CardContent>
                 </Card>
@@ -937,7 +937,7 @@ export function MqttProfileManagementContent() {
                           </td>
                           <td className="py-2 px-3">
                             <Badge variant={status.status === 'connected' ? 'default' : status.status === 'error' ? 'destructive' : 'secondary'}
-                              className={status.status === 'connected' ? 'bg-green-500' : ''}>
+                              className={status.status === 'connected' ? 'bg-success' : ''}>
                               {status.status === 'connected' && <Wifi className="h-3 w-3 mr-1" />}
                               {status.status === 'disconnected' && <WifiOff className="h-3 w-3 mr-1" />}
                               {status.status === 'error' && <XCircle className="h-3 w-3 mr-1" />}
@@ -991,9 +991,9 @@ export function MqttProfileManagementContent() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs text-muted-foreground">Success Rate</p>
-                        <div className="text-2xl font-bold text-green-500">{reconnectStats.summary.successRate}%</div>
+                        <div className="text-2xl font-bold text-success">{reconnectStats.summary.successRate}%</div>
                       </div>
-                      <CheckCircle2 className="h-8 w-8 text-green-500" />
+                      <CheckCircle2 className="h-8 w-8 text-success" />
                     </div>
                   </CardContent>
                 </Card>
@@ -1002,9 +1002,9 @@ export function MqttProfileManagementContent() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs text-muted-foreground">Failures</p>
-                        <div className="text-2xl font-bold text-red-500">{reconnectStats.summary.failureCount}</div>
+                        <div className="text-2xl font-bold text-destructive">{reconnectStats.summary.failureCount}</div>
                       </div>
-                      <XCircle className="h-8 w-8 text-red-500" />
+                      <XCircle className="h-8 w-8 text-destructive" />
                     </div>
                   </CardContent>
                 </Card>
@@ -1094,13 +1094,13 @@ export function MqttProfileManagementContent() {
                             <Badge variant={
                               log.eventType === 'success' ? 'default' : 
                               log.eventType === 'failure' || log.eventType === 'max_attempts_reached' ? 'destructive' : 'secondary'
-                            } className={log.eventType === 'success' ? 'bg-green-500' : ''}>
+                            } className={log.eventType === 'success' ? 'bg-success' : ''}>
                               {log.eventType}
                             </Badge>
                           </td>
                           <td className="py-2 px-3">{log.attemptNumber}</td>
                           <td className="py-2 px-3">{log.reconnectDelay ? `${log.reconnectDelay}ms` : '-'}</td>
-                          <td className="py-2 px-3 text-xs text-red-500 max-w-xs truncate" title={log.errorMessage}>
+                          <td className="py-2 px-3 text-xs text-destructive max-w-xs truncate" title={log.errorMessage}>
                             {log.errorMessage || '-'}
                           </td>
                           <td className="py-2 px-3 text-xs font-mono">{log.clientId || '-'}</td>
@@ -1562,25 +1562,25 @@ export function MqttProfileManagementContent() {
               </Card>
               <Card>
                 <CardContent className="pt-4">
-                  <div className="text-2xl font-bold text-red-500">{alertSummary?.unacknowledged || 0}</div>
+                  <div className="text-2xl font-bold text-destructive">{alertSummary?.unacknowledged || 0}</div>
                   <p className="text-xs text-muted-foreground">Unacknowledged</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4">
-                  <div className="text-2xl font-bold text-red-600">{alertSummary?.critical || 0}</div>
+                  <div className="text-2xl font-bold text-destructive">{alertSummary?.critical || 0}</div>
                   <p className="text-xs text-muted-foreground">Critical</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4">
-                  <div className="text-2xl font-bold text-yellow-500">{alertSummary?.warning || 0}</div>
+                  <div className="text-2xl font-bold text-warning">{alertSummary?.warning || 0}</div>
                   <p className="text-xs text-muted-foreground">Warning</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4">
-                  <div className="text-2xl font-bold text-blue-500">{alertSummary?.info || 0}</div>
+                  <div className="text-2xl font-bold text-info">{alertSummary?.info || 0}</div>
                   <p className="text-xs text-muted-foreground">Info</p>
                 </CardContent>
               </Card>
@@ -1677,16 +1677,16 @@ export function MqttProfileManagementContent() {
                 <div className="space-y-3">
                   {connectionAlerts?.alerts?.map((alert: any) => (
                     <div key={alert.id} className={`p-4 rounded-lg border-l-4 ${
-                      alert.severity === 'critical' ? 'border-l-red-500 bg-red-500/10' :
-                      alert.severity === 'warning' ? 'border-l-yellow-500 bg-yellow-500/10' :
-                      'border-l-blue-500 bg-blue-500/10'
+                      alert.severity === 'critical' ? 'border-l-destructive bg-destructive/10' :
+                      alert.severity === 'warning' ? 'border-l-warning bg-warning/10' :
+                      'border-l-info bg-info/10'
                     }`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            {alert.severity === 'critical' && <AlertTriangle className="h-5 w-5 text-red-500" />}
-                            {alert.severity === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
-                            {alert.severity === 'info' && <Bell className="h-5 w-5 text-blue-500" />}
+                            {alert.severity === 'critical' && <AlertTriangle className="h-5 w-5 text-destructive" />}
+                            {alert.severity === 'warning' && <AlertCircle className="h-5 w-5 text-warning" />}
+                            {alert.severity === 'info' && <Bell className="h-5 w-5 text-info" />}
                             <span className="font-medium">{alert.title}</span>
                             <Badge variant="outline">{alert.alertType.replace(/_/g, ' ')}</Badge>
                             {alert.isAcknowledged && <Badge variant="secondary">Acknowledged</Badge>}
@@ -1830,9 +1830,9 @@ export function MqttProfileManagementContent() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm">
-                          <span className="text-green-500">{profile.successCount}</span>
+                          <span className="text-success">{profile.successCount}</span>
                           {' / '}
-                          <span className="text-red-500">{profile.failureCount}</span>
+                          <span className="text-destructive">{profile.failureCount}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">Avg delay: {profile.avgDelay}ms</div>
                       </div>
@@ -1894,13 +1894,13 @@ export function MqttProfileManagementContent() {
                         <p className="text-xs text-muted-foreground">Total Attempts</p>
                       </div>
                       <div className="text-center">
-                        <div className="text-lg font-bold text-green-500">
+                        <div className="text-lg font-bold text-success">
                           {reconnectTrend.reduce((sum: number, d: any) => sum + d.successCount, 0)}
                         </div>
                         <p className="text-xs text-muted-foreground">Successes</p>
                       </div>
                       <div className="text-center">
-                        <div className="text-lg font-bold text-red-500">
+                        <div className="text-lg font-bold text-destructive">
                           {reconnectTrend.reduce((sum: number, d: any) => sum + d.failureCount, 0)}
                         </div>
                         <p className="text-xs text-muted-foreground">Failures</p>
@@ -2020,7 +2020,7 @@ export function MqttProfileManagementContent() {
                 <div className="bg-muted p-3 rounded-md">
                   <p className="text-sm"><strong>Preview:</strong> {t('mqtt.profileMgmt.bulkAssignPreview', { count: '{selectedTargets.length}', type: '{bulkAssignTargetType}' })}</p>
                   {bulkReplaceExisting && (
-                    <p className="text-sm text-orange-600">{t('mqtt.profileMgmt.replaceWarning')}</p>
+                    <p className="text-sm text-warning">{t('mqtt.profileMgmt.replaceWarning')}</p>
                   )}
                 </div>
               )}

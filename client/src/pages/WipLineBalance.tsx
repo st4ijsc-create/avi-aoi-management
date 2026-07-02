@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,34 +104,30 @@ export default function WipLineBalance() {
   return (
     <DashboardLayout>
       <div className="space-y-6 p-1">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Boxes className="h-6 w-6 text-primary" />
-              {t("wipDashboard.title", "WIP & Cân bằng chuyền")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t("wipDashboard.subtitle", "Theo dõi WIP realtime, dwell/bottleneck và điều phối thời gian thực")}
-            </p>
-          </div>
-          <div className="flex items-end gap-2">
-            <div>
-              <Label htmlFor="lineId" className="text-xs">{t("wipDashboard.lineFilter", "Lọc theo chuyền (ID)")}</Label>
-              <Input
-                id="lineId"
-                type="number"
-                min={1}
-                placeholder={t("wipDashboard.allLines", "Tất cả")}
-                value={lineInput}
-                onChange={(e) => setLineInput(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <Button variant="outline" size="icon" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Boxes className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title={t("wipDashboard.title", "WIP & Cân bằng chuyền")}
+          description={t("wipDashboard.subtitle", "Theo dõi WIP realtime, dwell/bottleneck và điều phối thời gian thực")}
+          actions={
+            <>
+              <div>
+                <Label htmlFor="lineId" className="text-xs">{t("wipDashboard.lineFilter", "Lọc theo chuyền (ID)")}</Label>
+                <Input
+                  id="lineId"
+                  type="number"
+                  min={1}
+                  placeholder={t("wipDashboard.allLines", "Tất cả")}
+                  value={lineInput}
+                  onChange={(e) => setLineInput(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <Button variant="outline" size="icon" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
 
         {/* U7 cross-links — this is the deep WIP dispatch view; the MES Control
             Tower folds WIP into a broader hub, Command Center gives the panorama. */}
@@ -154,11 +151,11 @@ export default function WipLineBalance() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500" /> {t("wipDashboard.blocked", "Blocked")}
+                <AlertTriangle className="h-4 w-4 text-warning" /> {t("wipDashboard.blocked", "Blocked")}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-red-600">
+              <div className="text-3xl font-bold text-destructive">
                 {(summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0}
               </div>
             </CardContent>
@@ -166,11 +163,11 @@ export default function WipLineBalance() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4 text-amber-500" /> {t("wipDashboard.starved", "Starved")}
+                <Clock className="h-4 w-4 text-warning" /> {t("wipDashboard.starved", "Starved")}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-amber-600">
+              <div className="text-3xl font-bold text-warning">
                 {(summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0}
               </div>
             </CardContent>

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -876,7 +877,7 @@ function TrainingJobsList({ modelId, t }: { modelId: number; t: (key: string, fa
             <span className="text-xs text-muted-foreground w-10 text-right">{job.progress ?? 0}%</span>
           </div>
           {job.errorMessage && (
-            <p className="text-xs text-red-500">{job.errorMessage}</p>
+            <p className="text-xs text-destructive">{job.errorMessage}</p>
           )}
         </div>
       ))}
@@ -1052,7 +1053,7 @@ function ModelDetailPanel({
                 return (
                   <TableRow key={v.id} className={v.status === "ACTIVE" ? "bg-primary/5" : ""}>
                     <TableCell className="font-mono text-sm">
-                      {v.status === "ACTIVE" && <CheckCircle2 className="h-3.5 w-3.5 inline mr-1 text-green-500" />}
+                      {v.status === "ACTIVE" && <CheckCircle2 className="h-3.5 w-3.5 inline mr-1 text-success" />}
                       {v.version}
                     </TableCell>
                     <TableCell>
@@ -1286,32 +1287,24 @@ export default function AIModelManagementPage() {
     <DashboardLayout>
       <div className="flex flex-col gap-6 p-4 md:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Box className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {t("aiModels.title", "AI Model Management")}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t("aiModels.subtitle", "Register, upload, and manage AI models and versions")}
-              </p>
-            </div>
-          </div>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t("aiModels.createModel", "Create Model")}
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Box className="h-6 w-6" />}
+          title={t("aiModels.title", "AI Model Management")}
+          description={t("aiModels.subtitle", "Register, upload, and manage AI models and versions")}
+          actions={
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t("aiModels.createModel", "Create Model")}
+            </Button>
+          }
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Box className="h-5 w-5 text-blue-500" />
+              <div className="h-9 w-9 rounded-lg bg-info/10 flex items-center justify-center">
+                <Box className="h-5 w-5 text-info" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.total}</p>
@@ -1321,8 +1314,8 @@ export default function AIModelManagementPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <div className="h-9 w-9 rounded-lg bg-success/10 flex items-center justify-center">
+                <CheckCircle2 className="h-5 w-5 text-success" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.active}</p>
@@ -1332,8 +1325,8 @@ export default function AIModelManagementPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-yellow-500" />
+              <div className="h-9 w-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                <Clock className="h-5 w-5 text-warning" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.ready}</p>
@@ -1343,8 +1336,8 @@ export default function AIModelManagementPage() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-red-500/10 flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
+              <div className="h-9 w-9 rounded-lg bg-destructive/10 flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.failed}</p>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
@@ -224,23 +225,21 @@ export default function ProductionOrders() {
     <DashboardLayout title={t('production.title')} navItems={navItems} currentPath="/production-orders">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{t('production.title')}</h1>
-              <ViewOnlyBadge module="production_orders" />
-            </div>
-            <p className="text-muted-foreground">{t('production.description')}</p>
-          </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <PermissionGate module="production_orders" action="canCreate">
-                <Button onClick={() => { resetForm(); setIsCreateOpen(true); }}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('production.createNew')}
-                </Button>
-              </PermissionGate>
-            </DialogTrigger>
+        <PageHeader
+          icon={<Package className="h-6 w-6" />}
+          title={t('production.title')}
+          badge={<ViewOnlyBadge module="production_orders" />}
+          description={t('production.description')}
+          actions={
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <PermissionGate module="production_orders" action="canCreate">
+                  <Button onClick={() => { resetForm(); setIsCreateOpen(true); }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    {t('production.createNew')}
+                  </Button>
+                </PermissionGate>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('production.createNewTitle')}</DialogTitle>
@@ -326,16 +325,17 @@ export default function ProductionOrders() {
                 </Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
-        </div>
+            </Dialog>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg">
-                  <Package className="w-6 h-6 text-blue-500" />
+                <div className="p-3 bg-info/10 rounded-lg">
+                  <Package className="w-6 h-6 text-info" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('production.totalOrders')}</p>
@@ -347,8 +347,8 @@ export default function ProductionOrders() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-yellow-500/10 rounded-lg">
-                  <Calendar className="w-6 h-6 text-yellow-500" />
+                <div className="p-3 bg-warning/10 rounded-lg">
+                  <Calendar className="w-6 h-6 text-warning" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('production.statusInProgress')}</p>
@@ -360,8 +360,8 @@ export default function ProductionOrders() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-500/10 rounded-lg">
-                  <CheckCircle2 className="w-6 h-6 text-green-500" />
+                <div className="p-3 bg-success/10 rounded-lg">
+                  <CheckCircle2 className="w-6 h-6 text-success" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('production.statusCompleted')}</p>
@@ -477,11 +477,11 @@ export default function ProductionOrders() {
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
-                            <span className="text-green-500">{order.okQuantity}</span>
+                            <span className="text-success">{order.okQuantity}</span>
                             {" / "}
-                            <span className="text-red-500">{order.ngQuantity}</span>
+                            <span className="text-destructive">{order.ngQuantity}</span>
                             {" / "}
-                            <span className="text-yellow-500">{order.ntfQuantity}</span>
+                            <span className="text-warning">{order.ntfQuantity}</span>
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
@@ -602,7 +602,7 @@ export default function ProductionOrders() {
             <AlertDialogFooter>
               <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
               <AlertDialogAction
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-destructive hover:bg-destructive/90 text-white"
                 onClick={() => {
                   if (deleteTarget) {
                     deleteMutation.mutate({ id: deleteTarget.id });

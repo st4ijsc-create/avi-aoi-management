@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -434,16 +435,16 @@ export function MqttClientManagementContent() {
     switch (status) {
       case 'ONLINE':
       case 'connected':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><Wifi className="w-3 h-3 mr-1" /> Online</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30"><Wifi className="w-3 h-3 mr-1" /> Online</Badge>;
       case 'OFFLINE':
       case 'disconnected':
-        return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30"><WifiOff className="w-3 h-3 mr-1" /> Offline</Badge>;
+        return <Badge className="bg-muted text-muted-foreground border-border"><WifiOff className="w-3 h-3 mr-1" /> Offline</Badge>;
       case 'DISCONNECTED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> Disconnected</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> Disconnected</Badge>;
       case 'error':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> Error</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> Error</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> Pending</Badge>;
+        return <Badge className="bg-warning/20 text-warning border-warning/30"><Clock className="w-3 h-3 mr-1" /> Pending</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -452,20 +453,20 @@ export function MqttClientManagementContent() {
   const getApprovalBadge = (status: string) => {
     switch (status) {
       case 'APPROVED':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" /> Approved</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle className="w-3 h-3 mr-1" /> Approved</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> Pending</Badge>;
+        return <Badge className="bg-warning/20 text-warning border-warning/30"><Clock className="w-3 h-3 mr-1" /> Pending</Badge>;
       case 'REJECTED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> Rejected</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> Rejected</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
   const getHealthBadge = (score: number) => {
-    if (score >= 80) return <Badge className="bg-green-500/20 text-green-400">{score}%</Badge>;
-    if (score >= 50) return <Badge className="bg-yellow-500/20 text-yellow-400">{score}%</Badge>;
-    return <Badge className="bg-red-500/20 text-red-400">{score}%</Badge>;
+    if (score >= 80) return <Badge className="bg-success/20 text-success">{score}%</Badge>;
+    if (score >= 50) return <Badge className="bg-warning/20 text-warning">{score}%</Badge>;
+    return <Badge className="bg-destructive/20 text-destructive">{score}%</Badge>;
   };
 
   const formatDate = (date: Date | string | null) => {
@@ -477,19 +478,21 @@ export function MqttClientManagementContent() {
     <>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+        <PageHeader
+          icon={<Smartphone className="w-6 h-6" />}
+          title={
+            <span className="flex items-center gap-2">
               {t('mqtt.clientMgmt.title')}
               {pendingCount > 0 && (
-                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                <Badge className="bg-warning/20 text-warning border-warning/30">
                   {pendingCount} {t('mqtt.clientMgmt.pendingApproval')}
                 </Badge>
               )}
-            </h1>
-            <p className="text-muted-foreground">{t('mqtt.clientMgmt.description')}</p>
-          </div>
-          <div className="flex gap-2">
+            </span>
+          }
+          description={t('mqtt.clientMgmt.description')}
+          actions={
+            <>
             <Button variant="outline" onClick={() => { refetchClients(); refetchManual(); }}>
               <RefreshCw className="w-4 h-4 mr-2" />
               {t('common.refresh')}
@@ -593,8 +596,9 @@ export function MqttClientManagementContent() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Filters */}
         <Card>
@@ -771,7 +775,7 @@ export function MqttClientManagementContent() {
                                     setApproveForm({ stationId: 'none', mappingType: 'MANUAL' });
                                     setApproveDialog({ open: true, client });
                                   }}
-                                  className="text-green-400 hover:text-green-300"
+                                  className="text-success hover:text-success/80"
                                   title={t('mqtt.clientMgmt.approve')}
                                 >
                                   <CheckCircle className="w-4 h-4" />
@@ -780,7 +784,7 @@ export function MqttClientManagementContent() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => rejectMutation.mutate({ id: client.id })}
-                                  className="text-red-400 hover:text-red-300"
+                                  className="text-destructive hover:text-destructive/80"
                                   title={t('mqtt.clientMgmt.reject')}
                                 >
                                   <XCircle className="w-4 h-4" />
@@ -840,7 +844,7 @@ export function MqttClientManagementContent() {
                                     setSingleConfigClient(client);
                                     setBulkConfigOpen(true);
                                   }}
-                                  className="text-blue-400 hover:text-blue-300"
+                                  className="text-info hover:text-info/80"
                                   title="Send Configure"
                                 >
                                   <Send className="w-4 h-4" />
@@ -849,7 +853,7 @@ export function MqttClientManagementContent() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => disconnectMutation.mutate({ id: client.id })}
-                                  className="text-orange-400 hover:text-orange-300"
+                                  className="text-warning hover:text-warning/80"
                                   title={t('mqtt.clientMgmt.disconnectReset')}
                                 >
                                   <Link2Off className="w-4 h-4" />
@@ -860,7 +864,7 @@ export function MqttClientManagementContent() {
                                   onClick={() => {
                                     sendCommandMutation.mutate({ deviceId: client.deviceId, command: 'CHECK_UPDATE' });
                                   }}
-                                  className="text-emerald-400 hover:text-emerald-300"
+                                  className="text-success hover:text-success/80"
                                   title={t('mqtt.clientMgmt.pushUpdateToDevice')}
                                 >
                                   <Download className="w-4 h-4" />
@@ -951,7 +955,7 @@ export function MqttClientManagementContent() {
                               variant="ghost"
                               size="sm"
                               onClick={() => deleteManualMutation.mutate({ id: conn.id })}
-                              className="text-red-400 hover:text-red-300"
+                              className="text-destructive hover:text-destructive/80"
                               title={t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1000,15 +1004,15 @@ export function MqttClientManagementContent() {
                           <span>Total: {health?.messageStats.total}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3 text-green-500" />
+                          <CheckCircle className="w-3 h-3 text-success" />
                           <span>Success: {health?.messageStats.successRate}%</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <XCircle className="w-3 h-3 text-red-500" />
+                          <XCircle className="w-3 h-3 text-destructive" />
                           <span>Failed: {health?.messageStats.failed}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-yellow-500" />
+                          <Clock className="w-3 h-3 text-warning" />
                           <span>Pending: {health?.messageStats.pending}</span>
                         </div>
                       </div>
@@ -1075,11 +1079,11 @@ export function MqttClientManagementContent() {
                           <div className="text-xs text-muted-foreground">Total Messages</div>
                         </div>
                         <div>
-                          <div className="text-2xl font-bold text-green-500">{clientHealth.messageStats.delivered}</div>
+                          <div className="text-2xl font-bold text-success">{clientHealth.messageStats.delivered}</div>
                           <div className="text-xs text-muted-foreground">Delivered</div>
                         </div>
                         <div>
-                          <div className="text-2xl font-bold text-red-500">{clientHealth.messageStats.failed}</div>
+                          <div className="text-2xl font-bold text-destructive">{clientHealth.messageStats.failed}</div>
                           <div className="text-xs text-muted-foreground">Failed</div>
                         </div>
                         <div>
@@ -1105,9 +1109,9 @@ export function MqttClientManagementContent() {
                             <Badge variant="outline">{log.messageType}</Badge>
                           </TableCell>
                           <TableCell>
-                            {log.status === 'DELIVERED' && <Badge className="bg-green-500/20 text-green-400">Delivered</Badge>}
-                            {log.status === 'FAILED' && <Badge className="bg-red-500/20 text-red-400">Failed</Badge>}
-                            {log.status === 'PENDING' && <Badge className="bg-yellow-500/20 text-yellow-400">Pending</Badge>}
+                            {log.status === 'DELIVERED' && <Badge className="bg-success/20 text-success">Delivered</Badge>}
+                            {log.status === 'FAILED' && <Badge className="bg-destructive/20 text-destructive">Failed</Badge>}
+                            {log.status === 'PENDING' && <Badge className="bg-warning/20 text-warning">Pending</Badge>}
                           </TableCell>
                         </TableRow>
                       ))}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -236,11 +237,11 @@ export default function MqttDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'DELIVERED':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.delivered')}</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.delivered')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.failed')}</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.failed')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.pending')}</Badge>;
+        return <Badge className="bg-warning/20 text-warning border-warning/30"><Clock className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.pending')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -249,9 +250,9 @@ export default function MqttDashboard() {
   const getMessageTypeBadge = (type: string) => {
     switch (type) {
       case 'NG_ALERT':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><AlertTriangle className="w-3 h-3 mr-1" /> NG Alert</Badge>;
+        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><AlertTriangle className="w-3 h-3 mr-1" /> NG Alert</Badge>;
       case 'DAILY_SUMMARY':
-        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><Activity className="w-3 h-3 mr-1" /> Daily</Badge>;
+        return <Badge className="bg-info/20 text-info border-info/30"><Activity className="w-3 h-3 mr-1" /> Daily</Badge>;
       case 'WEEKLY_SUMMARY':
         return <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30"><TrendingUp className="w-3 h-3 mr-1" /> Weekly</Badge>;
       default:
@@ -270,76 +271,76 @@ export default function MqttDashboard() {
     <DashboardLayout>
       <div className="space-y-3 sm:space-y-4 mobile-safe-bottom">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">MQTT Dashboard</h1>
-            <p className="text-sm sm:text-base text-muted-foreground">{t('mqtt.dashboard.description')}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {mqttStatus?.enabled ? (
-              <Badge className="bg-green-500/20 text-green-400 border-green-500/30 px-3 py-1">
-                <Server className="w-4 h-4 mr-2" />
-                Local: Online
-              </Badge>
-            ) : (
-              <Badge className="bg-red-500/20 text-red-400 border-red-500/30 px-3 py-1">
-                <Server className="w-4 h-4 mr-2" />
-                Local: Offline
-              </Badge>
-            )}
-            {mqttStatus?.external?.enabled && (
-              mqttStatus.external.connected ? (
-                <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 px-3 py-1">
-                  <Wifi className="w-4 h-4 mr-2" />
-                  Cloud: Connected
+        <PageHeader
+          title="MQTT Dashboard"
+          description={t('mqtt.dashboard.description')}
+          actions={
+            <>
+              {mqttStatus?.enabled ? (
+                <Badge className="bg-success/20 text-success border-success/30 px-3 py-1">
+                  <Server className="w-4 h-4 mr-2" />
+                  Local: Online
                 </Badge>
               ) : (
-                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 px-3 py-1">
-                  <WifiOff className="w-4 h-4 mr-2" />
-                  Cloud: Disconnected
+                <Badge className="bg-destructive/20 text-destructive border-destructive/30 px-3 py-1">
+                  <Server className="w-4 h-4 mr-2" />
+                  Local: Offline
                 </Badge>
-              )
-            )}
-            {/* WebSocket Toggle */}
-            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
-              <Radio className={`w-4 h-4 ${wsConnected ? 'text-green-500' : 'text-muted-foreground'}`} />
-              <Label htmlFor="ws-toggle" className="text-xs cursor-pointer">
-                {wsConnected ? 'WS: On' : 'WS: Off'}
-              </Label>
-              <Switch
-                id="ws-toggle"
-                checked={wsEnabled}
-                onCheckedChange={toggleWebSocket}
-                className="scale-75"
-              />
-            </div>
-            <Button
-              variant={soundMuted ? "outline" : "secondary"}
-              size="sm"
-              onClick={toggleSound}
-              title={soundMuted ? t('mqtt.dashboard.enableAlertSound') : t('mqtt.dashboard.disableAlertSound')}
-            >
-              {soundMuted ? (
-                <VolumeX className="w-4 h-4" />
-              ) : (
-                <Volume2 className="w-4 h-4" />
               )}
-            </Button>
-            <Button 
-              variant="destructive" 
-              size="sm" 
-              onClick={() => setShowTestDialog(true)}
-              disabled={testNGAlertMutation.isPending}
-            >
-              <TestTube2 className="w-4 h-4 mr-2" />
-              {testNGAlertMutation.isPending ? t('mqtt.dashboard.sending') : 'Test NG Alert'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-          </div>
-        </div>
+              {mqttStatus?.external?.enabled && (
+                mqttStatus.external.connected ? (
+                  <Badge className="bg-info/20 text-info border-info/30 px-3 py-1">
+                    <Wifi className="w-4 h-4 mr-2" />
+                    Cloud: Connected
+                  </Badge>
+                ) : (
+                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 px-3 py-1">
+                    <WifiOff className="w-4 h-4 mr-2" />
+                    Cloud: Disconnected
+                  </Badge>
+                )
+              )}
+              {/* WebSocket Toggle */}
+              <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
+                <Radio className={`w-4 h-4 ${wsConnected ? 'text-success' : 'text-muted-foreground'}`} />
+                <Label htmlFor="ws-toggle" className="text-xs cursor-pointer">
+                  {wsConnected ? 'WS: On' : 'WS: Off'}
+                </Label>
+                <Switch
+                  id="ws-toggle"
+                  checked={wsEnabled}
+                  onCheckedChange={toggleWebSocket}
+                  className="scale-75"
+                />
+              </div>
+              <Button
+                variant={soundMuted ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleSound}
+                title={soundMuted ? t('mqtt.dashboard.enableAlertSound') : t('mqtt.dashboard.disableAlertSound')}
+              >
+                {soundMuted ? (
+                  <VolumeX className="w-4 h-4" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowTestDialog(true)}
+                disabled={testNGAlertMutation.isPending}
+              >
+                <TestTube2 className="w-4 h-4 mr-2" />
+                {testNGAlertMutation.isPending ? t('mqtt.dashboard.sending') : 'Test NG Alert'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleRefresh}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
@@ -487,11 +488,11 @@ export default function MqttDashboard() {
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="flex items-center gap-2">
                 {realtimeStats?.externalBroker.connected ? (
-                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                  <Badge className="bg-success/20 text-success border-success/30">
                     <CheckCircle className="w-3 h-3 mr-1" /> Connected
                   </Badge>
                 ) : realtimeStats?.externalBroker.enabled ? (
-                  <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                  <Badge className="bg-warning/20 text-warning border-warning/30">
                     <Clock className="w-3 h-3 mr-1" /> Connecting...
                   </Badge>
                 ) : (
@@ -735,7 +736,7 @@ export default function MqttDashboard() {
                           <TableCell className="font-mono text-xs">{client.deviceId}</TableCell>
                           <TableCell>
                             {client.connectionStatus === 'ONLINE' ? (
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                              <Badge className="bg-success/20 text-success border-success/30">
                                 <Wifi className="w-3 h-3 mr-1" /> Online
                               </Badge>
                             ) : (
@@ -746,15 +747,15 @@ export default function MqttDashboard() {
                           </TableCell>
                           <TableCell>
                             {client.approvalStatus === 'APPROVED' ? (
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                              <Badge className="bg-success/20 text-success border-success/30">
                                 <CheckCircle className="w-3 h-3 mr-1" /> Approved
                               </Badge>
                             ) : client.approvalStatus === 'PENDING' ? (
-                              <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                              <Badge className="bg-warning/20 text-warning border-warning/30">
                                 <Clock className="w-3 h-3 mr-1" /> Pending
                               </Badge>
                             ) : (
-                              <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
+                              <Badge className="bg-destructive/20 text-destructive border-destructive/30">
                                 <XCircle className="w-3 h-3 mr-1" /> Rejected
                               </Badge>
                             )}
@@ -765,7 +766,7 @@ export default function MqttDashboard() {
                           </TableCell>
                           <TableCell>
                             {client.fcmToken ? (
-                              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                              <Badge className="bg-info/20 text-info border-info/30">
                                 <Bell className="w-3 h-3 mr-1" /> {t('common.yes')}
                               </Badge>
                             ) : (
@@ -971,8 +972,8 @@ export default function MqttDashboard() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="OK"><span className="text-green-500">OK</span></SelectItem>
-                                <SelectItem value="NG"><span className="text-red-500">NG</span></SelectItem>
+                                <SelectItem value="OK"><span className="text-success">OK</span></SelectItem>
+                                <SelectItem value="NG"><span className="text-destructive">NG</span></SelectItem>
                               </SelectContent>
                             </Select>
                           </TableCell>
@@ -1006,11 +1007,11 @@ export default function MqttDashboard() {
                     <Code2 className="w-4 h-4" />
                     <span>Response JSON</span>
                     {lastTestResult.type === 'success' ? (
-                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+                      <Badge className="bg-success/20 text-success border-success/30 text-xs">
                         <CheckCircle className="w-3 h-3 mr-1" /> Success
                       </Badge>
                     ) : (
-                      <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+                      <Badge className="bg-destructive/20 text-destructive border-destructive/30 text-xs">
                         <XCircle className="w-3 h-3 mr-1" /> Error
                       </Badge>
                     )}

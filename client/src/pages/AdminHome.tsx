@@ -5,14 +5,18 @@
  * nodes) as one-click tiles + a role-aware TodayBriefing. REUSES existing pages — nothing
  * rebuilt; each underlying page keeps its own RBAC (admin-gated).
  */
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { PageHeader, MetricCard, type MetricTone } from "@/components/patterns";
+import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
   ShieldCheck, Users, KeyRound, FileClock, SlidersHorizontal, Cpu,
-  LayoutDashboard, Activity, Archive, MonitorSmartphone, type LucideIcon,
+  LayoutDashboard, Activity, Archive, MonitorSmartphone, MonitorCheck,
+  HeartPulse, type LucideIcon,
 } from "lucide-react";
 
 interface Tile { icon: LucideIcon; label: string; description: string; accent: string; to: string }
@@ -40,6 +44,40 @@ export default function AdminHome() {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
 
+  // ── Live admin KPIs — all from EXISTING tRPC procedures (read-only) ──
+  const usersQuery = trpc.user.list.useQuery(undefined, {
+    refetchOnWindowFocus: false, retry: false, staleTime: 60_000,
+  });
+  const sessionsQuery = trpc.session.count.useQuery(undefined, {
+    refetchOnWindowFocus: false, retry: false, staleTime: 60_000,
+  });
+  const licenseState = trpc.license.systemState.useQuery(undefined, {
+    refetchOnWindowFocus: false, retry: false, staleTime: 60_000,
+  });
+  const licenseStats = trpc.license.admin.stats.useQuery(undefined, {
+    refetchOnWindowFocus: false, retry: false, staleTime: 60_000,
+  });
+
+  const userKpis = useMemo(() => {
+    const all = usersQuery.data ?? [];
+    const active = all.filter((u: any) => u?.isActive !== false).length;
+    return { total: all.length, active };
+  }, [usersQuery.data]);
+
+  // Map license enforcement state → label + tone (state values from licenseRouter.systemState)
+  const licenseView = useMemo(() => {
+    const state = licenseState.data?.state;
+    const map: Record<string, { labelKey: string; labelDefault: string; tone: MetricTone }> = {
+      normal:      { labelKey: "adminHome.kpi.licenseNormal",   labelDefault: "Hợp lệ",        tone: "success" },
+      warning:     { labelKey: "adminHome.kpi.licenseWarning",  labelDefault: "Sắp hết hạn",   tone: "warning" },
+      readonly:    { labelKey: "adminHome.kpi.licenseReadonly", labelDefault: "Chỉ đọc",       tone: "warning" },
+      locked:      { labelKey: "adminHome.kpi.licenseLocked",   labelDefault: "Đã khóa",       tone: "error" },
+      no_license:  { labelKey: "adminHome.kpi.licenseNone",     labelDefault: "Chưa kích hoạt", tone: "error" },
+    };
+    const entry = (state && map[state]) || { labelKey: "common.noData", labelDefault: "—", tone: "default" as MetricTone };
+    return { value: t(entry.labelKey, entry.labelDefault), tone: entry.tone, days: licenseState.data?.daysUntilExpiry ?? null };
+  }, [licenseState.data, t]);
+
   const tiles: Tile[] = [
     { icon: Users, label: t("adminHome.tiles.users", "Người dùng"), description: t("adminHome.tiles.usersDesc", "Tài khoản & vai trò"), accent: "border-indigo-500/30 text-indigo-600 dark:text-indigo-400", to: "/users" },
     { icon: ShieldCheck, label: t("adminHome.tiles.roles", "Phân quyền"), description: t("adminHome.tiles.rolesDesc", "Role builder & module"), accent: "border-emerald-500/30 text-emerald-600 dark:text-emerald-400", to: "/role-builder" },
@@ -56,14 +94,40 @@ export default function AdminHome() {
   return (
     <DashboardLayout>
       <div className="mx-auto w-full max-w-5xl space-y-6 p-2 sm:p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <Activity className="h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("adminHome.title", "Bảng quản trị")}</h1>
-            <p className="text-sm text-muted-foreground">{t("adminHome.subtitle", "Quản trị người dùng, phân quyền, audit và hệ thống")}</p>
-          </div>
+        <PageHeader
+          icon={<Activity className="h-6 w-6" />}
+          title={t("adminHome.title", "Bảng quản trị")}
+          description={t("adminHome.subtitle", "Quản trị người dùng, phân quyền, audit và hệ thống")}
+        />
+
+        {/* Live admin KPIs (read-only, existing tRPC) */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <MetricCard
+            icon={<Users className="h-5 w-5" />}
+            label={t("adminHome.kpi.activeUsers", "Người dùng hoạt động")}
+            value={usersQuery.isLoading ? "…" : userKpis.active}
+            tone="info"
+            delta={usersQuery.isLoading ? undefined : t("adminHome.kpi.totalUsers", { count: userKpis.total, defaultValue: "{{count}} tổng" })}
+          />
+          <MetricCard
+            icon={<MonitorCheck className="h-5 w-5" />}
+            label={t("adminHome.kpi.mySessions", "Phiên của tôi")}
+            value={sessionsQuery.isLoading ? "…" : (sessionsQuery.data?.count ?? 0)}
+          />
+          <MetricCard
+            icon={<ShieldCheck className="h-5 w-5" />}
+            label={t("adminHome.kpi.license", "Bản quyền")}
+            value={licenseState.isLoading ? "…" : licenseView.value}
+            tone={licenseView.tone}
+            delta={licenseView.days != null ? t("adminHome.kpi.daysLeft", { count: licenseView.days, defaultValue: "còn {{count}} ngày" }) : undefined}
+          />
+          <MetricCard
+            icon={<HeartPulse className="h-5 w-5" />}
+            label={t("adminHome.kpi.activeLicenses", "License đang hoạt động")}
+            value={licenseStats.isLoading ? "…" : (licenseStats.data?.activeLicenses ?? 0)}
+            tone="success"
+            delta={licenseStats.data ? t("adminHome.kpi.activations", { count: licenseStats.data.totalActiveActivations, defaultValue: "{{count}} kích hoạt" }) : undefined}
+          />
         </div>
 
         <TodayBriefing />
