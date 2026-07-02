@@ -268,8 +268,17 @@ Commit `549242b`. TSC 0 · build OK · tests pass (IR 49, registration 10, golde
 - **P3** — IR depth: safe typed-expression model (no eval, `irExpr.ts`) + new blocks `set_variable`/`counter`/`wait_until`/`set_analog`/`pid_control` through schema→lint→URScript+ROS2 transpile→tree+react-flow editor. (Reusable function-blocks/POUs deferred to a later slice.)
 - **Note:** P2 (drag-drop canvas) + T2 (Rapier physics) were front-loaded into Wave 1.
 
-### Commits (branch `automation-orchestration-r0`)
-`89cdf1b` doc-23 frontend redesign · `d617560` doc-24 Wave 1 · `549242b` doc-24 Wave 2.
+### Wave 3 — DONE & GREEN + committed (2026-07-02)
+Batch A `481d5be`, Batch B `3bd4bb0`. TSC 0 · build OK · tests pass.
+- **AOI-C** — first-party defect classifier: pure-TS softmax head on existing DINOv2 embeddings (no Python/GPU), label→train→register→serve→A/B→rollback reusing registry/active-learning/quality-gate; migration `0159`; flag `AOI_DL_HEAD_ENABLED`.
+- **C3** — OT connection HA: reconnect supervisor (backoff+jitter, health SLO) + dual-endpoint hot-standby failover; single-dispatch write-gates untouched; flag `OT_CONN_HA_ENABLED`.
+- **P4** — IEC 61131-3: structured LAD/FBD/SFC POU model + PLCopen TC6 XML round-trip (`fast-xml-parser`) + POU→ST transpile + blocking linter + `/pou-studio`; migration `0160`.
+- **C4** — robot breadth: real Fanuc RMI driver (gated, mock-tested) + VDA5050 unblocked (migration `0161`); Mitsubishi/Delta honest scaffolds.
+- **T3** — DTDL-v3-style twin schema (typed interfaces + capability telemetry + relationships, queryable) + USDA export; read-gated.
+- **T4** — real STEP/IGES→glTF via `occt-import-js` (OpenCASCADE WASM), registered into modelRegistry, WASM-guarded.
 
-### Waves 3–4 — PENDING (paused for owner review, 2026-07-02).
-Remaining per §6: **W3** AOI-C (first-party DL round-trip) · C3 (connection HA/failover) · C4 (robot-vendor breadth) · P4 (IEC-61131 graphical + PLCopen) · T3 (DTDL twin schema + USD) · T4 (CAD/STEP import); **W4** AOI-F (vision→control closed loop) · T5 (DES→scheduling) · T6 (Isaac sim-to-real) · C5 (companion specs + UNS-first) · P5 (version diff/merge + collab).
+### Commits (branch `automation-orchestration-r0`)
+`89cdf1b` doc-23 frontend · `d617560` W1 · `549242b` W2 · `481d5be` W3-A · `3bd4bb0` W3-B.
+
+### Wave 4 — PENDING (final wave). Per §6:
+AOI-F (vision→control closed loop, **gated actuation — safety-sensitive**) · T5 (DES throughput → scheduling feedback) · C5 (OPC-UA companion specs + UNS-first) · P5 (version diff/merge + collab). **T6 (Isaac sim-to-real) DEFERRED** per the owner's "keep heavy external integrations light" decision.
