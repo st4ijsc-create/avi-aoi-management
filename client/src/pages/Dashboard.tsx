@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { PageHeader } from "@/components/patterns";
 import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { RelatedViews } from "@/components/RelatedViews";
@@ -1126,20 +1127,20 @@ export default function Dashboard() {
       <DashboardTemplatePrompt />
       <div className="space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
-        <div className="flex flex-col gap-3 sm:gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
-                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />{t("dashboard.productionDashboard")}</h1>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
-                <p className="text-muted-foreground text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</p>
-                <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
-                <span className="text-xs text-muted-foreground">
-                  • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
-                </span>
-              </div>
-            </div>
-            
+        <PageHeader
+          icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          title={t("dashboard.productionDashboard")}
+          description={
+            <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
+              <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
+              <span className="text-xs text-muted-foreground">
+                • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
+              </span>
+            </span>
+          }
+          actions={
+            <>
             {/* Quick actions - visible on mobile */}
             <div className="flex items-center gap-2 sm:hidden">
               <Button variant="outline" size="icon" aria-label={t('common.refresh')} onClick={handleRefresh} className="h-9 w-9">
@@ -1156,8 +1157,7 @@ export default function Dashboard() {
                 </Link>
               )}
             </div>
-          </div>
-          
+
           {/* Filters - scrollable on mobile */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
             {/* Alert Badge - hidden on mobile (shown in quick actions) */}
@@ -1305,7 +1305,9 @@ export default function Dashboard() {
               />
             </div>
           </div>
-        </div>
+            </>
+          }
+        />
 
         {/* U7 (doc 21 §3 G-11) — this operational dashboard stays as a rich landing;
             point "see everything live" at the Command Center single pane of glass. */}
@@ -1929,11 +1931,11 @@ export default function Dashboard() {
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
+                              <div className="text-sm font-semibold text-destructive">{totalDefects}</div>
                               <div className="text-xs text-muted-foreground">{t("common.error")}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
+                              <div className="text-sm font-semibold text-info">{yieldRate.toFixed(1)}%</div>
                               <div className="text-xs text-muted-foreground">{t("dashboard.yield")}</div>
                             </div>
                           </div>
@@ -1965,11 +1967,11 @@ export default function Dashboard() {
                 <div className="flex flex-wrap items-center gap-4 text-sm">
                   <span className="text-muted-foreground font-medium">{t("dashboard.ngSeverityLabel")}</span>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-green-500" />
+                    <div className="w-3 h-3 rounded bg-success" />
                     <span>{t("dashboard.ngLevelGood")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-yellow-500" />
+                    <div className="w-3 h-3 rounded bg-warning" />
                     <span>{t("dashboard.ngLevelAcceptable")}</span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -1977,7 +1979,7 @@ export default function Dashboard() {
                     <span>{t("dashboard.ngLevelWarning")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-red-500" />
+                    <div className="w-3 h-3 rounded bg-destructive" />
                     <span>{t("dashboard.ngLevelCritical")}</span>
                   </div>
                 </div>
@@ -2473,7 +2475,7 @@ export default function Dashboard() {
                                 {visibleMetrics.fpy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
-                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-success' : fpyNum >= 70 ? 'text-warning' : 'text-destructive'}`}>
                                       {fpy}%
                                     </p>
                                   </div>
@@ -2481,19 +2483,19 @@ export default function Dashboard() {
                                 {visibleMetrics.fy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
-                                    <p className="text-base font-bold text-rose-400">{fy}%</p>
+                                    <p className="text-base font-bold text-destructive">{fy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
-                                    <p className="text-base font-bold text-amber-400">{ntfy}%</p>
+                                    <p className="text-base font-bold text-warning">{ntfy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
                                   <div className="flex-1 text-center py-2 px-1 relative">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.output")}</p>
-                                    <p className="text-base font-bold text-cyan-400">{machine.total}</p>
+                                    <p className="text-base font-bold text-info">{machine.total}</p>
                                   </div>
                                 )}
                                 {/* Status indicator */}
@@ -2534,7 +2536,7 @@ export default function Dashboard() {
                                         <TooltipTrigger asChild>
                                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${
                                             onlineMachines.has(machine.code)
-                                              ? 'bg-emerald-500/20 text-emerald-400'
+                                              ? 'bg-success/20 text-success'
                                               : 'bg-muted text-muted-foreground'
                                           }`}>
                                             {onlineMachines.has(machine.code) ? (
@@ -2849,8 +2851,8 @@ export default function Dashboard() {
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Target className="h-4 w-4 text-emerald-500" />
+                <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-success" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.fpyFullName")}</p>
@@ -2867,8 +2869,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center">
-                  <ThumbsDown className="h-4 w-4 text-rose-500" />
+                <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
+                  <ThumbsDown className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.fyFullName")}</p>
@@ -2885,8 +2887,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.ntfyFullName")}</p>
@@ -2903,8 +2905,8 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                  <BarChart3 className="h-4 w-4 text-cyan-500" />
+                <div className="w-8 h-8 rounded-full bg-info/20 flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 text-info" />
                 </div>
                 <div>
                   <p className="font-medium">{t("dashboard.outputLabel")}</p>
@@ -2956,10 +2958,10 @@ export default function Dashboard() {
                 {drilldownMeasurementPoints.map((mp: any) => {
                   const ngRate = mp.totalCount > 0 ? (mp.ngCount / mp.totalCount * 100) : 0;
                   const getNGColorClass = (rate: number) => {
-                    if (rate <= 2) return "text-green-500 bg-green-500/10 border-green-500/30";
-                    if (rate <= 5) return "text-yellow-500 bg-yellow-500/10 border-yellow-500/30";
+                    if (rate <= 2) return "text-success bg-success/10 border-success/30";
+                    if (rate <= 5) return "text-warning bg-warning/10 border-warning/30";
                     if (rate <= 10) return "text-orange-500 bg-orange-500/10 border-orange-500/30";
-                    return "text-red-500 bg-red-500/10 border-red-500/30";
+                    return "text-destructive bg-destructive/10 border-destructive/30";
                   };
                   return (
                     <div key={mp.measurementPointId} className={`p-4 rounded-lg border ${getNGColorClass(ngRate)}`}>
