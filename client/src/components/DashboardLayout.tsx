@@ -64,6 +64,15 @@ export default function DashboardLayout({
   const { loading, user } = useAuth();
   const { t } = useTranslation();
 
+  // Persist the desktop rail's expanded/collapsed state ACROSS navigations. Each page
+  // renders its own DashboardLayout, so the SidebarProvider remounts on every navigation;
+  // shadcn only seeds from `defaultOpen` (never reads its cookie back), which reset the
+  // rail to expanded on each page change. We control `open` from localStorage instead so
+  // a collapsed rail stays collapsed when you switch pages.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("sidebar_open") !== "false"; } catch { return true; }
+  });
+
   if (loading) {
     return <DashboardLayoutSkeleton />
   }
@@ -99,6 +108,11 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider
+      open={sidebarOpen}
+      onOpenChange={(o) => {
+        setSidebarOpen(o);
+        try { localStorage.setItem("sidebar_open", String(o)); } catch { /* storage unavailable */ }
+      }}
       style={
         {
           // R1: desktop nav is a fixed-width icon rail.
