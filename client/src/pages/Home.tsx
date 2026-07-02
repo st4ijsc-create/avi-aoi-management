@@ -23,7 +23,7 @@ import {
 import { Link } from "wouter";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { FirstRunTour } from "@/components/FirstRunTour";
-import { isFloorRole, landingPathForRole } from "@/lib/roleLanding";
+import { landingPathForRole } from "@/lib/roleLanding";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -38,15 +38,16 @@ export default function Home() {
     }
   }, [setupCheck, isAuthenticated, setLocation]);
 
-  // Nudge shop-floor roles (operator / maintenance) off the marketing Home onto
-  // their dedicated landing. Home stays reachable via explicit nav with ?stay=1
-  // so this redirect never traps a user who deliberately navigated here.
+  // ONE front door (source-of-truth home): send EVERY authenticated user to their
+  // canonical role-home — not just shop-floor roles — so login and "/" agree on a single
+  // consistent landing. This marketing/overview page stays for logged-out / setup, or when
+  // a signed-in user deliberately navigates here with ?stay=1. Roles with no dedicated
+  // home (landingPathForRole → "/") stay put, so there is no redirect loop.
   useEffect(() => {
     if (loading || !isAuthenticated) return;
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stay")) return;
-    if (isFloorRole(user?.role)) {
-      setLocation(landingPathForRole(user?.role), { replace: true });
-    }
+    const dest = landingPathForRole(user?.role);
+    if (dest !== "/") setLocation(dest, { replace: true });
   }, [loading, isAuthenticated, user?.role, setLocation]);
 
   const features = [
