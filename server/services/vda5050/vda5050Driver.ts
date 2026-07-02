@@ -12,10 +12,10 @@
  *        HITL gate AND ROBOT_CONTROL_ENABLED==="true" (dry-run never calls it),
  *        so this driver does not re-check control flags — the gate is upstream.
  *
- * ⚠ HONEST scaffold. `robotVendorEnum` in the DB does not yet contain "vda5050";
- *   wiring a real AGV requires extending that enum (a go-live prerequisite) OR
- *   running the standalone adapter manager. Topic/field mapping must be validated
- *   against a real AGV.
+ * ⚠ HONEST scaffold. As of doc 24 C4, migration 0161 adds "vda5050" to
+ *   `robotVendorEnum`, so a robots.vendor='vda5050' row now persists and the driver
+ *   is selectable through the standard robot framework (no longer enum-blocked).
+ *   Topic/field mapping still MUST be validated against a real AGV before go-live.
  */
 import type {
   RobotDriver,
@@ -45,8 +45,8 @@ type MqttLikeClient = {
   connected?: boolean;
 };
 
-/** The logical vendor key this driver registers under (cast — DB enum lacks it). */
-export const VDA5050_VENDOR = "vda5050" as unknown as RobotVendor;
+/** The logical vendor key this driver registers under (now a first-class RobotVendor). */
+export const VDA5050_VENDOR: RobotVendor = "vda5050";
 
 export class Vda5050RobotDriver implements RobotDriver {
   readonly vendor: RobotVendor = VDA5050_VENDOR;

@@ -124,6 +124,7 @@
     "node-opcua": "^2.173",
     "nodemailer": "^7.0.13",
     "nodes7": "^0.3.18",
+    "occt-import-js": "^0.0.23",
     "onnxruntime-node": "^1.24.3",
     "openai": "^6.34.0",
     "otplib": "^13.4.0",

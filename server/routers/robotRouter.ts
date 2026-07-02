@@ -9,7 +9,7 @@ import { getDb } from "../db/connection";
 import { robots, robotTelemetry, robotJobs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
-const vendorEnum = z.enum(["fanuc", "mitsubishi", "delta", "techman", "sim"]);
+const vendorEnum = z.enum(["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050"]);
 const kindEnum = z.enum(["arm", "scara", "cobot", "agv"]);
 
 export const robotRouter = router({

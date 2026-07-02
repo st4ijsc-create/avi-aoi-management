@@ -39,6 +39,7 @@ import {
   type Vec3,
   walkLinkTree,
 } from "./urdfParser";
+import { GltfBinaryBuilder, defaultMaterial } from "./gltfAssembly";
 
 // ── Triangle-mesh primitive: flat positions + normals + indices ─────────────────
 
@@ -241,11 +242,6 @@ function rpyToQuat(rpy: Vec3): [number, number, number, number] {
   return [qx, qy, qz, qw];
 }
 
-const GLTF_FLOAT = 5126;
-const GLTF_UNSIGNED_INT = 5125;
-const GLTF_ARRAY_BUFFER = 34962;
-const GLTF_ELEMENT_ARRAY_BUFFER = 34963;
-
 export interface UrdfToGltfResult {
   /** The glTF 2.0 JSON document (single embedded buffer, base64 data-URI). */
   gltf: Record<string, unknown>;
@@ -270,27 +266,11 @@ export function urdfToGltf(
 ): UrdfToGltfResult {
   const tree = walkLinkTree(robot);
 
-  // Binary buffer accumulation (4-byte aligned per glTF spec).
-  const bufferParts: Buffer[] = [];
-  let byteOffset = 0;
-  const bufferViews: Array<Record<string, unknown>> = [];
-  const accessors: Array<Record<string, unknown>> = [];
-
-  const pushView = (data: Buffer, target: number): number => {
-    // Pad to 4-byte boundary.
-    const pad = (4 - (byteOffset % 4)) % 4;
-    if (pad) {
-      bufferParts.push(Buffer.alloc(pad));
-      byteOffset += pad;
-    }
-    const view = { buffer: 0, byteOffset, byteLength: data.byteLength, target };
-    bufferViews.push(view);
-    bufferParts.push(data);
-    byteOffset += data.byteLength;
-    return bufferViews.length - 1;
-  };
-
-  const meshes: Array<Record<string, unknown>> = [];
+  // Shared glTF binary assembler (4-byte aligned bufferViews + POSITION min/max).
+  const builder = new GltfBinaryBuilder();
+  const meshes = builder.meshes;
+  const accessors = builder.accessors;
+  const bufferViews = builder.bufferViews;
   const externalMeshes: ExternalMeshRef[] = [];
 
   // Track link name → mesh index (only for links that produced geometry).
@@ -299,47 +279,7 @@ export function urdfToGltf(
   const addMeshForVisual = (linkName: string, vis: UrdfVisual): number => {
     const { mesh, externalRef } = geometryToMesh(linkName, vis.geometry, opts.meshResolver);
     if (externalRef) externalMeshes.push(externalRef);
-
-    // POSITION accessor.
-    const posBuf = Buffer.from(new Float32Array(mesh.positions).buffer);
-    const posView = pushView(posBuf, GLTF_ARRAY_BUFFER);
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      minX = Math.min(minX, mesh.positions[i]); maxX = Math.max(maxX, mesh.positions[i]);
-      minY = Math.min(minY, mesh.positions[i + 1]); maxY = Math.max(maxY, mesh.positions[i + 1]);
-      minZ = Math.min(minZ, mesh.positions[i + 2]); maxZ = Math.max(maxZ, mesh.positions[i + 2]);
-    }
-    const posAccessor = accessors.length;
-    accessors.push({
-      bufferView: posView,
-      componentType: GLTF_FLOAT,
-      count: mesh.positions.length / 3,
-      type: "VEC3",
-      min: [minX, minY, minZ],
-      max: [maxX, maxY, maxZ],
-    });
-
-    // NORMAL accessor.
-    const normBuf = Buffer.from(new Float32Array(mesh.normals).buffer);
-    const normView = pushView(normBuf, GLTF_ARRAY_BUFFER);
-    const normAccessor = accessors.length;
-    accessors.push({ bufferView: normView, componentType: GLTF_FLOAT, count: mesh.normals.length / 3, type: "VEC3" });
-
-    // Indices accessor.
-    const idxBuf = Buffer.from(new Uint32Array(mesh.indices).buffer);
-    const idxView = pushView(idxBuf, GLTF_ELEMENT_ARRAY_BUFFER);
-    const idxAccessor = accessors.length;
-    accessors.push({ bufferView: idxView, componentType: GLTF_UNSIGNED_INT, count: mesh.indices.length, type: "SCALAR" });
-
-    const meshIndex = meshes.length;
-    meshes.push({
-      name: linkName,
-      primitives: [
-        { attributes: { POSITION: posAccessor, NORMAL: normAccessor }, indices: idxAccessor, material: 0, mode: 4 },
-      ],
-    });
-    return meshIndex;
+    return builder.addMesh(linkName, mesh, 0).meshIndex;
   };
 
   // Build meshes for links that carry geometry (prefer <visual>, else <collision>).
@@ -386,8 +326,7 @@ export function urdfToGltf(
   // Conservative: walk tree accumulating translations only (rotations kept simple for bounds).
   const bounds = computeRobotBounds(robot, tree, linkMeshIndex, meshes, accessors);
 
-  const buffer = Buffer.concat(bufferParts);
-  const dataUri = `data:application/octet-stream;base64,${buffer.toString("base64")}`;
+  const { buffer, dataUri } = builder.finalize();
 
   const gltf: Record<string, unknown> = {
     asset: { version: "2.0", generator: "avi-aoi urdfToGltf (T2a hand-rolled)" },
@@ -395,13 +334,7 @@ export function urdfToGltf(
     scenes: [{ nodes: roots }],
     nodes,
     meshes,
-    materials: [
-      {
-        name: "urdf-default",
-        pbrMetallicRoughness: { baseColorFactor: [0.7, 0.72, 0.75, 1], metallicFactor: 0.1, roughnessFactor: 0.8 },
-        doubleSided: true,
-      },
-    ],
+    materials: [defaultMaterial("urdf-default")],
     accessors,
     bufferViews,
     buffers: [{ byteLength: buffer.byteLength, uri: dataUri }],

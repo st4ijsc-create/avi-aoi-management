@@ -8,7 +8,10 @@ import {
   pgTable, serial, integer, varchar, text, boolean, timestamp, jsonb, decimal, index, unique, pgEnum,
 } from "drizzle-orm/pg-core";
 
-export const robotVendorEnum = pgEnum("robotvendorenum", ["fanuc", "mitsubishi", "delta", "techman", "sim"]);
+// "vda5050" added by migration 0161 (doc 24 C4) so an AGV/AMR driven over the open
+// VDA 5050 MQTT standard is a first-class robot vendor (motion still gated by the
+// robotCommandDispatcher HITL/dry-run path — this is only a registry vendor).
+export const robotVendorEnum = pgEnum("robotvendorenum", ["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050"]);
 export const robotKindEnum = pgEnum("robotkindenum", ["arm", "scara", "cobot", "agv"]);
 export const robotJobTypeEnum = pgEnum("robotjobtypeenum", ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"]);
 export const robotJobStatusEnum = pgEnum("robotjobstatusenum", ["draft", "pending", "confirmed", "running", "done", "failed", "simulated", "rejected"]);

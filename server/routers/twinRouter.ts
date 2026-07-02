@@ -35,6 +35,8 @@ import {
   archiveModel,
 } from "../services/twin/modelRegistry";
 import { buildSceneGraph } from "../services/twin/sceneGraph";
+import { buildFactoryTwinModels } from "../services/twin/twinSchema";
+import { buildFactoryUsda } from "../services/twin/usdExport";
 import { runReplay } from "../services/twin/twinReplay";
 import { buildFactoryGrid, planPathOnGrid } from "../services/twin/occupancyGrid";
 import {
@@ -248,16 +250,25 @@ export const twinRouter = router({
         });
       }),
 
-    /** STEP/IGES seam — registers 'pending' (phase-2), never fakes geometry. Gated. */
+    /**
+     * STEP/IGES → glTF via occt-import-js (T4). With `stepSource` (raw CAD text or base64) it
+     * converts real CAD → a 'ready' registry row; without it, the honest 'pending' seam is kept.
+     * A bad file / unavailable kernel → 'failed' + reason. Never fabricates geometry. Gated.
+     */
     convertStep: protectedProcedure
       .use(requirePermission("machine_control", "canCreate"))
       .input(
         z.object({
           modelKey: z.string().min(1).max(128),
           sourceFormat: z.enum(["step", "iges"]),
+          // Raw STEP/IGES file contents (ISO-10303 text) or base64. Optional — omit to keep the seam.
+          stepSource: z.string().min(1).max(50_000_000).optional(),
           machineId: z.number().int().positive().optional(),
           equipmentId: z.string().max(128).optional(),
           equipmentClass: z.string().max(64).optional(),
+          scope: z.string().max(64).optional(),
+          corporateCode: z.string().max(50).optional(),
+          factoryId: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input, ctx }) => {
@@ -271,6 +282,46 @@ export const twinRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ factoryId: z.number().int().positive() }))
     .query(async ({ input }) => buildSceneGraph(input.factoryId)),
+
+  // ── T3 DTDL TWIN MODELS (read-only, queryable) ─────────────────────────────
+  //   The scene-graph projected into a DTDL-v3-shaped twin graph: the metamodel
+  //   Interfaces + the typed twin instances (Properties/Telemetry/Relationships/
+  //   Components). Telemetry channels are sourced from the equipment capability model.
+  //   Serializable projection only — the query API (TwinModelGraph) lives server-side.
+  twinModels: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const g = await buildFactoryTwinModels(input.factoryId);
+      return {
+        interfaces: g.interfaces,
+        twins: g.twins,
+        counts: {
+          total: g.size,
+          devices: g.getAllDevices().length,
+        },
+      };
+    }),
+
+  // ── T3 USD (USDA) EXPORT (read-only, interchange) ──────────────────────────
+  //   Emit the scene-graph as a valid USDA (ASCII USD) stage for Omniverse/Isaac.
+  //   Returns the text + basic metrics (no device control, no writes).
+  usdExport: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        factoryId: z.number().int().positive(),
+        upAxis: z.enum(["Y", "Z"]).optional(),
+        metersPerUnit: z.number().positive().max(1000).optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const usda = await buildFactoryUsda(input.factoryId, {
+        upAxis: input.upAxis,
+        metersPerUnit: input.metersPerUnit,
+      });
+      return { usda, byteLength: Buffer.byteLength(usda, "utf8"), format: "usda" as const };
+    }),
 
   // ── REPLAY (read-only, size-capped) ────────────────────────────────────────
   replay: protectedProcedure
