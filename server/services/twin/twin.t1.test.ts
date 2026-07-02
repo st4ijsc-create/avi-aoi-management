@@ -91,7 +91,7 @@ vi.mock("../../db/connection", () => ({ getDb: async () => makeFakeDb() }));
 import { pickBestModel, registerModel, resolveModel, isModelRenderable } from "./modelRegistry";
 import { buildGrid, planPathOnGrid, worldToCell, makeEmptyGrid } from "./occupancyGrid";
 import { assembleSceneGraph } from "./sceneGraph";
-import { foldSnapshots, computeEffectiveStep } from "./twinReplay";
+import { foldSnapshots, computeEffectiveStep, foldRobotJointFrames, mergeJointFrames } from "./twinReplay";
 import { rowToDelta } from "./twinStream";
 
 beforeEach(() => {
@@ -271,6 +271,96 @@ describe("twinStream rowToDelta", () => {
     expect(rowToDelta({ machineId: 5, metric: "position_x", numValue: 3 } as any)).toEqual({ equipmentId: "machine:5", field: "x", value: 3 });
     expect(rowToDelta({ machineId: 5, metric: "packml_state", textValue: "Held" } as any)).toEqual({ equipmentId: "machine:5", field: "state", value: "Held" });
     expect(rowToDelta({ machineId: 5, metric: "temperature", numValue: 70 } as any)).toBeNull();
+  });
+
+  // doc 24 Wave-1 T1 — a joints metric (JSON number array in textValue) becomes a
+  // joints delta; a malformed/empty joints payload is ignored (no articulation).
+  it("maps a joints metric (JSON array) → joints field", () => {
+    expect(rowToDelta({ machineId: 5, metric: "joints", textValue: "[0,1.57,-0.5]" } as any))
+      .toEqual({ equipmentId: "machine:5", field: "joints", value: [0, 1.57, -0.5] });
+    // comma-separated list is also accepted
+    expect(rowToDelta({ deviceId: "robot:3", metric: "joint_angles", textValue: "0.1, 0.2" } as any))
+      .toEqual({ equipmentId: "device:robot:3", field: "joints", value: [0.1, 0.2] });
+    // malformed / empty → null (falls back to the sliding block)
+    expect(rowToDelta({ machineId: 5, metric: "joints", textValue: "not-json" } as any)).toBeNull();
+    expect(rowToDelta({ machineId: 5, metric: "joints", textValue: "[]" } as any)).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// PURE — T1 articulation: scene-graph carries joints + modelId for robots
+// ════════════════════════════════════════════════════════════════════════════
+describe("assembleSceneGraph articulation (joints + kinematicModelId)", () => {
+  it("carries a robot's joints + maps kind → sample model id; machines stay null", () => {
+    const sg = assembleSceneGraph({
+      factory: { id: 1, code: "F1", name: "Factory 1" },
+      zones: [],
+      lines: [{ id: 2, code: "L2", name: "Line 2", workshopId: 9 }],
+      stations: [{ id: 5, code: "S5", name: "Station 5", lineId: 2 }],
+      machines: [{ id: 12, code: "M12", name: "AOI 12", stationId: 5, operationStatus: "running" }],
+      robots: [
+        { id: 3, code: "R3", name: "Cobot 3", stationId: 5, status: "running", kind: "cobot", joints: [0, 1.5, -0.5, 0, 0, 0] },
+        { id: 4, code: "R4", name: "Scara 4", stationId: 5, status: "idle", kind: "scara", joints: [0.2, -0.3, 40, 0] },
+        { id: 5, code: "R5", name: "Blind 5", stationId: 5, status: "idle", kind: "arm" }, // no joints
+      ],
+    });
+    const machine = sg.devices.find((d) => d.id === "machine:12")!;
+    expect(machine.joints).toBeNull();
+    expect(machine.kinematicModelId).toBeNull();
+
+    const cobot = sg.devices.find((d) => d.id === "robot:3")!;
+    expect(cobot.joints).toEqual([0, 1.5, -0.5, 0, 0, 0]);
+    expect(cobot.kinematicModelId).toBe("sample-arm-6dof"); // arm/cobot → 6-DOF
+
+    const scara = sg.devices.find((d) => d.id === "robot:4")!;
+    expect(scara.joints).toEqual([0.2, -0.3, 40, 0]);
+    expect(scara.kinematicModelId).toBe("sample-scara"); // scara/agv → 4-DOF
+
+    const blind = sg.devices.find((d) => d.id === "robot:5")!;
+    expect(blind.joints).toBeNull(); // no joint telemetry → falls back to block
+    expect(blind.kinematicModelId).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// PURE — T1 replay articulation: fold robot joints + merge into base snapshots
+// ════════════════════════════════════════════════════════════════════════════
+describe("replay articulation (foldRobotJointFrames + mergeJointFrames)", () => {
+  it("folds last poseJson.joints per (robot,bucket) and maps kind → model id", () => {
+    const t0 = new Date("2026-06-30T00:00:00Z");
+    const frames = foldRobotJointFrames([
+      { bucket: t0, robotId: 3, kind: "arm", poseJson: { joints: [0, 0, 0, 0, 0, 0] } },
+      { bucket: t0, robotId: 3, kind: "arm", poseJson: { joints: [0.1, 0.2, 0.3, 0, 0, 0] } }, // last wins (array_agg DESC → first, but fold keeps last seen)
+      { bucket: t0, robotId: 9, kind: "scara", poseJson: { joints: [1, 2, 30, 0] } },
+      { bucket: t0, robotId: 7, kind: "arm", poseJson: null }, // no pose → skipped
+    ]);
+    const r3 = frames.find((f) => f.equipmentId === "robot:3")!;
+    expect(r3.joints).toEqual([0.1, 0.2, 0.3, 0, 0, 0]);
+    expect(r3.kinematicModelId).toBe("sample-arm-6dof");
+    const r9 = frames.find((f) => f.equipmentId === "robot:9")!;
+    expect(r9.kinematicModelId).toBe("sample-scara");
+    expect(frames.find((f) => f.equipmentId === "robot:7")).toBeUndefined();
+  });
+
+  it("merges joints into a matching base frame, appends a joints-only frame otherwise", () => {
+    const ts = 1000;
+    const base = [
+      { timestamp: ts, equipmentId: "robot:3", position: { x: 1, y: 2 }, packMlState: "Execute", activeTaskId: null, joints: null, kinematicModelId: null },
+    ];
+    const jf = [
+      { timestamp: ts, equipmentId: "robot:3", position: null, packMlState: null, activeTaskId: null, joints: [0.5], kinematicModelId: "sample-arm-6dof" },
+      { timestamp: ts, equipmentId: "robot:8", position: null, packMlState: null, activeTaskId: null, joints: [0.1], kinematicModelId: "sample-scara" },
+    ];
+    const merged = mergeJointFrames(base, jf);
+    const r3 = merged.find((s) => s.equipmentId === "robot:3")!;
+    // existing position/state preserved AND joints attached in place
+    expect(r3.position).toEqual({ x: 1, y: 2 });
+    expect(r3.packMlState).toBe("Execute");
+    expect(r3.joints).toEqual([0.5]);
+    // robot:8 had no base frame → appended as a joints-only frame
+    const r8 = merged.find((s) => s.equipmentId === "robot:8")!;
+    expect(r8.position).toBeNull();
+    expect(r8.joints).toEqual([0.1]);
   });
 });
 

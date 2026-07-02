@@ -63,6 +63,17 @@ export interface DeviceNode {
   modelKind: string | null;
   activeTaskId: number | null;
   alarm: SceneAlarm | null;
+  /**
+   * doc 24 Wave-1 T1 — OPTIONAL articulation data (robots only, additive):
+   *   • joints  — latest joint-angle vector from robot_telemetry.poseJson.joints
+   *               (radians for revolute, mm for prismatic). null when the driver
+   *               reports no joints → the FE renders the sliding block as before.
+   *   • kinematicModelId — which sample kinematic model the joints index into
+   *               (mirrors the server family mapping: arm/cobot → sample-arm-6dof,
+   *               scara/agv → sample-scara). Lets the FE pick the matching FK chain.
+   */
+  joints: number[] | null;
+  kinematicModelId: string | null;
 }
 
 export interface StationNode {
@@ -154,6 +165,34 @@ function poseToPosition(pose: Record<string, unknown> | null): { x: number; y: n
   return null;
 }
 
+/**
+ * doc 24 Wave-1 T1 — pull the joint-angle vector out of a robot pose JSON. The
+ * robotDriver/VDA5050 shape carries joints at `poseJson.joints` (a number[] —
+ * radians for revolute, mm for prismatic). Returns null when absent/malformed so a
+ * robot without joint telemetry keeps rendering as the sliding block (backward-compat).
+ */
+function poseToJoints(pose: Record<string, unknown> | null): number[] | null {
+  if (!pose) return null;
+  const j = (pose as { joints?: unknown }).joints;
+  if (Array.isArray(j) && j.length > 0 && j.every((v) => typeof v === "number" && Number.isFinite(v))) {
+    return j as number[];
+  }
+  return null;
+}
+
+/**
+ * doc 24 Wave-1 T1 — map a robot `kind` → the sample kinematic-model id the FE FK
+ * uses. MIRRORS the server's robotKindToKinematicFamily + resolveKinematicModel
+ * (assetCockpitService.ts): arm/cobot → sample-arm-6dof (6-DOF UR-ish);
+ * scara/agv/other → sample-scara (4-DOF). Kept identical so a joints vector renders
+ * the same chain client- and server-side.
+ */
+function robotKindToKinematicModelId(kind: string | null | undefined): string {
+  const k = (kind ?? "").toLowerCase();
+  if (k === "cobot" || k === "arm") return "sample-arm-6dof";
+  return "sample-scara";
+}
+
 /** Machine layout position (normalized 0..1) → a plain {x,y} (best-effort). */
 function machinePosition(m: { layoutPositionX: unknown; layoutPositionY: unknown }): { x: number; y: number } | null {
   const x = m.layoutPositionX != null ? Number(m.layoutPositionX) : null;
@@ -242,12 +281,15 @@ export async function buildSceneGraph(factoryId: number): Promise<SceneGraph> {
       modelKind: modelRow?.modelKind ?? null,
       activeTaskId: null, // machines are not allocated tasks in G1
       alarm: null,
+      joints: null, // machines are not articulated
+      kinematicModelId: null,
     });
   }
 
   // Robot device nodes.
   for (const r of factoryRobots) {
     const pose = robotPose.get(r.id) ?? null;
+    const joints = poseToJoints(pose);
     const modelRow = await resolveModel({ equipmentId: String(r.id), equipmentClass: "ROBOT" });
     devices.push({
       id: `robot:${r.id}`,
@@ -264,6 +306,9 @@ export async function buildSceneGraph(factoryId: number): Promise<SceneGraph> {
       modelKind: modelRow?.modelKind ?? null,
       activeTaskId: taskByDevice.get(r.id) ?? null,
       alarm: null,
+      // T1 — carry joints + the matching kinematic-model id so the FE can articulate.
+      joints,
+      kinematicModelId: joints ? robotKindToKinematicModelId(r.kind) : null,
     });
   }
 
@@ -319,7 +364,7 @@ export interface SceneGraphInputs {
   lines: Array<{ id: number; code: string; name: string; workshopId: number }>;
   stations: Array<{ id: number; code: string; name: string; lineId: number }>;
   machines: Array<{ id: number; code: string; name: string; stationId: number; operationStatus?: string | null; modelUri?: string | null }>;
-  robots: Array<{ id: number; code: string; name: string; stationId: number | null; status?: string | null; activeTaskId?: number | null; modelUri?: string | null }>;
+  robots: Array<{ id: number; code: string; name: string; stationId: number | null; status?: string | null; activeTaskId?: number | null; modelUri?: string | null; kind?: string | null; joints?: number[] | null }>;
 }
 
 export function assembleSceneGraph(inputs: SceneGraphInputs): SceneGraph {
@@ -340,9 +385,12 @@ export function assembleSceneGraph(inputs: SceneGraphInputs): SceneGraph {
       modelKind: null,
       activeTaskId: null,
       alarm: null,
+      joints: null,
+      kinematicModelId: null,
     });
   }
   for (const r of inputs.robots) {
+    const joints = r.joints && r.joints.length > 0 ? r.joints : null;
     devices.push({
       id: `robot:${r.id}`,
       kind: "robot",
@@ -358,6 +406,8 @@ export function assembleSceneGraph(inputs: SceneGraphInputs): SceneGraph {
       modelKind: null,
       activeTaskId: r.activeTaskId ?? null,
       alarm: null,
+      joints,
+      kinematicModelId: joints ? robotKindToKinematicModelId(r.kind) : null,
     });
   }
   const devicesByStation = new Map<number, DeviceNode[]>();

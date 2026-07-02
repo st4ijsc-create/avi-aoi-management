@@ -202,9 +202,55 @@ function toBroadcast(row: InsertOtTelemetry) {
 }
 
 /**
+ * Bulk-persist canonical rows. PRIMARY path = the dedicated TimescaleDB hypertable
+ * (mirrors energy_readings). When TSDB is disabled/degraded the helper returns null
+ * and we FALL BACK to the main-DB ot_telemetry table (the plain table from 0132).
+ * DB-absent on both paths → persist NOTHING (returns 0). This is the SINGLE write
+ * function shared by the live ingest path AND the C1 store-and-forward backfill so
+ * both persist identically. Throws on a real DB error so the caller can decide to
+ * buffer (store-and-forward) vs swallow (live path). Returns rows persisted.
+ */
+async function persistRows(rows: InsertOtTelemetry[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const { insertOtTelemetryRows } = await import("../db/timescale");
+  const tsdbPersisted = await insertOtTelemetryRows(rows);
+  if (tsdbPersisted !== null) {
+    return tsdbPersisted; // TSDB handled it (count, possibly 0 if it degraded mid-batch).
+  }
+  // TSDB disabled/degraded → main-DB fallback.
+  const { getDb } = await import("../db/connection");
+  const db = await getDb();
+  if (db) {
+    const { otTelemetry } = await import("../../drizzle/schema");
+    await db.insert(otTelemetry).values(rows);
+    return rows.length;
+  }
+  return 0; // DB absent on both paths → nothing persisted.
+}
+
+/**
+ * C1 — wire the store-and-forward backfill to the SAME persistRows path. The insert fn
+ * the buffer replays through is exactly the live write, so a backfilled row lands
+ * identically to a live one. setInsertFn is an idempotent assignment (cheap), so we
+ * (re)wire on each engaged ingest rather than latching — this keeps the wiring correct
+ * even after a store-forward reset (tests / maintenance) with no stale-latch hazard.
+ */
+async function ensureStoreForwardWired(): Promise<typeof import("./ot/storeForward")> {
+  const sf = await import("./ot/storeForward");
+  sf.setInsertFn((rows) => persistRows(rows));
+  return sf;
+}
+
+/**
  * THE unified ingest entry. Normalize → resolve machineId → bulk-insert into
  * ot_telemetry → broadcast on `telemetry:sample`. Fail-safe: returns the count
  * actually persisted; never throws into the caller's poll loop.
+ *
+ * C1 STORE-AND-FORWARD (additive, flag-gated by OT_STORE_FORWARD_ENABLED, default OFF):
+ * when the flag is ON and the insert persists 0 rows for a NON-EMPTY batch (DB down),
+ * the rows are BUFFERED to a durable WAL instead of being dropped; when the flag is ON
+ * and a write SUCCEEDS, a bounded backfill opportunistically drains anything buffered
+ * while offline. With the flag OFF the code path is byte-for-byte the prior behaviour.
  */
 export async function ingestTelemetry(samples: CanonicalSample[]): Promise<number> {
   if (!samples || samples.length === 0) return 0;
@@ -217,29 +263,40 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
     rows.push(toCanonicalRow(s, machineId));
   }
 
-  // 3: bulk insert. PRIMARY path = the dedicated TimescaleDB hypertable (mirrors
-  // energy_readings). When TSDB is disabled/degraded the helper returns null and
-  // we FALL BACK to the main-DB ot_telemetry table (the plain table from 0132).
-  // DB-absent on both paths → skip persist, still broadcast. Degrade-safe: an
-  // insert error never propagates into a protocol reader's poll loop.
+  // 3: bulk insert via the shared persist path. Degrade-safe: an insert error never
+  // propagates into a protocol reader's poll loop.
   let persisted = 0;
+  let insertThrew = false;
   try {
-    const { insertOtTelemetryRows } = await import("../db/timescale");
-    const tsdbPersisted = await insertOtTelemetryRows(rows);
-    if (tsdbPersisted !== null) {
-      persisted = tsdbPersisted; // TSDB handled it (count, possibly 0).
-    } else {
-      // TSDB disabled/degraded → main-DB fallback.
-      const { getDb } = await import("../db/connection");
-      const db = await getDb();
-      if (db) {
-        const { otTelemetry } = await import("../../drizzle/schema");
-        await db.insert(otTelemetry).values(rows);
-        persisted = rows.length;
+    persisted = await persistRows(rows);
+  } catch (err) {
+    insertThrew = true;
+    console.error("[TelemetryBus] insert failed:", (err as Error)?.message || err);
+  }
+
+  // 3b: C1 STORE-AND-FORWARD (additive; no-op unless OT_STORE_FORWARD_ENABLED). When
+  // the batch did NOT fully persist (DB down/degraded or the insert threw), buffer the
+  // rows to the durable WAL instead of dropping them. On a SUCCESSFUL write,
+  // opportunistically drain anything buffered while offline. Fault-isolated so the
+  // store-and-forward path can never break ingest/broadcast.
+  try {
+    const { storeForwardEnabled } = await import("./ot/storeForward");
+    if (storeForwardEnabled()) {
+      const sf = await ensureStoreForwardWired();
+      // The persist path is all-or-nothing per batch (one db.insert(values)): it either
+      // returns rows.length, returns 0 (DB absent/degraded), or throws. So "nothing
+      // landed" == (threw OR persisted 0). Buffer only then — never buffer rows that
+      // already persisted (that would risk a double-insert since a live write is not in
+      // the applied ledger). buffer() is itself idempotent by natural key.
+      if (insertThrew || persisted === 0) {
+        await sf.buffer(rows);
+      } else if (persisted === rows.length) {
+        // A healthy write → the DB is back; drain the offline backlog (bounded).
+        if (sf.bufferedCount() > 0) await sf.backfill();
       }
     }
   } catch (err) {
-    console.error("[TelemetryBus] insert failed:", (err as Error)?.message || err);
+    console.error("[TelemetryBus] store-and-forward failed:", (err as Error)?.message || err);
   }
 
   // 4: broadcast on the ONE unified channel (signal-only; no-op without io) AND

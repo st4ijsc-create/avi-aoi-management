@@ -38,7 +38,7 @@ import type {
 import { parseFlowJson, countBlocks, assignIds, walkBlocks, type Flow, type IrBlock } from "./irModel";
 import { lintFlow, type LintDiagnostic } from "./irSafetyLinter";
 import { transpileFlow, defaultTargetFor, type TranspileTarget } from "./transpilers/registry";
-import { simKinematicEnabled, runGateForFlow, type SimScene, type SimGateResult } from "../sim/kinematicSimGate";
+import { simKinematicEnabled, runGateForFlow, runGateForFlowAsync, type SimScene, type SimGateResult } from "../sim/kinematicSimGate";
 import { EMPTY_SCENE } from "../sim/sceneAdapter";
 
 const IR_CAPS: ProgrammingCapability = {
@@ -139,7 +139,11 @@ export class IrProgrammingAdapter implements ProgrammingAdapter {
       // Scenario may supply a scene (obstacles + safety zones from the T1 scene graph via
       // sceneFromGraph). Absent → EMPTY_SCENE (still checks joint-limit + workspace).
       const scene = ((scenario as { scene?: SimScene }).scene) ?? EMPTY_SCENE;
-      const gate: SimGateResult = runGateForFlow(flow, scene, {
+      // Use the ASYNC runner so that when SIM_PHYSICS_ENABLED is on it binds the real Rapier
+      // rigid-body backend (async WASM load, cached) and a physics violation BLOCKS the gate.
+      // When the physics flag is OFF this is identical to runGateForFlow (no Rapier load) — the
+      // internal quasi-static dynamics still runs additively. Deploy stays gated separately.
+      const gate: SimGateResult = await runGateForFlowAsync(flow, scene, {
         selfCollision: (scenario as { selfCollision?: boolean }).selfCollision,
       });
       return this.gateToSimResult(build, flowId, gate);
@@ -182,6 +186,11 @@ export class IrProgrammingAdapter implements ProgrammingAdapter {
       if (gate.collision_events.length) warnings.push(`COLLISION: ${gate.collision_events.length} event(s) — e.g. ${gate.collision_events[0].linkA} vs ${gate.collision_events[0].linkB} (sep ${gate.collision_events[0].distance.toFixed(1)}mm).`);
       if (gate.joint_limit_violations.length) warnings.push(`JOINT-LIMIT: ${gate.joint_limit_violations.length} violation(s) — e.g. ${gate.joint_limit_violations[0].joint}.`);
       if (gate.safety_zone_violations.length) warnings.push(`SAFETY-ZONE: ${gate.safety_zone_violations.length} intrusion(s) — e.g. link ${gate.safety_zone_violations[0].link} in ${gate.safety_zone_violations[0].zoneId}.`);
+      // PHYSICS-block reasons (only present when SIM_PHYSICS_ENABLED + a real backend flagged a
+      // blocking dynamic violation, which flips gate.pass). Surface them so the operator sees why.
+      if (gate.physicsBlocked && gate.dynamics_reasons?.length) {
+        warnings.push(`PHYSICS (${gate.physicsEngine ?? "engine"}): ${gate.dynamics_reasons.join(" ")}`);
+      }
     }
     if (gate.note) warnings.push(gate.note);
     return {

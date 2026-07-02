@@ -220,3 +220,53 @@ export const commandLog = pgTable("command_log", {
 
 export type CommandLog = typeof commandLog.$inferSelect;
 export type InsertCommandLog = typeof commandLog.$inferInsert;
+
+// ─── Doc 24 / Wave-1 C2 — Hardware commissioning / FAT gate ───────────────────
+//
+// SAFETY (an ADDITIONAL gate, layered ON TOP of the mode gate; never weakens it):
+//   A real (non-simulated) control write to an adapter is BLOCKED unless that
+//   adapter has an ACTIVE, non-expired, SIGNED commissioning record — mirroring the
+//   proven sim-gate → deploy precondition (programmingService). When the flag
+//   OT_COMMISSIONING_REQUIRED is on (the DEFAULT) and the adapter is not commissioned,
+//   commandDispatcher FORCES the 'simulated' path regardless of OT_CONTROL_ENABLED
+//   (records a command_log row with errorText 'not_commissioned: …'; NO driver write).
+//   This table is the sign-off ledger the gate consults.
+//
+// `status` is a plain varchar (NOT a pg enum) so the migration stays additive +
+// idempotent (no ALTER TYPE): one of 'active' | 'revoked' | 'expired'. Only an
+// 'active' row with (expiresAt IS NULL OR expiresAt > now()) commissions the adapter.
+
+/**
+ * Commissioning Records — an append-mostly sign-off ledger: proof that an adapter
+ * passed its Factory Acceptance Test (FAT) / hardware commissioning and MAY receive
+ * real control writes. Admin-gated create (sign) / revoke. `signedBy`/`signedAt`
+ * capture who accepted responsibility; `fatReference` links the external FAT report.
+ */
+export const commissioningRecords = pgTable("commissioning_records", {
+  id: serial("id").primaryKey(),
+  adapterId: integer("adapterId").notNull(),
+  // 'active' (signed & in force) | 'revoked' (manually rescinded) | 'expired'.
+  // Only 'active' + non-expired commissions the adapter for real writes.
+  status: varchar("status", { length: 16 }).default("active").notNull(),
+  /** External FAT / commissioning report reference (doc id, ticket, checklist). */
+  fatReference: varchar("fatReference", { length: 255 }),
+  /** User (users.id) who signed off the commissioning — owns responsibility. */
+  signedBy: integer("signedBy").notNull(),
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+  /** Optional validity expiry; NULL = no expiry. A past expiry ⇒ NOT commissioned. */
+  expiresAt: timestamp("expiresAt"),
+  /** Set when status becomes 'revoked' (who + when + why). */
+  revokedBy: integer("revokedBy"),
+  revokedAt: timestamp("revokedAt"),
+  revokeReason: text("revokeReason"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_commissioning_records_adapter").on(table.adapterId),
+  index("idx_commissioning_records_status").on(table.status),
+  // Fast "is this adapter commissioned?" probe (adapter + status).
+  index("idx_commissioning_records_adapter_status").on(table.adapterId, table.status),
+]);
+
+export type CommissioningRecord = typeof commissioningRecords.$inferSelect;
+export type InsertCommissioningRecord = typeof commissioningRecords.$inferInsert;

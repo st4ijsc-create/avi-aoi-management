@@ -29,7 +29,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader, MetricCard, SectionCard, StatusBadge } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard, SectionCard, StatusBadge } from "@/components/patterns";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,12 +42,20 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Cpu, Info, Lock, Move, Rotate3d, Hand, HandMetal, ToggleRight, Hourglass,
-  GitBranch, Repeat, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
+  Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
-  FolderOpen, ListTree, ShieldCheck, Loader2,
+  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  // Shared IR model + pure helpers (ONE source of truth for tree AND graph views).
+  BLOCK_ICON, BLOCK_LABEL, PALETTE_GROUPS, COMPARE_OPS, TARGET_DEVICE_TYPES,
+  newBlock, findBlock, updateBlock, deleteBlock, moveBlock, addChild, cloneBlocks,
+  reorderRelativeToSibling, childSlots, getChildren, summarize,
+  type Pose, type CompareOp, type IrBlock, type BlockType, type Slot, type Flow,
+  type TargetDeviceType,
+} from "@/components/programming/irTree";
+import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 
 // ── Typesafe shapes inferred from the ir router output ────────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -56,208 +64,6 @@ type LintOutput = RouterOutputs["ir"]["lint"];
 type TranspileOutput = RouterOutputs["ir"]["transpilePreview"];
 type IrDiagnostic = LintOutput["diagnostics"][number];
 type TranspileTarget = IrStatus["targets"][number];
-
-// ── Local IR types (mirror server/services/programming/ir/irModel.ts input shape) ──
-type Pose = { x: number; y: number; z: number; rx: number; ry: number; rz: number };
-type CompareOp = "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
-type SignalCondition = { signal_ref: string; operator: CompareOp; value: number | boolean | string };
-
-type MoveLinearBlock = { id?: string; type: "move_linear"; target_pose: Pose; speed_mms: number; acceleration: number; blend_radius: number };
-type MoveJointBlock = { id?: string; type: "move_joint"; joints: number[]; speed_pct: number };
-type GripBlock = { id?: string; type: "grip"; tool_id: string; force_limit_n: number; timeout_ms: number };
-type ReleaseBlock = { id?: string; type: "release"; tool_id?: string };
-type SetOutputBlock = { id?: string; type: "set_output"; signal: string; value: boolean | number };
-type WaitBlock = { id?: string; type: "wait"; signal_ref?: string; ms?: number };
-type IfConditionBlock = { id?: string; type: "if_condition"; signal_ref: string; operator: CompareOp; value: number | boolean | string; true_branch: IrBlock[]; false_branch: IrBlock[] };
-type LoopBlock = { id?: string; type: "loop"; count?: number; while?: SignalCondition; body: IrBlock[] };
-
-type IrBlock =
-  | MoveLinearBlock | MoveJointBlock | GripBlock | ReleaseBlock
-  | SetOutputBlock | WaitBlock | IfConditionBlock | LoopBlock;
-type BlockType = IrBlock["type"];
-
-type TargetDeviceType = "universal-robots" | "ros2" | "generic";
-type Flow = {
-  flow_id: string;
-  target_device_type: TargetDeviceType;
-  version: number;
-  author?: string;
-  linked_capability?: string;
-  blocks: IrBlock[];
-};
-
-// ── Block metadata (icon / label / group / accent) ────────────────────────────
-const BLOCK_ICON: Record<BlockType, typeof Move> = {
-  move_linear: Move,
-  move_joint: Rotate3d,
-  grip: Hand,
-  release: HandMetal,
-  set_output: ToggleRight,
-  wait: Hourglass,
-  if_condition: GitBranch,
-  loop: Repeat,
-};
-
-const BLOCK_LABEL: Record<BlockType, { key: string; def: string }> = {
-  move_linear: { key: "ir.block.move_linear", def: "Move linear" },
-  move_joint: { key: "ir.block.move_joint", def: "Move joint" },
-  grip: { key: "ir.block.grip", def: "Grip" },
-  release: { key: "ir.block.release", def: "Release" },
-  set_output: { key: "ir.block.set_output", def: "Set output" },
-  wait: { key: "ir.block.wait", def: "Wait" },
-  if_condition: { key: "ir.block.if_condition", def: "If condition" },
-  loop: { key: "ir.block.loop", def: "Loop" },
-};
-
-const PALETTE_GROUPS: Array<{ label: { key: string; def: string }; types: BlockType[] }> = [
-  { label: { key: "ir.group.motion", def: "Motion" }, types: ["move_linear", "move_joint"] },
-  { label: { key: "ir.group.io", def: "I/O" }, types: ["grip", "release", "set_output", "wait"] },
-  { label: { key: "ir.group.control", def: "Control" }, types: ["if_condition", "loop"] },
-];
-
-const COMPARE_OPS: CompareOp[] = ["eq", "neq", "lt", "lte", "gt", "gte"];
-const TARGET_DEVICE_TYPES: TargetDeviceType[] = ["universal-robots", "ros2", "generic"];
-
-// ── Block factory (sane defaults inside the linter's default AABB / ceilings) ──
-let uid = 0;
-function nextId(): string {
-  uid += 1;
-  return `n${Date.now().toString(36)}${uid}`;
-}
-
-function newBlock(type: BlockType): IrBlock {
-  const id = nextId();
-  switch (type) {
-    case "move_linear":
-      return { id, type, target_pose: { x: 0, y: 0, z: 200, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 200, blend_radius: 0 };
-    case "move_joint":
-      return { id, type, joints: [0, 0, 0, 0, 0, 0], speed_pct: 50 };
-    case "grip":
-      return { id, type, tool_id: "gripper-1", force_limit_n: 40, timeout_ms: 2000 };
-    case "release":
-      return { id, type, tool_id: "gripper-1" };
-    case "set_output":
-      return { id, type, signal: "DO1", value: true };
-    case "wait":
-      return { id, type, ms: 500 };
-    case "if_condition":
-      return { id, type, signal_ref: "DI1", operator: "eq", value: true, true_branch: [], false_branch: [] };
-    case "loop":
-      return { id, type, count: 3, body: [] };
-  }
-}
-
-// ── Pure tree ops (child-list aware: true_branch / false_branch / body) ────────
-type Slot = "true_branch" | "false_branch" | "body";
-
-function childSlots(b: IrBlock): Slot[] {
-  if (b.type === "if_condition") return ["true_branch", "false_branch"];
-  if (b.type === "loop") return ["body"];
-  return [];
-}
-function getChildren(b: IrBlock, slot: Slot): IrBlock[] {
-  return ((b as unknown as Record<Slot, IrBlock[] | undefined>)[slot] ?? []);
-}
-
-function cloneBlocks(blocks: IrBlock[]): IrBlock[] {
-  return blocks.map((b) => {
-    if (b.type === "if_condition") return { ...b, true_branch: cloneBlocks(b.true_branch), false_branch: cloneBlocks(b.false_branch) };
-    if (b.type === "loop") return { ...b, body: cloneBlocks(b.body) };
-    return { ...b };
-  });
-}
-
-function findBlock(blocks: IrBlock[], id: string): IrBlock | null {
-  for (const b of blocks) {
-    if (b.id === id) return b;
-    for (const slot of childSlots(b)) {
-      const hit = findBlock(getChildren(b, slot), id);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
-
-/** Apply a mutator to the block with `id`, in place, on a fresh clone. */
-function updateBlock(blocks: IrBlock[], id: string, patch: Partial<IrBlock>): IrBlock[] {
-  return blocks.map((b) => {
-    if (b.id === id) return { ...b, ...patch } as IrBlock;
-    if (b.type === "if_condition") return { ...b, true_branch: updateBlock(b.true_branch, id, patch), false_branch: updateBlock(b.false_branch, id, patch) };
-    if (b.type === "loop") return { ...b, body: updateBlock(b.body, id, patch) };
-    return b;
-  });
-}
-
-function deleteBlock(blocks: IrBlock[], id: string): IrBlock[] {
-  return blocks
-    .filter((b) => b.id !== id)
-    .map((b) => {
-      if (b.type === "if_condition") return { ...b, true_branch: deleteBlock(b.true_branch, id), false_branch: deleteBlock(b.false_branch, id) };
-      if (b.type === "loop") return { ...b, body: deleteBlock(b.body, id) };
-      return b;
-    });
-}
-
-function moveInList(list: IrBlock[], id: string, dir: -1 | 1): IrBlock[] {
-  const i = list.findIndex((b) => b.id === id);
-  if (i < 0) return list;
-  const j = i + dir;
-  if (j < 0 || j >= list.length) return list;
-  const next = [...list];
-  [next[i], next[j]] = [next[j], next[i]];
-  return next;
-}
-/** Move a block up/down within whatever list contains it (top-level or a slot). */
-function moveBlock(blocks: IrBlock[], id: string, dir: -1 | 1): IrBlock[] {
-  if (blocks.some((b) => b.id === id)) return moveInList(blocks, id, dir);
-  return blocks.map((b) => {
-    if (b.type === "if_condition") return { ...b, true_branch: moveBlock(b.true_branch, id, dir), false_branch: moveBlock(b.false_branch, id, dir) };
-    if (b.type === "loop") return { ...b, body: moveBlock(b.body, id, dir) };
-    return b;
-  });
-}
-
-/** Append a child block into a container's slot. */
-function addChild(blocks: IrBlock[], parentId: string, slot: Slot, child: IrBlock): IrBlock[] {
-  return blocks.map((b) => {
-    if (b.id === parentId) {
-      if (b.type === "if_condition" && (slot === "true_branch" || slot === "false_branch")) {
-        return { ...b, [slot]: [...b[slot], child] } as IrBlock;
-      }
-      if (b.type === "loop" && slot === "body") {
-        return { ...b, body: [...b.body, child] };
-      }
-      return b;
-    }
-    if (b.type === "if_condition") return { ...b, true_branch: addChild(b.true_branch, parentId, slot, child), false_branch: addChild(b.false_branch, parentId, slot, child) };
-    if (b.type === "loop") return { ...b, body: addChild(b.body, parentId, slot, child) };
-    return b;
-  });
-}
-
-// ── Human-readable one-line summary per block (for the canvas card) ───────────
-function summarize(b: IrBlock, t: TFunction): string {
-  switch (b.type) {
-    case "move_linear": {
-      const p = b.target_pose;
-      return `→ (${p.x}, ${p.y}, ${p.z}) · ${b.speed_mms} mm/s`;
-    }
-    case "move_joint":
-      return `[${b.joints.join(", ")}] · ${b.speed_pct}%`;
-    case "grip":
-      return `${b.tool_id} · ${b.force_limit_n} N · ${b.timeout_ms} ms`;
-    case "release":
-      return b.tool_id ?? t("ir.sum.releaseAny", "release tool");
-    case "set_output":
-      return `${b.signal} = ${String(b.value)}`;
-    case "wait":
-      return [b.signal_ref ? `signal ${b.signal_ref}` : null, b.ms != null ? `${b.ms} ms` : null].filter(Boolean).join(" · ") || "—";
-    case "if_condition":
-      return `${b.signal_ref} ${b.operator} ${String(b.value)}`;
-    case "loop":
-      return b.count != null ? `${t("ir.sum.count", "count")} ${b.count}` : t("ir.sum.while", "while condition");
-  }
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CANVAS — nested block card (models OrchestrationStudio's StepBlock)
@@ -285,7 +91,7 @@ function BlockCard({
   const borderTone = hasError
     ? "border-destructive ring-1 ring-destructive/40"
     : hasWarn
-      ? "border-amber-500 ring-1 ring-amber-500/30"
+      ? "border-warning ring-1 ring-warning/30"
       : selected
         ? "border-primary ring-2 ring-primary"
         : "border-border hover:bg-muted/50";
@@ -334,7 +140,7 @@ function BlockCard({
             <div
               key={i}
               className={`flex items-start gap-1 rounded px-1.5 py-0.5 text-[11px] ${
-                d.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600"
+                d.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"
               }`}
             >
               {d.severity === "error" ? <XCircle className="mt-0.5 h-3 w-3 shrink-0" /> : <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />}
@@ -706,6 +512,9 @@ export default function IrEditor() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<"inspector" | "preview">("inspector");
   const [saveProjectId, setSaveProjectId] = useState<string>("");
+  // View toggle: the node-GRAPH canvas is the default (the "kéo thả khối" surface); the
+  // nested TREE stays available. Both render the SAME AST via the SAME helpers.
+  const [viewMode, setViewMode] = useState<"graph" | "tree">("graph");
 
   const utils = trpc.useUtils();
 
@@ -796,6 +605,11 @@ export default function IrEditor() {
   const handleMove = useCallback((id: string, dir: -1 | 1) => {
     setFlow((f) => ({ ...f, blocks: moveBlock(f.blocks, id, dir) }));
   }, []);
+  // Graph canvas: reconnecting a `next` edge between two SIBLINGS reorders them (no-op
+  // across lists). Routes through the same immutable AST helper as the tree's up/down.
+  const handleReorderToSibling = useCallback((sourceId: string, targetId: string) => {
+    setFlow((f) => ({ ...f, blocks: reorderRelativeToSibling(f.blocks, sourceId, targetId) }));
+  }, []);
 
   const loadFlow = async (artifactId: number) => {
     try {
@@ -836,7 +650,7 @@ export default function IrEditor() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         <PageHeader
           icon={<Code2 className="h-6 w-6" />}
           title={t("ir.title", "Visual IR Editor")}
@@ -851,8 +665,8 @@ export default function IrEditor() {
 
         {/* Flag-off preview banner (honest) */}
         {!statusQ.isLoading && !flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <span>{t("ir.flagOffBanner", "Preview mode: IR programming is disabled (DPC_IR_V2_ENABLED is off). Authoring, lint and transpile preview work; Save flow / Request build are blocked until the flag is enabled.")}</span>
           </div>
         )}
@@ -940,6 +754,12 @@ export default function IrEditor() {
             title={t("ir.palette", "Block palette")}
           >
             <div className="space-y-3">
+              <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <GripVertical className="h-3 w-3" />
+                {viewMode === "graph"
+                  ? t("ir.paletteHintGraph", "Drag a block onto the canvas — drop on an if/loop to nest it.")
+                  : t("ir.paletteHintTree", "Click a block to append it at the top level.")}
+              </p>
               {PALETTE_GROUPS.map((g) => (
                 <div key={g.label.def} className="space-y-1">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t(g.label.key, g.label.def)}</div>
@@ -947,7 +767,18 @@ export default function IrEditor() {
                     {g.types.map((type) => {
                       const Icon = BLOCK_ICON[type];
                       return (
-                        <Button key={type} size="sm" variant="outline" className="justify-start" onClick={() => addTopLevel(type)}>
+                        <Button
+                          key={type}
+                          size="sm"
+                          variant="outline"
+                          className="cursor-grab justify-start active:cursor-grabbing"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(IR_DND_MIME, type);
+                            e.dataTransfer.effectAllowed = "copy";
+                          }}
+                          onClick={() => addTopLevel(type)}
+                        >
                           <Icon className="mr-2 h-3.5 w-3.5" />{t(BLOCK_LABEL[type].key, BLOCK_LABEL[type].def)}
                         </Button>
                       );
@@ -958,20 +789,54 @@ export default function IrEditor() {
             </div>
           </SectionCard>
 
-          {/* CENTER — canvas */}
+          {/* CENTER — canvas (Graph | Tree — two views over ONE AST) */}
           <SectionCard
             className="lg:col-span-5"
-            icon={<ListTree className="h-4 w-4" />}
+            icon={viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
             title={t("ir.canvas", "Flow canvas")}
             description={
               <span className="flex flex-wrap gap-2 text-xs">
                 <span>{flow.blocks.length} {t("ir.topLevelBlocks", "top-level block(s)")}</span>
                 {errorCount > 0 && <span className="text-destructive">· {errorCount} {t("ir.errorsShort", "error(s)")}</span>}
-                {warnCount > 0 && <span className="text-amber-600">· {warnCount} {t("ir.warnsShort", "warning(s)")}</span>}
+                {warnCount > 0 && <span className="text-warning">· {warnCount} {t("ir.warnsShort", "warning(s)")}</span>}
               </span>
             }
+            action={
+              <div className="inline-flex shrink-0 rounded-md border border-border p-0.5">
+                <Button
+                  size="sm"
+                  variant={viewMode === "graph" ? "secondary" : "ghost"}
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setViewMode("graph")}
+                  aria-pressed={viewMode === "graph"}
+                >
+                  <Network className="h-3.5 w-3.5" />{t("ir.viewGraph", "Graph")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === "tree" ? "secondary" : "ghost"}
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setViewMode("tree")}
+                  aria-pressed={viewMode === "tree"}
+                >
+                  <ListTree className="h-3.5 w-3.5" />{t("ir.viewTree", "Tree")}
+                </Button>
+              </div>
+            }
           >
-            {flow.blocks.length === 0 ? (
+            {viewMode === "graph" ? (
+              <IrGraphCanvas
+                flow={flow}
+                selectedId={selectedId}
+                diagsByBlock={diagsByBlock}
+                onSelect={(id) => { setSelectedId(id); setRightTab("inspector"); }}
+                onDelete={handleDelete}
+                onAddTopLevel={addTopLevel}
+                onAddChild={handleAddChild}
+                onReorderToSibling={handleReorderToSibling}
+                t={t}
+              />
+            ) : flow.blocks.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.emptyCanvas", "No blocks yet. Add one from the palette on the left.")}</p>
             ) : (
               <ScrollArea className="max-h-[560px] pr-2">
@@ -1072,7 +937,7 @@ export default function IrEditor() {
             </div>
           )}
         </SectionCard>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

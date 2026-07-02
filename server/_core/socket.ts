@@ -1155,12 +1155,24 @@ export function stopTwinBroadcaster(): void {
  * A coalesced per-device delta pushed to twin viewers (room `twin:{factoryId}`).
  * Carries only what MOVED — position and/or state — so the FE can translate the
  * model without a full scene-graph refetch. SIGNAL ONLY: never writes a device/DB.
+ *
+ * doc 24 Wave-1 T1 — OPTIONAL articulation payload (additive, backward-compatible):
+ *   • joints  — the robot's joint-angle vector (radians for revolute, mm for
+ *               prismatic), indexed over the model's non-fixed joints. When present
+ *               the FE poses an ARTICULATED link chain via client-side FK instead of
+ *               sliding a block. Absent → the FE renders exactly as before.
+ *   • modelId — which kinematic model the joints index into (e.g. "sample-arm-6dof").
+ *               Lets the FE pick the matching FK chain without guessing.
+ * A device with no joints simply omits both fields (the wire shape is unchanged for
+ * every existing producer/consumer).
  */
 export interface TwinDeviceDelta {
   equipmentId: string; // "machine:<id>" | "robot:<id>" | "device:<deviceId>"
   position?: { x: number; y: number; z?: number };
   state?: string;
   metric?: string;
+  joints?: number[];
+  modelId?: string;
   ts: number;
 }
 

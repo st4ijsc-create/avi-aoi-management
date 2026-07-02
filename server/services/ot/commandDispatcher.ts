@@ -26,6 +26,16 @@
  *   - Mode gate: when OT_CONTROL_ENABLED !== "true" (the DEFAULT) the dispatcher
  *     NEVER calls driver.writeTags — it records a `simulated` commandLog row and
  *     returns { simulated: true }.
+ *   - C2 COMMISSIONING / FAT GATE (doc 24 Wave-1): an ADDITIONAL, stricter gate
+ *     layered ON TOP of the mode gate — it never removes or relaxes any existing
+ *     check. Flag OT_COMMISSIONING_REQUIRED (DEFAULT ON). Even when
+ *     OT_CONTROL_ENABLED==="true" AND every other gate would pass, if the target
+ *     adapter has NO active/non-expired/signed commissioning record, dispatch is
+ *     FORCED down the SAME 'simulated' path (a commandLog row with errorText
+ *     'not_commissioned: …'; driver.writeTags is NEVER called). PRECEDENCE:
+ *     not-commissioned ⇒ simulated REGARDLESS of OT_CONTROL_ENABLED. Mirrors the
+ *     proven sim-gate → deploy precondition (programmingService). Set the flag
+ *     false ONLY for legacy/dev.
  *   - F4b (OT_CONTROL_ENABLED==="true"): after ALL F4a gates pass, dispatch calls
  *     driver.writeTags() under a timeout (OT_CONTROL_TIMEOUT_MS, default 5000ms).
  *     write ok → status='acked'; write ok:false → 'failed'; timeout → 'timeout';
@@ -61,6 +71,7 @@ import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -321,37 +332,31 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   const who = actors(input);
   const trig = triggerCols(input);
   if (!isOtControlEnabled()) {
-    const commandLogIds: number[] = [];
-    const results: DispatchPerWrite[] = [];
-    for (const r of resolved) {
-      const [row] = await db
-        .insert(commandLog)
-        .values({
-          actionId: who.actionId,
-          adapterId: input.adapterId,
-          machineId: input.machineId ?? null,
-          tagKey: r.write.tagKey,
-          address: r.address,
-          commandType: input.commandType,
-          requestedValue: r.write.value as any,
-          requestedBy: who.requestedBy,
-          confirmedBy: who.confirmedBy,
-          status: "simulated",
-          ...trig,
-          idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
-        })
-        .returning({ id: commandLog.id });
-      commandLogIds.push(row.id);
-      results.push({ tagKey: r.write.tagKey, address: r.address, ok: true, status: "simulated" });
-    }
-    if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
-    return { ok: true, simulated: true, status: "simulated", results, commandLogIds };
+    return writeSimulated(db, input, resolved, who, trig);
+  }
+
+  // ── (5a) C2 COMMISSIONING / FAT GATE (doc 24 Wave-1) — a STRICTER precondition
+  //         layered ON TOP of the mode gate. Reachable ONLY when control is enabled
+  //         (else step 5 already returned). When OT_COMMISSIONING_REQUIRED is on
+  //         (DEFAULT) and the target adapter is NOT commissioned (no active,
+  //         non-expired, signed commissioning record), FORCE the SAME 'simulated'
+  //         path — driver.writeTags is NEVER called. This can only ever DOWNGRADE a
+  //         would-be real write to simulated; it never enables a write, so it cannot
+  //         weaken any gate above. PRECEDENCE: not-commissioned ⇒ simulated even
+  //         though OT_CONTROL_ENABLED==="true".
+  if (isCommissioningRequired() && !(await isCommissioned(input.adapterId))) {
+    return writeSimulated(
+      db, input, resolved, who, trig,
+      "not_commissioned",
+      "adapter has no active, non-expired, signed commissioning record — real write refused (recorded simulated)",
+    );
   }
 
   // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"
-  //         AND only after every F4a gate above (confirm+owner, idempotency,
-  //         allowlist writable, driver active). driver.writeTags() reaches the
-  //         physical device. ack (F4b) = write returned ok. NO blind retry.
+  //         AND the adapter is commissioned (C2) AND only after every F4a gate above
+  //         (confirm+owner, idempotency, allowlist writable, driver active).
+  //         driver.writeTags() reaches the physical device. ack (F4b) = write
+  //         returned ok. NO blind retry.
   //         G2.1: when OT_READBACK_ENABLED, a SINGLE driver.readTags() verifies the
   //         acked writes (acked_verified / acked_unverified — WARN only). The
   //         per-write outcome + read-back status are computed BEFORE inserting the
@@ -611,6 +616,56 @@ async function auditInterlockAutoBlock(input: DispatchInput, commandLogIds: numb
       status: "success",
     },
   );
+}
+
+/**
+ * Record a SIMULATED dispatch (one append-only commandLog row per resolved write)
+ * and return the { simulated: true } result. This is the SINGLE simulated-write
+ * implementation, shared by BOTH:
+ *   • the mode gate (OT_CONTROL_ENABLED !== "true") — the default dry-run, and
+ *   • the C2 commissioning gate (control on but adapter NOT commissioned) — which
+ *     passes `blockedReason="not_commissioned"` so the ledger records WHY the real
+ *     write was refused (errorText 'not_commissioned: …') and the result carries the
+ *     reason. Sharing one implementation guarantees the two paths cannot drift.
+ * driver.writeTags is NEVER called here. The interlock audit still fires for the
+ * interlock trigger (an auto-block that lands as simulated is still auditable).
+ */
+async function writeSimulated(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: DispatchInput,
+  resolved: Array<{ write: DispatchWrite; address: string; dataType?: string; scale?: number; offset?: number }>,
+  who: ReturnType<typeof actors>,
+  trig: ReturnType<typeof triggerCols>,
+  blockedReason?: string,
+  blockedDetail?: string,
+): Promise<DispatchResult> {
+  const commandLogIds: number[] = [];
+  const results: DispatchPerWrite[] = [];
+  const errorText = blockedReason ? `${blockedReason}: ${blockedDetail ?? "blocked"}` : null;
+  for (const r of resolved) {
+    const [row] = await db
+      .insert(commandLog)
+      .values({
+        actionId: who.actionId,
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        tagKey: r.write.tagKey,
+        address: r.address,
+        commandType: input.commandType,
+        requestedValue: r.write.value as any,
+        requestedBy: who.requestedBy,
+        confirmedBy: who.confirmedBy,
+        status: "simulated",
+        ...trig,
+        errorText,
+        idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
+      })
+      .returning({ id: commandLog.id });
+    commandLogIds.push(row.id);
+    results.push({ tagKey: r.write.tagKey, address: r.address, ok: true, status: "simulated", error: errorText ?? undefined });
+  }
+  if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
+  return { ok: true, simulated: true, status: "simulated", reason: blockedReason, results, commandLogIds };
 }
 
 // ─── commandLog writers (one row per write so the ledger is complete) ─────────

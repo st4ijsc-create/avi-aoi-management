@@ -31,6 +31,8 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
+import ArticulatedRobot from "@/components/twin/ArticulatedRobot";
+import { getKinematicModel } from "@/lib/kinematics";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +62,9 @@ interface TwinDeviceDelta {
   position?: { x: number; y: number; z?: number };
   state?: string;
   metric?: string;
+  // T1 — OPTIONAL articulation: a robot joint vector + the model it indexes into.
+  joints?: number[];
+  modelId?: string;
   ts: number;
 }
 interface TwinDeviceEvent {
@@ -122,6 +127,11 @@ interface RenderState {
   target: THREE.Vector3;
   color: string;
   state: string;
+  // T1 — articulation. `modelId` selects the FK chain (null = not articulated → block).
+  // `jointsRef.current` is the TARGET joint vector the ArticulatedRobot lerps toward;
+  // it is a stable ref object so updating angles never re-mounts the 3D body.
+  modelId: string | null;
+  jointsRef: { current: number[] };
 }
 
 // A primitive coloured block — the ALWAYS-WORKS body used both for unmodeled devices
@@ -185,6 +195,19 @@ function DeviceObject({
   const [hovered, setHovered] = useState(false);
   const isRobot = node.kind === "robot";
 
+  // T1 — ARTICULATION gate: a robot renders as an FK link chain when it carries a
+  // joint vector AND a resolvable kinematic model. Otherwise (machine, or a robot
+  // without joint telemetry / with an unknown model) it falls back to the existing
+  // glTF / sliding-block body — fully backward-compatible.
+  // Joints can start arriving via live DELTAS after mount (with scene-polling paused),
+  // which mutate rs in place WITHOUT a prop change. Flip a state once they do so the
+  // body swaps to the articulated chain even in delta-only mode. One-way (never reverts
+  // to a block mid-session, avoiding flicker if a single frame lacks joints).
+  const [sawJoints, setSawJoints] = useState(false);
+  // Re-resolve on every render (rs.modelId is mutated in place, so it is not a stable
+  // dep; a render is cheap and only happens on prop change / hover / sawJoints flip).
+  const kinModel = getKinematicModel(rs.modelId);
+  const articulated = isRobot && kinModel != null && (rs.jointsRef.current.length > 0 || sawJoints);
   useFrame(() => {
     if (!groupRef.current) return;
     // Smooth lerp toward the target position (live deltas / replay frames).
@@ -197,6 +220,9 @@ function DeviceObject({
       if (mat && mat.color) mat.color.set(rs.color);
       if (mat && mat.emissive) mat.emissive.set(rs.color);
     }
+    if (!sawJoints && isRobot && rs.jointsRef.current.length > 0 && getKinematicModel(rs.modelId) != null) {
+      setSawJoints(true);
+    }
   });
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(); };
@@ -205,10 +231,15 @@ function DeviceObject({
 
   return (
     <group ref={groupRef}>
-      {/* Body: glTF if a model is registered, else a primitive block (always works).
-          A load error (404 / malformed) degrades to the block via ModelErrorBoundary,
-          so an unresolved model never blanks the scene — unmodeled devices are unaffected. */}
-      {node.modelUri ? (
+      {/* Body: articulated FK link chain (robot + joints + model) takes priority; else
+          glTF if a model is registered; else a primitive block (always works). A glTF
+          load error (404 / malformed) degrades to the block via ModelErrorBoundary, so
+          an unresolved model never blanks the scene — unmodeled devices are unaffected. */}
+      {articulated && kinModel ? (
+        <group onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
+          <ArticulatedRobot model={kinModel} jointsRef={rs.jointsRef} colorSource={rs} />
+        </group>
+      ) : node.modelUri ? (
         <group onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
           <ModelErrorBoundary fallback={<PrimitiveBody isRobot={isRobot} color={rs.color} meshRef={meshRef} />}>
             <Suspense fallback={<PrimitiveBody isRobot={isRobot} color={rs.color} meshRef={meshRef} />}>
@@ -404,11 +435,20 @@ export default function DigitalTwinCenter() {
     devices.forEach((d, i) => {
       const [x, y, z] = toScenePos(d.position, i, devices.length);
       const prev = renderStates.current.get(d.id);
+      // T1 — seed articulation from the scene-graph node (robots carry joints +
+      // kinematicModelId when the driver reports joint telemetry). Reuse the previous
+      // jointsRef object so the ArticulatedRobot keeps animating across scene refetches.
+      const nodeJoints = (d.joints ?? null) as number[] | null;
+      const nodeModelId = (d.kinematicModelId ?? null) as string | null;
+      const jointsRef = prev?.jointsRef ?? { current: [] as number[] };
+      if (nodeJoints) jointsRef.current = nodeJoints;
       next.set(d.id, {
         cur: prev ? prev.cur.clone() : new THREE.Vector3(x, y, z),
         target: new THREE.Vector3(x, y, z),
         color: d.color || stateColor(d.state),
         state: d.state,
+        modelId: nodeModelId ?? prev?.modelId ?? null,
+        jointsRef,
       });
     });
     renderStates.current = next;
@@ -437,6 +477,9 @@ export default function DigitalTwinCenter() {
           rs.target.set(x, y, z);
         }
         if (delta.state) { rs.state = delta.state; rs.color = stateColor(delta.state); }
+        // T1 — articulation: retarget the joint vector (the ArticulatedRobot lerps to it).
+        if (delta.modelId) rs.modelId = delta.modelId;
+        if (delta.joints && delta.joints.length > 0) rs.jointsRef.current = delta.joints;
         i++;
       }
     };
@@ -512,6 +555,11 @@ export default function DigitalTwinCenter() {
         rs.target.set(x, y, z);
       }
       if (snap.packMlState) { rs.state = snap.packMlState; rs.color = stateColor(snap.packMlState); }
+      // T1 — replay articulation: retarget joints for this frame (interpolated on the client).
+      const snapModelId = (snap as { kinematicModelId?: string | null }).kinematicModelId ?? null;
+      const snapJoints = (snap as { joints?: number[] | null }).joints ?? null;
+      if (snapModelId) rs.modelId = snapModelId;
+      if (snapJoints && snapJoints.length > 0) rs.jointsRef.current = snapJoints;
       i++;
     }
   }, [mode, replay, replayTimes, frameIdx]);

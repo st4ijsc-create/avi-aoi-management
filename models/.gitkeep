@@ -1,0 +1,8 @@
+# AOI-A — DINOv2 ONNX models directory (default AI_DINOV2_MODEL_PATH root).
+#
+# Drop a real DINOv2 ONNX here as dinov2.onnx (the default configured path) to
+# activate the "onnx" embedding tier. Absent → the pipeline degrades HONESTLY to
+# text-of-image (GGUF) or heuristic and labels the tier; it NEVER fabricates vectors.
+#
+# Override the path with AI_DINOV2_MODEL_PATH (absolute or repo-relative).
+# Model binaries are gitignored (*.onnx) and MUST NOT be committed.

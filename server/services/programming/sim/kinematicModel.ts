@@ -243,6 +243,14 @@ export interface KinematicModel {
   workspace: { min: Vec3; max: Vec3 };
   /** How many joint values the chain expects (== count of non-fixed joints). */
   dof: number;
+  /**
+   * OPTIONAL base support footprint (mm) — the ground-plane XY half-extents of the robot's
+   * mounting base, centred on the base origin. Consumed ONLY by the real physics backend's
+   * (physics.ts / rapierPhysics.ts) tip-over check: the whole-arm COM is projected onto the
+   * ground and compared to this footprint. ABSENT → tip-over is NOT evaluated (honest — a
+   * bolted-down or unknown-footprint base cannot be assessed for tipping without this).
+   */
+  baseSupport?: { halfX: number; halfY: number };
 }
 
 /** One link's world placement after FK. */

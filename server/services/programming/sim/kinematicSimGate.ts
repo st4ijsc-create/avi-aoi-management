@@ -58,7 +58,9 @@ import {
   type TrajectorySample,
   type PhysicsResult,
   type PhysicsOptions,
+  type PhysicsBackend,
   InternalDynamicsBackend,
+  simPhysicsEnabled,
 } from "./physics";
 
 // ── Contract types ──────────────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ export interface SimGateResult {
   // `dynamicsPass`. Undefined when no model / dynamics did not run (honest no-op).
 
   /**
-   * True when the internal dynamics backend found NO velocity/accel/torque violation on the
+   * True when the dynamics backend found NO velocity/accel/torque violation on the
    * sampled trajectory. Undefined when dynamics was not evaluated (no samples). NEVER
    * fabricated — a no-op leaves it undefined rather than true.
    */
@@ -107,6 +109,20 @@ export interface SimGateResult {
   dynamics?: PhysicsResult;
   /** Human-readable dynamics violation reasons (empty when clean / not run). */
   dynamics_reasons?: string[];
+  /**
+   * Which dynamics engine produced `dynamics` — "internal" (quasi-static, default) or
+   * "rapier" (real rigid-body, when SIM_PHYSICS_ENABLED + a bound backend). Undefined when
+   * dynamics did not run. Honest provenance so a caller/UI knows whether the physics engine ran.
+   */
+  physicsEngine?: string;
+  /**
+   * True when SIM_PHYSICS_ENABLED is on AND a real physics backend flagged a BLOCKING
+   * dynamic violation (effort/instability/tip-over/contact). This is the ONLY path by which a
+   * dynamics result flips `pass`: when the physics flag is ON, a physics violation blocks the
+   * gate (→ blocks deploy) exactly like a collision. When the flag is OFF this stays undefined
+   * and `pass` keeps its original kinematic-only meaning (fully backward-compatible).
+   */
+  physicsBlocked?: boolean;
 }
 
 /** A safety/human-shared zone as a world AABB volume (from scene-graph zone bounds). */
@@ -219,8 +235,18 @@ export interface RunGateOptions {
    * (dynamics runs). Purely additive — disabling it never changes the kinematic `pass`.
    */
   skipDynamics?: boolean;
-  /** Tunables + defaults forwarded to the internal dynamics backend (physics.ts). */
+  /** Tunables + defaults forwarded to the dynamics backend (physics.ts). */
   dynamicsOptions?: PhysicsOptions;
+  /**
+   * OPTIONAL pre-loaded physics backend (T2, doc 24 Wave-1). When SIM_PHYSICS_ENABLED is on the
+   * caller may inject a real rigid-body backend here (e.g. RapierPhysicsBackend from
+   * createRapierBackend()). Because the gate is SYNCHRONOUS and Rapier's WASM init is async, the
+   * caller does the async load ONCE at its own boundary (irAdapter) and passes the ready backend
+   * in. When provided AND the flag is on, this backend runs INSTEAD of the internal quasi-static
+   * one and its violations BLOCK the gate (flip `pass`). When absent — or the flag is off — the
+   * internal quasi-static backend runs additively and NEVER changes `pass` (today's behaviour).
+   */
+  physicsBackend?: PhysicsBackend;
 }
 
 /**
@@ -385,7 +411,10 @@ export function runKinematicSimGate(
     }
   }
 
-  const pass =
+  // Kinematic pass (collision/limit/zone). Kept `let` so that — ONLY when SIM_PHYSICS_ENABLED
+  // is on and a real physics backend flags a blocking dynamic violation — the gate can also
+  // fail here. When the physics flag is OFF this value is exactly the original kinematic pass.
+  let pass =
     collision_events.length === 0 &&
     joint_limit_violations.length === 0 &&
     safety_zone_violations.length === 0;
@@ -400,20 +429,31 @@ export function runKinematicSimGate(
   }
   if (segs.length === 0) notes.push("flow has no motion blocks — trivially passes kinematics.");
 
-  // ── ADDITIVE dynamics pass (physics.ts) — behind SIM_KINEMATIC_ENABLED (same gate) ────────
-  // Runs the INTERNAL dynamics backend on the SAME sampled trajectory: finite-difference
-  // joint velocity/accel vs limits + a quasi-static gravity-torque estimate. Purely additive —
-  // it sets `dynamicsPass` + `dynamics` + `dynamics_reasons` and NEVER touches `pass` (the
-  // kinematic contract). HONEST no-op: with only the seeded home sample (no motion) there is
-  // no velocity to check and dynamics is left unevaluated (dynamicsPass stays undefined).
+  // ── DYNAMICS pass (physics.ts) — behind SIM_KINEMATIC_ENABLED (same gate) ─────────────────
+  // Backend SELECTION (T2, doc 24 Wave-1):
+  //   • DEFAULT / flag OFF → InternalDynamicsBackend (quasi-static). ADDITIVE: sets
+  //     `dynamicsPass`/`dynamics`/`dynamics_reasons` and NEVER touches `pass`. Today's behaviour.
+  //   • SIM_PHYSICS_ENABLED on + an injected real backend (opts.physicsBackend, e.g. Rapier) →
+  //     that backend runs on the SAME sampled trajectory with real rigid-body dynamics, and a
+  //     violation BLOCKS the gate (flips `pass` → blocks deploy) just like a collision. This is
+  //     the ONLY path where dynamics affects `pass`, and it is opt-in via flag + injected engine.
+  //   • Flag on but NO backend injected → we do NOT silently fabricate a physics pass: the
+  //     internal quasi-static backend still runs additively (pass unchanged) and a note records
+  //     that no external engine was bound (honest — the caller failed to load Rapier).
   let dynamicsPass: boolean | undefined;
   let dynamics: PhysicsResult | undefined;
   let dynamics_reasons: string[] | undefined;
+  let physicsEngine: string | undefined;
+  let physicsBlocked: boolean | undefined;
   const hasMotionSamples = trajectory.length >= 2;
+  const physicsFlag = simPhysicsEnabled();
+  const usePhysicsBlocking = physicsFlag && opts.physicsBackend !== undefined;
+
   if (!opts.skipDynamics && hasMotionSamples) {
-    const backend = new InternalDynamicsBackend();
+    const backend = usePhysicsBlocking ? opts.physicsBackend! : new InternalDynamicsBackend();
     dynamics = backend.simulate(trajectory, model, opts.dynamicsOptions);
     dynamicsPass = dynamics.ok;
+    physicsEngine = backend.id;
     dynamics_reasons = [];
     if (dynamics.jointVelocityViolations.length) {
       const v = dynamics.jointVelocityViolations[0];
@@ -429,11 +469,34 @@ export function runKinematicSimGate(
     }
     if (dynamics.estTorqueViolations.length) {
       const tq = dynamics.estTorqueViolations[0];
+      const label = usePhysicsBlocking ? "rigid-body inverse dynamics" : "static-gravity estimate";
+      const valueStr = Number.isFinite(tq.value) ? `${tq.value.toFixed(1)} N·m` : "self-contact";
       dynamics_reasons.push(
-        `EST-TORQUE: ${dynamics.estTorqueViolations.length} violation(s) — e.g. ${tq.joint} est ${tq.value.toFixed(1)} N·m > ${tq.limit.toFixed(1)} (static-gravity estimate).`,
+        `TORQUE/EFFORT: ${dynamics.estTorqueViolations.length} violation(s) — e.g. ${tq.joint} ${valueStr} > ${tq.limit.toFixed(1)} (${label}).`,
       );
     }
+    if (dynamics.tipOver === true) {
+      dynamics_reasons.push("TIP-OVER: whole-arm COM projects outside the base support footprint.");
+    }
     notes.push(...dynamics.notes);
+
+    // BLOCKING only under SIM_PHYSICS_ENABLED + a real backend. A physics violation fails the
+    // gate exactly like a collision (which blocks deploy via `pass`). Flag OFF → never blocks.
+    if (usePhysicsBlocking) {
+      physicsBlocked = !dynamics.ok || dynamics.tipOver === true;
+      if (physicsBlocked) {
+        pass = false;
+        notes.push(
+          `PHYSICS BLOCK: SIM_PHYSICS_ENABLED on and the ${backend.id} backend found a blocking ` +
+            `dynamic violation — gate FAILS (blocks deploy) like a collision.`,
+        );
+      }
+    } else if (physicsFlag) {
+      notes.push(
+        "SIM_PHYSICS_ENABLED is on but NO physics backend was bound (Rapier not loaded) — ran the " +
+          "internal quasi-static backend ADDITIVELY (does NOT block). Bind a backend via opts.physicsBackend.",
+      );
+    }
   } else if (!opts.skipDynamics) {
     notes.push("dynamics NOT evaluated — no motion (need ≥2 timed trajectory samples). Honest no-op.");
   }
@@ -454,6 +517,8 @@ export function runKinematicSimGate(
     result.dynamics = dynamics;
     result.dynamicsPass = dynamicsPass;
     result.dynamics_reasons = dynamics_reasons;
+    result.physicsEngine = physicsEngine;
+    if (physicsBlocked !== undefined) result.physicsBlocked = physicsBlocked;
   }
   return result;
 }
@@ -483,4 +548,46 @@ export function runGateForFlow(flow: Flow, scene: SimScene, opts?: RunGateOption
   const model = resolveKinematicModel(flow.target_device_type);
   if (!model) return noModelResult(flow.target_device_type);
   return runKinematicSimGate(flow, model, scene, opts);
+}
+
+/**
+ * ASYNC gate runner that BINDS the real physics engine (Rapier) when SIM_PHYSICS_ENABLED is on
+ * (T2, doc 24 Wave-1). This is the async boundary that reconciles the SYNCHRONOUS gate with
+ * Rapier's async WASM init: it loads Rapier ONCE (cached), constructs the backend, and injects it
+ * into the sync gate via `opts.physicsBackend`, so a physics violation BLOCKS the gate.
+ *
+ * HONEST DEGRADATION: if the flag is on but Rapier's WASM cannot load (unavailable in this
+ * runtime), we DO NOT block on a phantom engine and DO NOT fabricate a pass — we run the gate with
+ * the internal quasi-static backend (additive, non-blocking) and record the load failure in the
+ * note. When the flag is OFF this is byte-for-byte identical to `runGateForFlow` (Rapier never
+ * loaded, never imported). Callers that must remain synchronous can keep using `runGateForFlow`.
+ */
+export async function runGateForFlowAsync(
+  flow: Flow,
+  scene: SimScene,
+  opts?: RunGateOptions,
+): Promise<SimGateResult> {
+  const model = resolveKinematicModel(flow.target_device_type);
+  if (!model) return noModelResult(flow.target_device_type);
+
+  // Flag OFF (or a backend already injected) → no Rapier load; identical to the sync path.
+  if (!simPhysicsEnabled() || opts?.physicsBackend) {
+    return runKinematicSimGate(flow, model, scene, opts);
+  }
+
+  // Flag ON → try to bind Rapier. Dynamic import keeps the WASM out of the sync import graph.
+  try {
+    const { createRapierBackend } = await import("./rapierPhysics");
+    const physicsBackend = await createRapierBackend();
+    return runKinematicSimGate(flow, model, scene, { ...opts, physicsBackend });
+  } catch (err) {
+    // Rapier unavailable → honest fallback (internal quasi-static, non-blocking) + a note.
+    const res = runKinematicSimGate(flow, model, scene, opts);
+    const reason = err instanceof Error ? err.message : String(err);
+    res.note =
+      (res.note ? res.note + " " : "") +
+      `SIM_PHYSICS_ENABLED on but Rapier WASM failed to load (${reason}); ran internal ` +
+      `quasi-static dynamics (non-blocking). No fabricated physics pass.`;
+    return res;
+  }
 }

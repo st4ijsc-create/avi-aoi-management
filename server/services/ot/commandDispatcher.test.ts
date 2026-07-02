@@ -129,6 +129,10 @@ beforeEach(() => {
   lastWriteValueByKey.clear();
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "false";
+  // C2 (doc 24): these F4a/F4b/G2.1 tests predate the commissioning gate and assert
+  // the mode-gate behaviour directly. Opt the NEW gate OUT so their legacy semantics
+  // are preserved exactly (dedicated coverage lives in commandDispatcher.commissioning.test.ts).
+  process.env.OT_COMMISSIONING_REQUIRED = "false";
   delete process.env.OT_READBACK_ENABLED;
   delete process.env.OT_READBACK_FLOAT_TOLERANCE;
   // restore default writeTags impl after clearAllMocks wiped it.

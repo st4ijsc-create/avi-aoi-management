@@ -84,12 +84,39 @@ async function resolveFactoryId(machineId: number): Promise<number | null> {
 }
 
 /**
+ * doc 24 Wave-1 T1 — parse a joint-angle vector out of a telemetry row's textValue.
+ * A producer that streams joints through the unified bus encodes the vector as a JSON
+ * number array in textValue (the bus's toCanonicalRow JSON-stringifies non-primitive
+ * values). Also accepts a bare comma-separated list. Returns null for anything that
+ * is not a non-empty finite number array (so a malformed row is simply ignored).
+ */
+function parseJointVector(textValue: string | null | undefined): number[] | null {
+  if (!textValue) return null;
+  const s = textValue.trim();
+  let arr: unknown = null;
+  if (s.startsWith("[")) {
+    try { arr = JSON.parse(s); } catch { return null; }
+  } else if (s.includes(",")) {
+    arr = s.split(",").map((p) => Number(p.trim()));
+  } else {
+    return null;
+  }
+  if (Array.isArray(arr) && arr.length > 0 && arr.every((v) => typeof v === "number" && Number.isFinite(v))) {
+    return arr as number[];
+  }
+  return null;
+}
+
+/**
  * PURE — extract a twin delta from one canonical telemetry row, or null if the row
  * carries nothing the twin renders. Exported for unit-testing the mapping. We treat
- * position_x/position_y (numeric) and a state metric (text) as renderable; other
- * metrics are ignored on this channel.
+ * position_x/position_y (numeric) and a state metric (text) as renderable; a joints
+ * metric (JSON number array in textValue) drives articulation; other metrics are
+ * ignored on this channel.
  */
-export function rowToDelta(row: InsertOtTelemetry): { equipmentId: string; field: "x" | "y" | "state"; value: number | string } | null {
+export function rowToDelta(
+  row: InsertOtTelemetry,
+): { equipmentId: string; field: "x" | "y" | "state" | "joints"; value: number | string | number[] } | null {
   const metric = (row.metric ?? "").toLowerCase();
   const equipmentId = row.machineId != null ? `machine:${row.machineId}` : `device:${row.deviceId ?? "unknown"}`;
   if ((metric === "position_x" || metric === "pos_x" || metric === "x") && row.numValue != null) {
@@ -100,6 +127,11 @@ export function rowToDelta(row: InsertOtTelemetry): { equipmentId: string; field
   }
   if ((metric === "packml_state" || metric === "state" || metric === "operation_status") && row.textValue != null) {
     return { equipmentId, field: "state", value: row.textValue };
+  }
+  // T1 — OPTIONAL articulation: joints stream as a JSON number array in textValue.
+  if (metric === "joints" || metric === "joint_angles" || metric === "pose_joints") {
+    const joints = parseJointVector(row.textValue);
+    if (joints) return { equipmentId, field: "joints", value: joints };
   }
   return null;
 }
@@ -118,6 +150,8 @@ async function onTelemetryBatch(rows: InsertOtTelemetry[]): Promise<void> {
     if (parsed.field === "x") slot.delta.position = { x: parsed.value as number, y: slot.delta.position?.y ?? 0 };
     else if (parsed.field === "y") slot.delta.position = { x: slot.delta.position?.x ?? 0, y: parsed.value as number };
     else if (parsed.field === "state") slot.delta.state = parsed.value as string;
+    // T1 — coalesce the joint vector (last value wins, like position/state).
+    else if (parsed.field === "joints") slot.delta.joints = parsed.value as number[];
     slot.delta.ts = Date.now();
     pending.set(key, slot);
   }

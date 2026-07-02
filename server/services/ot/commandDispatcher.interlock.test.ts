@@ -138,6 +138,10 @@ beforeEach(() => {
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "true";
   process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+  // C2 (doc 24): these interlock tests predate the commissioning gate; opt it OUT so
+  // their legacy real-write semantics are preserved exactly (the new gate has its own
+  // suite in commandDispatcher.commissioning.test.ts, including an interlock case).
+  process.env.OT_COMMISSIONING_REQUIRED = "false";
   seedAuthorized();
 });
 

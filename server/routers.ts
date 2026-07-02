@@ -129,6 +129,7 @@ import { erpAdminRouter } from "./routers/erpAdminRouter"; // K0+ (doc 16 Khối
 import { ecosystemAdminRouter } from "./routers/ecosystemAdminRouter"; // U6-c (doc 21 §6 / G-12): admin-only READ — soft-ref integrity report (asset↔task↔program↔genealogy orphans)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
+import { commissioningRouter } from "./routers/commissioningRouter"; // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (OT_COMMISSIONING_REQUIRED, default ON; no device write path)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
@@ -379,6 +380,7 @@ export const appRouter = router({
   ecosystemAdmin: ecosystemAdminRouter, // U6-c (doc 21 §6 / G-12): soft-ref integrity report (READ-ONLY, admin)
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
+  commissioning: commissioningRouter, // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (no device write path)
   robot: robotRouter,
   secsGem: secsGemRouter,
   vda5050: vda5050Router,

@@ -30,12 +30,23 @@
  *   • For a high-fidelity answer, bind the EXTERNAL seam (Isaac Sim / RoboDK) below.
  *
  * ── THE EXTERNAL SEAM ───────────────────────────────────────────────────────
- * `ExternalPhysicsBackend` is a DOCUMENTED STUB. When SIM_PHYSICS_ENABLED is on, the gate
- * would delegate to a real physics engine over this adapter's contract; because none is
- * bound in-process, the stub THROWS a clear "not configured" error. `resolvePhysicsBackend`
- * therefore falls back to the internal backend by default (flag OFF), and only returns the
- * external backend when the flag is on — where the caller is expected to have bound a real
- * service (or gets the honest throw). No silent fabrication either way.
+ * `ExternalPhysicsBackend` is a DOCUMENTED STUB for an OUT-OF-PROCESS engine (Isaac Sim /
+ * RoboDK). When SIM_PHYSICS_ENABLED is on, the gate would delegate to a real physics engine
+ * over this adapter's contract; because none is bound in-process, the stub THROWS a clear
+ * "not configured" error. `resolvePhysicsBackend` therefore falls back to the internal backend
+ * by default (flag OFF), and only returns the external backend when the flag is on — where the
+ * caller is expected to have bound a real service (or gets the honest throw). No silent
+ * fabrication either way.
+ *
+ * ── T2 (doc 24 Wave-1): AN IN-PROCESS REAL ENGINE IS NOW BOUND ──────────────
+ * `RapierPhysicsBackend` (rapierPhysics.ts) satisfies THIS SAME `PhysicsBackend` contract using
+ * the WASM engine Rapier — a real rigid-body model (per-link mass + inertia tensor + COM from
+ * geometry) with recursive Newton–Euler inverse dynamics (joint EFFORT incl. inertial/Coriolis/
+ * gravity), dynamic INSTABILITY and base TIP-OVER. It is selected by the gate under
+ * SIM_PHYSICS_ENABLED via `RunGateOptions.physicsBackend` (loaded once through the async
+ * `createRapierBackend()` factory, since Rapier's WASM init is async while this contract is
+ * synchronous). When bound + the flag is on, a Rapier violation BLOCKS the gate. The external
+ * out-of-process seam below remains for a future GPU-backed engine over the same contract.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type { KinematicModel, KinematicJoint } from "./kinematicModel";
