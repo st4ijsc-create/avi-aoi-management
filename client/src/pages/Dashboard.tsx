@@ -210,6 +210,7 @@ export default function Dashboard() {
       borderRadius: '0.5rem',
       shadow: 'sm',
       opacity: '1.00',
+      mode: 'theme' as const, // follow the app dark/light theme by default
     };
   });
   
@@ -227,6 +228,21 @@ export default function Dashboard() {
       'lg': 'shadow-lg',
       'xl': 'shadow-xl',
     };
+    const shadow = shadowMap[widgetStyle.shadow] || '';
+    // THEME MODE (default + legacy): follow the app's dark/light theme via tokens — no
+    // forced bg/text/border colours, so cards match the rest of the system. Only an
+    // explicit 'custom' style overrides the theme with the user's picked colours.
+    if (widgetStyle.mode !== 'custom') {
+      return {
+        style: {
+          borderRadius: widgetStyle.borderRadius,
+          opacity: parseFloat(widgetStyle.opacity),
+        },
+        className: `border bg-card text-card-foreground ${shadow}`,
+        accentColor: widgetStyle.accentColor,
+        textColor: widgetStyle.textColor,
+      };
+    }
     return {
       style: {
         backgroundColor: widgetStyle.backgroundColor,
@@ -235,7 +251,7 @@ export default function Dashboard() {
         borderRadius: widgetStyle.borderRadius,
         opacity: parseFloat(widgetStyle.opacity),
       },
-      className: `border ${shadowMap[widgetStyle.shadow] || ''}`,
+      className: `border ${shadow}`,
       accentColor: widgetStyle.accentColor,
       textColor: widgetStyle.textColor,
     };
@@ -2471,9 +2487,9 @@ export default function Dashboard() {
                               onClick={() => openMachineDetail(machine)}
                             >
                               {/* Metrics Bar at Top - Customizable */}
-                              <div className="flex items-stretch bg-black/90 text-white">
+                              <div className="flex items-stretch bg-muted text-foreground">
                                 {visibleMetrics.fpy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
                                     <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-success' : fpyNum >= 70 ? 'text-warning' : 'text-destructive'}`}>
                                       {fpy}%
@@ -2481,13 +2497,13 @@ export default function Dashboard() {
                                   </div>
                                 )}
                                 {visibleMetrics.fy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
                                     <p className="text-base font-bold text-destructive">{fy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
                                     <p className="text-base font-bold text-warning">{ntfy}%</p>
                                   </div>
@@ -2505,7 +2521,7 @@ export default function Dashboard() {
                               </div>
 
                               {/* Machine Image - Large */}
-                              <div className="relative h-40 w-full bg-linear-to-br from-slate-800 to-slate-900">
+                              <div className="relative h-40 w-full bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
                                 {machineImage ? (
                                   <>
                                     <img
