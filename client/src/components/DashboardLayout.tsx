@@ -195,11 +195,10 @@ function DashboardLayoutContent({
     <>
       <div className="relative" data-app-chrome="sidebar">
         <Sidebar
-          // OFFCANVAS (not "icon"): the desktop nav is a cascading accordion/flyout that
-          // needs its full width — an icon-only collapse left the full-width rows spilling
-          // over the page content. Collapsing now slides the whole rail off-screen and the
-          // content reflows to full width; the header SidebarTrigger re-opens it.
-          collapsible="offcanvas"
+          // ICON rail: collapsing shrinks the rail to icons only. CascadingNav renders an
+          // icon-only rail in the collapsed state (module icons + a hover flyout), so the
+          // full-width rows no longer spill over the page content.
+          collapsible="icon"
           className="border-r border-sidebar-border"
         >
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
@@ -217,18 +216,20 @@ function DashboardLayoutContent({
               </div>
             ) : (
               // Desktop sidebar header: logo + title, with the collapse toggle on the right.
-              <div className="flex items-center gap-2 px-2 w-full">
+              // When collapsed to the icon rail, only the logo shows (title + in-rail toggle
+              // hidden — the header SidebarTrigger re-expands the rail).
+              <div className="flex items-center gap-2 px-2 w-full group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
                 <Link href="/" className="flex items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
-                  <span className="font-semibold tracking-tight truncate text-sidebar-foreground">
+                  <span className="font-semibold tracking-tight truncate text-sidebar-foreground group-data-[collapsible=icon]:hidden">
                     {title}
                   </span>
                 </Link>
                 <button
                   onClick={toggleSidebar}
-                  className="ml-auto h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                  className="ml-auto h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 group-data-[collapsible=icon]:hidden"
                   aria-label="Toggle navigation"
                 >
                   <PanelLeft className="h-4 w-4 text-sidebar-foreground" />
@@ -237,7 +238,7 @@ function DashboardLayoutContent({
             )}
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 py-2 overflow-y-auto group-data-[collapsible=icon]:overflow-visible">
+          <SidebarContent className="gap-0 py-2 overflow-y-auto overflow-x-hidden">
             {isMobile ? (
               // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
               <MobileDrillNav

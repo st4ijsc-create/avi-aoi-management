@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { NavGroup, NavItem, buildModuleL2 } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useIsCoarsePointer } from "@/hooks/useMobile";
+import { useSidebar } from "@/components/ui/sidebar";
 import { BetaBadge } from "./BetaBadge";
 
 /**
@@ -47,6 +48,11 @@ interface CascadingNavProps {
 
 export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavProps) {
   const { t } = useTranslation();
+  // When the rail is collapsed to icons, render the icon-only variant (module icons +
+  // a hover flyout) instead of the full-width accordion (whose labels would otherwise
+  // spill over the page content). `state` comes from the shadcn Sidebar provider.
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
   // The module that owns the current route. Used so the open (Level-2) module
   // follows where you ARE — important because each page renders its own
   // DashboardLayout, so this nav remounts on every navigation; without this the
@@ -166,6 +172,11 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     },
     [cancelClose],
   );
+
+  // Collapsed icon rail (after all hooks, so the hook order is stable).
+  if (collapsed && !coarse) {
+    return <CollapsedRail groups={groups} currentPath={currentPath} onNavigate={onNavigate} />;
+  }
 
   return (
     <div ref={containerRef} className="flex flex-col gap-0.5 px-2" data-cascading-nav>
@@ -390,6 +401,142 @@ function Level3Panel({
             onNavigate={onNavigate}
           />
         ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Collapsed icon rail (module icons + hover flyout) ───────────────────────
+/**
+ * Rendered when the sidebar is collapsed to icons. Shows one centered icon per module
+ * (native tooltip = label); hovering/clicking an icon opens a floating flyout with that
+ * module's pages (Level-2 categories + items). The flyout is portalled to <body> and
+ * fixed-positioned, so it is never clipped by the narrow rail.
+ */
+function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
+  const { t } = useTranslation();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const iconRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpenId(null), CLOSE_DELAY_MS);
+  }, [cancelClose]);
+  const openGroupId = useCallback((id: string) => {
+    cancelClose();
+    setOpenId(id);
+  }, [cancelClose]);
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  const handleNavigate = useCallback((href: string) => {
+    onNavigate(href);
+    cancelClose();
+    setOpenId(null);
+  }, [onNavigate, cancelClose]);
+
+  const openGroup = groups.find(g => g.id === openId) ?? null;
+
+  return (
+    <div className="flex flex-col items-center gap-1 px-1" data-cascading-nav>
+      {groups.map(group => {
+        const active = group.items.some(i => i.href === currentPath);
+        return (
+          <button
+            key={group.id}
+            ref={el => { iconRefs.current[group.id] = el; }}
+            type="button"
+            aria-label={t(group.label)}
+            title={t(group.label)}
+            aria-haspopup="menu"
+            aria-expanded={openId === group.id}
+            onMouseEnter={() => openGroupId(group.id)}
+            onMouseLeave={scheduleClose}
+            onFocus={() => openGroupId(group.id)}
+            onBlur={scheduleClose}
+            onClick={() => openGroupId(group.id)}
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+              "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active ? "bg-sidebar-accent text-primary" : "text-muted-foreground",
+            )}
+          >
+            {group.icon}
+          </button>
+        );
+      })}
+      {openGroup && (
+        <CollapsedFlyout
+          anchorEl={iconRefs.current[openGroup.id] ?? null}
+          group={openGroup}
+          currentPath={currentPath}
+          onNavigate={handleNavigate}
+          onEnter={cancelClose}
+          onLeave={scheduleClose}
+        />
+      )}
+    </div>
+  );
+}
+
+interface CollapsedFlyoutProps {
+  anchorEl: HTMLElement | null;
+  group: NavGroup;
+  currentPath: string;
+  onNavigate: (href: string) => void;
+  onEnter: () => void;
+  onLeave: () => void;
+}
+
+function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, onLeave }: CollapsedFlyoutProps) {
+  const { t } = useTranslation();
+  const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
+  const l2 = useMemo(() => buildModuleL2(group), [group]);
+  if (!pos) return null;
+
+  return createPortal(
+    <div
+      data-cascading-panel
+      role="menu"
+      aria-label={t(group.label)}
+      className={panelClass}
+      style={{ left: pos.left, top: pos.top, width: PANEL_WIDTH }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      <div className="px-2 pb-1 pt-0.5 text-xs font-semibold text-popover-foreground">{t(group.label)}</div>
+      <div className="space-y-0.5">
+        {l2.map(entry =>
+          entry.kind === "link" ? (
+            <ItemRow
+              key={entry.item.href}
+              item={entry.item}
+              isActive={currentPath === entry.item.href}
+              onNavigate={onNavigate}
+            />
+          ) : (
+            <div key={entry.key} className="pt-1">
+              <div className="px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                {t(entry.label)}
+              </div>
+              {entry.items.map(item => (
+                <ItemRow
+                  key={item.href}
+                  item={item}
+                  isActive={currentPath === item.href}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          ),
+        )}
       </div>
     </div>,
     document.body,
