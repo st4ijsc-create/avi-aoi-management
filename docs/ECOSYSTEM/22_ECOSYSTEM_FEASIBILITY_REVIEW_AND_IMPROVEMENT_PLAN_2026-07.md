@@ -175,3 +175,50 @@ Safety PLC SIL 2/3 + UWB/LiDAR (Khối 3) · export YOLO `.onnx` + hiệu chuẩ
 **Đề xuất thứ tự duyệt:** ưu tiên **P0 (sửa 3 lỗi đúng-đắn)** và **P1 (đồng bộ tài liệu)** ngay — chúng bảo vệ cả an toàn lẫn uy tín, chi phí thấp. Sau đó **P2/P4** cho giá trị nhìn-thấy-được nhanh (bật tính năng đã xong + dọn UX cho người dùng thật). P5/P6 là chiều sâu dài hạn.
 
 > **CỔNG DUYỆT:** Tôi sẽ **không** gọi agent chuyên môn thực thi cho tới khi bạn duyệt/điều chỉnh phạm vi & thứ tự ở **§5**. Bạn có thể duyệt toàn bộ, chọn một số GĐ, hoặc đổi ưu tiên.
+
+---
+
+## 7. CẬP NHẬT TIẾN ĐỘ & ĐÁNH GIÁ SO VỚI MỤC TIÊU — 2026-07-02
+
+> Người dùng **duyệt toàn bộ P0–P5 (phần mềm)** ngày 2026-07-01 → đã thực thi. **8 commit** trên nhánh `automation-orchestration-r0`. **Sức khỏe hiện tại:** `npm run check` sạch · full suite **2620 pass / 0 fail / 8 skip** (247 file).
+
+### 7.1 Trạng thái thực thi theo §5
+
+| GĐ | Mục tiêu §5 | Trạng thái | Commit | Còn lại |
+|---|---|---|---|---|
+| **P0** | Sửa 3 lỗi đúng-đắn (race reservation · deploy ép sim-gate · verify migration) | ✅ **XONG** (verify trên DB thật) | `3f7b46b` | — |
+| **P0.3** | Verify/reconcile migration | ✅ **XONG** — phát hiện dev DB kẹt ở **0130**, đã áp **24 migration → 0156** | `3f7b46b` + `db:push` | — |
+| **P1** | Đồng bộ trung thực tài liệu 16/17 | ✅ **XONG** | `e76d15a` | — |
+| **P2** | Bật cờ + nối producer | 🟡 **Producer XONG** (model-perf snapshot · RCA vision · safety upstream; outbox vốn đã có). **Cờ vẫn OFF** — chưa smoke-test dữ liệu/phần cứng thật | `0c6a2f0` | Flip cờ + smoke-test (ops) |
+| **P3** | Nợ tích hợp (license-gate · N+1 · rebalance · OPC-UA push) | ✅ **XONG** | `de1b448` | — |
+| **P4** | UX/Frontend | 🟡 **Một phần** — Simple/Advanced nav · 16 jargon hints · 12 Beta badges · nhất quán ngôn ngữ **XONG**; **Dashboard đã align DS**. Chưa: gộp "một home" · roll DS ra ~106 trang còn lại · làm sâu Viewer/AdminHome | `05fb0bd`, `2b3f6fc` | DS rollout breadth · one-home · thin homes |
+| **P5** | Chiều sâu robotics/twin (phần mềm) | 🟡 **Cốt lõi XONG** — IK solver (DLS) → full-arm collision cho move_linear · 2 glTF thật · SECS-II codec + S1F1/F2/F13/F14. Chưa: full GEM E30 · D*/live-obstacle path · physics sim (Isaac/RoboDK) · IK redundancy | `d38d5cf` | Chiều sâu dài hạn |
+| **P6** | Phần cứng | ⚪ **Ngoài phạm vi phần mềm** | — | CAPEX: SIL PLC · UWB/LiDAR · YOLO .onnx · FOCAS Fwlib32 · EtherCAT |
+
+**Ngoài §5 (theo yêu cầu phát sinh trong phiên):**
+- **Upload & đăng ký model 3D từ Machine Cockpit** (`d86d2d9`) — hiện thực hóa "một model thật/máy" mà P5/T1 để ngỏ: tab 3D `/machine/:id` có nút tải `.glb/.gltf` → `/uploads/models/` → `twin.models.uploadAndRegister` (gate RBAC, không cần TWIN_LIVE, không mở đường điều khiển). 8 test validate.
+- **Align `/dashboard` theo design-system** (`2b3f6fc`) — mẫu đầu tiên của "DS rollout" (P4/F1): `<PageHeader>` + 16 màu palette → token semantic, giữ nguyên màu Recharts/`oeeColor`.
+
+### 7.2 Đánh giá 3 lớp khả thi — CẬP NHẬT
+
+| Lớp | Doc 22 (2026-07-01) | Nay (2026-07-02) |
+|---|---|---|
+| **Biên dịch / kiến trúc** | 🟢 Sạch | 🟢 Vẫn sạch (typecheck xanh mọi phase; full suite 2620/0) |
+| **Đúng-đắn / sẵn-sàng-bật** | 🔴 Còn 2 lỗi chặn + migration chưa xác minh | 🟢 **Cải thiện rõ** — hết lỗi chặn, migration đã áp, producer đã sống, license-gate đã kín |
+| **Chạy thật (cờ ON + phần cứng)** | 🟡 Gần như toàn bộ TẮT CỜ | 🟡 **Chưa đổi** — cờ vẫn OFF theo kỷ luật, chưa kiểm phần cứng → **đây là ranh giới còn lại** |
+
+### 7.3 Kết luận đánh giá
+
+Doc 22 kết luận hệ *"đã xây, chưa bật, chưa kiểm phần cứng"*. Sau phiên thực thi:
+
+- **Phần "đã xây" nay đầy đủ + đúng hơn:** các lỗi đúng-đắn đã sửa & verify trên DB thật; các "producer đang ngủ" đã sống (auto-rollback có nguồn tín hiệu, vòng an toàn demo được end-to-end, RCA có bằng chứng ảnh); nợ tích hợp đã trả (license-gate, N+1, rebalance, OPC-UA push); UX dễ hơn hẳn cho người mới; twin có thể gắn **model 3D thật** cho từng máy qua UI; Simulation Gate có **IK** nên move_linear được kiểm va chạm toàn tay.
+- **Phần "chưa bật / chưa phần cứng" vẫn là ranh giới** — nhưng nay **chỉ còn 2 rào, đều KHÔNG phải lỗi code:** (a) **ops flip cờ + smoke-test** trên staging, (b) **CAPEX phần cứng** (P6). Không còn rào "code sai / thiếu / nợ tích hợp".
+
+**Trưởng thành cập nhật (code-maturity, vẫn flag-off):** khoảng cách gap-lớn của báo cáo đã thu hẹp ở Khối 2 (race + rebalance + N+1), Khối 3 (vòng an toàn demo-được), Khối 4 (loop đóng: auto-rollback + RCA vision), Khối 5 (license-gate), Khối 6 (IK), Khối 7 (model thật upload-được), Frontend (Simple-mode + Dashboard DS). **Trưởng thành vận hành (flag-on, real-data) chưa đổi** — chủ ý, chờ ops/phần cứng.
+
+### 7.4 Bước kế tiếp đề xuất (không tự chạy — chờ chỉ đạo)
+
+1. **Ops — flip nhóm cờ advisory an toàn** trên staging + smoke-test end-to-end: `PDM_SENSOR_INGEST` · `WORKFORCE` · `SAFETY_AUDIT` · `AI_MODEL_PERF_SNAPSHOTS` · `EQ_GOVERN` · `MTCONNECT` (đều read/advisory, không ghi thiết bị).
+2. **Twin** — bật `TWIN_LIVE_ENABLED` + upload model thật cho vài máy trọng điểm (UI mới).
+3. **P4 breadth** — roll DS ra top-20 trang còn ad-hoc · gộp "một home" nguồn-sự-thật · làm sâu ViewerHome/AdminHome.
+4. **P6** — lập kế hoạch mua sắm phần cứng (SIL PLC, UWB/LiDAR, camera+YOLO, FOCAS, EtherCAT) để đạt nghiệm thu ISO 10218/TS 15066 & runtime thật.
