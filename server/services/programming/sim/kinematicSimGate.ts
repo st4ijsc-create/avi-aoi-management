@@ -18,8 +18,18 @@
  *     safety_zone_violations, waypointsChecked }
  * `pass` = no collisions AND no joint-limit violations AND no safety-zone violations.
  *
+ * ── DYNAMICS-AWARE layer (additive, physics.ts) ─────────────────────────────
+ *   • After the kinematic pass, an INTERNAL dynamics backend runs on the SAME sampled
+ *     trajectory: finite-difference joint VELOCITY + ACCEL vs per-joint limits, and a
+ *     quasi-static gravity TORQUE estimate vs a torque limit. This is ADDITIVE — it sets
+ *     new `dynamicsPass` / `dynamics` / `dynamics_reasons` fields and NEVER changes `pass`
+ *     (existing callers are unaffected). Runs under the SAME SIM_KINEMATIC_ENABLED gate.
+ *   • An EXTERNAL physics seam (Isaac Sim / RoboDK) is behind SIM_PHYSICS_ENABLED (default
+ *     OFF → internal backend). See physics.ts for the honest stub + integration contract.
+ *   • Still NOT a full rigid-body contact-dynamics engine (no inertia/Coriolis/contact).
+ *
  * ── HONEST scope / seams ────────────────────────────────────────────────────
- *   • KINEMATIC, not full contact dynamics — swappable engine (PyBullet/Isaac later).
+ *   • KINEMATIC + quasi-static dynamics, not full contact dynamics — swappable engine.
  *   • move_joint drives REAL FK (joint values → link poses → collision). move_linear
  *     carries a Cartesian target; the gate now SAMPLES waypoints along the Cartesian path
  *     and solves NUMERICAL INVERSE KINEMATICS (ik.ts, DLS) at each, seeded from the previous
@@ -44,6 +54,12 @@ import {
   type CollisionEvent,
   checkCollisionsAtWaypoint,
 } from "./collision";
+import {
+  type TrajectorySample,
+  type PhysicsResult,
+  type PhysicsOptions,
+  InternalDynamicsBackend,
+} from "./physics";
 
 // ── Contract types ──────────────────────────────────────────────────────────────
 
@@ -73,6 +89,24 @@ export interface SimGateResult {
   waypointsChecked: number;
   /** Honest provenance — engine, model, and any scope caveats. NOT part of the pure contract. */
   note?: string;
+
+  // ── ADDITIVE dynamics layer (physics.ts) — backward-compatible ──────────────────
+  // These fields are NEW. Callers that only read the kinematic contract above are
+  // unaffected: `pass` keeps its original meaning (collision/limit/zone only). A dynamics
+  // violation sets `dynamicsPass:false` + reasons WITHOUT flipping `pass`, so existing
+  // gating logic is unchanged while dynamics-aware callers can additionally require
+  // `dynamicsPass`. Undefined when no model / dynamics did not run (honest no-op).
+
+  /**
+   * True when the internal dynamics backend found NO velocity/accel/torque violation on the
+   * sampled trajectory. Undefined when dynamics was not evaluated (no samples). NEVER
+   * fabricated — a no-op leaves it undefined rather than true.
+   */
+  dynamicsPass?: boolean;
+  /** The full dynamics verdict (velocity/accel/torque violations + notes). Undefined when not run. */
+  dynamics?: PhysicsResult;
+  /** Human-readable dynamics violation reasons (empty when clean / not run). */
+  dynamics_reasons?: string[];
 }
 
 /** A safety/human-shared zone as a world AABB volume (from scene-graph zone bounds). */
@@ -180,6 +214,13 @@ export interface RunGateOptions {
   ikPositionToleranceMm?: number;
   /** IK iteration cap per move_linear waypoint (determinism). Default 200. */
   ikMaxIterations?: number;
+  /**
+   * Skip the additive internal-dynamics pass (velocity/accel/static-torque). Default false
+   * (dynamics runs). Purely additive — disabling it never changes the kinematic `pass`.
+   */
+  skipDynamics?: boolean;
+  /** Tunables + defaults forwarded to the internal dynamics backend (physics.ts). */
+  dynamicsOptions?: PhysicsOptions;
 }
 
 /**
@@ -207,6 +248,13 @@ export function runKinematicSimGate(
   // Track the running joint state so consecutive move_joint segments interpolate from the
   // previous target. Also SEEDS the IK for move_linear (path continuity). Start at all-zero (home).
   let jointState = new Array<number>(model.dof).fill(0);
+
+  // Sampled trajectory for the ADDITIVE dynamics pass (physics.ts): each posed waypoint joint
+  // config + its ABSOLUTE time (s). Timestamps come from the SAME per-segment trapezoidal
+  // cycle-time the gate already computes, distributed linearly across that segment's waypoints.
+  // Seeded with the home config at t=0 so the first move has a velocity baseline.
+  const trajectory: TrajectorySample[] = [{ t: 0, joints: jointState.slice() }];
+  let tAccum = 0;
 
   // IK tunables (read at call time; conservative defaults suited to the mm-length models).
   const ikTolerance = opts.ikPositionToleranceMm ?? num("SIM_IK_TOLERANCE_MM", 2);
@@ -243,13 +291,17 @@ export function runKinematicSimGate(
       let maxDelta = 0;
       for (let i = 0; i < model.dof; i++) maxDelta = Math.max(maxDelta, Math.abs((target[i] ?? 0) - (jointState[i] ?? 0)));
       const rate = jointRate * Math.max(0.01, seg.speedPct / 100); // rad/s
-      cycle_time_actual += rate > 0 ? maxDelta / rate : 0;
-      // Interpolate res+1 waypoints from current state → target.
+      const segTime = rate > 0 ? maxDelta / rate : 0;
+      cycle_time_actual += segTime;
+      // Interpolate res+1 waypoints from current state → target, timestamping each within the
+      // segment's own time budget (linear along the segment — matches the joint-space lerp).
       for (let s = 1; s <= res; s++) {
         const t = s / res;
         const jv = lerpJoints(jointState, target, t);
         checkPose(waypointIdx++, jv);
+        trajectory.push({ t: tAccum + t * segTime, joints: jv.slice() });
       }
+      tAccum += segTime;
       jointState = lerpJoints(jointState, target, 1);
     } else {
       // move_linear: Cartesian target → SAMPLE the straight-line TCP path and solve IK at
@@ -265,11 +317,12 @@ export function runKinematicSimGate(
       const ws = model.workspace;
 
       // Cycle-time from the straight-line Cartesian distance.
-      cycle_time_actual += segmentTime(
+      const segTime = segmentTime(
         Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]),
         seg.speedMms,
         seg.accel,
       );
+      cycle_time_actual += segTime;
 
       let seed = jointState.slice();
       for (let s = 1; s <= res; s++) {
@@ -320,7 +373,12 @@ export function runKinematicSimGate(
         // Run the EXISTING full-arm checks (joint limits + FK collision + workspace links +
         // safety zones) on the SOLVED joint config — identical to a move_joint waypoint.
         checkPose(atWaypoint, ik.joints);
+        // Record the SOLVED joint config for the dynamics pass, timestamped within this
+        // segment's time budget. Skipped (workspace/unreachable) waypoints carry no joint
+        // config and are intentionally omitted from the trajectory.
+        trajectory.push({ t: tAccum + t * segTime, joints: ik.joints.slice() });
       }
+      tAccum += segTime;
       // Advance the running joint state to the final solved config (path continuity into any
       // subsequent segment).
       jointState = seed;
@@ -342,7 +400,45 @@ export function runKinematicSimGate(
   }
   if (segs.length === 0) notes.push("flow has no motion blocks — trivially passes kinematics.");
 
-  return {
+  // ── ADDITIVE dynamics pass (physics.ts) — behind SIM_KINEMATIC_ENABLED (same gate) ────────
+  // Runs the INTERNAL dynamics backend on the SAME sampled trajectory: finite-difference
+  // joint velocity/accel vs limits + a quasi-static gravity-torque estimate. Purely additive —
+  // it sets `dynamicsPass` + `dynamics` + `dynamics_reasons` and NEVER touches `pass` (the
+  // kinematic contract). HONEST no-op: with only the seeded home sample (no motion) there is
+  // no velocity to check and dynamics is left unevaluated (dynamicsPass stays undefined).
+  let dynamicsPass: boolean | undefined;
+  let dynamics: PhysicsResult | undefined;
+  let dynamics_reasons: string[] | undefined;
+  const hasMotionSamples = trajectory.length >= 2;
+  if (!opts.skipDynamics && hasMotionSamples) {
+    const backend = new InternalDynamicsBackend();
+    dynamics = backend.simulate(trajectory, model, opts.dynamicsOptions);
+    dynamicsPass = dynamics.ok;
+    dynamics_reasons = [];
+    if (dynamics.jointVelocityViolations.length) {
+      const v = dynamics.jointVelocityViolations[0];
+      dynamics_reasons.push(
+        `VELOCITY: ${dynamics.jointVelocityViolations.length} violation(s) — e.g. ${v.joint} peak ${v.value.toFixed(2)} > ${v.limit.toFixed(2)}.`,
+      );
+    }
+    if (dynamics.jointAccelViolations.length) {
+      const a = dynamics.jointAccelViolations[0];
+      dynamics_reasons.push(
+        `ACCEL: ${dynamics.jointAccelViolations.length} violation(s) — e.g. ${a.joint} peak ${a.value.toFixed(2)} > ${a.limit.toFixed(2)}.`,
+      );
+    }
+    if (dynamics.estTorqueViolations.length) {
+      const tq = dynamics.estTorqueViolations[0];
+      dynamics_reasons.push(
+        `EST-TORQUE: ${dynamics.estTorqueViolations.length} violation(s) — e.g. ${tq.joint} est ${tq.value.toFixed(1)} N·m > ${tq.limit.toFixed(1)} (static-gravity estimate).`,
+      );
+    }
+    notes.push(...dynamics.notes);
+  } else if (!opts.skipDynamics) {
+    notes.push("dynamics NOT evaluated — no motion (need ≥2 timed trajectory samples). Honest no-op.");
+  }
+
+  const result: SimGateResult = {
     pass,
     collision_events,
     joint_limit_violations,
@@ -351,6 +447,15 @@ export function runKinematicSimGate(
     waypointsChecked,
     note: notes.join(" "),
   };
+  // Attach the ADDITIVE dynamics fields ONLY when dynamics actually ran, so a skipped / no-op
+  // gate returns the EXACT original contract shape (no extra keys) for callers/tests that
+  // enumerate the object. Byte-for-byte backward-compatible when dynamics is not evaluated.
+  if (dynamics !== undefined) {
+    result.dynamics = dynamics;
+    result.dynamicsPass = dynamicsPass;
+    result.dynamics_reasons = dynamics_reasons;
+  }
+  return result;
 }
 
 /**

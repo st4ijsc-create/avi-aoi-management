@@ -6,6 +6,7 @@
  * open a session and confirm the peer is a SECS-II speaker:
  *   - S1F1 / S1F2  — Are You There Request / On Line Data
  *   - S1F13 / S1F14 — Establish Communications Request / Acknowledge (COMMACK)
+ *   - S1F17 / S1F18 — Request ON-LINE / ON-LINE Acknowledge (ONLACK)
  * This is NOT a GEM (E30) implementation: there is no control-state model, no
  * dynamic event/report linking, no spooling. These builders/parsers exist so
  * hsmsClient can send a real S1F1 and interpret a real S1F2 for a liveness/model
@@ -137,5 +138,72 @@ export function parseS1F14(body: Secs2Item): EstablishCommsAck | null {
     commack,
     accepted: commack === COMMACK.ACCEPTED,
     data: data ?? { modelName: "", softRev: "" },
+  };
+}
+
+// ─── S1F17 / S1F18 — Request ON-LINE / ON-LINE Acknowledge ────────────────────
+//
+// The standard GEM online-request handshake (SEMI E5 §S1). The HOST sends S1F17
+// (empty body) to request the equipment go ONLINE; the equipment replies with
+// S1F18 carrying ONLACK. This is the ONLY "write" the connectivity layer makes:
+// it asks the equipment to accept remote/online control — it does NOT push any
+// recipe, parameter, or host-command (S2Fxx). READ/MONITOR scope is preserved.
+
+/** S1F17 — Request ON-LINE (W). Empty body (`L[]`). Host → Equipment. */
+export function s1f17(): Secs2Message {
+  return { stream: 1, streamFunction: 17, wbit: true, body: I.L(), name: "S1F17 Request ON-LINE" };
+}
+
+/**
+ * ONLACK — ON-LINE Acknowledge code (SEMI E5 S1F18).
+ *   ACCEPTED           (0) — request accepted; equipment is/goes ON-LINE.
+ *   NOT_ALLOWED        (1) — request refused (e.g. equipment will not go online).
+ *   ALREADY_ONLINE     (2) — equipment was already ON-LINE.
+ * ACCEPTED and ALREADY_ONLINE both mean the equipment IS online; only
+ * NOT_ALLOWED (or any non-standard code) counts as a denial.
+ */
+export const ONLACK = {
+  ACCEPTED: 0x00,
+  NOT_ALLOWED: 0x01,
+  ALREADY_ONLINE: 0x02,
+} as const;
+
+/**
+ * S1F18 — ON-LINE Acknowledge. Reply to S1F17. Body is a single ONLACK binary
+ * item: `B[ONLACK]`. Equipment → Host.
+ */
+export function s1f18(onlack: number): Secs2Message {
+  return {
+    stream: 1,
+    streamFunction: 18,
+    wbit: false,
+    body: I.B(onlack & 0xff),
+    name: "S1F18 ON-LINE Acknowledge",
+  };
+}
+
+/** Parsed S1F18. `online` is true for ACCEPTED or ALREADY_ONLINE. */
+export interface OnlineAck {
+  onlack: number;
+  /** true → the equipment is ON-LINE (ONLACK ACCEPTED or ALREADY_ONLINE). */
+  online: boolean;
+}
+
+/**
+ * Parse an S1F18 body — `B[ONLACK]`. Fail-safe: a missing/wrong-format body
+ * yields onlack=0xff (treated as NOT online). Some equipment wrap the ONLACK in
+ * a 1-element list; that shape is also accepted.
+ */
+export function parseS1F18(body: Secs2Item): OnlineAck {
+  let onlack = 0xff;
+  if (body.format === "B") {
+    onlack = body.value[0] ?? 0xff;
+  } else if (body.format === "L") {
+    const inner = body.value[0];
+    if (inner && inner.format === "B") onlack = inner.value[0] ?? 0xff;
+  }
+  return {
+    onlack,
+    online: onlack === ONLACK.ACCEPTED || onlack === ONLACK.ALREADY_ONLINE,
   };
 }

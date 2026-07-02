@@ -351,3 +351,67 @@ export async function buildFactoryGrid(opts: BuildFactoryGridOptions = {}): Prom
 
   return { enabled, grid, obstacleCount: obstacles.length, note };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// DYNAMIC OBSTACLES — fold OTHER robots' live positions in as blocked cells so the
+// planner (A* or D* Lite) routes around them. This is what the doc-16 audit flagged
+// as MISSING from buildFactoryGrid (which only had static zone bounds).
+//
+// HONEST SCOPE: a robot becomes a blocked CELL (optionally an inflated disc of cells
+// for its footprint/safety margin) — a snapshot occupancy, not a time-parameterised
+// trajectory. This supports GRID-LEVEL robot-as-obstacle avoidance; it is NOT
+// continuous/kinodynamic multi-robot planning. Presentation/orchestration state only.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** A dynamic obstacle at a WORLD point (e.g. another robot's current pose). */
+export interface DynamicObstacle {
+  /** World position of the obstacle centre. */
+  point: Point2D;
+  /**
+   * Inflation RADIUS in world units (metres). Cells within this radius of the point
+   * are blocked (robot footprint + safety margin). 0 → just the single occupied cell.
+   */
+  radius?: number;
+  /** Optional id (e.g. robot id) for provenance/debugging — not used in masking. */
+  id?: number | string;
+}
+
+/** Deep-clone a grid's occupancy so masking is IMMUTABLE (never mutates the input). */
+export function cloneGrid(grid: OccupancyGrid): OccupancyGrid {
+  return { ...grid, cells: grid.cells.map((row) => row.slice()) };
+}
+
+/** Cells whose CENTRE lies within `radius` (world units) of a world point → blocked. */
+function markDynamic(grid: OccupancyGrid, obs: DynamicObstacle): void {
+  const radius = Math.max(0, obs.radius ?? 0);
+  const centre = worldToCell(grid, obs.point);
+  if (radius <= 0) {
+    if (inBounds(grid, centre.col, centre.row)) grid.cells[centre.row][centre.col] = true;
+    return;
+  }
+  // Scan the cell bounding box of the disc, block cells whose centre is within radius.
+  const rCells = Math.ceil(radius / grid.cellSize) + 1;
+  for (let dr = -rCells; dr <= rCells; dr++) {
+    for (let dc = -rCells; dc <= rCells; dc++) {
+      const col = centre.col + dc;
+      const row = centre.row + dr;
+      if (!inBounds(grid, col, row)) continue;
+      const w = cellToWorld(grid, col, row);
+      if (Math.hypot(w.x - obs.point.x, w.y - obs.point.y) <= radius + 1e-9) {
+        grid.cells[row][col] = true;
+      }
+    }
+  }
+}
+
+/**
+ * Return a NEW grid (input untouched) with each dynamic obstacle folded in as blocked
+ * cell(s). Feed OTHER robots' current positions here so the planner routes around them.
+ * Out-of-bounds obstacles are ignored. Immutable — safe to call per-plan.
+ */
+export function withDynamicObstacles(grid: OccupancyGrid, obstacles: DynamicObstacle[]): OccupancyGrid {
+  const next = cloneGrid(grid);
+  for (const o of obstacles) markDynamic(next, o);
+  return next;
+}
+

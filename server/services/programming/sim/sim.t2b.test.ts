@@ -322,11 +322,15 @@ describe("T2b · kinematic simulation gate", () => {
     expect(r.joint_limit_violations.some((v) => v.joint.startsWith("<workspace"))).toBe(false);
   });
 
-  it("returns EXACTLY the contract shape", () => {
+  it("carries the FULL kinematic contract shape (additive dynamics fields are extra, not breaking)", () => {
     const r = runKinematicSimGate(jointFlow([0.1, 0, 0, 0]), SAMPLE_SCARA, { obstacles: [], safetyZones: [] }, {});
-    expect(Object.keys(r).sort()).toEqual(
-      ["collision_events", "cycle_time_actual", "joint_limit_violations", "note", "pass", "safety_zone_violations", "waypointsChecked"].sort(),
-    );
+    // The original kinematic contract keys MUST still all be present (backward-compatible).
+    const kinematicKeys = ["collision_events", "cycle_time_actual", "joint_limit_violations", "note", "pass", "safety_zone_violations", "waypointsChecked"];
+    for (const k of kinematicKeys) expect(r).toHaveProperty(k);
+    // The dynamics layer adds fields on TOP (physics.ts), which existing callers ignore.
+    // With dynamics DISABLED the result is exactly the original shape (no extra keys).
+    const kinematicOnly = runKinematicSimGate(jointFlow([0.1, 0, 0, 0]), SAMPLE_SCARA, { obstacles: [], safetyZones: [] }, { skipDynamics: true });
+    expect(Object.keys(kinematicOnly).sort()).toEqual([...kinematicKeys].sort());
   });
 });
 

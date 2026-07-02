@@ -32,6 +32,22 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { zones, zoneReservations } from "../../../drizzle/schema";
 import { fleetOrchEnabled } from "./taskAllocator";
+// Pure planner deps — static imports (no DB side-effects at module load). Used by the
+// dynamic-obstacle planning seam below; the legacy planPath() stub keeps its lazy
+// require() so the byte-for-byte G1 behaviour (no grid → no import) is unchanged.
+import {
+  planPathOnGrid,
+  withDynamicObstacles,
+  type OccupancyGrid,
+  type Point2D,
+  type DynamicObstacle,
+} from "../twin/occupancyGrid";
+import {
+  planDStarLite,
+  replan as replanDStarLite,
+  type DStarLiteState,
+  type CellChange,
+} from "../twin/dstarLite";
 
 export interface ReserveInput {
   zoneId: number;
@@ -317,4 +333,189 @@ export function planPath(
     zones: zoneWaypoints,
     note: "stub: no occupancy-grid map supplied — waypoints returned verbatim (reservation-level routing only)",
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DYNAMIC-OBSTACLE-AWARE PLANNING (T1-e, doc 16 §15) — layer OTHER robots' live
+// positions onto the static grid and plan with D* Lite so a route avoids them; replan
+// INCREMENTALLY when an obstacle appears/moves. PURE helpers here are unflagged +
+// testable; the DB/live entry points are gated on FLEET_ORCH_ENABLED (no-op when off),
+// mirroring reserveZone / allocateTask.
+//
+// HONEST SCOPE: grid-level D* Lite with robots as blocked cells — NOT continuous /
+// kinodynamic planning. Decides a ROUTE for presentation/orchestration; commands no
+// device (dispatch stays with the gated dispatcher).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * PURE dynamic planner. Folds `dynamicObstacles` (other robots' world positions, with
+ * an optional inflation radius) onto `grid`, then plans `from`→`to`:
+ *   • with dynamics → D* Lite (returns the reusable search `state` for incremental
+ *     replanning via replanOnObstacleChange);
+ *   • no dynamics → falls back to the static A* (planPathOnGrid), matching planPath.
+ *
+ * The returned `state` (present only on the D* Lite path) is what makes the follow-up
+ * `replanOnObstacleChange` incremental rather than a from-scratch re-plan.
+ */
+export function planPathDynamic(
+  grid: OccupancyGrid,
+  from: Point2D,
+  to: Point2D,
+  dynamicObstacles: DynamicObstacle[] = [],
+): {
+  ok: boolean;
+  path: Point2D[];
+  cells: Array<{ col: number; row: number }>;
+  cost?: number;
+  expanded: number;
+  planner: "dstar_lite" | "astar";
+  note: string;
+  state?: DStarLiteState;
+  reason?: string;
+} {
+  if (dynamicObstacles.length === 0) {
+    // No live obstacles → static A* (identical cost model; cheaper, no reuse needed).
+    const r = planPathOnGrid(grid, from, to);
+    return {
+      ok: r.ok,
+      path: r.path,
+      cells: r.cells,
+      expanded: r.expanded,
+      planner: "astar",
+      note: r.ok ? `A* static route: ${r.cells.length} cells (${r.expanded} expanded)` : `A* failed: ${r.reason}`,
+      reason: r.ok ? undefined : r.reason,
+    };
+  }
+
+  const dynGrid = withDynamicObstacles(grid, dynamicObstacles);
+  const r = planDStarLite(dynGrid, from, to);
+  return {
+    ok: r.ok,
+    path: r.path,
+    cells: r.cells,
+    cost: r.cost,
+    expanded: r.expanded,
+    planner: "dstar_lite",
+    note: r.ok
+      ? `D* Lite route around ${dynamicObstacles.length} dynamic obstacle(s): ${r.cells.length} cells, cost ${r.cost.toFixed(2)} (${r.expanded} expanded)`
+      : `D* Lite failed: ${r.reason}`,
+    state: r.state,
+    reason: r.ok ? undefined : r.reason,
+  };
+}
+
+/**
+ * PURE incremental replan. Given a D* Lite `state` from a prior planPathDynamic() call
+ * and the CHANGED cells (obstacle appeared/cleared, expressed in cell coords), reuses
+ * the prior search to find the new route — the whole point of D* over re-running A*.
+ * `newStart` optionally advances the robot's current cell (applies the km offset).
+ */
+export function replanOnObstacleChange(
+  state: DStarLiteState,
+  changedCells: CellChange[],
+  opts?: { newStart?: { col: number; row: number } },
+): {
+  ok: boolean;
+  path: Point2D[];
+  cells: Array<{ col: number; row: number }>;
+  cost?: number;
+  expanded: number;
+  note: string;
+  reason?: string;
+} {
+  const r = replanDStarLite(state, changedCells, opts);
+  return {
+    ok: r.ok,
+    path: r.path,
+    cells: r.cells,
+    cost: r.cost,
+    expanded: r.expanded,
+    note: r.ok
+      ? `D* Lite incremental replan: ${r.cells.length} cells, cost ${r.cost.toFixed(2)} (${r.expanded} re-expanded)`
+      : `D* Lite replan failed: ${r.reason}`,
+    reason: r.ok ? undefined : r.reason,
+  };
+}
+
+export interface LivePlanResult {
+  ok: boolean;
+  enabled: boolean;
+  path?: Point2D[];
+  cells?: Array<{ col: number; row: number }>;
+  planner?: "dstar_lite" | "astar";
+  obstacleCount?: number;
+  note: string;
+  /** Reusable D* Lite state (D* path only) for a follow-up replan. */
+  state?: DStarLiteState;
+}
+
+/**
+ * LIVE entry point — build the factory grid, fold in OTHER robots' live positions as
+ * dynamic obstacles, and plan `from`→`to` (D* Lite when there are dynamics, else A*).
+ * No-op (enabled:false) unless FLEET_ORCH_ENABLED, mirroring reserveZone/allocateTask.
+ *
+ * `excludeDeviceId` drops the planning robot's own pose from the obstacle set so it
+ * doesn't block itself. `obstacleRadius` inflates each robot to a disc of cells.
+ */
+export async function planPathDynamicLive(
+  from: Point2D,
+  to: Point2D,
+  opts?: { factoryId?: number; excludeDeviceId?: number; obstacleRadius?: number },
+): Promise<LivePlanResult> {
+  if (!fleetOrchEnabled()) return { ok: false, enabled: false, note: "FLEET_ORCH_ENABLED off" };
+
+  const { buildFactoryGrid } = await import("../twin/occupancyGrid");
+  const built = await buildFactoryGrid({ factoryId: opts?.factoryId });
+  if (!built.grid) return { ok: false, enabled: true, note: `no grid: ${built.note}` };
+
+  const obstacles = await loadRobotObstacles(opts?.excludeDeviceId, opts?.obstacleRadius);
+  const r = planPathDynamic(built.grid, from, to, obstacles);
+  return {
+    ok: r.ok,
+    enabled: true,
+    path: r.path,
+    cells: r.cells,
+    planner: r.planner,
+    obstacleCount: obstacles.length,
+    note: `${built.note} | ${r.note}`,
+    state: r.state,
+  };
+}
+
+/**
+ * Load OTHER robots' current world positions from their latest telemetry as dynamic
+ * obstacles. Best-effort + degrade-safe (empty list when no db / no poses). Excludes
+ * the planning robot (excludeDeviceId) so it does not treat itself as an obstacle.
+ */
+async function loadRobotObstacles(
+  excludeDeviceId?: number,
+  obstacleRadius?: number,
+): Promise<DynamicObstacle[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const { robots, robotTelemetry } = await import("../../../drizzle/schema");
+  const { desc } = await import("drizzle-orm");
+
+  const robotRows = await db.select().from(robots).where(eq(robots.isEnabled, true));
+  if (robotRows.length === 0) return [];
+  const ids = robotRows.map((r) => r.id).filter((id) => id !== excludeDeviceId);
+  if (ids.length === 0) return [];
+
+  const telRows = await db
+    .select()
+    .from(robotTelemetry)
+    .where(inArray(robotTelemetry.robotId, ids))
+    .orderBy(desc(robotTelemetry.timestamp));
+  const latestByRobot = new Map<number, (typeof telRows)[number]>();
+  for (const tel of telRows) if (!latestByRobot.has(tel.robotId)) latestByRobot.set(tel.robotId, tel);
+
+  const obstacles: DynamicObstacle[] = [];
+  for (const [robotId, tel] of latestByRobot) {
+    const pose = (tel?.poseJson ?? null) as Record<string, unknown> | null;
+    const cart = pose?.cartesian as { x?: number; y?: number } | undefined;
+    if (cart && typeof cart.x === "number" && typeof cart.y === "number") {
+      obstacles.push({ id: robotId, point: { x: cart.x, y: cart.y }, radius: obstacleRadius });
+    }
+  }
+  return obstacles;
 }

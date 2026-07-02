@@ -191,6 +191,21 @@ export type BoundingVolume = SphereBV | CapsuleBV | AabbBV;
 
 export type JointType = "revolute" | "prismatic" | "fixed";
 
+/**
+ * OPTIONAL per-joint dynamics params (T2b dynamics layer, physics.ts). All optional and
+ * additive — a model that declares none still runs the kinematic gate exactly as before, and
+ * the dynamics backend falls back to sensible defaults (documented in physics.ts). Units:
+ * velocityLimit rad/s (revolute) or mm/s (prismatic); accelLimit rad/s² or mm/s²; torqueLimit
+ * N·m; massKg kg; comLeverMm the horizontal joint-axis→link-COM distance (mm).
+ */
+export interface JointDynamics {
+  velocityLimit?: number;
+  accelLimit?: number;
+  torqueLimit?: number;
+  massKg?: number;
+  comLeverMm?: number;
+}
+
 export interface KinematicJoint {
   name: string;
   type: JointType;
@@ -198,6 +213,11 @@ export interface KinematicJoint {
   dh: { a: number; alpha: number; d: number; theta: number };
   /** Joint limits (rad for revolute, mm for prismatic). Omitted → unlimited. */
   limits?: { min: number; max: number };
+  /**
+   * OPTIONAL dynamics params consumed ONLY by the dynamics layer (physics.ts). Absent →
+   * physics defaults. Never affects FK / kinematic checks.
+   */
+  dynamics?: JointDynamics;
   /** Bounding volume of the LINK that this joint carries, in the link's own frame. */
   bv: BoundingVolume;
   /**
@@ -357,18 +377,27 @@ export const SAMPLE_ARM_6DOF: KinematicModel = {
   workspace: { min: [-900, -900, -100], max: [900, 900, 1300] },
   dof: 6,
   joints: [
+    // `dynamics` params are UR5-ish PLACEHOLDERS (velocity ~180°/s, masses/torques in the UR
+    // ballpark) so the additive dynamics layer (physics.ts) has real limits to check — NOT
+    // vendor-exact spec values (honest, same footing as the authored DH numbers).
     { name: "shoulder_pan", type: "revolute", dh: { a: 0, alpha: 90 * DEG, d: 89.2, theta: 0 },
-      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "capsule", a: [0, 0, -50], b: [0, 0, 50], radius: 70 } },
+      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "capsule", a: [0, 0, -50], b: [0, 0, 50], radius: 70 },
+      dynamics: { velocityLimit: Math.PI, accelLimit: 15, torqueLimit: 150, massKg: 3.7, comLeverMm: 60 } },
     { name: "shoulder_lift", type: "revolute", dh: { a: -425, alpha: 0, d: 0, theta: 0 },
-      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "capsule", a: [0, 0, 0], b: [-425, 0, 0], radius: 55 } },
+      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "capsule", a: [0, 0, 0], b: [-425, 0, 0], radius: 55 },
+      dynamics: { velocityLimit: Math.PI, accelLimit: 15, torqueLimit: 150, massKg: 8.4, comLeverMm: 212 } },
     { name: "elbow", type: "revolute", dh: { a: -392, alpha: 0, d: 0, theta: 0 },
-      limits: { min: -Math.PI, max: Math.PI }, bv: { kind: "capsule", a: [0, 0, 0], b: [-392, 0, 0], radius: 45 } },
+      limits: { min: -Math.PI, max: Math.PI }, bv: { kind: "capsule", a: [0, 0, 0], b: [-392, 0, 0], radius: 45 },
+      dynamics: { velocityLimit: Math.PI, accelLimit: 20, torqueLimit: 150, massKg: 2.3, comLeverMm: 196 } },
     { name: "wrist_1", type: "revolute", dh: { a: 0, alpha: 90 * DEG, d: 109.3, theta: 0 },
-      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 45 } },
+      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 45 },
+      dynamics: { velocityLimit: 2 * Math.PI, accelLimit: 25, torqueLimit: 28, massKg: 1.2, comLeverMm: 45 } },
     { name: "wrist_2", type: "revolute", dh: { a: 0, alpha: -90 * DEG, d: 94.75, theta: 0 },
-      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 40 } },
+      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 40 },
+      dynamics: { velocityLimit: 2 * Math.PI, accelLimit: 25, torqueLimit: 28, massKg: 1.2, comLeverMm: 40 } },
     { name: "wrist_3", type: "revolute", dh: { a: 0, alpha: 0, d: 82.5, theta: 0 },
-      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 35 } },
+      limits: { min: -2 * Math.PI, max: 2 * Math.PI }, bv: { kind: "sphere", center: [0, 0, 0], radius: 35 },
+      dynamics: { velocityLimit: 2 * Math.PI, accelLimit: 30, torqueLimit: 28, massKg: 0.35, comLeverMm: 35 } },
   ],
 };
 
