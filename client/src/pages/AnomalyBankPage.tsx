@@ -20,12 +20,14 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -126,26 +128,35 @@ export default function AnomalyBankPage() {
   if (!canView) {
     return (
       <DashboardLayout title={t("anomalyBanks.title")} navItems={navItems} currentPath="/anomaly-banks">
-        <div className="p-6">
-          <Card><CardContent className="py-10 text-center text-muted-foreground">
-            <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
-            {t("anomalyBanks.noPermission")}
-          </CardContent></Card>
-        </div>
+        <PageContainer>
+          <Card>
+            <EmptyState
+              variant="error"
+              icon={AlertTriangle}
+              title={t("anomalyBanks.noPermission")}
+              description={t("common.noPermissionDesc", "You do not have permission to view this page.")}
+            />
+          </Card>
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout title={t("anomalyBanks.title")} navItems={navItems} currentPath="/anomaly-banks">
-      <div className="p-6 space-y-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Database className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{t("anomalyBanks.title")}</h1>
-          <ViewOnlyBadge module="analytics_ai_performance" />
-          <Badge variant="outline">PatchCore</Badge>
-          <Badge variant="secondary">{t("anomalyBanks.totalVectors")}: {totalVectors}</Badge>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Database className="h-6 w-6" />}
+          title={t("anomalyBanks.title")}
+          description={t("anomalyBanks.subtitle", "Manage PatchCore-style anomaly memory banks per machine / product scope.")}
+          badge={<ViewOnlyBadge module="analytics_ai_performance" />}
+          actions={
+            <>
+              <Badge variant="outline">PatchCore</Badge>
+              <Badge variant="secondary">{t("anomalyBanks.totalVectors")}: {totalVectors}</Badge>
+            </>
+          }
+        />
 
         {/* Scope filter + global build-from-vectors trigger */}
         <div className="flex gap-3 flex-wrap items-end">
@@ -187,10 +198,26 @@ export default function AnomalyBankPage() {
               </TableHeader>
               <TableBody>
                 {statsQ.isLoading && (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">{t("anomalyBanks.loading")}</TableCell></TableRow>
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={`sk-${i}`}>
+                      {Array.from({ length: 8 }).map((__, j) => (
+                        <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                      ))}
+                    </TableRow>
+                  ))
                 )}
                 {!statsQ.isLoading && profiles.length === 0 && (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">{t("anomalyBanks.empty")}</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-4">
+                      <EmptyState
+                        variant="no-data"
+                        icon={Database}
+                        title={t("anomalyBanks.empty")}
+                        description={t("anomalyBanks.emptyDesc", "No anomaly banks for this scope yet. Build one from stored vectors.")}
+                        compact
+                      />
+                    </TableCell>
+                  </TableRow>
                 )}
                 {profiles.map((p) => {
                   const boot = isBootstrap(p);
@@ -226,7 +253,7 @@ export default function AnomalyBankPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

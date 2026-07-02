@@ -1,7 +1,18 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
-import { PageHeader } from '@/components/patterns';
+import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  StatusBadge,
+  EmptyState,
+  chartColor,
+  chartTooltipStyle,
+  chartTooltipLabelStyle,
+  chartGridProps,
+  chartAxisTick,
+} from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Brain,
@@ -106,39 +118,33 @@ export default function AIPerformanceDashboard() {
     };
   }, [confusionMatrix]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'COMPLETED':
-        return <Badge className="bg-success/10 text-success">{t('common.completed')}</Badge>;
-      case 'PROCESSING':
-        return <Badge className="bg-info/10 text-info">{t('common.processing')}</Badge>;
-      case 'PENDING':
-        return <Badge className="bg-warning/10 text-warning">{t('common.pending')}</Badge>;
-      case 'FAILED':
-        return <Badge className="bg-destructive/10 text-destructive">{t('common.failed')}</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  const getStatusBadge = (status: string) => (
+    <StatusBadge
+      status={status}
+      map={{
+        COMPLETED: { tone: 'success', label: t('common.completed') },
+        PROCESSING: { tone: 'info', label: t('common.processing') },
+        PENDING: { tone: 'warning', label: t('common.pending') },
+        FAILED: { tone: 'error', label: t('common.failed') },
+      }}
+    />
+  );
 
-  const getFeedbackBadge = (feedback: string) => {
-    switch (feedback) {
-      case 'CORRECT':
-        return <Badge className="bg-success/10 text-success">{t('reports.correct')}</Badge>;
-      case 'INCORRECT':
-        return <Badge className="bg-destructive/10 text-destructive">{t('reports.incorrect')}</Badge>;
-      case 'PARTIAL':
-        return <Badge className="bg-warning/10 text-warning">{t('reports.partial')}</Badge>;
-      case 'UNSURE':
-        return <Badge className="bg-muted text-muted-foreground">{t('reports.unsure')}</Badge>;
-      default:
-        return <Badge variant="outline">{feedback}</Badge>;
-    }
-  };
+  const getFeedbackBadge = (feedback: string) => (
+    <StatusBadge
+      status={feedback}
+      map={{
+        CORRECT: { tone: 'success', label: t('reports.correct') },
+        INCORRECT: { tone: 'error', label: t('reports.incorrect') },
+        PARTIAL: { tone: 'warning', label: t('reports.partial') },
+        UNSURE: { tone: 'default', label: t('reports.unsure') },
+      }}
+    />
+  );
 
   return (
     <DashboardLayout>
-      <div className="container py-6 space-y-6">
+      <PageContainer fluid>
         {/* Header */}
         <PageHeader
           icon={<Brain className="h-6 w-6" />}
@@ -167,92 +173,39 @@ export default function AIPerformanceDashboard() {
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Accuracy</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.accuracy || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className={cn(
-                  "p-3 rounded-full",
-                  (metrics?.accuracy || 0) >= 80 ? "bg-success/10" : "bg-warning/10"
-                )}>
-                  <Target className={cn(
-                    "h-6 w-6",
-                    (metrics?.accuracy || 0) >= 80 ? "text-success" : "text-warning"
-                  )} />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {(metrics?.accuracy || 0) >= 80 ? t('reports.targetMet') : t('reports.needsImprovement')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Target className="h-5 w-5" />}
+            label={t('reports.accuracy', 'Accuracy')}
+            value={statsLoading ? '…' : `${(metrics?.accuracy || 0).toFixed(1)}%`}
+            tone={(metrics?.accuracy || 0) >= 80 ? 'success' : 'warning'}
+            delta={(metrics?.accuracy || 0) >= 80 ? t('reports.targetMet') : t('reports.needsImprovement')}
+          />
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Precision</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.precision || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-info/10">
-                  <Zap className="h-6 w-6 text-info" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.precisionDesc')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Zap className="h-5 w-5" />}
+            label={t('reports.precision', 'Precision')}
+            value={statsLoading ? '…' : `${(metrics?.precision || 0).toFixed(1)}%`}
+            delta={t('reports.precisionDesc')}
+          />
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Recall</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.recall || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-purple-500/10">
-                  <Activity className="h-6 w-6 text-purple-500" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.recallDesc')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Activity className="h-5 w-5" />}
+            label={t('reports.recall', 'Recall')}
+            value={statsLoading ? '…' : `${(metrics?.recall || 0).toFixed(1)}%`}
+            delta={t('reports.recallDesc')}
+          />
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">F1 Score</p>
-                  <div className="text-3xl font-bold">
-                    {statsLoading ? <Skeleton className="h-9 w-20" /> : `${(metrics?.f1Score || 0).toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="p-3 rounded-full bg-orange-500/10">
-                  <Award className="h-6 w-6 text-orange-500" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('reports.f1ScoreDesc')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Award className="h-5 w-5" />}
+            label={t('reports.f1Score', 'F1 Score')}
+            value={statsLoading ? '…' : `${(metrics?.f1Score || 0).toFixed(1)}%`}
+            delta={t('reports.f1ScoreDesc')}
+          />
         </div>
 
         {/* Main Content */}
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
             <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
             <TabsTrigger value="confusion">{t('reports.confusionMatrix')}</TabsTrigger>
             <TabsTrigger value="evaluation">{t('aiEval.beforeAfterTab', 'Eval (Before/After)')}</TabsTrigger>
@@ -335,9 +288,7 @@ export default function AIPerformanceDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div className="h-50 flex items-center justify-center text-muted-foreground">
-                      {t('common.noData')}
-                    </div>
+                    <EmptyState variant="no-data" compact className="h-50" />
                   )}
                 </CardContent>
               </Card>
@@ -372,14 +323,12 @@ export default function AIPerformanceDashboard() {
                           <div className="text-2xl font-bold">
                             {dashboardStats.accuracy ? `${dashboardStats.accuracy.toFixed(0)}%` : 'N/A'}
                           </div>
-                          <div className="text-sm text-muted-foreground">Accuracy</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.accuracy', 'Accuracy')}</div>
                         </div>
                       </div>
                     </div>
                   ) : (
-<div className="h-50 flex items-center justify-center text-muted-foreground">
-                      {t('common.noData')}
-                    </div>
+                    <EmptyState variant="no-data" compact className="h-50" />
                   )}
                 </CardContent>
               </Card>
@@ -412,26 +361,26 @@ export default function AIPerformanceDashboard() {
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
                         {t('reports.actualPositive')}
                       </div>
-                      <div className="p-8 text-center bg-green-500/20 rounded-lg border-2 border-green-500">
-                        <div className="text-3xl font-bold text-green-600">{confusionMatrix.truePositive}</div>
-                        <div className="text-sm text-muted-foreground">True Positive</div>
+                      <div className="p-8 text-center bg-success/20 rounded-lg border-2 border-success">
+                        <div className="text-3xl font-bold text-success">{confusionMatrix.truePositive}</div>
+                        <div className="text-sm text-muted-foreground">{t('reports.truePositive', 'True Positive')}</div>
                       </div>
-                      <div className="p-8 text-center bg-red-500/20 rounded-lg border-2 border-red-500">
-                        <div className="text-3xl font-bold text-red-600">{confusionMatrix.falseNegative}</div>
-                        <div className="text-sm text-muted-foreground">False Negative</div>
+                      <div className="p-8 text-center bg-destructive/20 rounded-lg border-2 border-destructive">
+                        <div className="text-3xl font-bold text-destructive">{confusionMatrix.falseNegative}</div>
+                        <div className="text-sm text-muted-foreground">{t('reports.falseNegative', 'False Negative')}</div>
                       </div>
-                      
+
                       {/* Actual Negative row */}
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
                         {t('reports.actualNegative')}
                       </div>
-                      <div className="p-8 text-center bg-red-500/20 rounded-lg border-2 border-red-500">
-                        <div className="text-3xl font-bold text-red-600">{confusionMatrix.falsePositive}</div>
-                        <div className="text-sm text-muted-foreground">False Positive</div>
+                      <div className="p-8 text-center bg-destructive/20 rounded-lg border-2 border-destructive">
+                        <div className="text-3xl font-bold text-destructive">{confusionMatrix.falsePositive}</div>
+                        <div className="text-sm text-muted-foreground">{t('reports.falsePositive', 'False Positive')}</div>
                       </div>
-                      <div className="p-8 text-center bg-green-500/20 rounded-lg border-2 border-green-500">
-                        <div className="text-3xl font-bold text-green-600">{confusionMatrix.trueNegative}</div>
-                        <div className="text-sm text-muted-foreground">True Negative</div>
+                      <div className="p-8 text-center bg-success/20 rounded-lg border-2 border-success">
+                        <div className="text-3xl font-bold text-success">{confusionMatrix.trueNegative}</div>
+                        <div className="text-sm text-muted-foreground">{t('reports.trueNegative', 'True Negative')}</div>
                       </div>
                     </div>
 
@@ -439,33 +388,34 @@ export default function AIPerformanceDashboard() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl mt-8">
                       <div className="p-4 rounded-lg border text-center">
                         <div className="text-lg font-bold">{metrics?.accuracy.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Accuracy</div>
+                        <div className="text-xs text-muted-foreground">{t('reports.accuracy', 'Accuracy')}</div>
                         <div className="text-xs text-muted-foreground mt-1">(TP+TN)/(Total)</div>
                       </div>
                       <div className="p-4 rounded-lg border text-center">
                         <div className="text-lg font-bold">{metrics?.precision.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Precision</div>
+                        <div className="text-xs text-muted-foreground">{t('reports.precision', 'Precision')}</div>
                         <div className="text-xs text-muted-foreground mt-1">TP/(TP+FP)</div>
                       </div>
                       <div className="p-4 rounded-lg border text-center">
                         <div className="text-lg font-bold">{metrics?.recall.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">Recall</div>
+                        <div className="text-xs text-muted-foreground">{t('reports.recall', 'Recall')}</div>
                         <div className="text-xs text-muted-foreground mt-1">TP/(TP+FN)</div>
                       </div>
                       <div className="p-4 rounded-lg border text-center">
                         <div className="text-lg font-bold">{metrics?.f1Score.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">F1 Score</div>
+                        <div className="text-xs text-muted-foreground">{t('reports.f1Score', 'F1 Score')}</div>
                         <div className="text-xs text-muted-foreground mt-1">2*(P*R)/(P+R)</div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-75 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.needMoreFeedback')}</p>
-                    </div>
-                  </div>
+                  <EmptyState
+                    variant="no-analytics"
+                    icon={Brain}
+                    title={t('reports.needMoreFeedback')}
+                    description={t('reports.needMoreFeedbackDesc', 'Provide more feedback on suggestions to build the confusion matrix.')}
+                    className="h-75"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -545,7 +495,7 @@ export default function AIPerformanceDashboard() {
                               {/* Batch Info */}
                               <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/50">
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Batch ID</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.batchId', 'Batch ID')}</div>
                                   <div className="font-mono text-sm">{batch.batchId}</div>
                                 </div>
                                 <div>
@@ -594,12 +544,13 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-50 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.noTrainingBatches')}</p>
-                    </div>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={Database}
+                    title={t('reports.noTrainingBatches')}
+                    description={t('reports.noTrainingBatchesDesc', 'Export reviewed feedback into a training batch to see it here.')}
+                    className="h-50"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -644,11 +595,11 @@ export default function AIPerformanceDashboard() {
                               </div>
                               <div>
                                 <div className="font-medium">
-                                  Inspection #{suggestion.inspectionId}
+                                  {t('reports.inspectionN', 'Inspection #{{id}}', { id: suggestion.inspectionId })}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
-                                  Suggested: {suggestion.suggestedResult} • 
-                                  Confidence: {(suggestion.confidence * 100).toFixed(0)}%
+                                  {t('reports.suggestedLabel', 'Suggested')}: {suggestion.suggestedResult} •{' '}
+                                  {t('reports.confidenceLabel', 'Confidence')}: {(suggestion.confidence * 100).toFixed(0)}%
                                 </div>
                               </div>
                             </div>
@@ -671,18 +622,19 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-50 flex items-center justify-center text-muted-foreground">
-                    <div className="text-center">
-                      <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>{t('reports.noSuggestions')}</p>
-                    </div>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={Brain}
+                    title={t('reports.noSuggestions')}
+                    description={t('reports.noSuggestionsDesc', 'AI suggestions and their feedback history will appear here.')}
+                    className="h-50"
+                  />
                 )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -851,13 +803,13 @@ function EvalBeforeAfterSection() {
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="metric" />
-                    <YAxis domain={[0, 100]} />
-                    <RTooltip />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="metric" tick={chartAxisTick} />
+                    <YAxis domain={[0, 100]} tick={chartAxisTick} />
+                    <RTooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
                     <Legend />
-                    <Bar dataKey={beforeKey} fill="#94a3b8" />
-                    <Bar dataKey={afterKey} fill="#3b82f6" />
+                    <Bar dataKey={beforeKey} fill={chartColor(4)} />
+                    <Bar dataKey={afterKey} fill={chartColor(0)} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -874,34 +826,34 @@ function EvalBeforeAfterSection() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="p-2" />
+                <Table className="w-auto text-sm">
+                  <TableHeader>
+                    <TableRow className="border-0 hover:bg-transparent">
+                      <TableHead className="p-2" />
                       {cmLabels.map((l) => (
-                        <th key={l} className="p-2 font-medium text-muted-foreground">{l}</th>
+                        <TableHead key={l} className="p-2 text-center font-medium text-muted-foreground">{l}</TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {cm.map((row, i) => (
-                      <tr key={i}>
-                        <td className="p-2 font-medium text-muted-foreground">{cmLabels[i] ?? i}</td>
+                      <TableRow key={i} className="border-0 hover:bg-transparent">
+                        <TableCell className="p-2 font-medium text-muted-foreground">{cmLabels[i] ?? i}</TableCell>
                         {row.map((cell, j) => (
-                          <td
+                          <TableCell
                             key={j}
                             className={cn(
                               'p-3 text-center border rounded',
-                              i === j ? 'bg-green-500/15 font-semibold' : cell > 0 ? 'bg-red-500/10' : '',
+                              i === j ? 'bg-success/15 font-semibold' : cell > 0 ? 'bg-destructive/10' : '',
                             )}
                           >
                             {cell}
-                          </td>
+                          </TableCell>
                         ))}
-                      </tr>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
                 <p className="text-xs text-muted-foreground mt-3">
                   {t('aiEval.evaluated', 'Đã đánh giá')}: {report.candidate.evaluated} • {t('aiEval.skipped', 'Bỏ qua')}: {report.candidate.skipped}
                 </p>
@@ -1004,7 +956,7 @@ function CanaryComparisonSection() {
           </div>
           {expStatus && (
             <div>
-              <Badge variant={expStatus === 'RUNNING' ? 'default' : 'secondary'}>{expStatus}</Badge>
+              <StatusBadge status={expStatus} variant={expStatus === 'RUNNING' ? 'default' : 'secondary'} />
             </div>
           )}
         </CardContent>
@@ -1016,42 +968,42 @@ function CanaryComparisonSection() {
             <CardTitle className="text-base">{t('canary.comparison', 'So sánh variant')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">{t('canary.metric', 'Chỉ số')}</th>
-                  <th className="text-right p-2">{t('canary.modelA', 'Model A (prod)')}</th>
-                  <th className="text-right p-2">{t('canary.modelB', 'Model B (canary)')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.inferences', 'Số suy luận')}</td>
-                  <td className="text-right p-2">{stats.modelA.inferenceCount}</td>
-                  <td className="text-right p-2">{stats.modelB.inferenceCount}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.accuracy', 'Độ chính xác')}</td>
-                  <td className="text-right p-2">{pct(stats.modelA.accuracy)}</td>
-                  <td className="text-right p-2">{pct(stats.modelB.accuracy)}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.avgConfidence', 'Confidence TB')}</td>
-                  <td className="text-right p-2">{pct(stats.modelA.avgConfidence)}</td>
-                  <td className="text-right p-2">{pct(stats.modelB.avgConfidence)}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="p-2">{t('canary.avgLatency', 'Độ trễ TB (ms)')}</td>
-                  <td className="text-right p-2">{stats.modelA.avgLatencyMs}</td>
-                  <td className="text-right p-2">{stats.modelB.avgLatencyMs}</td>
-                </tr>
-                <tr>
-                  <td className="p-2">{t('canary.feedback', 'Phản hồi')}</td>
-                  <td className="text-right p-2">{stats.modelA.feedbackCount}</td>
-                  <td className="text-right p-2">{stats.modelB.feedbackCount}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table className="text-sm">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left p-2">{t('canary.metric', 'Chỉ số')}</TableHead>
+                  <TableHead className="text-right p-2">{t('canary.modelA', 'Model A (prod)')}</TableHead>
+                  <TableHead className="text-right p-2">{t('canary.modelB', 'Model B (canary)')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.inferences', 'Số suy luận')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.inferenceCount}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.inferenceCount}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.accuracy', 'Độ chính xác')}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelA.accuracy)}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelB.accuracy)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.avgConfidence', 'Confidence TB')}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelA.avgConfidence)}</TableCell>
+                  <TableCell className="text-right p-2">{pct(stats.modelB.avgConfidence)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.avgLatency', 'Độ trễ TB (ms)')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.avgLatencyMs}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.avgLatencyMs}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="p-2">{t('canary.feedback', 'Phản hồi')}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelA.feedbackCount}</TableCell>
+                  <TableCell className="text-right p-2">{stats.modelB.feedbackCount}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
             <p className="text-xs text-muted-foreground mt-3">
               {t('canary.significance', 'p-value (chi-squared)')}: {stats.statisticalSignificance ?? t('canary.inconclusive', 'Chưa đủ dữ liệu')}
             </p>

@@ -68,17 +68,17 @@ interface NormalAlert {
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 const SEVERITY_TILE: Record<Severity, string> = {
-  critical: "bg-red-600 text-white border-red-700",
-  high: "bg-orange-500 text-white border-orange-600",
-  medium: "bg-yellow-500 text-black border-yellow-600",
-  low: "bg-blue-500 text-white border-blue-600",
+  critical: "bg-destructive text-white border-destructive",
+  high: "bg-warning text-white border-warning",
+  medium: "bg-warning/70 text-black border-warning",
+  low: "bg-info text-white border-info",
 };
 
 const SEVERITY_DOT: Record<Severity, string> = {
-  critical: "bg-red-600",
-  high: "bg-orange-500",
-  medium: "bg-yellow-500",
-  low: "bg-blue-500",
+  critical: "bg-destructive",
+  high: "bg-warning",
+  medium: "bg-warning/70",
+  low: "bg-info",
 };
 
 const SOURCE_ICON: Record<AlertSource, React.ReactNode> = {
@@ -403,7 +403,7 @@ export default function OpsConsole() {
     <DashboardLayout title={t("opsConsole.title", "Ops Console")} navItems={navItems} currentPath="/ops-console">
       <div
         ref={rootRef}
-        className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-red-950/40" : ""} ${isFs ? "min-h-screen bg-background" : ""}`}
+        className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-destructive/20" : ""} ${isFs ? "min-h-screen bg-background" : ""}`}
       >
         {/* Header / KPI strip */}
         <PageHeader
@@ -454,7 +454,7 @@ export default function OpsConsole() {
             {grouped.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <CheckCircle2 className="mb-3 h-12 w-12 text-green-500/60" />
+                  <CheckCircle2 className="mb-3 h-12 w-12 text-success/60" />
                   <p className="text-lg">{t("opsConsole.allClear", "All clear — no open alerts")}</p>
                 </CardContent>
               </Card>

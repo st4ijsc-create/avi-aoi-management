@@ -39,31 +39,31 @@ const variantConfig: Record<EmptyStateVariant, {
     icon: Database,
     titleKey: 'common.noDataYet',
     descriptionKey: 'common.noDataYetDescription',
-    iconColor: 'text-blue-500'
+    iconColor: 'text-info'
   },
   'no-results': {
     icon: FileQuestion,
     titleKey: 'common.noResults',
     descriptionKey: 'common.noResultsDescription',
-    iconColor: 'text-amber-500'
+    iconColor: 'text-warning'
   },
   'no-analytics': {
     icon: BarChart3,
     titleKey: 'common.noAnalytics',
     descriptionKey: 'common.noAnalyticsDescription',
-    iconColor: 'text-emerald-500'
+    iconColor: 'text-success'
   },
   'no-config': {
     icon: Settings,
     titleKey: 'common.noConfig',
     descriptionKey: 'common.noConfigDescription',
-    iconColor: 'text-purple-500'
+    iconColor: 'text-primary'
   },
   error: {
     icon: AlertCircle,
     titleKey: 'errors.occurred',
     descriptionKey: 'errors.loadDataFailed',
-    iconColor: 'text-red-500'
+    iconColor: 'text-destructive'
   }
 };
 
@@ -113,7 +113,7 @@ export function EmptyState({
     )}>
       <div className={cn(
         'rounded-full p-4 mb-4',
-        variant === 'error' ? 'bg-red-500/10' : 'bg-muted'
+        variant === 'error' ? 'bg-destructive/10' : 'bg-muted'
       )}>
         <Icon className={cn('h-12 w-12', config.iconColor)} />
       </div>

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -300,6 +302,7 @@ const faq = [
 ];
 
 export default function UserGuide() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [activeSection, setActiveSection] = useState(sections[0].id);
 
@@ -320,39 +323,41 @@ export default function UserGuide() {
   const currentSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0];
 
   return (
-    <DashboardLayout title="Hướng dẫn sử dụng" navItems={navItems} currentPath="/user-guide">
-      <div className="p-6 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <BookOpen className="h-6 w-6 text-primary" />
-              Hướng dẫn sử dụng hệ thống MES AVI/AOI
-            </h1>
-            <p className="text-muted-foreground">
-              Cập nhật đầy đủ theo tài liệu hệ thống: đăng nhập, vận hành, giám sát, phân tích, báo cáo và quản trị.
-            </p>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">Phiên bản 1.0.0</Badge>
-              <Badge variant="outline">Cập nhật: 26/01/2026</Badge>
+    <DashboardLayout title={t("userGuide.layoutTitle", "User guide")} navItems={navItems} currentPath="/user-guide">
+      <PageContainer>
+        <PageHeader
+          icon={<BookOpen className="h-6 w-6" />}
+          title={t("userGuide.title", "MES AVI/AOI system user guide")}
+          description={t(
+            "userGuide.subtitle",
+            "Fully aligned with the system docs: sign-in, operation, monitoring, analysis, reporting and administration.",
+          )}
+          badge={
+            <div className="mt-2 flex items-center gap-2">
+              <Badge variant="secondary">{t("userGuide.version", "Version 1.0.0")}</Badge>
+              <Badge variant="outline">{t("userGuide.updated", "Updated: 26/01/2026")}</Badge>
             </div>
-          </div>
-
-          <div className="relative w-full lg:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm kiếm theo chức năng, quy trình hoặc từ khóa..."
-              className="pl-10"
-            />
-          </div>
-        </div>
+          }
+          actions={
+            <div className="relative w-full lg:w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("userGuide.searchPlaceholder", "Search by feature, workflow or keyword...")}
+                className="pl-10"
+              />
+            </div>
+          }
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <Card className="lg:col-span-1 h-fit">
             <CardHeader>
-              <CardTitle>Mục lục</CardTitle>
-              <CardDescription>{visibleSections.length} phần hướng dẫn</CardDescription>
+              <CardTitle>{t("userGuide.tableOfContents", "Contents")}</CardTitle>
+              <CardDescription>
+                {t("userGuide.sectionCount", "{{count}} guide sections", { count: visibleSections.length })}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1">
               {visibleSections.map((section) => (
@@ -415,9 +420,9 @@ export default function UserGuide() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <HelpCircle className="h-5 w-5" />
-                  10. FAQ
+                  {t("userGuide.faqTitle", "10. FAQ")}
                 </CardTitle>
-                <CardDescription>Các câu hỏi thường gặp khi vận hành hệ thống</CardDescription>
+                <CardDescription>{t("userGuide.faqDescription", "Frequently asked questions when operating the system")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Accordion type="single" collapsible>
@@ -434,7 +439,7 @@ export default function UserGuide() {
             </Card>
           </div>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

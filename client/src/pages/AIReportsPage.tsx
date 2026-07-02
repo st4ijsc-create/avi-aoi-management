@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,21 +11,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   FileText,
-  RefreshCw,
-  Download,
   Calendar,
   BarChart3,
   AlertTriangle,
   TrendingUp,
   FileBarChart,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,21 +79,13 @@ export default function AIReportsPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-              <FileText className="h-6 w-6 text-indigo-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("rp.title", "Báo cáo AI")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("rp.subtitle", "Tạo báo cáo phân tích AI tự động - Tổng hợp, RCA, Hiệu suất mô hình")}
-              </p>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          icon={<FileText className="h-6 w-6 text-primary" />}
+          title={t("rp.title", "Báo cáo AI")}
+          description={t("rp.subtitle", "Tạo báo cáo phân tích AI tự động - Tổng hợp, RCA, Hiệu suất mô hình")}
+        />
 
         {/* Date Range + Generate */}
         <Card>
@@ -172,11 +165,11 @@ export default function AIReportsPage() {
                       </div>
                       <div className="border rounded-lg p-3">
                         <span className="text-xs text-muted-foreground">OK</span>
-                        <p className="text-lg font-bold text-green-600">{dailySummary.data.okCount}</p>
+                        <p className="text-lg font-bold text-success">{dailySummary.data.okCount}</p>
                       </div>
                       <div className="border rounded-lg p-3">
                         <span className="text-xs text-muted-foreground">NG</span>
-                        <p className="text-lg font-bold text-red-600">{dailySummary.data.ngCount}</p>
+                        <p className="text-lg font-bold text-destructive">{dailySummary.data.ngCount}</p>
                       </div>
                       <div className="border rounded-lg p-3">
                         <span className="text-xs text-muted-foreground">{t("rp.yield", "Yield")}</span>
@@ -280,30 +273,34 @@ export default function AIReportsPage() {
                     )}
                     {modelPerformance.data.models?.length > 0 && (
                       <div className="border rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted">
-                            <tr>
-                              <th className="px-3 py-2 text-left">Model</th>
-                              <th className="px-3 py-2 text-left">{t("rp.accuracy", "Độ chính xác")}</th>
-                              <th className="px-3 py-2 text-left">{t("rp.trend", "Xu hướng")}</th>
-                              <th className="px-3 py-2 text-left">Drift</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Model</TableHead>
+                              <TableHead>{t("rp.accuracy", "Độ chính xác")}</TableHead>
+                              <TableHead>{t("rp.trend", "Xu hướng")}</TableHead>
+                              <TableHead>Drift</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
                             {modelPerformance.data.models.map((m: any) => (
-                              <tr key={m.modelId} className="border-t">
-                                <td className="px-3 py-2 font-mono text-xs">{m.modelCode}</td>
-                                <td className="px-3 py-2">{(m.currentAccuracy * 100).toFixed(1)}%</td>
-                                <td className="px-3 py-2">
+                              <TableRow key={m.modelId}>
+                                <TableCell className="font-mono text-xs">{m.modelCode}</TableCell>
+                                <TableCell>{(m.currentAccuracy * 100).toFixed(1)}%</TableCell>
+                                <TableCell>
                                   <Badge variant={m.accuracyTrend === "improving" ? "default" : m.accuracyTrend === "declining" ? "destructive" : "secondary"}>
                                     {m.accuracyTrend}
                                   </Badge>
-                                </td>
-                                <td className="px-3 py-2">{m.driftDetected ? "⚠️" : "✅"}</td>
-                              </tr>
+                                </TableCell>
+                                <TableCell>
+                                  {m.driftDetected
+                                    ? <AlertTriangle className="h-4 w-4 text-warning" aria-label="Drift detected" />
+                                    : <CheckCircle2 className="h-4 w-4 text-success" aria-label="No drift" />}
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -361,7 +358,7 @@ export default function AIReportsPage() {
                       </div>
                     )}
                     {executiveSummary.data.forecast && (
-                      <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg">
+                      <div className="bg-info/10 border border-info/30 p-4 rounded-lg">
                         <h4 className="text-sm font-medium mb-1">{t("rp.forecast", "Dự báo")}</h4>
                         <p className="text-sm">{executiveSummary.data.forecast}</p>
                       </div>
@@ -376,7 +373,7 @@ export default function AIReportsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

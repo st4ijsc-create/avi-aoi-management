@@ -33,11 +33,15 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
   MetricCard,
+  PageContainer,
   PageHeader,
   SectionCard,
   StatusBadge,
   Heading,
   Text,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
 } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -227,7 +231,7 @@ export default function EquipmentStandards() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<ShieldCheck className="h-6 w-6" />}
@@ -586,13 +590,13 @@ export default function EquipmentStandards() {
                     <div className="h-48">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={conformanceChart}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                          <Tooltip />
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis dataKey="name" tick={chartAxisTick} />
+                          <YAxis allowDecimals={false} tick={chartAxisTick} />
+                          <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: "var(--muted)" }} />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                             {conformanceChart.map((entry) => (
-                              <Cell key={entry.kind} fill={entry.kind === "pass" ? "hsl(142 71% 45%)" : "hsl(0 84% 60%)"} />
+                              <Cell key={entry.kind} fill={entry.kind === "pass" ? "var(--success)" : "var(--destructive)"} />
                             ))}
                           </Bar>
                         </BarChart>
@@ -642,7 +646,7 @@ export default function EquipmentStandards() {
             </SectionCard>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* ── Dialogs ──────────────────────────────────────────────────────────── */}
       {registerOpen && (

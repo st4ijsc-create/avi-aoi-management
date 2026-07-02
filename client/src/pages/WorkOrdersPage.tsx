@@ -24,7 +24,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { StatusBadge, type BadgeVariant } from "@/components/patterns";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { StatusBadge, PageHeader, PageContainer, type BadgeVariant } from "@/components/patterns";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -151,43 +154,53 @@ export default function WorkOrdersPage() {
 
   return (
     <DashboardLayout title={t("workOrders.title")} navItems={navItems} currentPath="/work-orders">
-      <div className="p-6 space-y-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Wrench className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{t("workOrders.title")}</h1>
-          <ViewOnlyBadge module="machine_monitoring" />
-          {summary && (
-            <span className="flex gap-1">
-              <Badge variant="outline">{t("workOrders.total")}: {summary.total}</Badge>
-              <Badge variant="default">{t("workOrders.openCount")}: {summary.open}</Badge>
-            </span>
-          )}
-          <div className="ml-auto">
-            {canCreate && (
-              <Button onClick={() => setCreateOpen(true)} size="sm">
-                <Plus className="h-4 w-4 mr-1" /> {t("workOrders.create")}
-              </Button>
-            )}
-          </div>
-        </div>
+      <PageContainer className="space-y-4">
+        <PageHeader
+          icon={<Wrench className="h-6 w-6" />}
+          title={t("workOrders.title")}
+          badge={<ViewOnlyBadge module="machine_monitoring" />}
+          actions={
+            <>
+              {summary && (
+                <span className="flex gap-1">
+                  <Badge variant="outline">{t("workOrders.total")}: {summary.total}</Badge>
+                  <Badge variant="default">{t("workOrders.openCount")}: {summary.open}</Badge>
+                </span>
+              )}
+              {canCreate && (
+                <Button onClick={() => setCreateOpen(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-1" /> {t("workOrders.create")}
+                </Button>
+              )}
+            </>
+          }
+        />
 
         {/* Filters */}
         <div className="flex gap-3 flex-wrap items-end">
           <div className="grid gap-1">
             <Label>{t("workOrders.filterStatus")}</Label>
-            <select aria-label={t("workOrders.filterStatus")} className="flex h-9 w-44 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="">{t("workOrders.all")}</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{t(`workOrders.status.${s}`)}</option>)}
-            </select>
+            <Select value={statusFilter || "ALL"} onValueChange={(v) => setStatusFilter(v === "ALL" ? "" : v)}>
+              <SelectTrigger aria-label={t("workOrders.filterStatus")} className="h-9 w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("workOrders.all")}</SelectItem>
+                {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`workOrders.status.${s}`)}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.filterMachine")}</Label>
-            <select aria-label={t("workOrders.filterMachine")} className="flex h-9 w-56 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              value={machineFilter} onChange={(e) => setMachineFilter(e.target.value)}>
-              <option value="">{t("workOrders.all")}</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.code}{m.name ? ` — ${m.name}` : ""}</option>)}
-            </select>
+            <Select value={machineFilter || "ALL"} onValueChange={(v) => setMachineFilter(v === "ALL" ? "" : v)}>
+              <SelectTrigger aria-label={t("workOrders.filterMachine")} className="h-9 w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("workOrders.all")}</SelectItem>
+                {machines.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.code}{m.name ? ` — ${m.name}` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -242,7 +255,7 @@ export default function WorkOrdersPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* Create dialog */}
       {createOpen && (
@@ -325,11 +338,14 @@ function CreateDialog({
         <div className="grid gap-3 py-2">
           <div className="grid gap-1">
             <Label>{t("workOrders.col.machine")} *</Label>
-            <select aria-label={t("workOrders.col.machine")} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-              <option value="">--</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.code}{m.name ? ` — ${m.name}` : ""}</option>)}
-            </select>
+            <Select value={machineId} onValueChange={setMachineId}>
+              <SelectTrigger aria-label={t("workOrders.col.machine")} className="h-9 w-full">
+                <SelectValue placeholder={t("workOrders.selectMachine", "Select a machine…")} />
+              </SelectTrigger>
+              <SelectContent>
+                {machines.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.code}{m.name ? ` — ${m.name}` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.col.title")} *</Label>
@@ -338,10 +354,14 @@ function CreateDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">
               <Label>{t("workOrders.col.type")}</Label>
-              <select aria-label={t("workOrders.col.type")} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                value={type} onChange={(e) => setType(e.target.value)}>
-                {TYPES.map((s) => <option key={s} value={s}>{t(`workOrders.type.${s}`)}</option>)}
-              </select>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger aria-label={t("workOrders.col.type")} className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPES.map((s) => <SelectItem key={s} value={s}>{t(`workOrders.type.${s}`)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>{t("workOrders.col.priority")} (1–5)</Label>
@@ -405,11 +425,14 @@ function DetailDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">
               <Label>{t("workOrders.col.status")}</Label>
-              <select aria-label={t("workOrders.col.status")} disabled={!canEdit || isClosed}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm disabled:opacity-60"
-                value={status} onChange={(e) => setStatus(e.target.value)}>
-                {STATUSES.map((s) => <option key={s} value={s}>{t(`workOrders.status.${s}`)}</option>)}
-              </select>
+              <Select value={status} onValueChange={setStatus} disabled={!canEdit || isClosed}>
+                <SelectTrigger aria-label={t("workOrders.col.status")} className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`workOrders.status.${s}`)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>{t("workOrders.col.priority")}</Label>

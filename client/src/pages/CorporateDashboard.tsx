@@ -2,10 +2,11 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
-import { PageHeader } from "@/components/patterns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, MetricCard, chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { 
@@ -16,8 +17,7 @@ import {
   PieChart as PieChartIcon,
   Activity,
   Calendar,
-  FileDown,
-  Loader2
+  FileDown
 } from "lucide-react";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { 
@@ -37,8 +37,6 @@ import {
   LineChart,
   Line
 } from "recharts";
-
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function CorporateDashboard() {
   const { t } = useTranslation();
@@ -137,9 +135,14 @@ export default function CorporateDashboard() {
   if (isLoading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <span className="ml-2 text-muted-foreground">{t('corporate.loadingData')}</span>
+        <div className="space-y-6">
+          <Skeleton className="h-9 w-64" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[0, 1, 2, 3, 4, 5, 6].map(i => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </div>
+          <Skeleton className="h-80 w-full" />
         </div>
       </DashboardLayout>
     );
@@ -167,7 +170,12 @@ export default function CorporateDashboard() {
                   <SelectItem value="year">{t('corporate.thisYear')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                title={t('corporate.exportComingSoon')}
+              >
                 <FileDown className="h-4 w-4 mr-2" />
                 {t('corporate.exportReport')}
               </Button>
@@ -184,69 +192,53 @@ export default function CorporateDashboard() {
         />
 
         {/* KPI Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.corporation')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalCorporations}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.company')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalCompanies}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.factory')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalFactories}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.productionLine')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalLines}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.machines')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalMachines}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card bg-success/10">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.avgYield')}</span>
-                <span className="text-2xl font-bold text-success">{corporateOverview.avgYield}%</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="glass-card bg-primary/10">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.avgOEE')}</span>
-                {corporateOverview.avgOEE !== null ? (
-                  <span className="text-2xl font-bold text-primary">{corporateOverview.avgOEE}%</span>
-                ) : (
-                  <span className="text-sm font-medium text-muted-foreground" title={t('corporate.noOeeDataSource')}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <MetricCard
+            label={t('corporate.corporation')}
+            value={corporateOverview.totalCorporations}
+          />
+          <MetricCard
+            label={t('corporate.company')}
+            value={corporateOverview.totalCompanies}
+          />
+          <MetricCard
+            label={t('corporate.factory')}
+            value={corporateOverview.totalFactories}
+          />
+          <MetricCard
+            label={t('corporate.productionLine')}
+            value={corporateOverview.totalLines}
+          />
+          <MetricCard
+            label={t('corporate.machines')}
+            value={corporateOverview.totalMachines}
+          />
+          <MetricCard
+            label={t('corporate.avgYield')}
+            value={`${corporateOverview.avgYield}%`}
+            tone="success"
+          />
+          {corporateOverview.avgOEE !== null ? (
+            <MetricCard
+              label={t('corporate.avgOEE')}
+              value={`${corporateOverview.avgOEE}%`}
+              tone="info"
+            />
+          ) : (
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className="min-w-0">
+                  <div
+                    className="text-sm font-medium text-muted-foreground"
+                    title={t('corporate.noOeeDataSource')}
+                  >
                     {t('corporate.noData')}
-                  </span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">{t('corporate.avgOEE')}</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Tabs */}
@@ -282,8 +274,11 @@ export default function CorporateDashboard() {
                     {corporationData.map((corp, index) => (
                       <div key={corp.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${COLORS[index]}20` }}>
-                            <Building2 className="h-5 w-5" style={{ color: COLORS[index] }} />
+                          <div
+                            className="h-10 w-10 rounded-lg flex items-center justify-center"
+                            style={{ backgroundColor: `color-mix(in oklch, ${chartColor(index)} 15%, transparent)` }}
+                          >
+                            <Building2 className="h-5 w-5" style={{ color: chartColor(index) }} />
                           </div>
                           <div>
                             <p className="font-medium">{corp.name}</p>
@@ -295,7 +290,7 @@ export default function CorporateDashboard() {
                         <div className="flex items-center gap-4">
                           <div className="text-right">
                             <p className="font-bold text-success">{corp.yield}%</p>
-                            <p className="text-xs text-muted-foreground">Yield</p>
+                            <p className="text-xs text-muted-foreground">{t('corporate.yield')}</p>
                           </div>
                         </div>
                       </div>
@@ -316,18 +311,12 @@ export default function CorporateDashboard() {
                   <div className="h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={monthlyTrend}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="month" className="text-xs" />
-                        <YAxis domain={[80, 100]} className="text-xs" />
-                        <RechartsTooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px'
-                          }}
-                        />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="month" tick={chartAxisTick} />
+                        <YAxis domain={[80, 100]} tick={chartAxisTick} />
+                        <RechartsTooltip contentStyle={chartTooltipStyle} />
                         <Legend />
-                        <Line type="monotone" dataKey="yield" name="Yield %" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981' }} />
+                        <Line type="monotone" dataKey="yield" name={t('corporate.yieldPercent')} stroke="var(--success)" strokeWidth={2} dot={{ fill: 'var(--success)' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -347,18 +336,14 @@ export default function CorporateDashboard() {
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrend}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="month" className="text-xs" />
-                      <YAxis className="text-xs" />
-                      <RechartsTooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="month" tick={chartAxisTick} />
+                      <YAxis tick={chartAxisTick} />
+                      <RechartsTooltip
+                        contentStyle={chartTooltipStyle}
                         formatter={(value: number) => [value.toLocaleString(), t('corporate.output')]}
                       />
-                      <Bar dataKey="output" name={t('corporate.output')} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="output" name={t('corporate.output')} fill={chartColor(1)} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -393,10 +378,10 @@ export default function CorporateDashboard() {
                           label={({ name, yield: y }) => `${name}: ${y}%`}
                         >
                           {corporationData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            <Cell key={`cell-${index}`} fill={chartColor(index)} />
                           ))}
                         </Pie>
-                        <RechartsTooltip />
+                        <RechartsTooltip contentStyle={chartTooltipStyle} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -416,18 +401,12 @@ export default function CorporateDashboard() {
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={corporationData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis type="number" domain={[0, 100]} className="text-xs" />
-                      <YAxis dataKey="name" type="category" width={100} className="text-xs" />
-                      <RechartsTooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                      />
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis type="number" domain={[0, 100]} tick={chartAxisTick} />
+                      <YAxis dataKey="name" type="category" width={100} tick={chartAxisTick} />
+                      <RechartsTooltip contentStyle={chartTooltipStyle} />
                       <Legend />
-                      <Bar dataKey="yield" name="Yield %" fill="#10b981" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="yield" name={t('corporate.yieldPercent')} fill="var(--success)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

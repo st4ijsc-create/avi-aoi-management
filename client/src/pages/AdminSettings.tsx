@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -170,16 +171,12 @@ export default function AdminSettings() {
 
   return (
     <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("adminSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("adminSettings.description")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Settings className="h-6 w-6" />}
+          title={t("adminSettings.title")}
+          description={t("adminSettings.description")}
+        />
 
         <ErrorBoundary>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -436,7 +433,7 @@ export default function AdminSettings() {
             </div>
           </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

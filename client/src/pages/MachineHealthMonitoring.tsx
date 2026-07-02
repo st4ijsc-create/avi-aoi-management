@@ -3,7 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  EmptyState,
+  chartColor,
+  chartGridProps,
+  chartAxisProps,
+  chartTooltipStyle,
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,10 +87,9 @@ function HealthStatusBadge({ status }: { status: 'healthy' | 'warning' | 'critic
 // Health Score Gauge
 function HealthGauge({ score, size = "lg" }: { score: number; size?: "sm" | "md" | "lg" }) {
   const getColor = (score: number) => {
-    if (score >= 80) return "#22c55e"; // green
-    if (score >= 60) return "#eab308"; // yellow
-    if (score >= 40) return "#f97316"; // orange
-    return "#ef4444"; // red
+    if (score >= 80) return "var(--success)";
+    if (score >= 40) return "var(--warning)";
+    return "var(--destructive)";
   };
 
   const sizeClasses = {
@@ -147,8 +155,7 @@ function FactorCard({
 }) {
   const getColor = (value: number) => {
     if (value >= 80) return "text-success";
-    if (value >= 60) return "text-warning";
-    if (value >= 40) return "text-orange-500";
+    if (value >= 40) return "text-warning";
     return "text-destructive";
   };
 
@@ -230,63 +237,24 @@ export default function MachineHealthMonitoring() {
     },
   });
 
-  // Health history time-series — uses real machine_health_history rows when present,
-  // falls back to a deterministic synthetic walk so the chart is never empty.
+  // Health history time-series — REAL machine_health_history rows only. When no
+  // history exists yet the chart renders an honest empty state (no fabricated
+  // telemetry / synthetic random walk).
   const healthHistoryData = useMemo(() => {
-    // Real data path
-    if (healthHistoryRows && healthHistoryRows.length > 0) {
-      return healthHistoryRows.map((r: any) => {
-        const ts = new Date(r.timestamp);
-        return {
-          time: timeRange === "day"
-            ? ts.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-            : ts.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
-          healthScore: Number(r.healthScore ?? 0),
-          oee: Number(r.oeeScore ?? r.currentOEE ?? 0),
-          uptime: Number(r.uptimeScore ?? r.uptimePercentage ?? 0),
-          errorRate: Math.max(0, 100 - Number(r.errorRateScore ?? 0)),
-        };
-      });
-    }
-
-    // Synthetic fallback (no history yet)
-    const points = timeRange === "day" ? 24 : timeRange === "week" ? 7 : 30;
-    const data = [];
-    const baseScore = machineHealth?.score || 75;
-    const machineIdSeed = selectedMachine || 1;
-
-    const seededRandom = (index: number) => {
-      const x = Math.sin(machineIdSeed * 9301 + index * 49297) * 233280;
-      return x - Math.floor(x);
-    };
-
-    let currentScore = baseScore - 5 + seededRandom(0) * 10;
-
-    for (let i = points - 1; i >= 0; i--) {
-      const date = new Date();
-      if (timeRange === "day") {
-        date.setHours(date.getHours() - i);
-      } else {
-        date.setDate(date.getDate() - i);
-      }
-
-      const noise = (seededRandom(i + 1) - 0.5) * 6;
-      currentScore += (baseScore - currentScore) * 0.15 + noise;
-      currentScore = Math.max(0, Math.min(100, currentScore));
-      const score = Math.round(currentScore);
-
-      data.push({
+    if (!healthHistoryRows || healthHistoryRows.length === 0) return [];
+    return healthHistoryRows.map((r: any) => {
+      const ts = new Date(r.timestamp);
+      return {
         time: timeRange === "day"
-          ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-          : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
-        healthScore: score,
-        oee: Math.max(0, Math.min(100, Math.round(score * 0.9 + seededRandom(i + 100) * 10))),
-        uptime: Math.max(0, Math.min(100, Math.round(score * 0.95 + seededRandom(i + 200) * 5))),
-        errorRate: Math.max(0, Math.min(100, Math.round(100 - score + seededRandom(i + 300) * 10))),
-      });
-    }
-    return data;
-  }, [healthHistoryRows, machineHealth, timeRange, selectedMachine]);
+          ? ts.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+          : ts.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+        healthScore: Number(r.healthScore ?? 0),
+        oee: Number(r.oeeScore ?? r.currentOEE ?? 0),
+        uptime: Number(r.uptimeScore ?? r.uptimePercentage ?? 0),
+        errorRate: Math.max(0, 100 - Number(r.errorRateScore ?? 0)),
+      };
+    });
+  }, [healthHistoryRows, timeRange]);
 
   // Radar chart data for factors
   const radarData = useMemo(() => {
@@ -313,12 +281,11 @@ export default function MachineHealthMonitoring() {
     }));
   }, [allOEE]);
 
-  // Get health status color
+  // Get health status color (semantic theme tokens, dark/light aware)
   const getHealthColor = (score: number) => {
-    if (score >= 80) return "#22c55e";
-    if (score >= 60) return "#eab308";
-    if (score >= 40) return "#f97316";
-    return "#ef4444";
+    if (score >= 80) return "var(--success)";
+    if (score >= 40) return "var(--warning)";
+    return "var(--destructive)";
   };
 
   // Export health report
@@ -354,7 +321,7 @@ export default function MachineHealthMonitoring() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Heart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
@@ -425,68 +392,32 @@ export default function MachineHealthMonitoring() {
           <TabsContent value="overview" className="space-y-4">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-success/10">
-                      <CheckCircle2 className="h-6 w-6 text-success" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">{t('machines.healthyMachines')}</p>
-                      <p className="text-2xl font-bold text-success">
-                        {machineComparisonData.filter(m => m.healthScore >= 80).length}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-warning/10">
-                      <AlertTriangle className="h-6 w-6 text-warning" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">{t('machines.needAttention')}</p>
-                      <p className="text-2xl font-bold text-warning">
-                        {machineComparisonData.filter(m => m.healthScore >= 60 && m.healthScore < 80).length}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-destructive/10">
-                      <XCircle className="h-6 w-6 text-destructive" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">{t('machines.needMaintenance')}</p>
-                      <p className="text-2xl font-bold text-destructive">
-                        {machineComparisonData.filter(m => m.healthScore < 60).length}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-lg bg-info/10">
-                      <Activity className="h-6 w-6 text-info" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Health TB</p>
-                      <p className="text-2xl font-bold text-info">
-                        {machineComparisonData.length > 0 
-                          ? (machineComparisonData.reduce((sum, m) => sum + m.healthScore, 0) / machineComparisonData.length).toFixed(0)
-                          : 0}%
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <MetricCard
+                icon={<CheckCircle2 className="h-5 w-5" />}
+                label={t('machines.healthyMachines')}
+                value={machineComparisonData.filter(m => m.healthScore >= 80).length}
+                tone="success"
+              />
+              <MetricCard
+                icon={<AlertTriangle className="h-5 w-5" />}
+                label={t('machines.needAttention')}
+                value={machineComparisonData.filter(m => m.healthScore >= 60 && m.healthScore < 80).length}
+                tone="warning"
+              />
+              <MetricCard
+                icon={<XCircle className="h-5 w-5" />}
+                label={t('machines.needMaintenance')}
+                value={machineComparisonData.filter(m => m.healthScore < 60).length}
+                tone="danger"
+              />
+              <MetricCard
+                icon={<Activity className="h-5 w-5" />}
+                label={t('machines.avgHealth', 'Average health')}
+                value={`${machineComparisonData.length > 0
+                  ? (machineComparisonData.reduce((sum, m) => sum + m.healthScore, 0) / machineComparisonData.length).toFixed(0)
+                  : 0}%`}
+                tone="info"
+              />
             </div>
 
             {/* Machine Health Overview Chart */}
@@ -499,10 +430,11 @@ export default function MachineHealthMonitoring() {
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={machineComparisonData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis domain={[0, 100]} />
-                      <Tooltip 
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="name" {...chartAxisProps} />
+                      <YAxis domain={[0, 100]} {...chartAxisProps} />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
                         formatter={(value: number) => [`${value.toFixed(1)}%`, 'Health Score']}
                       />
                       <Bar dataKey="healthScore" name="Health Score">
@@ -665,14 +597,14 @@ export default function MachineHealthMonitoring() {
                       <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
                           <RadarChart data={radarData}>
-                            <PolarGrid />
-                            <PolarAngleAxis dataKey="factor" />
-                            <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                            <PolarGrid stroke="var(--border)" />
+                            <PolarAngleAxis dataKey="factor" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+                            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
                             <Radar
                               name="Health Factors"
                               dataKey="value"
-                              stroke="#8884d8"
-                              fill="#8884d8"
+                              stroke={chartColor(0)}
+                              fill={chartColor(0)}
                               fillOpacity={0.6}
                             />
                           </RadarChart>
@@ -712,30 +644,39 @@ export default function MachineHealthMonitoring() {
                   </CardHeader>
                   <CardContent>
                     <div className="h-80">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={healthHistoryData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="time" />
-                          <YAxis domain={[0, 100]} />
-                          <Tooltip />
-                          <Legend />
-                          <Area
-                            type="monotone"
-                            dataKey="healthScore"
-                            name="Health Score"
-                            stroke="#8884d8"
-                            fill="#8884d8"
-                            fillOpacity={0.3}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="oee"
-                            name="OEE"
-                            stroke="#82ca9d"
-                            strokeDasharray="5 5"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                      {healthHistoryData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={healthHistoryData}>
+                            <CartesianGrid {...chartGridProps} />
+                            <XAxis dataKey="time" {...chartAxisProps} />
+                            <YAxis domain={[0, 100]} {...chartAxisProps} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
+                            <Legend />
+                            <Area
+                              type="monotone"
+                              dataKey="healthScore"
+                              name="Health Score"
+                              stroke={chartColor(0)}
+                              fill={chartColor(0)}
+                              fillOpacity={0.3}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="oee"
+                              name="OEE"
+                              stroke={chartColor(1)}
+                              strokeDasharray="5 5"
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <EmptyState
+                          variant="no-analytics"
+                          title={t('machines.noHealthHistory', 'No health history yet')}
+                          description={t('machines.noHealthHistoryDesc', 'Health history is recorded over time as the machine reports telemetry. Nothing has been logged for the selected range yet.')}
+                          compact
+                        />
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -761,14 +702,14 @@ export default function MachineHealthMonitoring() {
                 <div className="h-96">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={machineComparisonData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" domain={[0, 100]} />
-                      <YAxis type="category" dataKey="name" width={80} />
-                      <Tooltip />
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis type="number" domain={[0, 100]} {...chartAxisProps} />
+                      <YAxis type="category" dataKey="name" width={80} {...chartAxisProps} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                       <Legend />
-                      <Bar dataKey="healthScore" name="Health Score" fill="#8884d8" />
-                      <Bar dataKey="oee" name="OEE" fill="#82ca9d" />
-                      <Bar dataKey="availability" name="Availability" fill="#ffc658" />
+                      <Bar dataKey="healthScore" name="Health Score" fill={chartColor(0)} />
+                      <Bar dataKey="oee" name="OEE" fill={chartColor(1)} />
+                      <Bar dataKey="availability" name="Availability" fill={chartColor(2)} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -848,7 +789,7 @@ export default function MachineHealthMonitoring() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

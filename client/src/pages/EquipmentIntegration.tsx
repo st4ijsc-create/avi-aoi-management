@@ -33,6 +33,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
   MetricCard,
+  PageContainer,
   PageHeader,
   SectionCard,
   StatusBadge,
@@ -212,7 +213,7 @@ export default function EquipmentIntegration() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<Plug className="h-6 w-6" />}
@@ -539,7 +540,7 @@ export default function EquipmentIntegration() {
             </SectionCard>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* ── Dialogs ──────────────────────────────────────────────────────────── */}
       {createOpen && (

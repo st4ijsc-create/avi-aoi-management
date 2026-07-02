@@ -62,7 +62,7 @@ const PROVIDER_INFO: Record<ApiKeyProvider, { label: string; icon: React.ReactNo
   openai: { label: 'OpenAI', icon: <Brain className="h-4 w-4" />, color: 'bg-success/10 text-success' },
   azure_openai: { label: 'Azure OpenAI', icon: <Globe className="h-4 w-4" />, color: 'bg-info/10 text-info' },
   huggingface: { label: 'Hugging Face', icon: <Cpu className="h-4 w-4" />, color: 'bg-warning/10 text-warning' },
-  custom: { label: 'Custom', icon: <Server className="h-4 w-4" />, color: 'bg-purple-500/10 text-purple-600' },
+  custom: { label: 'Custom', icon: <Server className="h-4 w-4" />, color: 'bg-primary/10 text-primary' },
 };
 
 const STATUS_CONFIG: Record<ApiKeyStatus, { label: string; icon: React.ReactNode; variant: 'default' | 'destructive' | 'secondary' | 'outline' }> = {

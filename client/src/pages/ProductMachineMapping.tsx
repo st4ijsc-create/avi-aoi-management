@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { useState } from "react";
 
 export default function ProductMachineMapping() {
@@ -80,18 +81,13 @@ export default function ProductMachineMapping() {
       title={t('products.mappingTitle')}
       navItems={navItems}
     >
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{t('products.assignProductToMachine')}</h1>
-              <ViewOnlyBadge module="settings_product_mapping" />
-            </div>
-            <p className="text-muted-foreground">
-              {t('products.assignDescription')}
-            </p>
-          </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Link className="h-6 w-6" />}
+          title={t('products.assignProductToMachine')}
+          description={t('products.assignDescription')}
+          badge={<ViewOnlyBadge module="settings_product_mapping" />}
+          actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <PermissionGate module="settings_product_mapping" action="canCreate">
             <DialogTrigger asChild>
@@ -154,7 +150,8 @@ export default function ProductMachineMapping() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+          }
+        />
 
         {/* Mappings by Machine */}
         <div className="grid gap-6">
@@ -182,15 +179,15 @@ export default function ProductMachineMapping() {
                       {machineMappings.map((mapping: any) => {
                         const product = products?.find(p => p.id === mapping.productModelId);
                         return (
-                          <div 
-                            key={mapping.id} 
+                          <div
+                            key={mapping.id}
                             className={`flex items-center justify-between p-3 rounded-lg border ${
-                              mapping.isActive ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/50 border-border'
+                              mapping.isActive ? 'bg-success/5 border-success/20' : 'bg-muted/50 border-border'
                             }`}
                           >
                             <div className="flex items-center gap-3">
-                              <div className={`p-1.5 rounded ${mapping.isActive ? 'bg-green-500/10' : 'bg-muted'}`}>
-                                <Package className={`h-4 w-4 ${mapping.isActive ? 'text-green-500' : 'text-muted-foreground'}`} />
+                              <div className={`p-1.5 rounded ${mapping.isActive ? 'bg-success/10' : 'bg-muted'}`}>
+                                <Package className={`h-4 w-4 ${mapping.isActive ? 'text-success' : 'text-muted-foreground'}`} />
                               </div>
                               <div>
                                 <p className="font-medium text-sm">{product?.name || 'N/A'}</p>
@@ -210,7 +207,7 @@ export default function ProductMachineMapping() {
                                 disabled={!isAdmin}
                               >
                                 {mapping.isActive ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                  <CheckCircle2 className="h-4 w-4 text-success" />
                                 ) : (
                                   <XCircle className="h-4 w-4 text-muted-foreground" />
                                 )}
@@ -288,7 +285,7 @@ export default function ProductMachineMapping() {
             </Card>
           )}
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

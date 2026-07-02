@@ -2,7 +2,13 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import {
+  PageHeader,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -177,11 +183,11 @@ export default function RealtimeReportView() {
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <CartesianGrid {...chartGridProps} />
                   <XAxis dataKey="time" hide />
-                  <YAxis domain={[0, 100]} width={36} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#2563eb" dot={false} strokeWidth={2} />
+                  <YAxis domain={[0, 100]} width={36} tick={chartAxisTick} />
+                  <Tooltip contentStyle={chartTooltipStyle} />
+                  <Line type="monotone" dataKey="value" stroke={chartColor(0)} dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -212,7 +218,7 @@ export default function RealtimeReportView() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
-                <Leaf className="h-4 w-4 text-emerald-600" />
+                <Leaf className="h-4 w-4 text-success" />
                 {t("rtReport.enpi", "EnPI & Carbon (ISO 50001)")}
               </CardTitle>
               <CardDescription>{t("rtReport.enpiDesc", "Tiêu thụ năng lượng và phát thải gần nhất theo máy")}</CardDescription>

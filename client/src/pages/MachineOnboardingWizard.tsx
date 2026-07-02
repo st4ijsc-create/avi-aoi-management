@@ -55,7 +55,7 @@ export function MachineOnboardingWizardContent() {
             <div className="flex flex-col items-center">
               <div className={cn(
                 "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium border",
-                i < step ? "bg-green-500 text-white border-green-500"
+                i < step ? "bg-success text-success-foreground border-success"
                   : i === step ? "bg-primary text-primary-foreground border-primary"
                   : "bg-muted text-muted-foreground",
               )}>
@@ -64,7 +64,7 @@ export function MachineOnboardingWizardContent() {
               <span className="text-xs mt-1 text-center w-20">{title}</span>
             </div>
             {i < stepTitles.length - 1 && (
-              <div className={cn("h-0.5 flex-1 mx-2", i < step ? "bg-green-500" : "bg-muted")} />
+              <div className={cn("h-0.5 flex-1 mx-2", i < step ? "bg-success" : "bg-muted")} />
             )}
           </div>
         ))}

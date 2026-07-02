@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -57,16 +58,12 @@ export default function RequestRole() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto w-full max-w-2xl space-y-4 p-2 sm:p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <ShieldQuestion className="h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("roleUpgrade.title", "Xin nâng quyền")}</h1>
-            <p className="text-sm text-muted-foreground">{t("roleUpgrade.subtitle", "Gửi yêu cầu tới quản trị viên để được cấp vai trò phù hợp")}</p>
-          </div>
-        </div>
+      <PageContainer className="max-w-2xl">
+        <PageHeader
+          icon={<ShieldQuestion className="h-6 w-6" />}
+          title={t("roleUpgrade.title", "Xin nâng quyền")}
+          description={t("roleUpgrade.subtitle", "Gửi yêu cầu tới quản trị viên để được cấp vai trò phù hợp")}
+        />
 
         <Card>
           <CardHeader><CardTitle className="text-base">{t("roleUpgrade.formTitle", "Thông tin yêu cầu")}</CardTitle></CardHeader>
@@ -97,7 +94,7 @@ export default function RequestRole() {
             <p className="text-xs text-muted-foreground">{t("roleUpgrade.note", "Quản trị viên cấp quyền tại trang Người dùng / Phân quyền.")}</p>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

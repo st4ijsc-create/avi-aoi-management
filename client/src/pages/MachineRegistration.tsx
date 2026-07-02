@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import {
   Card,
@@ -318,25 +318,25 @@ export function MachineRegistrationContent() {
     switch (status) {
       case "approved":
         return (
-          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+          <Badge variant="outline" className="border-success/30 bg-success/15 text-success">
             <CheckCircle2 className="h-3 w-3 mr-1" /> {t('machineRegistration.status.approved')}
           </Badge>
         );
       case "pending":
         return (
-          <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+          <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning">
             <Clock className="h-3 w-3 mr-1" /> {t('machineRegistration.status.pending')}
           </Badge>
         );
       case "rejected":
         return (
-          <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+          <Badge variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive">
             <XCircle className="h-3 w-3 mr-1" /> {t('machineRegistration.status.rejected')}
           </Badge>
         );
       default:
         return (
-          <Badge variant="outline">
+          <Badge variant="outline" className="text-muted-foreground">
             <AlertTriangle className="h-3 w-3 mr-1" /> {t('machineRegistration.status.unregistered')}
           </Badge>
         );
@@ -346,14 +346,14 @@ export function MachineRegistrationContent() {
   const getSyncModeBadge = (mode: string | null | undefined) => {
     if (mode === "online") {
       return (
-        <Badge variant="outline" className="text-green-600 border-green-300">
-          <Wifi className="h-3 w-3 mr-1" /> Online
+        <Badge variant="outline" className="border-success/30 text-success">
+          <Wifi className="h-3 w-3 mr-1" /> {t('machineRegistration.sync.online')}
         </Badge>
       );
     }
     return (
-      <Badge variant="outline" className="text-gray-500 border-gray-300">
-        <WifiOff className="h-3 w-3 mr-1" /> Offline
+      <Badge variant="outline" className="text-muted-foreground">
+        <WifiOff className="h-3 w-3 mr-1" /> {t('machineRegistration.sync.offline')}
       </Badge>
     );
   };
@@ -382,7 +382,7 @@ export function MachineRegistrationContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header — DS PageHeader (shared pattern) */}
         <PageHeader
           icon={<HardDrive className="h-6 w-6" />}
@@ -412,58 +412,30 @@ export function MachineRegistrationContent() {
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
-                  <Clock className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{pendingMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.pending')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{approvedMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.approved')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-                  <XCircle className="h-5 w-5 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{rejectedMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.rejected')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                  <Server className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{allMachines.length}</p>
-                  <p className="text-sm text-muted-foreground">{t('machineRegistration.summary.total')}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Clock className="h-5 w-5" />}
+            label={t('machineRegistration.summary.pending')}
+            value={pendingMachines.length}
+            tone={pendingMachines.length > 0 ? "warning" : "default"}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            label={t('machineRegistration.summary.approved')}
+            value={approvedMachines.length}
+            tone="success"
+          />
+          <MetricCard
+            icon={<XCircle className="h-5 w-5" />}
+            label={t('machineRegistration.summary.rejected')}
+            value={rejectedMachines.length}
+            tone={rejectedMachines.length > 0 ? "error" : "default"}
+          />
+          <MetricCard
+            icon={<Server className="h-5 w-5" />}
+            label={t('machineRegistration.summary.total')}
+            value={allMachines.length}
+            tone="info"
+          />
         </div>
 
         {/* Main content */}
@@ -497,7 +469,7 @@ export function MachineRegistrationContent() {
             {pendingMachines.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <CheckCircle2 className="h-12 w-12 mx-auto text-green-400 mb-3" />
+                  <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
                   <h3 className="text-lg font-medium">{t('machineRegistration.pendingTab.emptyTitle')}</h3>
                   <p className="text-muted-foreground mt-1">
                     {t('machineRegistration.pendingTab.emptyDesc')}
@@ -509,13 +481,13 @@ export function MachineRegistrationContent() {
                 {pendingMachines.map((machine) => (
                   <Card
                     key={machine.id}
-                    className="border-yellow-200 dark:border-yellow-800/50"
+                    className="border-warning/40"
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                            <Cpu className="h-5 w-5 text-yellow-600" />
+                          <div className="p-2 bg-warning/15 rounded-lg">
+                            <Cpu className="h-5 w-5 text-warning" />
                           </div>
                           <div>
                             <CardTitle className="text-lg">{machine.name}</CardTitle>
@@ -571,7 +543,7 @@ export function MachineRegistrationContent() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenReject(machine)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
                           <XCircle className="h-4 w-4 mr-1" />
                           {t('machineRegistration.actions.reject')}
@@ -579,7 +551,7 @@ export function MachineRegistrationContent() {
                         <Button
                           size="sm"
                           onClick={() => handleOpenApprove(machine)}
-                          className="bg-green-600 hover:bg-green-700"
+                          className="bg-success text-success-foreground hover:bg-success/90"
                         >
                           <CheckCircle2 className="h-4 w-4 mr-1" />
                           {t('machineRegistration.actions.approveAllocate')}
@@ -717,7 +689,7 @@ export function MachineRegistrationContent() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-red-500 hover:text-red-700"
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
                                       onClick={() =>
                                         handleOpenReject(machine as PendingMachine)
                                       }
@@ -727,7 +699,7 @@ export function MachineRegistrationContent() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-green-500 hover:text-green-700"
+                                      className="h-7 w-7 text-success hover:text-success"
                                       onClick={() =>
                                         handleOpenApprove(machine as PendingMachine)
                                       }
@@ -743,7 +715,7 @@ export function MachineRegistrationContent() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-7 w-7 text-blue-500 hover:text-blue-700"
+                                          className="h-7 w-7 text-info hover:text-info"
                                           onClick={() => handleOpenEdit(machine)}
                                         >
                                           <Pencil className="h-4 w-4" />
@@ -756,7 +728,7 @@ export function MachineRegistrationContent() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-7 w-7 text-orange-500 hover:text-orange-700"
+                                          className="h-7 w-7 text-warning hover:text-warning"
                                           onClick={() => handleOpenRevoke(machine)}
                                         >
                                           <Undo2 className="h-4 w-4" />
@@ -792,17 +764,17 @@ export function MachineRegistrationContent() {
         </Tabs>
 
         {/* Info card */}
-        <Card className="border-blue-200 dark:border-blue-800/50">
+        <Card className="border-info/40">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
-              <Info className="h-4 w-4 text-blue-500" />
+              <Info className="h-4 w-4 text-info" />
               {t('machineRegistration.guide.title')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid md:grid-cols-4 gap-4 text-sm">
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-info/15 flex items-center justify-center text-info font-bold">
                   1
                 </div>
                 <div>
@@ -813,7 +785,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-warning/15 flex items-center justify-center text-warning font-bold">
                   2
                 </div>
                 <div>
@@ -824,7 +796,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-success/15 flex items-center justify-center text-success font-bold">
                   3
                 </div>
                 <div>
@@ -835,7 +807,7 @@ export function MachineRegistrationContent() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 font-bold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold">
                   4
                 </div>
                 <div>
@@ -848,14 +820,14 @@ export function MachineRegistrationContent() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* ── Approve Dialog ── */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <CheckCircle2 className="h-5 w-5 text-success" />
               {t('machineRegistration.approveDialog.title')}
             </DialogTitle>
             <DialogDescription>
@@ -941,7 +913,7 @@ export function MachineRegistrationContent() {
             <Button
               onClick={handleApprove}
               disabled={approveMutation.isPending}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-success text-success-foreground hover:bg-success/90"
             >
               {approveMutation.isPending ? (
                 <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
@@ -959,7 +931,7 @@ export function MachineRegistrationContent() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" />
+              <XCircle className="h-5 w-5 text-destructive" />
               {t('machineRegistration.rejectDialog.title')}
             </DialogTitle>
             <DialogDescription>
@@ -1009,7 +981,7 @@ export function MachineRegistrationContent() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Undo2 className="h-5 w-5 text-orange-500" />
+              <Undo2 className="h-5 w-5 text-warning" />
               {t('machineRegistration.revokeDialog.title')}
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -1019,7 +991,7 @@ export function MachineRegistrationContent() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('machineRegistration.revokeDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
               onClick={handleRevoke}
               disabled={revokeApprovalMutation.isPending}
             >
@@ -1039,7 +1011,7 @@ export function MachineRegistrationContent() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-blue-500" />
+              <Pencil className="h-5 w-5 text-info" />
               {t('machineRegistration.editDialog.title')}
             </DialogTitle>
             <DialogDescription>

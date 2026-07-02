@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -141,7 +142,7 @@ export default function Profile() {
       title={t('profile.title')}
       currentPath="/profile"
     >
-      <div className="container py-6 max-w-2xl space-y-6">
+      <PageContainer className="max-w-2xl">
         {/* Profile Card */}
         <Card>
           <CardHeader>
@@ -320,12 +321,12 @@ export default function Profile() {
             <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-3">
                 {twoFAStatus?.enabled ? (
-                  <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                    <ShieldCheck className="h-5 w-5 text-green-500" />
+                  <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5 text-success" />
                   </div>
                 ) : (
-                  <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
-                    <ShieldOff className="h-5 w-5 text-orange-500" />
+                  <div className="h-10 w-10 rounded-full bg-warning/10 flex items-center justify-center">
+                    <ShieldOff className="h-5 w-5 text-warning" />
                   </div>
                 )}
                 <div>
@@ -388,8 +389,8 @@ export default function Profile() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <KeyRound className="h-5 w-5 text-blue-500" />
+                  <div className="h-10 w-10 rounded-full bg-info/10 flex items-center justify-center">
+                    <KeyRound className="h-5 w-5 text-info" />
                   </div>
                   <div>
                     <p className="font-medium">{t('profile.backupCodesRemaining')}</p>
@@ -437,7 +438,7 @@ export default function Profile() {
             <SessionManagement />
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* 2FA Setup Dialog */}
       <Dialog open={show2FASetup} onOpenChange={(open) => {
@@ -462,7 +463,7 @@ export default function Profile() {
             <div className="space-y-4">
               {/* QR Code */}
               <div className="flex justify-center p-4 bg-white rounded-lg">
-                <img src={setupData.qrCode} alt="QR Code" className="w-48 h-48" />
+                <img src={setupData.qrCode} alt={t('auth.qrCodeAlt', 'QR Code')} className="w-48 h-48" />
               </div>
 
               {/* Manual Entry */}
@@ -478,7 +479,7 @@ export default function Profile() {
                   />
                   <Button variant="outline" size="icon" onClick={copySecret}>
                     {secretCopied ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success" />
                     ) : (
                       <Copy className="h-4 w-4" />
                     )}
@@ -629,7 +630,7 @@ export default function Profile() {
             <Button
               variant="outline"
               onClick={() => {
-                const text = `Mã dự phòng AVI/AOI Management\n\n${backupCodes.join('\n')}\n\nTạo lúc: ${new Date().toLocaleString('vi-VN')}`;
+                const text = `${t('profile.backupCodesFileTitle', 'AVI/AOI Management backup codes')}\n\n${backupCodes.join('\n')}\n\n${t('profile.backupCodesFileGeneratedAt', 'Generated at')}: ${new Date().toLocaleString('vi-VN')}`;
                 const blob = new Blob([text], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');

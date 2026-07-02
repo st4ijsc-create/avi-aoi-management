@@ -224,8 +224,8 @@ export default function FieldDevices() {
 
         {/* ── Flag-off preview banner (honest, calm) ─────────────────────────── */}
         {!flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <span>
               {t(
                 "field.flagOffBanner",
@@ -535,7 +535,7 @@ function CandidateRow({
         {canControl ? (
           <Button size="sm" variant="ghost" className="h-7" disabled={pending} onClick={onRegister}
             title={t("field.registerTip", "Register this candidate as a DISABLED adapter (enable it later to connect)")}>
-            <PlusCircle className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("field.register", "Register")}
+            <PlusCircle className="mr-1 h-3.5 w-3.5 text-success" />{t("field.register", "Register")}
           </Button>
         ) : (
           <span className="text-xs text-muted-foreground">{t("field.viewOnly", "View only")}</span>

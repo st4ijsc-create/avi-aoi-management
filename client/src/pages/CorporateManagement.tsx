@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +101,9 @@ export default function CorporateManagement() {
     code: "", name: "", description: "", factoryId: 0, floorArea: ""
   });
   
+  // Delete confirmation state (factory | workshop)
+  const [pendingDelete, setPendingDelete] = useState<{ type: "factory" | "workshop"; id: number; name: string } | null>(null);
+
   // Corporate info form state
   const [corporateInfo, setCorporateInfo] = useState({
     corporateName: "",
@@ -284,6 +289,16 @@ export default function CorporateManagement() {
     }
   };
 
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    if (pendingDelete.type === "factory") {
+      deleteFactoryMutation.mutate({ id: pendingDelete.id });
+    } else {
+      deleteWorkshopMutation.mutate({ id: pendingDelete.id });
+    }
+    setPendingDelete(null);
+  };
+
   // Toggle tree node expansion
   const toggleNode = (nodeId: string) => {
     setExpandedNodes(prev => {
@@ -407,23 +422,20 @@ export default function CorporateManagement() {
 
   return (
     <DashboardLayout title={t('corporate.corporateManagement', 'Corporate Management')} navItems={navItems} currentPath="/corporate-management">
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
-              {t('corporate.corporateManagement', 'Corporate Management')}
-              <ViewOnlyBadge module="corporate_management" />
-            </h1>
-            <p className="text-muted-foreground">{t('corporate.corporateManagementDesc', 'Manage organizational hierarchy and factory relationships')}</p>
-          </div>
-          <div className="flex items-center gap-2">
+      <PageContainer>
+        {/* Page Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Building2 className="h-6 w-6" />}
+          title={t('corporate.corporateManagement', 'Corporate Management')}
+          description={t('corporate.corporateManagementDesc', 'Manage organizational hierarchy and factory relationships')}
+          badge={<ViewOnlyBadge module="corporate_management" />}
+          actions={
             <Button variant="outline" size="sm" onClick={() => { refetchFactories(); refetchWorkshops(); }}>
               <RefreshCw className="h-4 w-4 mr-1" />
               {t('common.refresh', 'Refresh')}
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -582,7 +594,7 @@ export default function CorporateManagement() {
                               <span className="font-semibold text-foreground">{factory.name}</span>
                               <Badge variant="outline" className="text-xs">{factory.code}</Badge>
                               {factory.isActive !== false && (
-                                <Badge className="text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Active</Badge>
+                                <Badge variant="outline" className="text-xs border-success/30 bg-success/15 text-success">{t('machines.active')}</Badge>
                               )}
                             </div>
                             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
@@ -598,11 +610,9 @@ export default function CorporateManagement() {
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setLocation(`/corporate-layout`); }}>
                               <Eye className="h-3 w-3" />
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={(e) => { 
-                              e.stopPropagation(); 
-                              if (confirm(t('corporate.confirmDeleteFactory', 'Are you sure you want to delete this factory?'))) {
-                                deleteFactoryMutation.mutate({ id: factory.id });
-                              }
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDelete({ type: "factory", id: factory.id, name: factory.name });
                             }}>
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -657,11 +667,9 @@ export default function CorporateManagement() {
                                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); setLocation(`/layout?workshopId=${workshop.id}`); }}>
                                         <Eye className="h-3 w-3" />
                                       </Button>
-                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={(e) => { 
+                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={(e) => {
                                         e.stopPropagation();
-                                        if (confirm(t('corporate.confirmDeleteWorkshop', 'Delete this workshop?'))) {
-                                          deleteWorkshopMutation.mutate({ id: workshop.id });
-                                        }
+                                        setPendingDelete({ type: "workshop", id: workshop.id, name: workshop.name });
                                       }}>
                                         <Trash2 className="h-3 w-3" />
                                       </Button>
@@ -816,9 +824,7 @@ export default function CorporateManagement() {
                                 <Pencil className="h-3 w-3" />
                               </Button>
                               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => {
-                                if (confirm(t('corporate.confirmDeleteFactory', 'Delete this factory?'))) {
-                                  deleteFactoryMutation.mutate({ id: factory.id });
-                                }
+                                setPendingDelete({ type: "factory", id: factory.id, name: factory.name });
                               }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
@@ -1114,7 +1120,30 @@ export default function CorporateManagement() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={pendingDelete != null} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete?.type === "workshop"
+                ? t('corporate.confirmDeleteWorkshop', 'Delete this workshop?')
+                : t('corporate.confirmDeleteFactory', 'Are you sure you want to delete this factory?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{pendingDelete?.name}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('common.delete', 'Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Factory Dialog */}
       <Dialog open={showFactoryDialog} onOpenChange={(open) => { if (!open) { setShowFactoryDialog(false); resetFactoryForm(); } }}>

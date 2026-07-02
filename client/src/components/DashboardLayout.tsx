@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, LayoutGrid, Layers, Sparkles } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
@@ -28,11 +28,22 @@ import { NotificationCenter } from "./NotificationCenter";
 import { AIActionInboxLauncher } from "./AIActionInbox";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
-import { CSSProperties, ReactNode, useEffect, useState } from "react";
+import { SiteSwitcher } from "./SiteSwitcher";
+import { SiteHealthDot } from "./SiteHealthDot";
+import { CSSProperties, Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { navGroups, NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { useNavMode } from "@/hooks/useNavMode";
 import { BetaBanner } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -171,9 +182,23 @@ function DashboardLayoutContent({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Find active item for header display
-  const allItems = navGroups.flatMap(g => g.items);
-  const activeItem = allItems.find(item => item.href === (currentPath || location));
+  // The current route (query string stripped) — used for the global breadcrumb row.
+  const activePath = (currentPath || location).split("?")[0];
+
+  // Global breadcrumbs (F2): one Module › Section › Page trail rendered from the
+  // shell for every page. Hidden on root/landing routes where it is just noise.
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(activePath, t), [activePath, t]);
+  const BREADCRUMB_HIDDEN_ROUTES = new Set<string>([
+    "/",
+    "/operator",
+    "/maintenance-home",
+    "/quality-home",
+    "/supervisor-home",
+    "/admin-home",
+    "/viewer-home",
+    "/command-center",
+  ]);
+  const showBreadcrumbs = breadcrumbs.length > 1 && !BREADCRUMB_HIDDEN_ROUTES.has(activePath);
 
   // Navigate helper — on mobile, also close the Sheet drawer after picking a page.
   const handleNavigate = (href: string) => {
@@ -253,6 +278,14 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0 py-2 overflow-y-auto overflow-x-hidden">
+            {isMobile && (
+              // F2 — site/scope switcher at the top of the mobile Menu drawer so the
+              // ecosystem scope is reachable on phones too. Degrades to a static label
+              // for non-admins / single-site.
+              <div className="px-3 pb-2">
+                <SiteSwitcher variant="drawer" />
+              </div>
+            )}
             {isMobile ? (
               // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
               <MobileDrillNav
@@ -358,54 +391,69 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="bg-background">
-        <div data-app-chrome="header" className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Always show the sidebar toggle: on mobile it opens the sheet; on desktop it
-                re-opens the offcanvas rail after it has been collapsed (the in-rail toggle
-                is gone once the rail slides away). */}
-            <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
-            <span className="font-medium text-foreground text-sm sm:text-base truncate">
-              {activeItem ? t(activeItem.label) : title}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPaletteOpen(true)}
-              aria-label={t("nav.searchPlaceholder")}
-              className={cn(
-                "ml-1 sm:ml-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 text-muted-foreground transition-colors hover:bg-muted",
-                "h-9 w-9 justify-center sm:h-9 sm:w-auto sm:justify-start sm:px-3",
-              )}
-            >
-              <Search className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline truncate text-sm">{t("nav.searchPlaceholder")}</span>
-              <kbd className="hidden sm:inline-flex ml-2 items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
-                ⌘K
-              </kbd>
-            </button>
+        {/* F2 (doc 23 §5) — restructured context bar:
+            [trigger] · Site/Scope switcher · WIDE global ⌘K search (center, widest) ·
+            alerts (AI inbox + notifications) · site-health dot · theme/lang. Kiosk
+            mode hides the whole bar via [data-app-chrome="header"]. */}
+        <div data-app-chrome="header" className="flex border-b border-border h-14 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+          {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
+              sheet / re-opens the collapsed desktop rail. */}
+          <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
+          <div className="hidden sm:block shrink-0">
+            <SiteSwitcher variant="header" />
           </div>
+
+          {/* Center — primary/wide global search that opens the command palette (⌘K).
+              This is the widest element in the bar. */}
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label={t("nav.searchPlaceholder")}
+            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-left text-sm">{t("nav.searchPlaceholder")}</span>
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
+              ⌘K
+            </kbd>
+          </button>
+
+          {/* Right — alerts · site-health dot · theme/lang. */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setMegaOpen(true)}
-              aria-label={t("nav.quickBrowse")}
-              title={t("nav.quickBrowse")}
-              className={cn(
-                "flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/40 text-muted-foreground transition-colors hover:bg-muted",
-                "w-9 justify-center sm:w-auto sm:justify-start sm:px-3",
-              )}
-            >
-              <LayoutGrid className="h-4 w-4 shrink-0" />
-              <span className="hidden md:inline truncate text-sm">{t("nav.quickBrowse")}</span>
-              <kbd className="hidden md:inline-flex ml-1 items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
-                ⌘\
-              </kbd>
-            </button>
-            <ThemeToggle />
-            <LanguageSwitcher />
             <AIActionInboxLauncher />
             <NotificationCenter />
+            <SiteHealthDot />
+            <ThemeToggle />
+            <LanguageSwitcher />
           </div>
         </div>
+        {showBreadcrumbs && (
+          // F2 — slim global breadcrumb row rendered ONCE from the shell (covers all
+          // pages without editing each PageHeader). Query strings are stripped.
+          <div className="border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbs.map((crumb, i) => {
+                  const isLast = i === breadcrumbs.length - 1;
+                  return (
+                    <Fragment key={`${crumb.label}-${i}`}>
+                      <BreadcrumbItem>
+                        {isLast || crumb.href == null ? (
+                          <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink asChild>
+                            <Link href={crumb.href}>{crumb.label}</Link>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                      {!isLast && <BreadcrumbSeparator />}
+                    </Fragment>
+                  );
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
+        )}
         <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
@@ -423,6 +471,7 @@ function DashboardLayoutContent({
           currentPath={currentPath || location}
           onNavigate={handleNavigate}
           onOpenMenu={() => setOpenMobile(true)}
+          role={user?.role}
         />
       )}
       <CommandPalette

@@ -12,6 +12,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -203,16 +204,12 @@ export default function MaskAnnotationPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Brush className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{t("maskAnno.title")}</h1>
-            <p className="text-sm text-muted-foreground">{t("maskAnno.subtitle")}</p>
-          </div>
-        </div>
+      <PageContainer fluid>
+        <PageHeader
+          icon={<Brush className="h-6 w-6" />}
+          title={t("maskAnno.title")}
+          description={t("maskAnno.subtitle")}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Canvas */}
@@ -275,7 +272,7 @@ export default function MaskAnnotationPage() {
                   <Input value={umPerPx} onChange={(e) => setUmPerPx(e.target.value)} placeholder={t("maskAnno.umPerPxPh")} />
                 </div>
               </div>
-              {!um && <p className="text-xs text-amber-600">{t("maskAnno.noCalib")}</p>}
+              {!um && <p className="text-xs text-warning">{t("maskAnno.noCalib")}</p>}
 
               <div className="border-t pt-2 space-y-1">
                 <Label className="text-xs">{t("maskAnno.runModel")}</Label>
@@ -314,7 +311,7 @@ export default function MaskAnnotationPage() {
                           <span>{t("maskAnno.feretMax")}: {fmt(mm.feretMax)}</span>
                           <span>{t("maskAnno.feretMin")}: {fmt(mm.feretMin)}</span>
                           <span>{t("maskAnno.equivDia")}: {fmt(mm.equivDiameter)}</span>
-                          {mm.degraded && <span className="text-amber-600">{t("maskAnno.unitPx")}</span>}
+                          {mm.degraded && <span className="text-warning">{t("maskAnno.unitPx")}</span>}
                         </div>
                       )}
                     </div>
@@ -324,7 +321,7 @@ export default function MaskAnnotationPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

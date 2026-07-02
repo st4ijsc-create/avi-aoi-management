@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader, PageContainer, SectionCard, EmptyState } from '@/components/patterns';
 import { toast } from 'sonner';
 import { UserPlus, X, Users, Building2, Factory } from 'lucide-react';
 import { navItems } from '@/lib/navigation';
@@ -39,7 +40,7 @@ export default function UserAssignments() {
       setCorporateCode('');
       refetch();
     } catch (error: any) {
-      toast.error(`Failed: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     }
   };
 
@@ -58,7 +59,7 @@ export default function UserAssignments() {
       setFactoryCode('');
       refetch();
     } catch (error: any) {
-      toast.error(`Failed: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     }
   };
 
@@ -68,7 +69,7 @@ export default function UserAssignments() {
       toast.success(t('users.removedCorporateAssignment'));
       refetch();
     } catch (error: any) {
-      toast.error(`Failed: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     }
   };
 
@@ -78,7 +79,7 @@ export default function UserAssignments() {
       toast.success(t('users.removedFactoryAssignment'));
       refetch();
     } catch (error: any) {
-      toast.error(`Failed: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     }
   };
 
@@ -88,16 +89,19 @@ export default function UserAssignments() {
       navItems={navItems}
       currentPath="/user-assignments"
     >
-      <div className="space-y-6">
+      <PageContainer>
+        <PageHeader
+          icon={<Users className="h-6 w-6 text-primary" />}
+          title={t('users.userAssignments')}
+        />
+
         {/* Assignment Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              {t('users.assignUserToCorporateFactory')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <SectionCard
+          icon={<UserPlus className="h-5 w-5" />}
+          title={t('users.assignUserToCorporateFactory')}
+          contentClassName="space-y-6"
+        >
+          <>
             {/* User Selection */}
             <div>
               <Label>{t('users.selectUser')}</Label>
@@ -157,8 +161,8 @@ export default function UserAssignments() {
                 {t('users.assignFactory')}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </>
+        </SectionCard>
 
         {/* User Assignments List */}
         <div className="space-y-4">
@@ -232,13 +236,17 @@ export default function UserAssignments() {
 
           {allAssignments?.length === 0 && (
             <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                {t('users.noUsersFound')}
+              <CardContent className="py-4">
+                <EmptyState
+                  variant="no-results"
+                  icon={Users}
+                  title={t('users.noUsersFound')}
+                />
               </CardContent>
             </Card>
           )}
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

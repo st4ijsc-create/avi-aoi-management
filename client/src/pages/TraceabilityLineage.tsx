@@ -106,7 +106,7 @@ export default function TraceabilityLineage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <ArrowUp className="h-4 w-4 text-blue-500" />
+                      <ArrowUp className="h-4 w-4 text-info" />
                       <Truck className="h-4 w-4" /> {t("trace.upstream", "Thượng nguồn — Nguyên vật liệu")}
                     </CardTitle>
                     <CardDescription>{t("trace.upstreamDesc", "Lô nhà cung cấp & phiếu nhập liên quan")}</CardDescription>
@@ -172,7 +172,7 @@ export default function TraceabilityLineage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <ArrowDown className="h-4 w-4 text-emerald-500" />
+                      <ArrowDown className="h-4 w-4 text-success" />
                       <PackageCheck className="h-4 w-4" /> {t("trace.downstream", "Hạ nguồn — Quyết định lô / Khách hàng")}
                     </CardTitle>
                   </CardHeader>

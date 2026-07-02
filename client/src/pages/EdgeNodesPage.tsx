@@ -14,7 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -130,9 +130,9 @@ export default function EdgeNodesPage() {
       return <Badge variant="outline" className="text-muted-foreground"><WifiOff className="mr-1 h-3 w-3" />{t("edgeNodes.offline", "Ngoại tuyến")}</Badge>;
     }
     if (n.status === "degraded") {
-      return <Badge className="bg-amber-500 text-white"><Activity className="mr-1 h-3 w-3" />{t("edgeNodes.degraded", "Suy giảm")}</Badge>;
+      return <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning"><Activity className="mr-1 h-3 w-3" />{t("edgeNodes.degraded", "Suy giảm")}</Badge>;
     }
-    return <Badge className="bg-emerald-500 text-white"><Wifi className="mr-1 h-3 w-3" />{t("edgeNodes.online", "Trực tuyến")}</Badge>;
+    return <Badge variant="outline" className="border-success/30 bg-success/15 text-success"><Wifi className="mr-1 h-3 w-3" />{t("edgeNodes.online", "Trực tuyến")}</Badge>;
   };
 
   if (!canView) {
@@ -145,7 +145,7 @@ export default function EdgeNodesPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="space-y-4">
         <PageHeader
           icon={<Cpu className="h-6 w-6" />}
           title={t("edgeNodes.title", "Node biên (Edge)")}
@@ -164,8 +164,8 @@ export default function EdgeNodesPage() {
         />
 
         {!statusQ.isLoading && !enabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <span>{t("edgeNodes.disabledBanner", "Edge runtime chưa bật (EDGE_RUNTIME_ENABLED) — vẫn xem được danh sách, nhưng đăng ký/gỡ bị tắt.")}</span>
           </div>
         )}
@@ -195,7 +195,7 @@ export default function EdgeNodesPage() {
                     <TableCell className="font-medium">{n.name}{n.factoryCode ? <div className="text-[11px] text-muted-foreground">{n.factoryCode}</div> : null}</TableCell>
                     <TableCell>{statusBadge(n)}</TableCell>
                     <TableCell className="text-xs">
-                      <span className={heartbeatStale(n.lastHeartbeatAt) ? "text-amber-600" : ""}>{fmtDate(n.lastHeartbeatAt)}</span>
+                      <span className={heartbeatStale(n.lastHeartbeatAt) ? "text-warning" : ""}>{fmtDate(n.lastHeartbeatAt)}</span>
                     </TableCell>
                     <TableCell className="text-xs">
                       {(n.assignedLineCodes ?? []).length ? (n.assignedLineCodes ?? []).map((l) => <Badge key={l} variant="outline" className="mr-1 text-[10px]">{l}</Badge>) : <span className="text-muted-foreground">—</span>}
@@ -217,7 +217,7 @@ export default function EdgeNodesPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* Register / edit dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

@@ -17,10 +17,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Play, Pause, RotateCcw, Radio, Bot, Cpu, CheckCircle2, XCircle, Activity, Info } from "lucide-react";
@@ -36,7 +38,7 @@ const MACHINES = [
       adapterKind: "ot-mitsubishi-mc",
       cycleTimeTracked: true,
       extraCommands: [
-        { name: "feed_dut", label: "Cấp 1 DUT tới vị trí gắp", paramsSchema: [{ name: "slot", label: "Khay", dataType: "int" }], riskLevel: "high", requiredPermission: "machine_control/canCreate" },
+        { name: "feed_dut", label: "Feed one DUT to the pick position", paramsSchema: [{ name: "slot", label: "Tray", dataType: "int" }], riskLevel: "high", requiredPermission: "machine_control/canCreate" },
       ],
     },
   },
@@ -45,7 +47,7 @@ const MACHINES = [
     machineType: "ROBOT",
     capabilities: {
       extraCommands: [
-        { name: "transfer", label: "Gắp–thả giữa 2 vị trí", paramsSchema: [{ name: "from", label: "Từ", dataType: "string" }, { name: "to", label: "Đến", dataType: "string" }], riskLevel: "high", requiredPermission: "machine_control/canCreate" },
+        { name: "transfer", label: "Pick-and-place between two positions", paramsSchema: [{ name: "from", label: "From", dataType: "string" }, { name: "to", label: "To", dataType: "string" }], riskLevel: "high", requiredPermission: "machine_control/canCreate" },
       ],
     },
   },
@@ -57,28 +59,28 @@ const COMMAND_DURATIONS = { start: 800, stop: 800, feed_dut: 1600, transfer: 130
 /** The control PROGRAM — one DUT cycle (the line repeats it). */
 const WORKFLOW = {
   ref: "RF-TEST-CELL-CYCLE",
-  name: "Chu kỳ test cách sóng 1 DUT",
+  name: "One-DUT RF shield test cycle",
   steps: [
-    { id: "feeder_start", type: "command", machineId: FEEDER, command: "start", label: "Cấp liệu XYZ: khởi động" },
-    { id: "feed", type: "command", machineId: FEEDER, command: "feed_dut", args: { slot: 1 }, label: "Gantry XYZ đưa DUT tới vị trí gắp" },
-    { id: "xyz_travel", type: "delay", ms: 1200, label: "Trục XYZ định vị" },
-    { id: "wait_dut", type: "wait_telemetry", condition: { source: "telemetry", machineId: FEEDER, key: "dut_ready", op: "eq", value: 1 }, timeoutMs: 5000, label: "Interlock: chỉ gắp khi có DUT" },
-    { id: "robot_start", type: "command", machineId: ROBOT, command: "start", label: "Robot vào chế độ chạy" },
-    { id: "pick_to_rf", type: "command", machineId: ROBOT, command: "transfer", args: { from: "PICK", to: "RF_CHAMBER" }, label: "Robot gắp DUT → buồng cách sóng" },
-    { id: "load_settle", type: "delay", ms: 800, label: "Đặt DUT vào jig RF" },
-    { id: "rf_recipe", type: "command", machineId: RF, command: "select_recipe", args: { recipeCode: "WIFI6_BT_TX" }, label: "Nạp bài đo RF (WiFi6/BT TX)" },
-    { id: "rf_start", type: "command", machineId: RF, command: "start", label: "Đóng buồng + chạy đo phát xạ" },
-    { id: "rf_measure", type: "delay", ms: 3000, label: "Đo: công suất TX, tần số, EVM, phổ" },
-    { id: "wait_result", type: "wait_telemetry", condition: { source: "telemetry", machineId: RF, key: "test_done", op: "eq", value: 1 }, timeoutMs: 10000, label: "Chờ kết quả đo" },
+    { id: "feeder_start", type: "command", machineId: FEEDER, command: "start", label: "XYZ feeder: start" },
+    { id: "feed", type: "command", machineId: FEEDER, command: "feed_dut", args: { slot: 1 }, label: "XYZ gantry brings DUT to the pick position" },
+    { id: "xyz_travel", type: "delay", ms: 1200, label: "XYZ axes positioning" },
+    { id: "wait_dut", type: "wait_telemetry", condition: { source: "telemetry", machineId: FEEDER, key: "dut_ready", op: "eq", value: 1 }, timeoutMs: 5000, label: "Interlock: pick only when a DUT is present" },
+    { id: "robot_start", type: "command", machineId: ROBOT, command: "start", label: "Robot enters run mode" },
+    { id: "pick_to_rf", type: "command", machineId: ROBOT, command: "transfer", args: { from: "PICK", to: "RF_CHAMBER" }, label: "Robot picks DUT → RF shield chamber" },
+    { id: "load_settle", type: "delay", ms: 800, label: "Place DUT into the RF jig" },
+    { id: "rf_recipe", type: "command", machineId: RF, command: "select_recipe", args: { recipeCode: "WIFI6_BT_TX" }, label: "Load RF test recipe (WiFi6/BT TX)" },
+    { id: "rf_start", type: "command", machineId: RF, command: "start", label: "Close chamber + run emission measurement" },
+    { id: "rf_measure", type: "delay", ms: 3000, label: "Measure: TX power, frequency, EVM, spectrum" },
+    { id: "wait_result", type: "wait_telemetry", condition: { source: "telemetry", machineId: RF, key: "test_done", op: "eq", value: 1 }, timeoutMs: 10000, label: "Wait for the measurement result" },
     {
       id: "sort", type: "branch",
       condition: { source: "telemetry", machineId: RF, key: "process_result", op: "eq", value: "PASS" },
-      then: [{ id: "place_ok", type: "command", machineId: ROBOT, command: "transfer", args: { from: "RF_CHAMBER", to: "CARTON_OK" }, label: "Xếp DUT ĐẠT vào hộp các-tông" }],
-      else: [{ id: "place_ng", type: "command", machineId: ROBOT, command: "transfer", args: { from: "RF_CHAMBER", to: "REJECT_BIN" }, label: "Loại DUT LỖI vào khay NG" }],
-      label: "Phân loại theo kết quả RF",
+      then: [{ id: "place_ok", type: "command", machineId: ROBOT, command: "transfer", args: { from: "RF_CHAMBER", to: "CARTON_OK" }, label: "Stack PASS DUT into the carton" }],
+      else: [{ id: "place_ng", type: "command", machineId: ROBOT, command: "transfer", args: { from: "RF_CHAMBER", to: "REJECT_BIN" }, label: "Reject FAIL DUT into the NG bin" }],
+      label: "Sort by RF result",
     },
-    { id: "place_settle", type: "delay", ms: 900, label: "Robot đặt + về home" },
-    { id: "rf_stop", type: "command", machineId: RF, command: "stop", label: "Mở buồng, kết thúc đo" },
+    { id: "place_settle", type: "delay", ms: 900, label: "Robot places + returns home" },
+    { id: "rf_stop", type: "command", machineId: RF, command: "stop", label: "Open chamber, end measurement" },
   ],
 };
 
@@ -207,7 +209,7 @@ export default function RfTestCellSim() {
         if (!alive) return;
         setSims({ pass: pass as unknown as Sim, fail: fail as unknown as Sim });
       } catch (err) {
-        toast.error(t("rfcell.simFailed", "Không tải được mô phỏng twin"));
+        toast.error(t("rfcell.simFailed", "Could not load the twin simulation"));
         // eslint-disable-next-line no-console
         console.error(err);
       } finally {
@@ -275,45 +277,57 @@ export default function RfTestCellSim() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 p-1">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <Radio className="h-5 w-5 text-primary" /> {t("rfcell.title", "Trạm test cách sóng — Mô phỏng realtime")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("rfcell.subtitle", "FX5U cấp liệu XYZ • Robot gắp–thả • Buồng đo RF — bản sao số chạy theo thời gian thực")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={loading || !sims} onClick={() => setRunning((r) => !r)}>
-              {running ? <><Pause className="h-4 w-4 mr-1" /> {t("rfcell.pause", "Tạm dừng")}</> : <><Play className="h-4 w-4 mr-1" /> {t("rfcell.play", "Chạy")}</>}
-            </Button>
-            <Button size="sm" variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-1" /> {t("rfcell.reset", "Đặt lại")}</Button>
-            <div className="flex items-center gap-1">
-              <Label className="text-xs text-muted-foreground">{t("rfcell.speed", "Tốc độ")}</Label>
-              {SPEEDS.map((s) => (
-                <Button key={s} size="sm" variant={speed === s ? "default" : "outline"} className="px-2 h-7" onClick={() => setSpeed(s)}>{s}×</Button>
-              ))}
-            </div>
-          </div>
-        </div>
+      <PageContainer fluid className="space-y-4">
+        <PageHeader
+          icon={<Radio className="h-6 w-6" />}
+          title={t("rfcell.title", "RF Shielded Test Cell — Realtime Simulation")}
+          badge={<Badge variant="secondary" className="mt-1 text-[10px] uppercase tracking-wide">{t("common.beta", "Beta")}</Badge>}
+          description={t("rfcell.subtitle", "FX5U XYZ feeder • pick&place robot • RF test chamber — a digital twin running in real time")}
+          actions={
+            <>
+              <Button size="sm" disabled={loading || !sims} onClick={() => setRunning((r) => !r)}>
+                {running ? <><Pause className="h-4 w-4 mr-1" /> {t("rfcell.pause", "Pause")}</> : <><Play className="h-4 w-4 mr-1" /> {t("rfcell.play", "Play")}</>}
+              </Button>
+              <Button size="sm" variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-1" /> {t("rfcell.reset", "Reset")}</Button>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">{t("rfcell.speed", "Speed")}</Label>
+                {SPEEDS.map((s) => (
+                  <Button key={s} size="sm" variant={speed === s ? "default" : "outline"} className="px-2 h-7" onClick={() => setSpeed(s)}>{s}×</Button>
+                ))}
+              </div>
+            </>
+          }
+        />
 
-        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
           <Info className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{t("rfcell.twinNote", "Đây là MÔ PHỎNG trên bản sao số (digital twin) — không phát lệnh xuống thiết bị. Khi chạy thật: mọi lệnh đi qua dispatcher HITL; an toàn (E-stop/interlock/chuyển động) nằm trên PLC FX5U.")}</span>
+          <span>{t("rfcell.twinNote", "This is a SIMULATION on a digital twin — no command is sent to any device. When run for real, every command goes through the HITL dispatcher; safety (E-stop / interlock / motion) stays on the FX5U PLC.")}</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* ── 2D cell scene ── */}
           <Card className="lg:col-span-2">
-            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Activity className="h-4 w-4" /> {t("rfcell.cellView", "Sơ đồ trạm (nhìn từ trên)")}</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Activity className="h-4 w-4" /> {t("rfcell.cellView", "Cell layout (top-down)")}</CardTitle></CardHeader>
             <CardContent>
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="aspect-[2/1] w-full rounded-md" />
+                  <Skeleton className="h-7 w-full rounded" />
+                  <p className="text-center text-xs text-muted-foreground">{t("rfcell.loading", "Loading twin simulation…")}</p>
+                </div>
+              ) : !sims ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+                  <XCircle className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium">{t("rfcell.loadFailedTitle", "Simulation unavailable")}</p>
+                  <p className="max-w-sm text-xs text-muted-foreground">{t("rfcell.loadFailedBody", "The digital-twin simulation could not be loaded. Check that the orchestration twin service is reachable, then retry.")}</p>
+                </div>
+              ) : (
+              <>
               <svg viewBox="0 0 840 420" className="w-full rounded-md bg-slate-50 dark:bg-slate-900 border">
                 {/* feeder rail + tray */}
                 <rect x="55" y="135" width="255" height="8" rx="4" className="fill-slate-300 dark:fill-slate-700" />
                 <rect x="60" y="120" width="70" height="60" rx="4" className="fill-slate-200 dark:fill-slate-800 stroke-slate-400" />
-                <text x="95" y="200" textAnchor="middle" className="fill-slate-500 text-[11px]">Khay DUT</text>
+                <text x="95" y="200" textAnchor="middle" className="fill-slate-500 text-[11px]">{t("rfcell.svg.dutTray", "DUT tray")}</text>
                 {/* gantry carriage */}
                 {(() => {
                   const gx = token?.carrier === "gantry" ? token.x : PT.PICK.x;
@@ -321,12 +335,12 @@ export default function RfTestCellSim() {
                 })()}
                 <text x={PT.PICK.x} y={108} textAnchor="middle" className="fill-slate-500 text-[10px]">XYZ (FX5U)</text>
                 <circle cx={PT.PICK.x} cy={PT.PICK.y} r={6} className="fill-slate-400" />
-                <text x={PT.PICK.x} y={172} textAnchor="middle" className="fill-slate-500 text-[10px]">Vị trí gắp</text>
+                <text x={PT.PICK.x} y={172} textAnchor="middle" className="fill-slate-500 text-[10px]">{t("rfcell.svg.pickPos", "Pick position")}</text>
 
                 {/* robot */}
                 <circle cx={PT.ROBOT.x} cy={PT.ROBOT.y} r={26} className="fill-slate-200 dark:fill-slate-800 stroke-slate-400" />
                 <circle cx={PT.ROBOT.x} cy={PT.ROBOT.y} r={8} className="fill-indigo-500" />
-                <text x={PT.ROBOT.x} y={PT.ROBOT.y + 44} textAnchor="middle" className="fill-slate-500 text-[10px]">Robot</text>
+                <text x={PT.ROBOT.x} y={PT.ROBOT.y + 44} textAnchor="middle" className="fill-slate-500 text-[10px]">{t("rfcell.svg.robot", "Robot")}</text>
                 {token?.carrier === "robot" && <line x1={PT.ROBOT.x} y1={PT.ROBOT.y} x2={token.x} y2={token.y} className="stroke-indigo-500" strokeWidth={4} strokeLinecap="round" />}
 
                 {/* RF chamber */}
@@ -337,7 +351,7 @@ export default function RfTestCellSim() {
                     <animate attributeName="r" values={`${r};${r + 10};${r}`} dur="1.2s" repeatCount="indefinite" />
                   </circle>
                 ))}
-                <text x={PT.CHAMBER.x} y={PT.CHAMBER.y - 58} textAnchor="middle" className="fill-slate-500 text-[10px]">Buồng cách sóng (RF)</text>
+                <text x={PT.CHAMBER.x} y={PT.CHAMBER.y - 58} textAnchor="middle" className="fill-slate-500 text-[10px]">{t("rfcell.svg.rfChamber", "RF shield chamber")}</text>
                 {resultKnown && view.t < (sim?.timeline.find((x) => x.stepId === "place_settle")?.endMs ?? 0) && (
                   <text x={PT.CHAMBER.x} y={PT.CHAMBER.y + 4} textAnchor="middle" className={view.variant === "FAIL" ? "fill-red-600 text-[14px] font-bold" : "fill-emerald-600 text-[14px] font-bold"}>
                     {view.variant === "FAIL" ? "FAIL" : "PASS"}
@@ -351,12 +365,12 @@ export default function RfTestCellSim() {
                   const filled = i < view.carton;
                   return <rect key={i} x={PT.CARTON.x - 64 + c * 21} y={PT.CARTON.y - 36 + r * 17} width="17" height="13" rx="2" className={filled ? "fill-emerald-500" : "fill-slate-200 dark:fill-slate-700 stroke-slate-300"} />;
                 })}
-                <text x={PT.CARTON.x} y={PT.CARTON.y + 46} textAnchor="middle" className="fill-slate-500 text-[10px]">Hộp các-tông ĐẠT ({view.carton}/{CARTON_SIZE})</text>
+                <text x={PT.CARTON.x} y={PT.CARTON.y + 46} textAnchor="middle" className="fill-slate-500 text-[10px]">{t("rfcell.svg.cartonOk", "PASS carton")} ({view.carton}/{CARTON_SIZE})</text>
 
                 {/* reject bin */}
                 <rect x={PT.REJECT.x - 28} y={PT.REJECT.y - 22} width="56" height="40" rx="4" className="fill-red-50 dark:fill-red-950/30 stroke-red-400" strokeWidth={2} />
                 <text x={PT.REJECT.x} y={PT.REJECT.y + 4} textAnchor="middle" className="fill-red-600 text-[12px] font-semibold">{view.ng}</text>
-                <text x={PT.REJECT.x} y={PT.REJECT.y + 34} textAnchor="middle" className="fill-slate-500 text-[10px]">Khay NG</text>
+                <text x={PT.REJECT.x} y={PT.REJECT.y + 34} textAnchor="middle" className="fill-slate-500 text-[10px]">{t("rfcell.svg.rejectBin", "Reject bin")}</text>
 
                 {/* the DUT token */}
                 {token?.visible && (
@@ -368,7 +382,7 @@ export default function RfTestCellSim() {
               {/* timeline / playhead */}
               {sim && (
                 <div className="mt-3">
-                  <div className="text-[11px] text-muted-foreground mb-1">{t("rfcell.timeline", "Tiến trình chu kỳ")} — {labelOf(act?.stepId)}</div>
+                  <div className="text-[11px] text-muted-foreground mb-1">{t("rfcell.timeline", "Cycle progress")} — {labelOf(act?.stepId)}</div>
                   <div className="relative h-7 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
                     {sim.timeline.filter((e) => e.stepType !== "sequence" && e.stepType !== "parallel" && e.endMs > e.startMs).map((e) => {
                       const left = (e.startMs / sim.totalDurationMs) * 100;
@@ -385,13 +399,15 @@ export default function RfTestCellSim() {
                   </div>
                 </div>
               )}
+              </>
+              )}
             </CardContent>
           </Card>
 
           {/* ── live status + KPIs ── */}
           <div className="space-y-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.machines", "Trạng thái máy (PackML)")}</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.machines", "Machine status (PackML)")}</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {[
                   { icon: <Cpu className="h-4 w-4" />, name: "FX5U Feeder XYZ", st: feederState },
@@ -407,30 +423,30 @@ export default function RfTestCellSim() {
             </Card>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.kpis", "Sản lượng & năng suất")}</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.kpis", "Output & throughput")}</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                <Kpi label={t("rfcell.cycleNo", "Chu kỳ")} value={String(view.cycle)} />
-                <Kpi label={t("rfcell.cycleTime", "Nhịp/DUT")} value={`${cycleSec.toFixed(1)}s`} />
+                <Kpi label={t("rfcell.cycleNo", "Cycle")} value={String(view.cycle)} />
+                <Kpi label={t("rfcell.cycleTime", "Cycle/DUT")} value={`${cycleSec.toFixed(1)}s`} />
                 <Kpi label="OK" value={String(view.ok)} cls="text-emerald-600" icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
                 <Kpi label="NG" value={String(view.ng)} cls="text-red-600" icon={<XCircle className="h-3.5 w-3.5" />} />
                 <Kpi label={t("rfcell.yield", "Yield")} value={`${yieldPct}%`} />
-                <Kpi label={t("rfcell.uph", "Năng suất")} value={`${uph} UPH`} />
-                <Kpi label={t("rfcell.cartonsDone", "Hộp đã đóng")} value={String(view.cartonsDone)} />
-                <Kpi label={t("rfcell.inCarton", "Trong hộp")} value={`${view.carton}/${CARTON_SIZE}`} />
+                <Kpi label={t("rfcell.uph", "Throughput")} value={`${uph} UPH`} />
+                <Kpi label={t("rfcell.cartonsDone", "Cartons done")} value={String(view.cartonsDone)} />
+                <Kpi label={t("rfcell.inCarton", "In carton")} value={`${view.carton}/${CARTON_SIZE}`} />
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.program", "Chương trình điều khiển")}</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("rfcell.program", "Control program")}</CardTitle></CardHeader>
               <CardContent className="text-xs text-muted-foreground space-y-1">
-                <p>{t("rfcell.programNote", "Một chu kỳ = WorkflowDefinition (FOE/ISA-88) gồm 15 bước. Twin dự đoán nhịp, trạng thái PackML và nhánh PASS/FAIL.")}</p>
+                <p>{t("rfcell.programNote", "One cycle = a WorkflowDefinition (FOE/ISA-88) of 15 steps. The twin predicts cycle time, PackML state and the PASS/FAIL branch.")}</p>
                 <p className="font-mono text-[11px] text-foreground">ref: {WORKFLOW.ref} • {WORKFLOW.steps.length} steps</p>
-                <p>{t("rfcell.openStudio", "Mở /orchestration-studio để sửa/triển khai/chạy thật (qua dispatcher HITL).")}</p>
+                <p>{t("rfcell.openStudio", "Open /orchestration-studio to edit / deploy / run it for real (via the HITL dispatcher).")}</p>
               </CardContent>
             </Card>
           </div>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -127,21 +128,23 @@ export default function FactoryFloorEditor() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 p-1">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2"><Move className="h-5 w-5 text-primary" /> {t("ffe.title", "Sửa mặt bằng nhà máy")} <ViewOnlyBadge module="machine_control" /></h1>
-            <p className="text-sm text-muted-foreground">{t("ffe.subtitle", "Kéo từng máy về đúng vị trí thực trên sàn — toạ độ được lưu và dùng cho bản đồ 3D")}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => setFactoryId(Number(v))}>
-              <SelectTrigger className="w-[200px]"><SelectValue placeholder={t("ffe.pickFactory", "Chọn nhà máy")} /></SelectTrigger>
-              <SelectContent>{factories.map((f) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}</SelectContent>
-            </Select>
-            <Button size="sm" variant={snap ? "default" : "outline"} onClick={() => setSnap((s) => !s)}><Magnet className="h-4 w-4 mr-1" /> {t("ffe.snap", "Bắt lưới")}</Button>
-            <Button size="sm" variant="outline" onClick={() => setLocation("/factory-live-map")}><Boxes className="h-4 w-4 mr-1" /> {t("ffe.view3d", "Xem 3D")}</Button>
-          </div>
-        </div>
+      <PageContainer fluid className="space-y-4">
+        <PageHeader
+          icon={<Move className="h-6 w-6" />}
+          title={t("ffe.title", "Sửa mặt bằng nhà máy")}
+          badge={<ViewOnlyBadge module="machine_control" />}
+          description={t("ffe.subtitle", "Kéo từng máy về đúng vị trí thực trên sàn — toạ độ được lưu và dùng cho bản đồ 3D")}
+          actions={
+            <>
+              <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => setFactoryId(Number(v))}>
+                <SelectTrigger className="w-[200px]"><SelectValue placeholder={t("ffe.pickFactory", "Chọn nhà máy")} /></SelectTrigger>
+                <SelectContent>{factories.map((f) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button size="sm" variant={snap ? "default" : "outline"} onClick={() => setSnap((s) => !s)}><Magnet className="h-4 w-4 mr-1" /> {t("ffe.snap", "Bắt lưới")}</Button>
+              <Button size="sm" variant="outline" onClick={() => setLocation("/factory-live-map")}><Boxes className="h-4 w-4 mr-1" /> {t("ffe.view3d", "Xem 3D")}</Button>
+            </>
+          }
+        />
 
         <div className="rounded-md border border-sky-300 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-800 dark:text-sky-200 flex items-start gap-2">
           <Info className="h-4 w-4 mt-0.5 shrink-0" />
@@ -239,7 +242,7 @@ export default function FactoryFloorEditor() {
             })()}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

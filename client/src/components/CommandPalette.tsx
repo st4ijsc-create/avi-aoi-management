@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Star, StarOff } from "lucide-react";
+import { Search, Star, StarOff } from "lucide-react";
 import {
   CommandDialog,
   CommandInput,
@@ -15,7 +15,9 @@ import { cn } from "@/lib/utils";
 
 const RECENT_KEY = "nav-recent";
 const FAVORITES_KEY = "nav-favorites";
+const RECENT_SEARCH_KEY = "nav-recent-search";
 const RECENT_MAX = 5;
+const RECENT_SEARCH_MAX = 5;
 
 /** Read a JSON string-array from localStorage, tolerating bad/missing data. */
 function readHrefList(key: string): string[] {
@@ -44,6 +46,17 @@ export function pushRecentHref(href: string) {
   writeHrefList(RECENT_KEY, next);
 }
 
+/** Push a non-trivial search term to the front of the recent-searches list. */
+function pushRecentSearch(term: string) {
+  const q = term.trim();
+  if (q.length < 2) return;
+  const next = [q, ...readHrefList(RECENT_SEARCH_KEY).filter(h => h.toLowerCase() !== q.toLowerCase())].slice(
+    0,
+    RECENT_SEARCH_MAX,
+  );
+  writeHrefList(RECENT_SEARCH_KEY, next);
+}
+
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -65,13 +78,15 @@ export function CommandPalette({ open, onOpenChange, groups, onNavigate }: Comma
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-  // Refresh recent/favorites every time the palette opens (other surfaces may
-  // have mutated localStorage since last open).
+  // Refresh recent/favorites/searches every time the palette opens (other surfaces
+  // may have mutated localStorage since last open).
   useEffect(() => {
     if (open) {
       setFavorites(readHrefList(FAVORITES_KEY));
       setRecent(readHrefList(RECENT_KEY));
+      setRecentSearches(readHrefList(RECENT_SEARCH_KEY));
       setSearch("");
     }
   }, [open]);
@@ -109,9 +124,11 @@ export function CommandPalette({ open, onOpenChange, groups, onNavigate }: Comma
   const handleNavigate = useCallback(
     (href: string) => {
       pushRecentHref(href);
+      // If the user typed a query to reach this result, remember it as a recent search.
+      if (search.trim().length >= 2) pushRecentSearch(search);
       onNavigate(href);
     },
-    [onNavigate],
+    [onNavigate, search],
   );
 
   const isEmptySearch = search.trim() === "";
@@ -177,6 +194,25 @@ export function CommandPalette({ open, onOpenChange, groups, onNavigate }: Comma
       />
       <CommandList>
         <CommandEmpty>{t("nav.searchEmpty")}</CommandEmpty>
+
+        {isEmptySearch && recentSearches.length > 0 && (
+          <>
+            <CommandGroup heading={t("nav.recentSearches", "Recent searches")}>
+              {recentSearches.map(term => (
+                <CommandItem
+                  key={`search-${term}`}
+                  value={`__recent_search__ ${term}`}
+                  onSelect={() => setSearch(term)}
+                  className="gap-2"
+                >
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{term}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
 
         {isEmptySearch && favoriteItems.length > 0 && (
           <>

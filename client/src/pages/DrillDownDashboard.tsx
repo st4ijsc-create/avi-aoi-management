@@ -2,21 +2,21 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
+import { MetricCard, EmptyState, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { 
-  Building2, 
-  Factory, 
-  GitBranch, 
-  Cpu, 
-  ChevronRight, 
+import {
+  Building2,
+  Factory,
+  GitBranch,
+  Cpu,
+  ChevronRight,
   Home,
   TrendingUp,
-  TrendingDown,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -52,8 +52,6 @@ interface DrillDownState {
   machineId?: number;
   machineName?: string;
 }
-
-const COLORS = ["#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899"];
 
 // Breadcrumb component
 function Breadcrumb({ 
@@ -133,57 +131,6 @@ function Breadcrumb({
   );
 }
 
-// Stats card component
-function StatsCard({ 
-  title, 
-  value, 
-  subtitle, 
-  trend, 
-  icon: Icon,
-  color = "blue"
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  trend?: number;
-  icon: React.ComponentType<{ className?: string }>;
-  color?: "blue" | "green" | "red" | "yellow";
-}) {
-  const { t } = useTranslation();
-  const colorClasses = {
-    blue: "bg-blue-500/10 text-blue-500",
-    green: "bg-green-500/10 text-green-500",
-    red: "bg-red-500/10 text-red-500",
-    yellow: "bg-yellow-500/10 text-yellow-500",
-  };
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
-            )}
-          </div>
-          <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-        {trend !== undefined && (
-          <div className={`flex items-center gap-1 mt-2 text-sm ${trend >= 0 ? "text-green-500" : "text-red-500"}`}>
-            {trend >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-            <span>{Math.abs(trend).toFixed(1)}%</span>
-            <span className="text-muted-foreground">{t('dashboard.vsYesterday')}</span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 // Clickable bar chart item
 function ClickableBarItem({ 
   data, 
@@ -221,7 +168,7 @@ function ClickableBarItem({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground w-12">NG</span>
-          <Progress value={(data.ng / maxValue) * 100} className="h-2 flex-1 [&>div]:bg-red-500" />
+          <Progress value={(data.ng / maxValue) * 100} className="h-2 flex-1 [&>div]:bg-destructive" />
           <span className="text-xs font-medium w-16 text-right">{data.ng.toLocaleString()}</span>
         </div>
       </div>
@@ -326,9 +273,9 @@ export default function DrillDownDashboard() {
 
   // Pie chart data
   const pieData = [
-    { name: "OK", value: currentStats.ok, color: "#22c55e" },
-    { name: "NG", value: currentStats.ng, color: "#ef4444" },
-    { name: "NTF", value: currentStats.ntf, color: "#f59e0b" },
+    { name: "OK", value: currentStats.ok, color: "var(--success)" },
+    { name: "NG", value: currentStats.ng, color: "var(--destructive)" },
+    { name: "NTF", value: currentStats.ntf, color: "var(--warning)" },
   ].filter(d => d.value > 0);
 
   // Get level title
@@ -389,31 +336,31 @@ export default function DrillDownDashboard() {
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatsCard
-            title={t('dashboard.totalProduction')}
+          <MetricCard
+            label={t('dashboard.totalProduction')}
             value={currentStats.total.toLocaleString()}
-            icon={Activity}
-            color="blue"
+            icon={<Activity className="h-5 w-5" />}
+            tone="info"
           />
-          <StatsCard
-            title={t('dashboard.okProducts')}
+          <MetricCard
+            label={t('dashboard.okProducts')}
             value={currentStats.ok.toLocaleString()}
-            subtitle={`${((currentStats.ok / currentStats.total) * 100 || 0).toFixed(1)}%`}
-            icon={CheckCircle2}
-            color="green"
+            delta={`${((currentStats.ok / currentStats.total) * 100 || 0).toFixed(1)}%`}
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            tone="good"
           />
-          <StatsCard
-            title={t('dashboard.ngProducts')}
+          <MetricCard
+            label={t('dashboard.ngProducts')}
             value={currentStats.ng.toLocaleString()}
-            subtitle={`${((currentStats.ng / currentStats.total) * 100 || 0).toFixed(1)}%`}
-            icon={XCircle}
-            color="red"
+            delta={`${((currentStats.ng / currentStats.total) * 100 || 0).toFixed(1)}%`}
+            icon={<XCircle className="h-5 w-5" />}
+            tone="danger"
           />
-          <StatsCard
-            title="Yield Rate"
+          <MetricCard
+            label={t('dashboard.yieldRate')}
             value={`${currentStats.yieldRate.toFixed(2)}%`}
-            icon={TrendingUp}
-            color={currentStats.yieldRate >= 95 ? "green" : currentStats.yieldRate >= 90 ? "yellow" : "red"}
+            icon={<TrendingUp className="h-5 w-5" />}
+            tone={currentStats.yieldRate >= 95 ? "good" : currentStats.yieldRate >= 90 ? "warning" : "danger"}
           />
         </div>
 
@@ -438,10 +385,12 @@ export default function DrillDownDashboard() {
                     ))}
                   </div>
                 ) : currentStats.data.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <AlertTriangle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>{t('common.noData')}</p>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={AlertTriangle}
+                    title={t('common.noData')}
+                    compact
+                  />
                 ) : (
                   <div className="space-y-3">
                     {currentStats.data.map((item: any) => (
@@ -503,7 +452,8 @@ export default function DrillDownDashboard() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip 
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
                         formatter={(value: number) => value.toLocaleString()}
                       />
                       <Legend />
@@ -557,23 +507,24 @@ export default function DrillDownDashboard() {
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={currentStats.data.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fontSize: 12 }}
+                  <CartesianGrid {...chartGridProps} />
+                  <XAxis
+                    dataKey="name"
+                    tick={chartAxisTick}
                     interval={0}
                     angle={-45}
                     textAnchor="end"
                     height={80}
                   />
-                  <YAxis />
-                  <Tooltip 
+                  <YAxis tick={chartAxisTick} />
+                  <Tooltip
+                    contentStyle={chartTooltipStyle}
                     formatter={(value: number) => value.toLocaleString()}
                   />
                   <Legend />
-                  <Bar dataKey="ok" name="OK" fill="#22c55e" />
-                  <Bar dataKey="ng" name="NG" fill="#ef4444" />
-                  <Bar dataKey="ntf" name="NTF" fill="#f59e0b" />
+                  <Bar dataKey="ok" name="OK" fill="var(--success)" />
+                  <Bar dataKey="ng" name="NG" fill="var(--destructive)" />
+                  <Bar dataKey="ntf" name="NTF" fill="var(--warning)" />
                 </BarChart>
               </ResponsiveContainer>
             )}

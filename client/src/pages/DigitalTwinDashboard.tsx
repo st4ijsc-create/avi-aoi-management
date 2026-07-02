@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/patterns";
 import {
   Boxes,
@@ -29,8 +30,8 @@ import { RelatedViews } from "@/components/RelatedViews";
 function twinDot(color?: string | null) {
   return (
     <span
-      className="inline-block h-3 w-3 rounded-full ring-1 ring-black/10"
-      style={{ backgroundColor: color || "#94a3b8" }}
+      className="inline-block h-3 w-3 rounded-full ring-1 ring-border"
+      style={{ backgroundColor: color || "var(--muted-foreground)" }}
     />
   );
 }
@@ -213,7 +214,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {twin.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
                 ) : twinRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -276,14 +281,20 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {heatmap.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : heatRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                     {heatRows.map((r) => {
                       const intensity = maxNg > 0 ? r.ngCount / maxNg : 0;
-                      const bg = `rgba(239, 68, 68, ${0.12 + intensity * 0.78})`;
+                      // Themed defect-intensity tint (dark-first): destructive token
+                      // mixed into transparent, alpha 12%→90% by NG intensity.
+                      const bg = `color-mix(in srgb, var(--destructive) ${Math.round((0.12 + intensity * 0.78) * 100)}%, transparent)`;
                       return (
                         <div
                           key={r.machineId}
@@ -348,7 +359,14 @@ export default function DigitalTwinDashboard() {
                     {t("digitalTwin.whatIfHint", "Nhấn \"Chạy mô phỏng\" để ước lượng năng suất theo các trạm hiện có.")}
                   </p>
                 ) : whatIf.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                      ))}
+                    </div>
+                    <Skeleton className="h-32 w-full" />
+                  </div>
                 ) : !whatIf.data ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -426,7 +444,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {stationLoad.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : !stationLoad.data || stationLoad.data.cells.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
@@ -468,7 +490,11 @@ export default function DigitalTwinDashboard() {
               </CardHeader>
               <CardContent>
                 {prediction.isLoading ? (
-                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
                 ) : !prediction.data || !prediction.data.available ? (
                   <p className="text-sm text-muted-foreground">
                     {t("digitalTwin.prediction.unavailable", "Chưa đủ dữ liệu để dự báo")}

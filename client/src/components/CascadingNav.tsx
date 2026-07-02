@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NavGroup, NavItem, buildModuleL2 } from "@/lib/navigation";
+import { NavGroup, NavItem, buildModuleL2, isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useIsCoarsePointer } from "@/hooks/useMobile";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -58,7 +58,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // DashboardLayout, so this nav remounts on every navigation; without this the
   // accordion would always reset to collapsed after navigating.
   const moduleForPath = useMemo(
-    () => groups.find(g => g.items.some(i => i.href === currentPath))?.id ?? null,
+    () => groups.find(g => g.items.some(i => isNavItemActive(i.href, currentPath)))?.id ?? null,
     [groups, currentPath],
   );
   // Open the current route's module by default (on mount / remount).
@@ -181,7 +181,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   return (
     <div ref={containerRef} className="flex flex-col gap-0.5 px-2" data-cascading-nav>
       {groups.map(group => {
-        const moduleHasActive = group.items.some(item => item.href === currentPath);
+        const moduleHasActive = group.items.some(item => isNavItemActive(item.href, currentPath));
         const isOpen = group.id === activeModuleId;
         const isActive = isOpen || moduleHasActive;
         const l2 = buildModuleL2(group);
@@ -226,7 +226,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                       >
                         <ItemRow
                           item={entry.item}
-                          isActive={currentPath === entry.item.href}
+                          isActive={isNavItemActive(entry.item.href, currentPath)}
                           onNavigate={handleNavigate}
                           variant="pill"
                         />
@@ -235,7 +235,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                   }
                   // Category → opens the Level-3 floating menu on hover (fine pointer)
                   // or expands its items inline on tap (touch).
-                  const categoryHasActive = entry.items.some(i => i.href === currentPath);
+                  const categoryHasActive = entry.items.some(i => isNavItemActive(i.href, currentPath));
                   const isCatOpen = hoverCategoryKey === entry.key;
                   return (
                     <div key={entry.key}>
@@ -278,7 +278,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                             <ItemRow
                               key={item.href}
                               item={item}
-                              isActive={currentPath === item.href}
+                              isActive={isNavItemActive(item.href, currentPath)}
                               onNavigate={handleNavigate}
                               variant="pill"
                             />
@@ -397,7 +397,7 @@ function Level3Panel({
           <ItemRow
             key={item.href}
             item={item}
-            isActive={currentPath === item.href}
+            isActive={isNavItemActive(item.href, currentPath)}
             onNavigate={onNavigate}
           />
         ))}
@@ -447,7 +447,7 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
   return (
     <div className="flex flex-col items-center gap-1 px-1" data-cascading-nav>
       {groups.map(group => {
-        const active = group.items.some(i => i.href === currentPath);
+        const active = group.items.some(i => isNavItemActive(i.href, currentPath));
         return (
           <button
             key={group.id}
@@ -518,7 +518,7 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
             <ItemRow
               key={entry.item.href}
               item={entry.item}
-              isActive={currentPath === entry.item.href}
+              isActive={isNavItemActive(entry.item.href, currentPath)}
               onNavigate={onNavigate}
             />
           ) : (
@@ -530,7 +530,7 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
                 <ItemRow
                   key={item.href}
                   item={item}
-                  isActive={currentPath === item.href}
+                  isActive={isNavItemActive(item.href, currentPath)}
                   onNavigate={onNavigate}
                 />
               ))}
@@ -617,7 +617,7 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
     return (
       <div className="space-y-0.5 px-2">
         {groups.map(g => {
-          const isActive = g.items.some(item => item.href === currentPath);
+          const isActive = g.items.some(item => isNavItemActive(item.href, currentPath));
           return (
             <button
               key={g.id}
@@ -666,7 +666,7 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
           <ItemRow
             key={item.href}
             item={item}
-            isActive={currentPath === item.href}
+            isActive={isNavItemActive(item.href, currentPath)}
             onNavigate={onNavigate}
           />
         ))}
@@ -695,12 +695,12 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
             <ItemRow
               key={entry.item.href}
               item={entry.item}
-              isActive={currentPath === entry.item.href}
+              isActive={isNavItemActive(entry.item.href, currentPath)}
               onNavigate={onNavigate}
             />
           );
         }
-        const categoryHasActive = entry.items.some(i => i.href === currentPath);
+        const categoryHasActive = entry.items.some(i => isNavItemActive(i.href, currentPath));
         return (
           <button
             key={entry.key}

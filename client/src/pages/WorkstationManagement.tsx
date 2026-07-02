@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
@@ -229,7 +230,7 @@ export default function WorkstationManagement() {
 
   return (
     <DashboardLayout navItems={navItems}>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header — DS PageHeader (shared pattern) */}
         <PageHeader
           title={
@@ -250,42 +251,26 @@ export default function WorkstationManagement() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('machines.totalWorkstations')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                {t('machines.activeStatus')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats.active}</div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            label={t('machines.totalWorkstations')}
+            value={stats.total}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            label={t('machines.activeStatus')}
+            value={stats.active}
+            tone="success"
+          />
+          <MetricCard
+            icon={<XCircle className="h-5 w-5" />}
+            label={t('machines.pausedStatus')}
+            value={stats.inactive}
+            tone="danger"
+          />
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <XCircle className="w-4 h-4 text-red-500" />
-                {t('machines.pausedStatus')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats.inactive}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-blue-500" />
+                <BarChart3 className="w-4 h-4 text-info" />
                 {t('machines.byType')}
               </CardTitle>
             </CardHeader>
@@ -436,7 +421,7 @@ export default function WorkstationManagement() {
                               </PermissionGate>
                               <PermissionGate module="settings_factory" action="canDelete">
                                 <DropdownMenuItem
-                                  className="text-red-600"
+                                  className="text-destructive"
                                   onClick={() => setDeleteConfirmId(ws.id)}
                                 >
                                   <Trash2 className="w-4 h-4 mr-2" />
@@ -613,33 +598,31 @@ export default function WorkstationManagement() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-red-600">
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="w-5 h-5" />
                 {t('machines.confirmDelete')}
-              </DialogTitle>
-              <DialogDescription>
+              </AlertDialogTitle>
+              <AlertDialogDescription>
                 {t('machines.deleteConfirmMessage')}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
-                {t('common.cancel')}
-              </Button>
-              <Button 
-                variant="destructive" 
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
                 onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}
                 disabled={deleteMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 {t('machines.delete')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </DashboardLayout>
   );
 }

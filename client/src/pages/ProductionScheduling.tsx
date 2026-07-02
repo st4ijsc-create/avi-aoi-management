@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
+import { StatusBadge as PatternStatusBadge, type BadgeVariant, PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -47,8 +47,8 @@ import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 type AlgorithmType = "fifo" | "priority" | "edf";
 
 const CONFLICT_SEVERITY_CONFIG = {
-  warning: { color: "bg-yellow-500", textColor: "text-yellow-500", icon: AlertTriangle },
-  error: { color: "bg-red-500", textColor: "text-red-500", icon: AlertTriangle },
+  warning: { color: "bg-warning", textColor: "text-warning", icon: AlertTriangle },
+  error: { color: "bg-destructive", textColor: "text-destructive", icon: AlertTriangle },
 };
 
 export default function ProductionScheduling() {
@@ -218,61 +218,28 @@ export default function ProductionScheduling() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-3 sm:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-                <CalendarDays className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
-                {t("scheduling.title", "Lập lịch sản xuất")}
-              </h1>
-              <ViewOnlyBadge module="production_orders" />
-            </div>
-            <p className="text-muted-foreground mt-1">
-              {t("scheduling.description", "Tối ưu hóa lịch sản xuất với thuật toán Priority/EDF/FIFO")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageHeader
+          icon={<CalendarDays className="h-6 w-6" />}
+          title={t("scheduling.title", "Lập lịch sản xuất")}
+          description={t("scheduling.description", "Tối ưu hóa lịch sản xuất với thuật toán Priority/EDF/FIFO")}
+          badge={<ViewOnlyBadge module="production_orders" />}
+          actions={
             <Button onClick={() => refetchOrders()} variant="outline" size="sm">
               <RefreshCw className="h-4 w-4 mr-2" />
               {t("common.refresh", "Làm mới")}
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <div className="text-sm text-muted-foreground">{t("scheduling.totalOrders", "Tổng đơn")}</div>
-              <div className="text-2xl font-bold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <div className="text-sm text-muted-foreground">{t("scheduling.inProgress", "Đang SX")}</div>
-              <div className="text-2xl font-bold text-blue-500">{stats.inProgress}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <div className="text-sm text-muted-foreground">{t("scheduling.planned", "Lên kế hoạch")}</div>
-              <div className="text-2xl font-bold text-yellow-500">{stats.planned}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <div className="text-sm text-muted-foreground">{t("scheduling.completed", "Hoàn thành")}</div>
-              <div className="text-2xl font-bold text-green-500">{stats.completed}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <div className="text-sm text-muted-foreground">{t("scheduling.overdue", "Trễ hạn")}</div>
-              <div className="text-2xl font-bold text-red-500">{stats.overdue}</div>
-            </CardContent>
-          </Card>
+          <MetricCard label={t("scheduling.totalOrders", "Tổng đơn")} value={stats.total} />
+          <MetricCard label={t("scheduling.inProgress", "Đang SX")} value={stats.inProgress} tone="info" />
+          <MetricCard label={t("scheduling.planned", "Lên kế hoạch")} value={stats.planned} tone="warning" />
+          <MetricCard label={t("scheduling.completed", "Hoàn thành")} value={stats.completed} tone="success" />
+          <MetricCard label={t("scheduling.overdue", "Trễ hạn")} value={stats.overdue} tone="danger" />
         </div>
 
         {/* Algorithm Selection + Optimize */}
@@ -371,7 +338,7 @@ export default function ProductionScheduling() {
         {/* Optimization Results */}
         {/* WS-4: What-if simulation result */}
         {whatIfResult && (
-          <Card className="border-amber-500">
+          <Card className="border-warning">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">
                 {t("scheduling.whatIfResult", "Kết quả What-if")} — {t("scheduling.capacityReduced", "giảm công suất {{pct}}%", { pct: whatIfResult.capacityReductionPct })}
@@ -389,7 +356,7 @@ export default function ProductionScheduling() {
                   {whatIfResult.lateOrders.map((o: any) => (
                     <div key={o.orderId} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
                       <span>{o.orderCode}</span>
-                      <span className="text-red-500">{t("scheduling.hoursLate", "trễ {{h}}h", { h: o.hoursLate })}</span>
+                      <span className="text-destructive">{t("scheduling.hoursLate", "trễ {{h}}h", { h: o.hoursLate })}</span>
                     </div>
                   ))}
                 </div>
@@ -433,7 +400,7 @@ export default function ProductionScheduling() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-success" />
                     {t("scheduling.suggestions", "Gợi ý sắp xếp")} ({optimizeResult.suggestions.length})
                   </CardTitle>
                 </CardHeader>
@@ -694,7 +661,7 @@ export default function ProductionScheduling() {
             <ApsSchedulingPanel factoryId={1} />
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

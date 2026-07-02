@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -116,10 +116,10 @@ export default function AIQualityGatePage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
-          icon={<ShieldCheck className="h-6 w-6" />}
+          icon={<ShieldCheck className="h-6 w-6 text-primary" />}
           title={t("qg.title", "AI Quality Gate")}
           description={t("qg.subtitle", "Quản lý cổng chất lượng tự động - Tự động phân loại OK/NG/Cần đánh giá")}
           actions={
@@ -139,42 +139,30 @@ export default function AIQualityGatePage() {
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-success" />
-                  <span className="text-sm text-muted-foreground">{t("qg.autoOk", "Auto OK")}</span>
-                </div>
-                <p className="text-2xl font-bold mt-1">{stats.autoOk ?? 0}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <XCircle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm text-muted-foreground">{t("qg.autoNg", "Auto NG")}</span>
-                </div>
-                <p className="text-2xl font-bold mt-1">{stats.autoNg ?? 0}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  <span className="text-sm text-muted-foreground">{t("qg.needsReview", "Cần đánh giá")}</span>
-                </div>
-                <p className="text-2xl font-bold mt-1">{stats.needsReview ?? 0}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-info" />
-                  <span className="text-sm text-muted-foreground">{t("qg.total", "Tổng cộng")}</span>
-                </div>
-                <p className="text-2xl font-bold mt-1">{stats.total ?? 0}</p>
-              </CardContent>
-            </Card>
+            <MetricCard
+              icon={<CheckCircle className="h-4 w-4" />}
+              label={t("qg.autoOk", "Auto OK")}
+              value={stats.autoOk ?? 0}
+              tone="success"
+            />
+            <MetricCard
+              icon={<XCircle className="h-4 w-4" />}
+              label={t("qg.autoNg", "Auto NG")}
+              value={stats.autoNg ?? 0}
+              tone="error"
+            />
+            <MetricCard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label={t("qg.needsReview", "Cần đánh giá")}
+              value={stats.needsReview ?? 0}
+              tone="warning"
+            />
+            <MetricCard
+              icon={<BarChart3 className="h-4 w-4" />}
+              label={t("qg.total", "Tổng cộng")}
+              value={stats.total ?? 0}
+              tone="info"
+            />
           </div>
         )}
 
@@ -298,7 +286,7 @@ export default function AIQualityGatePage() {
                         <TableRow key={r.id}>
                           <TableCell className="font-mono text-xs">#{r.id}</TableCell>
                           <TableCell>
-                            <Badge className={decisionColors[r.decision] || "bg-gray-500"}>
+                            <Badge className={decisionColors[r.decision] || "bg-muted"}>
                               {r.decision}
                             </Badge>
                           </TableCell>
@@ -506,7 +494,7 @@ export default function AIQualityGatePage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

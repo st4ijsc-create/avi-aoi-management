@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -162,7 +164,7 @@ function SortableProcessItem({
           variant="ghost"
           size="icon"
           onClick={() => onDelete(process.id)}
-          className="text-red-500 hover:text-red-600"
+          className="text-destructive hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -179,6 +181,7 @@ export function ProcessManagementContent() {
   const [selectedProcess, setSelectedProcess] = useState<number | null>(null);
   const [formData, setFormData] = useState<ProcessFormData>(defaultFormData);
   const [filterType, setFilterType] = useState<string>("all");
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -293,8 +296,13 @@ export function ProcessManagementContent() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm(t('process.deleteConfirm'))) {
-      deleteMutation.mutate({ id });
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteId != null) {
+      deleteMutation.mutate({ id: deleteId });
+      setDeleteId(null);
     }
   };
 
@@ -318,49 +326,45 @@ export function ProcessManagementContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Workflow className="h-6 w-6" />
-            {t('process.title')}
-            <ViewOnlyBadge module="settings_factory" />
-          </h1>
-          <p className="text-muted-foreground">
-            {t('process.subtitle')}
-          </p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <PermissionGate module="settings_factory" action="canCreate">
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('process.addProcess')}
-            </Button>
-          </DialogTrigger>
-          </PermissionGate>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{t('process.createTitle')}</DialogTitle>
-              <DialogDescription>
-                {t('process.createDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <ProcessForm 
-              formData={formData} 
-              setFormData={setFormData} 
-            />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                {t('common.cancel')}
+      {/* Header — DS PageHeader (shared pattern) */}
+      <PageHeader
+        icon={<Workflow className="h-6 w-6" />}
+        title={t('process.title')}
+        description={t('process.subtitle')}
+        badge={<ViewOnlyBadge module="settings_factory" />}
+        actions={
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <PermissionGate module="settings_factory" action="canCreate">
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                {t('process.addProcess')}
               </Button>
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? t('process.creating') : t('process.create')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </DialogTrigger>
+            </PermissionGate>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('process.createTitle')}</DialogTitle>
+                <DialogDescription>
+                  {t('process.createDesc')}
+                </DialogDescription>
+              </DialogHeader>
+              <ProcessForm
+                formData={formData}
+                setFormData={setFormData}
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button onClick={handleCreate} disabled={createMutation.isPending}>
+                  {createMutation.isPending ? t('process.creating') : t('process.create')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {/* Filter */}
       <Card>
@@ -424,11 +428,11 @@ export function ProcessManagementContent() {
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <Factory className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>{t('process.noProcesses')}</p>
-              <p className="text-sm">{t('process.noProcessesDesc')}</p>
-            </div>
+            <EmptyState
+              icon={Factory}
+              title={t('process.noProcesses')}
+              description={t('process.noProcessesDesc')}
+            />
           )}
         </CardContent>
       </Card>
@@ -456,6 +460,25 @@ export function ProcessManagementContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteId != null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('process.deleteTitle', 'Delete process')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('process.deleteConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -464,7 +487,9 @@ export default function ProcessManagement() {
   const { t } = useTranslation();
   return (
     <DashboardLayout title={t('process.title')}>
-      <ProcessManagementContent />
+      <PageContainer>
+        <ProcessManagementContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }

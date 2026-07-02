@@ -15,12 +15,23 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { StatusBadge, MetricCard, SectionCard } from "@/components/patterns";
+import {
+  StatusBadge,
+  MetricCard,
+  SectionCard,
+  PageHeader,
+  PageContainer,
+  chartColor,
+  chartTooltipStyle,
+  chartTooltipLabelStyle,
+  chartGridProps,
+  chartAxisProps,
+} from "@/components/patterns";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -676,99 +687,98 @@ export default function FederationDashboard() {
   if (rollupsQ.isLoading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <span className="ml-2 text-muted-foreground">
-            {t("federation.loading", "Loading federation roll-up…")}
-          </span>
-        </div>
+        <PageContainer>
+          <Skeleton className="h-10 w-72" />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Globe className="h-6 w-6 text-primary" />
-              {t("federation.dashboard", "Federation Dashboard")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t(
-                "federation.dashboardDescription",
-                "Read-only cross-site roll-up. The core aggregates each site's KPIs — it never controls a site.",
+      <PageContainer>
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<Globe className="h-6 w-6" />}
+          title={t("federation.dashboard", "Federation Dashboard")}
+          description={t(
+            "federation.dashboardDescription",
+            "Read-only cross-site roll-up. The core aggregates each site's KPIs — it never controls a site.",
+          )}
+          actions={
+            <>
+              {/* U5 — honest LIVE (aggregator emitting site:update) vs POLLING (30s) */}
+              {hasLive ? (
+                <Badge
+                  className="border-transparent bg-success/15 text-success"
+                  title={t(
+                    "federation.liveHint",
+                    "Aggregator is pushing site:update — site cards update in real time.",
+                  )}
+                >
+                  <Radio className="h-3 w-3" />
+                  {t("federation.live", "LIVE")}
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className="text-muted-foreground"
+                  title={
+                    liveConnected
+                      ? t(
+                          "federation.pollingConnectedHint",
+                          "Socket connected; no aggregator push yet — polling every 30s.",
+                        )
+                      : t("federation.pollingHint", "Live layer off — polling every 30s.")
+                  }
+                >
+                  <Clock className="h-3 w-3" />
+                  {t("federation.polling", "POLLING")}
+                </Badge>
               )}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* U5 — honest LIVE (aggregator emitting site:update) vs POLLING (30s) */}
-            {hasLive ? (
-              <Badge
-                className="border-transparent bg-success/15 text-success"
-                title={t(
-                  "federation.liveHint",
-                  "Aggregator is pushing site:update — site cards update in real time.",
-                )}
-              >
-                <Radio className="h-3 w-3" />
-                {t("federation.live", "LIVE")}
-              </Badge>
-            ) : (
-              <Badge
-                variant="secondary"
-                className="text-muted-foreground"
-                title={
-                  liveConnected
-                    ? t(
-                        "federation.pollingConnectedHint",
-                        "Socket connected; no aggregator push yet — polling every 30s.",
-                      )
-                    : t("federation.pollingHint", "Live layer off — polling every 30s.")
-                }
-              >
-                <Clock className="h-3 w-3" />
-                {t("federation.polling", "POLLING")}
-              </Badge>
-            )}
-            {corporateOptions.length > 0 && (
-              <Select value={corporateFilter} onValueChange={setCorporateFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <Network className="h-4 w-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">
-                    {t("federation.allCorporates", "All corporates")}
-                  </SelectItem>
-                  {corporateOptions.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+              {corporateOptions.length > 0 && (
+                <Select value={corporateFilter} onValueChange={setCorporateFilter}>
+                  <SelectTrigger className="w-[200px]">
+                    <Network className="h-4 w-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">
+                      {t("federation.allCorporates", "All corporates")}
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                void rollupsQ.refetch();
-                void summaryQ.refetch();
-                void statusQ.refetch();
-                void syncLogQ.refetch();
-                void alertRollupQ.refetch();
-                void categoryRollupQ.refetch();
-                if (drillSiteCode) void siteDetailQ.refetch();
-              }}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t("federation.refresh", "Refresh")}
-            </Button>
-          </div>
-        </div>
+                    {corporateOptions.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void rollupsQ.refetch();
+                  void summaryQ.refetch();
+                  void statusQ.refetch();
+                  void syncLogQ.refetch();
+                  void alertRollupQ.refetch();
+                  void categoryRollupQ.refetch();
+                  if (drillSiteCode) void siteDetailQ.refetch();
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t("federation.refresh", "Refresh")}
+              </Button>
+            </>
+          }
+        />
 
         {/* Empty state — no sites enrolled */}
         {rollups.length === 0 && (
@@ -786,72 +796,47 @@ export default function FederationDashboard() {
 
         {/* Aggregate header cards — only from real rollups */}
         {rollups.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.totalSites", "Sites")}
-                  </span>
-                  <span className="text-2xl font-bold">{summary?.sitesTotal ?? rollups.length}</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card bg-success/10">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.reporting", "Reporting")}
-                  </span>
-                  <span className="text-2xl font-bold text-success">{reporting}</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card bg-warning/10">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.stale", "Stale")}
-                  </span>
-                  <span className="text-2xl font-bold text-warning">{staleCount}</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.down", "Down")}
-                  </span>
-                  <span className="text-2xl font-bold text-muted-foreground">{downCount}</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card bg-primary/10">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.weightedYield", "Yield (units-weighted)")}
-                  </span>
-                  <span className="text-2xl font-bold text-primary">
-                    {fmt(summary?.overallYieldRate ?? null, "%")}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass-card">
-              <CardContent className="p-4">
-                <div className="flex flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    {t("federation.totalThroughput", "Total throughput")}
-                  </span>
-                  <span className="text-2xl font-bold">
-                    {fmtInt(summary?.totals.totalInspections ?? null)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <SectionCard
+            icon={<Globe className="h-4 w-4 text-primary" />}
+            title={t("federation.fleetOverview", "Fleet overview")}
+          >
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+              <MetricCard
+                icon={<Network className="h-4 w-4" />}
+                label={t("federation.totalSites", "Sites")}
+                value={summary?.sitesTotal ?? rollups.length}
+              />
+              <MetricCard
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label={t("federation.reporting", "Reporting")}
+                value={reporting}
+                tone="success"
+              />
+              <MetricCard
+                icon={<Clock className="h-4 w-4" />}
+                label={t("federation.stale", "Stale")}
+                value={staleCount}
+                tone={staleCount > 0 ? "warning" : "default"}
+              />
+              <MetricCard
+                icon={<CircleSlash className="h-4 w-4" />}
+                label={t("federation.down", "Down")}
+                value={downCount}
+                tone={downCount > 0 ? "error" : "default"}
+              />
+              <MetricCard
+                icon={<TrendingUp className="h-4 w-4" />}
+                label={t("federation.weightedYield", "Yield (units-weighted)")}
+                value={fmt(summary?.overallYieldRate ?? null, "%")}
+                tone="info"
+              />
+              <MetricCard
+                icon={<Activity className="h-4 w-4" />}
+                label={t("federation.totalThroughput", "Total throughput")}
+                value={fmtInt(summary?.totals.totalInspections ?? null)}
+              />
+            </div>
+          </SectionCard>
         )}
 
         {/* Honest ≥2-sites note (no fabricated ranking with 1 site) */}
@@ -873,14 +858,10 @@ export default function FederationDashboard() {
 
         {/* Per-site KPI grid */}
         {rollups.length > 0 && (
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Network className="h-4 w-4 text-primary" />
-                {t("federation.siteGrid", "Per-site KPIs")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <SectionCard
+            icon={<Network className="h-4 w-4 text-primary" />}
+            title={t("federation.siteGrid", "Per-site KPIs")}
+          >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1007,8 +988,7 @@ export default function FederationDashboard() {
                   })}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
+          </SectionCard>
         )}
 
         {/* U5 — Cross-site alert roll-up */}
@@ -1076,31 +1056,27 @@ export default function FederationDashboard() {
         {rollups.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Trend (siteKpiHistory) */}
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    {t("federation.kpiTrend", "Site KPI trend (daily)")}
-                  </CardTitle>
-                  <Select
-                    value={activeTrendSite != null ? String(activeTrendSite) : ""}
-                    onValueChange={(v) => setSelectedTrendSite(Number(v))}
-                  >
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder={t("federation.selectSite", "Select site")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rollups.map((r) => (
-                        <SelectItem key={r.site.id} value={String(r.site.id)}>
-                          {r.site.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardHeader>
-              <CardContent>
+            <SectionCard
+              icon={<TrendingUp className="h-4 w-4 text-primary" />}
+              title={t("federation.kpiTrend", "Site KPI trend (daily)")}
+              action={
+                <Select
+                  value={activeTrendSite != null ? String(activeTrendSite) : ""}
+                  onValueChange={(v) => setSelectedTrendSite(Number(v))}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder={t("federation.selectSite", "Select site")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rollups.map((r) => (
+                      <SelectItem key={r.site.id} value={String(r.site.id)}>
+                        {r.site.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+            >
                 {historyQ.isLoading ? (
                   <div className="flex items-center justify-center h-[260px] text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin mr-2" />
@@ -1120,22 +1096,20 @@ export default function FederationDashboard() {
                           oee: h.oee,
                         }))}
                       >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="day" className="text-xs" />
-                        <YAxis domain={[0, 100]} className="text-xs" />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="day" {...chartAxisProps} />
+                        <YAxis domain={[0, 100]} {...chartAxisProps} />
                         <RechartsTooltip
-                          contentStyle={{
-                            backgroundColor: "hsl(var(--card))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px",
-                          }}
+                          contentStyle={chartTooltipStyle}
+                          labelStyle={chartTooltipLabelStyle}
+                          itemStyle={chartTooltipLabelStyle}
                         />
                         <Legend />
                         <Line
                           type="monotone"
                           dataKey="yield"
                           name={t("federation.yield", "Yield")}
-                          stroke="#10b981"
+                          stroke={chartColor(0)}
                           strokeWidth={2}
                           connectNulls
                           dot={false}
@@ -1144,7 +1118,7 @@ export default function FederationDashboard() {
                           type="monotone"
                           dataKey="oee"
                           name={t("federation.oee", "OEE")}
-                          stroke="#3b82f6"
+                          stroke={chartColor(1)}
                           strokeWidth={2}
                           connectNulls
                           dot={false}
@@ -1153,18 +1127,14 @@ export default function FederationDashboard() {
                     </ResponsiveContainer>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </SectionCard>
 
             {/* Sync / health panel */}
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-primary" />
-                  {t("federation.syncHealth", "Aggregator sync & health")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <SectionCard
+              icon={<Activity className="h-4 w-4 text-primary" />}
+              title={t("federation.syncHealth", "Aggregator sync & health")}
+              contentClassName="space-y-3"
+            >
                 {/* Honest scheduler heartbeat */}
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   {status?.isRunning ? (
@@ -1257,11 +1227,10 @@ export default function FederationDashboard() {
                     </TableBody>
                   </Table>
                 </div>
-              </CardContent>
-            </Card>
+            </SectionCard>
           </div>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

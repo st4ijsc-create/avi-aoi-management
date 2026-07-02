@@ -2,6 +2,9 @@ import { useState, useMemo, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, chartGridProps, chartAxisProps, chartTooltipStyle, chartTooltipLabelStyle } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
+import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,12 +60,14 @@ import {
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
 
+// Result colours map to semantic tokens (success/destructive/warning) so charts
+// follow the theme; series colours use the DS chart palette.
 const COLORS = {
-  ok: "#10b981",
-  ng: "#ef4444",
-  ntf: "#f59e0b",
-  primary: "#06b6d4",
-  secondary: "#8b5cf6",
+  ok: "var(--success)",
+  ng: "var(--destructive)",
+  ntf: "var(--warning)",
+  primary: "var(--chart-1)",
+  secondary: "var(--chart-4)",
 };
 
 type TimeRange = "7d" | "30d" | "90d" | "365d";
@@ -180,21 +185,12 @@ export default function Reports() {
       });
   }, [dailyStats]);
 
-  // Machine comparison data
-  const machineComparisonData = useMemo(() => {
-    if (!machines || !dailyStats) return [];
-
-    // Group by machine (simplified - in real app would query per machine)
-    const machineStats = machines.map((machine: { id: number; name: string; code: string }) => ({
-      name: machine.name,
-      code: machine.code,
-      total: Math.floor(Math.random() * 1000) + 500, // Placeholder
-      yieldRate: 85 + Math.random() * 15, // Placeholder
-      ngRate: 2 + Math.random() * 8, // Placeholder
-    }));
-
-    return machineStats.sort((a, b) => b.yieldRate - a.yieldRate);
-  }, [machines, dailyStats]);
+  // Machine comparison data — requires a per-machine stats query that is not yet
+  // wired here. Ship an explicit empty set (honest) rather than synthetic
+  // Math.random() placeholders so the UI never shows fabricated numbers.
+  const machineComparisonData = useMemo<
+    { name: string; code: string; total: number; yieldRate: number; ngRate: number }[]
+  >(() => [], []);
 
   // Result distribution data
   const resultDistributionData = useMemo(() => {
@@ -205,18 +201,11 @@ export default function Reports() {
     ];
   }, [aggregatedStats]);
 
-  // Factory comparison data
-  const factoryComparisonData = useMemo(() => {
-    if (!factories) return [];
-
-    return factories.map((factory: { id: number; name: string; code: string }) => ({
-      name: factory.name,
-      code: factory.code,
-      total: Math.floor(Math.random() * 5000) + 2000, // Placeholder
-      yieldRate: 88 + Math.random() * 10, // Placeholder
-      machines: machines?.filter((m: { stationId: number }) => m.stationId > 0).length || 0,
-    }));
-  }, [factories, machines]);
+  // Factory comparison data — same as above: no per-factory yield query is wired
+  // here yet, so return an explicit empty set instead of synthetic placeholders.
+  const factoryComparisonData = useMemo<
+    { name: string; code: string; total: number; yieldRate: number; machines: number }[]
+  >(() => [], []);
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -442,8 +431,14 @@ export default function Reports() {
   if (authLoading) {
     return (
       <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="space-y-4">
+          <Skeleton className="h-9 w-64" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full" />
+            ))}
+          </div>
+          <Skeleton className="h-72 w-full" />
         </div>
       </DashboardLayout>
     );
@@ -451,8 +446,13 @@ export default function Reports() {
 
   return (
     <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
+      <PageHeader
+        icon={<BarChart3 className="h-6 w-6" />}
+        title={t('reports.title')}
+        description={t('reports.subtitle', 'Quality yield, defect trends and cost-of-poor-quality analytics')}
+      />
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6 mt-4">
         <div className="flex items-center gap-2">
           <Factory className="h-4 w-4 text-muted-foreground" />
           <Select value={selectedFactory} onValueChange={setSelectedFactory}>
@@ -612,7 +612,7 @@ export default function Reports() {
           <TabsTrigger value="trend">{t('reports.tabTrend')}</TabsTrigger>
           <TabsTrigger value="machines">{t('reports.tabByMachine')}</TabsTrigger>
           <TabsTrigger value="factories">{t('reports.tabByFactory')}</TabsTrigger>
-          <TabsTrigger value="quality-cost">Chi phí chất lượng</TabsTrigger>
+          <TabsTrigger value="quality-cost">{t('reports.tabQualityCost', 'Chi phí chất lượng')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executive" className="space-y-4">
@@ -688,6 +688,9 @@ export default function Reports() {
               <CardDescription>{t('reports.machinePerformanceDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -724,6 +727,7 @@ export default function Reports() {
                   })}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
 
@@ -772,20 +776,20 @@ export default function Reports() {
             {/* Yield Rate Trend */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Xu hướng Yield Rate</CardTitle>
-                <CardDescription>Biểu đồ Yield Rate theo thời gian</CardDescription>
+                <CardTitle className="text-lg">{t('reports.yieldTrendTitle', 'Xu hướng Yield Rate')}</CardTitle>
+                <CardDescription>{t('reports.yieldTrendDesc', 'Biểu đồ Yield Rate theo thời gian')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={yieldTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                      <YAxis yAxisId="left" stroke="#9ca3af" fontSize={12} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" fontSize={12} domain={[0, 100]} />
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                      <YAxis yAxisId="left" {...chartAxisProps} fontSize={12} />
+                      <YAxis yAxisId="right" orientation="right" {...chartAxisProps} fontSize={12} domain={[0, 100]} />
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                        labelStyle={{ color: "#f3f4f6" }}
+                        contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
                       />
                       <Legend />
                       <Bar yAxisId="left" dataKey="total" name={t('reports.totalProducts')} fill={COLORS.primary} opacity={0.5} />
@@ -829,7 +833,8 @@ export default function Reports() {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                        contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
                       />
                       <Legend />
                     </PieChart>
@@ -849,12 +854,12 @@ export default function Reports() {
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={yieldTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                    <YAxis stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                    <YAxis {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Bar dataKey="ok" name="OK" stackId="a" fill={COLORS.ok} />
@@ -877,12 +882,12 @@ export default function Reports() {
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={yieldTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                    <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="date" {...chartAxisProps} fontSize={12} />
+                    <YAxis domain={[0, 100]} {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Area
@@ -899,7 +904,7 @@ export default function Reports() {
                       type="monotone"
                       dataKey={() => 95}
                       name={t('reports.target95')}
-                      stroke="#f59e0b"
+                      stroke={COLORS.ntf}
                       strokeDasharray="5 5"
                       dot={false}
                     />
@@ -954,15 +959,18 @@ export default function Reports() {
               <CardDescription>{t('reports.machineComparisonDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={machineComparisonData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis type="number" domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
-                    <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={12} width={120} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis type="number" domain={[0, 100]} {...chartAxisProps} fontSize={12} />
+                    <YAxis type="category" dataKey="name" {...chartAxisProps} fontSize={12} width={120} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                       formatter={(value: number) => [`${value.toFixed(2)}%`, "Yield Rate"]}
                     />
                     <Bar dataKey="yieldRate" name="Yield Rate" fill={COLORS.primary}>
@@ -976,6 +984,7 @@ export default function Reports() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -985,6 +994,9 @@ export default function Reports() {
               <CardTitle className="text-lg">{t('reports.machineDetail')}</CardTitle>
             </CardHeader>
             <CardContent>
+              {machineComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1021,6 +1033,7 @@ export default function Reports() {
                   ))}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1032,15 +1045,18 @@ export default function Reports() {
               <CardDescription>{t('reports.factoryComparisonDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
+              {factoryComparisonData.length === 0 ? (
+                <EmptyState variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
+              ) : (
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={factoryComparisonData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                    <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="name" {...chartAxisProps} fontSize={12} />
+                    <YAxis domain={[0, 100]} {...chartAxisProps} fontSize={12} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#f3f4f6" }}
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartTooltipLabelStyle}
                     />
                     <Legend />
                     <Bar dataKey="yieldRate" name="Yield Rate (%)" fill={COLORS.primary}>
@@ -1054,6 +1070,7 @@ export default function Reports() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1094,14 +1111,14 @@ export default function Reports() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Target className="h-5 w-5" />
-                Cấu hình chi phí tái chế
+                {t('reports.reworkCostConfig', 'Cấu hình chi phí tái chế')}
               </CardTitle>
-              <CardDescription>Thiết lập chi phí rework cho từng loại lỗi để tính COPQ</CardDescription>
+              <CardDescription>{t('reports.reworkCostConfigDesc', 'Thiết lập chi phí rework cho từng loại lỗi để tính COPQ')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Chi phí rework / NG (VNĐ)</label>
+                  <label className="text-sm font-medium">{t('reports.reworkCostNg', 'Chi phí rework / NG (VNĐ)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1115,7 +1132,7 @@ export default function Reports() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Chi phí rework / NTF (VNĐ)</label>
+                  <label className="text-sm font-medium">{t('reports.reworkCostNtf', 'Chi phí rework / NTF (VNĐ)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1137,9 +1154,9 @@ export default function Reports() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Xu hướng COPQ theo tuần
+                {t('reports.copqTrendTitle', 'Xu hướng COPQ theo tuần')}
               </CardTitle>
-              <CardDescription>Chi phí chất lượng kém (Cost of Poor Quality) = NG × đơn giá NG + NTF × đơn giá NTF</CardDescription>
+              <CardDescription>{t('reports.copqTrendDesc', 'Chi phí chất lượng kém (Cost of Poor Quality) = NG × đơn giá NG + NTF × đơn giá NTF')}</CardDescription>
             </CardHeader>
             <CardContent>
               {weeklyCOPQ && (weeklyCOPQ as any[]).length > 0 ? (() => {
@@ -1168,19 +1185,19 @@ export default function Reports() {
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                       <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
-                        <div className="text-sm text-destructive">Tổng COPQ</div>
+                        <div className="text-sm text-destructive">{t('reports.copqTotal', 'Tổng COPQ')}</div>
                         <div className="text-xl font-bold text-destructive">{totalCOPQ.toLocaleString()} đ</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800">
-                        <div className="text-sm text-orange-600 dark:text-orange-400">Chi phí NG</div>
-                        <div className="text-xl font-bold text-orange-700 dark:text-orange-300">{(totalNG * reworkCostNG).toLocaleString()} đ</div>
+                      <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                        <div className="text-sm text-destructive">{t('reports.copqNgCost', 'Chi phí NG')}</div>
+                        <div className="text-xl font-bold text-destructive">{(totalNG * reworkCostNG).toLocaleString()} đ</div>
                       </div>
                       <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
-                        <div className="text-sm text-warning">Chi phí NTF</div>
+                        <div className="text-sm text-warning">{t('reports.copqNtfCost', 'Chi phí NTF')}</div>
                         <div className="text-xl font-bold text-warning">{(totalNTF * reworkCostNTF).toLocaleString()} đ</div>
                       </div>
                       <div className="p-4 rounded-lg bg-info/10 border border-info/20">
-                        <div className="text-sm text-info">Tổng sản phẩm lỗi</div>
+                        <div className="text-sm text-info">{t('reports.copqDefectTotal', 'Tổng sản phẩm lỗi')}</div>
                         <div className="text-xl font-bold text-info">{(totalNG + totalNTF).toLocaleString()}</div>
                       </div>
                     </div>
@@ -1188,11 +1205,13 @@ export default function Reports() {
                     {/* Chart */}
                     <ResponsiveContainer width="100%" height={400}>
                       <ComposedChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} unit="%" />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="week" {...chartAxisProps} />
+                        <YAxis yAxisId="left" {...chartAxisProps} />
+                        <YAxis yAxisId="right" orientation="right" {...chartAxisProps} unit="%" />
                         <Tooltip
+                          contentStyle={chartTooltipStyle}
+                          labelStyle={chartTooltipLabelStyle}
                           formatter={(value: any, name: string) => {
                             if (name === 'copqNG') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NG)'];
                             if (name === 'copqNTF') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NTF)'];
@@ -1211,14 +1230,14 @@ export default function Reports() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Tuần</TableHead>
-                          <TableHead className="text-right">Tổng SP</TableHead>
+                          <TableHead>{t('reports.week', 'Tuần')}</TableHead>
+                          <TableHead className="text-right">{t('reports.totalProductsShort', 'Tổng SP')}</TableHead>
                           <TableHead className="text-right">NG</TableHead>
                           <TableHead className="text-right">NTF</TableHead>
                           <TableHead className="text-right">COPQ (NG)</TableHead>
                           <TableHead className="text-right">COPQ (NTF)</TableHead>
-                          <TableHead className="text-right">Tổng COPQ</TableHead>
-                          <TableHead className="text-right">Tỷ lệ NG</TableHead>
+                          <TableHead className="text-right">{t('reports.copqTotal', 'Tổng COPQ')}</TableHead>
+                          <TableHead className="text-right">{t('reports.ngRateShort', 'Tỷ lệ NG')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1243,9 +1262,10 @@ export default function Reports() {
                   </div>
                 );
               })() : (
-                <div className="flex items-center justify-center h-48 text-muted-foreground">
-                  Không có dữ liệu COPQ cho khoảng thời gian đã chọn
-                </div>
+                <EmptyState
+                  variant="no-data"
+                  title={t('reports.copqEmpty', 'Không có dữ liệu COPQ cho khoảng thời gian đã chọn')}
+                />
               )}
             </CardContent>
           </Card>

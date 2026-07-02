@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,12 +12,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { 
-  Users as UsersIcon, 
-  Shield, 
-  User, 
+import {
+  Users as UsersIcon,
+  Shield,
+  User,
   Search,
   Pencil,
   Trash2,
@@ -313,78 +316,58 @@ export default function Users() {
 
   return (
     <DashboardLayout title={t('users.management')} navItems={navItems}>
-      <div className="space-y-6">
-        <h1 className="sr-only">{t('users.management')}</h1>
+      <PageContainer>
+        <PageHeader
+          icon={<UsersIcon className="h-6 w-6 text-primary" />}
+          title={t('users.management')}
+          description={t('users.manageAccounts')}
+          badge={<ViewOnlyBadge module="admin_users" />}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <PermissionGate module="admin_users" action="canCreate">
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('users.addUser')}
+                </Button>
+              </PermissionGate>
+            </>
+          }
+        />
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.totalUsers')}</CardTitle>
-              <UsersIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{users?.length || 0}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Admin</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {users?.filter((u: any) => u.role === "admin").length || 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.active')}</CardTitle>
-              <UserCheck className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {users?.filter((u: any) => u.isActive).length || 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('users.disabled')}</CardTitle>
-              <UserX className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {users?.filter((u: any) => !u.isActive).length || 0}
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<UsersIcon className="h-5 w-5" />}
+            label={t('users.totalUsers')}
+            value={users?.length || 0}
+          />
+          <MetricCard
+            icon={<Shield className="h-5 w-5" />}
+            label="Admin"
+            value={users?.filter((u: any) => u.role === "admin").length || 0}
+          />
+          <MetricCard
+            icon={<UserCheck className="h-5 w-5" />}
+            label={t('users.active')}
+            value={users?.filter((u: any) => u.isActive).length || 0}
+            tone="success"
+          />
+          <MetricCard
+            icon={<UserX className="h-5 w-5" />}
+            label={t('users.disabled')}
+            value={users?.filter((u: any) => !u.isActive).length || 0}
+            tone="danger"
+          />
         </div>
 
         {/* Main Card */}
         <Card>
           <CardHeader>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <CardTitle>{t('users.userList')}</CardTitle>
-                  <ViewOnlyBadge module="admin_users" />
-                </div>
-                <CardDescription>{t('users.manageAccounts')}</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  {t('common.refresh')}
-                </Button>
-                <PermissionGate module="admin_users" action="canCreate">
-                  <Button onClick={() => setCreateDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('users.addUser')}
-                  </Button>
-                </PermissionGate>
-              </div>
-            </div>
+            <CardTitle>{t('users.userList')}</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Filters */}
@@ -400,7 +383,7 @@ export default function Users() {
               </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="w-37.5">
-                  <SelectValue placeholder="Vai trò" />
+                  <SelectValue placeholder={t('users.role')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('users.allRoles')}</SelectItem>
@@ -410,7 +393,7 @@ export default function Users() {
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-37.5">
-                  <SelectValue placeholder="Trạng thái" />
+                  <SelectValue placeholder={t('common.status')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('common.all')}</SelectItem>
@@ -422,14 +405,17 @@ export default function Users() {
 
             {/* Table */}
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
               </div>
             ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <UsersIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>{t('users.noUsersFound')}</p>
-              </div>
+              <EmptyState
+                variant="no-results"
+                icon={UsersIcon}
+                title={t('users.noUsersFound')}
+              />
             ) : (
               <div className="rounded-md border overflow-x-auto">
                 <Table>
@@ -549,7 +535,7 @@ export default function Users() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       {/* Create Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -822,7 +808,7 @@ export default function Users() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={confirmDelete}
             >
               {t('common.delete')}

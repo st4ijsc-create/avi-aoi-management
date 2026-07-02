@@ -53,7 +53,25 @@ import {
   SquareCheck
 } from "lucide-react";
 import { LayoutGrid, List } from "lucide-react";
-import { PageHeader } from "@/components/patterns";
+import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  StatusBadge,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
@@ -847,27 +865,33 @@ export default function History() {
     switch (result) {
       case "OK":
         return (
-          <Badge className="bg-success/20 text-success border-success/30 gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            OK
-          </Badge>
+          <StatusBadge
+            status="OK"
+            tone="success"
+            className="gap-1"
+            label={<><CheckCircle2 className="h-3 w-3" />OK</>}
+          />
         );
       case "NG":
         return (
-          <Badge className="bg-destructive/20 text-destructive border-destructive/30 gap-1">
-            <XCircle className="h-3 w-3" />
-            NG
-          </Badge>
+          <StatusBadge
+            status="NG"
+            tone="error"
+            className="gap-1"
+            label={<><XCircle className="h-3 w-3" />NG</>}
+          />
         );
       case "NTF":
         return (
-          <Badge className="bg-warning/20 text-warning border-warning/30 gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            NTF
-          </Badge>
+          <StatusBadge
+            status="NTF"
+            tone="warning"
+            className="gap-1"
+            label={<><AlertTriangle className="h-3 w-3" />NTF</>}
+          />
         );
       default:
-        return <Badge variant="secondary">{result}</Badge>;
+        return <StatusBadge status={result} variant="secondary" />;
     }
   };
 
@@ -876,10 +900,13 @@ export default function History() {
     return machine?.name || `Machine #${machineId}`;
   };
 
+  // Result colours sourced from the theme-aware semantic tokens so charts flip
+  // correctly between dark/light (recharts accepts any CSS colour, including
+  // `var(--token)`, resolved at paint time).
   const COLORS = {
-    ok: "#22c55e",
-    ng: "#ef4444",
-    ntf: "#f97316",
+    ok: "var(--success)",
+    ng: "var(--destructive)",
+    ntf: "var(--warning)",
   };
 
   const pieData = analysisStats ? [
@@ -894,7 +921,7 @@ export default function History() {
       navItems={navItems}
       currentPath="/history"
     >
-      <div className="space-y-6">
+      <PageContainer fluid>
         {/* Header */}
         <PageHeader
           icon={<HistoryIcon className="h-6 w-6" />}
@@ -905,7 +932,7 @@ export default function History() {
         {/* Recent Searches Chips */}
         {recentSearches.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">Tìm kiếm gần đây:</span>
+            <span className="text-sm text-muted-foreground">{t("history.recentSearches", "Recent searches:")}</span>
             {recentSearches.map((rs, idx) => (
               <Badge
                 key={rs.ts}
@@ -1122,7 +1149,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-5xl grid-cols-9">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 overflow-x-auto">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />{t("history.listTab")}</TabsTrigger>
             <TabsTrigger value="infinite" className="gap-2">
@@ -1311,13 +1338,13 @@ export default function History() {
                 {isLoading ? (
                   <div className="space-y-3">
                     {Array.from({ length: 5 }).map((_, i) => (
-                      <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-muted/30 animate-pulse">
-                        <div className="h-12 w-12 rounded-lg bg-muted" />
+                      <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-muted/30">
+                        <Skeleton className="h-12 w-12 rounded-lg" />
                         <div className="flex-1 space-y-2">
-                          <div className="h-4 w-32 bg-muted rounded" />
-                          <div className="h-3 w-48 bg-muted rounded" />
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-48" />
                         </div>
-                        <div className="h-6 w-16 bg-muted rounded-full" />
+                        <Skeleton className="h-6 w-16 rounded-full" />
                       </div>
                     ))}
                   </div>
@@ -1325,91 +1352,89 @@ export default function History() {
                   <div className="space-y-3">
                     {listViewMode === "table" ? (
                       /* Table View */
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-border bg-muted/50">
-                              <th className="text-left p-3 w-10">
-                                <Checkbox
-                                  checked={isSelectAll}
-                                  onCheckedChange={handleSelectAll}
-                                />
-                              </th>
-                              {visibleColumns.serialNumber && <th className="text-left p-3 font-medium">{t("history.serialNumberLabel")}</th>}
-                              {visibleColumns.machine && <th className="text-left p-3 font-medium">{t("history.machine")}</th>}
-                              {visibleColumns.result && <th className="text-left p-3 font-medium">{t("history.result")}</th>}
-                              {visibleColumns.time && <th className="text-left p-3 font-medium">{t("common.time")}</th>}
-                              {visibleColumns.productModel && <th className="text-left p-3 font-medium">{t("history.model")}</th>}
-                              {visibleColumns.factory && <th className="text-left p-3 font-medium">{t("history.factory")}</th>}
-                              {visibleColumns.workshop && <th className="text-left p-3 font-medium">{t("history.workshopLabel")}</th>}
-                              {visibleColumns.line && <th className="text-left p-3 font-medium">{t("dashboard.productionLine")}</th>}
-                              {visibleColumns.station && <th className="text-left p-3 font-medium">{t("history.station")}</th>}
-                              {visibleColumns.okCount && <th className="text-right p-3 font-medium">OK</th>}
-                              {visibleColumns.ngCount && <th className="text-right p-3 font-medium">NG</th>}
-                              {visibleColumns.ntfCount && <th className="text-right p-3 font-medium">NTF</th>}
-                              <th className="text-right p-3 w-20"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                      <Table className="text-sm">
+                        <TableHeader>
+                          <TableRow className="border-b border-border bg-muted/50">
+                            <TableHead className="text-left p-3 w-10">
+                              <Checkbox
+                                checked={isSelectAll}
+                                onCheckedChange={handleSelectAll}
+                              />
+                            </TableHead>
+                            {visibleColumns.serialNumber && <TableHead className="text-left p-3 font-medium">{t("history.serialNumberLabel")}</TableHead>}
+                            {visibleColumns.machine && <TableHead className="text-left p-3 font-medium">{t("history.machine")}</TableHead>}
+                            {visibleColumns.result && <TableHead className="text-left p-3 font-medium">{t("history.result")}</TableHead>}
+                            {visibleColumns.time && <TableHead className="text-left p-3 font-medium">{t("common.time")}</TableHead>}
+                            {visibleColumns.productModel && <TableHead className="text-left p-3 font-medium">{t("history.model")}</TableHead>}
+                            {visibleColumns.factory && <TableHead className="text-left p-3 font-medium">{t("history.factory")}</TableHead>}
+                            {visibleColumns.workshop && <TableHead className="text-left p-3 font-medium">{t("history.workshopLabel")}</TableHead>}
+                            {visibleColumns.line && <TableHead className="text-left p-3 font-medium">{t("dashboard.productionLine")}</TableHead>}
+                            {visibleColumns.station && <TableHead className="text-left p-3 font-medium">{t("history.station")}</TableHead>}
+                            {visibleColumns.okCount && <TableHead className="text-right p-3 font-medium">OK</TableHead>}
+                            {visibleColumns.ngCount && <TableHead className="text-right p-3 font-medium">NG</TableHead>}
+                            {visibleColumns.ntfCount && <TableHead className="text-right p-3 font-medium">NTF</TableHead>}
+                            <TableHead className="text-right p-3 w-20"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             {data.data.map((inspection) => (
-                              <tr 
+                              <TableRow
                                 key={inspection.id}
                                 className={`border-b border-border/50 transition-colors ${selectedIds.has(inspection.id) ? 'bg-primary/10' : 'hover:bg-muted/30'}`}
                               >
-                                <td className="p-3">
+                                <TableCell className="p-3">
                                   <Checkbox
                                     checked={selectedIds.has(inspection.id)}
                                     onCheckedChange={(checked) => handleSelectItem(inspection.id, !!checked)}
                                   />
-                                </td>
+                                </TableCell>
                                 {visibleColumns.serialNumber && (
-                                  <td className="p-3 font-medium">{inspection.serialNumber}</td>
+                                  <TableCell className="p-3 font-medium">{inspection.serialNumber}</TableCell>
                                 )}
                                 {visibleColumns.machine && (
-                                  <td className="p-3 text-muted-foreground">{getMachineName(inspection.machineId)}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{getMachineName(inspection.machineId)}</TableCell>
                                 )}
                                 {visibleColumns.result && (
-                                  <td className="p-3">{getResultBadge(inspection.overallResult)}</td>
+                                  <TableCell className="p-3">{getResultBadge(inspection.overallResult)}</TableCell>
                                 )}
                                 {visibleColumns.time && (
-                                  <td className="p-3 text-muted-foreground">{formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}</TableCell>
                                 )}
                                 {visibleColumns.productModel && (
-                                  <td className="p-3 text-muted-foreground">{inspection.productModel || '-'}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{inspection.productModel || '-'}</TableCell>
                                 )}
                                 {visibleColumns.factory && (
-                                  <td className="p-3 text-muted-foreground">{(inspection as any).factoryCode || '-'}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{(inspection as any).factoryCode || '-'}</TableCell>
                                 )}
                                 {visibleColumns.workshop && (
-                                  <td className="p-3 text-muted-foreground">{(inspection as any).workshopCode || '-'}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{(inspection as any).workshopCode || '-'}</TableCell>
                                 )}
                                 {visibleColumns.line && (
-                                  <td className="p-3 text-muted-foreground">{(inspection as any).lineCode || '-'}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{(inspection as any).lineCode || '-'}</TableCell>
                                 )}
                                 {visibleColumns.station && (
-                                  <td className="p-3 text-muted-foreground">{(inspection as any).stageCode || '-'}</td>
+                                  <TableCell className="p-3 text-muted-foreground">{(inspection as any).stageCode || '-'}</TableCell>
                                 )}
                                 {visibleColumns.okCount && (
-                                  <td className="p-3 text-right text-success">{(inspection as any).okCount ?? '-'}</td>
+                                  <TableCell className="p-3 text-right text-success">{(inspection as any).okCount ?? '-'}</TableCell>
                                 )}
                                 {visibleColumns.ngCount && (
-                                  <td className="p-3 text-right text-destructive">{(inspection as any).ngCount ?? '-'}</td>
+                                  <TableCell className="p-3 text-right text-destructive">{(inspection as any).ngCount ?? '-'}</TableCell>
                                 )}
                                 {visibleColumns.ntfCount && (
-                                  <td className="p-3 text-right text-warning">{(inspection as any).ntfCount ?? '-'}</td>
+                                  <TableCell className="p-3 text-right text-warning">{(inspection as any).ntfCount ?? '-'}</TableCell>
                                 )}
-                                <td className="p-3 text-right">
+                                <TableCell className="p-3 text-right">
                                   <Link href={`/inspection/${inspection.id}`}>
                                     <Button variant="ghost" size="sm">
                                       <Eye className="h-4 w-4" />
                                     </Button>
                                   </Link>
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                        </TableBody>
+                      </Table>
                     ) : (
                       /* Card View */
                       <>
@@ -1486,11 +1511,11 @@ export default function History() {
                     )}
                   </div>
                 ) : (
-                  <div className="py-12 text-center">
-                    <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">{t("common.noResults")}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryChangingFilters")}</p>
-                  </div>
+                  <EmptyState
+                    icon={HistoryIcon}
+                    title={t("common.noResults")}
+                    description={t("history.tryChangingFilters")}
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1517,71 +1542,39 @@ export default function History() {
               <div className="space-y-6">
                 {/* Summary Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <Card className="glass-card">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Activity className="h-6 w-6 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">{t("history.totalProducts")}</p>
-                          <p className="text-2xl font-bold text-foreground">{analysisStats.total}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="glass-card">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-success/10 flex items-center justify-center">
-                          <CheckCircle2 className="h-6 w-6 text-success" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">OK</p>
-                          <p className="text-2xl font-bold text-success">{analysisStats.okCount}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="glass-card">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-destructive/10 flex items-center justify-center">
-                          <XCircle className="h-6 w-6 text-destructive" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">NG</p>
-                          <p className="text-2xl font-bold text-destructive">{analysisStats.ngCount}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="glass-card">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-warning/10 flex items-center justify-center">
-                          <AlertTriangle className="h-6 w-6 text-warning" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">NTF</p>
-                          <p className="text-2xl font-bold text-warning">{analysisStats.ntfCount}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="glass-card">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <TrendingUp className="h-6 w-6 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">{t("history.yieldRate")}</p>
-                          <p className="text-2xl font-bold text-primary">{analysisStats.yieldRate.toFixed(1)}%</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <MetricCard
+                    className="glass-card"
+                    icon={<Activity className="h-6 w-6" />}
+                    label={t("history.totalProducts")}
+                    value={analysisStats.total}
+                  />
+                  <MetricCard
+                    className="glass-card"
+                    icon={<CheckCircle2 className="h-6 w-6" />}
+                    label="OK"
+                    value={analysisStats.okCount}
+                    tone="success"
+                  />
+                  <MetricCard
+                    className="glass-card"
+                    icon={<XCircle className="h-6 w-6" />}
+                    label="NG"
+                    value={analysisStats.ngCount}
+                    tone="error"
+                  />
+                  <MetricCard
+                    className="glass-card"
+                    icon={<AlertTriangle className="h-6 w-6" />}
+                    label="NTF"
+                    value={analysisStats.ntfCount}
+                    tone="warning"
+                  />
+                  <MetricCard
+                    className="glass-card"
+                    icon={<TrendingUp className="h-6 w-6" />}
+                    label={t("history.yieldRate")}
+                    value={`${analysisStats.yieldRate.toFixed(1)}%`}
+                  />
                 </div>
 
                 {/* Charts Row */}
@@ -1610,7 +1603,7 @@ export default function History() {
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Pie>
-                            <Tooltip />
+                            <Tooltip contentStyle={chartTooltipStyle} />
                             <Legend />
                           </RechartsPie>
                         </ResponsiveContainer>
@@ -1628,16 +1621,10 @@ export default function History() {
                       <div className="h-75">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={analysisStats.dateStats}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                            <YAxis stroke="#9ca3af" fontSize={12} />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#1f2937', 
-                                border: '1px solid #374151',
-                                borderRadius: '8px'
-                              }}
-                            />
+                            <CartesianGrid {...chartGridProps} />
+                            <XAxis dataKey="date" tick={chartAxisTick} />
+                            <YAxis tick={chartAxisTick} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
                             <Legend />
                             <Bar dataKey="ok" name="OK" fill={COLORS.ok} stackId="a" />
                             <Bar dataKey="ng" name="NG" fill={COLORS.ng} stackId="a" />
@@ -1656,36 +1643,34 @@ export default function History() {
                       <Cpu className="h-5 w-5 text-primary" />{t("history.statsByMachine")}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-border">
-                            <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.machine")}</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {analysisStats.machineStats.map((machine) => (
-                            <tr key={machine.id} className="border-b border-border/50 hover:bg-secondary/30">
-                              <td className="py-3 px-4 font-medium text-foreground">{machine.name}</td>
-                              <td className="text-center py-3 px-4 text-foreground">{machine.total}</td>
-                              <td className="text-center py-3 px-4 text-success font-medium">{machine.ok}</td>
-                              <td className="text-center py-3 px-4 text-destructive font-medium">{machine.ng}</td>
-                              <td className="text-center py-3 px-4 text-warning font-medium">{machine.ntf}</td>
-                              <td className="text-center py-3 px-4">
-                                <Badge variant={machine.yieldRate >= 95 ? "default" : machine.yieldRate >= 90 ? "secondary" : "destructive"}>
-                                  {machine.yieldRate.toFixed(1)}%
-                                </Badge>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-b border-border">
+                          <TableHead className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.machine")}</TableHead>
+                          <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</TableHead>
+                          <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</TableHead>
+                          <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</TableHead>
+                          <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</TableHead>
+                          <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analysisStats.machineStats.map((machine) => (
+                          <TableRow key={machine.id} className="border-b border-border/50 hover:bg-secondary/30">
+                            <TableCell className="py-3 px-4 font-medium text-foreground">{machine.name}</TableCell>
+                            <TableCell className="text-center py-3 px-4 text-foreground">{machine.total}</TableCell>
+                            <TableCell className="text-center py-3 px-4 text-success font-medium">{machine.ok}</TableCell>
+                            <TableCell className="text-center py-3 px-4 text-destructive font-medium">{machine.ng}</TableCell>
+                            <TableCell className="text-center py-3 px-4 text-warning font-medium">{machine.ntf}</TableCell>
+                            <TableCell className="text-center py-3 px-4">
+                              <Badge variant={machine.yieldRate >= 95 ? "default" : machine.yieldRate >= 90 ? "secondary" : "destructive"}>
+                                {machine.yieldRate.toFixed(1)}%
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </CardContent>
                 </Card>
 
@@ -1766,46 +1751,46 @@ export default function History() {
                         <Target className="h-5 w-5 text-primary" />{t("history.statsByProduct")}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-border">
-                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("products.productModel")}</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {analysisStats.productStats.map((product) => (
-                              <tr key={product.model} className="border-b border-border/50 hover:bg-secondary/30">
-                                <td className="py-3 px-4 font-medium text-foreground">{product.model}</td>
-                                <td className="text-center py-3 px-4 text-foreground">{product.total}</td>
-                                <td className="text-center py-3 px-4 text-success font-medium">{product.ok}</td>
-                                <td className="text-center py-3 px-4 text-destructive font-medium">{product.ng}</td>
-                                <td className="text-center py-3 px-4 text-warning font-medium">{product.ntf}</td>
-                                <td className="text-center py-3 px-4">
-                                  <Badge variant={product.yieldRate >= 95 ? "default" : product.yieldRate >= 90 ? "secondary" : "destructive"}>
-                                    {product.yieldRate.toFixed(1)}%
-                                  </Badge>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-b border-border">
+                            <TableHead className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("products.productModel")}</TableHead>
+                            <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</TableHead>
+                            <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</TableHead>
+                            <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</TableHead>
+                            <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</TableHead>
+                            <TableHead className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analysisStats.productStats.map((product) => (
+                            <TableRow key={product.model} className="border-b border-border/50 hover:bg-secondary/30">
+                              <TableCell className="py-3 px-4 font-medium text-foreground">{product.model}</TableCell>
+                              <TableCell className="text-center py-3 px-4 text-foreground">{product.total}</TableCell>
+                              <TableCell className="text-center py-3 px-4 text-success font-medium">{product.ok}</TableCell>
+                              <TableCell className="text-center py-3 px-4 text-destructive font-medium">{product.ng}</TableCell>
+                              <TableCell className="text-center py-3 px-4 text-warning font-medium">{product.ntf}</TableCell>
+                              <TableCell className="text-center py-3 px-4">
+                                <Badge variant={product.yieldRate >= 95 ? "default" : product.yieldRate >= 90 ? "secondary" : "destructive"}>
+                                  {product.yieldRate.toFixed(1)}%
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </CardContent>
                   </Card>
                 )}
               </div>
             ) : (
               <Card className="glass-card">
-                <CardContent className="py-12 text-center">
-                  <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">{t("history.noDataToAnalyze")}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
+                <CardContent>
+                  <EmptyState
+                    icon={BarChart3}
+                    title={t("history.noDataToAnalyze")}
+                    description={t("history.tryDifferentFilters")}
+                  />
                 </CardContent>
               </Card>
             )}
@@ -1934,7 +1919,7 @@ export default function History() {
                         }, []).map((ws: any) => {
                           const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
                           return (
-                            <Card key={ws.workstationId} className="border-l-4 border-l-blue-500">
+                            <Card key={ws.workstationId} className="border-l-4 border-l-info">
                               <CardContent className="pt-4">
                                 <div className="space-y-2">
                                   <div className="font-semibold text-sm">{ws.workstationName || t('common.unknown')}</div>
@@ -1994,13 +1979,13 @@ export default function History() {
                           }
                           return acc;
                         }, [])}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="code" />
-                          <YAxis />
-                          <Tooltip />
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis dataKey="code" tick={chartAxisTick} />
+                          <YAxis tick={chartAxisTick} />
+                          <Tooltip contentStyle={chartTooltipStyle} />
                           <Legend />
-                          <Bar dataKey="NG" fill="#ef4444" />
-                          <Bar dataKey="NTF" fill="#eab308" />
+                          <Bar dataKey="NG" fill="var(--destructive)" />
+                          <Bar dataKey="NTF" fill="var(--warning)" />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
@@ -2061,20 +2046,19 @@ export default function History() {
                   <CardTitle className="text-lg">{t("history.pointsByWorkstation")}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="border-b">
-                        <tr>
-                          <th className="text-left py-2 px-2">{t("history.workstationTab")}</th>
-                          <th className="text-left py-2 px-2">{t("common.code")}</th>
-                          <th className="text-center py-2 px-2">{t("history.pointCount")}</th>
-                          <th className="text-center py-2 px-2">OK</th>
-                          <th className="text-center py-2 px-2">NG</th>
-                          <th className="text-center py-2 px-2">NTF</th>
-                          <th className="text-center py-2 px-2">Yield</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                  <Table className="text-sm">
+                    <TableHeader className="border-b">
+                      <TableRow>
+                        <TableHead className="text-left py-2 px-2">{t("history.workstationTab")}</TableHead>
+                        <TableHead className="text-left py-2 px-2">{t("common.code")}</TableHead>
+                        <TableHead className="text-center py-2 px-2">{t("history.pointCount")}</TableHead>
+                        <TableHead className="text-center py-2 px-2">OK</TableHead>
+                        <TableHead className="text-center py-2 px-2">NG</TableHead>
+                        <TableHead className="text-center py-2 px-2">NTF</TableHead>
+                        <TableHead className="text-center py-2 px-2">Yield</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                         {workstationData && workstationData.length > 0 ? (
                           workstationData.reduce((acc: any[], ws: any) => {
                             const existing = acc.find(w => w.workstationId === ws.workstationId);
@@ -2091,32 +2075,31 @@ export default function History() {
                           }, []).map((ws: any) => {
                             const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
                             return (
-                              <tr key={ws.workstationId} className="border-b hover:bg-muted/50">
-                                <td className="py-2 px-2">{ws.workstationName || t('common.unknown')}</td>
-                                <td className="py-2 px-2 text-xs text-muted-foreground">{ws.workstationCode}</td>
-                                <td className="text-center py-2 px-2">{ws.pointCount || 0}</td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-success/10">{ws.okCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-destructive/10">{ws.ngCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-warning/10">{ws.ntfCount || 0}</Badge></td>
-                                <td className="text-center py-2 px-2"><Badge className="bg-success">{yieldRate.toFixed(1)}%</Badge></td>
-                              </tr>
+                              <TableRow key={ws.workstationId} className="border-b hover:bg-muted/50">
+                                <TableCell className="py-2 px-2">{ws.workstationName || t('common.unknown')}</TableCell>
+                                <TableCell className="py-2 px-2 text-xs text-muted-foreground">{ws.workstationCode}</TableCell>
+                                <TableCell className="text-center py-2 px-2">{ws.pointCount || 0}</TableCell>
+                                <TableCell className="text-center py-2 px-2"><Badge variant="outline" className="bg-success/10">{ws.okCount || 0}</Badge></TableCell>
+                                <TableCell className="text-center py-2 px-2"><Badge variant="outline" className="bg-destructive/10">{ws.ngCount || 0}</Badge></TableCell>
+                                <TableCell className="text-center py-2 px-2"><Badge variant="outline" className="bg-warning/10">{ws.ntfCount || 0}</Badge></TableCell>
+                                <TableCell className="text-center py-2 px-2"><Badge className="bg-success">{yieldRate.toFixed(1)}%</Badge></TableCell>
+                              </TableRow>
                             );
                           })
                         ) : (
-                          <tr>
-                            <td colSpan={7}>
+                          <TableRow>
+                            <TableCell colSpan={7}>
                               <EmptyState
                                 variant="no-data"
                                 title={t("dashboard.noWorkstationData")}
                                 description={t("dashboard.noWorkstationDataDesc")}
                                 compact
                               />
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </tbody>
-                    </table>
-                  </div>
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             </div>
@@ -2156,15 +2139,11 @@ export default function History() {
                             cl: 95,
                             lcl: 90,
                           }))}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                            <YAxis stroke="#9ca3af" fontSize={12} domain={[80, 100]} />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#1f2937', 
-                                border: '1px solid #374151',
-                                borderRadius: '8px'
-                              }}
+                            <CartesianGrid {...chartGridProps} />
+                            <XAxis dataKey="date" tick={chartAxisTick} />
+                            <YAxis tick={chartAxisTick} domain={[80, 100]} />
+                            <Tooltip
+                              contentStyle={chartTooltipStyle}
                               formatter={(value: number, name: string) => {
                                 if (name === 'yieldRate') return [`${value.toFixed(1)}%`, t('history.yieldRate')];
                                 if (name === 'ucl') return ['99%', t('history.ucl')];
@@ -2174,10 +2153,10 @@ export default function History() {
                               }}
                             />
                             <Legend />
-                            <Bar dataKey="yieldRate" name={t('history.yieldRate')} fill="#10b981" />
-                            <Bar dataKey="ucl" name={t('history.uclLabel')} fill="#ef4444" opacity={0.3} />
-                            <Bar dataKey="cl" name={t('history.clLabel')} fill="#3b82f6" opacity={0.3} />
-                            <Bar dataKey="lcl" name={t('history.lclLabel')} fill="#f59e0b" opacity={0.3} />
+                            <Bar dataKey="yieldRate" name={t('history.yieldRate')} fill="var(--success)" />
+                            <Bar dataKey="ucl" name={t('history.uclLabel')} fill="var(--destructive)" opacity={0.3} />
+                            <Bar dataKey="cl" name={t('history.clLabel')} fill="var(--info)" opacity={0.3} />
+                            <Bar dataKey="lcl" name={t('history.lclLabel')} fill="var(--warning)" opacity={0.3} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -2210,25 +2189,19 @@ export default function History() {
                         <div className="h-75">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={[
-                              { name: 'OK', value: analysisStats.okCount, fill: '#10b981' },
-                              { name: 'NG', value: analysisStats.ngCount, fill: '#ef4444' },
-                              { name: 'NTF', value: analysisStats.ntfCount, fill: '#f59e0b' },
+                              { name: 'OK', value: analysisStats.okCount, fill: 'var(--success)' },
+                              { name: 'NG', value: analysisStats.ngCount, fill: 'var(--destructive)' },
+                              { name: 'NTF', value: analysisStats.ntfCount, fill: 'var(--warning)' },
                             ]}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                              <YAxis stroke="#9ca3af" fontSize={12} />
-                              <Tooltip 
-                                contentStyle={{ 
-                                  backgroundColor: '#1f2937', 
-                                  border: '1px solid #374151',
-                                  borderRadius: '8px'
-                                }}
-                              />
+                              <CartesianGrid {...chartGridProps} />
+                              <XAxis dataKey="name" tick={chartAxisTick} />
+                              <YAxis tick={chartAxisTick} />
+                              <Tooltip contentStyle={chartTooltipStyle} />
                               <Bar dataKey="value" name={t("history.quantity")}>
                                 {[
-                                  { name: 'OK', fill: '#10b981' },
-                                  { name: 'NG', fill: '#ef4444' },
-                                  { name: 'NTF', fill: '#f59e0b' },
+                                  { name: 'OK', fill: 'var(--success)' },
+                                  { name: 'NG', fill: 'var(--destructive)' },
+                                  { name: 'NTF', fill: 'var(--warning)' },
                                 ].map((entry, index) => (
                                   <Cell key={`cell-${index}`} fill={entry.fill} />
                                 ))}
@@ -2264,25 +2237,23 @@ export default function History() {
                             return paretoData.length > 0 ? (
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={paretoData}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={10} angle={-15} textAnchor="end" height={60} />
-                                  <YAxis yAxisId="left" stroke="#9ca3af" fontSize={12} />
-                                  <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" fontSize={12} domain={[0, 100]} />
-                                  <Tooltip 
-                                    contentStyle={{ 
-                                      backgroundColor: '#1f2937', 
-                                      border: '1px solid #374151',
-                                      borderRadius: '8px'
-                                    }}
-                                  />
+                                  <CartesianGrid {...chartGridProps} />
+                                  <XAxis dataKey="name" tick={{ ...chartAxisTick, fontSize: "0.625rem" }} angle={-15} textAnchor="end" height={60} />
+                                  <YAxis yAxisId="left" tick={chartAxisTick} />
+                                  <YAxis yAxisId="right" orientation="right" tick={chartAxisTick} domain={[0, 100]} />
+                                  <Tooltip contentStyle={chartTooltipStyle} />
                                   <Legend />
-                                  <Bar yAxisId="left" dataKey="ng" name={t("history.ngErrorCount")} fill="#ef4444" />
-                                  <Bar yAxisId="right" dataKey="cumulative" name={t("history.cumulativePercent")} fill="#3b82f6" />
+                                  <Bar yAxisId="left" dataKey="ng" name={t("history.ngErrorCount")} fill="var(--destructive)" />
+                                  <Bar yAxisId="right" dataKey="cumulative" name={t("history.cumulativePercent")} fill={chartColor(0)} />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
-                              <div className="h-full flex items-center justify-center text-muted-foreground">
-                                {t("history.noErrorDataToShow")}
+                              <div className="h-full flex items-center justify-center">
+                                <EmptyState
+                                  variant="no-analytics"
+                                  title={t("history.noErrorDataToShow")}
+                                  compact
+                                />
                               </div>
                             );
                           })()}
@@ -2568,10 +2539,12 @@ export default function History() {
                 </>
               ) : (
                 <Card className="glass-card">
-                  <CardContent className="py-12 text-center">
-                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">{t("history.noSPCData")}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
+                  <CardContent>
+                    <EmptyState
+                      icon={TrendingUp}
+                      title={t("history.noSPCData")}
+                      description={t("history.tryDifferentFilters")}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -2582,7 +2555,7 @@ export default function History() {
           <TabsContent value="ai">
             <div className="space-y-6">
               {/* AI Header */}
-              <Card className="glass-card bg-linear-to-r from-primary/10 to-purple-500/10">
+              <Card className="glass-card bg-linear-to-r from-primary/10 to-accent/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
                     <Brain className="h-6 w-6 text-primary" />{t("history.aiAnalysisTitle")}</CardTitle>
@@ -2595,8 +2568,8 @@ export default function History() {
                   {/* Summary skeleton */}
                   <Card className="glass-card">
                     <CardContent className="pt-6 space-y-3">
-                      <div className="h-4 w-full bg-muted rounded animate-pulse" />
-                      <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
                     </CardContent>
                   </Card>
                   {/* Stats skeleton */}
@@ -2686,18 +2659,14 @@ export default function History() {
                         <div className="h-62.5">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={aiAnalysis.trendPrediction.predictions}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                              <YAxis stroke="#9ca3af" fontSize={12} domain={[80, 100]} />
-                              <Tooltip 
-                                contentStyle={{ 
-                                  backgroundColor: '#1f2937', 
-                                  border: '1px solid #374151',
-                                  borderRadius: '8px'
-                                }}
+                              <CartesianGrid {...chartGridProps} />
+                              <XAxis dataKey="date" tick={chartAxisTick} />
+                              <YAxis tick={chartAxisTick} domain={[80, 100]} />
+                              <Tooltip
+                                contentStyle={chartTooltipStyle}
                                 formatter={(value: number) => [`${value.toFixed(1)}%`, t('history.predictedYield')]}
                               />
-                              <Bar dataKey="predictedYield" name={t("history.prediction")} fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="predictedYield" name={t("history.prediction")} fill="var(--primary)" radius={[4, 4, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -2778,11 +2747,11 @@ export default function History() {
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
                           <Activity className="h-5 w-5 text-primary" />
-                          Phân cụm mẫu lỗi (Defect Pattern Clustering)
-                          <Badge variant="outline" className="ml-2">{defectClusters.length} cụm</Badge>
+                          {t("history.defectPatternClustering", "Defect Pattern Clustering")}
+                          <Badge variant="outline" className="ml-2">{t("history.clusterCount", "{{count}} clusters", { count: defectClusters.length })}</Badge>
                         </CardTitle>
                         <CardDescription>
-                          Nhóm các điểm đo NG theo loại lỗi, giúp nhận diện xu hướng lỗi và ưu tiên cải thiện
+                          {t("history.defectClusteringDesc", "Groups NG measurement points by defect type to surface trends and prioritise improvements")}
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -2794,10 +2763,10 @@ export default function History() {
                                 <Badge variant="destructive">{cluster.totalNG} NG</Badge>
                               </div>
                               <div className="flex gap-4 text-sm text-muted-foreground mb-3">
-                                <span>Ảnh hưởng: {cluster.affectedInspections} lần kiểm tra</span>
+                                <span>{t("history.clusterImpact", "Impact: {{count}} inspections", { count: cluster.affectedInspections })}</span>
                               </div>
                               <div className="space-y-2">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Top điểm đo lỗi:</p>
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("history.topDefectPoints", "Top defect points:")}</p>
                                 {cluster.topPoints.map((point) => (
                                   <div key={point.pointDefId} className="flex items-center justify-between text-sm">
                                     <span className="text-foreground truncate mr-2" title={point.name}>
@@ -2816,10 +2785,12 @@ export default function History() {
                 </>
               ) : (
                 <Card className="glass-card">
-                  <CardContent className="py-12 text-center">
-                    <Brain className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">{t("history.noAIData")}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{t("history.minDataRequired")}</p>
+                  <CardContent>
+                    <EmptyState
+                      icon={Brain}
+                      title={t("history.noAIData")}
+                      description={t("history.minDataRequired")}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -2902,7 +2873,7 @@ export default function History() {
                     </Card>
 
                     {/* NTF Yield Card */}
-                    <Card className="glass-card border-l-4 border-l-cyan-500">
+                    <Card className="glass-card border-l-4 border-l-info">
                       <CardContent className="pt-6">
                         <div className="space-y-2">
                           <p className="text-sm text-muted-foreground">{t("history.avgNtfYield")}</p>
@@ -2953,20 +2924,20 @@ export default function History() {
                               ...d,
                               dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
                             }))}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
-                              <YAxis stroke="#6b7280" fontSize={12} domain={[96, 100]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                              <CartesianGrid {...chartGridProps} vertical={false} />
+                              <XAxis dataKey="dayName" tick={chartAxisTick} axisLine={false} tickLine={false} />
+                              <YAxis tick={chartAxisTick} domain={[96, 100]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip
+                                contentStyle={chartTooltipStyle}
                                 formatter={(value: number) => [`${value.toFixed(2)}%`, 'FPY']}
                               />
-                              <Line 
-                                type="monotone" 
-                                dataKey="yieldRate" 
-                                stroke="#3b82f6" 
+                              <Line
+                                type="monotone"
+                                dataKey="yieldRate"
+                                stroke={chartColor(0)}
                                 strokeWidth={3}
-                                dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
-                                activeDot={{ r: 6, fill: '#3b82f6' }}
+                                dot={{ fill: chartColor(0), strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: chartColor(0) }}
                               />
                             </LineChart>
                           </ResponsiveContainer>
@@ -2988,20 +2959,20 @@ export default function History() {
                               failRate: 100 - d.yieldRate,
                               dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
                             }))}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
-                              <YAxis stroke="#6b7280" fontSize={12} domain={[0, 5]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                              <CartesianGrid {...chartGridProps} vertical={false} />
+                              <XAxis dataKey="dayName" tick={chartAxisTick} axisLine={false} tickLine={false} />
+                              <YAxis tick={chartAxisTick} domain={[0, 5]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip
+                                contentStyle={chartTooltipStyle}
                                 formatter={(value: number) => [`${value.toFixed(2)}%`, 'Fail Rate']}
                               />
-                              <Line 
-                                type="monotone" 
-                                dataKey="failRate" 
-                                stroke="#f97316" 
+                              <Line
+                                type="monotone"
+                                dataKey="failRate"
+                                stroke="var(--warning)"
                                 strokeWidth={3}
-                                dot={{ fill: '#f97316', strokeWidth: 2, r: 4 }}
-                                activeDot={{ r: 6, fill: '#f97316' }}
+                                dot={{ fill: 'var(--warning)', strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: 'var(--warning)' }}
                               />
                             </LineChart>
                           </ResponsiveContainer>
@@ -3026,20 +2997,20 @@ export default function History() {
                               ntfRate: d.total > 0 ? (d.ntf / d.total) * 100 : 0,
                               dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
                             }))}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
-                              <YAxis stroke="#6b7280" fontSize={12} domain={[0, 3]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                              <CartesianGrid {...chartGridProps} vertical={false} />
+                              <XAxis dataKey="dayName" tick={chartAxisTick} axisLine={false} tickLine={false} />
+                              <YAxis tick={chartAxisTick} domain={[0, 3]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip
+                                contentStyle={chartTooltipStyle}
                                 formatter={(value: number) => [`${value.toFixed(2)}%`, 'NTF Rate']}
                               />
-                              <Line 
-                                type="monotone" 
-                                dataKey="ntfRate" 
-                                stroke="#06b6d4" 
+                              <Line
+                                type="monotone"
+                                dataKey="ntfRate"
+                                stroke="var(--info)"
                                 strokeWidth={3}
-                                dot={{ fill: '#06b6d4', strokeWidth: 2, r: 4 }}
-                                activeDot={{ r: 6, fill: '#06b6d4' }}
+                                dot={{ fill: 'var(--info)', strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: 'var(--info)' }}
                               />
                             </LineChart>
                           </ResponsiveContainer>
@@ -3061,16 +3032,16 @@ export default function History() {
                               uph: Math.round(d.total * 24 / 8), // Assume 8 working hours
                               dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
                             }))}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
-                              <YAxis stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                              <CartesianGrid {...chartGridProps} vertical={false} />
+                              <XAxis dataKey="dayName" tick={chartAxisTick} axisLine={false} tickLine={false} />
+                              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} />
+                              <Tooltip
+                                contentStyle={chartTooltipStyle}
                                 formatter={(value: number) => [value, 'UPH']}
                               />
-                              <Bar 
-                                dataKey="uph" 
-                                fill="#1e3a5f"
+                              <Bar
+                                dataKey="uph"
+                                fill={chartColor(0)}
                                 radius={[4, 4, 0, 0]}
                               />
                             </BarChart>
@@ -3087,59 +3058,59 @@ export default function History() {
                         <BarChart3 className="h-5 w-5 text-primary" />{t("history.yieldSummaryByDay")}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-border">
-                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.date")}</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">FPY</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Fail Rate</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF Rate</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">UPH</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-b border-border">
+                            <TableHead className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.date")}</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">OK</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NG</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">FPY</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Fail Rate</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF Rate</TableHead>
+                            <TableHead className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">UPH</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             {analysisStats.dateStats.map((day, i) => (
-                              <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
-                                <td className="py-3 px-4 text-sm font-medium">{day.date}</td>
-                                <td className="py-3 px-4 text-sm text-right">{day.total}</td>
-                                <td className="py-3 px-4 text-sm text-right text-success">{day.ok}</td>
-                                <td className="py-3 px-4 text-sm text-right text-destructive">{day.ng}</td>
-                                <td className="py-3 px-4 text-sm text-right text-warning">{day.ntf}</td>
-                                <td className="py-3 px-4 text-sm text-right">
+                              <TableRow key={i} className="border-b border-border/50 hover:bg-muted/30">
+                                <TableCell className="py-3 px-4 text-sm font-medium">{day.date}</TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right">{day.total}</TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right text-success">{day.ok}</TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right text-destructive">{day.ng}</TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right text-warning">{day.ntf}</TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right">
                                   <span className={day.yieldRate >= 98.5 ? 'text-success' : 'text-warning'}>
                                     {day.yieldRate.toFixed(2)}%
                                   </span>
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right">
                                   <span className={(100 - day.yieldRate) <= 1.5 ? 'text-success' : 'text-destructive'}>
                                     {(100 - day.yieldRate).toFixed(2)}%
                                   </span>
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right">
                                   {day.total > 0 ? ((day.ntf / day.total) * 100).toFixed(2) : '0.00'}%
-                                </td>
-                                <td className="py-3 px-4 text-sm text-right">
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-sm text-right">
                                   {Math.round(day.total * 24 / 8)}
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                        </TableBody>
+                      </Table>
                     </CardContent>
                   </Card>
                 </>
               ) : (
                 <Card className="glass-card">
-                  <CardContent className="py-12 text-center">
-                    <Target className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">{t("history.noYieldData")}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
+                  <CardContent>
+                    <EmptyState
+                      icon={Target}
+                      title={t("history.noYieldData")}
+                      description={t("history.tryDifferentFilters")}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -3166,8 +3137,10 @@ export default function History() {
               </CardHeader>
               <CardContent>
                 {isLoadingGallery ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <Skeleton key={i} className="aspect-square w-full rounded-lg" />
+                    ))}
                   </div>
                 ) : galleryData?.data && galleryData.data.length > 0 ? (
                   <ImageGallery
@@ -3199,8 +3172,8 @@ export default function History() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-      
+      </PageContainer>
+
       {/* Barcode Scanner Dialog */}
       <BarcodeScanner
         open={isScannerOpen}

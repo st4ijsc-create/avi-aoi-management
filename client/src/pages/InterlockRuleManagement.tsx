@@ -23,7 +23,7 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader } from "@/components/patterns";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +37,10 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -116,6 +120,7 @@ export default function InterlockRuleManagement() {
   // ── Rule dialog ──
   const [ruleOpen, setRuleOpen] = useState(false);
   const [form, setForm] = useState<RuleForm>(emptyRule);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
@@ -231,7 +236,7 @@ export default function InterlockRuleManagement() {
 
   return (
     <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
-    <div className="p-6 space-y-6">
+    <PageContainer className="space-y-6">
       <PageHeader
         icon={<ShieldAlert className="h-6 w-6" />}
         title={
@@ -336,7 +341,7 @@ export default function InterlockRuleManagement() {
                             )}
                             {canDelete && (
                               <Button size="sm" variant="destructive" disabled={deleteRule.isPending}
-                                onClick={() => { if (confirm(t("interlockRules.confirmDelete", { name: r.name }))) deleteRule.mutate({ id: r.id }); }}>
+                                onClick={() => setDeleteTarget({ id: r.id, name: r.name })}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
@@ -537,7 +542,7 @@ export default function InterlockRuleManagement() {
             </Button>
 
             {testEnabled && testQuery.isLoading && <p className="text-sm text-muted-foreground">{t("interlockRules.testRunning")}</p>}
-            {testEnabled && testQuery.error && <p className="text-sm text-rose-600">{testQuery.error.message}</p>}
+            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{testQuery.error.message}</p>}
             {testEnabled && testQuery.data && (
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <div className="flex items-center gap-2">
@@ -558,7 +563,28 @@ export default function InterlockRuleManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* ── Delete confirm (AlertDialog — replaces window.confirm) ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("interlockRules.deleteConfirmTitle", "Delete interlock rule?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("interlockRules.confirmDelete", { name: deleteTarget?.name ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("interlockRules.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteRule.isPending}
+              onClick={() => { if (deleteTarget) { deleteRule.mutate({ id: deleteTarget.id }); setDeleteTarget(null); } }}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />{t("interlockRules.delete", "Delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageContainer>
     </DashboardLayout>
   );
 }

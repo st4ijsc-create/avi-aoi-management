@@ -1,6 +1,16 @@
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -156,6 +166,9 @@ export function MqttClientManagementContent() {
 
   // Single-device configure — reuses bulk config dialog
   const [singleConfigClient, setSingleConfigClient] = useState<any>(null);
+
+  // Delete confirmation
+  const [deleteClient, setDeleteClient] = useState<any>(null);
 
   // Multi-select & Bulk configure state
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set());
@@ -476,7 +489,7 @@ export function MqttClientManagementContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Smartphone className="w-6 h-6" />}
@@ -876,11 +889,7 @@ export function MqttClientManagementContent() {
                               variant="ghost"
                               size="sm"
                               className="text-destructive"
-                              onClick={() => {
-                                if (confirm(t('mqtt.clientMgmt.confirmDeleteClient'))) {
-                                  deleteMutation.mutate({ id: client.id });
-                                }
-                              }}
+                              onClick={() => setDeleteClient(client)}
                               title={t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1072,25 +1081,11 @@ export function MqttClientManagementContent() {
                 </CardHeader>
                 <CardContent>
                   {selectedClient && clientHealth && (
-                    <div className="mb-4 p-4 rounded-lg bg-muted/50">
-                      <div className="grid grid-cols-4 gap-4 text-center">
-                        <div>
-                          <div className="text-2xl font-bold">{clientHealth.messageStats.total}</div>
-                          <div className="text-xs text-muted-foreground">Total Messages</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-success">{clientHealth.messageStats.delivered}</div>
-                          <div className="text-xs text-muted-foreground">Delivered</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-destructive">{clientHealth.messageStats.failed}</div>
-                          <div className="text-xs text-muted-foreground">Failed</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold">{clientHealth.messageStats.successRate}%</div>
-                          <div className="text-xs text-muted-foreground">Success Rate</div>
-                        </div>
-                      </div>
+                    <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <MetricCard label={t('mqtt.clientMgmt.totalMessages')} value={clientHealth.messageStats.total} />
+                      <MetricCard label={t('mqtt.clientMgmt.delivered')} value={clientHealth.messageStats.delivered} tone="success" />
+                      <MetricCard label={t('mqtt.clientMgmt.failed')} value={clientHealth.messageStats.failed} tone="danger" />
+                      <MetricCard label={t('mqtt.clientMgmt.successRate')} value={`${clientHealth.messageStats.successRate}%`} />
                     </div>
                   )}
                   <Table>
@@ -1979,7 +1974,29 @@ export function MqttClientManagementContent() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+
+        {/* Delete confirmation */}
+        <AlertDialog open={!!deleteClient} onOpenChange={(open) => !open && setDeleteClient(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('common.delete')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('mqtt.clientMgmt.confirmDeleteClient')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteClient) deleteMutation.mutate({ id: deleteClient.id });
+                  setDeleteClient(null);
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </>
   );
 }

@@ -5,7 +5,17 @@
 
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +71,7 @@ export function MqttProfileManagementContent() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importOptions, setImportOptions] = useState({ overwriteExisting: false, skipDuplicates: true });
+  const [deleteProfileTarget, setDeleteProfileTarget] = useState<any>(null);
 
   // Queries
   const { data: profiles, refetch: refetchProfiles } = trpc.mqttClientManagement.listProfiles.useQuery();
@@ -368,7 +379,7 @@ export function MqttProfileManagementContent() {
 
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Server className="h-6 w-6" />}
@@ -504,46 +515,30 @@ export function MqttProfileManagementContent() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Profiles</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{dashboardStats?.profiles?.total || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                {dashboardStats?.profiles?.active || 0} active
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Assignments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{dashboardStats?.assignments?.total || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                {dashboardStats?.assignments?.machines || 0} machines, {dashboardStats?.assignments?.stations || 0} stations
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Errors (24h)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-destructive">{dashboardStats?.errorsLast24h || 0}</div>
-              <p className="text-xs text-muted-foreground">Connection errors</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Templates</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{templates?.length || 0}</div>
-              <p className="text-xs text-muted-foreground">Topic templates</p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            label={t('mqtt.profileMgmt.statProfiles')}
+            value={dashboardStats?.profiles?.total || 0}
+            delta={t('mqtt.profileMgmt.statActiveCount', { count: dashboardStats?.profiles?.active || 0 })}
+          />
+          <MetricCard
+            label={t('mqtt.profileMgmt.statAssignments')}
+            value={dashboardStats?.assignments?.total || 0}
+            delta={t('mqtt.profileMgmt.statMachinesStations', {
+              machines: dashboardStats?.assignments?.machines || 0,
+              stations: dashboardStats?.assignments?.stations || 0,
+            })}
+          />
+          <MetricCard
+            label={t('mqtt.profileMgmt.statErrors24h')}
+            value={dashboardStats?.errorsLast24h || 0}
+            tone="danger"
+            delta={t('mqtt.profileMgmt.statConnectionErrors')}
+          />
+          <MetricCard
+            label={t('mqtt.profileMgmt.statTemplates')}
+            value={templates?.length || 0}
+            delta={t('mqtt.profileMgmt.statTopicTemplates')}
+          />
         </div>
 
         {/* Main Content Tabs */}
@@ -643,11 +638,7 @@ export function MqttProfileManagementContent() {
                           variant="ghost"
                           size="sm"
                           className="text-destructive"
-                          onClick={() => {
-                            if (confirm(t('mqtt.profileMgmt.confirmDeleteProfile'))) {
-                              deleteProfile.mutate({ id: profile.id });
-                            }
-                          }}
+                          onClick={() => setDeleteProfileTarget(profile)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1036,7 +1027,7 @@ export function MqttProfileManagementContent() {
                       return (
                         <div key={index} className="flex-1 flex flex-col items-center gap-1">
                           <div className="w-full bg-muted rounded-t relative" style={{ height: `${Math.max(height, 5)}%` }}>
-                            <div className="absolute bottom-0 w-full bg-green-500 rounded-t" 
+                            <div className="absolute bottom-0 w-full bg-success rounded-t"
                               style={{ height: `${day.attempts > 0 ? (day.successes / day.attempts) * 100 : 0}%` }} />
                           </div>
                           <span className="text-xs text-muted-foreground rotate-45 origin-left">
@@ -1052,7 +1043,7 @@ export function MqttProfileManagementContent() {
                       <span>Total Attempts</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-green-500 rounded" />
+                      <div className="w-3 h-3 bg-success rounded" />
                       <span>Successes</span>
                     </div>
                   </div>
@@ -2042,7 +2033,29 @@ export function MqttProfileManagementContent() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+
+        {/* Delete profile confirmation */}
+        <AlertDialog open={!!deleteProfileTarget} onOpenChange={(open) => !open && setDeleteProfileTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('common.delete')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('mqtt.profileMgmt.confirmDeleteProfile')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteProfileTarget) deleteProfile.mutate({ id: deleteProfileTarget.id });
+                  setDeleteProfileTarget(null);
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </>
   );
 }

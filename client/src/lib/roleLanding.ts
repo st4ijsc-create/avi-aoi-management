@@ -4,7 +4,7 @@
  * Instead of every role landing on the marketing Home ("/"), each role is routed
  * to the surface most useful to them on login:
  *   - operator           → /operator            (the big-button floor shell)
- *   - maintenance        → /technician-copilot   (RCA copilot)
+ *   - maintenance        → /maintenance-home     (maintenance workspace, F1 doc 23)
  *   - quality_inspector  → /quality-home          (the inspection workspace)
  *   - supervisor/manager → /supervisor-home       (briefing: rollup + escalation, U1)
  *   - admin/it_admin     → /admin-home             (governance briefing, U5)
@@ -23,7 +23,7 @@ export function landingPathForRole(role?: string | null): string {
     case "operator":
       return "/operator";
     case "maintenance":
-      return "/technician-copilot";
+      return "/maintenance-home";
     case "quality_inspector":
       return "/quality-home";
     case "supervisor":

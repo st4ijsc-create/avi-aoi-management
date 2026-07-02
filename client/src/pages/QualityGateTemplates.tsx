@@ -403,7 +403,7 @@ export function QualityGateTemplatesContent() {
                       const value = rule.threshold ?? rule.value;
                       return (
                         <div key={i} className="text-sm flex items-center gap-2 p-2 rounded bg-muted">
-                          <CheckCircle className="h-3 w-3 text-green-500" />
+                          <CheckCircle className="h-3 w-3 text-success" />
                           <span>
                             {type} {comparison} {value} → {rule.action}
                           </span>
@@ -453,9 +453,9 @@ function TemplateCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {isBuiltin ? (
-              <ShieldCheck className="h-5 w-5 text-green-500" />
+              <ShieldCheck className="h-5 w-5 text-success" />
             ) : (
-              <Settings className="h-5 w-5 text-blue-500" />
+              <Settings className="h-5 w-5 text-info" />
             )}
             <CardTitle className="text-base">{template.name}</CardTitle>
           </div>

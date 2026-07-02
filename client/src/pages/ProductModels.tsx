@@ -3002,10 +3002,10 @@ export default function ProductModels() {
                               return (
                                 <>
                                   {selected?.isActive === false && (
-                                    <p className="text-xs text-amber-600">⚠️ Selected instrument is inactive and will be rejected on save.</p>
+                                    <p className="text-xs text-warning">⚠️ Selected instrument is inactive and will be rejected on save.</p>
                                   )}
                                   {!selected?.mmPerPixel && (
-                                    <p className="text-xs text-amber-600">⚠️ Selected instrument has no mmPerPixel calibration (will use pixel coordinates only).</p>
+                                    <p className="text-xs text-warning">⚠️ Selected instrument has no mmPerPixel calibration (will use pixel coordinates only).</p>
                                   )}
                                 </>
                               );
@@ -3033,7 +3033,7 @@ export default function ProductModels() {
                             </SelectContent>
                           </Select>
                           {pointPreferredSamplingPlanId && (samplingPlans || []).find((p: any) => p.id === pointPreferredSamplingPlanId)?.isActive === false && (
-                            <p className="text-xs text-amber-600">⚠️ Selected sampling plan is inactive and will be rejected on save.</p>
+                            <p className="text-xs text-warning">⚠️ Selected sampling plan is inactive and will be rejected on save.</p>
                           )}
                         </div>
 
@@ -3057,7 +3057,7 @@ export default function ProductModels() {
                             </SelectContent>
                           </Select>
                           {pointProductViewId && (productViews || []).find((v: any) => v.id === pointProductViewId)?.isActive === false && (
-                            <p className="text-xs text-amber-600">⚠️ Selected view is inactive and will be rejected on save.</p>
+                            <p className="text-xs text-warning">⚠️ Selected view is inactive and will be rejected on save.</p>
                           )}
                         </div>
 
@@ -3079,8 +3079,8 @@ export default function ProductModels() {
                           const hasView = pointProductViewId !== undefined;
                           const readinessCount = (hasCalibration ? 1 : 0) + (hasAQL ? 1 : 0) + (hasView ? 1 : 0);
                           const readinessStatus = readinessCount === 3 ? 'ready' : readinessCount >= 2 ? 'partial' : 'incomplete';
-                          const readinessColor = readinessStatus === 'ready' ? 'bg-green-50 border-green-200' : 
-                                               readinessStatus === 'partial' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
+                          const readinessColor = readinessStatus === 'ready' ? 'bg-success/10 border-success/30' :
+                                               readinessStatus === 'partial' ? 'bg-warning/10 border-warning/30' : 'bg-destructive/10 border-destructive/30';
                           const readinessIcon = readinessStatus === 'ready' ? '✓' : 
                                               readinessStatus === 'partial' ? '⚠️' : '❌';
                           const readinessLabel = readinessStatus === 'ready' ? 'Ready' : 
@@ -3090,13 +3090,13 @@ export default function ProductModels() {
                             <div className={`text-xs p-3 border rounded ${readinessColor}`}>
                               <p className="font-semibold mb-2">{readinessIcon} P3 Quality Readiness: <span className="font-bold">{readinessLabel}</span></p>
                               <div className="space-y-1">
-                                <p className={hasCalibration ? 'text-green-700' : 'text-gray-500'}>
+                                <p className={hasCalibration ? 'text-success' : 'text-muted-foreground'}>
                                   • Instrument: {instrument ? `${instrument.code} (cal: ${instrument.mmPerPixel ?? 'uncalibrated'} mm/px)` : 'None'}
                                 </p>
-                                <p className={hasAQL ? 'text-green-700' : 'text-gray-500'}>
+                                <p className={hasAQL ? 'text-success' : 'text-muted-foreground'}>
                                   • Sampling Plan: {samplingPlan ? `${samplingPlan.code} (AQL: C=${samplingPlan.aqlCritical ?? '-'}, M=${samplingPlan.aqlMajor ?? '-'}, m=${samplingPlan.aqlMinor ?? '-'}, n=${samplingPlan.sampleSize ?? '?'})` : 'None'}
                                 </p>
-                                <p className={hasView ? 'text-green-700' : 'text-gray-500'}>
+                                <p className={hasView ? 'text-success' : 'text-muted-foreground'}>
                                   • View: {productView ? `${productView.viewType.toUpperCase()} (${productView.code})` : 'All views'}
                                 </p>
                               </div>
@@ -3266,7 +3266,7 @@ export default function ProductModels() {
                                 href={doc.fileUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="truncate text-blue-600 hover:underline"
+                                className="truncate text-info hover:underline"
                                 title={doc.fileName}
                               >
                                 {doc.fileName}
@@ -3285,7 +3285,7 @@ export default function ProductModels() {
                                 onClick={() => deleteDocumentMutation.mutate({ id: doc.id })}
                                 disabled={deleteDocumentMutation.isPending}
                               >
-                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                <Trash2 className="h-3.5 w-3.5 text-destructive" />
                               </Button>
                             </PermissionGate>
                           </div>
@@ -3877,15 +3877,15 @@ export default function ProductModels() {
                         <div className="space-y-2">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-xs"><span>EV</span><span>{ev.toFixed(4)}</span></div>
-                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${Math.max(2, evPct)}%` }} /></div>
+                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-info" style={{ width: `${Math.max(2, evPct)}%` }} /></div>
                           </div>
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-xs"><span>AV</span><span>{av.toFixed(4)}</span></div>
-                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-violet-500" style={{ width: `${Math.max(2, avPct)}%` }} /></div>
+                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${Math.max(2, avPct)}%` }} /></div>
                           </div>
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-xs"><span>GRR</span><span>{grr.toFixed(4)}</span></div>
-                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-amber-500" style={{ width: `${Math.max(2, grrPctBar)}%` }} /></div>
+                            <div className="h-2 rounded bg-muted overflow-hidden"><div className="h-full bg-warning" style={{ width: `${Math.max(2, grrPctBar)}%` }} /></div>
                           </div>
                         </div>
                       </div>

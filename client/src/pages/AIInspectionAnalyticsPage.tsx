@@ -19,6 +19,7 @@ import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer, chartColor } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,7 +76,7 @@ import { AnalyticsErrorBoundary } from "@/components/analytics/AnalyticsErrorBou
 
 // Utilities
 import { exportToCSV, exportToJSON, exportChartToPNG, formatChartDataForExport } from "@/lib/exportUtils";
-import { ANALYTICS_COLORS, LOCAL_STORAGE_KEYS } from "@/lib/analyticsConstants";
+import { LOCAL_STORAGE_KEYS } from "@/lib/analyticsConstants";
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 function fmt(d: Date): string {
@@ -230,29 +231,19 @@ export default function AIInspectionAnalyticsPage() {
   // ─── Render ────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-              <BarChart3 className="h-6 w-6 text-cyan-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {t("aiAnalytics.title", "AI Inspection Analytics")}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t("aiAnalytics.subtitle", "Trends, forecasts, risk assessment & insights")}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 ml-auto">
+        <PageHeader
+          icon={<BarChart3 className="h-6 w-6" />}
+          title={t("aiAnalytics.title", "AI Inspection Analytics")}
+          description={t("aiAnalytics.subtitle", "Trends, forecasts, risk assessment & insights")}
+          actions={
             <Button variant="outline" size="sm" onClick={() => batch.refetch()} disabled={batch.isLoading}>
               <RefreshCw className={`h-4 w-4 mr-1 ${batch.isLoading ? "animate-spin" : ""}`} />
               {t("common.refresh", "Refresh")}
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* Date Range Selector */}
         <Card>
@@ -340,15 +331,15 @@ export default function AIInspectionAnalyticsPage() {
 
         {/* Error Boundary */}
         {batch.isError && (
-          <Card className="border-red-500/30 bg-red-500/5">
+          <Card className="border-destructive/30 bg-destructive/5">
             <CardContent className="pt-6">
               <div className="flex gap-4">
-                <AlertTriangle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+                <AlertTriangle className="h-6 w-6 text-destructive shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <h3 className="font-semibold text-sm text-red-700">
+                  <h3 className="font-semibold text-sm text-destructive">
                     {t("common.error", "Error")}
                   </h3>
-                  <p className="text-sm text-red-600 mt-1">
+                  <p className="text-sm text-destructive/90 mt-1">
                     {t("aiAnalytics.loadError", "Failed to load analytics data. Please try again.")}
                   </p>
                   <Button variant="outline" size="sm" onClick={() => batch.refetch()} className="mt-3">
@@ -396,15 +387,17 @@ export default function AIInspectionAnalyticsPage() {
                         <Area
                           type="monotone"
                           dataKey="defectRate"
-                          stroke="#ef4444"
-                          fill="#ef444420"
+                          stroke="var(--destructive)"
+                          fill="var(--destructive)"
+                          fillOpacity={0.12}
                           name={t("aiAnalytics.defectRate", "Defect Rate %")}
                         />
                         <Area
                           type="monotone"
                           dataKey="yieldRate"
-                          stroke="#22c55e"
-                          fill="#22c55e20"
+                          stroke="var(--success)"
+                          fill="var(--success)"
+                          fillOpacity={0.12}
                           name={t("aiAnalytics.yieldRate2", "Yield %")}
                         />
                       </AreaChart>
@@ -453,14 +446,14 @@ export default function AIInspectionAnalyticsPage() {
                           radius={[4, 4, 0, 0]}
                         >
                           {batch.pareto.data.map((_: any, i: number) => (
-                            <Cell key={i} fill={ANALYTICS_COLORS[i % ANALYTICS_COLORS.length]} />
+                            <Cell key={i} fill={chartColor(i)} />
                           ))}
                         </Bar>
                         <Line
                           yAxisId="right"
                           type="monotone"
                           dataKey="cumulativePercentage"
-                          stroke="#f97316"
+                          stroke="var(--warning)"
                           strokeWidth={2}
                           dot={{ r: 3 }}
                           name={t("aiAnalytics.cumulative", "Cumulative %")}
@@ -482,7 +475,7 @@ export default function AIInspectionAnalyticsPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-red-500" />
+                      <Shield className="h-4 w-4 text-destructive" />
                       {t("aiAnalytics.risks", "Risk Assessment")}
                     </CardTitle>
                   </CardHeader>
@@ -522,7 +515,7 @@ export default function AIInspectionAnalyticsPage() {
                         <Line
                           type="monotone"
                           dataKey="total"
-                          stroke="#3b82f6"
+                          stroke="var(--info)"
                           strokeWidth={2}
                           name={t("aiAnalytics.totalInsp", "Total Inspections")}
                           dot={false}
@@ -530,7 +523,7 @@ export default function AIInspectionAnalyticsPage() {
                         <Line
                           type="monotone"
                           dataKey="pass"
-                          stroke="#22c55e"
+                          stroke="var(--success)"
                           strokeWidth={2}
                           name={t("aiAnalytics.pass", "Pass")}
                           dot={false}
@@ -538,7 +531,7 @@ export default function AIInspectionAnalyticsPage() {
                         <Line
                           type="monotone"
                           dataKey="fail"
-                          stroke="#ef4444"
+                          stroke="var(--destructive)"
                           strokeWidth={2}
                           name={t("aiAnalytics.fail", "Fail")}
                           dot={false}
@@ -568,13 +561,13 @@ export default function AIInspectionAnalyticsPage() {
                         <Legend />
                         <Bar
                           dataKey="totalInspections"
-                          fill="#3b82f6"
+                          fill="var(--info)"
                           name={t("aiAnalytics.totalInsp", "Total Inspections")}
                           radius={[4, 4, 0, 0]}
                         />
                         <Bar
                           dataKey="yieldRate"
-                          fill="#22c55e"
+                          fill="var(--success)"
                           name={t("aiAnalytics.yieldRate2", "Yield %")}
                           radius={[4, 4, 0, 0]}
                         />
@@ -617,7 +610,7 @@ export default function AIInspectionAnalyticsPage() {
                       <Legend />
                       <Bar
                         dataKey="yieldRate"
-                        fill="#22c55e"
+                        fill="var(--success)"
                         name={t("aiAnalytics.yieldRate2", "Yield %")}
                         radius={[0, 4, 4, 0]}
                       />
@@ -699,7 +692,7 @@ export default function AIInspectionAnalyticsPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Target className="h-4 w-4 text-blue-500" />
+                      <Target className="h-4 w-4 text-info" />
                       {t("aiAnalytics.correlations", "Factor Correlations")}
                     </CardTitle>
                   </CardHeader>
@@ -750,13 +743,13 @@ export default function AIInspectionAnalyticsPage() {
                     {/* Statistics */}
                     <div className="flex gap-4 mb-4 text-xs flex-wrap">
                       <span>
-                        UCL: <strong className="text-red-500">{batch.control.data.summary.ucl.toFixed(2)}</strong>
+                        UCL: <strong className="text-destructive">{batch.control.data.summary.ucl.toFixed(2)}</strong>
                       </span>
                       <span>
-                        CL: <strong className="text-blue-500">{batch.control.data.summary.mean.toFixed(2)}</strong>
+                        CL: <strong className="text-info">{batch.control.data.summary.mean.toFixed(2)}</strong>
                       </span>
                       <span>
-                        LCL: <strong className="text-red-500">{batch.control.data.summary.lcl.toFixed(2)}</strong>
+                        LCL: <strong className="text-destructive">{batch.control.data.summary.lcl.toFixed(2)}</strong>
                       </span>
                       {batch.control.data.summary.cpk != null && (
                         <span>
@@ -764,10 +757,10 @@ export default function AIInspectionAnalyticsPage() {
                           <strong
                             className={
                               batch.control.data.summary.cpk >= 1.33
-                                ? "text-green-500"
+                                ? "text-success"
                                 : batch.control.data.summary.cpk >= 1.0
-                                  ? "text-yellow-500"
-                                  : "text-red-500"
+                                  ? "text-warning"
+                                  : "text-destructive"
                             }
                           >
                             {batch.control.data.summary.cpk.toFixed(2)}
@@ -801,33 +794,33 @@ export default function AIInspectionAnalyticsPage() {
                         <RechartsTooltip content={<AdvancedTooltip decimalPlaces={2} />} />
                         <ReferenceLine
                           y={batch.control.data.summary.ucl}
-                          stroke="#ef4444"
+                          stroke="var(--destructive)"
                           strokeDasharray="5 5"
                           label={{ value: "UCL", position: "right", fontSize: 10 }}
                         />
                         <ReferenceLine
                           y={batch.control.data.summary.mean}
-                          stroke="#3b82f6"
+                          stroke="var(--info)"
                           strokeDasharray="3 3"
                           label={{ value: "CL", position: "right", fontSize: 10 }}
                         />
                         <ReferenceLine
                           y={batch.control.data.summary.lcl}
-                          stroke="#ef4444"
+                          stroke="var(--destructive)"
                           strokeDasharray="5 5"
                           label={{ value: "LCL", position: "right", fontSize: 10 }}
                         />
                         <Line
                           type="monotone"
                           dataKey="value"
-                          stroke="#3b82f6"
+                          stroke="var(--info)"
                           strokeWidth={1.5}
                           dot={false}
                           name={t("aiAnalytics.value", "Value")}
                         />
                         <Scatter
                           dataKey="oocValue"
-                          fill="#ef4444"
+                          fill="var(--destructive)"
                           name={t("aiAnalytics.oocPoint", "Out of Control")}
                         />
                       </ComposedChart>
@@ -891,20 +884,22 @@ export default function AIInspectionAnalyticsPage() {
                           type="monotone"
                           dataKey="upper"
                           stroke="none"
-                          fill="#22c55e10"
+                          fill="var(--success)"
+                          fillOpacity={0.08}
                           name={t("aiAnalytics.upperBound", "Upper Bound")}
                         />
                         <Area
                           type="monotone"
                           dataKey="lower"
                           stroke="none"
-                          fill="#22c55e10"
+                          fill="var(--success)"
+                          fillOpacity={0.08}
                           name={t("aiAnalytics.lowerBound", "Lower Bound")}
                         />
                         <Line
                           type="monotone"
                           dataKey="value"
-                          stroke="#3b82f6"
+                          stroke="var(--info)"
                           strokeWidth={2}
                           dot={false}
                           name={t("aiAnalytics.actual", "Actual")}
@@ -912,7 +907,7 @@ export default function AIInspectionAnalyticsPage() {
                         <Line
                           type="monotone"
                           dataKey="predicted"
-                          stroke="#22c55e"
+                          stroke="var(--success)"
                           strokeWidth={2}
                           strokeDasharray="5 5"
                           dot={false}
@@ -948,7 +943,7 @@ export default function AIInspectionAnalyticsPage() {
               ) : (
                 <Card>
                   <CardContent className="py-12 text-center text-muted-foreground">
-                    <Shield className="h-12 w-12 mx-auto mb-3 text-green-500" />
+                    <Shield className="h-12 w-12 mx-auto mb-3 text-success" />
                     <p className="font-medium">
                       {t("aiAnalytics.noRisks", "No risks detected in this period")}
                     </p>
@@ -958,7 +953,7 @@ export default function AIInspectionAnalyticsPage() {
             </AnalyticsErrorBoundary>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -966,30 +961,28 @@ export default function AIInspectionAnalyticsPage() {
 // ─── Risk Card Component ───────────────────────────────────────────────
 function RiskCard({ risk, t, detailed }: { risk: any; t: any; detailed?: boolean }) {
   const levelColor: Record<string, string> = {
-    critical: "bg-red-500",
-    high: "bg-orange-500",
-    medium: "bg-yellow-500",
-    low: "bg-green-500",
+    critical: "bg-destructive",
+    high: "bg-warning",
+    medium: "bg-warning/60",
+    low: "bg-success",
+  };
+
+  const levelBorder: Record<string, string> = {
+    critical: "var(--destructive)",
+    high: "var(--warning)",
+    medium: "var(--warning)",
+    low: "var(--success)",
   };
 
   return (
     <Card
       className="border-l-4"
-      style={{
-        borderLeftColor:
-          risk.level === "critical"
-            ? "#ef4444"
-            : risk.level === "high"
-              ? "#f97316"
-              : risk.level === "medium"
-                ? "#eab308"
-                : "#22c55e",
-      }}
+      style={{ borderLeftColor: levelBorder[risk.level] ?? "var(--border)" }}
     >
       <CardContent className="py-3">
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${levelColor[risk.level] ?? "bg-gray-400"}`} />
+            <div className={`h-2 w-2 rounded-full ${levelColor[risk.level] ?? "bg-muted-foreground"}`} />
             <span className="font-medium text-sm">{risk.category}</span>
           </div>
           <Badge

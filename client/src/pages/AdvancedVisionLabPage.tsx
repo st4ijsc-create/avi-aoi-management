@@ -22,8 +22,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Eye, ScanText, Crop, Wand2, MessageSquareQuote, Layers, Image as ImageIcon, Activity, FlameKindling, Search, ShieldAlert, Lightbulb } from "lucide-react";
+import { Loader2, Eye, ScanText, Crop, Wand2, MessageSquareQuote, Layers, Image as ImageIcon, Activity, FlameKindling, Search, ShieldAlert, Lightbulb, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -93,22 +94,23 @@ function targetRefToFinding(r: TargetRef): Pick<ProposeDefectFinding, "measureme
 }
 
 function TargetRefInputs({ value, onChange }: { value: TargetRef; onChange: (v: TargetRef) => void }) {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-3 gap-2 p-2 rounded border border-dashed bg-muted/20">
       <div className="space-y-1">
-        <Label className="text-[11px]">Measurement result #</Label>
+        <Label className="text-[11px]">{t("visionLab.targetRef.measurementResult", "Measurement result #")}</Label>
         <Input type="number" value={value.measurementResultId}
-          onChange={(e) => onChange({ ...value, measurementResultId: e.target.value })} placeholder="gắn vào" />
+          onChange={(e) => onChange({ ...value, measurementResultId: e.target.value })} placeholder={t("visionLab.targetRef.attach", "attach to")} />
       </div>
       <div className="space-y-1">
-        <Label className="text-[11px]">Inspection #</Label>
+        <Label className="text-[11px]">{t("visionLab.targetRef.inspection", "Inspection #")}</Label>
         <Input type="number" value={value.inspectionId}
-          onChange={(e) => onChange({ ...value, inspectionId: e.target.value })} placeholder="tạo mới" />
+          onChange={(e) => onChange({ ...value, inspectionId: e.target.value })} placeholder={t("visionLab.targetRef.createNew", "create new")} />
       </div>
       <div className="space-y-1">
-        <Label className="text-[11px]">Point def #</Label>
+        <Label className="text-[11px]">{t("visionLab.targetRef.pointDef", "Point def #")}</Label>
         <Input type="number" value={value.pointDefId}
-          onChange={(e) => onChange({ ...value, pointDefId: e.target.value })} placeholder="tạo mới" />
+          onChange={(e) => onChange({ ...value, pointDefId: e.target.value })} placeholder={t("visionLab.targetRef.createNew", "create new")} />
       </div>
     </div>
   );
@@ -123,20 +125,21 @@ interface PickerProps {
 }
 
 function ImagePicker({ label, value, onChange }: PickerProps) {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const handle = useCallback(async (file: File | null) => {
     if (!file) { onChange(null); return; }
     if (file.size > MAX_IMAGE_BYTES) {
-      toast.error(`Ảnh "${file.name}" vượt quá 10 MB`);
+      toast.error(t("visionLab.imageTooLarge", 'Image "{{name}}" exceeds 10 MB').replace("{{name}}", file.name));
       return;
     }
     try {
       const b64 = await fileToBase64(file);
       onChange({ base64: b64, name: file.name, mime: file.type || "image/png" });
     } catch (e) {
-      toast.error(`Không đọc được ảnh: ${(e as Error).message}`);
+      toast.error(t("visionLab.imageReadFailed", "Could not read image: {{msg}}").replace("{{msg}}", (e as Error).message));
     }
-  }, [onChange]);
+  }, [onChange, t]);
 
   return (
     <div className="space-y-2">
@@ -150,7 +153,7 @@ function ImagePicker({ label, value, onChange }: PickerProps) {
         />
         {value && (
           <Button type="button" variant="ghost" size="sm" onClick={() => { onChange(null); if (inputRef.current) inputRef.current.value = ""; }}>
-            Xoá
+            {t("common.remove", "Remove")}
           </Button>
         )}
       </div>
@@ -167,25 +170,26 @@ function ImagePicker({ label, value, onChange }: PickerProps) {
 // ─── Tab A. compareOkVsNg ─────────────────────────────────────────────
 
 function TabCompare() {
+  const { t } = useTranslation();
   const [ok, setOk] = useState<PickerProps["value"]>(null);
   const [ng, setNg] = useState<PickerProps["value"]>(null);
   const [targetRef, setTargetRef] = useState<TargetRef>(emptyTargetRef);
   const m = trpc.aiAdvancedVision.compareOkVsNg.useMutation();
 
   const run = () => {
-    if (!ok || !ng) return toast.error("Chọn cả ảnh OK và NG");
+    if (!ok || !ng) return toast.error(t("visionLab.compare.pickBoth", "Pick both an OK and an NG image"));
     m.mutate({ okImage: ok.base64, ngImage: ng.base64, language: "vi" });
   };
 
   return (
     <div className="space-y-4">
       <div className="grid md:grid-cols-2 gap-4">
-        <ImagePicker label="Ảnh OK (chuẩn)" value={ok} onChange={setOk} />
-        <ImagePicker label="Ảnh NG (cần kiểm)" value={ng} onChange={setNg} />
+        <ImagePicker label={t("visionLab.compare.okImage", "OK image (reference)")} value={ok} onChange={setOk} />
+        <ImagePicker label={t("visionLab.compare.ngImage", "NG image (to inspect)")} value={ng} onChange={setNg} />
       </div>
       <Button onClick={run} disabled={m.isPending || !ok || !ng}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        So sánh
+        {t("visionLab.compare.run", "Compare")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && (() => { const d = m.data as any; return (
@@ -221,15 +225,16 @@ function TabCompare() {
 // ─── Tab B. imageQualityCheck ─────────────────────────────────────────
 
 function TabQuality() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const m = trpc.aiAdvancedVision.imageQualityCheck.useMutation();
-  const run = () => { if (!img) return toast.error("Chọn ảnh"); m.mutate({ image: img.base64 }); };
+  const run = () => { if (!img) return toast.error(t("visionLab.pickImage", "Pick an image")); m.mutate({ image: img.base64 }); };
   return (
     <div className="space-y-4">
-      <ImagePicker label="Ảnh cần đánh giá" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.quality.image", "Image to evaluate")} value={img} onChange={setImg} />
       <Button onClick={run} disabled={m.isPending || !img}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Phân tích chất lượng
+        {t("visionLab.quality.run", "Analyze quality")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && <ResultJson data={m.data} />}
@@ -245,18 +250,18 @@ function TabHeatmap() {
   const [cand, setCand] = useState<PickerProps["value"]>(null);
   const m = trpc.aiAdvancedVision.generateDefectHeatmap.useMutation();
   const run = () => {
-    if (!ok || !cand) return toast.error("Chọn ảnh OK và ảnh kiểm");
+    if (!ok || !cand) return toast.error(t("visionLab.heatmap.pickBoth", "Pick an OK image and a candidate image"));
     m.mutate({ okReference: ok.base64, candidate: cand.base64 });
   };
   return (
     <div className="space-y-4">
       <div className="grid md:grid-cols-2 gap-4">
-        <ImagePicker label="Ảnh OK tham chiếu" value={ok} onChange={setOk} />
-        <ImagePicker label="Ảnh cần phát hiện lỗi" value={cand} onChange={setCand} />
+        <ImagePicker label={t("visionLab.heatmap.okImage", "OK reference image")} value={ok} onChange={setOk} />
+        <ImagePicker label={t("visionLab.heatmap.candImage", "Image to detect defects on")} value={cand} onChange={setCand} />
       </div>
       <Button onClick={run} disabled={m.isPending || !ok || !cand}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Tạo heatmap
+        {t("visionLab.heatmap.run", "Generate heatmap")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && (
@@ -264,7 +269,7 @@ function TabHeatmap() {
           <div className="text-sm flex flex-wrap items-center gap-2">
             <Badge variant="outline">{m.data.width} × {m.data.height}</Badge>
             <span className="text-muted-foreground">
-              diffRatio {(m.data.diffRatio * 100).toFixed(2)}% · {m.data.totalDiffPixels.toLocaleString()} pixels lỗi · {m.data.hotspots.length} hotspot
+              {t("visionLab.heatmap.diffRatio", "diffRatio")} {(m.data.diffRatio * 100).toFixed(2)}% · {m.data.totalDiffPixels.toLocaleString()} {t("visionLab.heatmap.diffPixels", "defect pixels")} · {m.data.hotspots.length} {t("visionLab.heatmap.hotspots", "hotspots")}
             </span>
             {/* B4.2 — cờ căn golden-sample (chỉ hiện khi ALIGN_BEFORE_DIFF bật & confidence đủ). */}
             {m.data.aligned
@@ -282,19 +287,20 @@ function TabHeatmap() {
 // ─── Tab D. extractText ───────────────────────────────────────────────
 
 function TabOcr() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const [lang, setLang] = useState<"auto" | "en" | "vi">("auto");
   const m = trpc.aiAdvancedVision.extractText.useMutation();
-  const run = () => { if (!img) return toast.error("Chọn ảnh"); m.mutate({ image: img.base64, language: lang }); };
+  const run = () => { if (!img) return toast.error(t("visionLab.pickImage", "Pick an image")); m.mutate({ image: img.base64, language: lang }); };
   return (
     <div className="space-y-4">
-      <ImagePicker label="Ảnh chứa văn bản" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.ocr.image", "Image containing text")} value={img} onChange={setImg} />
       <div className="w-48">
-        <Label>Ngôn ngữ</Label>
+        <Label>{t("visionLab.ocr.language", "Language")}</Label>
         <Select value={lang} onValueChange={(v) => setLang(v as typeof lang)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="auto">Auto detect</SelectItem>
+            <SelectItem value="auto">{t("visionLab.ocr.auto", "Auto detect")}</SelectItem>
             <SelectItem value="en">English</SelectItem>
             <SelectItem value="vi">Tiếng Việt</SelectItem>
           </SelectContent>
@@ -302,7 +308,7 @@ function TabOcr() {
       </div>
       <Button onClick={run} disabled={m.isPending || !img}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Trích xuất văn bản
+        {t("visionLab.ocr.run", "Extract text")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && <ResultJson data={m.data} />}
@@ -313,9 +319,10 @@ function TabOcr() {
 // ─── Tab E. autoDetectRoi ─────────────────────────────────────────────
 
 function TabRoi() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const m = trpc.aiAdvancedVision.autoDetectRoi.useMutation();
-  const run = () => { if (!img) return toast.error("Chọn ảnh"); m.mutate({ image: img.base64 }); };
+  const run = () => { if (!img) return toast.error(t("visionLab.pickImage", "Pick an image")); m.mutate({ image: img.base64 }); };
   const overlayStyle = useMemo(() => {
     if (!img || !m.data) return null;
     const d = m.data as any;
@@ -328,10 +335,10 @@ function TabRoi() {
   }, [img, m.data]);
   return (
     <div className="space-y-4">
-      <ImagePicker label="Ảnh đầu vào" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.roi.image", "Input image")} value={img} onChange={setImg} />
       <Button onClick={run} disabled={m.isPending || !img}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Phát hiện ROI
+        {t("visionLab.roi.run", "Detect ROI")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && img && (
@@ -350,33 +357,34 @@ function TabRoi() {
 // ─── Tab F. augmentImage ──────────────────────────────────────────────
 
 function TabAugment() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const [selected, setSelected] = useState<AugmentTransform[]>(["rotate90", "brightnessUp", "noise"]);
   const m = trpc.aiAdvancedVision.augmentImage.useMutation();
-  const toggle = (t: AugmentTransform) =>
-    setSelected((s) => s.includes(t) ? s.filter(x => x !== t) : [...s, t]);
+  const toggle = (tf: AugmentTransform) =>
+    setSelected((s) => s.includes(tf) ? s.filter(x => x !== tf) : [...s, tf]);
   const run = () => {
-    if (!img) return toast.error("Chọn ảnh");
-    if (selected.length === 0) return toast.error("Chọn ít nhất 1 transform");
+    if (!img) return toast.error(t("visionLab.pickImage", "Pick an image"));
+    if (selected.length === 0) return toast.error(t("visionLab.augment.pickOne", "Pick at least one transform"));
     m.mutate({ image: img.base64, transforms: selected });
   };
   return (
     <div className="space-y-4">
-      <ImagePicker label="Ảnh gốc" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.augment.image", "Source image")} value={img} onChange={setImg} />
       <div>
-        <Label>Transforms</Label>
+        <Label>{t("visionLab.augment.transforms", "Transforms")}</Label>
         <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mt-2">
-          {ALL_TRANSFORMS.map((t) => (
-            <label key={t} className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox checked={selected.includes(t)} onCheckedChange={() => toggle(t)} />
-              {t}
+          {ALL_TRANSFORMS.map((tf) => (
+            <label key={tf} className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={selected.includes(tf)} onCheckedChange={() => toggle(tf)} />
+              {tf}
             </label>
           ))}
         </div>
       </div>
       <Button onClick={run} disabled={m.isPending || !img}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Sinh ảnh tăng cường
+        {t("visionLab.augment.run", "Generate augmented images")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && (
@@ -396,24 +404,25 @@ function TabAugment() {
 // ─── Tab G. visualQA ──────────────────────────────────────────────────
 
 function TabVqa() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const [q, setQ] = useState("Mô tả ngắn gọn các khuyết tật bạn nhìn thấy trên ảnh này.");
   const m = trpc.aiAdvancedVision.visualQA.useMutation();
   const run = () => {
-    if (!img) return toast.error("Chọn ảnh");
-    if (q.trim().length < 3) return toast.error("Câu hỏi tối thiểu 3 ký tự");
+    if (!img) return toast.error(t("visionLab.pickImage", "Pick an image"));
+    if (q.trim().length < 3) return toast.error(t("visionLab.vqa.minQuestion", "Question must be at least 3 characters"));
     m.mutate({ image: img.base64, question: q.trim(), language: "vi" });
   };
   return (
     <div className="space-y-4">
-      <ImagePicker label="Ảnh để hỏi" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.vqa.image", "Image to ask about")} value={img} onChange={setImg} />
       <div>
-        <Label>Câu hỏi</Label>
+        <Label>{t("visionLab.vqa.question", "Question")}</Label>
         <Textarea value={q} onChange={(e) => setQ(e.target.value)} rows={3} />
       </div>
       <Button onClick={run} disabled={m.isPending || !img}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Hỏi LLaVA
+        {t("visionLab.vqa.run", "Ask LLaVA")}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && <ResultJson data={m.data} />}
@@ -424,6 +433,7 @@ function TabVqa() {
 // ─── Tab H. batchTriage ───────────────────────────────────────────────
 
 function TabBatch() {
+  const { t } = useTranslation();
   const [imgs, setImgs] = useState<{ base64: string; name: string; mime: string }[]>([]);
   const m = trpc.aiAdvancedVision.batchTriage.useMutation();
 
@@ -432,21 +442,21 @@ function TabBatch() {
     const arr: { base64: string; name: string; mime: string }[] = [];
     for (let i = 0; i < files.length && imgs.length + arr.length < 20; i++) {
       const f = files[i];
-      if (f.size > MAX_IMAGE_BYTES) { toast.error(`Bỏ qua ${f.name} (>10 MB)`); continue; }
+      if (f.size > MAX_IMAGE_BYTES) { toast.error(t("visionLab.batch.skipLarge", "Skipped {{name}} (>10 MB)").replace("{{name}}", f.name)); continue; }
       arr.push({ base64: await fileToBase64(f), name: f.name, mime: f.type || "image/png" });
     }
     setImgs((s) => [...s, ...arr]);
-  }, [imgs.length]);
+  }, [imgs.length, t]);
 
   const run = () => {
-    if (imgs.length === 0) return toast.error("Chọn ít nhất 1 ảnh");
+    if (imgs.length === 0) return toast.error(t("visionLab.batch.pickOne", "Pick at least one image"));
     m.mutate({ images: imgs.map((i) => i.base64), language: "vi" });
   };
 
   return (
     <div className="space-y-4">
       <div>
-        <Label>Chọn nhiều ảnh (tối đa 20)</Label>
+        <Label>{t("visionLab.batch.pickMany", "Pick multiple images (up to 20)")}</Label>
         <Input type="file" accept="image/*" multiple onChange={(e) => add(e.target.files)} />
       </div>
       {imgs.length > 0 && (
@@ -454,7 +464,13 @@ function TabBatch() {
           {imgs.map((im, i) => (
             <div key={i} className="relative border rounded overflow-hidden">
               <img src={previewUrl(im.base64, im.mime)} alt={im.name} className="w-full h-20 object-cover" />
-              <button onClick={() => setImgs((s) => s.filter((_, j) => j !== i))} className="absolute top-0 right-0 bg-black/60 text-white text-xs px-1">×</button>
+              <button
+                onClick={() => setImgs((s) => s.filter((_, j) => j !== i))}
+                className="absolute top-0 right-0 bg-foreground/60 text-background p-0.5"
+                aria-label={t("common.remove", "Remove")}
+              >
+                <X className="h-3 w-3" />
+              </button>
               <div className="text-[10px] truncate p-0.5">{im.name}</div>
             </div>
           ))}
@@ -462,13 +478,13 @@ function TabBatch() {
       )}
       <Button onClick={run} disabled={m.isPending || imgs.length === 0}>
         {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Triage {imgs.length} ảnh
+        {t("visionLab.batch.run", "Triage {{count}} images").replace("{{count}}", String(imgs.length))}
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && (() => { const d = m.data as any; return (
         <div className="space-y-2">
           <div className="text-sm text-muted-foreground">
-            Tổng {d.total} · OK {d.summary.ok} · NG {d.summary.ng} · REVIEW {d.summary.review}
+            {t("visionLab.batch.total", "Total")} {d.total} · OK {d.summary.ok} · NG {d.summary.ng} · REVIEW {d.summary.review}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {d.results.map((r: any, i: number) => (
@@ -493,6 +509,7 @@ function TabBatch() {
 // ─── Tab I. Similar defect search (WS-3) ──────────────────────────────
 
 function TabSimilar() {
+  const { t } = useTranslation();
   const [img, setImg] = useState<PickerProps["value"]>(null);
   const [topK, setTopK] = useState(8);
   const [defectType, setDefectType] = useState("");
@@ -506,7 +523,7 @@ function TabSimilar() {
   const { data: stats } = trpc.aiImageSearch.stats.useQuery({});
 
   const run = async () => {
-    if (!img) return toast.error("Chọn ảnh NG cần tra cứu");
+    if (!img) return toast.error(t("visionLab.similar.pickImage", "Pick an NG image to look up"));
     setBusy(true);
     setResults(null);
     try {
@@ -523,7 +540,7 @@ function TabSimilar() {
       setSearchMode((res.searchMode ?? null) as SearchMode | null);
       setEmbeddingSource(((res as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (e: any) {
-      toast.error(e?.message ?? "Tìm kiếm thất bại");
+      toast.error(e?.message ?? t("visionLab.similar.searchFailed", "Search failed"));
     } finally {
       setBusy(false);
     }
@@ -532,15 +549,15 @@ function TabSimilar() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Mô tả ảnh bằng LLM rồi nhúng văn bản (Ollama mxbai-embed-large, 1024-d) để tìm các lỗi NG tương tự đã lưu.
+        {t("visionLab.similar.desc", "Describe the image with an LLM then embed the text (Ollama mxbai-embed-large, 1024-d) to find similar stored NG defects.")}
         {stats && (
           <span className="ml-1">
-            Đã index: <b>{(stats as any).indexedCount ?? 0}</b>
-            {!(stats as any).pgvectorAvailable && <span className="text-amber-600"> (pgvector chưa sẵn sàng — fallback)</span>}
+            {t("visionLab.similar.indexed", "Indexed:")} <b>{(stats as any).indexedCount ?? 0}</b>
+            {!(stats as any).pgvectorAvailable && <span className="text-warning"> {t("visionLab.similar.pgvectorFallback", "(pgvector not ready — fallback)")}</span>}
           </span>
         )}
       </p>
-      <ImagePicker label="Ảnh NG cần tra cứu" value={img} onChange={setImg} />
+      <ImagePicker label={t("visionLab.similar.pickImage", "Pick an NG image to look up")} value={img} onChange={setImg} />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div>
           <Label>Top K</Label>
@@ -553,13 +570,13 @@ function TabSimilar() {
           />
         </div>
         <div>
-          <Label>Loại lỗi (tùy chọn)</Label>
-          <Input value={defectType} onChange={(e) => setDefectType(e.target.value)} placeholder="vd: solder_bridge" />
+          <Label>{t("visionLab.similar.defectType", "Defect type (optional)")}</Label>
+          <Input value={defectType} onChange={(e) => setDefectType(e.target.value)} placeholder="e.g. solder_bridge" />
         </div>
       </div>
       <Button onClick={run} disabled={busy || !img}>
         {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Tìm lỗi tương tự
+        {t("visionLab.similar.run", "Find similar defects")}
       </Button>
       <SimilarImageGrid results={results} loading={busy} searchMode={searchMode} embeddingSource={embeddingSource} />
     </div>
@@ -718,42 +735,37 @@ function TabAnomaly() {
 // ─── Page ─────────────────────────────────────────────────────────────
 
 export default function AdvancedVisionLabPage() {
+  const { t } = useTranslation();
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Wand2 className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Advanced Vision Lab</h1>
-            <p className="text-sm text-muted-foreground">
-              Thử 8 tính năng xử lý ảnh nâng cao (LLaVA + sharp). Upload ảnh thật từ AOI để kiểm tra trực tiếp.
-            </p>
-          </div>
-        </div>
+      <PageContainer fluid>
+        <PageHeader
+          icon={<Wand2 className="h-6 w-6" />}
+          title={t("visionLab.title", "Advanced Vision Lab")}
+          description={t("visionLab.subtitle", "Try 8 advanced image-processing features (LLaVA + sharp). Upload real AOI images to test directly.")}
+        />
 
         <Card>
           <CardHeader>
-            <CardTitle>Phòng thí nghiệm tính năng</CardTitle>
+            <CardTitle>{t("visionLab.featuresTitle", "Feature laboratory")}</CardTitle>
             <CardDescription>
-              Mỗi tab tương ứng 1 endpoint <code>aiAdvancedVision.*</code>. Các tính năng dùng LLaVA (D, G, A, H) sẽ chậm hơn vì gọi GGUF model.
+              {t("visionLab.featuresDesc", "Each tab maps to one aiAdvancedVision.* endpoint. The LLaVA-backed features (D, G, A, H) are slower because they call the GGUF model.")}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="compare" className="w-full">
               <TabsList className="flex flex-wrap h-auto">
-                <TabsTrigger value="compare"><Eye className="h-4 w-4 mr-1" /> A. Compare</TabsTrigger>
-                <TabsTrigger value="quality"><Activity className="h-4 w-4 mr-1" /> B. Quality</TabsTrigger>
-                <TabsTrigger value="heatmap"><FlameKindling className="h-4 w-4 mr-1" /> C. Heatmap</TabsTrigger>
-                <TabsTrigger value="ocr"><ScanText className="h-4 w-4 mr-1" /> D. OCR</TabsTrigger>
-                <TabsTrigger value="roi"><Crop className="h-4 w-4 mr-1" /> E. ROI</TabsTrigger>
-                <TabsTrigger value="augment"><ImageIcon className="h-4 w-4 mr-1" /> F. Augment</TabsTrigger>
-                <TabsTrigger value="vqa"><MessageSquareQuote className="h-4 w-4 mr-1" /> G. Visual QA</TabsTrigger>
-                <TabsTrigger value="batch"><Layers className="h-4 w-4 mr-1" /> H. Batch</TabsTrigger>
-                <TabsTrigger value="similar"><Search className="h-4 w-4 mr-1" /> I. Tìm lỗi tương tự</TabsTrigger>
-                <TabsTrigger value="anomaly"><ShieldAlert className="h-4 w-4 mr-1" /> J. Anomaly</TabsTrigger>
-                <TabsTrigger value="explain"><Lightbulb className="h-4 w-4 mr-1" /> K. XAI</TabsTrigger>
+                <TabsTrigger value="compare"><Eye className="h-4 w-4 mr-1" /> {t("visionLab.tab.compare", "A. Compare")}</TabsTrigger>
+                <TabsTrigger value="quality"><Activity className="h-4 w-4 mr-1" /> {t("visionLab.tab.quality", "B. Quality")}</TabsTrigger>
+                <TabsTrigger value="heatmap"><FlameKindling className="h-4 w-4 mr-1" /> {t("visionLab.tab.heatmap", "C. Heatmap")}</TabsTrigger>
+                <TabsTrigger value="ocr"><ScanText className="h-4 w-4 mr-1" /> {t("visionLab.tab.ocr", "D. OCR")}</TabsTrigger>
+                <TabsTrigger value="roi"><Crop className="h-4 w-4 mr-1" /> {t("visionLab.tab.roi", "E. ROI")}</TabsTrigger>
+                <TabsTrigger value="augment"><ImageIcon className="h-4 w-4 mr-1" /> {t("visionLab.tab.augment", "F. Augment")}</TabsTrigger>
+                <TabsTrigger value="vqa"><MessageSquareQuote className="h-4 w-4 mr-1" /> {t("visionLab.tab.vqa", "G. Visual QA")}</TabsTrigger>
+                <TabsTrigger value="batch"><Layers className="h-4 w-4 mr-1" /> {t("visionLab.tab.batch", "H. Batch")}</TabsTrigger>
+                <TabsTrigger value="similar"><Search className="h-4 w-4 mr-1" /> {t("visionLab.tab.similar", "I. Similar defects")}</TabsTrigger>
+                <TabsTrigger value="anomaly"><ShieldAlert className="h-4 w-4 mr-1" /> {t("visionLab.tab.anomaly", "J. Anomaly")}</TabsTrigger>
+                <TabsTrigger value="explain"><Lightbulb className="h-4 w-4 mr-1" /> {t("visionLab.tab.explain", "K. XAI")}</TabsTrigger>
               </TabsList>
               <div className="mt-4">
                 <TabsContent value="compare"><TabCompare /></TabsContent>
@@ -771,7 +783,7 @@ export default function AdvancedVisionLabPage() {
             </Tabs>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

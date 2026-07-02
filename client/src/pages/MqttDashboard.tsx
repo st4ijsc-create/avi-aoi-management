@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import {
+  PageHeader, PageContainer, MetricCard, StatusBadge,
+  chartColor, chartTooltipStyle, chartGridProps, chartAxisTick,
+} from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,8 +41,6 @@ import {
   Cell,
 } from "recharts";
 import { useTranslation } from 'react-i18next';
-
-const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1'];
 
 export default function MqttDashboard() {
   const { t } = useTranslation();
@@ -254,22 +255,22 @@ export default function MqttDashboard() {
       case 'DAILY_SUMMARY':
         return <Badge className="bg-info/20 text-info border-info/30"><Activity className="w-3 h-3 mr-1" /> Daily</Badge>;
       case 'WEEKLY_SUMMARY':
-        return <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30"><TrendingUp className="w-3 h-3 mr-1" /> Weekly</Badge>;
+        return <Badge className="bg-primary/20 text-primary border-primary/30"><TrendingUp className="w-3 h-3 mr-1" /> Weekly</Badge>;
       default:
         return <Badge variant="outline">{type}</Badge>;
     }
   };
 
-  // Prepare pie chart data for message breakdown
+  // Prepare pie chart data for message breakdown (themed chart tokens)
   const pieData = stats ? [
-    { name: 'NG Alerts', value: stats.breakdown.ngAlerts, color: '#ef4444' },
-    { name: 'Daily Summary', value: stats.breakdown.dailySummaries, color: '#3b82f6' },
-    { name: 'Weekly Summary', value: stats.breakdown.weeklySummaries, color: '#8b5cf6' },
+    { name: 'NG Alerts', value: stats.breakdown.ngAlerts, color: chartColor(2) },
+    { name: 'Daily Summary', value: stats.breakdown.dailySummaries, color: chartColor(0) },
+    { name: 'Weekly Summary', value: stats.breakdown.weeklySummaries, color: chartColor(4) },
   ].filter(d => d.value > 0) : [];
 
   return (
     <DashboardLayout>
-      <div className="space-y-3 sm:space-y-4 mobile-safe-bottom">
+      <PageContainer fluid className="space-y-3 sm:space-y-4 mobile-safe-bottom">
         {/* Header */}
         <PageHeader
           title="MQTT Dashboard"
@@ -294,7 +295,7 @@ export default function MqttDashboard() {
                     Cloud: Connected
                   </Badge>
                 ) : (
-                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 px-3 py-1">
+                  <Badge className="bg-warning/20 text-warning border-warning/30 px-3 py-1">
                     <WifiOff className="w-4 h-4 mr-2" />
                     Cloud: Disconnected
                   </Badge>
@@ -344,164 +345,75 @@ export default function MqttDashboard() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-          {/* Connected Clients */}
-          <Card className="bg-linear-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
-                <span className="hidden sm:inline">Clients Online</span>
-                <span className="sm:hidden">Online</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-emerald-400">
-                {statsLoading ? '-' : stats?.clients.online || 0}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                / {stats?.clients.total || 0} {t('mqtt.dashboard.totalClients')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Offline Clients */}
-          <Card className="bg-linear-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <WifiOff className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" />
-                <span className="hidden sm:inline">Clients Offline</span>
-                <span className="sm:hidden">Offline</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-amber-400">
-                {statsLoading ? '-' : stats?.clients.offline || 0}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats?.clients.pendingApproval || 0} {t('mqtt.dashboard.pendingApproval')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Messages Today */}
-          <Card className="bg-linear-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400" />
-                <span className="hidden sm:inline">{t('mqtt.dashboard.messagesToday')}</span>
-                <span className="sm:hidden">{t('mqtt.messages')}</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-blue-400">
-                {statsLoading ? '-' : stats?.messages.total || 0}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats?.breakdown.ngAlerts || 0} NG alerts
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Delivery Rate */}
-          <Card className="bg-linear-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <Send className="w-3 h-3 sm:w-4 sm:h-4 text-purple-400" />
-                <span className="hidden sm:inline">{t('mqtt.dashboard.successRate')}</span>
-                <span className="sm:hidden">{t('mqtt.dashboard.rate')}</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-purple-400">
-                {statsLoading ? '-' : `${stats?.messages.deliveryRate || 0}%`}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats?.messages.delivered || 0} / {stats?.messages.total || 0} {t('mqtt.messages')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Wifi className="w-4 h-4" />}
+            tone="success"
+            label={t('mqtt.dashboard.clientsOnline', 'Clients Online')}
+            value={statsLoading ? '-' : (stats?.clients.online ?? 0)}
+            delta={`/ ${stats?.clients.total ?? 0} ${t('mqtt.dashboard.totalClients')}`}
+          />
+          <MetricCard
+            icon={<WifiOff className="w-4 h-4" />}
+            tone="warning"
+            label={t('mqtt.dashboard.clientsOffline', 'Clients Offline')}
+            value={statsLoading ? '-' : (stats?.clients.offline ?? 0)}
+            delta={`${stats?.clients.pendingApproval ?? 0} ${t('mqtt.dashboard.pendingApproval')}`}
+          />
+          <MetricCard
+            icon={<MessageSquare className="w-4 h-4" />}
+            tone="info"
+            label={t('mqtt.dashboard.messagesToday')}
+            value={statsLoading ? '-' : (stats?.messages.total ?? 0)}
+            delta={`${stats?.breakdown.ngAlerts ?? 0} NG alerts`}
+          />
+          <MetricCard
+            icon={<Send className="w-4 h-4" />}
+            label={t('mqtt.dashboard.successRate')}
+            value={statsLoading ? '-' : `${stats?.messages.deliveryRate ?? 0}%`}
+            delta={`${stats?.messages.delivered ?? 0} / ${stats?.messages.total ?? 0} ${t('mqtt.messages')}`}
+          />
         </div>
 
         {/* Realtime Monitoring Section */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-          {/* Throughput - Last Minute */}
-          <Card className="bg-linear-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <Zap className="w-3 h-3 sm:w-4 sm:h-4 text-cyan-400" />
-                {t('mqtt.dashboard.throughput1min')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-cyan-400">
-                {realtimeStats?.throughput.lastMinute || 0}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('mqtt.dashboard.msgPerMin')}
-              </p>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Zap className="w-4 h-4" />}
+            tone="info"
+            label={t('mqtt.dashboard.throughput1min')}
+            value={realtimeStats?.throughput.lastMinute ?? 0}
+            delta={t('mqtt.dashboard.msgPerMin')}
+          />
+          <MetricCard
+            icon={<BarChart3 className="w-4 h-4" />}
+            tone="info"
+            label={t('mqtt.dashboard.throughput5min')}
+            value={realtimeStats?.throughput.last5Minutes ?? 0}
+            delta={t('mqtt.dashboard.avgMsgPerMin')}
+          />
+          <MetricCard
+            icon={<Timer className="w-4 h-4" />}
+            label={t('mqtt.dashboard.latencyAvg', 'Latency (Avg)')}
+            value={realtimeStats?.latency.avgMs ?? 0}
+            delta={`ms (P95: ${realtimeStats?.latency.p95Ms ?? 0}ms)`}
+          />
 
-          {/* Throughput - Last 5 Minutes */}
-          <Card className="bg-linear-to-br from-indigo-500/10 to-indigo-600/5 border-indigo-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-400" />
-                {t('mqtt.dashboard.throughput5min')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-indigo-400">
-                {realtimeStats?.throughput.last5Minutes || 0}
+          {/* External Broker Status (bespoke — badge + endpoint, not a scalar) */}
+          <Card>
+            <CardContent className="flex flex-col justify-center gap-1 p-4">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Gauge className="w-4 h-4" />
+                {t('mqtt.dashboard.externalBroker', 'External Broker')}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('mqtt.dashboard.avgMsgPerMin')}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Average Latency */}
-          <Card className="bg-linear-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <Timer className="w-3 h-3 sm:w-4 sm:h-4 text-rose-400" />
-                Latency (Avg)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold text-rose-400">
-                {realtimeStats?.latency.avgMs || 0}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                ms (P95: {realtimeStats?.latency.p95Ms || 0}ms)
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* External Broker Status */}
-          <Card className="bg-linear-to-br from-teal-500/10 to-teal-600/5 border-teal-500/20">
-            <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
-                <Gauge className="w-3 h-3 sm:w-4 sm:h-4 text-teal-400" />
-                External Broker
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 pt-0">
               <div className="flex items-center gap-2">
                 {realtimeStats?.externalBroker.connected ? (
-                  <Badge className="bg-success/20 text-success border-success/30">
-                    <CheckCircle className="w-3 h-3 mr-1" /> Connected
-                  </Badge>
+                  <StatusBadge status="connected" tone="success" label={<><CheckCircle className="w-3 h-3 mr-1" /> Connected</>} className="gap-0" />
                 ) : realtimeStats?.externalBroker.enabled ? (
-                  <Badge className="bg-warning/20 text-warning border-warning/30">
-                    <Clock className="w-3 h-3 mr-1" /> Connecting...
-                  </Badge>
+                  <StatusBadge status="connecting" tone="warning" label={<><Clock className="w-3 h-3 mr-1" /> Connecting...</>} className="gap-0" />
                 ) : (
-                  <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
-                    <XCircle className="w-3 h-3 mr-1" /> Disabled
-                  </Badge>
+                  <StatusBadge status="disabled" tone="default" label={<><XCircle className="w-3 h-3 mr-1" /> Disabled</>} className="gap-0" />
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-2 truncate">
+              <p className="text-xs text-muted-foreground truncate">
                 {realtimeStats?.externalBroker.broker || 'N/A'}
                 {realtimeStats?.externalBroker.useTLS && (
                   <Badge variant="outline" className="ml-2 text-xs">TLS</Badge>
@@ -533,47 +445,44 @@ export default function MqttDashboard() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={throughputHistory}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                    <XAxis 
-                      dataKey="time" 
-                      stroke="#888"
-                      tick={{ fontSize: 10 }}
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis
+                      dataKey="time"
+                      tick={chartAxisTick}
                       interval={9}
                     />
-                    <YAxis stroke="#888" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
-                    />
+                    <YAxis tick={chartAxisTick} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="count" 
-                      name={t('common.total')} 
-                      stroke="#06b6d4" 
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      name={t('common.total')}
+                      stroke={chartColor(1)}
                       strokeWidth={2}
                       dot={false}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="delivered" 
-                      name={t('mqtt.dashboard.delivered')} 
-                      stroke="#10b981" 
+                    <Line
+                      type="monotone"
+                      dataKey="delivered"
+                      name={t('mqtt.dashboard.delivered')}
+                      stroke={chartColor(0)}
                       strokeWidth={2}
                       dot={false}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="failed" 
-                      name={t('mqtt.dashboard.failed')} 
-                      stroke="#ef4444" 
+                    <Line
+                      type="monotone"
+                      dataKey="failed"
+                      name={t('mqtt.dashboard.failed')}
+                      stroke={chartColor(2)}
                       strokeWidth={2}
                       dot={false}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="ngAlerts" 
-                      name="NG Alerts" 
-                      stroke="#f59e0b" 
+                    <Line
+                      type="monotone"
+                      dataKey="ngAlerts"
+                      name="NG Alerts"
+                      stroke={chartColor(3)}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -836,7 +745,7 @@ export default function MqttDashboard() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* Test NG Alert Dialog */}
       <Dialog open={showTestDialog} onOpenChange={(open) => { setShowTestDialog(open); if (!open) setLastTestResult(null); }}>

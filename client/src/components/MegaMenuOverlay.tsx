@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { NavGroup, groupItemsBySection } from "@/lib/navigation";
+import { NavGroup, groupItemsBySection, isNavItemActive } from "@/lib/navigation";
 import { pushRecentHref } from "./CommandPalette";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +75,7 @@ export function MegaMenuOverlay({
                           </div>
                         )}
                         {bucket.items.map(item => {
-                          const isActive = location === item.href;
+                          const isActive = isNavItemActive(item.href, location);
                           return (
                             <button
                               key={item.href}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
-import { PageHeader } from '@/components/patterns';
+import { PageHeader, MetricCard, StatusBadge } from '@/components/patterns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -208,13 +208,13 @@ export default function HistoryExportScheduling() {
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'SUCCESS':
-        return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.success')}</Badge>;
+        return <StatusBadge status="SUCCESS" tone="success" label={<><CheckCircle aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.success')}</>} />;
       case 'FAILED':
-        return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.failed')}</Badge>;
+        return <StatusBadge status="FAILED" tone="error" label={<><XCircle aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.failed')}</>} />;
       case 'RUNNING':
-        return <Badge className="bg-info/20 text-info border-info/30"><RefreshCw aria-hidden="true" className="w-3 h-3 mr-1 animate-spin" />{t('reports.running')}</Badge>;
+        return <StatusBadge status="RUNNING" tone="info" label={<><RefreshCw aria-hidden="true" className="w-3 h-3 mr-1 inline animate-spin" />{t('reports.running')}</>} />;
       case 'PENDING':
-        return <Badge className="bg-warning/20 text-warning border-warning/30"><Clock aria-hidden="true" className="w-3 h-3 mr-1" />{t('reports.pending')}</Badge>;
+        return <StatusBadge status="PENDING" tone="warning" label={<><Clock aria-hidden="true" className="w-3 h-3 mr-1 inline" />{t('reports.pending')}</>} />;
       default:
         return <Badge variant="outline">-</Badge>;
     }
@@ -365,36 +365,25 @@ export default function HistoryExportScheduling() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.totalSchedules')}</CardDescription>
-              <CardTitle className="text-2xl">{schedules.length}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.active')}</CardDescription>
-              <CardTitle className="text-2xl text-success">
-                {schedules.filter(s => s.isActive).length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.success7days')}</CardDescription>
-              <CardTitle className="text-2xl text-info">
-                {logs.filter(l => l.status === 'SUCCESS').length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>{t('reports.failed7days')}</CardDescription>
-              <CardTitle className="text-2xl text-destructive">
-                {logs.filter(l => l.status === 'FAILED').length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
+          <MetricCard
+            label={t('reports.totalSchedules')}
+            value={schedules.length}
+          />
+          <MetricCard
+            label={t('reports.active')}
+            value={schedules.filter(s => s.isActive).length}
+            tone="success"
+          />
+          <MetricCard
+            label={t('reports.success7days')}
+            value={logs.filter(l => l.status === 'SUCCESS').length}
+            tone="info"
+          />
+          <MetricCard
+            label={t('reports.failed7days')}
+            value={logs.filter(l => l.status === 'FAILED').length}
+            tone="error"
+          />
         </div>
 
         <Tabs defaultValue="schedules">
@@ -744,14 +733,14 @@ export default function HistoryExportScheduling() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Annotations</Label>
+                    <Label className="font-normal">{t('reports.annotations', 'Annotations')}</Label>
                     <Switch
                       checked={formData.includeAnnotations}
                       onCheckedChange={(v) => setFormData({ ...formData, includeAnnotations: v })}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Measurements</Label>
+                    <Label className="font-normal">{t('reports.measurements', 'Measurements')}</Label>
                     <Switch
                       checked={formData.includeMeasurements}
                       onCheckedChange={(v) => setFormData({ ...formData, includeMeasurements: v })}
@@ -905,8 +894,8 @@ export default function HistoryExportScheduling() {
                     <h3 className="font-semibold text-sm">{t('reports.includeContent')}</h3>
                     <div className="flex flex-wrap gap-2">
                       {formData.includeImages && <Badge variant="outline">{t('reports.images')}</Badge>}
-                      {formData.includeAnnotations && <Badge variant="outline">Annotations</Badge>}
-                      {formData.includeMeasurements && <Badge variant="outline">Measurements</Badge>}
+                      {formData.includeAnnotations && <Badge variant="outline">{t('reports.annotations', 'Annotations')}</Badge>}
+                      {formData.includeMeasurements && <Badge variant="outline">{t('reports.measurements', 'Measurements')}</Badge>}
                       {formData.includeSummaryStats && <Badge variant="outline">{t('reports.stats')}</Badge>}
                       {!formData.includeImages && !formData.includeAnnotations && !formData.includeMeasurements && !formData.includeSummaryStats && (
                         <span className="text-sm text-muted-foreground italic">{t('reports.noContentSelected')}</span>

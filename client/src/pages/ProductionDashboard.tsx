@@ -14,10 +14,23 @@ import QuickIssueReport from "@/components/QuickIssueReport";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  StatusBadge,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+  EmptyState,
+} from "@/components/patterns";
+import {
   Factory,
   Filter,
   Search,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   CalendarDays,
   TrendingUp,
   TrendingDown,
@@ -28,6 +41,13 @@ import {
   RefreshCw,
   Layers,
   Sparkles,
+  Gauge,
+  PackageCheck,
+  RotateCcw,
+  X,
+  ChevronUp,
+  ChevronDown,
+  ExternalLink,
 } from "lucide-react";
 import { useLocation, useSearch } from "wouter";
 import {
@@ -82,11 +102,10 @@ function getPresetDateRange(preset: DatePreset): { start: Date; end: Date } {
   return { start, end };
 }
 
-const PARETO_COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4",
-  "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#a855f7",
-  "#64748b", "#d946ef", "#0ea5e9", "#84cc16", "#f43f5e",
-];
+/* F4a (doc 23): categorical series colours now cycle the DS chart tokens
+   (`--chart-1..5`) via chartColor(i) instead of a hardcoded hex palette, so
+   charts follow the theme and flip correctly between light/dark. */
+const paretoColor = (i: number) => chartColor(i);
 
 /* ── Helpers ── */
 
@@ -98,31 +117,34 @@ function getYieldLevel(value: number | null): "good" | "warn" | "bad" | "none" {
 }
 
 const yieldColorMap: Record<string, string> = {
-  good: "text-emerald-500",
-  warn: "text-yellow-500",
-  bad: "text-red-500",
+  good: "text-success",
+  warn: "text-warning",
+  bad: "text-destructive",
   none: "text-muted-foreground/40",
 };
 
 const yieldBarBg: Record<string, string> = {
-  good: "bg-emerald-500",
-  warn: "bg-yellow-500",
-  bad: "bg-red-500",
+  good: "bg-success",
+  warn: "bg-warning",
+  bad: "bg-destructive",
   none: "bg-muted",
 };
 
+/* F4a (doc 23): tag tints now use the SEMANTIC theme tokens (primary/info/
+   destructive/warning/success) instead of literal palette classes, so the
+   categories stay visually distinct AND flip correctly between light/dark. */
 function getDefectTagStyle(code: string, name: string) {
   const lower = (code + " " + name).toLowerCase();
   if (lower.includes("irregular") || lower.includes("shift") || lower.includes("gap") || lower.includes("misalign") || lower.includes("loose") || lower.includes("flatness"))
-    return { label: "Irregular", cls: "text-purple-400 border-purple-600/25 bg-purple-600/5" };
+    return { label: "Irregular", cls: "text-primary border-primary/25 bg-primary/5" };
   if (lower.includes("assy") || lower.includes("missing") || lower.includes("thiếu") || lower.includes("screw") || lower.includes("clip") || lower.includes("orient") || lower.includes("lắp") || lower.includes("lệch") || lower.includes("ssd"))
-    return { label: "ASSY", cls: "text-blue-400 border-blue-500/25 bg-blue-500/5" };
+    return { label: "ASSY", cls: "text-info border-info/25 bg-info/5" };
   if (lower.includes("damage") || lower.includes("buckle") || lower.includes("wrinkle") || lower.includes("scratch") || lower.includes("crack"))
-    return { label: "Damage", cls: "text-red-400 border-red-500/25 bg-red-500/5" };
+    return { label: "Damage", cls: "text-destructive border-destructive/25 bg-destructive/5" };
   if (lower.includes("pollution") || lower.includes("spot") || lower.includes("stain") || lower.includes("dirt") || lower.includes("dust"))
-    return { label: "Pollution", cls: "text-yellow-400 border-yellow-500/25 bg-yellow-500/5" };
+    return { label: "Pollution", cls: "text-warning border-warning/25 bg-warning/5" };
   if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lỏng") || lower.includes("flying") || lower.includes("blockage"))
-    return { label: "NTF", cls: "text-emerald-400 border-emerald-500/25 bg-emerald-500/5" };
+    return { label: "NTF", cls: "text-success border-success/25 bg-success/5" };
   return { label: code || "Other", cls: "text-muted-foreground border-border bg-muted/30" };
 }
 
@@ -179,7 +201,7 @@ function PcbThumbnail({ seed }: { seed: number }) {
   }, [seed]);
 
   return (
-    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
+    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-muted">
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
@@ -436,79 +458,76 @@ export default function ProductionDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col min-h-0">
-        {/* a11y (doc 17 §7.4 #8): page-level heading for the document outline.
-            Visually hidden so the dense summary strip is unchanged. */}
-        <h1 className="sr-only">{t("productionDashboard.pageTitle", "Production Dashboard")}</h1>
-        {/* ── Summary Strip ── */}
-        <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex items-center gap-4 sm:gap-8 overflow-x-auto">
-          {/* Live badge */}
-          <div className="flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 rounded-full px-3 py-1 shrink-0">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-            <span className="text-xs font-medium text-emerald-500">{t("productionDashboard.live", "Live")}</span>
-          </div>
+      {/* F4a: adopt the DS PageContainer shell (fluid = full-bleed monitor page).
+          Padding/rhythm are zeroed here because this dense layout owns its own
+          edge-to-edge sticky strips + horizontal-scroll table. */}
+      <PageContainer fluid className="flex flex-col min-h-0 p-0 md:p-0 space-y-0">
+        {/* ── Page header (F4a: visible <h1> via PageHeader, replacing the
+            former sr-only heading) + KPI cards ── */}
+        <div className="bg-card border-b border-border px-3 sm:px-7 py-3 sm:py-4">
+          <PageHeader
+            icon={<Factory className="h-6 w-6" />}
+            title={t("productionDashboard.pageTitle", "Production Dashboard")}
+            description={`${t("productionDashboard.todayLabel", "Today")} · ${todayStr}`}
+            actions={
+              <span className="inline-flex items-center gap-2 border border-success/30 bg-success/10 rounded-full px-3 py-1">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                </span>
+                <span className="text-xs font-medium text-success">{t("productionDashboard.live", "Live")}</span>
+              </span>
+            }
+          />
 
-          <span className="text-xs text-muted-foreground shrink-0">{t("productionDashboard.todayLabel", "Today")} &middot; {todayStr}</span>
-
-          <div className="w-px h-8 bg-border shrink-0" />
-
-          <div className="flex flex-col gap-0.5 min-w-fit">
-            <span className="text-lg font-semibold font-mono">{summary.totalStations}</span>
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-              {t("productionDashboard.totalStations", "Stations")}
-            </span>
-          </div>
-          <div className="w-px h-8 bg-border shrink-0" />
-          <div className="flex flex-col gap-0.5 min-w-fit">
-            <span className="text-lg font-semibold font-mono text-emerald-500">
-              {summary.avgFPY.toFixed(1)}%
-            </span>
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-              {t("productionDashboard.avgFPY", "Avg First Pass Yield")}
-            </span>
-          </div>
-          <div className="w-px h-8 bg-border shrink-0" />
-          <div className="flex flex-col gap-0.5 min-w-fit">
-            <span className="text-lg font-semibold font-mono">{summary.totalOutput.toLocaleString()}</span>
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-              {t("productionDashboard.totalOutput", "Total Output")}
-            </span>
-          </div>
-          <div className="w-px h-8 bg-border shrink-0" />
-          <div className="flex flex-col gap-0.5 min-w-fit">
-            <span
-              className={`text-lg font-semibold font-mono ${
-                summary.avgRetests > 5 ? "text-red-500" : summary.avgRetests > 2 ? "text-yellow-500" : ""
+          {/* ── KPI cards (F4a: responsive MetricCard grid, replacing the dense
+              horizontal scroll-strip) ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
+            <MetricCard
+              icon={<Factory className="h-4 w-4" />}
+              label={t("productionDashboard.totalStations", "Stations")}
+              value={summary.totalStations}
+            />
+            <MetricCard
+              icon={<Gauge className="h-4 w-4" />}
+              label={t("productionDashboard.avgFPY", "Avg First Pass Yield")}
+              value={`${summary.avgFPY.toFixed(1)}%`}
+              tone="success"
+            />
+            <MetricCard
+              icon={<PackageCheck className="h-4 w-4" />}
+              label={t("productionDashboard.totalOutput", "Total Output")}
+              value={summary.totalOutput.toLocaleString()}
+            />
+            <MetricCard
+              icon={<RotateCcw className="h-4 w-4" />}
+              label={t("productionDashboard.avgRetests", "Avg Retests")}
+              value={`${summary.avgRetests.toFixed(1)}%`}
+              tone={summary.avgRetests > 5 ? "danger" : summary.avgRetests > 2 ? "warning" : "default"}
+            />
+            <button
+              type="button"
+              onClick={handleLowYieldClick}
+              title={t("productionDashboard.lowYieldFilterHint", "Click to filter low-yield stations")}
+              aria-pressed={lowYieldFilter}
+              className={`text-left rounded-xl transition-shadow focus:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                lowYieldFilter ? "ring-1 ring-warning/50" : ""
               }`}
             >
-              {summary.avgRetests.toFixed(1)}%
-            </span>
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-              {t("productionDashboard.avgRetests", "Avg Retests")}
-            </span>
+              <MetricCard
+                icon={<AlertTriangle className="h-4 w-4" />}
+                label={t("productionDashboard.lowYieldStations", "Low Yield Stations")}
+                value={summary.lowYieldStations}
+                tone={summary.lowYieldStations > 0 ? "warning" : "default"}
+                delta={
+                  lowYieldFilter
+                    ? t("productionDashboard.lowYieldFilterActive", "Filter active")
+                    : undefined
+                }
+                className={lowYieldFilter ? "bg-warning/5" : undefined}
+              />
+            </button>
           </div>
-          <div className="w-px h-8 bg-border shrink-0" />
-          <button
-            type="button"
-            onClick={handleLowYieldClick}
-            title={t("productionDashboard.lowYieldFilterHint", "Click to filter low-yield stations")}
-            className={`flex flex-col gap-0.5 min-w-fit text-left rounded-md px-2 -mx-2 py-1 -my-1 transition-colors hover:bg-muted/40 cursor-pointer ${
-              lowYieldFilter ? "bg-yellow-500/10 ring-1 ring-yellow-500/40" : ""
-            }`}
-          >
-            <span
-              className={`text-lg font-semibold font-mono ${summary.lowYieldStations > 0 ? "text-yellow-500" : ""}`}
-            >
-              {summary.lowYieldStations}
-            </span>
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
-              {t("productionDashboard.lowYieldStations", "Low Yield Stations")}
-              {lowYieldFilter && <span className="ml-1 text-yellow-500">●</span>}
-            </span>
-          </button>
         </div>
 
         {/* U7 cross-links — station-level production view; MES Control Tower + the
@@ -522,10 +541,11 @@ export default function ProductionDashboard() {
           />
         </div>
 
-        {/* ── Toolbar ── */}
-        <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-x-auto">
+        {/* ── Toolbar (F4a: grouped + wraps responsively instead of one long
+            horizontal scroll strip) ── */}
+        <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Tabs */}
-          <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
+          <div className="flex flex-wrap gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
             {[
               { key: "station", label: t("productionDashboard.tabStation", "Station View") },
               { key: "defect", label: t("productionDashboard.tabDefect", "Defect Analysis") },
@@ -546,10 +566,10 @@ export default function ProductionDashboard() {
             ))}
           </div>
 
-          <div className="w-px h-6 bg-border shrink-0" />
+          <div className="w-px h-6 bg-border shrink-0 hidden sm:block" />
 
           {/* Date Presets */}
-          <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
+          <div className="flex flex-wrap gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
             {([
               { key: "today", label: t("productionDashboard.today", "Today") },
               { key: "yesterday", label: t("productionDashboard.yesterday", "Yesterday") },
@@ -562,7 +582,7 @@ export default function ProductionDashboard() {
                 onClick={() => setDatePreset(p.key)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                   datePreset === p.key
-                    ? "bg-purple-600/20 text-purple-400 border border-purple-600/30"
+                    ? "bg-primary/15 text-primary border border-primary/30"
                     : "text-muted-foreground/60 hover:text-muted-foreground"
                 }`}
               >
@@ -574,7 +594,7 @@ export default function ProductionDashboard() {
                 <button
                   className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1 ${
                     datePreset === "custom"
-                      ? "bg-purple-600/20 text-purple-400 border border-purple-600/30"
+                      ? "bg-primary/15 text-primary border border-primary/30"
                       : "text-muted-foreground/60 hover:text-muted-foreground"
                   }`}
                 >
@@ -599,7 +619,7 @@ export default function ProductionDashboard() {
             </Popover>
           </div>
 
-          <div className="flex-1" />
+          <div className="hidden lg:block flex-1" />
 
           {/* Filters */}
           <Select
@@ -736,15 +756,15 @@ export default function ProductionDashboard() {
                 <div className="h-56 sm:h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={factoryAgg} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={50} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} label={{ value: "%", position: "insideLeft", fontSize: 10 }} domain={[0, 100]} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                      <Tooltip />
+                      <CartesianGrid {...chartGridProps} opacity={0.2} />
+                      <XAxis dataKey="name" tick={chartAxisTick} interval={0} angle={-15} textAnchor="end" height={50} />
+                      <YAxis yAxisId="left" tick={chartAxisTick} label={{ value: "%", position: "insideLeft", fontSize: 10 }} domain={[0, 100]} />
+                      <YAxis yAxisId="right" orientation="right" tick={chartAxisTick} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar yAxisId="right" dataKey="output" name={t("productionDashboard.totalOutput", "Total Output")} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                      <Line yAxisId="left" type="monotone" dataKey="avgFPY" name={t("productionDashboard.avgFPY", "Avg FPY")} stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
-                      <ReferenceLine yAxisId="left" y={70} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "70%", fontSize: 10, fill: "#ef4444" }} />
+                      <Bar yAxisId="right" dataKey="output" name={t("productionDashboard.totalOutput", "Total Output")} fill={chartColor(0)} radius={[4, 4, 0, 0]} />
+                      <Line yAxisId="left" type="monotone" dataKey="avgFPY" name={t("productionDashboard.avgFPY", "Avg FPY")} stroke={chartColor(1)} strokeWidth={2} dot={{ r: 4 }} />
+                      <ReferenceLine yAxisId="left" y={70} stroke="var(--destructive)" strokeDasharray="4 4" label={{ value: "70%", fontSize: 10, fill: "var(--destructive)" }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -762,12 +782,12 @@ export default function ProductionDashboard() {
                     >
                       <div className="text-xs font-medium truncate">{f.name}</div>
                       <div className="text-[11px] text-muted-foreground flex items-center justify-between mt-0.5">
-                        <span>FPY: <b className={f.avgFPY < 70 ? "text-red-500" : "text-emerald-600"}>{f.avgFPY}%</b></span>
+                        <span>FPY: <b className={f.avgFPY < 70 ? "text-destructive" : "text-success"}>{f.avgFPY}%</b></span>
                         <span>{f.output.toLocaleString()}</span>
                       </div>
                       {f.lowYield > 0 && (
-                        <div className="text-[10px] text-amber-600 mt-0.5">
-                          ⚠ {f.lowYield} {t("productionDashboard.lowYieldStations", "Low Yield")}
+                        <div className="text-[10px] text-warning mt-0.5 flex items-center gap-1">
+                          <AlertTriangle className="h-2.5 w-2.5" /> {f.lowYield} {t("productionDashboard.lowYieldStations", "Low Yield")}
                         </div>
                       )}
                     </button>
@@ -822,7 +842,7 @@ export default function ProductionDashboard() {
             />
           )}
         </div>
-      </div>
+      </PageContainer>
 
       <style>{`
         @keyframes rowFadeIn {
@@ -868,7 +888,11 @@ function MachineAISignalsSection({ t }: { t: any }) {
               {t("machineAI.sectionHint", "Rủi ro hỏng hóc · bất thường · khuyến nghị")}
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">{collapsed ? "▼" : "▲"}</span>
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
         </button>
 
         {!collapsed && (
@@ -954,9 +978,10 @@ function StationViewTab({
           {searchText && (
             <button
               onClick={() => setSearchText("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground text-xs"
+              aria-label={t("common.clear", "Clear")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
             >
-              ✕
+              <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -964,12 +989,12 @@ function StationViewTab({
           <button
             type="button"
             onClick={onClearLowYieldFilter}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium bg-warning/10 text-warning border border-warning/30 hover:bg-warning/20"
             title={t("productionDashboard.clearLowYieldFilter", "Clear filter")}
           >
             <AlertTriangle className="h-3 w-3" />
             {t("productionDashboard.lowYieldFilterChip", "Low Yield Stations (FPY < 70%)")}
-            <span className="ml-1 opacity-70">✕</span>
+            <X className="h-3 w-3 ml-1 opacity-70" />
           </button>
         )}
       </div>
@@ -1007,14 +1032,21 @@ function StationViewTab({
           ))}
         </div>
       ) : filteredData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50">
-          <Factory className="h-12 w-12 mb-3" />
-          <p className="text-sm">
-            {searchText
-              ? t("productionDashboard.noSearchResults", "No stations match '{{query}}'.", { query: searchText })
-              : t("productionDashboard.noStations", "No station data found for the selected filters.")}
-          </p>
-        </div>
+        searchText ? (
+          <EmptyState
+            variant="no-results"
+            icon={Search}
+            title={t("productionDashboard.noSearchResultsTitle", "No matching stations")}
+            description={t("productionDashboard.noSearchResults", "No stations match '{{query}}'.", { query: searchText })}
+          />
+        ) : (
+          <EmptyState
+            variant="no-data"
+            icon={Factory}
+            title={t("productionDashboard.noStationsTitle", "No station data")}
+            description={t("productionDashboard.noStations", "No station data found for the selected filters.")}
+          />
+        )
       ) : (
         <div>
           {filteredData.map((row: any, idx: number) => {
@@ -1039,7 +1071,7 @@ function StationViewTab({
                 {/* Station Info */}
                 <div className="flex items-center gap-3 min-w-0">
                   {row.latestProductImage ? (
-                    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
+                    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-muted">
                       <img
                         src={row.latestProductImage}
                         alt={row.station.name}
@@ -1058,7 +1090,7 @@ function StationViewTab({
                       {row.workshop?.name || row.line?.name || ""}
                     </div>
                     <div className="text-[10.5px] text-muted-foreground/40 mt-0.5">
-                      {row.machineCount} Image monitors &bull; {row.measurementPointCount} Measurements
+                      {row.machineCount} {t("productionDashboard.imageMonitors", "Image monitors")} &bull; {row.measurementPointCount} {t("productionDashboard.measurements", "Measurements")}
                     </div>
                   </div>
                 </div>
@@ -1079,7 +1111,7 @@ function StationViewTab({
                     />
                   </div>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">
-                    First pass yield
+                    {t("productionDashboard.firstPassYieldLabel", "First pass yield")}
                   </span>
                 </div>
 
@@ -1095,11 +1127,11 @@ function StationViewTab({
                     }`}
                   >
                     {isNoData ? "--" : `${Math.abs(row.yieldChange).toFixed(1)}%`}
-                    {changeDir === "up" && <span className="text-[10px]">▲</span>}
-                    {changeDir === "down" && <span className="text-[10px]">▼</span>}
+                    {changeDir === "up" && <ArrowUp className="h-2.5 w-2.5" />}
+                    {changeDir === "down" && <ArrowDown className="h-2.5 w-2.5" />}
                   </span>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">
-                    Point change
+                    {t("productionDashboard.pointChangeLabel", "Point change")}
                   </span>
                 </div>
 
@@ -1119,7 +1151,7 @@ function StationViewTab({
                     />
                   </div>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">
-                    Final yield
+                    {t("productionDashboard.finalYieldLabel", "Final yield")}
                   </span>
                 </div>
 
@@ -1128,7 +1160,7 @@ function StationViewTab({
                   <span className="font-mono text-[15px] font-semibold leading-none">
                     {row.output.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">Output</span>
+                  <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">{t("productionDashboard.outputLabel", "Output")}</span>
                 </div>
 
                 {/* Retests */}
@@ -1138,13 +1170,13 @@ function StationViewTab({
                       isNoData
                         ? "text-muted-foreground/40"
                         : row.retestRate > 5
-                          ? "text-yellow-500"
+                          ? "text-warning"
                           : ""
                     }`}
                   >
                     {isNoData ? "— %" : `${row.retestRate.toFixed(1)}%`}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">Retests</span>
+                  <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">{t("productionDashboard.retestsLabel", "Retests")}</span>
                 </div>
 
                 {/* Top Issues */}
@@ -1171,9 +1203,10 @@ function StationViewTab({
                           </span>
                           <button
                             onClick={() => navigate(`/correlation-analysis?pointDefId=${defect.pointDefId}`)}
-                            className="text-[10px] text-purple-400 hover:underline whitespace-nowrap shrink-0"
+                            className="text-[10px] text-primary hover:underline whitespace-nowrap shrink-0 inline-flex items-center gap-0.5"
                           >
-                            Correlate ↗
+                            {t("productionDashboard.correlate", "Correlate")}
+                            <ExternalLink className="h-2.5 w-2.5" />
                           </button>
                         </div>
                       );
@@ -1185,7 +1218,7 @@ function StationViewTab({
                 <div className="flex justify-end">
                   <button
                     onClick={() => navigate(`/station-analysis/${row.station.id}?dp=${datePreset}&from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`)}
-                    className="bg-purple-600 hover:bg-purple-700 active:translate-y-0 text-white rounded-md px-3.5 py-2 text-xs font-semibold transition-all hover:-translate-y-px whitespace-nowrap"
+                    className="bg-primary hover:bg-primary/90 active:translate-y-0 text-primary-foreground rounded-md px-3.5 py-2 text-xs font-semibold transition-all hover:-translate-y-px whitespace-nowrap"
                   >
                     {t("productionDashboard.viewTopIssues", "View top issues")}
                   </button>
@@ -1216,7 +1249,7 @@ function DefectAnalysisTab({
 }) {
   if (isLoading) {
     return (
-      <div className="p-7 grid grid-cols-2 gap-6">
+      <div className="p-4 sm:p-7 grid grid-cols-1 md:grid-cols-2 gap-6">
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="bg-card border border-border rounded-xl p-6">
             <Skeleton className="h-5 w-40 mb-4" />
@@ -1232,54 +1265,56 @@ function DefectAnalysisTab({
 
   if (defectsByType.length === 0 && defectsByStation.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50">
-        <BarChart3 className="h-12 w-12 mb-3" />
-        <p className="text-sm">{t("productionDashboard.noDefectData", "No defect data for the selected period")}</p>
-      </div>
+      <EmptyState
+        variant="no-analytics"
+        icon={BarChart3}
+        title={t("productionDashboard.noDefectDataTitle", "No defect data")}
+        description={t("productionDashboard.noDefectData", "No defect data for the selected period")}
+      />
     );
   }
 
   return (
-    <div className="p-7 space-y-6">
+    <div className="p-4 sm:p-7 space-y-6">
       {/* Pareto Chart + Table */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Pareto Bar Chart */}
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-purple-400" />
+            <BarChart3 className="h-4 w-4 text-primary" />
             {t("productionDashboard.defectPareto", "Defect Pareto Analysis")}
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={defectsByType} margin={{ top: 5, right: 20, bottom: 50, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+              <CartesianGrid {...chartGridProps} opacity={0.3} />
               <XAxis
                 dataKey="code"
-                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                tick={chartAxisTick}
                 angle={-35}
                 textAnchor="end"
                 interval={0}
               />
-              <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <YAxis yAxisId="left" tick={chartAxisTick} />
               <YAxis
                 yAxisId="right"
                 orientation="right"
                 domain={[0, 100]}
-                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                tick={chartAxisTick}
                 tickFormatter={(v) => `${v}%`}
               />
               <Tooltip
-                contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                contentStyle={chartTooltipStyle}
                 formatter={(value: any, name: string) =>
                   name === "cumPercentage" ? [`${value}%`, "Cumulative %"] : [value, "NG Count"]
                 }
               />
               <Bar yAxisId="left" dataKey="ngCount" radius={[4, 4, 0, 0]}>
                 {defectsByType.map((_: any, i: number) => (
-                  <Cell key={i} fill={PARETO_COLORS[i % PARETO_COLORS.length]} />
+                  <Cell key={i} fill={paretoColor(i)} />
                 ))}
               </Bar>
-              <Line yAxisId="right" type="monotone" dataKey="cumPercentage" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
-              <ReferenceLine yAxisId="right" y={80} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "80%", position: "right", fill: "#ef4444", fontSize: 10 }} />
+              <Line yAxisId="right" type="monotone" dataKey="cumPercentage" stroke={chartColor(4)} strokeWidth={2} dot={{ r: 3 }} />
+              <ReferenceLine yAxisId="right" y={80} stroke="var(--destructive)" strokeDasharray="4 4" label={{ value: "80%", position: "right", fill: "var(--destructive)", fontSize: 10 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -1308,7 +1343,7 @@ function DefectAnalysisTab({
                       className="h-full rounded-full"
                       style={{
                         width: `${Math.min(d.percentage, 100)}%`,
-                        backgroundColor: PARETO_COLORS[i % PARETO_COLORS.length],
+                        backgroundColor: paretoColor(i),
                       }}
                     />
                   </div>
@@ -1329,17 +1364,17 @@ function DefectAnalysisTab({
         </h3>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={defectsByStation} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+            <CartesianGrid {...chartGridProps} opacity={0.3} />
             <XAxis
               dataKey="stationCode"
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tick={chartAxisTick}
               angle={-25}
               textAnchor="end"
               interval={0}
             />
-            <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+            <YAxis tick={chartAxisTick} />
             <Tooltip
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+              contentStyle={chartTooltipStyle}
               formatter={(value: any) => [value, "NG Count"]}
               labelFormatter={(label) => {
                 const s = defectsByStation.find((d: any) => d.stationCode === label);
@@ -1348,7 +1383,7 @@ function DefectAnalysisTab({
             />
             <Bar dataKey="ngCount" radius={[4, 4, 0, 0]}>
               {defectsByStation.map((_: any, i: number) => (
-                <Cell key={i} fill={PARETO_COLORS[i % PARETO_COLORS.length]} opacity={0.85} />
+                <Cell key={i} fill={paretoColor(i)} opacity={0.85} />
               ))}
             </Bar>
           </BarChart>
@@ -1387,7 +1422,7 @@ function TrendTab({
 
   if (isLoading) {
     return (
-      <div className="p-7 space-y-6">
+      <div className="p-4 sm:p-7 space-y-6">
         <Skeleton className="h-8 w-60" />
         <Skeleton className="h-87.5 w-full rounded-xl" />
         <Skeleton className="h-62.5 w-full rounded-xl" />
@@ -1395,10 +1430,16 @@ function TrendTab({
     );
   }
 
+  const intervalLabels: Record<"hour" | "day" | "week", string> = {
+    hour: t("productionDashboard.intervalHour", "Hourly"),
+    day: t("productionDashboard.intervalDay", "Daily"),
+    week: t("productionDashboard.intervalWeek", "Weekly"),
+  };
+
   return (
-    <div className="p-7 space-y-6">
+    <div className="p-4 sm:p-7 space-y-6">
       {/* Interval selector */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs text-muted-foreground">{t("productionDashboard.interval", "Interval")}:</span>
         <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5">
           {(["hour", "day", "week"] as const).map((v) => (
@@ -1411,39 +1452,41 @@ function TrendTab({
                   : "text-muted-foreground/60 hover:text-muted-foreground"
               }`}
             >
-              {v === "hour" ? "Hourly" : v === "day" ? "Daily" : "Weekly"}
+              {intervalLabels[v]}
             </button>
           ))}
         </div>
       </div>
 
       {chartData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50">
-          <TrendingUp className="h-12 w-12 mb-3" />
-          <p className="text-sm">{t("productionDashboard.noTrendData", "No trend data for the selected period")}</p>
-        </div>
+        <EmptyState
+          variant="no-analytics"
+          icon={TrendingUp}
+          title={t("productionDashboard.noTrendDataTitle", "No trend data")}
+          description={t("productionDashboard.noTrendData", "No trend data for the selected period")}
+        />
       ) : (
         <>
           {/* Yield Trend */}
           <div className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-400" />
+              <TrendingUp className="h-4 w-4 text-success" />
               {t("productionDashboard.yieldTrend", "Yield Trend")}
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${v}%`} />
+                <CartesianGrid {...chartGridProps} opacity={0.3} />
+                <XAxis dataKey="label" tick={chartAxisTick} />
+                <YAxis domain={[0, 100]} tick={chartAxisTick} tickFormatter={(v) => `${v}%`} />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={chartTooltipStyle}
                   formatter={(v: any, name: string) => [`${Number(v).toFixed(1)}%`, name === "fpy" ? "First Pass Yield" : "Final Yield"]}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="fpy" name="FPY" stroke="#22c55e" strokeWidth={2} dot={{ r: 2 }} />
-                <Line type="monotone" dataKey="finalYield" name="Final Yield" stroke="#06b6d4" strokeWidth={2} dot={{ r: 2 }} strokeDasharray="5 5" />
-                <ReferenceLine y={90} stroke="#22c55e" strokeDasharray="3 3" opacity={0.5} />
-                <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" opacity={0.5} />
+                <Line type="monotone" dataKey="fpy" name="FPY" stroke="var(--success)" strokeWidth={2} dot={{ r: 2 }} />
+                <Line type="monotone" dataKey="finalYield" name="Final Yield" stroke={chartColor(0)} strokeWidth={2} dot={{ r: 2 }} strokeDasharray="5 5" />
+                <ReferenceLine y={90} stroke="var(--success)" strokeDasharray="3 3" opacity={0.5} />
+                <ReferenceLine y={70} stroke="var(--destructive)" strokeDasharray="3 3" opacity={0.5} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1451,22 +1494,22 @@ function TrendTab({
           {/* Output & NG Trend */}
           <div className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-blue-400" />
+              <BarChart3 className="h-4 w-4 text-info" />
               {t("productionDashboard.outputTrend", "Output & NG Trend")}
             </h3>
             <ResponsiveContainer width="100%" height={250}>
               <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                <CartesianGrid {...chartGridProps} opacity={0.3} />
+                <XAxis dataKey="label" tick={chartAxisTick} />
+                <YAxis tick={chartAxisTick} />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={chartTooltipStyle}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="ok" name="OK" fill="#22c55e" stackId="a" radius={[0, 0, 0, 0]} opacity={0.7} />
-                <Bar dataKey="ng" name="NG" fill="#ef4444" stackId="a" radius={[0, 0, 0, 0]} opacity={0.7} />
-                <Bar dataKey="ntf" name="NTF" fill="#eab308" stackId="a" radius={[4, 4, 0, 0]} opacity={0.7} />
-                <Line type="monotone" dataKey="total" name="Total" stroke="#a855f7" strokeWidth={2} dot={false} />
+                <Bar dataKey="ok" name="OK" fill="var(--success)" stackId="a" radius={[0, 0, 0, 0]} opacity={0.7} />
+                <Bar dataKey="ng" name="NG" fill="var(--destructive)" stackId="a" radius={[0, 0, 0, 0]} opacity={0.7} />
+                <Bar dataKey="ntf" name="NTF" fill="var(--warning)" stackId="a" radius={[4, 4, 0, 0]} opacity={0.7} />
+                <Line type="monotone" dataKey="total" name="Total" stroke={chartColor(4)} strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -1518,11 +1561,11 @@ function SpcTab({
 
   if (isLoading) {
     return (
-      <div className="p-7 space-y-4">
+      <div className="p-4 sm:p-7 space-y-4">
         {[1, 2, 3].map(i => (
           <div key={i} className="bg-card border border-border rounded-xl p-6">
             <Skeleton className="h-5 w-40 mb-3" />
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               {[1, 2, 3, 4, 5].map(j => <Skeleton key={j} className="h-16" />)}
             </div>
             <Skeleton className="h-30 mt-4" />
@@ -1534,36 +1577,43 @@ function SpcTab({
 
   if (spcRows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50">
-        <Target className="h-12 w-12 mb-3" />
-        <p className="text-sm">{t("productionDashboard.noSpcData", "No SPC data for the selected period")}</p>
-      </div>
+      <EmptyState
+        variant="no-analytics"
+        icon={Target}
+        title={t("productionDashboard.noSpcDataTitle", "No SPC data")}
+        description={t("productionDashboard.noSpcData", "No SPC data for the selected period")}
+      />
     );
   }
 
+  const anyOutOfControl = spcRows.some((r: any) => r?.cpk < 1);
+
   return (
-    <div className="p-7 space-y-4">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SpcKpiCard
-          label="Avg Cpk"
+    <div className="p-4 sm:p-7 space-y-4">
+      {/* Summary Cards (F4a: MetricCard grid) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <MetricCard
+          icon={<Gauge className="h-4 w-4" />}
+          label={t("productionDashboard.spcAvgCpk", "Avg Cpk")}
           value={spcRows.length > 0 ? (spcRows.reduce((s: number, r: any) => s + (r?.cpk || 0), 0) / spcRows.length).toFixed(2) : "—"}
-          color={spcRows.some((r: any) => r?.cpk < 1) ? "text-red-500" : "text-emerald-500"}
+          tone={anyOutOfControl ? "danger" : "success"}
         />
-        <SpcKpiCard
-          label="Avg Yield"
+        <MetricCard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label={t("productionDashboard.spcAvgYield", "Avg Yield")}
           value={spcRows.length > 0 ? `${(spcRows.reduce((s: number, r: any) => s + (r?.fpy || 0), 0) / spcRows.length).toFixed(1)}%` : "—"}
-          color="text-blue-400"
+          tone="info"
         />
-        <SpcKpiCard
-          label="Out of Control"
+        <MetricCard
+          icon={<AlertTriangle className="h-4 w-4" />}
+          label={t("productionDashboard.spcOutOfControl", "Out of Control")}
           value={String(spcRows.filter((r: any) => r?.cpk < 1).length)}
-          color={spcRows.some((r: any) => r?.cpk < 1) ? "text-yellow-500" : "text-emerald-500"}
+          tone={anyOutOfControl ? "warning" : "success"}
         />
-        <SpcKpiCard
-          label="Total Stations"
+        <MetricCard
+          icon={<Factory className="h-4 w-4" />}
+          label={t("productionDashboard.spcTotalStations", "Total Stations")}
           value={String(spcRows.length)}
-          color=""
         />
       </div>
 
@@ -1572,33 +1622,44 @@ function SpcTab({
         <div
           key={row?.stationId}
           className={`bg-card border rounded-xl p-5 transition-colors ${
-            row?.cpk < 1 ? "border-red-500/30" : "border-border"
+            row?.cpk < 1 ? "border-destructive/30" : "border-border"
           }`}
         >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
               <h4 className="text-sm font-semibold">{row?.stationCode}: {row?.stationName}</h4>
               {row?.cpk < 1 && (
-                <span className="text-[10px] bg-red-500/15 text-red-400 border border-red-500/25 rounded px-1.5 py-0.5 font-mono">
-                  <AlertTriangle className="h-2.5 w-2.5 inline mr-0.5" />
-                  Out of control
-                </span>
+                <StatusBadge
+                  status="out-of-control"
+                  tone="error"
+                  label={
+                    <span className="inline-flex items-center gap-0.5">
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                      {t("productionDashboard.spcOutOfControlBadge", "Out of control")}
+                    </span>
+                  }
+                  className="font-mono"
+                />
               )}
               {row?.cpk >= 1.33 && (
-                <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded px-1.5 py-0.5 font-mono">
-                  Capable
-                </span>
+                <StatusBadge
+                  status="capable"
+                  tone="success"
+                  label={t("productionDashboard.spcCapable", "Capable")}
+                  className="font-mono"
+                />
               )}
             </div>
             <button
               onClick={() => navigate(`/station-analysis/${row?.stationId}?dp=${datePreset}&from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`)}
-              className="text-[11px] text-purple-400 hover:underline"
+              className="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5"
             >
-              Deep analysis →
+              {t("productionDashboard.spcDeepAnalysis", "Deep analysis")}
+              <ArrowUp className="h-2.5 w-2.5 rotate-45" />
             </button>
           </div>
 
-          <div className="grid grid-cols-6 gap-4 text-center mb-3">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 text-center mb-3">
             <div>
               <span className="block text-lg font-mono font-semibold">{row?.fpy?.toFixed(1)}%</span>
               <span className="text-[10px] text-muted-foreground/60">FPY</span>
@@ -1612,15 +1673,15 @@ function SpcTab({
               <span className="text-[10px] text-muted-foreground/60">Std Dev</span>
             </div>
             <div>
-              <span className="block text-lg font-mono font-semibold text-emerald-400">{row?.ucl?.toFixed(1)}%</span>
+              <span className="block text-lg font-mono font-semibold text-success">{row?.ucl?.toFixed(1)}%</span>
               <span className="text-[10px] text-muted-foreground/60">UCL</span>
             </div>
             <div>
-              <span className="block text-lg font-mono font-semibold text-red-400">{row?.lcl?.toFixed(1)}%</span>
+              <span className="block text-lg font-mono font-semibold text-destructive">{row?.lcl?.toFixed(1)}%</span>
               <span className="text-[10px] text-muted-foreground/60">LCL</span>
             </div>
             <div>
-              <span className={`block text-lg font-mono font-semibold ${row?.cpk < 1 ? "text-red-500" : row?.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"}`}>
+              <span className={`block text-lg font-mono font-semibold ${row?.cpk < 1 ? "text-destructive" : row?.cpk >= 1.33 ? "text-success" : "text-warning"}`}>
                 {row?.cpk?.toFixed(2)}
               </span>
               <span className="text-[10px] text-muted-foreground/60">Cpk</span>
@@ -1631,32 +1692,32 @@ function SpcTab({
           {row?.dailyYields?.length > 1 && (
             <ResponsiveContainer width="100%" height={120}>
               <LineChart data={row.dailyYields} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid {...chartGridProps} opacity={0.2} />
                 <XAxis dataKey="day" tick={false} />
                 <YAxis
                   domain={[
                     Math.max(0, Math.floor(row.lcl - 5)),
                     Math.min(100, Math.ceil(row.ucl + 5)),
                   ]}
-                  tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                  tick={chartAxisTick}
                   tickFormatter={(v) => `${v}%`}
                   width={40}
                 />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }}
+                  contentStyle={chartTooltipStyle}
                   formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Yield"]}
                   labelFormatter={(l) => {
                     try { return new Date(l).toLocaleDateString(getActiveLocale(), { month: "short", day: "numeric" }); }
                     catch { return l; }
                   }}
                 />
-                <ReferenceLine y={row.ucl} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} />
-                <ReferenceLine y={row.mean} stroke="#a855f7" strokeDasharray="2 2" strokeWidth={1} />
-                <ReferenceLine y={row.lcl} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1} />
+                <ReferenceLine y={row.ucl} stroke="var(--success)" strokeDasharray="4 4" strokeWidth={1} />
+                <ReferenceLine y={row.mean} stroke={chartColor(4)} strokeDasharray="2 2" strokeWidth={1} />
+                <ReferenceLine y={row.lcl} stroke="var(--destructive)" strokeDasharray="4 4" strokeWidth={1} />
                 <Line
                   type="monotone"
                   dataKey="yield"
-                  stroke="#3b82f6"
+                  stroke={chartColor(0)}
                   strokeWidth={1.5}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props;
@@ -1667,8 +1728,8 @@ function SpcTab({
                         cx={cx}
                         cy={cy}
                         r={ooc ? 4 : 2}
-                        fill={ooc ? "#ef4444" : "#3b82f6"}
-                        stroke={ooc ? "#ef4444" : "none"}
+                        fill={ooc ? "var(--destructive)" : chartColor(0)}
+                        stroke={ooc ? "var(--destructive)" : "none"}
                         strokeWidth={ooc ? 2 : 0}
                       />
                     );
@@ -1679,15 +1740,6 @@ function SpcTab({
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-function SpcKpiCard({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-4 text-center">
-      <span className={`block text-2xl font-mono font-semibold ${color}`}>{value}</span>
-      <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{label}</span>
     </div>
   );
 }

@@ -193,7 +193,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <ImageIcon className="h-8 w-8 text-purple-500" />
+                <ImageIcon className="h-8 w-8 text-primary" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalImages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.totalImages || 0}</p>
@@ -204,7 +204,7 @@ export default function AOIPackages() {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <HardDrive className="h-8 w-8 text-orange-500" />
+                <HardDrive className="h-8 w-8 text-warning" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('packages.totalSize')}</p>
                   <p className="text-2xl font-bold">{formatBytes(statsQuery.data?.summary?.totalSize || 0)}</p>
@@ -761,19 +761,19 @@ export default function AOIPackages() {
                         <div className="space-y-0">
                           {logsQuery.data.logs.map((log: any, i: number) => {
                             const eventConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", label: t('packages.logInit') },
-                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300", label: t('packages.logUploadStart') },
-                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logUploadSuccess') },
-                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logUploadFail') },
-                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300", label: t('packages.logCommitStart') },
-                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logCommitSuccess') },
-                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logCommitFail') },
-                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300", label: t('packages.logRetry') },
-                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: t('packages.logImageView') },
-                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300", label: t('packages.logZipDownload') },
-                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300", label: t('packages.logStatusChange') },
+                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-info/15 text-info border-info/30", label: t('packages.logInit') },
+                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-info/15 text-info border-info/30", label: t('packages.logUploadStart') },
+                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-success/15 text-success border-success/30", label: t('packages.logUploadSuccess') },
+                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-destructive/15 text-destructive border-destructive/30", label: t('packages.logUploadFail') },
+                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-primary/15 text-primary border-primary/30", label: t('packages.logCommitStart') },
+                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-success/15 text-success border-success/30", label: t('packages.logCommitSuccess') },
+                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-destructive/15 text-destructive border-destructive/30", label: t('packages.logCommitFail') },
+                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-warning/15 text-warning border-warning/30", label: t('packages.logRetry') },
+                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-muted text-muted-foreground border-border", label: t('packages.logImageView') },
+                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-primary/15 text-primary border-primary/30", label: t('packages.logZipDownload') },
+                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-warning/15 text-warning border-warning/30", label: t('packages.logStatusChange') },
                             };
-                            const cfg = eventConfig[log.event] || { icon: <Info className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700", label: log.event };
+                            const cfg = eventConfig[log.event] || { icon: <Info className="h-3.5 w-3.5" />, color: "bg-muted text-muted-foreground border-border", label: log.event };
                             const levelColors: Record<string, string> = {
                               error: "border-l-destructive",
                               warn: "border-l-warning",

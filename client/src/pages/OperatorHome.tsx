@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
@@ -65,7 +66,7 @@ function Tile({ icon: Icon, label, onClick, accent, badge }: TileProps) {
       )}
     >
       {badge != null && badge > 0 && (
-        <span className="absolute right-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-red-500 px-2 text-sm font-bold text-white">
+        <span className="absolute right-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-destructive px-2 text-sm font-bold text-destructive-foreground">
           {badge > 99 ? "99+" : badge}
         </span>
       )}
@@ -90,21 +91,13 @@ export default function OperatorHome() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto w-full max-w-4xl space-y-6 p-2 sm:p-4">
+      <PageContainer className="max-w-4xl">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <Factory className="h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {t("operator.title", "Màn hình vận hành")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("operator.subtitle", "Chạm một nút để bắt đầu")}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Factory className="h-6 w-6" />}
+          title={t("operator.title", "Màn hình vận hành")}
+          description={t("operator.subtitle", "Chạm một nút để bắt đầu")}
+        />
 
         {/* U16 — offline indicator (sets expectations when connectivity drops) */}
         <OfflineBanner />
@@ -163,7 +156,7 @@ export default function OperatorHome() {
             onClick={() => setInboxOpen(true)}
           />
         </div>
-      </div>
+      </PageContainer>
 
       {/* Controlled inbox dialog (1-tap approve) */}
       <AIActionInbox open={inboxOpen} onOpenChange={setInboxOpen} />

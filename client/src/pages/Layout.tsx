@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -478,15 +479,15 @@ export default function Layout() {
   };
 
   const getStatusColor = (yieldRate: number) => {
-    if (yieldRate >= 98) return "border-green-500 shadow-green-500/20";
-    if (yieldRate >= 95) return "border-yellow-500 shadow-yellow-500/20";
-    return "border-red-500 shadow-red-500/20";
+    if (yieldRate >= 98) return "border-success shadow-success/20";
+    if (yieldRate >= 95) return "border-warning shadow-warning/20";
+    return "border-destructive shadow-destructive/20";
   };
 
   const getStatusIcon = (yieldRate: number) => {
-    if (yieldRate >= 98) return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    if (yieldRate >= 95) return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
-    return <XCircle className="h-4 w-4 text-red-500" />;
+    if (yieldRate >= 98) return <CheckCircle2 className="h-4 w-4 text-success" />;
+    if (yieldRate >= 95) return <AlertTriangle className="h-4 w-4 text-warning" />;
+    return <XCircle className="h-4 w-4 text-destructive" />;
   };
 
   const handleCreateLayout = () => {
@@ -509,101 +510,99 @@ export default function Layout() {
       navItems={navItems}
       currentPath="/layout"
     >
-      <div className="space-y-6 h-full">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">{t('layout.workshopLayout')}</h1>
-              <ViewOnlyBadge module="settings_factory" />
-            </div>
-            <p className="text-muted-foreground">{t('layout.workshopLayoutDescription')}</p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Select value={selectedWorkshop} onValueChange={(v) => {
-              setSelectedWorkshop(v);
-              setSelectedLayout("");
-            }}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder={t('layout.selectWorkshop')} />
-              </SelectTrigger>
-              <SelectContent>
-                {workshops?.map((workshop) => (
-                  <SelectItem key={workshop.id} value={String(workshop.id)}>
-                    {workshop.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {layouts && layouts.length > 0 && (
-              <Select value={selectedLayout} onValueChange={setSelectedLayout}>
+      <PageContainer fluid className="h-full">
+        {/* Header — DS PageHeader (shared pattern) */}
+        <PageHeader
+          icon={<LayoutGrid className="h-6 w-6" />}
+          title={t('layout.workshopLayout')}
+          description={t('layout.workshopLayoutDescription')}
+          badge={<ViewOnlyBadge module="settings_factory" />}
+          actions={
+            <>
+              <Select value={selectedWorkshop} onValueChange={(v) => {
+                setSelectedWorkshop(v);
+                setSelectedLayout("");
+              }}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder={t('layout.selectLayout')} />
+                  <SelectValue placeholder={t('layout.selectWorkshop')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {layouts.map((layout) => (
-                    <SelectItem key={layout.id} value={String(layout.id)}>
-                      {layout.name} ({layout.layoutType || "2D"})
+                  {workshops?.map((workshop) => (
+                    <SelectItem key={workshop.id} value={String(workshop.id)}>
+                      {workshop.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
 
-            {selectedWorkshop && (
-              <PermissionGate module="settings_factory" action="canCreate">
-              <Dialog open={isCreateLayoutOpen} onOpenChange={setIsCreateLayoutOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Plus className="h-4 w-4 mr-1" />
-                    {t('layout.createLayout')}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{t('layout.createNewLayout')}</DialogTitle>
-                    <DialogDescription>
-                      {t('layout.createLayoutDescription')}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>{t('layout.layoutName')}</Label>
-                      <Input
-                        value={newLayoutName}
-                        onChange={(e) => setNewLayoutName(e.target.value)}
-                        placeholder={t('layout.layoutNamePlaceholder')}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t('layout.layoutType')}</Label>
-                      <Select value={newLayoutType} onValueChange={(v: "2D" | "3D") => setNewLayoutType(v)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="2D">{t('layout.layout2D')}</SelectItem>
-                          <SelectItem value="3D">{t('layout.layout3D')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsCreateLayoutOpen(false)}>
-                      {t('common.cancel')}
+              {layouts && layouts.length > 0 && (
+                <Select value={selectedLayout} onValueChange={setSelectedLayout}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder={t('layout.selectLayout')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {layouts.map((layout) => (
+                      <SelectItem key={layout.id} value={String(layout.id)}>
+                        {layout.name} ({layout.layoutType || "2D"})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {selectedWorkshop && (
+                <PermissionGate module="settings_factory" action="canCreate">
+                <Dialog open={isCreateLayoutOpen} onOpenChange={setIsCreateLayoutOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Plus className="h-4 w-4 mr-1" />
+                      {t('layout.createLayout')}
                     </Button>
-                    <Button onClick={handleCreateLayout} disabled={createLayoutMutation.isPending}>
-                      {createLayoutMutation.isPending ? t('layout.creating') : t('layout.createLayout')}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-              </PermissionGate>
-            )}
-          </div>
-        </div>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{t('layout.createNewLayout')}</DialogTitle>
+                      <DialogDescription>
+                        {t('layout.createLayoutDescription')}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>{t('layout.layoutName')}</Label>
+                        <Input
+                          value={newLayoutName}
+                          onChange={(e) => setNewLayoutName(e.target.value)}
+                          placeholder={t('layout.layoutNamePlaceholder')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t('layout.layoutType')}</Label>
+                        <Select value={newLayoutType} onValueChange={(v: "2D" | "3D") => setNewLayoutType(v)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="2D">{t('layout.layout2D')}</SelectItem>
+                            <SelectItem value="3D">{t('layout.layout3D')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateLayoutOpen(false)}>
+                        {t('common.cancel')}
+                      </Button>
+                      <Button onClick={handleCreateLayout} disabled={createLayoutMutation.isPending}>
+                        {createLayoutMutation.isPending ? t('layout.creating') : t('layout.createLayout')}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                </PermissionGate>
+              )}
+            </>
+          }
+        />
 
         {/* Main Content with Tabs */}
         {selectedLayout ? (
@@ -839,9 +838,9 @@ export default function Layout() {
 
                               {/* Yield status indicator */}
                               <div className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-bold shadow ${
-                                machine.stats.yieldRate >= 98 ? 'bg-green-500/90 text-white' :
-                                machine.stats.yieldRate >= 95 ? 'bg-yellow-500/90 text-black' :
-                                machine.stats.total > 0 ? 'bg-red-500/90 text-white' : 'bg-gray-500/70 text-white'
+                                machine.stats.yieldRate >= 98 ? 'bg-success text-success-foreground' :
+                                machine.stats.yieldRate >= 95 ? 'bg-warning text-warning-foreground' :
+                                machine.stats.total > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-muted-foreground'
                               }`}>
                                 {machine.stats.total > 0 ? `${machine.stats.yieldRate.toFixed(1)}%` : 'N/A'}
                               </div>
@@ -901,9 +900,9 @@ export default function Layout() {
                     <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg space-x-3">
                       <span><Move className="h-3 w-3 inline mr-1" />{t('layout.controlsHint')}</span>
                       <span>|</span>
-                      <span>🖱️ Scroll to zoom</span>
+                      <span className="inline-flex items-center gap-1"><ZoomIn className="h-3 w-3" />{t('layout.scrollToZoom', 'Scroll to zoom')}</span>
                       <span>|</span>
-                      <span>Click machine for details</span>
+                      <span>{t('layout.clickMachineForDetails', 'Click machine for details')}</span>
                     </div>
 
                     {/* Selected machine info panel */}
@@ -955,32 +954,32 @@ export default function Layout() {
                                   <div className="text-[10px] text-muted-foreground">Total</div>
                                   <div className="font-bold">{sel.stats.total.toLocaleString()}</div>
                                 </div>
-                                <div className="bg-green-500/10 rounded px-2 py-1">
-                                  <div className="text-[10px] text-green-600">OK</div>
-                                  <div className="font-bold text-green-600">{sel.stats.ok.toLocaleString()}</div>
+                                <div className="bg-success/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-success">OK</div>
+                                  <div className="font-bold text-success">{sel.stats.ok.toLocaleString()}</div>
                                 </div>
-                                <div className="bg-red-500/10 rounded px-2 py-1">
-                                  <div className="text-[10px] text-red-600">NG</div>
-                                  <div className="font-bold text-red-600">{sel.stats.ng.toLocaleString()}</div>
+                                <div className="bg-destructive/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-destructive">NG</div>
+                                  <div className="font-bold text-destructive">{sel.stats.ng.toLocaleString()}</div>
                                 </div>
-                                <div className="bg-yellow-500/10 rounded px-2 py-1">
-                                  <div className="text-[10px] text-yellow-600">NTF</div>
-                                  <div className="font-bold text-yellow-600">{sel.stats.ntf.toLocaleString()}</div>
+                                <div className="bg-warning/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-warning">NTF</div>
+                                  <div className="font-bold text-warning">{sel.stats.ntf.toLocaleString()}</div>
                                 </div>
                               </div>
                               <div className="mt-2">
                                 <div className="flex justify-between text-xs mb-1">
                                   <span className="text-muted-foreground">Yield Rate</span>
                                   <span className={`font-bold ${
-                                    sel.stats.yieldRate >= 98 ? 'text-green-600' :
-                                    sel.stats.yieldRate >= 95 ? 'text-yellow-600' : 'text-red-600'
+                                    sel.stats.yieldRate >= 98 ? 'text-success' :
+                                    sel.stats.yieldRate >= 95 ? 'text-warning' : 'text-destructive'
                                   }`}>{sel.stats.yieldRate.toFixed(2)}%</span>
                                 </div>
                                 <div className="w-full bg-muted rounded-full h-2">
                                   <div
                                     className={`h-2 rounded-full transition-all ${
-                                      sel.stats.yieldRate >= 98 ? 'bg-green-500' :
-                                      sel.stats.yieldRate >= 95 ? 'bg-yellow-500' : 'bg-red-500'
+                                      sel.stats.yieldRate >= 98 ? 'bg-success' :
+                                      sel.stats.yieldRate >= 95 ? 'bg-warning' : 'bg-destructive'
                                     }`}
                                     style={{ width: `${Math.min(100, sel.stats.yieldRate)}%` }}
                                   />
@@ -1075,7 +1074,7 @@ export default function Layout() {
             </CardContent>
           </Card>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

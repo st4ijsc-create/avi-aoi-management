@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -89,7 +89,7 @@ export default function MESControlTower() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-1">
+      <PageContainer>
         <PageHeader
           icon={<Activity className="h-6 w-6" />}
           title={t("mesControlTower.titleHub", "MES Operations Hub")}
@@ -106,46 +106,26 @@ export default function MESControlTower() {
 
         {/* KPI cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Boxes className="h-4 w-4" /> {t("mesControlTower.wipTotal", "Tổng WIP")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{wipTotal}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Gauge className="h-4 w-4" /> {t("mesControlTower.lines", "Chuyền theo dõi")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{lineBalance.data?.length ?? 0}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Wrench className="h-4 w-4" /> {t("mesControlTower.openWorkOrders", "Lệnh bảo trì mở")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{openWo}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <GitMerge className="h-4 w-4" /> {t("mesControlTower.dispositions", "Quyết định lô")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{dispositions.data?.length ?? 0}</div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Boxes className="h-5 w-5" />}
+            label={t("mesControlTower.wipTotal", "Tổng WIP")}
+            value={wipTotal}
+          />
+          <MetricCard
+            icon={<Gauge className="h-5 w-5" />}
+            label={t("mesControlTower.lines", "Chuyền theo dõi")}
+            value={lineBalance.data?.length ?? 0}
+          />
+          <MetricCard
+            icon={<Wrench className="h-5 w-5" />}
+            label={t("mesControlTower.openWorkOrders", "Lệnh bảo trì mở")}
+            value={openWo}
+          />
+          <MetricCard
+            icon={<GitMerge className="h-5 w-5" />}
+            label={t("mesControlTower.dispositions", "Quyết định lô")}
+            value={dispositions.data?.length ?? 0}
+          />
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -280,8 +260,8 @@ export default function MESControlTower() {
                         <TableCell>{names.line(d.lineId)}</TableCell>
                         <TableCell>{d.dwellMs ?? "—"}</TableCell>
                         <TableCell>{d.processingMs ?? "—"}</TableCell>
-                        <TableCell className="text-amber-600">{d.starvedMs ?? "—"}</TableCell>
-                        <TableCell className="text-red-600">{d.blockedMs ?? "—"}</TableCell>
+                        <TableCell className="text-warning">{d.starvedMs ?? "—"}</TableCell>
+                        <TableCell className="text-destructive">{d.blockedMs ?? "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -374,7 +354,7 @@ export default function MESControlTower() {
                       <TableRow key={w.id}>
                         <TableCell className="font-mono text-xs">{w.workOrderNumber}</TableCell>
                         <TableCell>{w.machineCode ?? names.machine(w.machineId)}</TableCell>
-                        <TableCell>{w.type}{w.trigger === "PREDICTED_FAILURE" && <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" />}</TableCell>
+                        <TableCell>{w.type}{w.trigger === "PREDICTED_FAILURE" && <AlertTriangle className="inline h-3 w-3 ml-1 text-warning" />}</TableCell>
                         <TableCell>{w.trigger}</TableCell>
                         <TableCell><StatusBadge value={w.status} /></TableCell>
                         <TableCell className="text-xs">{w.openedAt ? new Date(w.openedAt).toLocaleString() : "—"}</TableCell>
@@ -386,7 +366,7 @@ export default function MESControlTower() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -521,8 +501,8 @@ function SerialTracePanel({ names }: { names: Names }) {
                       <TableRow key={d.id}>
                         <TableCell>{names.station(d.stationId)}</TableCell>
                         <TableCell>{d.dwellMs ?? "—"}</TableCell>
-                        <TableCell className="text-amber-600">{d.starvedMs ?? "—"}</TableCell>
-                        <TableCell className="text-red-600">{d.blockedMs ?? "—"}</TableCell>
+                        <TableCell className="text-warning">{d.starvedMs ?? "—"}</TableCell>
+                        <TableCell className="text-destructive">{d.blockedMs ?? "—"}</TableCell>
                         <TableCell className="text-xs">{d.enteredAt ? new Date(d.enteredAt).toLocaleString() : "—"}</TableCell>
                       </TableRow>
                     ))}

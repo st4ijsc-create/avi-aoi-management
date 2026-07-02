@@ -62,9 +62,9 @@ const COMPARISON_SYMBOLS: Record<string, string> = {
 };
 
 const ACTION_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  alert: { label: "qualityGates.actionAlert", icon: <Bell className="h-4 w-4" />, color: "bg-yellow-500" },
-  pause: { label: "qualityGates.actionPause", icon: <Pause className="h-4 w-4" />, color: "bg-orange-500" },
-  stop: { label: "qualityGates.actionStop", icon: <StopCircle className="h-4 w-4" />, color: "bg-red-500" },
+  alert: { label: "qualityGates.actionAlert", icon: <Bell className="h-4 w-4" />, color: "bg-warning" },
+  pause: { label: "qualityGates.actionPause", icon: <Pause className="h-4 w-4" />, color: "bg-warning" },
+  stop: { label: "qualityGates.actionStop", icon: <StopCircle className="h-4 w-4" />, color: "bg-destructive" },
 };
 
 const EVENT_STATUS_VARIANT: Record<string, "destructive" | "secondary" | "default" | "outline"> = {
@@ -74,11 +74,12 @@ const EVENT_STATUS_VARIANT: Record<string, "destructive" | "secondary" | "defaul
   auto_resolved: "outline",
 };
 
+// Token-driven status tints (soft bg + matching foreground) — dark/light aware.
 const EVENT_STATUS_CLASS: Record<string, string> = {
-  active: "bg-red-500 text-white",
-  acknowledged: "bg-yellow-500 text-white",
-  resolved: "bg-green-500 text-white",
-  auto_resolved: "bg-blue-500 text-white",
+  active: "border-destructive/30 bg-destructive/15 text-destructive",
+  acknowledged: "border-warning/30 bg-warning/15 text-warning",
+  resolved: "border-success/30 bg-success/15 text-success",
+  auto_resolved: "border-info/30 bg-info/15 text-info",
 };
 
 // ── Types ──
@@ -550,7 +551,7 @@ export function QualityGatesContent() {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge className={EVENT_STATUS_CLASS[event.status] ?? ""}>
+                              <Badge variant="outline" className={EVENT_STATUS_CLASS[event.status] ?? ""}>
                                 {event.status}
                               </Badge>
                             </TableCell>
@@ -566,7 +567,7 @@ export function QualityGatesContent() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-yellow-600 hover:text-yellow-700"
+                                    className="h-8 w-8 text-warning hover:text-warning"
                                     title={t('qualityGates.acknowledge')}
                                     onClick={() => openEventActionDialog("acknowledge", event.id)}
                                   >
@@ -577,7 +578,7 @@ export function QualityGatesContent() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-green-600 hover:text-green-700"
+                                    className="h-8 w-8 text-success hover:text-success"
                                     title={t('qualityGates.resolve')}
                                     onClick={() => openEventActionDialog("resolve", event.id)}
                                   >
@@ -985,18 +986,21 @@ function GateEvaluationCard({ gate }: { gate: any }) {
   const details = data?.details;
 
   return (
-    <Card className={triggered ? "border-red-500 bg-red-50 dark:bg-red-950/20" : "border-green-500 bg-green-50 dark:bg-green-950/20"}>
+    <Card className={triggered ? "border-destructive/50 bg-destructive/5" : "border-success/50 bg-success/5"}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             {triggered ? (
-              <ShieldAlert className="h-5 w-5 text-red-600" />
+              <ShieldAlert className="h-5 w-5 text-destructive" />
             ) : (
-              <ShieldCheck className="h-5 w-5 text-green-600" />
+              <ShieldCheck className="h-5 w-5 text-success" />
             )}
             {gate.name}
           </CardTitle>
-          <Badge className={triggered ? "bg-red-600 text-white" : "bg-green-600 text-white"}>
+          <Badge
+            variant="outline"
+            className={triggered ? "border-destructive/30 bg-destructive/15 text-destructive" : "border-success/30 bg-success/15 text-success"}
+          >
             {triggered ? t('qualityGates.triggered') : t('qualityGates.ok')}
           </Badge>
         </div>
@@ -1011,7 +1015,7 @@ function GateEvaluationCard({ gate }: { gate: any }) {
         {/* Current vs Threshold */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{t('qualityGates.currentValue')}</span>
-          <span className={`font-mono font-bold text-lg ${triggered ? "text-red-600" : "text-green-600"}`}>
+          <span className={`font-mono font-bold text-lg ${triggered ? "text-destructive" : "text-success"}`}>
             {data?.currentValue != null ? Number(data.currentValue).toFixed(2) : "—"}
           </span>
         </div>
@@ -1024,7 +1028,7 @@ function GateEvaluationCard({ gate }: { gate: any }) {
         {data?.currentValue != null && data?.threshold != null && (
           <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${triggered ? "bg-red-500" : "bg-green-500"}`}
+              className={`h-full rounded-full transition-all ${triggered ? "bg-destructive" : "bg-success"}`}
               style={{
                 width: `${Math.min(100, Math.max(0, (Number(data.currentValue) / Number(data.threshold)) * 100))}%`,
               }}

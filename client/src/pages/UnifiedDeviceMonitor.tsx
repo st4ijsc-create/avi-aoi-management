@@ -29,7 +29,7 @@ import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import DeviceOnboardingWizard from "@/components/DeviceOnboardingWizard";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -331,7 +331,7 @@ export default function UnifiedDeviceMonitor() {
 
   return (
     <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
-      <div className="space-y-6 p-4 md:p-6">
+      <PageContainer fluid>
         {/* Header */}
         <PageHeader
           icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
@@ -351,22 +351,32 @@ export default function UnifiedDeviceMonitor() {
 
         {/* Summary */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Card><CardContent className="flex items-center gap-3 pt-4">
-            <Server className="h-7 w-7 text-muted-foreground" />
-            <div><p className="text-2xl font-bold">{counts.total}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.totalDevices", "Tổng thiết bị")}</p></div>
-          </CardContent></Card>
-          <Card className="border-success/40"><CardContent className="flex items-center gap-3 pt-4">
-            <Wifi className="h-7 w-7 text-success" />
-            <div><p className="text-2xl font-bold text-success">{counts.online}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.online", "Trực tuyến")}</p></div>
-          </CardContent></Card>
-          <Card className="border-destructive/40"><CardContent className="flex items-center gap-3 pt-4">
-            <WifiOff className="h-7 w-7 text-destructive" />
-            <div><p className="text-2xl font-bold text-destructive">{counts.offline}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.offline", "Ngoại tuyến")}</p></div>
-          </CardContent></Card>
-          <Card className="border-warning/40"><CardContent className="flex items-center gap-3 pt-4">
-            <HelpCircle className="h-7 w-7 text-warning" />
-            <div><p className="text-2xl font-bold text-warning">{counts.unknown}</p><p className="text-xs text-muted-foreground">{t("deviceMonitor.unknown", "Chưa rõ")}</p></div>
-          </CardContent></Card>
+          <MetricCard
+            icon={<Server className="h-5 w-5" />}
+            value={counts.total}
+            label={t("deviceMonitor.totalDevices", "Tổng thiết bị")}
+          />
+          <MetricCard
+            icon={<Wifi className="h-5 w-5" />}
+            value={counts.online}
+            label={t("deviceMonitor.online", "Trực tuyến")}
+            tone="success"
+            className="border-success/40"
+          />
+          <MetricCard
+            icon={<WifiOff className="h-5 w-5" />}
+            value={counts.offline}
+            label={t("deviceMonitor.offline", "Ngoại tuyến")}
+            tone="error"
+            className="border-destructive/40"
+          />
+          <MetricCard
+            icon={<HelpCircle className="h-5 w-5" />}
+            value={counts.unknown}
+            label={t("deviceMonitor.unknown", "Chưa rõ")}
+            tone="warning"
+            className="border-warning/40"
+          />
         </div>
 
         {/* Protocol framework status strip (honest flag state) */}
@@ -522,7 +532,7 @@ export default function UnifiedDeviceMonitor() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
 
       <DeviceOnboardingWizard open={wizardOpen} onOpenChange={setWizardOpen} onChanged={refetchAll} />
     </DashboardLayout>

@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -160,15 +161,11 @@ export function CausalGraphEditorPageContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Network className="h-6 w-6" />
-          {t("causalGraph.title", "Trình chỉnh sửa đồ thị nhân quả")}
-        </h1>
-        <p className="text-muted-foreground">
-          {t("causalGraph.desc", "Quản lý đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc")}
-        </p>
-      </div>
+      <PageHeader
+        icon={<Network className="h-6 w-6" />}
+        title={t("causalGraph.title", "Trình chỉnh sửa đồ thị nhân quả")}
+        description={t("causalGraph.desc", "Quản lý đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc")}
+      />
 
       {/* Nodes grouped by type */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -425,7 +422,9 @@ export function CausalGraphEditorPageContent() {
 export default function CausalGraphEditorPage() {
   return (
     <DashboardLayout>
-      <CausalGraphEditorPageContent />
+      <PageContainer>
+        <CausalGraphEditorPageContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }

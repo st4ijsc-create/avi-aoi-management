@@ -20,6 +20,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
@@ -213,29 +214,25 @@ export default function EngineeringWorkspace() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 p-4">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <Code2 className="h-6 w-6" /> {t("engineering.title", "Xưởng lập trình thiết bị")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("engineering.subtitle", "Soạn → kiểm tra → build → mô phỏng → (sign-off) deploy cho PLC / Robot / Zmotion")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={deployEnabled ? "default" : "secondary"}>
-              {t("engineering.deployFlag", "Deploy")}: {deployEnabled ? "ON" : "OFF"}
-            </Badge>
-            <Button variant="outline" size="sm" onClick={() => { statusQ.refetch(); projectsQ.refetch(); }}>
-              <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Làm mới")}
-            </Button>
-          </div>
-        </div>
+      <PageContainer fluid className="space-y-4">
+        <PageHeader
+          icon={<Code2 className="h-6 w-6" />}
+          title={t("engineering.title", "Xưởng lập trình thiết bị")}
+          description={t("engineering.subtitle", "Soạn → kiểm tra → build → mô phỏng → (sign-off) deploy cho PLC / Robot / Zmotion")}
+          actions={
+            <>
+              <Badge variant={deployEnabled ? "default" : "secondary"}>
+                {t("engineering.deployFlag", "Deploy")}: {deployEnabled ? "ON" : "OFF"}
+              </Badge>
+              <Button variant="outline" size="sm" onClick={() => { statusQ.refetch(); projectsQ.refetch(); }}>
+                <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Làm mới")}
+              </Button>
+            </>
+          }
+        />
 
         {!deployEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               {t("engineering.deployOffBanner", "DPC_DEPLOY_ENABLED đang TẮT — mọi deploy được ghi nhận là SIMULATED, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.")}
@@ -411,11 +408,11 @@ export default function EngineeringWorkspace() {
                     {diagnostics && (
                       <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs">
                         {diagnostics.length === 0 ? (
-                          <span className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3 w-3" /> {t("engineering.noDiag", "Không có cảnh báo")}</span>
+                          <span className="flex items-center gap-1 text-success"><CheckCircle2 className="h-3 w-3" /> {t("engineering.noDiag", "Không có cảnh báo")}</span>
                         ) : (
                           diagnostics.map((d, i) => (
                             <div key={i} className="flex items-center gap-1">
-                              {d.severity === "error" ? <XCircle className="h-3 w-3 text-red-500" /> : <AlertTriangle className="h-3 w-3 text-amber-500" />}
+                              {d.severity === "error" ? <XCircle className="h-3 w-3 text-destructive" /> : <AlertTriangle className="h-3 w-3 text-warning" />}
                               <span>{d.line ? `L${d.line}: ` : ""}{d.message}</span>
                             </div>
                           ))
@@ -453,7 +450,11 @@ export default function EngineeringWorkspace() {
                     {simResult && (
                       <div className="rounded-md border bg-muted/30 p-2 text-xs">
                         <div className="mb-1 font-medium">{t("engineering.timeline", "Timeline")} ({simResult.timeline.length} {t("engineering.steps", "bước")}, {simResult.ok ? "OK" : "WARN"})</div>
-                        {simResult.warnings.map((w, i) => <div key={i} className="text-amber-600">⚠ {w}</div>)}
+                        {simResult.warnings.map((w, i) => (
+                          <div key={i} className="flex items-center gap-1 text-warning">
+                            <AlertTriangle className="h-3 w-3 shrink-0" /> {w}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </CardContent>
@@ -513,7 +514,7 @@ export default function EngineeringWorkspace() {
                             <TableCell>{d.id}</TableCell>
                             <TableCell>{d.stage}</TableCell>
                             <TableCell><Badge variant={d.status === "rejected" ? "destructive" : "secondary"}>{d.status}</Badge></TableCell>
-                            <TableCell>{d.simulated ? "✓" : "—"}</TableCell>
+                            <TableCell>{d.simulated ? <CheckCircle2 className="h-4 w-4 text-muted-foreground" aria-label={t("engineering.simulated", "Mô phỏng")} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                           </TableRow>
                         ))}
                         {(deploymentsQ.data ?? []).length === 0 && (
@@ -557,7 +558,7 @@ export default function EngineeringWorkspace() {
             )}
           </div>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

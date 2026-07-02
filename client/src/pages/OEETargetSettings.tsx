@@ -13,7 +13,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { PageHeader, StatusBadge } from '@/components/patterns';
 import { Target, TrendingUp, AlertTriangle, CheckCircle2, Edit, Trash2, Plus, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,6 +28,7 @@ export default function OEETargetSettings() {
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   
   const [formData, setFormData] = useState({
     targetOEE: 80,
@@ -130,9 +135,10 @@ export default function OEETargetSettings() {
     });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm(t('oee.confirmDeleteTarget'))) {
-      deleteTarget.mutate({ id });
+  const handleConfirmDelete = () => {
+    if (deleteTargetId != null) {
+      deleteTarget.mutate({ id: deleteTargetId });
+      setDeleteTargetId(null);
     }
   };
 
@@ -155,13 +161,13 @@ export default function OEETargetSettings() {
     const criticalThreshold = target.criticalThreshold / 100;
 
     if (oee >= targetOEE) {
-      return <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />{t('oee.onTarget')}</Badge>;
+      return <StatusBadge status="onTarget" tone="success" label={<><CheckCircle2 className="w-3 h-3 mr-1 inline" />{t('oee.onTarget')}</>} />;
     } else if (oee >= alertThreshold) {
-      return <Badge className="bg-yellow-500"><TrendingUp className="w-3 h-3 mr-1" />{t('oee.belowTarget')}</Badge>;
+      return <StatusBadge status="belowTarget" tone="warning" label={<><TrendingUp className="w-3 h-3 mr-1 inline" />{t('oee.belowTarget')}</>} />;
     } else if (oee >= criticalThreshold) {
-      return <Badge className="bg-orange-500"><AlertTriangle className="w-3 h-3 mr-1" />{t('oee.alert')}</Badge>;
+      return <StatusBadge status="alert" tone="warning" label={<><AlertTriangle className="w-3 h-3 mr-1 inline" />{t('oee.alert')}</>} />;
     } else {
-      return <Badge className="bg-red-500"><AlertTriangle className="w-3 h-3 mr-1" />{t('oee.critical')}</Badge>;
+      return <StatusBadge status="critical" tone="error" label={<><AlertTriangle className="w-3 h-3 mr-1 inline" />{t('oee.critical')}</>} />;
     }
   };
 
@@ -179,14 +185,12 @@ export default function OEETargetSettings() {
 
   return (
     <DashboardLayout title={t('oee.targetSettings')} navItems={navItems} currentPath="/oee-target-settings">
-      <div className="container py-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Target className="w-8 h-8 text-primary" />
-        <div>
-          <h1 className="text-3xl font-bold">{t('oee.targetSettings')}</h1>
-          <p className="text-muted-foreground">{t('oee.targetSettingsDescription')}</p>
-        </div>
-      </div>
+      <div className="container py-6 space-y-6">
+      <PageHeader
+        icon={<Target className="h-6 w-6 text-primary" />}
+        title={t('oee.targetSettings')}
+        description={t('oee.targetSettingsDescription')}
+      />
 
       <ErrorBoundary>
       <Tabs defaultValue="targets" className="space-y-6">
@@ -241,7 +245,7 @@ export default function OEETargetSettings() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDelete(target.id)}
+                            onClick={() => setDeleteTargetId(target.id)}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -434,6 +438,19 @@ export default function OEETargetSettings() {
         </TabsContent>
       </Tabs>
       </ErrorBoundary>
+
+      <AlertDialog open={deleteTargetId != null} onOpenChange={(o) => !o && setDeleteTargetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('oee.deleteTarget', 'Delete target')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('oee.confirmDeleteTarget')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>{t('common.delete', 'Delete')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </DashboardLayout>
   );

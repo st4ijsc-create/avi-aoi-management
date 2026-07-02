@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader, PageContainer } from '@/components/patterns';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,7 +31,12 @@ export default function DefectHeatmapPage() {
 
   return (
     <DashboardLayout>
-      <div className="container py-6">
+      <PageContainer>
+        <PageHeader
+          icon={<MapPin className="h-6 w-6" />}
+          title={t('defects.heatmap.pageTitle', 'Bản đồ nhiệt lỗi & Xu hướng')}
+          description={t('defects.heatmap.pageSubtitle', 'Phân bố lỗi theo vị trí và phân tích xu hướng theo thời gian')}
+        />
         <Tabs defaultValue="heatmap" className="space-y-6">
           <TabsList>
             <TabsTrigger value="heatmap" className="flex items-center gap-2">
@@ -69,7 +75,7 @@ export default function DefectHeatmapPage() {
             </ErrorBoundary>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

@@ -485,8 +485,8 @@ export default function AIChatPage() {
               </div>
             )}
             {s!.recommendations && s!.recommendations.length > 0 && (
-              <div className="text-xs bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded px-2 py-1.5">
-                <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">
+              <div className="text-xs bg-warning/10 border border-warning/30 rounded px-2 py-1.5">
+                <p className="font-semibold text-warning mb-1">
                   {t("aiChat.recommendationsTitle", "Khuyến nghị")}
                 </p>
                 <ul className="list-disc list-inside space-y-0.5">
@@ -555,7 +555,7 @@ export default function AIChatPage() {
     <DashboardLayout>
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Sidebar - Conversations */}
-        <div className="w-72 border-r flex flex-col bg-muted/30">
+        <div className="hidden md:flex w-72 border-r flex-col bg-muted/30">
           <div className="p-3 border-b">
             <Button
               className="w-full"

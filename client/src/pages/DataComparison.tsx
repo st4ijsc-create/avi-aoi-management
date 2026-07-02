@@ -1,26 +1,32 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PageHeader,
+  MetricCard,
+  EmptyState,
+  chartColor,
+  chartTooltipStyle,
+  chartGridProps,
+  chartAxisTick,
+} from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import {
-  GitCompare, TrendingUp, TrendingDown, Minus, ArrowRight,
-  Calendar, Building2, Loader2, BarChart3, RefreshCw,
-  ArrowUpRight, ArrowDownRight, Cpu, Download,
+  GitCompare, Minus, ArrowRight,
+  Calendar, RefreshCw,
+  ArrowUpRight, ArrowDownRight,
 } from "lucide-react";
-import { toast } from "sonner";
 import { useState, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend, Area, AreaChart, Cell,
+  Legend, Area, AreaChart,
 } from "recharts";
 
 const PERIOD_OPTIONS = [
@@ -31,8 +37,8 @@ const PERIOD_OPTIONS = [
 ];
 
 const CHANGE_COLORS = {
-  positive: "text-green-400",
-  negative: "text-red-400",
+  positive: "text-success",
+  negative: "text-destructive",
   neutral: "text-muted-foreground",
 };
 
@@ -107,8 +113,8 @@ export function DataComparisonContent() {
   });
 
   function getChangeIcon(change: number) {
-    if (change > 0) return <ArrowUpRight className="h-4 w-4 text-green-400" />;
-    if (change < 0) return <ArrowDownRight className="h-4 w-4 text-red-400" />;
+    if (change > 0) return <ArrowUpRight className="h-4 w-4 text-success" />;
+    if (change < 0) return <ArrowDownRight className="h-4 w-4 text-destructive" />;
     return <Minus className="h-4 w-4 text-muted-foreground" />;
   }
 
@@ -211,8 +217,13 @@ export function DataComparisonContent() {
         </Card>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
+            <Skeleton className="h-[380px] w-full" />
           </div>
         ) : comparison ? (
           <>
@@ -261,28 +272,24 @@ export function DataComparisonContent() {
                   invert: true,
                 },
               ].map((kpi, i) => (
-                <Card key={i}>
-                  <CardContent className="p-4">
-                    <div className="text-xs text-muted-foreground mb-1">{kpi.label}</div>
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <div className="text-2xl font-bold">
-                          {kpi.curr != null ? kpi.curr.toLocaleString() : "N/A"}
-                          {kpi.suffix || ""}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {t('reports.previousPeriod')}: {kpi.prev != null ? kpi.prev.toLocaleString() : "N/A"}{kpi.suffix || ""}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
+                <MetricCard
+                  key={i}
+                  label={kpi.label}
+                  value={`${kpi.curr != null ? kpi.curr.toLocaleString() : "N/A"}${kpi.suffix || ""}`}
+                  delta={
+                    <span className="flex items-center gap-2">
+                      <span>
+                        {t('reports.previousPeriod')}: {kpi.prev != null ? kpi.prev.toLocaleString() : "N/A"}{kpi.suffix || ""}
+                      </span>
+                      <span className="flex items-center gap-0.5">
                         {getChangeIcon(kpi.change || 0)}
-                        <span className={`text-sm font-medium ${getChangeColor(kpi.change || 0, kpi.invert)}`}>
+                        <span className={`font-medium ${getChangeColor(kpi.change || 0, kpi.invert)}`}>
                           {formatPercent(kpi.change)}
                         </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </span>
+                    </span>
+                  }
+                />
               ))}
             </div>
 
@@ -305,33 +312,24 @@ export function DataComparisonContent() {
                         }))}>
                           <defs>
                             <linearGradient id="prevGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                              <stop offset="5%" stopColor={chartColor(0)} stopOpacity={0.3} />
+                              <stop offset="95%" stopColor={chartColor(0)} stopOpacity={0} />
                             </linearGradient>
                             <linearGradient id="currGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                              <stop offset="5%" stopColor={chartColor(1)} stopOpacity={0.3} />
+                              <stop offset="95%" stopColor={chartColor(1)} stopOpacity={0} />
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                          <XAxis
-                            dataKey="date"
-                            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                          />
-                          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--card))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "8px",
-                            }}
-                          />
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis dataKey="date" tick={chartAxisTick} />
+                          <YAxis tick={chartAxisTick} />
+                          <Tooltip contentStyle={chartTooltipStyle} />
                           <Legend />
                           <Area
                             type="monotone"
                             dataKey="previousTotal"
                             name={t('reports.previousPeriod')}
-                            stroke="#6366f1"
+                            stroke={chartColor(0)}
                             fill="url(#prevGrad)"
                             strokeWidth={2}
                           />
@@ -339,7 +337,7 @@ export function DataComparisonContent() {
                             type="monotone"
                             dataKey="currentTotal"
                             name={t('reports.currentPeriod')}
-                            stroke="#10b981"
+                            stroke={chartColor(1)}
                             fill="url(#currGrad)"
                             strokeWidth={2}
                           />
@@ -365,19 +363,13 @@ export function DataComparisonContent() {
                           previousYield: m.previous?.yieldRate ?? 0,
                           currentYield: m.current?.yieldRate ?? 0,
                         }))} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                          <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                          <YAxis dataKey="machineName" type="category" width={120} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--card))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "8px",
-                            }}
-                          />
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis type="number" tick={chartAxisTick} />
+                          <YAxis dataKey="machineName" type="category" width={120} tick={chartAxisTick} />
+                          <Tooltip contentStyle={chartTooltipStyle} />
                           <Legend />
-                          <Bar dataKey="previousYield" name={t('reports.previousPeriod')} fill="#6366f1" radius={[0, 4, 4, 0]} />
-                          <Bar dataKey="currentYield" name={t('reports.currentPeriod')} fill="#10b981" radius={[0, 4, 4, 0]} />
+                          <Bar dataKey="previousYield" name={t('reports.previousPeriod')} fill={chartColor(0)} radius={[0, 4, 4, 0]} />
+                          <Bar dataKey="currentYield" name={t('reports.currentPeriod')} fill={chartColor(1)} radius={[0, 4, 4, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -410,8 +402,8 @@ export function DataComparisonContent() {
                               variant="outline"
                               className={
                                 point.improvement
-                                  ? "text-green-400 border-green-500/30"
-                                  : "text-red-400 border-red-500/30"
+                                  ? "text-success border-success/30"
+                                  : "text-destructive border-destructive/30"
                               }
                             >
                               {point.change > 0 ? "+" : ""}{point.change}
@@ -426,11 +418,11 @@ export function DataComparisonContent() {
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-            <GitCompare className="h-16 w-16 mb-4 opacity-30" />
-            <p className="text-lg">{t('reports.selectPeriodPrompt')}</p>
-            <p className="text-sm mt-1">{t('reports.comparisonSupportDesc')}</p>
-          </div>
+          <EmptyState
+            icon={GitCompare}
+            title={t('reports.selectPeriodPrompt')}
+            description={t('reports.comparisonSupportDesc')}
+          />
         )}
       </div>
     </>

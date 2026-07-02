@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -258,7 +258,7 @@ export function BackupRestorePageContent() {
     return (
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="p-8 text-center">
-            <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
+            <AlertTriangle className="h-12 w-12 mx-auto text-warning mb-4" />
             <h2 className="text-xl font-semibold mb-2">{t('backup.accessDenied')}</h2>
             <p className="text-muted-foreground">
               {t('backup.adminOnlyMessage')}
@@ -273,7 +273,7 @@ export function BackupRestorePageContent() {
         {/* Header — DS PageHeader (shared pattern) */}
         <PageHeader
           icon={<Archive className="h-6 w-6" />}
-          title="Backup & Restore"
+          title={t('backup.title')}
           description={t('backup.description')}
         />
 
@@ -436,12 +436,12 @@ export function BackupRestorePageContent() {
                   {importPreview && (
                     <Card className="bg-muted/50">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-base">Preview Backup</CardTitle>
+                        <CardTitle className="text-base">{t('backup.previewTitle')}</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Version:</span>
+                            <span className="text-muted-foreground">{t('backup.versionLabel')}:</span>
                             <span className="ml-2 font-medium">{importPreview.version}</span>
                           </div>
                           <div>
@@ -520,13 +520,13 @@ export function BackupRestorePageContent() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{backup.name}</span>
                             {backup.status === "success" && (
-                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              <CheckCircle2 className="h-4 w-4 text-success" />
                             )}
                             {backup.status === "failed" && (
-                              <XCircle className="h-4 w-4 text-red-500" />
+                              <XCircle className="h-4 w-4 text-destructive" />
                             )}
                             {backup.status === "pending" && (
-                              <Clock className="h-4 w-4 text-yellow-500" />
+                              <Clock className="h-4 w-4 text-warning" />
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">{backup.description}</p>
@@ -562,7 +562,9 @@ export function BackupRestorePageContent() {
 export default function BackupRestore() {
   return (
     <DashboardLayout>
-      <BackupRestorePageContent />
+      <PageContainer>
+        <BackupRestorePageContent />
+      </PageContainer>
     </DashboardLayout>
   );
 }

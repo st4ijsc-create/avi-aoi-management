@@ -19,7 +19,17 @@ import {
   Target, Gauge, Percent, Send, Radio, Zap
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 
 interface ThresholdFormData {
@@ -69,6 +79,7 @@ export function MqttNgRateThresholdContent() {
   const [testSendExternal, setTestSendExternal] = useState(true);
   const [testSendFcm, setTestSendFcm] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [deleteThresholdId, setDeleteThresholdId] = useState<number | null>(null);
 
   // ─── Data Queries ──────────────────────────────────────────────────────
   const { data: stations } = trpc.station.list.useQuery();
@@ -221,7 +232,7 @@ export function MqttNgRateThresholdContent() {
   // ─── Render ────────────────────────────────────────────────────────────
   return (
     <>
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Gauge className="w-6 h-6" />}
@@ -261,62 +272,29 @@ export function MqttNgRateThresholdContent() {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-info/20">
-                  <Settings className="w-5 h-5 text-info" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{thresholds?.length || 0}</p>
-                  <p className="text-sm text-muted-foreground">{t("mqttNgRateThreshold.configuredThresholds")}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-success/20">
-                  <CheckCircle className="w-5 h-5 text-success" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{thresholds?.filter((t: any) => t.isEnabled).length || 0}</p>
-                  <p className="text-sm text-muted-foreground">{t("mqttNgRateThreshold.active")}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-warning/20">
-                  <AlertTriangle className="w-5 h-5 text-warning" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {alertHistoryData?.data?.filter((a: any) => !a.isResolved && a.severity === "warning").length || 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{t("mqttNgRateThreshold.unresolvedWarnings")}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-destructive/20">
-                  <XCircle className="w-5 h-5 text-destructive" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {alertHistoryData?.data?.filter((a: any) => !a.isResolved && a.severity === "critical").length || 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{t("mqttNgRateThreshold.unresolvedCritical")}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Settings className="w-5 h-5" />}
+            label={t("mqttNgRateThreshold.configuredThresholds")}
+            value={thresholds?.length || 0}
+          />
+          <MetricCard
+            icon={<CheckCircle className="w-5 h-5" />}
+            label={t("mqttNgRateThreshold.active")}
+            value={thresholds?.filter((t: any) => t.isEnabled).length || 0}
+            tone="success"
+          />
+          <MetricCard
+            icon={<AlertTriangle className="w-5 h-5" />}
+            label={t("mqttNgRateThreshold.unresolvedWarnings")}
+            value={alertHistoryData?.data?.filter((a: any) => !a.isResolved && a.severity === "warning").length || 0}
+            tone="warning"
+          />
+          <MetricCard
+            icon={<XCircle className="w-5 h-5" />}
+            label={t("mqttNgRateThreshold.unresolvedCritical")}
+            value={alertHistoryData?.data?.filter((a: any) => !a.isResolved && a.severity === "critical").length || 0}
+            tone="danger"
+          />
         </div>
 
         {/* Tab Content */}
@@ -432,11 +410,7 @@ export function MqttNgRateThresholdContent() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => {
-                                  if (confirm(t("mqttNgRateThreshold.confirmDelete"))) {
-                                    deleteMutation.mutate({ id: threshold.id });
-                                  }
-                                }}
+                                onClick={() => setDeleteThresholdId(threshold.id)}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
@@ -1070,7 +1044,29 @@ export function MqttNgRateThresholdContent() {
             )}
           </CardContent>
         </Card>
-      </div>
+
+        {/* Delete threshold confirmation */}
+        <AlertDialog open={deleteThresholdId !== null} onOpenChange={(open) => !open && setDeleteThresholdId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("common.delete")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("mqttNgRateThreshold.confirmDelete")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteThresholdId !== null) deleteMutation.mutate({ id: deleteThresholdId });
+                  setDeleteThresholdId(null);
+                }}
+              >
+                {t("common.delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </>
   );
 }

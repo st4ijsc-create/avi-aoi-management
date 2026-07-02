@@ -18,9 +18,8 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, SectionCard, StatusBadge, EmptyState } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -183,25 +182,25 @@ export default function SitesRegistry() {
 
   const healthBadge = (r: SiteRow) => {
     const { key } = deriveHealth(r);
-    if (key === "ok") return <Badge className="bg-emerald-500 text-white">{t("sites.statusOk", "OK")}</Badge>;
-    if (key === "stale") return <Badge variant="outline" className="text-amber-600 border-amber-400">{t("sites.statusStale", "STALE")}</Badge>;
-    if (key === "down") return <Badge variant="outline" className="text-red-600 border-red-400">{t("sites.statusDown", "DOWN")}</Badge>;
-    return <Badge variant="outline" className="text-muted-foreground">{t("sites.statusUnknown", "UNKNOWN")}</Badge>;
+    if (key === "ok") return <StatusBadge status="ok" tone="success" label={t("sites.statusOk", "OK")} />;
+    if (key === "stale") return <StatusBadge status="stale" tone="warning" label={t("sites.statusStale", "STALE")} />;
+    if (key === "down") return <StatusBadge status="down" tone="error" label={t("sites.statusDown", "DOWN")} />;
+    return <StatusBadge status="unknown" tone="default" label={t("sites.statusUnknown", "UNKNOWN")} />;
   };
 
   if (!canView) {
     return (
       <DashboardLayout>
-        <div className="p-6">
+        <PageContainer>
           <p className="text-sm text-muted-foreground">{t("sites.noPermission", "Bạn không có quyền quản lý sites federation.")}</p>
-        </div>
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer>
         {/* Header — DS PageHeader (shared pattern) */}
         <PageHeader
           icon={<Network className="h-6 w-6" />}
@@ -223,24 +222,19 @@ export default function SitesRegistry() {
           }
         />
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t("sites.listTitle", "Danh sách site")}</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionCard
+          icon={<Network className="h-4 w-4 text-primary" />}
+          title={t("sites.listTitle", "Danh sách site")}
+          contentClassName={rows.length === 0 ? undefined : "p-0"}
+        >
             {rows.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-10 text-center">
-                <Network className="h-10 w-10 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">
-                  {t("sites.emptyTitle", "Chưa có site nào.")}
-                </p>
-                <p className="max-w-md text-xs text-muted-foreground">
-                  {t("sites.emptyHint", "Bấm \"Đăng ký deployment này\" để tự-enroll bản thân làm site local (hoạt động ngay với 1 deployment), hoặc \"Thêm site\" để đăng ký một nhà máy từ xa.")}
-                </p>
-                <Button onClick={() => enrollM.mutate({})} disabled={!canCreate || enrollM.isPending}>
-                  <ServerCog className="mr-1.5 h-4 w-4" /> {t("sites.enrollThis", "Đăng ký deployment này")}
-                </Button>
-              </div>
+              <EmptyState
+                icon={Network}
+                title={t("sites.emptyTitle", "Chưa có site nào.")}
+                description={t("sites.emptyHint", "Bấm \"Đăng ký deployment này\" để tự-enroll bản thân làm site local (hoạt động ngay với 1 deployment), hoặc \"Thêm site\" để đăng ký một nhà máy từ xa.")}
+                actionLabel={canCreate ? t("sites.enrollThis", "Đăng ký deployment này") : undefined}
+                onAction={canCreate ? () => enrollM.mutate({}) : undefined}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -272,14 +266,23 @@ export default function SitesRegistry() {
                       <TableCell className="max-w-[220px] truncate font-mono text-xs" title={r.baseUrl}>{r.baseUrl}</TableCell>
                       <TableCell>
                         {healthBadge(r)}
-                        {r.lastError && <div className="mt-0.5 max-w-[180px] truncate text-[10px] text-red-500" title={r.lastError}>{r.lastError}</div>}
+                        {r.lastError && <div className="mt-0.5 max-w-[180px] truncate text-[10px] text-destructive" title={r.lastError}>{r.lastError}</div>}
                       </TableCell>
                       <TableCell className="text-xs">{fmtDate(r.lastSyncAt)}</TableCell>
                       <TableCell>
                         {r.hasToken ? (
-                          <Badge variant="outline" className="text-emerald-600 border-emerald-400"><ShieldCheck className="mr-1 h-3 w-3" />{t("sites.tokenSet", "đã cấu hình")}</Badge>
+                          <StatusBadge
+                            status="tokenSet"
+                            tone="success"
+                            label={<span className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" />{t("sites.tokenSet", "đã cấu hình")}</span>}
+                          />
                         ) : (
-                          <Badge variant="outline" className="text-amber-600 border-amber-400" title={r.tokenEnvVar}><ShieldAlert className="mr-1 h-3 w-3" />{t("sites.tokenMissing", "thiếu env")}</Badge>
+                          <StatusBadge
+                            status="tokenMissing"
+                            tone="warning"
+                            className="cursor-help"
+                            label={<span className="flex items-center gap-1" title={r.tokenEnvVar}><ShieldAlert className="h-3 w-3" />{t("sites.tokenMissing", "thiếu env")}</span>}
+                          />
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -300,9 +303,8 @@ export default function SitesRegistry() {
                 </TableBody>
               </Table>
             )}
-          </CardContent>
-        </Card>
-      </div>
+        </SectionCard>
+      </PageContainer>
 
       {/* ── Create / Edit dialog ── */}
       <Dialog open={formOpen} onOpenChange={(o) => { if (!o) { setFormOpen(false); resetForm(); } }}>

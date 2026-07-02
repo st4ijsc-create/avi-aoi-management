@@ -27,7 +27,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Database, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
+import { Database, Plus, Pencil, Trash2, AlertTriangle, Check, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 type Field = {
@@ -46,27 +50,28 @@ export default function MasterDataManagement() {
   if (!canView) {
     return (
       <DashboardLayout title={t("masterData.title")} navItems={navItems} currentPath="/master-data">
-        <div className="p-6">
+        <PageContainer>
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground">
               <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
               {t("masterData.noPermission")}
             </CardContent>
           </Card>
-        </div>
+        </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout title={t("masterData.title")} navItems={navItems} currentPath="/master-data">
-      <div className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Database className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{t("masterData.title")}</h1>
-          <Badge variant="outline">MES/MOM</Badge>
-          <ViewOnlyBadge module="masterdata" />
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Database className="h-6 w-6" />}
+          title={t("masterData.title")}
+          description={t("masterData.subtitle")}
+          badge={<ViewOnlyBadge module="masterdata" />}
+          actions={<Badge variant="outline">MES/MOM</Badge>}
+        />
         <Tabs defaultValue="suppliers">
           <TabsList>
             <TabsTrigger value="suppliers">{t("masterData.tabs.suppliers")}</TabsTrigger>
@@ -91,7 +96,7 @@ export default function MasterDataManagement() {
           <TabsContent value="calendar"><CalendarPanel /></TabsContent>
           <TabsContent value="inventory"><InventoryPanel /></TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }
@@ -140,16 +145,22 @@ function EntityDialog({
                   onCheckedChange={(c) => setVals((v) => ({ ...v, [f.key]: c }))}
                 />
               ) : f.type === "select" ? (
-                <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  value={vals[f.key] ?? ""}
-                  onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value || undefined }))}
+                <Select
+                  value={vals[f.key] ?? "__none__"}
+                  onValueChange={(val) =>
+                    setVals((v) => ({ ...v, [f.key]: val === "__none__" ? undefined : val }))
+                  }
                 >
-                  <option value="">--</option>
-                  {(f.options ?? []).map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="--" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">--</SelectItem>
+                    {(f.options ?? []).map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input
                   type={f.type === "number" ? "number" : "text"}
@@ -176,7 +187,13 @@ function EntityDialog({
 
 function ActiveBadge({ active }: { active: boolean }) {
   const { t } = useTranslation();
-  return <Badge variant={active ? "default" : "outline"}>{active ? t("masterData.active") : t("masterData.inactive")}</Badge>;
+  return (
+    <StatusBadge
+      status={active ? "active" : "inactive"}
+      tone={active ? "success" : "default"}
+      label={active ? t("masterData.active") : t("masterData.inactive")}
+    />
+  );
 }
 
 // ─── Suppliers ──────────────────────────────────────────────────────────────
@@ -225,7 +242,7 @@ function SuppliersPanel() {
               <TableCell className="font-mono">{r.code}</TableCell>
               <TableCell>{r.name}</TableCell>
               <TableCell>{r.type}</TableCell>
-              <TableCell><Badge variant="secondary">{r.approvalStatus}</Badge></TableCell>
+              <TableCell><StatusBadge status={String(r.approvalStatus ?? "")} /></TableCell>
               <TableCell><ActiveBadge active={r.isActive} /></TableCell>
               <TableCell className="text-right space-x-1">
                 {canEdit && (
@@ -295,7 +312,10 @@ function MaterialsPanel() {
               <TableCell>{r.name}</TableCell>
               <TableCell>{r.mpn ?? "-"}</TableCell>
               <TableCell>{r.packageType ?? "-"}</TableCell>
-              <TableCell>{r.rohs ? "✓" : "✗"}</TableCell>
+              <TableCell>{r.rohs
+                ? <Check className="h-4 w-4 text-success" aria-label={t("masterData.active")} />
+                : <XIcon className="h-4 w-4 text-muted-foreground" aria-label={t("masterData.inactive")} />}
+              </TableCell>
               <TableCell><ActiveBadge active={r.isActive} /></TableCell>
               <TableCell className="text-right space-x-1">
                 {canEdit && (
@@ -645,7 +665,7 @@ function ToolsPanel() {
               <TableCell className="font-mono">{r.code}</TableCell>
               <TableCell>{r.name}</TableCell>
               <TableCell>{r.type}</TableCell>
-              <TableCell><Badge variant="secondary">{r.status}</Badge></TableCell>
+              <TableCell><StatusBadge status={String(r.status ?? "")} /></TableCell>
               <TableCell>{r.lifeLimit != null ? `${r.lifeUsed}/${r.lifeLimit}` : (r.lifeUsed ?? 0)}</TableCell>
               <TableCell className="text-right space-x-1">
                 {canEdit && (
@@ -729,7 +749,10 @@ function UomPanel() {
                 <TableCell className="font-mono">{r.code}</TableCell>
                 <TableCell>{r.name}</TableCell>
                 <TableCell>{r.dimension}</TableCell>
-                <TableCell>{r.isBase ? "✓" : "-"}</TableCell>
+                <TableCell>{r.isBase
+                  ? <Check className="h-4 w-4 text-success" aria-label={t("masterData.isBase")} />
+                  : <span className="text-muted-foreground">-</span>}
+                </TableCell>
                 <TableCell><ActiveBadge active={r.isActive} /></TableCell>
                 <TableCell className="text-right space-x-1">
                   {canEdit && (

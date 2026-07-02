@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { PageHeader, PageContainer, ToolTile } from "@/components/patterns";
 import {
   Brain,
   MessageSquare,
@@ -33,29 +34,29 @@ import {
 
 const aiFeatures = [
   // Analysis
-  { key: "timeSeries", icon: TrendingUp, href: "/ai-time-series", color: "text-cyan-500", bg: "bg-cyan-500/10", category: "analysis" },
-  { key: "inspectionAnalytics", icon: Sparkles, href: "/ai-inspection-analytics", color: "text-cyan-600", bg: "bg-cyan-600/10", category: "analysis" },
-  { key: "performance", icon: Activity, href: "/ai-performance", color: "text-red-500", bg: "bg-red-500/10", category: "analysis" },
-  { key: "reports", icon: FileText, href: "/ai-reports", color: "text-yellow-500", bg: "bg-yellow-500/10", category: "analysis" },
-  { key: "managementInsight", icon: Lightbulb, href: "/management-insight", color: "text-amber-500", bg: "bg-amber-500/10", category: "analysis" },
-  { key: "technicianCopilot", icon: Wrench, href: "/technician-copilot", color: "text-rose-500", bg: "bg-rose-500/10", category: "analysis" },
+  { key: "timeSeries", icon: TrendingUp, href: "/ai-time-series", category: "analysis" },
+  { key: "inspectionAnalytics", icon: Sparkles, href: "/ai-inspection-analytics", category: "analysis" },
+  { key: "performance", icon: Activity, href: "/ai-performance", category: "analysis" },
+  { key: "reports", icon: FileText, href: "/ai-reports", category: "analysis" },
+  { key: "managementInsight", icon: Lightbulb, href: "/management-insight", category: "analysis" },
+  { key: "technicianCopilot", icon: Wrench, href: "/technician-copilot", category: "analysis" },
   // Inspection AI
-  { key: "chat", icon: MessageSquare, href: "/ai-chat", color: "text-blue-500", bg: "bg-blue-500/10", category: "inspection" },
-  { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", color: "text-green-500", bg: "bg-green-500/10", category: "inspection" },
-  { key: "activeLearning", icon: GraduationCap, href: "/ai-active-learning", color: "text-purple-500", bg: "bg-purple-500/10", category: "inspection" },
-  { key: "imageSearch", icon: Search, href: "/ai-image-search", color: "text-orange-500", bg: "bg-orange-500/10", category: "inspection" },
-  { key: "advancedVisionLab", icon: FlaskConical, href: "/ai-advanced-vision-lab", color: "text-fuchsia-500", bg: "bg-fuchsia-500/10", category: "inspection" },
-  { key: "localKb", icon: Book, href: "/ai-local-kb", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "inspection" },
+  { key: "chat", icon: MessageSquare, href: "/ai-chat", category: "inspection" },
+  { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", category: "inspection" },
+  { key: "activeLearning", icon: GraduationCap, href: "/ai-active-learning", category: "inspection" },
+  { key: "imageSearch", icon: Search, href: "/ai-image-search", category: "inspection" },
+  { key: "advancedVisionLab", icon: FlaskConical, href: "/ai-advanced-vision-lab", category: "inspection" },
+  { key: "localKb", icon: Book, href: "/ai-local-kb", category: "inspection" },
   // Models
-  { key: "ggufModels", icon: Brain, href: "/ai-gguf-models", color: "text-amber-500", bg: "bg-amber-500/10", category: "models" },
-  { key: "modelManagement", icon: Cpu, href: "/ai-models", color: "text-violet-500", bg: "bg-violet-500/10", category: "models" },
-  { key: "batchInference", icon: Layers, href: "/ai-batch-jobs", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "models" },
+  { key: "ggufModels", icon: Brain, href: "/ai-gguf-models", category: "models" },
+  { key: "modelManagement", icon: Cpu, href: "/ai-models", category: "models" },
+  { key: "batchInference", icon: Layers, href: "/ai-batch-jobs", category: "models" },
   // X3: "abTesting" tile removed — live A/B canary is a tab in the Performance dashboard (/ai-performance).
   // System
-  { key: "aiBrain", icon: Gauge, href: "/ai-brain", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "system" },
-  { key: "monitoring", icon: MonitorCheck, href: "/ai-monitoring", color: "text-emerald-500", bg: "bg-emerald-500/10", category: "system" },
-  { key: "dataProcessing", icon: Database, href: "/ai-data-processing", color: "text-teal-500", bg: "bg-teal-500/10", category: "system" },
-  { key: "settings", icon: Settings, href: "/ai-settings", color: "text-slate-500", bg: "bg-slate-500/10", category: "system" },
+  { key: "aiBrain", icon: Gauge, href: "/ai-brain", category: "system" },
+  { key: "monitoring", icon: MonitorCheck, href: "/ai-monitoring", category: "system" },
+  { key: "dataProcessing", icon: Database, href: "/ai-data-processing", category: "system" },
+  { key: "settings", icon: Settings, href: "/ai-settings", category: "system" },
 ];
 
 const CATEGORIES = [
@@ -72,31 +73,25 @@ export default function AIHub() {
 
   const ps = providerStatus.data;
   // X2 cleanup: system is 100% local — provider is GGUF or Offline.
-  const providerLabel = ps?.activeProvider === "gguf" ? "GGUF Local" : "Offline";
-  const providerColor = ps?.activeProvider === "gguf" ? "text-amber-500" : "text-slate-400";
-  const providerBg = ps?.activeProvider === "gguf" ? "bg-amber-500/10" : "bg-slate-500/10";
+  const providerAvailable = ps?.activeProvider === "gguf";
+  const providerLabel = providerAvailable ? "GGUF Local" : "Offline";
+  const providerColor = providerAvailable ? "text-warning" : "text-muted-foreground";
+  const providerBg = providerAvailable ? "bg-warning/10" : "bg-muted";
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Brain className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("aiHub.title", "AI Hub")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("aiHub.subtitle", "Trung tâm quản lý các tính năng AI - Tất cả công cụ AI trong một nơi")}
-            </p>
-          </div>
-          <Badge variant="secondary" className="ml-auto">
-            <Sparkles className="h-3 w-3 mr-1" />
-            {t("aiHub.featureCount", "{{count}} tính năng", { count: aiFeatures.length })}
-          </Badge>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Brain className="h-6 w-6 text-primary" />}
+          title={t("aiHub.title", "AI Hub")}
+          description={t("aiHub.subtitle", "Trung tâm quản lý các tính năng AI - Tất cả công cụ AI trong một nơi")}
+          actions={
+            <Badge variant="secondary">
+              <Sparkles className="h-3 w-3 mr-1" />
+              {t("aiHub.featureCount", "{{count}} tính năng", { count: aiFeatures.length })}
+            </Badge>
+          }
+        />
 
         {/* Live Provider Status Panel */}
         <Card className="border-primary/20">
@@ -113,9 +108,9 @@ export default function AIHub() {
               {/* X2 cleanup: OpenAI status row removed — system is 100% local (GGUF > offline). */}
               <div className="flex items-center gap-1.5">
                 {ps?.gguf.available
-                  ? <CheckCircle2 className="h-4 w-4 text-amber-500" />
-                  : <AlertCircle className="h-4 w-4 text-slate-300" />}
-                <span className={ps?.gguf.available ? "text-amber-600" : "text-muted-foreground"}>
+                  ? <CheckCircle2 className="h-4 w-4 text-warning" />
+                  : <AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                <span className={ps?.gguf.available ? "text-warning" : "text-muted-foreground"}>
                   GGUF {ps?.gguf.available ? (ps.gguf.modelName ?? "") : t("aiHub.status.noModel", "Chưa tải model")}
                   {ps?.gguf.gpuEnabled && <Badge variant="outline" className="ml-1 text-[10px] py-0 h-4">GPU</Badge>}
                 </span>
@@ -136,32 +131,15 @@ export default function AIHub() {
                 {t(cat.labelKey, cat.labelDefault)}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {features.map(feature => {
-                  const Icon = feature.icon;
-                  return (
-                    <Card
-                      key={feature.key}
-                      className="group cursor-pointer hover:shadow-md transition-all hover:border-primary/30"
-                      onClick={() => setLocation(feature.href)}
-                    >
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center gap-3">
-                          <div className={`h-9 w-9 rounded-lg ${feature.bg} flex items-center justify-center`}>
-                            <Icon className={`h-5 w-5 ${feature.color}`} />
-                          </div>
-                          <CardTitle className="text-sm font-semibold group-hover:text-primary transition-colors">
-                            {t(`aiHub.features.${feature.key}.title`, feature.key)}
-                          </CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <CardDescription className="text-xs line-clamp-2">
-                          {t(`aiHub.features.${feature.key}.desc`, "")}
-                        </CardDescription>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                {features.map(feature => (
+                  <ToolTile
+                    key={feature.key}
+                    icon={feature.icon}
+                    href={feature.href}
+                    label={t(`aiHub.features.${feature.key}.title`, feature.key)}
+                    blurb={t(`aiHub.features.${feature.key}.desc`, "")}
+                  />
+                ))}
               </div>
             </div>
           );
@@ -201,7 +179,7 @@ export default function AIHub() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

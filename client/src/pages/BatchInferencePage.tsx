@@ -4,9 +4,11 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge, type BadgeVariant } from "@/components/patterns";
+import { StatusBadge, PageHeader, PageContainer, EmptyState, type BadgeVariant } from "@/components/patterns";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -111,19 +113,14 @@ export default function BatchInferencePage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Layers className="h-7 w-7 text-primary" />
-            <div>
-              <h1 className="text-2xl font-bold">{t("batch.title", "Batch Inference Jobs")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("batch.subtitle", "Run AI inference on large sets of images in parallel")}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
+        <PageHeader
+          icon={<Layers className="h-6 w-6" />}
+          title={t("batch.title", "Batch Inference Jobs")}
+          description={t("batch.subtitle", "Run AI inference on large sets of images in parallel")}
+          actions={
+            <>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-1" />
               {t("common.refresh", "Refresh")}
@@ -154,21 +151,21 @@ export default function BatchInferencePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label>{t("batch.model", "AI Model")}</Label>
-                    <select
-                      className="border rounded px-3 py-2 text-sm bg-background"
-                      value={newModelId}
-                      onChange={(e) => setNewModelId(e.target.value)}
-                    >
-                      <option value="">{t("batch.selectModel", "-- Select a model --")}</option>
-                      {(models as any[])?.map((m: any) => (
-                        <option key={m.id} value={m.id}>{m.code} — {m.name}</option>
-                      ))}
-                    </select>
+                    <Select value={newModelId} onValueChange={setNewModelId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("batch.selectModel", "-- Select a model --")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(models as any[])?.map((m: any) => (
+                          <SelectItem key={m.id} value={String(m.id)}>{m.code} — {m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label>{t("batch.inputs", "Inputs (JSON array)")}</Label>
-                    <textarea
-                      className="border rounded px-3 py-2 text-sm font-mono h-32 resize-y bg-background"
+                    <Textarea
+                      className="font-mono h-32 resize-y"
                       placeholder='[{"reference": "/uploads/img1.jpg"}, {"reference": "/uploads/img2.jpg"}]'
                       value={newInputs}
                       onChange={(e) => setNewInputs(e.target.value)}
@@ -188,8 +185,9 @@ export default function BatchInferencePage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Jobs list */}
@@ -204,9 +202,15 @@ export default function BatchInferencePage() {
                     {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
                   </div>
                 ) : !jobs?.length ? (
-                  <p className="p-6 text-center text-muted-foreground text-sm">
-                    {t("batch.noJobs", "No batch jobs yet. Create one to get started.")}
-                  </p>
+                  <EmptyState
+                    variant="no-data"
+                    icon={Layers}
+                    title={t("batch.noJobsTitle", "No batch jobs yet")}
+                    description={t("batch.noJobs", "No batch jobs yet. Create one to get started.")}
+                    actionLabel={t("batch.newJob", "New Job")}
+                    onAction={() => setCreateOpen(true)}
+                    compact
+                  />
                 ) : (
                   <Table>
                     <TableHeader>
@@ -285,11 +289,11 @@ export default function BatchInferencePage() {
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{t("batch.successCount", "Succeeded")}</span>
-                      <span className="font-medium text-green-600">{selectedJob.completedItems}</span>
+                      <span className="font-medium text-success">{selectedJob.completedItems}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{t("batch.failCount", "Failed")}</span>
-                      <span className="font-medium text-red-500">{selectedJob.failedItems}</span>
+                      <span className="font-medium text-destructive">{selectedJob.failedItems}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{t("batch.totalItems", "Total items")}</span>
@@ -298,7 +302,7 @@ export default function BatchInferencePage() {
                   </div>
 
                   {selectedJob.errorLog && (
-                    <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950 rounded p-2 break-all">
+                    <p className="text-xs text-destructive bg-destructive/10 rounded p-2 break-all">
                       {selectedJob.errorLog}
                     </p>
                   )}
@@ -313,7 +317,7 @@ export default function BatchInferencePage() {
             )}
           </div>
         </div>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

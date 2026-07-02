@@ -54,6 +54,7 @@ import {
   Pie
 } from "recharts";
 import { toast } from "sonner";
+import { chartColor, chartGridProps, chartAxisProps, chartTooltipStyle } from "@/components/patterns";
 
 interface OEEMetrics {
   machineId: number;
@@ -238,7 +239,7 @@ export default function OEEDashboard() {
     value: duration,
   }));
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+  const COLORS = [chartColor(0), chartColor(1), chartColor(2), chartColor(3), chartColor(4), chartColor(0)];
 
   // Export OEE data to CSV
   const exportToCSV = () => {
@@ -557,7 +558,7 @@ export default function OEEDashboard() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-orange-500" />
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
                 <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
@@ -653,22 +654,22 @@ export default function OEEDashboard() {
                         <OEEGauge
                           value={machineOEE.availability}
                           label="Availability"
-                          color="#22c55e"
+                          color="var(--success)"
                         />
                         <OEEGauge
                           value={machineOEE.performance}
                           label="Performance"
-                          color="#3b82f6"
+                          color="var(--info)"
                         />
                         <OEEGauge
                           value={machineOEE.quality}
                           label="Quality"
-                          color="#f59e0b"
+                          color="var(--warning)"
                         />
                         <OEEGauge
                           value={machineOEE.oee}
                           label="OEE"
-                          color="#8b5cf6"
+                          color="var(--primary)"
                         />
                       </div>
 
@@ -758,16 +759,16 @@ export default function OEEDashboard() {
                     const a = semiE10Q.data.alert;
                     const banner =
                       a.level === "critical"
-                        ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-300"
+                        ? "bg-destructive/10 border-destructive/50 text-destructive"
                         : a.level === "warning"
-                          ? "bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-300"
-                          : "bg-green-500/10 border-green-500 text-green-700 dark:text-green-300";
+                          ? "bg-warning/10 border-warning/50 text-warning"
+                          : "bg-success/10 border-success/50 text-success";
                     const tiles: Array<{ k: keyof typeof b.states; label: string; color: string }> = [
-                      { k: "PT", label: "Productive (PT)", color: "text-green-600" },
-                      { k: "SB", label: "Standby (SB)", color: "text-blue-600" },
-                      { k: "ET", label: "Engineering (ET)", color: "text-indigo-600" },
-                      { k: "SD", label: "Sched. Downtime (SD)", color: "text-amber-600" },
-                      { k: "UD", label: "Unsched. Down (UD)", color: "text-red-600" },
+                      { k: "PT", label: "Productive (PT)", color: "text-success" },
+                      { k: "SB", label: "Standby (SB)", color: "text-info" },
+                      { k: "ET", label: "Engineering (ET)", color: "text-primary" },
+                      { k: "SD", label: "Sched. Downtime (SD)", color: "text-warning" },
+                      { k: "UD", label: "Unsched. Down (UD)", color: "text-destructive" },
                       { k: "NS", label: "Non-Scheduled (NS)", color: "text-muted-foreground" },
                     ];
                     return (
@@ -831,14 +832,14 @@ export default function OEEDashboard() {
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={allOEE}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="machineCode" />
-                        <YAxis domain={[0, 100]} />
-                        <Tooltip />
+                        <CartesianGrid {...chartGridProps} />
+                        <XAxis dataKey="machineCode" {...chartAxisProps} />
+                        <YAxis domain={[0, 100]} {...chartAxisProps} />
+                        <Tooltip contentStyle={chartTooltipStyle} />
                         <Legend />
-                        <Bar dataKey="availability" name="Availability" fill="#22c55e" />
-                        <Bar dataKey="performance" name="Performance" fill="#3b82f6" />
-                        <Bar dataKey="quality" name="Quality" fill="#f59e0b" />
+                        <Bar dataKey="availability" name="Availability" fill="var(--success)" />
+                        <Bar dataKey="performance" name="Performance" fill="var(--info)" />
+                        <Bar dataKey="quality" name="Quality" fill="var(--warning)" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -867,14 +868,14 @@ export default function OEEDashboard() {
                             labelLine={false}
                             label={({ name, value }) => `${name}: ${value}m`}
                             outerRadius={80}
-                            fill="#8884d8"
+                            fill={chartColor(0)}
                             dataKey="value"
                           >
                             {downtimePieData.map((_, index) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip contentStyle={chartTooltipStyle} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -1025,9 +1026,9 @@ export default function OEEDashboard() {
                             innerRadius="60%"
                             outerRadius="100%"
                             barSize={10}
-                            data={[{ value: machineHealth.score, fill: 
-                              machineHealth.score >= 80 ? '#22c55e' :
-                              machineHealth.score >= 50 ? '#f59e0b' : '#ef4444'
+                            data={[{ value: machineHealth.score, fill:
+                              machineHealth.score >= 80 ? 'var(--success)' :
+                              machineHealth.score >= 50 ? 'var(--warning)' : 'var(--destructive)'
                             }]}
                             startAngle={180}
                             endAngle={0}

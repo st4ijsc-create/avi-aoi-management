@@ -30,7 +30,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { MetricCard, PageHeader } from "@/components/patterns";
+import { MetricCard, PageContainer, PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -400,7 +400,7 @@ export default function FleetOrchestration() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<Truck className="h-6 w-6" />}
@@ -739,7 +739,7 @@ export default function FleetOrchestration() {
             />
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* ── Reassign dialog ──────────────────────────────────────────────────── */}
       {assignTask && (

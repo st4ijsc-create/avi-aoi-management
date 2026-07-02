@@ -7,8 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { PageHeader } from "@/components/patterns";
-import { toast } from "sonner";
+import { PageHeader, MetricCard } from "@/components/patterns";
 import { ArrowRight, Plus, Minus } from "lucide-react";
 
 export function ProductComparison() {
@@ -110,35 +109,19 @@ export function ProductComparison() {
           <>
             {/* Summary */}
             <div className="grid grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{comparison.totalPoints1}</div>
-                  <p className="text-xs text-muted-foreground">{product1?.code}</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.commonPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-success">{comparison.common.length}</div>
-                  <p className="text-xs text-muted-foreground">{t('products.identical')}</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{comparison.totalPoints2}</div>
-                  <p className="text-xs text-muted-foreground">{product2?.code}</p>
-                </CardContent>
-              </Card>
+              <MetricCard
+                label={`${t('products.totalPoints')} · ${product1?.code ?? ''}`}
+                value={comparison.totalPoints1}
+              />
+              <MetricCard
+                label={`${t('products.commonPoints')} · ${t('products.identical')}`}
+                value={comparison.common.length}
+                tone="success"
+              />
+              <MetricCard
+                label={`${t('products.totalPoints')} · ${product2?.code ?? ''}`}
+                value={comparison.totalPoints2}
+              />
             </div>
 
             {/* Detailed Comparison */}

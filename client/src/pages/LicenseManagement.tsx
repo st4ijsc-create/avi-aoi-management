@@ -3,8 +3,13 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { saveLicenseKey } from "@/hooks/useLicenseModules";
+import {
+  PageHeader, PageContainer, MetricCard, EmptyState,
+  StatusBadge as DsStatusBadge,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,22 +47,32 @@ import {
 // STATUS BADGE
 // ═══════════════════════════════════════════════════════════════
 
+const STATUS_ICON: Record<string, React.ReactNode> = {
+  active: <CheckCircle2 className="w-3 h-3" />,
+  expired: <Clock className="w-3 h-3" />,
+  revoked: <Ban className="w-3 h-3" />,
+  suspended: <AlertTriangle className="w-3 h-3" />,
+  pending: <Clock className="w-3 h-3" />,
+};
+
+const STATUS_VARIANT_MAP: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  active: "default",
+  expired: "secondary",
+  revoked: "destructive",
+  suspended: "outline",
+  pending: "outline",
+};
+
 function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }> = {
-    active: { variant: "default", icon: <CheckCircle2 className="w-3 h-3" /> },
-    expired: { variant: "secondary", icon: <Clock className="w-3 h-3" /> },
-    revoked: { variant: "destructive", icon: <Ban className="w-3 h-3" /> },
-    suspended: { variant: "outline", icon: <AlertTriangle className="w-3 h-3" /> },
-    pending: { variant: "outline", icon: <Clock className="w-3 h-3" /> },
-  };
-
-  const config = variants[status] || variants.pending;
-
+  const variant = STATUS_VARIANT_MAP[status] || STATUS_VARIANT_MAP.pending;
+  const icon = STATUS_ICON[status] || STATUS_ICON.pending;
   return (
-    <Badge variant={config.variant} className="gap-1">
-      {config.icon}
-      {status}
-    </Badge>
+    <DsStatusBadge
+      status={status}
+      variant={variant}
+      className="gap-1"
+      label={<span className="inline-flex items-center gap-1">{icon}{status}</span>}
+    />
   );
 }
 
@@ -87,64 +102,56 @@ export function LicenseManagementContent() {
   const isAdmin = user?.role === "admin";
 
   return (
-    <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Shield className="w-8 h-8" />
-              Quản lý Bản quyền
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Quản lý license đã kích hoạt từ License Server, xem thiết bị và module
-            </p>
-          </div>
-        </div>
+    <PageContainer>
+      <PageHeader
+        icon={<Shield className="h-6 w-6" />}
+        title={t('license.title')}
+        description={t('license.subtitle')}
+      />
 
-        <Tabs defaultValue={isAdmin ? "licenses" : "activate"}>
-          <TabsList>
-            <TabsTrigger value="activate" className="gap-1">
-              <Key className="w-4 h-4" />
-              Kích hoạt
-            </TabsTrigger>
-            {isAdmin && (
-              <>
-                <TabsTrigger value="licenses" className="gap-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  Danh sách License
-                </TabsTrigger>
-                <TabsTrigger value="modules" className="gap-1">
-                  <Package className="w-4 h-4" />
-                  Modules
-                </TabsTrigger>
-                <TabsTrigger value="stats" className="gap-1">
-                  <BarChart3 className="w-4 h-4" />
-                  Thống kê
-                </TabsTrigger>
-              </>
-            )}
-          </TabsList>
-
-          <TabsContent value="activate">
-            <ActivateTab />
-          </TabsContent>
-
+      <Tabs defaultValue={isAdmin ? "licenses" : "activate"}>
+        <TabsList>
+          <TabsTrigger value="activate" className="gap-1">
+            <Key className="w-4 h-4" />
+            {t('license.tabActivate')}
+          </TabsTrigger>
           {isAdmin && (
             <>
-              <TabsContent value="licenses">
-                <LicensesTab />
-              </TabsContent>
-              <TabsContent value="modules">
-                <ModulesTab />
-              </TabsContent>
-              <TabsContent value="stats">
-                <StatsTab />
-              </TabsContent>
+              <TabsTrigger value="licenses" className="gap-1">
+                <ShieldCheck className="w-4 h-4" />
+                {t('license.tabLicenses')}
+              </TabsTrigger>
+              <TabsTrigger value="modules" className="gap-1">
+                <Package className="w-4 h-4" />
+                {t('license.tabModules')}
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="gap-1">
+                <BarChart3 className="w-4 h-4" />
+                {t('license.tabStats')}
+              </TabsTrigger>
             </>
           )}
-        </Tabs>
-      </div>
-    </>
+        </TabsList>
+
+        <TabsContent value="activate">
+          <ActivateTab />
+        </TabsContent>
+
+        {isAdmin && (
+          <>
+            <TabsContent value="licenses">
+              <LicensesTab />
+            </TabsContent>
+            <TabsContent value="modules">
+              <ModulesTab />
+            </TabsContent>
+            <TabsContent value="stats">
+              <StatsTab />
+            </TabsContent>
+          </>
+        )}
+      </Tabs>
+    </PageContainer>
   );
 }
 
@@ -153,6 +160,7 @@ export function LicenseManagementContent() {
 // ═══════════════════════════════════════════════════════════════
 
 function ActivateTab() {
+  const { t } = useTranslation();
   const [licenseKey, setLicenseKey] = useState("");
   const [productCode, setProductCode] = useState("avi-aoi-management");
   const [result, setResult] = useState<any>(null);
@@ -172,7 +180,7 @@ function ActivateTab() {
     onSuccess: (data) => {
       setResult(data);
       saveLicenseKey(licenseKey.trim());
-      toast.success("Kích hoạt license thành công!");
+      toast.success(t('license.activateSuccess'));
     },
     onError: (err) => {
       toast.error(err.message);
@@ -184,7 +192,7 @@ function ActivateTab() {
     onSuccess: (data) => {
       setOfflineRequest(data);
       setOfflineStep(2);
-      toast.success("Đã tạo yêu cầu kích hoạt offline");
+      toast.success(t('license.offlineRequestCreated'));
     },
     onError: (err) => {
       toast.error(err.message);
@@ -196,7 +204,7 @@ function ActivateTab() {
       setOfflineResult(data);
       setOfflineStep(3);
       saveLicenseKey(licenseKey.trim());
-      toast.success("Áp dụng license offline thành công!");
+      toast.success(t('license.offlineApplySuccess'));
     },
     onError: (err) => {
       toast.error(err.message);
@@ -205,7 +213,7 @@ function ActivateTab() {
 
   const handleActivate = () => {
     if (!licenseKey.trim()) {
-      toast.error("Vui lòng nhập license key");
+      toast.error(t('license.enterLicenseKey'));
       return;
     }
     activateMutation.mutate({
@@ -217,7 +225,7 @@ function ActivateTab() {
 
   const handleGenerateOfflineRequest = () => {
     if (!licenseKey.trim()) {
-      toast.error("Vui lòng nhập license key");
+      toast.error(t('license.enterLicenseKey'));
       return;
     }
     generateOfflineRequestMutation.mutate({
@@ -227,11 +235,11 @@ function ActivateTab() {
 
   const handleApplyOfflineLicense = () => {
     if (!offlinePackageBase64.trim()) {
-      toast.error("Vui lòng dán nội dung gói license offline");
+      toast.error(t('license.pasteOfflinePackage'));
       return;
     }
     if (!licenseKey.trim()) {
-      toast.error("Vui lòng nhập license key");
+      toast.error(t('license.enterLicenseKey'));
       return;
     }
     applyOfflineMutation.mutate({
@@ -254,7 +262,7 @@ function ActivateTab() {
   const copyRequestToClipboard = () => {
     if (!offlineRequest?.requestBase64) return;
     navigator.clipboard.writeText(offlineRequest.requestBase64);
-    toast.success("Đã sao chép vào clipboard");
+    toast.success(t('license.copiedToClipboard'));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,7 +272,7 @@ function ActivateTab() {
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
       setOfflinePackageBase64(content.trim());
-      toast.success(`Đã tải file: ${file.name}`);
+      toast.success(t('license.fileLoaded', { name: file.name }));
     };
     reader.readAsText(file);
   };
@@ -291,7 +299,7 @@ function ActivateTab() {
           className="flex items-center gap-2"
         >
           <Wifi className="w-4 h-4" />
-          Kích hoạt Online
+          {t('license.activateOnline')}
         </Button>
         <Button
           variant={activationMode === "offline" ? "default" : "outline"}
@@ -299,7 +307,7 @@ function ActivateTab() {
           className="flex items-center gap-2"
         >
           <WifiOff className="w-4 h-4" />
-          Kích hoạt Offline
+          {t('license.activateOffline')}
         </Button>
       </div>
 
@@ -310,10 +318,10 @@ function ActivateTab() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Key className="w-5 h-5" />
-                Kích hoạt Online
+                {t('license.activateOnline')}
               </CardTitle>
               <CardDescription>
-                Nhập license key để kích hoạt bản quyền từ License Server
+                {t('license.activateOnlineDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -322,27 +330,27 @@ function ActivateTab() {
                 {serverStatus?.configured ? (
                   <>
                     <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success" />
                     </span>
                     <span className="text-muted-foreground">
-                      License Server: <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{serverStatus.serverUrl}</code>
+                      {t('license.licenseServer')}: <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{serverStatus.serverUrl}</code>
                     </span>
                   </>
                 ) : (
                   <>
                     <span className="relative flex h-2.5 w-2.5">
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-warning" />
                     </span>
                     <span className="text-muted-foreground text-xs">
-                      License Server chưa cấu hình — sử dụng kích hoạt offline
+                      {t('license.serverNotConfigured')}
                     </span>
                   </>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label>License Key</Label>
+                <Label>{t('license.licenseKey')}</Label>
                 <Input
                   placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
                   value={licenseKey}
@@ -351,7 +359,7 @@ function ActivateTab() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Product Code</Label>
+                <Label>{t('license.productCode')}</Label>
                 <Input
                   value={productCode}
                   onChange={(e) => setProductCode(e.target.value)}
@@ -367,7 +375,7 @@ function ActivateTab() {
                 ) : (
                   <ShieldCheck className="w-4 h-4 mr-2" />
                 )}
-                Kích hoạt Online
+                {t('license.activateOnline')}
               </Button>
             </CardContent>
           </Card>
@@ -376,43 +384,43 @@ function ActivateTab() {
           {result && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-600">
+                <CardTitle className="flex items-center gap-2 text-success">
                   <CheckCircle2 className="w-5 h-5" />
-                  Kích hoạt thành công
+                  {t('license.activateSuccessTitle')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Khách hàng</span>
+                  <span className="text-muted-foreground">{t('license.customer')}</span>
                   <span className="font-medium">{result.customerName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Loại license</span>
+                  <span className="text-muted-foreground">{t('license.licenseType')}</span>
                   <TypeBadge type={result.licenseType} />
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Hết hạn</span>
+                  <span className="text-muted-foreground">{t('license.expiresAt')}</span>
                   <span className="font-medium">
                     {result.expiresAt
                       ? new Date(result.expiresAt).toLocaleDateString("vi-VN")
-                      : "Vĩnh viễn"}
+                      : t('license.perpetual')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Modules</span>
+                  <span className="text-muted-foreground">{t('license.modules')}</span>
                   <div className="flex gap-1 flex-wrap justify-end">
                     {result.moduleCodes?.map((m: string) => (
                       <Badge key={m} variant="secondary">{m}</Badge>
                     ))}
                     {(!result.moduleCodes || result.moduleCodes.length === 0) && (
-                      <span className="text-sm text-muted-foreground">Tất cả</span>
+                      <span className="text-sm text-muted-foreground">{t('common.all')}</span>
                     )}
                   </div>
                 </div>
                 <div className="pt-3 border-t">
                   <Button onClick={downloadLicenseFile} variant="outline" className="w-full">
                     <Download className="w-4 h-4 mr-2" />
-                    Tải file License (.lic)
+                    {t('license.downloadLicenseFile')}
                   </Button>
                 </div>
               </CardContent>
@@ -433,16 +441,16 @@ function ActivateTab() {
                     offlineStep === step
                       ? "bg-primary text-primary-foreground"
                       : offlineStep > step
-                        ? "bg-green-500 text-white"
+                        ? "bg-success text-white"
                         : "bg-muted text-muted-foreground"
                   }`}
                 >
                   {offlineStep > step ? <CheckCircle2 className="w-4 h-4" /> : step}
                 </div>
                 <span className={`text-sm ${offlineStep === step ? "font-medium" : "text-muted-foreground"}`}>
-                  {step === 1 && "Tạo yêu cầu"}
-                  {step === 2 && "Gửi Admin"}
-                  {step === 3 && "Áp dụng"}
+                  {step === 1 && t('license.stepCreate')}
+                  {step === 2 && t('license.stepSendAdmin')}
+                  {step === 3 && t('license.stepApply')}
                 </span>
                 {step < 3 && <div className="w-8 h-px bg-border" />}
               </div>
@@ -455,16 +463,15 @@ function ActivateTab() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="w-5 h-5" />
-                  Bước 1: Tạo yêu cầu kích hoạt
+                  {t('license.step1Title')}
                 </CardTitle>
                 <CardDescription>
-                  Nhập license key → hệ thống tạo file yêu cầu chứa thông tin máy (hardware fingerprint).
-                  Gửi file này cho quản trị viên.
+                  {t('license.step1Desc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>License Key</Label>
+                  <Label>{t('license.licenseKey')}</Label>
                   <Input
                     placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
                     value={licenseKey}
@@ -482,7 +489,7 @@ function ActivateTab() {
                   ) : (
                     <FileText className="w-4 h-4 mr-2" />
                   )}
-                  Tạo yêu cầu kích hoạt
+                  {t('license.generateRequest')}
                 </Button>
               </CardContent>
             </Card>
@@ -495,37 +502,36 @@ function ActivateTab() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clipboard className="w-5 h-5" />
-                    Bước 2: Gửi yêu cầu cho Admin
+                    {t('license.step2Title')}
                   </CardTitle>
                   <CardDescription>
-                    Sao chép hoặc tải file yêu cầu bên dưới, gửi cho quản trị viên License Server.
-                    Admin sẽ tạo gói license offline và gửi lại cho bạn.
+                    {t('license.step2Desc')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Thông tin yêu cầu</Label>
+                    <Label>{t('license.requestInfo')}</Label>
                     <div className="text-sm space-y-1 bg-muted p-3 rounded-md">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">License Key:</span>
+                        <span className="text-muted-foreground">{t('license.licenseKey')}:</span>
                         <code className="text-xs">{licenseKey}</code>
                    </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Product Code:</span>
+                        <span className="text-muted-foreground">{t('license.productCode')}:</span>
                         <code className="text-xs">{offlineRequest.productCode}</code>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hardware Fingerprint:</span>
+                        <span className="text-muted-foreground">{t('license.hardwareFingerprint')}:</span>
                         <code className="text-xs">{offlineRequest.hardwareFingerprint?.substring(0, 16)}...</code>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Thời gian:</span>
+                        <span className="text-muted-foreground">{t('common.time')}:</span>
                         <span className="text-xs">{new Date(offlineRequest.timestamp).toLocaleString("vi-VN")}</span>
                       </div>
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Mã yêu cầu (Base64)</Label>
+                    <Label>{t('license.requestCode')}</Label>
                     <Textarea
                       readOnly
                       value={offlineRequest.requestBase64}
@@ -536,11 +542,11 @@ function ActivateTab() {
                   <div className="flex gap-2">
                     <Button onClick={copyRequestToClipboard} variant="outline" className="flex-1">
                       <Copy className="w-4 h-4 mr-2" />
-                      Sao chép
+                      {t('common.copy')}
                     </Button>
                     <Button onClick={downloadRequestFile} variant="outline" className="flex-1">
                       <Download className="w-4 h-4 mr-2" />
-                      Tải file .txt
+                      {t('license.downloadTxt')}
                     </Button>
                   </div>
                 </CardContent>
@@ -550,26 +556,26 @@ function ActivateTab() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Upload className="w-5 h-5" />
-                    Nhận gói License Offline
+                    {t('license.receivePackageTitle')}
                   </CardTitle>
                   <CardDescription>
-                    Sau khi Admin tạo gói license, dán nội dung base64 hoặc tải file lên bên dưới
+                    {t('license.receivePackageDesc')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Gói License Offline (Base64)</Label>
+                    <Label>{t('license.offlinePackage')}</Label>
                     <Textarea
-                      placeholder="Dán nội dung gói license offline base64 tại đây..."
+                      placeholder={t('license.offlinePackagePlaceholder')}
                       value={offlinePackageBase64}
                       onChange={(e) => setOfflinePackageBase64(e.target.value)}
                       rows={6}
                       className="font-mono text-xs"
                     />
                   </div>
-                  <div className="text-center text-sm text-muted-foreground">hoặc</div>
+                  <div className="text-center text-sm text-muted-foreground">{t('license.or')}</div>
                   <div className="space-y-2">
-                    <Label>Tải file lên</Label>
+                    <Label>{t('license.uploadFile')}</Label>
                     <Input
                       type="file"
                       accept=".txt,.dat,.b64,.lic"
@@ -586,7 +592,7 @@ function ActivateTab() {
                     ) : (
                       <ShieldCheck className="w-4 h-4 mr-2" />
                     )}
-                    Áp dụng License Offline
+                    {t('license.applyOffline')}
                   </Button>
                 </CardContent>
               </Card>
@@ -597,19 +603,19 @@ function ActivateTab() {
           {offlineStep === 3 && offlineResult && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-600">
+                <CardTitle className="flex items-center gap-2 text-success">
                   <CheckCircle2 className="w-5 h-5" />
-                  Kích hoạt Offline thành công!
+                  {t('license.offlineSuccessTitle')}
                 </CardTitle>
                 <CardDescription>
-                  License đã được xác thực và lưu trữ. Hệ thống sẽ sử dụng license offline cho các lần khởi động sau.
+                  {t('license.offlineSuccessDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {offlineResult.validationResult && (
                   <>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Trạng thái</span>
+                      <span className="text-muted-foreground">{t('common.status')}</span>
                       <Badge variant="default">
                         <CheckCircle2 className="w-3 h-3 mr-1" />
                         {offlineResult.validationResult.status || "active"}
@@ -617,27 +623,27 @@ function ActivateTab() {
                     </div>
                     {offlineResult.validationResult.customerName && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Khách hàng</span>
+                        <span className="text-muted-foreground">{t('license.customer')}</span>
                         <span className="font-medium">{offlineResult.validationResult.customerName}</span>
                       </div>
                     )}
                     {offlineResult.validationResult.licenseType && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Loại license</span>
+                        <span className="text-muted-foreground">{t('license.licenseType')}</span>
                         <TypeBadge type={offlineResult.validationResult.licenseType} />
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Hết hạn</span>
+                      <span className="text-muted-foreground">{t('license.expiresAt')}</span>
                       <span className="font-medium">
                         {offlineResult.validationResult.expiresAt
                           ? new Date(offlineResult.validationResult.expiresAt).toLocaleDateString("vi-VN")
-                          : "Vĩnh viễn"}
+                          : t('license.perpetual')}
                       </span>
                     </div>
                     {offlineResult.validationResult.moduleCodes?.length > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Modules</span>
+                        <span className="text-muted-foreground">{t('license.modules')}</span>
                         <div className="flex gap-1 flex-wrap justify-end">
                           {offlineResult.validationResult.moduleCodes.map((m: string) => (
                             <Badge key={m} variant="secondary">{m}</Badge>
@@ -646,10 +652,10 @@ function ActivateTab() {
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Chế độ</span>
+                      <span className="text-muted-foreground">{t('license.mode')}</span>
                       <Badge variant="outline">
                         <WifiOff className="w-3 h-3 mr-1" />
-                        Offline
+                        {t('license.offline')}
                       </Badge>
                     </div>
                   </>
@@ -667,7 +673,7 @@ function ActivateTab() {
                     }}
                   >
                     <RefreshCw className="w-4 h-4 mr-2" />
-                    Kích hoạt license khác
+                    {t('license.activateAnother')}
                   </Button>
                 </div>
               </CardContent>
@@ -684,6 +690,7 @@ function ActivateTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function LicensesTab() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -698,17 +705,17 @@ function LicensesTab() {
       {/* Toolbar */}
       <div className="flex items-center gap-3">
         <Input
-          placeholder="Tìm theo key, tên, email..."
+          placeholder={t('license.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs"
         />
         <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? undefined : v)}>
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="Trạng thái" />
+            <SelectValue placeholder={t('common.status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tất cả</SelectItem>
+            <SelectItem value="all">{t('common.all')}</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>
             <SelectItem value="revoked">Revoked</SelectItem>
@@ -719,7 +726,7 @@ function LicensesTab() {
         <div className="flex-1" />
         <Button variant="outline" onClick={() => refetch()}>
           <RefreshCw className="w-4 h-4 mr-1" />
-          Làm mới
+          {t('common.refresh')}
         </Button>
       </div>
 
@@ -729,27 +736,28 @@ function LicensesTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>License Key</TableHead>
-                <TableHead>Khách hàng</TableHead>
-                <TableHead>Loại</TableHead>
-                <TableHead>Trạng thái</TableHead>
-                <TableHead>Kích hoạt</TableHead>
-                <TableHead>Hết hạn</TableHead>
-                <TableHead className="text-right">Chi tiết</TableHead>
+                <TableHead>{t('license.licenseKey')}</TableHead>
+                <TableHead>{t('license.customer')}</TableHead>
+                <TableHead>{t('common.type')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('license.activations')}</TableHead>
+                <TableHead>{t('license.expiresAt')}</TableHead>
+                <TableHead className="text-right">{t('common.details')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
-                    Đang tải...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell colSpan={7} className="py-2">
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))
               ) : !data?.licenses?.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    Chưa có license nào
+                  <TableCell colSpan={7} className="p-0">
+                    <EmptyState variant="no-data" title={t('license.noLicenses')} compact />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -764,7 +772,7 @@ function LicensesTab() {
                           className="h-6 w-6"
                           onClick={() => {
                             navigator.clipboard.writeText(lic.licenseKey);
-                            toast.success("Đã sao chép");
+                            toast.success(t('common.copied'));
                           }}
                         >
                           <Copy className="w-3 h-3" />
@@ -801,7 +809,7 @@ function LicensesTab() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => setSelectedKey(lic.licenseKey)}
-                        title="Xem activations"
+                        title={t('license.viewActivations')}
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
@@ -830,6 +838,7 @@ function LicensesTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function ActivationsDialog({ licenseKey, onClose }: { licenseKey: string; onClose: () => void }) {
+  const { t } = useTranslation();
   const { data: activations, isLoading } = trpc.license.admin.activations.useQuery({ licenseKey });
 
   return (
@@ -838,32 +847,32 @@ function ActivationsDialog({ licenseKey, onClose }: { licenseKey: string; onClos
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Monitor className="w-5 h-5" />
-            Thiết bị đã kích hoạt
+            {t('license.activatedDevices')}
           </DialogTitle>
           <DialogDescription>
-            License: <code className="text-xs bg-muted px-1 py-0.5 rounded">{licenseKey}</code>
+            {t('license.licenseKey')}: <code className="text-xs bg-muted px-1 py-0.5 rounded">{licenseKey}</code>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           {isLoading ? (
-            <div className="text-center py-8">
-              <RefreshCw className="w-5 h-5 animate-spin mx-auto" />
+            <div className="space-y-2 py-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : !activations?.length ? (
-            <p className="text-center text-muted-foreground py-8">
-              Chưa có thiết bị nào được kích hoạt
-            </p>
+            <EmptyState variant="no-data" title={t('license.noDevices')} compact />
           ) : (
             <div className="overflow-x-auto -mx-6 px-6">
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="whitespace-nowrap">Thiết bị</TableHead>
-                    <TableHead className="whitespace-nowrap">Fingerprint</TableHead>
-                    <TableHead className="whitespace-nowrap">IP</TableHead>
-                    <TableHead className="whitespace-nowrap">Lần cuối</TableHead>
-                    <TableHead className="whitespace-nowrap text-right">Trạng thái</TableHead>
+                    <TableHead className="whitespace-nowrap">{t('license.device')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t('license.fingerprint')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t('license.ip')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{t('license.lastSeen')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-right">{t('common.status')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -906,11 +915,14 @@ function ActivationsDialog({ licenseKey, onClose }: { licenseKey: string; onClos
                         </TableCell>
                         <TableCell className="text-right">
                           {act.isActive ? (
-                            <Badge variant="default" className="gap-1 text-xs">
-                              <Activity className="w-3 h-3" /> Active
-                            </Badge>
+                            <DsStatusBadge
+                              status="active"
+                              tone="success"
+                              className="gap-1 text-xs"
+                              label={<span className="inline-flex items-center gap-1"><Activity className="w-3 h-3" />{t('common.active')}</span>}
+                            />
                           ) : (
-                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                            <DsStatusBadge status="inactive" variant="secondary" className="text-xs" label={t('common.inactive')} />
                           )}
                         </TableCell>
                       </TableRow>
@@ -931,6 +943,7 @@ function ActivationsDialog({ licenseKey, onClose }: { licenseKey: string; onClos
 // ═══════════════════════════════════════════════════════════════
 
 function ModulesTab() {
+  const { t } = useTranslation();
   // System modules from registry
   const { data: systemModules, isLoading: sysLoading } = trpc.license.modules.systemModules.useQuery();
 
@@ -953,9 +966,9 @@ function ModulesTab() {
       a.download = `modules-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Đã xuất file modules JSON");
+      toast.success(t('license.exportSuccess'));
     } catch (err: any) {
-      toast.error("Lỗi xuất file: " + (err.message || "Unknown"));
+      toast.error(t('license.exportError', { message: err.message || "Unknown" }));
     }
   };
 
@@ -964,21 +977,23 @@ function ModulesTab() {
       {/* Header + Export */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h3 className="text-lg font-semibold">System Modules</h3>
+          <h3 className="text-lg font-semibold">{t('license.systemModules')}</h3>
           <p className="text-sm text-muted-foreground">
-            Danh sách module hệ thống. Nhấn "Export" để tạo file JSON gửi đến License Server đồng bộ.
+            {t('license.systemModulesDesc')}
           </p>
         </div>
         <Button variant="outline" onClick={handleExport} disabled={exporting}>
           <Download className="w-4 h-4 mr-1" />
-          {exporting ? "Đang xuất..." : "Export Modules"}
+          {exporting ? t('license.exporting') : t('license.exportModules')}
         </Button>
       </div>
 
       {/* System Modules Grid */}
       {sysLoading ? (
-        <div className="text-center py-8">
-          <RefreshCw className="w-5 h-5 animate-spin mx-auto" />
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -998,11 +1013,11 @@ function ModulesTab() {
                 <p className="text-sm text-muted-foreground mb-2">{mod.description}</p>
                 <div className="flex items-center justify-between">
                   <Badge variant={mod.isCore ? "default" : "outline"}>
-                    {mod.isCore ? "Core" : "Optional"}
+                    {mod.isCore ? t('license.core') : t('license.optional')}
                   </Badge>
                   {mod.routes && (
                     <span className="text-xs text-muted-foreground">
-                      {mod.routes.length} routes
+                      {t('license.routesCount', { count: mod.routes.length })}
                     </span>
                   )}
                 </div>
@@ -1020,72 +1035,70 @@ function ModulesTab() {
 // ═══════════════════════════════════════════════════════════════
 
 function StatsTab() {
+  const { t } = useTranslation();
   const { data: stats, isLoading } = trpc.license.admin.stats.useQuery();
 
   if (isLoading) {
     return (
-      <div className="text-center py-12">
-        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-        Đang tải thống kê...
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
       </div>
     );
   }
 
   if (!stats) return null;
 
-  const statCards = [
+  const statCards: { title: string; value: number; icon: React.ReactNode; tone: "info" | "success" | "warning" | "error" | "default" }[] = [
     {
-      title: "Tổng License",
+      title: t('license.totalLicenses'),
       value: stats.totalLicenses || 0,
-      icon: Key,
-      color: "text-blue-500",
+      icon: <Key className="h-5 w-5" />,
+      tone: "info",
     },
     {
-      title: "Đang hoạt động",
+      title: t('license.activeLicenses'),
       value: stats.activeLicenses || 0,
-      icon: CheckCircle2,
-      color: "text-green-500",
+      icon: <CheckCircle2 className="h-5 w-5" />,
+      tone: "success",
     },
     {
-      title: "Hết hạn",
+      title: t('license.expiredLicenses'),
       value: stats.expiredLicenses || 0,
-      icon: Clock,
-      color: "text-yellow-500",
+      icon: <Clock className="h-5 w-5" />,
+      tone: "warning",
     },
     {
-      title: "Đã thu hồi",
+      title: t('license.revokedLicenses'),
       value: stats.revokedLicenses || 0,
-      icon: Ban,
-      color: "text-red-500",
+      icon: <Ban className="h-5 w-5" />,
+      tone: "error",
     },
     {
-      title: "Tạm ngưng",
+      title: t('license.suspendedLicenses'),
       value: 0,
-      icon: AlertTriangle,
-      color: "text-orange-500",
+      icon: <AlertTriangle className="h-5 w-5" />,
+      tone: "warning",
     },
     {
-      title: "Thiết bị Active",
+      title: t('license.activeDevices'),
       value: stats.totalActiveActivations || 0,
-      icon: Monitor,
-      color: "text-purple-500",
+      icon: <Monitor className="h-5 w-5" />,
+      tone: "default",
     },
   ];
 
   return (
     <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
       {statCards.map((stat) => (
-        <Card key={stat.title}>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <stat.icon className={`w-8 h-8 ${stat.color}`} />
-              <div>
-                <p className="text-2xl font-bold">{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.title}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <MetricCard
+          key={stat.title}
+          icon={stat.icon}
+          label={stat.title}
+          value={stat.value}
+          tone={stat.tone}
+        />
       ))}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -87,16 +88,12 @@ export default function MonitoringSettings() {
 
   return (
     <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("monitoringSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("monitoringSettings.description")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Settings className="h-5 w-5 text-primary" />}
+          title={t("monitoringSettings.title")}
+          description={t("monitoringSettings.description")}
+        />
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -111,7 +108,7 @@ export default function MonitoringSettings() {
                   className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <HardDrive className="h-4 w-4 text-blue-500" />
+                    <HardDrive className="h-4 w-4 text-info" />
                     <span>{t("monitoringSettings.cat.machines")}</span>
                   </div>
                   {collapsedCategories['machines'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -147,7 +144,7 @@ export default function MonitoringSettings() {
                   className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <Radio className="h-4 w-4 text-green-500" />
+                    <Radio className="h-4 w-4 text-success" />
                     <span>{t("monitoringSettings.cat.mqtt")}</span>
                   </div>
                   {collapsedCategories['mqtt'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -214,11 +211,11 @@ export default function MonitoringSettings() {
 
               <TabsContent value="device-management" className="mt-0">
                 <div className="space-y-6">
-                  <Card className="glass-card border-blue-500/30 bg-blue-500/5">
+                  <Card className="glass-card border-info/30 bg-info/5">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-full bg-blue-500/20">
-                          <Wifi className="h-6 w-6 text-blue-400" />
+                        <div className="p-3 rounded-full bg-info/20">
+                          <Wifi className="h-6 w-6 text-info" />
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold">{t("settings.mqttClientsTitle")}</h3>
@@ -300,7 +297,7 @@ export default function MonitoringSettings() {
           </div>
         </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

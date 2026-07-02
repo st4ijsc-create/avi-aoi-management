@@ -33,13 +33,19 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { MetricCard, PageHeader } from "@/components/patterns";
+import {
+  MetricCard, PageHeader, PageContainer,
+  chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -342,7 +348,7 @@ export default function SafetyWorkforce() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<ShieldAlert className="h-6 w-6" />}
@@ -426,11 +432,11 @@ export default function SafetyWorkforce() {
                 {trend.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={trend}>
-                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                      <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                      <YAxis width={36} allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Area type="monotone" dataKey="count" name={t("safety.nearMissCount", "Near-misses")} stroke="#7c3aed" fill="#7c3aed33" />
+                      <CartesianGrid {...chartGridProps} className="opacity-30" />
+                      <XAxis dataKey="day" tick={chartAxisTick} />
+                      <YAxis width={36} allowDecimals={false} tick={chartAxisTick} />
+                      <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
+                      <Area type="monotone" dataKey="count" name={t("safety.nearMissCount", "Near-misses")} stroke={chartColor(0)} fill={chartColor(0)} fillOpacity={0.2} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -485,16 +491,18 @@ export default function SafetyWorkforce() {
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">{t("safety.filterType", "Type")}</Label>
-                  <select
-                    className="flex h-8 w-40 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={eventTypeFilter}
-                    onChange={(e) => setEventTypeFilter(e.target.value)}
+                  <Select
+                    value={eventTypeFilter || "all"}
+                    onValueChange={(v) => setEventTypeFilter(v === "all" ? "" : v)}
                   >
-                    <option value="">{t("safety.all", "All")}</option>
-                    {EVENT_TYPES.map((s) => (
-                      <option key={s} value={s}>{t(`safety.evt.${s}`, s)}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
+                      {EVENT_TYPES.map((s) => (
+                        <SelectItem key={s} value={s}>{t(`safety.evt.${s}`, s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -625,16 +633,18 @@ export default function SafetyWorkforce() {
                   {t("workforce.assignmentsTitle", "Operator assignments")}
                 </CardTitle>
                 <div className="flex items-center gap-2">
-                  <select
-                    className="flex h-8 w-32 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={assignStatusFilter}
-                    onChange={(e) => setAssignStatusFilter(e.target.value)}
+                  <Select
+                    value={assignStatusFilter || "all"}
+                    onValueChange={(v) => setAssignStatusFilter(v === "all" ? "" : v)}
                   >
-                    <option value="">{t("safety.all", "All")}</option>
-                    {ASSIGN_STATUSES.map((s) => (
-                      <option key={s} value={s}>{t(`safety.assign.${s}`, s)}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
+                      {ASSIGN_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>{t(`safety.assign.${s}`, s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {canControl && (
                     <Button size="sm" variant="outline" className="h-8" onClick={() => setAssignOpen(true)}>
                       <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
@@ -807,7 +817,7 @@ export default function SafetyWorkforce() {
             )}
           </span>
         </div>
-      </div>
+      </PageContainer>
 
       {/* ── Audit confirm ────────────────────────────────────────────────────── */}
       <AlertDialog open={!!auditTarget} onOpenChange={(o) => !o && setAuditTarget(null)}>
@@ -1046,16 +1056,18 @@ function AssignmentDialog({
           </div>
           <div className="grid gap-1">
             <Label>{t("workforce.skillLevel", "Skill level (optional)")}</Label>
-            <select
-              className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-              value={skillLevel}
-              onChange={(e) => setSkillLevel(e.target.value)}
+            <Select
+              value={skillLevel || "none"}
+              onValueChange={(v) => setSkillLevel(v === "none" ? "" : v)}
             >
-              <option value="">{t("workforce.skillNone", "— none —")}</option>
-              {["trainee", "qualified", "expert", "trainer"].map((s) => (
-                <option key={s} value={s}>{t(`safety.skill.${s}`, s)}</option>
-              ))}
-            </select>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t("workforce.skillNone", "— none —")}</SelectItem>
+                {["trainee", "qualified", "expert", "trainer"].map((s) => (
+                  <SelectItem key={s} value={s}>{t(`safety.skill.${s}`, s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

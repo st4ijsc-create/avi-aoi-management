@@ -22,6 +22,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,19 +57,19 @@ function fmt(v?: string | Date | null): string {
 function jobStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "done":
-      return <Badge className="bg-emerald-500 text-white">{t("robot.job.done", "Hoàn tất")}</Badge>;
+      return <StatusBadge status={status} tone="success" label={t("robot.job.done", "Hoàn tất")} />;
     case "running":
-      return <Badge className="bg-blue-500 text-white">{t("robot.job.running", "Đang chạy")}</Badge>;
+      return <StatusBadge status={status} tone="info" label={t("robot.job.running", "Đang chạy")} />;
     case "failed":
-      return <Badge variant="destructive">{t("robot.job.failed", "Lỗi")}</Badge>;
+      return <StatusBadge status={status} tone="error" label={t("robot.job.failed", "Lỗi")} />;
     case "rejected":
-      return <Badge variant="destructive">{t("robot.job.rejected", "Từ chối")}</Badge>;
+      return <StatusBadge status={status} tone="error" label={t("robot.job.rejected", "Từ chối")} />;
     case "confirmed":
     case "pending":
-      return <Badge className="bg-amber-500 text-white">{t("robot.job.pending", "Chờ xác nhận")}</Badge>;
+      return <StatusBadge status={status} tone="warning" label={t("robot.job.pending", "Chờ xác nhận")} />;
     case "simulated":
     default:
-      return <Badge variant="outline" className="text-muted-foreground">{t("robot.job.simulated", "Mô phỏng")}</Badge>;
+      return <StatusBadge status={status} tone="default" label={t("robot.job.simulated", "Mô phỏng")} />;
   }
 }
 
@@ -120,27 +121,22 @@ export default function RobotControl() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Bot className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">{t("robot.title", "Điều khiển Robot")}</h1>
-            {!isAdmin && <ViewOnlyBadge />}
-            <p className="text-sm text-muted-foreground">
-              {t("robot.subtitle", "Theo dõi robot/AGV: registry, telemetry, nhật ký lệnh — chuyển động luôn qua HITL/dry-run")}
-            </p>
-          </div>
-          <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+      <PageContainer className="space-y-4">
+        <PageHeader
+          icon={<Bot className="h-6 w-6" />}
+          title={t("robot.title", "Điều khiển Robot")}
+          badge={!isAdmin ? <ViewOnlyBadge /> : undefined}
+          description={t("robot.subtitle", "Theo dõi robot/AGV: registry, telemetry, nhật ký lệnh — chuyển động luôn qua HITL/dry-run")}
+          actions={
+            <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          }
+        />
 
         {/* Safety banner — honest about the gate (always shown) */}
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
             {t(
               "robot.safetyBanner",
@@ -188,8 +184,8 @@ export default function RobotControl() {
                     <TableCell className="text-xs">{r.kind}</TableCell>
                     <TableCell>
                       {r.isEnabled
-                        ? <Badge className="bg-emerald-500 text-white"><CheckCircle2 className="mr-1 h-3 w-3" />{t("robot.enabled", "Bật")}</Badge>
-                        : <Badge variant="outline" className="text-muted-foreground"><CircleSlash className="mr-1 h-3 w-3" />{t("robot.disabled", "Tắt")}</Badge>}
+                        ? <StatusBadge status="enabled" tone="success" label={<><CheckCircle2 className="mr-1 h-3 w-3" />{t("robot.enabled", "Bật")}</>} className="gap-0" />
+                        : <StatusBadge status="disabled" tone="default" label={<><CircleSlash className="mr-1 h-3 w-3" />{t("robot.disabled", "Tắt")}</>} className="gap-0" />}
                     </TableCell>
                     <TableCell className="text-xs">{r.status}</TableCell>
                     <TableCell className="text-xs">{fmt(r.lastSeenAt)}</TableCell>
@@ -328,7 +324,7 @@ export default function RobotControl() {
             </Card>
           </div>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

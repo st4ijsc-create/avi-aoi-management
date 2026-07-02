@@ -1,8 +1,10 @@
 import { Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageHeader, PageContainer } from '@/components/patterns';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TrendingUp } from 'lucide-react';
 
 // Lazy load the DefectTrendPrediction component
 const DefectTrendPrediction = lazy(() => import('@/components/DefectTrendPrediction').then(m => ({ default: m.DefectTrendPrediction })));

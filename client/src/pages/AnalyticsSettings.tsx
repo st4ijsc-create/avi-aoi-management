@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -105,15 +106,11 @@ export default function AnalyticsSettings() {
   return (
     <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Settings className="h-6 w-6 text-primary" />
-              {t("analyticsSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("analyticsSettings.description")}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Settings className="h-6 w-6" />}
+          title={t("analyticsSettings.title")}
+          description={t("analyticsSettings.description")}
+        />
 
         <ErrorBoundary>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -128,7 +125,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-blue-500" />
+                      <FileText className="h-4 w-4 text-info" />
                       <span>{t("analyticsSettings.cat.reports")}</span>
                     </div>
                     {collapsedCategories["reports"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -150,7 +147,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Brain className="h-4 w-4 text-purple-500" />
+                      <Brain className="h-4 w-4 text-primary" />
                       <span>{t("analyticsSettings.cat.spc")}</span>
                     </div>
                     {collapsedCategories["spc"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -173,7 +170,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Tags className="h-4 w-4 text-orange-500" />
+                      <Tags className="h-4 w-4 text-warning" />
                       <span>{t("analyticsSettings.cat.annotations")}</span>
                     </div>
                     {collapsedCategories["annotations"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -193,7 +190,7 @@ export default function AnalyticsSettings() {
                     className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-emerald-500" />
+                      <Sparkles className="h-4 w-4 text-success" />
                       <span>{t("analyticsSettings.cat.predictions")}</span>
                     </div>
                     {collapsedCategories["predictions"] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

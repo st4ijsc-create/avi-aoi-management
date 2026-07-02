@@ -7,10 +7,11 @@
  * (`danger` / `good`) are kept as aliases of the DS tones (`error` / `success`)
  * so existing call-sites swap with zero visual change.
  *
- * NOTE on colour: the value tint deliberately reuses the SAME literal classes
- * the original used (text-amber-500 / text-emerald-500 / text-destructive) to
- * guarantee identical pixels on adoption. New pages may prefer the semantic
- * `text-warning` / `text-success` / `text-info` tokens — both read clearly.
+ * NOTE on colour (F0, doc 23): value tints now use the SEMANTIC tokens
+ * (`text-warning` / `text-success` / `text-destructive` / `text-info`) instead of
+ * literal palette classes (amber/emerald), so the card is theme-token-driven and
+ * consistent across light/dark. The mapping is intentionally close to the old
+ * literals (amber→warning, emerald→success).
  */
 import * as React from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,11 +28,11 @@ export type MetricTone =
 
 const TONE_CLASS: Record<MetricTone, string> = {
   default: "text-foreground",
-  warning: "text-amber-500",
+  warning: "text-warning",
   danger: "text-destructive",
   error: "text-destructive",
-  good: "text-emerald-500",
-  success: "text-emerald-500",
+  good: "text-success",
+  success: "text-success",
   info: "text-info",
 };
 

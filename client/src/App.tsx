@@ -6,6 +6,7 @@ import React, { Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SiteProvider } from "./contexts/SiteContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import { ConnectionBanner } from "./components/ConnectionBanner";
@@ -90,6 +91,7 @@ const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowled
 const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role landing: simplified big-button floor operator shell
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
+const MaintenanceHome = React.lazy(() => import("./pages/MaintenanceHome")); // F1 (doc 23): maintenance/technician workspace front door (role landing)
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
@@ -369,6 +371,7 @@ function Router() {
       <Route path="/inbox"><AIPageWrapper><InboxPage /></AIPageWrapper></Route>
       <Route path="/today"><AIPageWrapper><TodayPage /></AIPageWrapper></Route>
       <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
+      <Route path="/maintenance-home"><AIPageWrapper><MaintenanceHome /></AIPageWrapper></Route>
       <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
       <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>
       <Route path="/profile" component={Profile} />
@@ -397,17 +400,22 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
-        <TooltipProvider>
-          <AiCopilotProvider>
-            <ConnectionBanner />
-            <Toaster />
-            <Router />
-            {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
-                provider from main.tsx) so it appears on every route, including
-                lazy AI pages. The bubble hides itself when not logged in. */}
-            <AILocalChatBubble />
-          </AiCopilotProvider>
-        </TooltipProvider>
+        {/* F0/F2 (doc 23): SiteProvider — the multi-site scope store. F2 populates
+            it from the header SiteSwitcher (admin-gated sites.list) and persists the
+            active site to localStorage. Non-admins degrade to a static "All sites". */}
+        <SiteProvider>
+          <TooltipProvider>
+            <AiCopilotProvider>
+              <ConnectionBanner />
+              <Toaster />
+              <Router />
+              {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
+                  provider from main.tsx) so it appears on every route, including
+                  lazy AI pages. The bubble hides itself when not logged in. */}
+              <AILocalChatBubble />
+            </AiCopilotProvider>
+          </TooltipProvider>
+        </SiteProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

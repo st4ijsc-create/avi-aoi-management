@@ -37,12 +37,13 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { MetricCard, PageHeader, SectionCard, StatusBadge, Text } from "@/components/patterns";
+import { MetricCard, PageHeader, PageContainer, SectionCard, StatusBadge, Text } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -256,7 +257,7 @@ export default function RobotModelHealth() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="gap-4 space-y-0 flex flex-col">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<Bot className="h-6 w-6" />}
@@ -288,8 +289,8 @@ export default function RobotModelHealth() {
 
         {/* ── Flag-off preview banners (two independent flags, calm/honest) ──── */}
         {!robotAnomalyEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <span>
               {t(
                 "robotHealth.anomalyFlagOffBanner",
@@ -299,8 +300,8 @@ export default function RobotModelHealth() {
           </div>
         )}
         {!modelAutoRollbackEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <span>
               {t(
                 "robotHealth.rollbackFlagOffBanner",
@@ -334,16 +335,20 @@ export default function RobotModelHealth() {
               action={
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">{t("robotHealth.filterKind", "Kind")}</Label>
-                  <select
-                    className="flex h-8 w-40 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={kindFilter}
-                    onChange={(e) => setKindFilter(e.target.value)}
+                  <Select
+                    value={kindFilter === "" ? "all" : kindFilter}
+                    onValueChange={(v) => setKindFilter(v === "all" ? "" : v)}
                   >
-                    <option value="">{t("robotHealth.all", "All")}</option>
-                    {ANOMALY_KINDS.map((k) => (
-                      <option key={k} value={k}>{t(`robotHealth.kindOpt.${k}`, k)}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("robotHealth.all", "All")}</SelectItem>
+                      {ANOMALY_KINDS.map((k) => (
+                        <SelectItem key={k} value={k}>{t(`robotHealth.kindOpt.${k}`, k)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {canControl && (
                     <Button size="sm" variant="outline" className="h-8" onClick={() => setScanOpen(true)}>
                       <ScanLine className="mr-1 h-4 w-4" />{t("robotHealth.scan", "Scan robot")}
@@ -509,7 +514,7 @@ export default function RobotModelHealth() {
             </div>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
 
       {/* ── Scan robot dialog (flag- + perm-gated) ───────────────────────────── */}
       {scanOpen && (
@@ -571,15 +576,16 @@ function ScanRobotDialog({
           <div className="grid gap-1">
             <Label>{t("robotHealth.robot", "Robot")}</Label>
             {robots.length > 0 ? (
-              <select
-                className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={robotId}
-                onChange={(e) => setRobotId(e.target.value)}
-              >
-                {robots.map((r) => (
-                  <option key={r.id} value={r.id}>{r.code} — {r.name}</option>
-                ))}
-              </select>
+              <Select value={robotId} onValueChange={setRobotId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder={t("robotHealth.robot", "Robot")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {robots.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>{r.code} — {r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
               <Input
                 type="number" min={1} value={robotId}

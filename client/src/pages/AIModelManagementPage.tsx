@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard, StatusBadge, EmptyState } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +13,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -61,6 +70,7 @@ import {
   Box,
   Rocket,
   Play,
+  X,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────
@@ -130,11 +140,12 @@ const STATUS_CONFIG: Record<ModelStatus, { color: string; icon: typeof CheckCirc
   ARCHIVED: { color: "outline", icon: Archive },
 };
 
+// Semantic-token tints (theme-aware, no per-mode palette overrides).
 const FORMAT_COLORS: Record<ModelFormat, string> = {
-  ONNX: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  TENSORRT: "bg-green-500/10 text-green-700 dark:text-green-400",
-  OPENVINO: "bg-purple-500/10 text-purple-700 dark:text-purple-400",
-  CUSTOM: "bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  ONNX: "bg-info/15 text-info",
+  TENSORRT: "bg-success/15 text-success",
+  OPENVINO: "bg-primary/15 text-primary",
+  CUSTOM: "bg-warning/15 text-warning",
 };
 
 function formatFileSize(bytes: number | null | undefined): string {
@@ -848,11 +859,17 @@ function TrainingJobsList({ modelId, t }: { modelId: number; t: (key: string, fa
   if (isLoading) return <Skeleton className="h-20 w-full" />;
   if (!jobs || jobs.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">{t("aiEval.noJobs", "Chưa có training job")}</p>
+      <EmptyState
+        variant="no-data"
+        icon={Rocket}
+        title={t("aiEval.noJobs", "Chưa có training job")}
+        description={t("aiEval.noJobsDesc", "Khởi tạo một training pipeline để bắt đầu")}
+        compact
+      />
     );
   }
 
-  const jobStatusColor = (s: string) => {
+  const jobStatusColor = (s: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (s) {
       case "COMPLETED": return "default";
       case "RUNNING": case "TRAINING": case "QUEUED": return "secondary";
@@ -870,7 +887,7 @@ function TrainingJobsList({ modelId, t }: { modelId: number; t: (key: string, fa
               <p className="text-sm font-medium truncate">{job.name}</p>
               <p className="text-xs text-muted-foreground font-mono">→ {job.targetVersion}</p>
             </div>
-            <Badge variant={jobStatusColor(job.status) as any} className="text-xs">{job.status}</Badge>
+            <StatusBadge status={job.status} variant={jobStatusColor(job.status)} className="text-xs" />
           </div>
           <div className="flex items-center gap-2">
             <Progress value={job.progress ?? 0} className="h-2 flex-1" />
@@ -942,8 +959,8 @@ function ModelDetailPanel({
             <p className="text-sm text-muted-foreground mt-1">{model.description}</p>
           )}
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          ✕
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title={t("common.close", "Close")}>
+          <X className="h-4 w-4" />
         </Button>
       </div>
 
@@ -951,10 +968,16 @@ function ModelDetailPanel({
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <span className="text-muted-foreground">{t("aiModels.fields.status", "Status")}:</span>{" "}
-          <Badge variant={statusCfg.color as any}>
-            <StatusIcon className="h-3 w-3 mr-1" />
-            {model.status}
-          </Badge>
+          <StatusBadge
+            status={model.status}
+            variant={statusCfg.color as "default" | "secondary" | "destructive" | "outline"}
+            label={
+              <span className="inline-flex items-center">
+                <StatusIcon className="h-3 w-3 mr-1" />
+                {model.status}
+              </span>
+            }
+          />
         </div>
         <div>
           <span className="text-muted-foreground">{t("aiModels.fields.format", "Format")}:</span>{" "}
@@ -1057,10 +1080,17 @@ function ModelDetailPanel({
                       {v.version}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={vstatus.color as any} className="text-xs">
-                        <VIcon className="h-3 w-3 mr-1" />
-                        {v.status}
-                      </Badge>
+                      <StatusBadge
+                        status={v.status}
+                        variant={vstatus.color as "default" | "secondary" | "destructive" | "outline"}
+                        className="text-xs"
+                        label={
+                          <span className="inline-flex items-center">
+                            <VIcon className="h-3 w-3 mr-1" />
+                            {v.status}
+                          </span>
+                        }
+                      />
                     </TableCell>
                     <TableCell className="text-xs">{formatFileSize(v.fileSize)}</TableCell>
                     <TableCell className="text-xs max-w-37.5 truncate">
@@ -1085,11 +1115,13 @@ function ModelDetailPanel({
             </TableBody>
           </Table>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <Archive className="h-8 w-8 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">{t("aiModels.noVersions", "No versions yet")}</p>
-            <p className="text-xs">{t("aiModels.noVersionsDesc", "Upload a file or create a version to get started")}</p>
-          </div>
+          <EmptyState
+            variant="no-data"
+            icon={Archive}
+            title={t("aiModels.noVersions", "No versions yet")}
+            description={t("aiModels.noVersionsDesc", "Upload a file or create a version to get started")}
+            compact
+          />
         )}
       </div>
 
@@ -1155,29 +1187,29 @@ function DeleteConfirmDialog({
   t: (key: string, fallback?: string) => string;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="max-w-sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="h-5 w-5" />
             {t("aiModels.deleteModel", "Delete Model")}
-          </DialogTitle>
-          <DialogDescription>
+          </AlertDialogTitle>
+          <AlertDialogDescription>
             {t("aiModels.deleteConfirm", "Are you sure you want to delete")} <strong>{modelName}</strong>?{" "}
             {t("aiModels.deleteWarning", "This action cannot be undone.")}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isLoading}>
             {t("common.cancel", "Cancel")}
-          </Button>
+          </AlertDialogCancel>
           <Button variant="destructive" onClick={onConfirm} disabled={isLoading}>
             {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             {t("common.delete", "Delete")}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -1285,7 +1317,7 @@ export default function AIModelManagementPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer fluid>
         {/* Header */}
         <PageHeader
           icon={<Box className="h-6 w-6" />}
@@ -1301,50 +1333,30 @@ export default function AIModelManagementPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-info/10 flex items-center justify-center">
-                <Box className="h-5 w-5 text-info" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.total}</p>
-                <p className="text-xs text-muted-foreground">{t("aiModels.stats.total", "Total Models")}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-success/10 flex items-center justify-center">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.active}</p>
-                <p className="text-xs text-muted-foreground">{t("aiModels.stats.active", "Active")}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-warning/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.ready}</p>
-                <p className="text-xs text-muted-foreground">{t("aiModels.stats.ready", "Ready")}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-destructive/10 flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.failed}</p>
-                <p className="text-xs text-muted-foreground">{t("aiModels.stats.failed", "Failed")}</p>
-              </div>
-            </CardContent>
-          </Card>
+          <MetricCard
+            icon={<Box className="h-5 w-5" />}
+            value={stats.total}
+            label={t("aiModels.stats.total", "Total Models")}
+            tone="info"
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            value={stats.active}
+            label={t("aiModels.stats.active", "Active")}
+            tone="success"
+          />
+          <MetricCard
+            icon={<Clock className="h-5 w-5" />}
+            value={stats.ready}
+            label={t("aiModels.stats.ready", "Ready")}
+            tone="warning"
+          />
+          <MetricCard
+            icon={<AlertTriangle className="h-5 w-5" />}
+            value={stats.failed}
+            label={t("aiModels.stats.failed", "Failed")}
+            tone="danger"
+          />
         </div>
 
         {/* Main Content */}
@@ -1404,20 +1416,23 @@ export default function AIModelManagementPage() {
                     ))}
                   </div>
                 ) : filteredModels.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Brain className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm text-muted-foreground">
-                      {models?.length === 0
-                        ? t("aiModels.empty", "No models registered yet")
-                        : t("aiModels.noResults", "No models match your filters")}
-                    </p>
-                    {models?.length === 0 && (
-                      <Button className="mt-3" size="sm" onClick={() => setShowCreateDialog(true)}>
-                        <Plus className="h-4 w-4 mr-1" />
-                        {t("aiModels.createFirst", "Register your first model")}
-                      </Button>
-                    )}
-                  </div>
+                  models?.length === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Brain}
+                      title={t("aiModels.empty", "No models registered yet")}
+                      description={t("aiModels.emptyDesc", "Register a model to upload files and manage versions")}
+                      actionLabel={t("aiModels.createFirst", "Register your first model")}
+                      onAction={() => setShowCreateDialog(true)}
+                    />
+                  ) : (
+                    <EmptyState
+                      variant="no-results"
+                      icon={Brain}
+                      title={t("aiModels.noResults", "No models match your filters")}
+                      description={t("aiModels.noResultsDesc", "Try adjusting your search or filters")}
+                    />
+                  )
                 ) : (
                   <Table>
                     <TableHeader>
@@ -1455,10 +1470,17 @@ export default function AIModelManagementPage() {
                             </TableCell>
                             <TableCell className="text-sm">{model.modelType}</TableCell>
                             <TableCell>
-                              <Badge variant={statusCfg.color as any} className="text-xs">
-                                <StatusIcon className="h-3 w-3 mr-1" />
-                                {model.status}
-                              </Badge>
+                              <StatusBadge
+                                status={model.status}
+                                variant={statusCfg.color as "default" | "secondary" | "destructive" | "outline"}
+                                className="text-xs"
+                                label={
+                                  <span className="inline-flex items-center">
+                                    <StatusIcon className="h-3 w-3 mr-1" />
+                                    {model.status}
+                                  </span>
+                                }
+                              />
                             </TableCell>
                             <TableCell className="font-mono text-xs">{model.currentVersion ?? "—"}</TableCell>
                             <TableCell className="text-xs">{formatFileSize(model.fileSize)}</TableCell>
@@ -1537,7 +1559,7 @@ export default function AIModelManagementPage() {
             </div>
           )}
         </div>
-      </div>
+      </PageContainer>
 
       {/* Dialogs */}
       <ModelFormDialog

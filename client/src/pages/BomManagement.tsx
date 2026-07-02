@@ -10,10 +10,12 @@
  * holds the matching grant; the whole page requires canView.
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,6 +38,7 @@ function useMaterialOptions(): EntityOption[] {
 }
 
 export default function BomManagement() {
+  const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("mes_bom", "canView");
   const canCreate = hasPermission("mes_bom", "canCreate");
@@ -44,44 +47,45 @@ export default function BomManagement() {
   if (!canView) {
     return (
       <DashboardLayout title="BOM & Feeder (MES)" navItems={navItems} currentPath="/bom-management">
-      <div className="p-6">
+      <PageContainer>
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
-            Bạn không có quyền xem module BOM &amp; Feeder (mes_bom).
+            {t("bom.noPermission")}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout title="BOM & Feeder (MES)" navItems={navItems} currentPath="/bom-management">
-    <div className="p-6 space-y-4">
-      <div className="flex items-center gap-2">
-        <Boxes className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">BOM &amp; Feeder (MES)</h1>
-        <Badge variant="outline">G2.4</Badge>
-        <ViewOnlyBadge module="mes_bom" />
-      </div>
+    <PageContainer>
+      <PageHeader
+        icon={<Boxes className="h-6 w-6" />}
+        title={t("bom.title")}
+        badge={<ViewOnlyBadge module="mes_bom" />}
+        actions={<Badge variant="outline">G2.4</Badge>}
+      />
       <Tabs defaultValue="bom">
         <TabsList>
-          <TabsTrigger value="bom">BOM</TabsTrigger>
-          <TabsTrigger value="feeder">Feeder</TabsTrigger>
-          <TabsTrigger value="trace">Truy vết</TabsTrigger>
+          <TabsTrigger value="bom">{t("bom.tabBom")}</TabsTrigger>
+          <TabsTrigger value="feeder">{t("bom.tabFeeder")}</TabsTrigger>
+          <TabsTrigger value="trace">{t("bom.tabTrace")}</TabsTrigger>
         </TabsList>
         <TabsContent value="bom"><BomPanel canCreate={canCreate} canDelete={canDelete} /></TabsContent>
         <TabsContent value="feeder"><FeederPanel canCreate={canCreate} /></TabsContent>
         <TabsContent value="trace"><TracePanel /></TabsContent>
       </Tabs>
-    </div>
+    </PageContainer>
     </DashboardLayout>
   );
 }
 
 // ─── BOM definitions + line items ───────────────────────────────────────────
 function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boolean }) {
+  const { t } = useTranslation();
   const [productModelId, setProductModelId] = useState("");
   const [selectedBomId, setSelectedBomId] = useState<number | null>(null);
   const pid = Number(productModelId);
@@ -98,11 +102,11 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
 
   const [newCode, setNewCode] = useState("");
   const createDef = trpc.bom.createDefinition.useMutation({
-    onSuccess: () => { toast.success("Đã tạo BOM"); setNewCode(""); list.refetch(); },
+    onSuccess: () => { toast.success(t("bom.toastCreated")); setNewCode(""); list.refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const archiveDef = trpc.bom.archiveDefinition.useMutation({
-    onSuccess: () => { toast.success("Đã lưu trữ BOM"); setSelectedBomId(null); list.refetch(); },
+    onSuccess: () => { toast.success(t("bom.toastArchived")); setSelectedBomId(null); list.refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -111,42 +115,42 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
     { componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" },
   );
   const addLine = trpc.bom.addLineItem.useMutation({
-    onSuccess: () => { toast.success("Đã thêm dòng"); setLi({ componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" }); utils.bom.getDefinition.invalidate(); },
+    onSuccess: () => { toast.success(t("bom.toastLineAdded")); setLi({ componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" }); utils.bom.getDefinition.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
   const delLine = trpc.bom.deleteLineItem.useMutation({
-    onSuccess: () => { toast.success("Đã xóa dòng"); utils.bom.getDefinition.invalidate(); },
+    onSuccess: () => { toast.success(t("bom.toastLineDeleted")); utils.bom.getDefinition.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle>BOM theo Product Model</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("bom.byProductModel")}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-end gap-2">
             <div>
-              <Label>Product Model ID</Label>
-              <Input value={productModelId} onChange={(e) => setProductModelId(e.target.value)} className="w-40" placeholder="vd: 1" />
+              <Label>{t("bom.productModelId")}</Label>
+              <Input value={productModelId} onChange={(e) => setProductModelId(e.target.value)} className="w-40" placeholder={t("bom.productModelIdPlaceholder")} />
             </div>
             {canCreate && (
               <>
                 <div>
-                  <Label>Mã BOM mới</Label>
+                  <Label>{t("bom.newBomCode")}</Label>
                   <Input value={newCode} onChange={(e) => setNewCode(e.target.value)} className="w-48" placeholder="BOM-001" />
                 </div>
                 <Button
                   disabled={!newCode || !(pid > 0) || createDef.isPending}
                   onClick={() => createDef.mutate({ productModelId: pid, code: newCode })}
                 >
-                  <Plus className="mr-1 h-4 w-4" /> Tạo BOM
+                  <Plus className="mr-1 h-4 w-4" /> {t("bom.createBom")}
                 </Button>
               </>
             )}
           </div>
           <Table>
             <TableHeader>
-              <TableRow><TableHead>ID</TableHead><TableHead>Mã</TableHead><TableHead>Phiên bản</TableHead><TableHead>Trạng thái</TableHead><TableHead></TableHead></TableRow>
+              <TableRow><TableHead>{t("bom.id")}</TableHead><TableHead>{t("bom.code")}</TableHead><TableHead>{t("bom.version")}</TableHead><TableHead>{t("bom.status")}</TableHead><TableHead></TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {(list.data ?? []).map((b: any) => (
@@ -156,7 +160,7 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
                   <TableCell>v{b.version}</TableCell>
                   <TableCell><Badge variant={b.status === "active" ? "default" : "outline"}>{b.status}</Badge></TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => setSelectedBomId(b.id)}>Dòng linh kiện</Button>
+                    <Button size="sm" variant="outline" onClick={() => setSelectedBomId(b.id)}>{t("bom.lineItems")}</Button>
                     {canDelete && (
                       <Button size="sm" variant="ghost" onClick={() => archiveDef.mutate({ id: b.id })}><Trash2 className="h-4 w-4" /></Button>
                     )}
@@ -164,7 +168,7 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
                 </TableRow>
               ))}
               {list.data && list.data.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Chưa có BOM</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{t("bom.noBom")}</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -173,33 +177,33 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
 
       {selectedBomId != null && (
         <Card>
-          <CardHeader><CardTitle>Dòng linh kiện — BOM #{selectedBomId}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("bom.lineItemsForBom", { id: selectedBomId })}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {canCreate && (
               <div className="flex items-end gap-2 flex-wrap">
                 <div>
-                  <Label>Vật liệu (master)</Label>
+                  <Label>{t("bom.materialMaster")}</Label>
                   <div>
                     <EntityCombobox
                       options={materialOptions}
                       value={li.materialId}
                       onChange={(id, opt) => setLi({ ...li, materialId: id, componentCode: opt?.code ?? li.componentCode })}
-                      placeholder="Chọn vật liệu..."
+                      placeholder={t("bom.selectMaterial")}
                       className="w-56"
                     />
                   </div>
                 </div>
-                <div><Label>Mã linh kiện</Label><Input value={li.componentCode} onChange={(e) => setLi({ ...li, componentCode: e.target.value })} className="w-40" placeholder="hoặc nhập tay" /></div>
-                <div><Label>SL/đơn vị</Label><Input value={li.qtyPer} onChange={(e) => setLi({ ...li, qtyPer: e.target.value })} className="w-24" /></div>
-                <div><Label>Ref Designator</Label><Input value={li.refDesignator} onChange={(e) => setLi({ ...li, refDesignator: e.target.value })} className="w-40" /></div>
+                <div><Label>{t("bom.componentCode")}</Label><Input value={li.componentCode} onChange={(e) => setLi({ ...li, componentCode: e.target.value })} className="w-40" placeholder={t("bom.orTypeManually")} /></div>
+                <div><Label>{t("bom.qtyPerUnit")}</Label><Input value={li.qtyPer} onChange={(e) => setLi({ ...li, qtyPer: e.target.value })} className="w-24" /></div>
+                <div><Label>{t("bom.refDesignator")}</Label><Input value={li.refDesignator} onChange={(e) => setLi({ ...li, refDesignator: e.target.value })} className="w-40" /></div>
                 <Button
                   disabled={!li.componentCode || addLine.isPending}
                   onClick={() => addLine.mutate({ bomId: selectedBomId, componentCode: li.componentCode, materialId: li.materialId ?? undefined, qtyPer: Number(li.qtyPer) || 1, refDesignator: li.refDesignator || undefined })}
-                ><Plus className="mr-1 h-4 w-4" /> Thêm</Button>
+                ><Plus className="mr-1 h-4 w-4" /> {t("common.add")}</Button>
               </div>
             )}
             <Table>
-              <TableHeader><TableRow><TableHead>Mã LK</TableHead><TableHead>Tên</TableHead><TableHead>SL</TableHead><TableHead>RefDes</TableHead><TableHead></TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>{t("bom.componentCodeShort")}</TableHead><TableHead>{t("bom.name")}</TableHead><TableHead>{t("bom.qty")}</TableHead><TableHead>{t("bom.refDes")}</TableHead><TableHead></TableHead></TableRow></TableHeader>
               <TableBody>
                 {(detail.data?.lineItems ?? []).map((it: any) => (
                   <TableRow key={it.id}>
@@ -223,6 +227,7 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
 
 // ─── Feeder panel (assign/load + reorder badge) ─────────────────────────────
 function FeederPanel({ canCreate }: { canCreate: boolean }) {
+  const { t } = useTranslation();
   const [machineId, setMachineId] = useState("");
   const mid = Number(machineId);
   const feeders = trpc.bom.listFeeders.useQuery({ machineId: mid }, { enabled: mid > 0 });
@@ -231,43 +236,43 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
     { componentCode: "", materialId: null, slotCode: "", qtyOnFeeder: "0", reorderLevel: "0" },
   );
   const assign = trpc.bom.assignFeederMaterial.useMutation({
-    onSuccess: () => { toast.success("Đã gán feeder"); feeders.refetch(); },
+    onSuccess: () => { toast.success(t("bom.toastFeederAssigned")); feeders.refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
   return (
     <Card>
-      <CardHeader><CardTitle>Feeder theo máy</CardTitle></CardHeader>
+      <CardHeader><CardTitle>{t("bom.feederByMachine")}</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-end gap-2 flex-wrap">
-          <div><Label>Machine ID</Label><Input value={machineId} onChange={(e) => setMachineId(e.target.value)} className="w-32" /></div>
+          <div><Label>{t("bom.machineId")}</Label><Input value={machineId} onChange={(e) => setMachineId(e.target.value)} className="w-32" /></div>
           {canCreate && (
             <>
               <div>
-                <Label>Vật liệu (master)</Label>
+                <Label>{t("bom.materialMaster")}</Label>
                 <div>
                   <EntityCombobox
                     options={materialOptions}
                     value={f.materialId}
                     onChange={(id, opt) => setF({ ...f, materialId: id, componentCode: opt?.code ?? f.componentCode })}
-                    placeholder="Chọn vật liệu..."
+                    placeholder={t("bom.selectMaterial")}
                     className="w-52"
                   />
                 </div>
               </div>
-              <div><Label>Mã LK</Label><Input value={f.componentCode} onChange={(e) => setF({ ...f, componentCode: e.target.value })} className="w-32" placeholder="hoặc nhập tay" /></div>
-              <div><Label>Slot</Label><Input value={f.slotCode} onChange={(e) => setF({ ...f, slotCode: e.target.value })} className="w-24" /></div>
-              <div><Label>SL nạp</Label><Input value={f.qtyOnFeeder} onChange={(e) => setF({ ...f, qtyOnFeeder: e.target.value })} className="w-24" /></div>
-              <div><Label>Mức đặt lại</Label><Input value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className="w-24" /></div>
+              <div><Label>{t("bom.componentCodeShort")}</Label><Input value={f.componentCode} onChange={(e) => setF({ ...f, componentCode: e.target.value })} className="w-32" placeholder={t("bom.orTypeManually")} /></div>
+              <div><Label>{t("bom.slot")}</Label><Input value={f.slotCode} onChange={(e) => setF({ ...f, slotCode: e.target.value })} className="w-24" /></div>
+              <div><Label>{t("bom.qtyLoaded")}</Label><Input value={f.qtyOnFeeder} onChange={(e) => setF({ ...f, qtyOnFeeder: e.target.value })} className="w-24" /></div>
+              <div><Label>{t("bom.reorderLevel")}</Label><Input value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className="w-24" /></div>
               <Button
                 disabled={!(mid > 0) || !f.componentCode || assign.isPending}
                 onClick={() => assign.mutate({ machineId: mid, componentCode: f.componentCode, materialId: f.materialId ?? undefined, slotCode: f.slotCode || undefined, qtyOnFeeder: Number(f.qtyOnFeeder) || 0, reorderLevel: Number(f.reorderLevel) || 0 })}
-              ><Plus className="mr-1 h-4 w-4" /> Gán/Nạp</Button>
+              ><Plus className="mr-1 h-4 w-4" /> {t("bom.assignLoad")}</Button>
             </>
           )}
         </div>
         <Table>
-          <TableHeader><TableRow><TableHead>Slot</TableHead><TableHead>Mã LK</TableHead><TableHead>Còn lại</TableHead><TableHead>Mức đặt lại</TableHead><TableHead>Trạng thái</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>{t("bom.slot")}</TableHead><TableHead>{t("bom.componentCodeShort")}</TableHead><TableHead>{t("bom.remaining")}</TableHead><TableHead>{t("bom.reorderLevel")}</TableHead><TableHead>{t("bom.status")}</TableHead></TableRow></TableHeader>
           <TableBody>
             {(feeders.data ?? []).map((row: any) => {
               const below = Number(row.qtyOnFeeder) <= Number(row.reorderLevel);
@@ -279,7 +284,7 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
                   <TableCell>{row.reorderLevel}</TableCell>
                   <TableCell>
                     {below
-                      ? <Badge variant="destructive">Cần đặt lại</Badge>
+                      ? <Badge variant="destructive">{t("bom.needReorder")}</Badge>
                       : <Badge variant="outline">{row.status}</Badge>}
                   </TableCell>
                 </TableRow>
@@ -294,6 +299,7 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
 
 // ─── Trace (forward serial → components, reverse lot/component → serials) ─────
 function TracePanel() {
+  const { t } = useTranslation();
   const [serial, setSerial] = useState("");
   const [lotId, setLotId] = useState("");
   const forward = trpc.bom.traceForward.useQuery({ serialNumber: serial }, { enabled: serial.length > 0 });
@@ -305,11 +311,11 @@ function TracePanel() {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
-        <CardHeader><CardTitle><GitMerge className="inline h-4 w-4 mr-1" /> Forward: Serial → Linh kiện</CardTitle></CardHeader>
+        <CardHeader><CardTitle><GitMerge className="inline h-4 w-4 mr-1" /> {t("bom.forwardTitle")}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Serial board" />
+          <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder={t("bom.serialBoard")} />
           <Table>
-            <TableHeader><TableRow><TableHead>Mã LK</TableHead><TableHead>Serial LK</TableHead><TableHead>Lot NCC</TableHead><TableHead>Hash</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{t("bom.componentCodeShort")}</TableHead><TableHead>{t("bom.componentSerial")}</TableHead><TableHead>{t("bom.supplierLot")}</TableHead><TableHead>{t("bom.hash")}</TableHead></TableRow></TableHeader>
             <TableBody>
               {(forward.data?.components ?? []).map((c: any) => (
                 <TableRow key={c.id}>
@@ -324,12 +330,12 @@ function TracePanel() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle>Reverse: Lot NCC → Serials</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("bom.reverseTitle")}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          <Input value={lotId} onChange={(e) => setLotId(e.target.value)} placeholder="Supplier Lot ID" />
+          <Input value={lotId} onChange={(e) => setLotId(e.target.value)} placeholder={t("bom.supplierLotId")} />
           <div className="flex flex-wrap gap-1">
             {(reverse.data?.serials ?? []).map((s: string) => <Badge key={s} variant="secondary">{s}</Badge>)}
-            {reverse.data && reverse.data.serials.length === 0 && <span className="text-muted-foreground text-sm">Không có serial nào dùng lot này</span>}
+            {reverse.data && reverse.data.serials.length === 0 && <span className="text-muted-foreground text-sm">{t("bom.noSerialForLot")}</span>}
           </div>
         </CardContent>
       </Card>

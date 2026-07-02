@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
-import { PageHeader } from '@/components/patterns';
+import { PageHeader, PageContainer, MetricCard, EmptyState } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { navItems } from '@/lib/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -45,10 +45,10 @@ const HEALTH_CONFIG: Record<HealthStatus, {
   icon: React.ReactNode;
   bg: string;
 }> = {
-  HEALTHY:  { label: 'Healthy',  color: 'text-green-600',  icon: <CheckCircle2 className="h-5 w-5" />,  bg: 'bg-green-50 dark:bg-green-950/20' },
-  WARNING:  { label: 'Warning',  color: 'text-yellow-600', icon: <AlertTriangle className="h-5 w-5" />, bg: 'bg-yellow-50 dark:bg-yellow-950/20' },
-  CRITICAL: { label: 'Critical', color: 'text-red-600',    icon: <XCircle className="h-5 w-5" />,       bg: 'bg-red-50 dark:bg-red-950/20' },
-  UNKNOWN:  { label: 'Unknown',  color: 'text-gray-500',   icon: <Activity className="h-5 w-5" />,      bg: 'bg-gray-50 dark:bg-gray-950/20' },
+  HEALTHY:  { label: 'Healthy',  color: 'text-success',          icon: <CheckCircle2 className="h-5 w-5" />, bg: 'bg-success/10' },
+  WARNING:  { label: 'Warning',  color: 'text-warning',          icon: <AlertTriangle className="h-5 w-5" />, bg: 'bg-warning/10' },
+  CRITICAL: { label: 'Critical', color: 'text-destructive',      icon: <XCircle className="h-5 w-5" />,       bg: 'bg-destructive/10' },
+  UNKNOWN:  { label: 'Unknown',  color: 'text-muted-foreground',  icon: <Activity className="h-5 w-5" />,      bg: 'bg-muted/40' },
 };
 
 const SEVERITY_VARIANT: Record<AlertSeverity, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -112,7 +112,7 @@ export default function ModelMonitoringPage() {
 
   return (
     <DashboardLayout title={t('modelMonitoring.title')} navItems={navItems} currentPath="/ai-monitoring">
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Activity className="h-6 w-6" />}
@@ -182,41 +182,36 @@ export default function ModelMonitoringPage() {
                 </Card>
 
                 {/* Latest Accuracy */}
-                <Card>
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <BarChart3 className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm font-medium text-muted-foreground">{t('modelMonitoring.accuracyLatest')}</span>
-                    </div>
-                    <div className="text-3xl font-bold">
-                      {health?.latestSnapshot?.accuracy != null
-                        ? `${(parseFloat(String(health.latestSnapshot.accuracy)) * 100).toFixed(1)}%`
-                        : '—'}
-                    </div>
-                    {health?.latestSnapshot?.totalInferences != null && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t('modelMonitoring.inferences', { count: health.latestSnapshot.totalInferences.toLocaleString() })}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                <MetricCard
+                  icon={<BarChart3 className="h-4 w-4" />}
+                  label={t('modelMonitoring.accuracyLatest')}
+                  value={
+                    health?.latestSnapshot?.accuracy != null
+                      ? `${(parseFloat(String(health.latestSnapshot.accuracy)) * 100).toFixed(1)}%`
+                      : '—'
+                  }
+                  delta={
+                    health?.latestSnapshot?.totalInferences != null
+                      ? t('modelMonitoring.inferences', { count: health.latestSnapshot.totalInferences.toLocaleString() })
+                      : undefined
+                  }
+                />
 
                 {/* Active Alerts */}
-                <Card>
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Bell className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm font-medium text-muted-foreground">{t('modelMonitoring.activeAlerts')}</span>
-                    </div>
-                    <div className="text-3xl font-bold">{health?.activeAlerts?.length ?? 0}</div>
-                    {(health?.activeAlerts?.length ?? 0) > 0 && (
-                      <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                <MetricCard
+                  icon={<Bell className="h-4 w-4" />}
+                  label={t('modelMonitoring.activeAlerts')}
+                  value={health?.activeAlerts?.length ?? 0}
+                  tone={(health?.activeAlerts?.length ?? 0) > 0 ? 'warning' : 'default'}
+                  delta={
+                    (health?.activeAlerts?.length ?? 0) > 0 ? (
+                      <span className="flex items-center gap-1 text-destructive">
                         <AlertTriangle className="h-3 w-3" />
                         {t('modelMonitoring.requiresAttention')}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                      </span>
+                    ) : undefined
+                  }
+                />
               </div>
             )}
 
@@ -239,10 +234,13 @@ export default function ModelMonitoringPage() {
                     ))}
                   </div>
                 ) : !alerts || alerts.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                    <CheckCircle2 className="h-10 w-10 mb-3 text-green-500 opacity-60" />
-                    <p className="text-sm">{t('modelMonitoring.noAlerts')}</p>
-                  </div>
+                  <EmptyState
+                    variant="no-data"
+                    icon={CheckCircle2}
+                    title={t('modelMonitoring.noAlerts')}
+                    description={t('modelMonitoring.noAlertsDesc', 'This model has no open drift alerts.')}
+                    compact
+                  />
                 ) : (
                   <ScrollArea className="max-h-105">
                     <Table>
@@ -283,7 +281,7 @@ export default function ModelMonitoringPage() {
                               </TableCell>
                               <TableCell>
                                 {isResolved ? (
-                                  <Badge variant="outline" className="text-green-600">{t('modelMonitoring.statusResolved')}</Badge>
+                                  <Badge variant="outline" className="text-success">{t('modelMonitoring.statusResolved')}</Badge>
                                 ) : isAcknowledged ? (
                                   <Badge variant="secondary">{t('modelMonitoring.statusAcknowledged')}</Badge>
                                 ) : (
@@ -362,13 +360,14 @@ export default function ModelMonitoringPage() {
 
         {!selectedModelId && (
           <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Activity className="h-12 w-12 mb-4 opacity-30" />
-              <p>Select a model above to view its health metrics and drift alerts</p>
-            </CardContent>
+            <EmptyState
+              icon={Activity}
+              title={t('modelMonitoring.selectModelTitle', 'Select a model')}
+              description={t('modelMonitoring.selectModelHint', 'Select a model above to view its health metrics and drift alerts.')}
+            />
           </Card>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

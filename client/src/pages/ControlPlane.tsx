@@ -21,6 +21,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -117,27 +118,25 @@ export default function ControlPlane() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer className="space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Factory className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">{t("controlPlane.title", "Factory Control Plane")}</h1>
-            <ViewOnlyBadge module="machine_control" />
-            <p className="text-sm text-muted-foreground">
-              {t("controlPlane.subtitle", "Năng lực thiết bị (Capability/PackML), điều phối FOE và runtime biên — điều khiển luôn qua HITL/dry-run")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">FOE</span><FlagPill enabled={foeEnabled} t={t} />
-            <span className="ml-2 text-xs text-muted-foreground">Edge</span><FlagPill enabled={edgeEnabled} t={t} />
-          </div>
-          <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+        <PageHeader
+          icon={<Factory className="h-6 w-6" />}
+          title={t("controlPlane.title", "Factory Control Plane")}
+          badge={<ViewOnlyBadge module="machine_control" />}
+          description={t("controlPlane.subtitle", "Năng lực thiết bị (Capability/PackML), điều phối FOE và runtime biên — điều khiển luôn qua HITL/dry-run")}
+          actions={
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">FOE</span><FlagPill enabled={foeEnabled} t={t} />
+                <span className="ml-2 text-xs text-muted-foreground">Edge</span><FlagPill enabled={edgeEnabled} t={t} />
+              </div>
+              <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Làm mới")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </>
+          }
+        />
 
         {/* Safety banner */}
         <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
@@ -366,7 +365,7 @@ export default function ControlPlane() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

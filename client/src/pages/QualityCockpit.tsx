@@ -169,19 +169,19 @@ function RealtimeGateStatus() {
   const activeCount = activeEventsQuery.data?.length ?? 0;
 
   return (
-    <Card className={activeCount > 0 ? "border-red-500 bg-red-50 dark:bg-red-950/20" : "border-green-500 bg-green-50 dark:bg-green-950/20"}>
+    <Card className={activeCount > 0 ? "border-destructive/50 bg-destructive/5" : "border-success/50 bg-success/5"}>
       <CardHeader className="py-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             {activeCount > 0 ? (
-              <ShieldAlert className="h-5 w-5 text-red-600" />
+              <ShieldAlert className="h-5 w-5 text-destructive" />
             ) : (
-              <ShieldCheck className="h-5 w-5 text-green-600" />
+              <ShieldCheck className="h-5 w-5 text-success" />
             )}
             {t("qualityCockpit.gates.realtimeStatus")}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Radio className="h-3.5 w-3.5 text-green-500 animate-pulse" />
+            <Radio className="h-3.5 w-3.5 text-success animate-pulse" />
             <Badge variant={activeCount > 0 ? "destructive" : "secondary"}>
               {t("qualityCockpit.gates.activeBreaches", { count: activeCount })}
             </Badge>

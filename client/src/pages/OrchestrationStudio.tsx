@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -118,8 +119,8 @@ function StepBlock({
   if (step.type === "sequence" || step.type === "parallel") {
     childLists.push({ slot: "steps", label: "", items: step.steps ?? [] });
   } else if (step.type === "branch") {
-    childLists.push({ slot: "then", label: t("studio.branchThen", "Nếu đúng (then)"), items: step.then ?? [] });
-    childLists.push({ slot: "else", label: t("studio.branchElse", "Nếu sai (else)"), items: step.else ?? [] });
+    childLists.push({ slot: "then", label: t("studio.branchThen", "If true (then)"), items: step.then ?? [] });
+    childLists.push({ slot: "else", label: t("studio.branchElse", "If false (else)"), items: step.else ?? [] });
   }
 
   return (
@@ -150,7 +151,7 @@ function StepBlock({
             className="h-6 w-6"
             disabled={index === 0}
             onClick={(e) => { e.stopPropagation(); onMove(step.id, -1); }}
-            aria-label={t("studio.moveUp", "Lên")}
+            aria-label={t("studio.moveUp", "Up")}
           >
             <ChevronUp className="h-3.5 w-3.5" />
           </Button>
@@ -160,7 +161,7 @@ function StepBlock({
             className="h-6 w-6"
             disabled={index === siblingCount - 1}
             onClick={(e) => { e.stopPropagation(); onMove(step.id, 1); }}
-            aria-label={t("studio.moveDown", "Xuống")}
+            aria-label={t("studio.moveDown", "Down")}
           >
             <ChevronDown className="h-3.5 w-3.5" />
           </Button>
@@ -169,7 +170,7 @@ function StepBlock({
             variant="ghost"
             className="h-6 w-6 text-destructive"
             onClick={(e) => { e.stopPropagation(); onDelete(step.id); }}
-            aria-label={t("common.delete", "Xóa")}
+            aria-label={t("common.delete", "Delete")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -219,17 +220,17 @@ function summarize(step: StudioStep, t: TFunction): string {
     case "wait_state":
       return `M#${step.machineId ?? "?"} → ${(step.targetStates ?? []).join(", ") || "—"}`;
     case "wait_telemetry":
-      return t("studio.conditionShort", "điều kiện telemetry");
+      return t("studio.conditionShort", "telemetry condition");
     case "branch":
-      return t("studio.branchShort", "rẽ nhánh theo điều kiện");
+      return t("studio.branchShort", "branch on condition");
     case "delay":
       return `${step.ms ?? 0} ms`;
     case "hitl_gate":
-      return step.prompt || t("studio.gateShort", "chờ duyệt thủ công");
+      return step.prompt || t("studio.gateShort", "wait for manual approval");
     case "sequence":
-      return `${(step.steps ?? []).length} ${t("studio.children", "bước con")}`;
+      return `${(step.steps ?? []).length} ${t("studio.children", "child steps")}`;
     case "parallel":
-      return `${(step.steps ?? []).length} ${t("studio.branches", "nhánh song song")}`;
+      return `${(step.steps ?? []).length} ${t("studio.branches", "parallel branches")}`;
     default:
       return "";
   }
@@ -246,7 +247,7 @@ function AddStepMenu({ onAdd, t, small }: { onAdd: (k: StepKind) => void; t: TFu
         onClick={() => setOpen((o) => !o)}
       >
         <Plus className="mr-1 h-3.5 w-3.5" />
-        {t("studio.addStep", "Thêm bước")}
+        {t("studio.addStep", "Add step")}
       </Button>
       {open && (
         <div className="absolute z-20 mt-1 grid w-44 grid-cols-1 gap-0.5 rounded-md border bg-popover p-1 shadow-lg">
@@ -314,11 +315,11 @@ function Inspector({
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label className="text-xs">{t("studio.stepId", "Mã bước (id)")}</Label>
+        <Label className="text-xs">{t("studio.stepId", "Step id")}</Label>
         <Input value={step.id} onChange={(e) => onPatch({ id: e.target.value })} className="font-mono text-sm" />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">{t("studio.stepLabel", "Nhãn (tuỳ chọn)")}</Label>
+        <Label className="text-xs">{t("studio.stepLabel", "Label (optional)")}</Label>
         <Input value={step.label ?? ""} onChange={(e) => onPatch({ label: e.target.value })} />
       </div>
 
@@ -327,12 +328,12 @@ function Inspector({
       {step.type === "command" && (
         <>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.machine", "Máy")}</Label>
+            <Label className="text-xs">{t("studio.machine", "Machine")}</Label>
             <Select
               value={step.machineId ? String(step.machineId) : ""}
               onValueChange={(v) => onPatch({ machineId: Number(v), command: "", args: {} })}
             >
-              <SelectTrigger><SelectValue placeholder={t("studio.pickMachine", "Chọn máy…")} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("studio.pickMachine", "Select machine…")} /></SelectTrigger>
               <SelectContent>
                 {machines.map((m) => (
                   <SelectItem key={m.machineId} value={String(m.machineId)}>
@@ -343,13 +344,13 @@ function Inspector({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.command", "Lệnh")}</Label>
+            <Label className="text-xs">{t("studio.command", "Command")}</Label>
             <Select
               value={(step.command as string) || ""}
               onValueChange={(v) => onPatch({ command: v, args: {} })}
               disabled={!selectedMachine}
             >
-              <SelectTrigger><SelectValue placeholder={t("studio.pickCommand", "Chọn lệnh…")} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("studio.pickCommand", "Select command…")} /></SelectTrigger>
               <SelectContent>
                 {commands.map((c) => (
                   <SelectItem key={c.name} value={c.name}>
@@ -362,7 +363,7 @@ function Inspector({
           </div>
           {selectedCmd && (selectedCmd.paramsSchema?.length ?? 0) > 0 && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-2">
-              <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.args", "Tham số")}</div>
+              <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.args", "Parameters")}</div>
               {(selectedCmd.paramsSchema ?? []).map((p) => (
                 <ArgField key={p.name} param={p} value={(step.args ?? {})[p.name]} onChange={(val) => onPatch({ args: { ...(step.args ?? {}), [p.name]: val } })} t={t} />
               ))}
@@ -374,9 +375,9 @@ function Inspector({
       {step.type === "wait_state" && (
         <>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.machine", "Máy")}</Label>
+            <Label className="text-xs">{t("studio.machine", "Machine")}</Label>
             <Select value={step.machineId ? String(step.machineId) : ""} onValueChange={(v) => onPatch({ machineId: Number(v) })}>
-              <SelectTrigger><SelectValue placeholder={t("studio.pickMachine", "Chọn máy…")} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("studio.pickMachine", "Select machine…")} /></SelectTrigger>
               <SelectContent>
                 {machines.map((m) => (
                   <SelectItem key={m.machineId} value={String(m.machineId)}>#{m.machineId} · {m.name}</SelectItem>
@@ -385,7 +386,7 @@ function Inspector({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.targetStates", "Trạng thái đích (PackML)")}</Label>
+            <Label className="text-xs">{t("studio.targetStates", "Target states (PackML)")}</Label>
             <div className="flex flex-wrap gap-1">
               {PACKML_STATES.map((s) => {
                 const on = (step.targetStates ?? []).includes(s);
@@ -425,18 +426,18 @@ function Inspector({
       )}
 
       {step.type === "delay" && (
-        <NumberField label={t("studio.delayMs", "Thời gian chờ (ms)")} value={step.ms ?? 1000} onChange={(n) => onPatch({ ms: n })} />
+        <NumberField label={t("studio.delayMs", "Delay (ms)")} value={step.ms ?? 1000} onChange={(n) => onPatch({ ms: n })} />
       )}
 
       {step.type === "hitl_gate" && (
         <div className="space-y-1.5">
-          <Label className="text-xs">{t("studio.gatePrompt", "Câu hỏi cho người duyệt")}</Label>
+          <Label className="text-xs">{t("studio.gatePrompt", "Prompt for the approver")}</Label>
           <Textarea value={step.prompt ?? ""} onChange={(e) => onPatch({ prompt: e.target.value })} rows={3} />
         </div>
       )}
 
       {(step.type === "sequence" || step.type === "parallel") && (
-        <p className="text-xs text-muted-foreground">{t("studio.containerHint", "Thêm/sắp xếp các bước con ngay trên cây quy trình bên trái.")}</p>
+        <p className="text-xs text-muted-foreground">{t("studio.containerHint", "Add / reorder child steps directly on the workflow tree on the left.")}</p>
       )}
     </div>
   );
@@ -509,10 +510,10 @@ function ConditionEditor({
   const set = (patch: Record<string, unknown>) => onChange({ ...c, ...patch });
   return (
     <div className="space-y-2 rounded-md border bg-muted/30 p-2">
-      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.condition", "Điều kiện")}</div>
+      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.condition", "Condition")}</div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <Label className="text-[11px]">{t("studio.condSource", "Nguồn")}</Label>
+          <Label className="text-[11px]">{t("studio.condSource", "Source")}</Label>
           <Select value={c.source ?? "telemetry"} onValueChange={(v) => set({ source: v })}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -521,7 +522,7 @@ function ConditionEditor({
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-[11px]">{t("studio.condOp", "Toán tử")}</Label>
+          <Label className="text-[11px]">{t("studio.condOp", "Operator")}</Label>
           <Select value={c.op ?? "gt"} onValueChange={(v) => set({ op: v })}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -532,7 +533,7 @@ function ConditionEditor({
       </div>
       {(c.source === "telemetry" || c.source === "state") && (
         <div className="space-y-1">
-          <Label className="text-[11px]">{t("studio.machine", "Máy")}</Label>
+          <Label className="text-[11px]">{t("studio.machine", "Machine")}</Label>
           <Select value={c.machineId ? String(c.machineId) : ""} onValueChange={(v) => set({ machineId: Number(v) })}>
             <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="…" /></SelectTrigger>
             <SelectContent>
@@ -543,13 +544,13 @@ function ConditionEditor({
       )}
       {c.source !== "state" && (
         <div className="space-y-1">
-          <Label className="text-[11px]">{c.source === "const" ? t("studio.condConst", "Giá trị (const)") : t("studio.condKey", "Khoá (key)")}</Label>
+          <Label className="text-[11px]">{c.source === "const" ? t("studio.condConst", "Value (const)") : t("studio.condKey", "Key")}</Label>
           <Input className="h-8 text-sm" value={(c.key as string) ?? ""} onChange={(e) => set({ key: e.target.value })} />
         </div>
       )}
       {c.op !== "exists" && (
         <div className="space-y-1">
-          <Label className="text-[11px]">{t("studio.condValue", "Giá trị so sánh")}</Label>
+          <Label className="text-[11px]">{t("studio.condValue", "Comparison value")}</Label>
           <Input className="h-8 text-sm" value={c.value != null ? String(c.value) : ""} onChange={(e) => {
             const raw = e.target.value;
             const num = Number(raw);
@@ -593,7 +594,7 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
       {sim.errors.length > 0 && (
         <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-red-600">
-            <XCircle className="h-4 w-4" /> {t("studio.validationErrors", "Lỗi xác thực")}
+            <XCircle className="h-4 w-4" /> {t("studio.validationErrors", "Validation errors")}
           </div>
           <ul className="ml-5 list-disc text-xs text-red-600/90">
             {sim.errors.map((e, i) => <li key={i}>{e}</li>)}
@@ -604,18 +605,18 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <Badge variant={sim.ok ? "default" : "destructive"} className={sim.ok ? "bg-emerald-500" : ""}>
           {sim.ok ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}
-          {sim.ok ? t("studio.simOk", "Khả thi") : t("studio.simNotOk", "Có vấn đề")}
+          {sim.ok ? t("studio.simOk", "Feasible") : t("studio.simNotOk", "Has issues")}
         </Badge>
         <span className="text-muted-foreground">
           <Timer className="mr-1 inline h-3.5 w-3.5" />
-          {t("studio.totalDuration", "Tổng thời gian dự kiến")}: <b>{(sim.totalDurationMs / 1000).toFixed(1)}s</b>
+          {t("studio.totalDuration", "Estimated total time")}: <b>{(sim.totalDurationMs / 1000).toFixed(1)}s</b>
         </span>
-        <span className="text-muted-foreground">{sim.timeline.length} {t("studio.steps", "bước")}</span>
+        <span className="text-muted-foreground">{sim.timeline.length} {t("studio.steps", "steps")}</span>
       </div>
 
       {/* Timeline / Gantt */}
       <div>
-        <div className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.timeline", "Dòng thời gian (Gantt)")}</div>
+        <div className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.timeline", "Timeline (Gantt)")}</div>
         <div className="space-y-1">
           {sim.timeline.map((e, i) => {
             const left = (e.startMs / total) * 100;
@@ -644,7 +645,7 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
       {/* Per-machine state trace */}
       {Object.keys(sim.machineStateTrace).length > 0 && (
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.stateTrace", "Diễn biến trạng thái máy")}</div>
+          <div className="mb-1 text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.stateTrace", "Machine state trace")}</div>
           <div className="space-y-1.5">
             {Object.entries(sim.machineStateTrace).map(([id, pts]) => (
               <div key={id} className="flex items-center gap-2">
@@ -669,7 +670,7 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
       {sim.warnings.length > 0 && (
         <div>
           <div className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-amber-600">
-            <AlertTriangle className="h-3.5 w-3.5" /> {t("studio.warnings", "Cảnh báo")} ({sim.warnings.length})
+            <AlertTriangle className="h-3.5 w-3.5" /> {t("studio.warnings", "Warnings")} ({sim.warnings.length})
           </div>
           <ul className="space-y-1">
             {sim.warnings.map((w, i) => (
@@ -721,14 +722,14 @@ export default function OrchestrationStudio() {
 
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
-      if (r?.ok) { toast.success(t("studio.deployed", "Đã lưu/triển khai quy trình")); void workflowsQ.refetch(); }
-      else toast.error(r?.message ?? t("studio.deployFail", "Triển khai thất bại"));
+      if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
+      else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toast.error(e.message),
   });
   const startRunM = trpc.orchestration.startRun.useMutation({
     onSuccess: (r) => {
-      toast.success(t("studio.runStarted", "Đã bắt đầu chạy (run #{{id}})", { id: r?.runId ?? "?" }));
+      toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
       void runsQ.refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -748,11 +749,11 @@ export default function OrchestrationStudio() {
   const [dupNewRef, setDupNewRef] = useState("");
 
   const deleteWfM = trpc.orchestration.deleteWorkflow.useMutation({
-    onSuccess: () => { toast.success(t("studio.wfDeleted", "Đã xoá quy trình")); setDeleteWf(null); void workflowsQ.refetch(); },
+    onSuccess: () => { toast.success(t("studio.wfDeleted", "Workflow deleted")); setDeleteWf(null); void workflowsQ.refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
-    onSuccess: () => { toast.success(t("studio.wfDuplicated", "Đã nhân bản quy trình")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
+    onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -789,7 +790,7 @@ export default function OrchestrationStudio() {
       setDef(cloneDef(json));
       setSelectedId(null);
       setSim(null);
-      toast.success(t("studio.loaded", "Đã nạp quy trình vào trình soạn"));
+      toast.success(t("studio.loaded", "Workflow loaded into the editor"));
     }
   };
 
@@ -819,7 +820,7 @@ export default function OrchestrationStudio() {
         lang: i18nLang,
       });
       if (!res.available) {
-        toast.error(res.message ?? t("studio.aiUnavailable", "Trợ lý AI chưa khả dụng"));
+        toast.error(res.message ?? t("studio.aiUnavailable", "AI advisor is not available yet"));
         return;
       }
       if (res.workflow) {
@@ -828,10 +829,10 @@ export default function OrchestrationStudio() {
         setSelectedId(null);
         setAiRationale(res.rationale || null);
         setSim((res.simulation as unknown as SimResult) ?? null);
-        if (res.valid) toast.success(t("studio.aiProposed", "AI đã đề xuất quy trình — hãy xem lại trước khi triển khai"));
-        else toast.warning(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+        if (res.valid) toast.success(t("studio.aiProposed", "AI proposed a workflow — review it before deploying"));
+        else toast.warning(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       } else {
-        toast.error(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+        toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -849,7 +850,7 @@ export default function OrchestrationStudio() {
         lang: i18nLang,
       });
       if (!res.available) {
-        toast.error(res.message ?? t("studio.aiUnavailable", "Trợ lý AI chưa khả dụng"));
+        toast.error(res.message ?? t("studio.aiUnavailable", "AI advisor is not available yet"));
         return;
       }
       if (res.workflow) {
@@ -859,9 +860,9 @@ export default function OrchestrationStudio() {
           diff: res.diff ?? [],
           rationale: res.rationale || "",
         });
-        if (!res.valid) toast.warning(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+        if (!res.valid) toast.warning(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       } else {
-        toast.error(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+        toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -876,39 +877,37 @@ export default function OrchestrationStudio() {
     setSelectedId(null);
     setAiRationale(optimizePreview.rationale || null);
     setOptimizePreview(null);
-    toast.success(t("studio.aiOptimizeApplied", "Đã áp dụng bản tối ưu của AI"));
+    toast.success(t("studio.aiOptimizeApplied", "Applied the AI-optimized workflow"));
   };
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+      <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         {/* Header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Workflow className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">{t("studio.title", "Studio Quy trình")}</h1>
-            <p className="text-sm text-muted-foreground">{t("studio.subtitle", "Soạn quy trình đa máy bằng hình ảnh, mô phỏng trên bản sao số, rồi triển khai & chạy")}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void runSimulate()} disabled={simulating || def.steps.length === 0}>
-              <FlaskConical className="mr-1.5 h-4 w-4" /> {t("studio.simulate", "🔬 Mô phỏng")}
-            </Button>
-            <Button variant="outline" onClick={runDeploy} disabled={!canControl || !foeEnabled || deployM.isPending}>
-              <Save className="mr-1.5 h-4 w-4" /> {t("studio.deploy", "💾 Lưu (deploy)")}
-            </Button>
-            <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref}>
-              <Play className="mr-1.5 h-4 w-4" /> {t("studio.run", "▶️ Chạy")}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Workflow className="h-6 w-6" />}
+          title={t("studio.title", "Orchestration Studio")}
+          description={t("studio.subtitle", "Author multi-machine workflows visually, simulate them on the digital twin, then deploy & run")}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => void runSimulate()} disabled={simulating || def.steps.length === 0}>
+                <FlaskConical className="mr-1.5 h-4 w-4" /> {t("studio.simulate", "Simulate")}
+              </Button>
+              <Button variant="outline" onClick={runDeploy} disabled={!canControl || !foeEnabled || deployM.isPending}>
+                <Save className="mr-1.5 h-4 w-4" /> {t("studio.deploy", "Save (deploy)")}
+              </Button>
+              <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref}>
+                <Play className="mr-1.5 h-4 w-4" /> {t("studio.run", "Run")}
+              </Button>
+            </>
+          }
+        />
 
         {/* FOE disabled banner */}
         {!statusQ.isLoading && !foeEnabled && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>{t("studio.foeOff", "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng được, nhưng deploy/chạy bị tắt.")}</span>
+            <span>{t("studio.foeOff", "FOE is off (FOE_ENABLED) — you can still author & simulate, but deploy/run are disabled.")}</span>
           </div>
         )}
 
@@ -917,17 +916,17 @@ export default function OrchestrationStudio() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="h-4 w-4 text-violet-600" />
-              {t("studio.aiTitle", "Trợ lý AI điều phối")}
+              {t("studio.aiTitle", "AI orchestration advisor")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-col gap-2 md:flex-row md:items-end">
               <div className="flex-1 space-y-1.5">
-                <Label className="text-xs">{t("studio.aiGoal", "Mục tiêu / vấn đề (cho AI)")}</Label>
+                <Label className="text-xs">{t("studio.aiGoal", "Goal / problem (for the AI)")}</Label>
                 <Input
                   value={aiGoal}
                   onChange={(e) => setAiGoal(e.target.value)}
-                  placeholder={t("studio.aiGoalPlaceholder", "VD: AOI báo NG → robot gắp loại → băng tải chuyển; thêm cổng duyệt trước khi dừng line")}
+                  placeholder={t("studio.aiGoalPlaceholder", "e.g. AOI reports NG → robot rejects part → conveyor moves it; add an approval gate before stopping the line")}
                   disabled={!aiEnabled || aiBusy}
                 />
               </div>
@@ -937,31 +936,31 @@ export default function OrchestrationStudio() {
                   className="border-violet-500/40"
                   onClick={() => void aiSuggest()}
                   disabled={!aiEnabled || aiBusy}
-                  title={!aiEnabled ? t("studio.aiOff", "Bật AI_ORCHESTRATION_ADVISOR_ENABLED để dùng") : undefined}
+                  title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
                 >
-                  <Sparkles className="mr-1.5 h-4 w-4" /> {t("studio.aiSuggest", "🤖 AI gợi ý quy trình")}
+                  <Sparkles className="mr-1.5 h-4 w-4" /> {t("studio.aiSuggest", "AI suggest workflow")}
                 </Button>
                 <Button
                   variant="outline"
                   className="border-violet-500/40"
                   onClick={() => void aiOptimize()}
                   disabled={!aiEnabled || aiBusy || def.steps.length === 0}
-                  title={!aiEnabled ? t("studio.aiOff", "Bật AI_ORCHESTRATION_ADVISOR_ENABLED để dùng") : undefined}
+                  title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
                 >
-                  <Wand2 className="mr-1.5 h-4 w-4" /> {t("studio.aiOptimize", "🤖 AI tối ưu")}
+                  <Wand2 className="mr-1.5 h-4 w-4" /> {t("studio.aiOptimize", "AI optimize")}
                 </Button>
               </div>
             </div>
 
             {!aiStatusQ.isLoading && !aiEnabled && (
               <p className="text-xs text-muted-foreground">
-                {t("studio.aiDisabledHint", "Trợ lý AI đang TẮT (AI_ORCHESTRATION_ADVISOR_ENABLED). AI chỉ ĐỀ XUẤT — con người luôn xem lại & triển khai thủ công.")}
+                {t("studio.aiDisabledHint", "The AI advisor is OFF (AI_ORCHESTRATION_ADVISOR_ENABLED). AI only PROPOSES — a human always reviews & deploys manually.")}
               </p>
             )}
 
             {aiRationale && (
               <div className="rounded-md border border-violet-500/30 bg-card p-2 text-xs">
-                <span className="font-semibold text-violet-700">{t("studio.aiRationale", "Lý giải của AI")}: </span>
+                <span className="font-semibold text-violet-700">{t("studio.aiRationale", "AI rationale")}: </span>
                 {aiRationale}
               </div>
             )}
@@ -970,7 +969,7 @@ export default function OrchestrationStudio() {
             {optimizePreview && (
               <div className="space-y-2 rounded-md border border-violet-500/40 bg-card p-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-violet-700">
-                  <Wand2 className="h-4 w-4" /> {t("studio.aiOptimizePreview", "Bản tối ưu do AI đề xuất")}
+                  <Wand2 className="h-4 w-4" /> {t("studio.aiOptimizePreview", "AI-proposed optimization")}
                 </div>
                 {optimizePreview.rationale && (
                   <p className="text-xs text-muted-foreground">{optimizePreview.rationale}</p>
@@ -982,16 +981,16 @@ export default function OrchestrationStudio() {
                 )}
                 <div className="flex gap-2">
                   <Button size="sm" className="bg-violet-600 hover:bg-violet-700" onClick={acceptOptimized}>
-                    {t("studio.aiAccept", "Áp dụng vào trình soạn")}
+                    {t("studio.aiAccept", "Apply to editor")}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setOptimizePreview(null)}>
-                    {t("studio.aiDiscard", "Bỏ qua")}
+                    {t("studio.aiDiscard", "Discard")}
                   </Button>
                 </div>
               </div>
             )}
             <p className="text-[11px] text-muted-foreground">
-              {t("studio.aiHitlNote", "HITL: AI chỉ đề xuất quy trình + mô phỏng trên bản sao số. Việc lưu (deploy) & chạy luôn do con người thực hiện thủ công.")}
+              {t("studio.aiHitlNote", "HITL: AI only proposes a workflow + simulates it on the digital twin. Saving (deploy) & running are always done manually by a human.")}
             </p>
           </CardContent>
         </Card>
@@ -1000,15 +999,15 @@ export default function OrchestrationStudio() {
         <Card>
           <CardContent className="grid grid-cols-1 gap-3 py-4 md:grid-cols-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">{t("studio.ref", "Mã quy trình (ref) *")}</Label>
+              <Label className="text-xs">{t("studio.ref", "Workflow ref *")}</Label>
               <Input value={def.ref} onChange={(e) => setDef((d) => ({ ...d, ref: e.target.value }))} placeholder="line-a-startup" className="font-mono" />
             </div>
             <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-xs">{t("studio.name", "Tên *")}</Label>
-              <Input value={def.name} onChange={(e) => setDef((d) => ({ ...d, name: e.target.value }))} placeholder={t("studio.namePlaceholder", "Khởi động dây chuyền A")} />
+              <Label className="text-xs">{t("studio.name", "Name *")}</Label>
+              <Input value={def.name} onChange={(e) => setDef((d) => ({ ...d, name: e.target.value }))} placeholder={t("studio.namePlaceholder", "Line A startup")} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">{t("studio.version", "Phiên bản")}</Label>
+              <Label className="text-xs">{t("studio.version", "Version")}</Label>
               <Input type="number" value={def.version ?? 1} onChange={(e) => setDef((d) => ({ ...d, version: Number(e.target.value) }))} />
             </div>
           </CardContent>
@@ -1019,11 +1018,11 @@ export default function OrchestrationStudio() {
           {/* LEFT — step tree */}
           <Card className="lg:col-span-2">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t("studio.canvas", "Cây quy trình")}</CardTitle>
+              <CardTitle className="text-base">{t("studio.canvas", "Workflow tree")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5">
               {def.steps.length === 0 && (
-                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "Chưa có bước nào. Thêm bước đầu tiên bên dưới.")}</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
               )}
               {def.steps.map((s, i) => (
                 <StepBlock
@@ -1047,13 +1046,13 @@ export default function OrchestrationStudio() {
           {/* RIGHT — inspector */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t("studio.inspector", "Cấu hình bước")}</CardTitle>
+              <CardTitle className="text-base">{t("studio.inspector", "Step configuration")}</CardTitle>
             </CardHeader>
             <CardContent>
               {selectedStep ? (
                 <Inspector step={selectedStep} machines={machines} onPatch={handlePatch} t={t} />
               ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Chọn một bước trên cây để cấu hình.")}</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Select a step on the tree to configure it.")}</p>
               )}
             </CardContent>
           </Card>
@@ -1064,7 +1063,7 @@ export default function OrchestrationStudio() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Bản sao số — kết quả mô phỏng")}
+                <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Digital twin — simulation result")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1078,14 +1077,14 @@ export default function OrchestrationStudio() {
           {/* Saved workflows */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">{t("studio.workflows", "Quy trình đã lưu")}</CardTitle>
+              <CardTitle className="text-base">{t("studio.workflows", "Saved workflows")}</CardTitle>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void workflowsQ.refetch()}>
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             </CardHeader>
             <CardContent className="space-y-1.5">
               {(workflowsQ.data ?? []).length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflows", "Chưa có quy trình nào.")}</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflows", "No workflows yet.")}</p>
               )}
               {(workflowsQ.data ?? []).map((w: Record<string, unknown>) => (
                 <div key={String(w.id)} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
@@ -1095,14 +1094,14 @@ export default function OrchestrationStudio() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button size="sm" variant="outline" onClick={() => loadWorkflow(w as { definitionJson?: unknown })}>
-                      {t("studio.load", "Nạp")}
+                      {t("studio.load", "Load")}
                     </Button>
                     <Button
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7"
                       disabled={!canControl}
-                      title={t("studio.duplicate", "Nhân bản")}
+                      title={t("studio.duplicate", "Duplicate")}
                       onClick={() => { setDupWf({ id: Number(w.id), ref: String(w.ref), name: String(w.name ?? w.ref) }); setDupNewRef(`${String(w.ref)}-copy`); }}
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -1112,7 +1111,7 @@ export default function OrchestrationStudio() {
                       variant="ghost"
                       className="h-7 w-7 text-destructive"
                       disabled={!canControl}
-                      title={t("common.delete", "Xóa")}
+                      title={t("common.delete", "Delete")}
                       onClick={() => setDeleteWf({ id: Number(w.id), ref: String(w.ref) })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1126,14 +1125,14 @@ export default function OrchestrationStudio() {
           {/* Recent runs */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">{t("studio.runs", "Lần chạy gần đây")}</CardTitle>
+              <CardTitle className="text-base">{t("studio.runs", "Recent runs")}</CardTitle>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void runsQ.refetch()}>
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             </CardHeader>
             <CardContent className="space-y-1.5">
               {(runsQ.data ?? []).length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "Chưa có lần chạy nào.")}</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
               )}
               {(runsQ.data ?? []).map((r: Record<string, unknown>) => (
                 <RunRow
@@ -1151,28 +1150,28 @@ export default function OrchestrationStudio() {
 
         {/* future enhancement note */}
         <p className="text-center text-[11px] text-muted-foreground">
-          {t("studio.futureNote", "Phiên bản v1 dùng cây bước lồng nhau. Nâng cấp tương lai: chỉnh sửa dạng đồ thị (react-flow).")}
+          {t("studio.futureNote", "v1 uses a nested step tree. Future upgrade: graph-style editing (react-flow).")}
         </p>
-      </div>
+      </PageContainer>
 
       {/* Duplicate workflow dialog */}
       <Dialog open={dupWf != null} onOpenChange={(o) => { if (!o) { setDupWf(null); setDupNewRef(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("studio.duplicateTitle", "Nhân bản quy trình")}</DialogTitle>
-            <DialogDescription>{t("studio.duplicateDesc", "Tạo một bản sao với mã (ref) mới. Bản sao không kèm lượt chạy nào.")}</DialogDescription>
+            <DialogTitle>{t("studio.duplicateTitle", "Duplicate workflow")}</DialogTitle>
+            <DialogDescription>{t("studio.duplicateDesc", "Create a copy with a new ref. The copy carries no runs.")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.duplicateNewRef", "Mã quy trình mới (ref) *")}</Label>
+            <Label className="text-xs">{t("studio.duplicateNewRef", "New workflow ref *")}</Label>
             <Input value={dupNewRef} onChange={(e) => setDupNewRef(e.target.value)} className="font-mono" placeholder="line-a-startup-copy" />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setDupWf(null); setDupNewRef(""); }}>{t("common.cancel", "Huỷ")}</Button>
+            <Button variant="outline" onClick={() => { setDupWf(null); setDupNewRef(""); }}>{t("common.cancel", "Cancel")}</Button>
             <Button
               disabled={!dupNewRef.trim() || duplicateWfM.isPending}
               onClick={() => dupWf && duplicateWfM.mutate({ id: dupWf.id, newRef: dupNewRef.trim() })}
             >
-              {t("studio.duplicate", "Nhân bản")}
+              {t("studio.duplicate", "Duplicate")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1182,15 +1181,15 @@ export default function OrchestrationStudio() {
       <AlertDialog open={deleteWf != null} onOpenChange={(o) => !o && setDeleteWf(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("studio.deleteWfTitle", "Xoá quy trình?")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("studio.deleteWfTitle", "Delete workflow?")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("studio.deleteWfDesc", "Quy trình \"{{ref}}\" cùng lịch sử lượt chạy đã kết thúc sẽ bị xoá. Nếu còn lượt chạy đang hoạt động, thao tác sẽ bị từ chối.", { ref: deleteWf?.ref })}
+              {t("studio.deleteWfDesc", "Workflow \"{{ref}}\" and its finished run history will be deleted. If any run is still active, the operation is rejected.", { ref: deleteWf?.ref })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Huỷ")}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => deleteWf && deleteWfM.mutate({ id: deleteWf.id })}>
-              {t("common.delete", "Xóa")}
+              {t("common.delete", "Delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1240,20 +1239,20 @@ function RunRow({
         {awaiting && canControl && (
           <div className="flex gap-1">
             <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true)}>
-              {t("studio.approve", "Duyệt")}
+              {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => onResume(false)}>
-              {t("studio.reject", "Từ chối")}
+              {t("studio.reject", "Reject")}
             </Button>
             <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
-              {t("studio.abort", "Dừng")}
+              {t("studio.abort", "Abort")}
             </Button>
           </div>
         )}
       </div>
       {open && (
         <div className="border-t bg-muted/20 px-2 py-1.5">
-          {detailQ.isLoading && <p className="text-xs text-muted-foreground">{t("common.loading", "Đang tải...")}</p>}
+          {detailQ.isLoading && <p className="text-xs text-muted-foreground">{t("common.loading", "Loading…")}</p>}
           {(detailQ.data?.steps ?? []).map((s: { stepId: string; stepType: string; status: string }) => (
             <div key={s.stepId} className="flex items-center justify-between py-0.5 text-xs">
               <span className="font-mono text-[11px]">{s.stepId} <span className="text-muted-foreground">({s.stepType})</span></span>
@@ -1261,7 +1260,7 @@ function RunRow({
             </div>
           ))}
           {detailQ.data && (detailQ.data.steps ?? []).length === 0 && (
-            <p className="text-xs text-muted-foreground">{t("studio.noSteps", "Chưa có bước nào được ghi nhận.")}</p>
+            <p className="text-xs text-muted-foreground">{t("studio.noSteps", "No steps recorded yet.")}</p>
           )}
         </div>
       )}

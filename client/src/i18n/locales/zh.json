@@ -2505,7 +2505,7 @@
   },
   "guide": {
     "userGuide": "使用指南",
-    "userGuideDescription": "AVI/AOI管理系统完整使用文档",
+    "userGuideDescription": "Continuum 系统完整使用文档",
     "tableOfContents": "目录",
     "searchPlaceholder": "在指南中搜索...",
     "faqTitle": "常见问题",
@@ -2518,10 +2518,10 @@
     "alertRulesDesc": "设置和管理告警规则",
     "overview": {
       "title": "概述",
-      "description": "AVI/AOI管理系统总体介绍",
+      "description": "Continuum 系统总体介绍",
       "introduction": {
         "title": "系统介绍",
-        "content": "AVI/AOI管理系统是一套全面的解决方案，用于监控、分析和管理制造工厂中的自动检测设备。\n\n系统提供实时监控、检测数据分析、产能报告和产品质量管理功能。"
+        "content": "Continuum 系统是一套全面的解决方案，用于监控、分析和管理制造工厂中的自动检测设备。\n\n系统提供实时监控、检测数据分析、产能报告和产品质量管理功能。"
       },
       "architecture": {
         "title": "系统架构",
@@ -2655,7 +2655,7 @@
       },
       "maxPoints": {
         "question": "每块PCB的最大检测点数是多少？",
-        "answer": "最大检测点数取决于AOI设备配置和检测程序。AVI/AOI管理系统可以处理每块PCB数千个检测点。为了优化性能，建议限制在每板5000个检测点以下。"
+        "answer": "最大检测点数取决于AOI设备配置和检测程序。Continuum 系统可以处理每块PCB数千个检测点。为了优化性能，建议限制在每板5000个检测点以下。"
       }
     }
   },
@@ -4580,14 +4580,14 @@
   "aboutPage": {
     "layoutTitle": "系统介绍",
     "hero": {
-      "title": "AVI/AOI 管理系统",
+      "title": "Continuum",
       "description": "面向自动化检测产线的生产与质量管理平台，帮助企业实时监控运营、降低缺陷并优化绩效。",
       "version": "版本 1.0.0",
       "updated": "更新日期：13/05/2026"
     },
     "system": {
       "title": "系统简介",
-      "description": "AVI/AOI Management 平台在生产运营中的核心能力。",
+      "description": "Continuum 平台在生产运营中的核心能力。",
       "highlights": [
         "通过 MQTT 与可视化仪表板实现 AVI/AOI 设备实时监控。",
         "标准化检测数据，并按产品、工序与设备追溯缺陷。",
@@ -4616,7 +4616,7 @@
       "title": "系统开发团队",
       "description": "开发与维护团队信息。",
       "teamLabel": "开发团队",
-      "teamValue": "AVI/AOI Management Platform 工程团队",
+      "teamValue": "Continuum 平台工程团队",
       "roleLabel": "主要职责",
       "roleValue": "系统架构设计、业务功能开发、性能优化，以及生产环境下的持续运行保障。",
       "contactLabel": "内部联系人",

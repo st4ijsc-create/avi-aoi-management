@@ -2,12 +2,24 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PageContainer, PageHeader, EmptyState } from '@/components/patterns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -69,6 +81,10 @@ export function ScheduledReportsContent() {
   const { t } = useTranslation();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [sendTarget, setSendTarget] = useState<
+    { schedule: 'DAILY' | 'WEEKLY' | 'MONTHLY'; recipients: string[] } | null
+  >(null);
   const [previewHtml, setPreviewHtml] = useState('');
   const [newReport, setNewReport] = useState({
     name: '',
@@ -165,9 +181,14 @@ export function ScheduledReportsContent() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm(t('scheduledReports.deleteConfirm'))) {
-      deleteMutation.mutate({ id });
+    setDeleteTarget(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteTarget != null) {
+      deleteMutation.mutate({ id: deleteTarget });
     }
+    setDeleteTarget(null);
   };
 
   const handleToggle = (id: number, isActive: boolean) => {
@@ -187,11 +208,15 @@ export function ScheduledReportsContent() {
   };
 
   const handleSendNow = (schedule: 'DAILY' | 'WEEKLY' | 'MONTHLY', recipients: string[]) => {
-    const freqLabel = getFrequencyLabel(schedule);
-    if (confirm(t('scheduledReports.sendConfirm', { frequency: freqLabel, count: recipients.length }))) {
-      const frequency = schedule.toLowerCase() as 'daily' | 'weekly' | 'monthly';
-      sendMutation.mutate({ name: `Manual ${frequency} report`, frequency, recipients });
+    setSendTarget({ schedule, recipients });
+  };
+
+  const confirmSendNow = () => {
+    if (sendTarget) {
+      const frequency = sendTarget.schedule.toLowerCase() as 'daily' | 'weekly' | 'monthly';
+      sendMutation.mutate({ name: `Manual ${frequency} report`, frequency, recipients: sendTarget.recipients });
     }
+    setSendTarget(null);
   };
 
   const getFrequencyLabel = (schedule: string) => {
@@ -205,30 +230,28 @@ export function ScheduledReportsContent() {
 
   const getFrequencyColor = (schedule: string) => {
     switch (schedule) {
-      case 'DAILY': return 'bg-blue-500/10 text-blue-700 border-blue-200';
-      case 'WEEKLY': return 'bg-green-500/10 text-green-700 border-green-200';
-      case 'MONTHLY': return 'bg-purple-500/10 text-purple-700 border-purple-200';
+      case 'DAILY': return 'bg-info/10 text-info border-info/30';
+      case 'WEEKLY': return 'bg-success/10 text-success border-success/30';
+      case 'MONTHLY': return 'bg-primary/10 text-primary border-primary/30';
       default: return '';
     }
   };
 
   return (
     <>
-      <div className="container py-6 space-y-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{t('scheduledReports.title')}</h1>
-            <p className="text-muted-foreground">
-              {t('scheduledReports.subtitle')}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <PageHeader
+          icon={<FileBarChart className="h-6 w-6" />}
+          title={t('scheduledReports.title')}
+          description={t('scheduledReports.subtitle')}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
@@ -304,15 +327,16 @@ export function ScheduledReportsContent() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => handlePreview('daily')}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-500" />
+                <Calendar className="h-4 w-4 text-info" />
                 {t('scheduledReports.dailyReport')}
               </CardTitle>
             </CardHeader>
@@ -330,7 +354,7 @@ export function ScheduledReportsContent() {
           <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => handlePreview('weekly')}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-green-500" />
+                <Calendar className="h-4 w-4 text-success" />
                 {t('scheduledReports.weeklyReport')}
               </CardTitle>
             </CardHeader>
@@ -348,7 +372,7 @@ export function ScheduledReportsContent() {
           <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => handlePreview('monthly')}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-purple-500" />
+                <Calendar className="h-4 w-4 text-primary" />
                 {t('scheduledReports.monthlyReport')}
               </CardTitle>
             </CardHeader>
@@ -377,18 +401,24 @@ export function ScheduledReportsContent() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {t('common.loading')}
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="h-5 w-1/3" />
+                    <Skeleton className="h-5 w-24" />
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="ml-auto h-8 w-24" />
+                  </div>
+                ))}
               </div>
             ) : !reports || reports.length === 0 ? (
-              <div className="text-center py-8">
-                <FileBarChart className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-muted-foreground">{t('scheduledReports.noReports')}</p>
-                <Button variant="outline" className="mt-4" onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('scheduledReports.createFirst')}
-                </Button>
-              </div>
+              <EmptyState
+                variant="no-data"
+                icon={FileBarChart}
+                title={t('scheduledReports.noReports')}
+                actionLabel={t('scheduledReports.createFirst')}
+                onAction={() => setIsCreateDialogOpen(true)}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -433,7 +463,7 @@ export function ScheduledReportsContent() {
                       </TableCell>
                       <TableCell>
                         {report.isActive ? (
-                          <Badge className="bg-green-500/10 text-green-700 border-green-200">
+                          <Badge variant="outline" className="bg-success/10 text-success border-success/30">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             {t('scheduledReports.active')}
                           </Badge>
@@ -523,20 +553,20 @@ export function ScheduledReportsContent() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="p-3 bg-blue-500/10 rounded-lg">
-                <h4 className="font-medium text-blue-700 mb-1">{t('scheduledReports.dailyReport')}</h4>
+              <div className="p-3 bg-info/10 rounded-lg">
+                <h4 className="font-medium text-info mb-1">{t('scheduledReports.dailyReport')}</h4>
                 <p className="text-muted-foreground text-xs">
                   {t('scheduledReports.dailyGuideDesc')}
                 </p>
               </div>
-              <div className="p-3 bg-green-500/10 rounded-lg">
-                <h4 className="font-medium text-green-700 mb-1">{t('scheduledReports.weeklyReport')}</h4>
+              <div className="p-3 bg-success/10 rounded-lg">
+                <h4 className="font-medium text-success mb-1">{t('scheduledReports.weeklyReport')}</h4>
                 <p className="text-muted-foreground text-xs">
                   {t('scheduledReports.weeklyGuideDesc')}
                 </p>
               </div>
-              <div className="p-3 bg-purple-500/10 rounded-lg">
-                <h4 className="font-medium text-purple-700 mb-1">{t('scheduledReports.monthlyReport')}</h4>
+              <div className="p-3 bg-primary/10 rounded-lg">
+                <h4 className="font-medium text-primary mb-1">{t('scheduledReports.monthlyReport')}</h4>
                 <p className="text-muted-foreground text-xs">
                   {t('scheduledReports.monthlyGuideDesc')}
                 </p>
@@ -544,7 +574,47 @@ export function ScheduledReportsContent() {
             </div>
           </CardContent>
         </Card>
-      </div>
+
+        {/* Delete confirmation */}
+        <AlertDialog open={deleteTarget != null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('scheduledReports.deleteTitle', 'Delete scheduled report?')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('scheduledReports.deleteConfirm')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Send-now confirmation */}
+        <AlertDialog open={sendTarget != null} onOpenChange={(open) => { if (!open) setSendTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('scheduledReports.sendNow')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {sendTarget
+                  ? t('scheduledReports.sendConfirm', {
+                      frequency: getFrequencyLabel(sendTarget.schedule),
+                      count: sendTarget.recipients.length,
+                    })
+                  : ''}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmSendNow}>{t('scheduledReports.sendNow')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </>
   );
 }

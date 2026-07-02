@@ -22,7 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { StatusBadge, type BadgeVariant } from "@/components/patterns";
+import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -158,11 +158,11 @@ export default function ThresholdApprovalsPage() {
   return (
     <DashboardLayout title={t("thresholdApprovals.title")} navItems={navItems} currentPath="/threshold-approvals">
       <div className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{t("thresholdApprovals.title")}</h1>
-          <Badge variant="outline">{t("thresholdApprovals.queueBadge")}</Badge>
-        </div>
+        <PageHeader
+          icon={<SlidersHorizontal className="h-6 w-6 text-primary" />}
+          title={t("thresholdApprovals.title")}
+          actions={<Badge variant="outline">{t("thresholdApprovals.queueBadge")}</Badge>}
+        />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
           <TabsList>

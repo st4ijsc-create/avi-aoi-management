@@ -20,9 +20,9 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { PageHeader, PageContainer, ToolTile } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,35 +43,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// ─── A quick-access tool tile (icon + label + short description) ───────────────
+// ─── A quick-access tool tile definition (mapped onto the shared <ToolTile>) ───
 
-interface ToolTileProps {
+interface ToolTileDef {
   icon: LucideIcon;
   label: string;
   description: string;
-  accent: string;
-  onClick: () => void;
-}
-
-function ToolTile({ icon: Icon, label, description, accent, onClick }: ToolTileProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex min-h-[88px] flex-col items-start gap-1.5 rounded-xl border p-4 text-left",
-        "transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-        "bg-card hover:bg-muted/60 shadow-sm",
-        accent,
-      )}
-    >
-      <Icon className="h-6 w-6 shrink-0" strokeWidth={2.1} />
-      <span className="text-base font-semibold leading-tight tracking-tight text-foreground">
-        {label}
-      </span>
-      <span className="text-xs leading-snug text-muted-foreground">{description}</span>
-    </button>
-  );
+  to: string;
 }
 
 // ─── A recent-NG row (deep-links to the inspection detail) ─────────────────────
@@ -89,9 +67,9 @@ function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () 
   const when = row?.inspectedAt ? new Date(row.inspectedAt) : null;
   const whenStr = when && !isNaN(when.getTime()) ? when.toLocaleString() : "";
   return (
-    <div className="flex w-full items-center gap-2.5 rounded-lg border border-l-4 border-l-red-500 bg-card/60 px-3 py-2 transition-colors hover:bg-muted/50">
+    <div className="flex w-full items-center gap-2.5 rounded-lg border border-l-4 border-l-destructive bg-card/60 px-3 py-2 transition-colors hover:bg-muted/50">
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-        <AlertTriangle className="size-4 shrink-0 text-red-600 dark:text-red-400" />
+        <AlertTriangle className="size-4 shrink-0 text-destructive" />
         <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
           <Cpu className="size-3" />
           {row?.machineCode ?? "—"}
@@ -112,7 +90,7 @@ function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () 
           onClick={onAck}
           title="Đã xem / Acknowledge"
         >
-          <CheckCheck className="size-4 text-emerald-600" />
+          <CheckCheck className="size-4 text-success" />
         </Button>
       )}
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -143,81 +121,67 @@ export default function QualityHome() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
-  const tools: ToolTileProps[] = [
+  const tools: ToolTileDef[] = [
     {
       icon: ShieldCheck,
       label: t("quality.tools.qualityGates"),
       description: t("quality.tools.qualityGatesDesc"),
-      accent: "border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
-      onClick: () => navigate("/quality-gates"),
+      to: "/quality-gates",
     },
     {
       icon: Brain,
       label: t("quality.tools.spc"),
       description: t("quality.tools.spcDesc"),
-      accent: "border-violet-500/30 text-violet-600 dark:text-violet-400",
-      onClick: () => navigate("/spc-analysis"),
+      to: "/spc-analysis",
     },
     {
       icon: BarChart3,
       label: t("quality.tools.pareto"),
       description: t("quality.tools.paretoDesc"),
-      accent: "border-sky-500/30 text-sky-600 dark:text-sky-400",
-      onClick: () => navigate("/pareto-analysis"),
+      to: "/pareto-analysis",
     },
     {
       icon: Map,
       label: t("quality.tools.defectHeatmap"),
       description: t("quality.tools.defectHeatmapDesc"),
-      accent: "border-amber-500/30 text-amber-600 dark:text-amber-400",
-      onClick: () => navigate("/defect-heatmap"),
+      to: "/defect-heatmap",
     },
     {
       icon: Camera,
       label: t("quality.tools.aoiPackages"),
       description: t("quality.tools.aoiPackagesDesc"),
-      accent: "border-cyan-500/30 text-cyan-600 dark:text-cyan-400",
-      onClick: () => navigate("/aoi-packages"),
+      to: "/aoi-packages",
     },
     {
       icon: HistoryIcon,
       label: t("quality.tools.historyReview"),
       description: t("quality.tools.historyReviewDesc"),
-      accent: "border-slate-500/30 text-slate-600 dark:text-slate-400",
-      onClick: () => navigate("/history"),
+      to: "/history",
     },
     {
       icon: Brush,
       label: t("quality.tools.annotation"),
       description: t("quality.tools.annotationDesc"),
-      accent: "border-rose-500/30 text-rose-600 dark:text-rose-400",
-      onClick: () => navigate("/mask-annotation"),
+      to: "/mask-annotation",
     },
     // Doc 10 U10 — surface the review/approval queue (auto-accept/reject thresholds) for QC.
     {
       icon: ClipboardCheck,
       label: t("quality.tools.approvals", "Duyệt ngưỡng"),
       description: t("quality.tools.approvalsDesc", "Hàng đợi phê duyệt ngưỡng NG"),
-      accent: "border-teal-500/30 text-teal-600 dark:text-teal-400",
-      onClick: () => navigate("/threshold-approvals"),
+      to: "/threshold-approvals",
     },
   ];
 
   return (
     <DashboardLayout>
-      <div className="mx-auto w-full max-w-5xl space-y-6 p-2 sm:p-4">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <ClipboardCheck className="h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {t("quality.title")}
-            </h1>
-            <p className="text-sm text-muted-foreground">{t("quality.subtitle")}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<ClipboardCheck className="h-6 w-6" />}
+          title={t("quality.title")}
+          description={t("quality.subtitle")}
+        />
 
         {/* Role-aware "Today" summary (quality variant, zero-click) */}
         <TodayBriefing />
@@ -229,7 +193,13 @@ export default function QualityHome() {
           </h2>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
             {tools.map((tool) => (
-              <ToolTile key={tool.label} {...tool} />
+              <ToolTile
+                key={tool.label}
+                icon={tool.icon}
+                label={tool.label}
+                blurb={tool.description}
+                href={tool.to}
+              />
             ))}
           </div>
         </section>
@@ -273,7 +243,7 @@ export default function QualityHome() {
             </div>
           )}
         </section>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

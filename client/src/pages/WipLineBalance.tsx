@@ -31,15 +31,19 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 
+// WIP status → themed colour. Semantically-loaded statuses map onto the shared
+// status tokens (blocked→destructive, starved/on_hold→warning, completed→success);
+// the rest fall back to the categorical chart palette so charts follow the theme.
 const STATUS_COLORS: Record<string, string> = {
-  queued: "#94a3b8",
-  in_process: "#3b82f6",
-  completed: "#22c55e",
-  blocked: "#ef4444",
-  starved: "#f59e0b",
-  scrapped: "#7c3aed",
-  on_hold: "#eab308",
+  queued: "var(--muted-foreground)",
+  in_process: "var(--info)",
+  completed: "var(--success)",
+  blocked: "var(--destructive)",
+  starved: "var(--warning)",
+  scrapped: "var(--chart-5)",
+  on_hold: "var(--warning)",
 };
 
 function reasonLabel(t: (k: string, d: string) => string, code: string): string {
@@ -199,11 +203,11 @@ export default function WipLineBalance() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? "#64748b"} />
+                      {pieData.map((entry, i) => (
+                        <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? chartColor(i)} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -222,14 +226,14 @@ export default function WipLineBalance() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dwellData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="station" fontSize={11} />
-                    <YAxis fontSize={11} />
-                    <Tooltip />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="station" tick={chartAxisTick} />
+                    <YAxis tick={chartAxisTick} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
                     <Legend />
-                    <Bar dataKey="dwell" name={t("wipDashboard.dwell", "Dwell")} fill="#3b82f6" />
-                    <Bar dataKey="starved" name={t("wipDashboard.starved", "Starved")} fill="#f59e0b" />
-                    <Bar dataKey="blocked" name={t("wipDashboard.blocked", "Blocked")} fill="#ef4444" />
+                    <Bar dataKey="dwell" name={t("wipDashboard.dwell", "Dwell")} fill="var(--info)" />
+                    <Bar dataKey="starved" name={t("wipDashboard.starved", "Starved")} fill="var(--warning)" />
+                    <Bar dataKey="blocked" name={t("wipDashboard.blocked", "Blocked")} fill="var(--destructive)" />
                   </BarChart>
                 </ResponsiveContainer>
               )}

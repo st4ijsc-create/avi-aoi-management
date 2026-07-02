@@ -412,9 +412,10 @@ export const navGroups: NavGroup[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 4. DEVICES & OT — realtime status/health · device adapters / edge / MQTT ·
-  //    Engineering & Control (programming / interlock / recipe) · Maintenance.
-  //    Landing for maintenance.
+  // 4. DEVICES & MONITORING — realtime status/health · device adapters / edge /
+  //    MQTT telemetry · onboarding · Maintenance. Landing for maintenance.
+  //    (F2 doc 23 §5 E2: the engineering/control + automation surface split out
+  //    into its own `engineering` module below to relieve this over-loaded group.)
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "devices",
@@ -429,7 +430,6 @@ export const navGroups: NavGroup[] = [
       { key: "monitoring", label: "nav.section.monitoring" },
       { key: "telemetry", label: "nav.section.telemetry" },
       { key: "onboarding", label: "nav.section.onboarding" },
-      { key: "engineering", label: "nav.section.engineering" },
       { key: "maintenance", label: "nav.section.maintenance" },
     ],
     items: [
@@ -602,6 +602,77 @@ export const navGroups: NavGroup[] = [
         engineerOriented: true,
         beta: true,
       },
+      // — Maintenance / predictive —
+      {
+        href: "/technician-copilot",
+        label: "nav.technicianCopilot",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.technicianCopilotDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "maintenance",
+      },
+      {
+        href: "/work-orders",
+        label: "nav.workOrders",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "nav.workOrdersDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "maintenance",
+      },
+      {
+        href: "/alerts",
+        label: "nav.alertsList",
+        icon: <Bell className="h-4 w-4" />,
+        description: "nav.alertsListDesc",
+        requiredPermission: "mqtt_alerts",
+        permissionCategory: "mqtt",
+        section: "maintenance",
+      },
+      {
+        href: "/mqtt-alerts",
+        label: "nav.alertRules",
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "nav.alertRulesDesc",
+        requiredPermission: "mqtt_alerts",
+        permissionCategory: "mqtt",
+        section: "maintenance",
+      },
+      {
+        href: "/monitoring-setting",
+        label: "nav.monitoringSetting",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.monitoringSettingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "maintenance",
+      },
+    ],
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 4b. ENGINEERING & CONTROL (ADVANCED) — the programming / interlock / recipe
+  //     surface + the Automation-Orchestration cockpits (fleet · safety · standards
+  //     · integration · twin/RF · IR editor · floor editor) split out of Devices
+  //     (F2 doc 23 §5 E2). Advanced-tier; every item keeps its ORIGINAL href /
+  //     icon / permission / tier / hint / beta verbatim — regrouped only. Gating is
+  //     inherited from the items (machine_control / machine_monitoring / interlock),
+  //     so this group respects the same role/permission filtering as its pages.
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: "engineering",
+    label: "nav.engineeringGroup",
+    icon: <Code2 className="h-4 w-4" />,
+    description: "nav.engineeringGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "machine_monitoring",
+    // doc 22 P4 — engineering-heavy module: hidden in Simple mode.
+    tier: "advanced",
+    sections: [
+      { key: "engineering", label: "nav.section.engineering" },
+    ],
+    items: [
       // — Engineering & Control —
       {
         href: "/engineering",
@@ -754,52 +825,6 @@ export const navGroups: NavGroup[] = [
         hint: "nav.hint.cellTwin",
         engineerOriented: true,
         beta: true,
-      },
-      // — Maintenance / predictive —
-      {
-        href: "/technician-copilot",
-        label: "nav.technicianCopilot",
-        icon: <Wrench className="h-4 w-4" />,
-        description: "nav.technicianCopilotDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "maintenance",
-      },
-      {
-        href: "/work-orders",
-        label: "nav.workOrders",
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "nav.workOrdersDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-        section: "maintenance",
-      },
-      {
-        href: "/alerts",
-        label: "nav.alertsList",
-        icon: <Bell className="h-4 w-4" />,
-        description: "nav.alertsListDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-        section: "maintenance",
-      },
-      {
-        href: "/mqtt-alerts",
-        label: "nav.alertRules",
-        icon: <AlertTriangle className="h-4 w-4" />,
-        description: "nav.alertRulesDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-        section: "maintenance",
-      },
-      {
-        href: "/monitoring-setting",
-        label: "nav.monitoringSetting",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.monitoringSettingDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "maintenance",
       },
     ],
   },
@@ -1518,6 +1543,29 @@ export function filterNavGroupsByMode(groups: NavGroup[], mode: NavMode): NavGro
 // Helper to get group by item href
 export function getGroupByHref(href: string): NavGroup | undefined {
   return navGroups.find(group => group.items.some(item => item.href === href));
+}
+
+/**
+ * F2 (doc 23 §5 E3) — route-prefix active matcher.
+ *
+ * Highlights a nav item as active when the CURRENT location matches the item's
+ * href by PATH PREFIX (query strings stripped on both sides), so child/query
+ * routes light up their parent:
+ *   - `/audit-logs?tab=enhanced` → matches item `/audit-logs?tab=enhanced` AND
+ *     the bare `/audit-logs` family (query ignored).
+ *   - `/machine/42`              → matches item `/machine`.
+ *
+ * Guarded against false positives: a prefix match must break on a path boundary
+ * (the next char in the location is `/`), so `/reports` does NOT match
+ * `/report-builder`. The root href `/` only matches the exact root path.
+ */
+export function isNavItemActive(itemHref: string, currentPath: string): boolean {
+  const item = (itemHref || "").split("?")[0];
+  const current = (currentPath || "").split("?")[0];
+  if (item === current) return true;
+  // Root ("/") must be exact — never a prefix of every route.
+  if (item === "/") return false;
+  return current.startsWith(item + "/");
 }
 
 /** Look up a nav item by its href (ignoring any query string). */

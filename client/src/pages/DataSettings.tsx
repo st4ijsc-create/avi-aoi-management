@@ -1,10 +1,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -729,16 +731,12 @@ export default function DataSettings() {
 
   return (
     <DashboardLayout title={t("dataSettings.title")} navItems={navItems} currentPath="/datasettings">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Database className="h-6 w-6 text-primary" />
-              {t("dataSettings.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("dataSettings.description")}</p>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Database className="h-6 w-6" />}
+          title={t("dataSettings.title")}
+          description={t("dataSettings.description")}
+        />
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -2056,41 +2054,44 @@ export default function DataSettings() {
               </CardHeader>
               <CardContent>
                 <div className="rounded-md border">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="p-3 text-left font-medium">{t("settings.tableCode")}</th>
-                        <th className="p-3 text-left font-medium">{t("settings.tableShiftName")}</th>
-                        <th className="p-3 text-left font-medium">{t("settings.tableFactory")}</th>
-                        <th className="p-3 text-left font-medium">{t("settings.tableTime")}</th>
-                        <th className="p-3 text-left font-medium">{t("settings.tableStatus")}</th>
-                        <th className="p-3 text-right font-medium">{t("settings.tableActions")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>{t("settings.tableCode")}</TableHead>
+                        <TableHead>{t("settings.tableShiftName")}</TableHead>
+                        <TableHead>{t("settings.tableFactory")}</TableHead>
+                        <TableHead>{t("settings.tableTime")}</TableHead>
+                        <TableHead>{t("settings.tableStatus")}</TableHead>
+                        <TableHead className="text-right">{t("settings.tableActions")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {shifts?.map((shift) => (
-                        <tr key={shift.id} className="border-b hover:bg-muted/30">
-                          <td className="p-3 font-mono text-sm">{shift.code}</td>
-                          <td className="p-3 font-medium">{shift.name}</td>
-                          <td className="p-3">
-                            {shift.factoryId 
+                        <TableRow key={shift.id}>
+                          <TableCell className="font-mono text-sm">{shift.code}</TableCell>
+                          <TableCell className="font-medium">{shift.name}</TableCell>
+                          <TableCell>
+                            {shift.factoryId
                               ? factories?.find(f => f.id === shift.factoryId)?.name || t('common.na')
                               : <span className="text-muted-foreground">{t("settings.entireSystem")}</span>
                             }
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell>
                             <span className="font-mono">
                               {String(shift.startHour).padStart(2, '0')}:{String(shift.startMinute).padStart(2, '0')}
                               {' - '}
                               {String(shift.endHour).padStart(2, '0')}:{String(shift.endMinute).padStart(2, '0')}
                             </span>
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-2 py-1 rounded-full text-xs ${shift.isActive ? 'bg-green-500/20 text-green-500' : 'bg-gray-500/20 text-gray-500'}`}>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={shift.isActive ? 'border-success/30 bg-success/15 text-success' : 'text-muted-foreground'}
+                            >
                               {shift.isActive ? t('settings.shiftActive') : t('settings.shiftPaused')}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -2105,7 +2106,7 @@ export default function DataSettings() {
                                   <Pencil className="h-4 w-4 mr-2" />
                                   {t("settings.edit")}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   className="text-destructive"
                                   onClick={() => {
                                     setShiftToDelete(shift);
@@ -2117,16 +2118,16 @@ export default function DataSettings() {
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
                       {(!shifts || shifts.length === 0) && (
-                        <tr>
-                          <td colSpan={6} className="p-8 text-center text-muted-foreground">{t("settings.noShifts")}</td>
-                        </tr>
+                        <TableRow>
+                          <TableCell colSpan={6} className="p-8 text-center text-muted-foreground">{t("settings.noShifts")}</TableCell>
+                        </TableRow>
                       )}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>
@@ -2414,7 +2415,7 @@ export default function DataSettings() {
           </div>
         </Tabs>
         </ErrorBoundary>
-      </div>
+      </PageContainer>
 
       {/* Edit Stage Dialog */}
       <Dialog open={editStageDialogOpen} onOpenChange={setEditStageDialogOpen}>

@@ -179,7 +179,7 @@ export default function AIActiveLearningPage() {
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-purple-500" />
+                  <BarChart3 className="h-4 w-4 text-primary" />
                   <span className="text-sm text-muted-foreground">{t("al.accuracy", "Độ chính xác")}</span>
                 </div>
                 <p className="text-2xl font-bold mt-1">

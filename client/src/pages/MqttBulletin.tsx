@@ -10,7 +10,18 @@
 
 import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard, StatusBadge } from "@/components/patterns";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -112,6 +123,10 @@ export default function MqttBulletin() {
   const [ngFormQos, setNgFormQos] = useState(1);
   const [ngFormRetain, setNgFormRetain] = useState(false);
   const [ngFormCooldownSeconds, setNgFormCooldownSeconds] = useState(0);
+
+  // Delete-confirmation state (replaces window.confirm)
+  const [deleteSettingStationId, setDeleteSettingStationId] = useState<number | null>(null);
+  const [deleteNgAlertStationId, setDeleteNgAlertStationId] = useState<number | null>(null);
 
   // Dialog mode: "add" for multi-station, "edit" for single station
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -434,7 +449,7 @@ export default function MqttBulletin() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 sm:space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Newspaper className="h-6 w-6" />}
@@ -457,9 +472,11 @@ export default function MqttBulletin() {
               <FlaskConical className="h-4 w-4" />
               {t('mqtt.bulletinPage.sendTestBulletin')}
             </Button>
-            <Badge variant={schedulerStatus?.isRunning ? "default" : "secondary"}>
-              {schedulerStatus?.isRunning ? t('mqtt.bulletinPage.running') : t('mqtt.bulletinPage.off')}
-            </Badge>
+            <StatusBadge
+              status={schedulerStatus?.isRunning ? "running" : "off"}
+              tone={schedulerStatus?.isRunning ? "success" : "default"}
+              label={schedulerStatus?.isRunning ? t('mqtt.bulletinPage.running') : t('mqtt.bulletinPage.off')}
+            />
             <Badge variant="outline">
               {schedulerStatus?.activeIntervals ?? 0} {t('mqtt.bulletinPage.stationSending')}
             </Badge>
@@ -492,60 +509,53 @@ export default function MqttBulletin() {
           <TabsContent value="dashboard" className="space-y-4">
             {/* Stats Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('mqtt.bulletinPage.bulletinCount7d')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{dashboardStats?.summary.totalBulletins ?? 0}</div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+              <MetricCard
+                icon={<Newspaper className="h-4 w-4" />}
+                label={t('mqtt.bulletinPage.bulletinCount7d')}
+                value={dashboardStats?.summary.totalBulletins ?? 0}
+                delta={
+                  <span className="flex items-center gap-1">
                     <Send className="h-3 w-3" />
                     {dashboardStats?.summary.deliveredCount ?? 0} {t('mqtt.bulletinPage.successful')}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('mqtt.bulletinPage.totalInspections')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-info">
-                    {(dashboardStats?.summary.totalInspections ?? 0).toLocaleString()}
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-success mt-1">
+                  </span>
+                }
+              />
+              <MetricCard
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label={t('mqtt.bulletinPage.totalInspections')}
+                value={(dashboardStats?.summary.totalInspections ?? 0).toLocaleString()}
+                tone="info"
+                delta={
+                  <span className="flex items-center gap-1 text-success">
                     <CheckCircle2 className="h-3 w-3" />
                     {(dashboardStats?.summary.totalOK ?? 0).toLocaleString()} OK
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>{t('mqtt.bulletinPage.totalNG')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-destructive">
-                    {(dashboardStats?.summary.totalNG ?? 0).toLocaleString()}
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-warning mt-1">
+                  </span>
+                }
+              />
+              <MetricCard
+                icon={<XCircle className="h-4 w-4" />}
+                label={t('mqtt.bulletinPage.totalNG')}
+                value={(dashboardStats?.summary.totalNG ?? 0).toLocaleString()}
+                tone="danger"
+                delta={
+                  <span className="flex items-center gap-1 text-warning">
                     <AlertTriangle className="h-3 w-3" />
                     {(dashboardStats?.summary.totalNTF ?? 0).toLocaleString()} NTF
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>Yield Rate TB</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-success">
-                    {dashboardStats?.summary.avgYieldRate ?? 0}%
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                  </span>
+                }
+              />
+              <MetricCard
+                icon={<TrendingUp className="h-4 w-4" />}
+                label={t('mqtt.bulletinPage.avgYieldRate', 'Yield Rate TB')}
+                value={`${dashboardStats?.summary.avgYieldRate ?? 0}%`}
+                tone="success"
+                delta={
+                  <span className="flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" />
-                    {dashboardStats?.summary.activeStations ?? 0} station
-                  </div>
-                </CardContent>
-              </Card>
+                    {dashboardStats?.summary.activeStations ?? 0} {t('mqtt.bulletinPage.stationLabel', 'station')}
+                  </span>
+                }
+              />
             </div>
 
             {/* Station breakdown */}
@@ -617,7 +627,11 @@ export default function MqttBulletin() {
             <Card>
               <CardContent className="pt-6">
                 {loadingSettings ? (
-                  <p className="text-center py-8 text-muted-foreground">{t('common.loading')}</p>
+                  <div className="space-y-2 py-2">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
                 ) : !settings?.length ? (
                   <div className="text-center py-8">
                     <Newspaper className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
@@ -692,11 +706,7 @@ export default function MqttBulletin() {
                                 size="icon"
                                 title={t('common.delete')}
                                 className="text-destructive hover:text-destructive/80"
-                                onClick={() => {
-                                  if (confirm(t('mqtt.bulletinPage.confirmDeleteConfig'))) {
-                                    deleteMutation.mutate({ stationId: s.stationId });
-                                  }
-                                }}
+                                onClick={() => setDeleteSettingStationId(s.stationId)}
                               >
                                 <XCircle className="h-4 w-4" />
                               </Button>
@@ -744,7 +754,11 @@ export default function MqttBulletin() {
             <Card>
               <CardContent className="pt-6">
                 {loadingHistory ? (
-                  <p className="text-center py-8 text-muted-foreground">{t('common.loading')}</p>
+                  <div className="space-y-2 py-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
                 ) : !historyData?.items?.length ? (
                   <p className="text-center py-8 text-muted-foreground">
                     {t('mqtt.bulletinPage.noHistory')}
@@ -867,7 +881,11 @@ export default function MqttBulletin() {
             <Card>
               <CardContent className="pt-6">
                 {loadingNgAlert ? (
-                  <p className="text-center py-8 text-muted-foreground">{t('common.loading')}</p>
+                  <div className="space-y-2 py-2">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
                 ) : !ngAlertSettings?.length ? (
                   <div className="text-center py-8">
                     <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
@@ -942,11 +960,7 @@ export default function MqttBulletin() {
                                 size="icon"
                                 title={t('common.delete')}
                                 className="text-destructive hover:text-destructive/80"
-                                onClick={() => {
-                                  if (confirm(t('mqtt.ngAlert.confirmDelete', 'Xóa cấu hình NG Alert cho station này?'))) {
-                                    ngAlertDeleteMutation.mutate({ stationId: s.stationId });
-                                  }
-                                }}
+                                onClick={() => setDeleteNgAlertStationId(s.stationId)}
                               >
                                 <XCircle className="h-4 w-4" />
                               </Button>
@@ -1596,7 +1610,65 @@ export default function MqttBulletin() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
+
+        {/* Delete Bulletin Setting Confirmation */}
+        <AlertDialog
+          open={deleteSettingStationId !== null}
+          onOpenChange={(open) => !open && setDeleteSettingStationId(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('common.confirmDelete', 'Xác nhận xóa')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('mqtt.bulletinPage.confirmDeleteConfig')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteSettingStationId !== null) {
+                    deleteMutation.mutate({ stationId: deleteSettingStationId });
+                    setDeleteSettingStationId(null);
+                  }
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete NG Alert Setting Confirmation */}
+        <AlertDialog
+          open={deleteNgAlertStationId !== null}
+          onOpenChange={(open) => !open && setDeleteNgAlertStationId(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('common.confirmDelete', 'Xác nhận xóa')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('mqtt.ngAlert.confirmDelete', 'Xóa cấu hình NG Alert cho station này?')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteNgAlertStationId !== null) {
+                    ngAlertDeleteMutation.mutate({ stationId: deleteNgAlertStationId });
+                    setDeleteNgAlertStationId(null);
+                  }
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageContainer>
     </DashboardLayout>
   );
 }

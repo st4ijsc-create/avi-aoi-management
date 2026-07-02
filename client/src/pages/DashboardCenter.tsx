@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader } from "@/components/patterns";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -76,15 +77,11 @@ export default function DashboardCenter() {
   return (
     <DashboardLayout title={t("dashboardCenter.title")} navItems={navItems} currentPath="/dashboard-center">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <LayoutDashboard className="h-6 w-6 text-primary" />
-              {t("dashboardCenter.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("dashboardCenter.description")}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<LayoutDashboard className="h-6 w-6" />}
+          title={t("dashboardCenter.title")}
+          description={t("dashboardCenter.description")}
+        />
 
         <ErrorBoundary>
           <Tabs value={activeTab} onValueChange={handleTabChange}>

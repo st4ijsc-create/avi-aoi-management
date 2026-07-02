@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
@@ -223,7 +223,7 @@ export default function ProductionOrders() {
 
   return (
     <DashboardLayout title={t('production.title')} navItems={navItems} currentPath="/production-orders">
-      <div className="space-y-6">
+      <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Package className="h-6 w-6" />}
@@ -373,8 +373,8 @@ export default function ProductionOrders() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-purple-500/10 rounded-lg">
-                  <Target className="w-6 h-6 text-purple-500" />
+                <div className="p-3 bg-primary/10 rounded-lg">
+                  <Target className="w-6 h-6 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('production.totalOutput')}</p>
@@ -615,7 +615,7 @@ export default function ProductionOrders() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

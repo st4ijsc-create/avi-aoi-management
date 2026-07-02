@@ -2,6 +2,17 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  PageHeader,
+  PageContainer,
+  MetricCard,
+  chartColor,
+  chartAxisTick,
+  chartGridProps,
+  chartTooltipStyle,
+  chartTooltipLabelStyle,
+} from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   AreaChart,
@@ -20,35 +31,6 @@ import { Leaf, Zap, Gauge, Factory } from "lucide-react";
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
   return Number.isFinite(n) ? n : 0;
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  unit,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  unit?: string;
-  accent?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{label}</span>
-          <span className={accent}>{icon}</span>
-        </div>
-        <div className="mt-2 text-2xl font-bold">
-          {value}
-          {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 export default function CarbonDashboard() {
@@ -108,44 +90,35 @@ export default function CarbonDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-1">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Leaf className="h-6 w-6 text-emerald-600" />
-            {t("carbon.title", "Năng lượng & Carbon (ISO 50001)")}
-          </h1>
-          <p className="text-muted-foreground">
-            {t("carbon.subtitle", "EnPI, tiêu thụ năng lượng và phát thải CO₂ quy đổi theo máy")}
-          </p>
-        </div>
+      <PageContainer>
+        <PageHeader
+          icon={<Leaf className="h-6 w-6" />}
+          title={t("carbon.title", "Năng lượng & Carbon (ISO 50001)")}
+          description={t("carbon.subtitle", "EnPI, tiêu thụ năng lượng và phát thải CO₂ quy đổi theo máy")}
+        />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
+          <MetricCard
             icon={<Zap className="h-5 w-5" />}
-            label={t("carbon.totalKwh", "Tổng năng lượng")}
+            label={t("carbon.totalKwh", "Tổng năng lượng") + " (kWh)"}
             value={kpis.totalKwh.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-            unit="kWh"
-            accent="text-amber-500"
           />
-          <KpiCard
+          <MetricCard
             icon={<Factory className="h-5 w-5" />}
-            label={t("carbon.totalCarbon", "Tổng phát thải")}
+            label={t("carbon.totalCarbon", "Tổng phát thải") + " (kg CO₂)"}
             value={kpis.totalCarbon.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-            unit="kg CO₂"
-            accent="text-emerald-600"
+            tone="success"
           />
-          <KpiCard
+          <MetricCard
             icon={<Gauge className="h-5 w-5" />}
-            label={t("carbon.avgEpu", "EnPI trung bình")}
+            label={t("carbon.avgEpu", "EnPI trung bình") + " (kWh/SP)"}
             value={kpis.avgEpu.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-            unit="kWh/SP"
-            accent="text-blue-500"
+            tone="info"
           />
-          <KpiCard
+          <MetricCard
             icon={<Factory className="h-5 w-5" />}
             label={t("carbon.goodUnits", "Sản phẩm đạt")}
             value={kpis.goodUnits.toLocaleString()}
-            accent="text-violet-500"
           />
         </div>
 
@@ -158,20 +131,18 @@ export default function CarbonDashboard() {
             {trend.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trend}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" width={44} tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="right" orientation="right" width={44} tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <CartesianGrid {...chartGridProps} />
+                  <XAxis dataKey="time" tick={chartAxisTick} />
+                  <YAxis yAxisId="left" width={44} tick={chartAxisTick} />
+                  <YAxis yAxisId="right" orientation="right" width={44} tick={chartAxisTick} />
+                  <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
                   <Legend />
-                  <Area yAxisId="left" type="monotone" dataKey="kwh" name="kWh" stroke="#f59e0b" fill="#f59e0b33" />
-                  <Area yAxisId="right" type="monotone" dataKey="carbon" name="CO₂ (kg)" stroke="#059669" fill="#05966933" />
+                  <Area yAxisId="left" type="monotone" dataKey="kwh" name="kWh" stroke={chartColor(0)} fill={chartColor(0)} fillOpacity={0.2} />
+                  <Area yAxisId="right" type="monotone" dataKey="carbon" name="CO₂ (kg)" stroke={chartColor(1)} fill={chartColor(1)} fillOpacity={0.2} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                {t("carbon.noData", "Không có dữ liệu")}
-              </div>
+              <EmptyState variant="no-analytics" compact title={t("carbon.noData", "Không có dữ liệu")} />
             )}
           </CardContent>
         </Card>
@@ -185,23 +156,21 @@ export default function CarbonDashboard() {
             {byMachine.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={byMachine}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="machine" tick={{ fontSize: 11 }} />
-                  <YAxis width={44} tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <CartesianGrid {...chartGridProps} />
+                  <XAxis dataKey="machine" tick={chartAxisTick} />
+                  <YAxis width={44} tick={chartAxisTick} />
+                  <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
                   <Legend />
-                  <Bar dataKey="epu" name={t("carbon.epu", "EnPI thực tế")} fill="#2563eb" />
-                  <Bar dataKey="baseline" name={t("carbon.baseline", "Baseline")} fill="#94a3b8" />
+                  <Bar dataKey="epu" name={t("carbon.epu", "EnPI thực tế")} fill={chartColor(0)} />
+                  <Bar dataKey="baseline" name={t("carbon.baseline", "Baseline")} fill="var(--muted-foreground)" />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                {t("carbon.noData", "Không có dữ liệu")}
-              </div>
+              <EmptyState variant="no-analytics" compact title={t("carbon.noData", "Không có dữ liệu")} />
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

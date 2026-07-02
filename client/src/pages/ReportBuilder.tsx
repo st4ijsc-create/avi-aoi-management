@@ -1,7 +1,17 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,8 +37,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart as RechartsLineChart, Line, PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from "recharts";
-
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#f97316"];
 
 const WIDGET_ICONS: Record<string, React.ReactNode> = {
   kpi_card: <Activity className="h-4 w-4" />,
@@ -79,6 +87,7 @@ export function ReportBuilderContent() {
   const [editingReport, setEditingReport] = useState<ReportDefinition | null>(null);
   const [showWidgetPicker, setShowWidgetPicker] = useState(false);
   const [editingWidget, setEditingWidget] = useState<string | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<any | null>(null);
 
   // Queries
   const { data: reports, refetch } = trpc.reportBuilder.list.useQuery();
@@ -289,9 +298,7 @@ export function ReportBuilderContent() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => {
-                          if (confirm(t('reports.confirmDeleteReport'))) deleteMutation.mutate(report.id);
-                        }}
+                        onClick={() => setReportToDelete(report)}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -524,6 +531,27 @@ export function ReportBuilderContent() {
             {editingReport && <ReportPreview report={editingReport} />}
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!reportToDelete} onOpenChange={(open) => !open && setReportToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('reports.deleteReportTitle', 'Delete report?')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('reports.confirmDeleteReport')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (reportToDelete) deleteMutation.mutate(reportToDelete.id);
+                  setReportToDelete(null);
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </>
   );
@@ -595,7 +623,7 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
             {data?.value != null ? data.value.toLocaleString() : "—"}
           </div>
           {(data as any)?.change != null && (
-            <Badge variant="outline" className={`mt-1 text-xs ${(data as any).change >= 0 ? "text-green-400" : "text-red-400"}`}>
+            <Badge variant="outline" className={`mt-1 text-xs ${(data as any).change >= 0 ? "text-success" : "text-destructive"}`}>
               {(data as any).change >= 0 ? "+" : ""}{(data as any).change.toFixed(1)}%
             </Badge>
           )}
@@ -615,15 +643,13 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={(data as any)?.data || []}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                />
-                <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="name" tick={chartAxisTick} />
+                <YAxis tick={chartAxisTick} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Bar dataKey="value" fill={chartColor(0)} radius={[4, 4, 0, 0]}>
                   {((data as any)?.data || []).map((_: any, i: number) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Cell key={i} fill={chartColor(i)} />
                   ))}
                 </Bar>
               </BarChart>
@@ -644,13 +670,11 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <RechartsLineChart data={(data as any)?.data || []}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
-                />
-                <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="name" tick={chartAxisTick} />
+                <YAxis tick={chartAxisTick} />
+                <Tooltip contentStyle={chartTooltipStyle} />
+                <Line type="monotone" dataKey="value" stroke={chartColor(1)} strokeWidth={2} dot={{ r: 3 }} />
               </RechartsLineChart>
             </ResponsiveContainer>
           </div>
@@ -680,10 +704,10 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
                   label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
                   {((data as any)?.data || []).map((_: any, i: number) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Cell key={i} fill={chartColor(i)} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip contentStyle={chartTooltipStyle} />
               </RechartsPieChart>
             </ResponsiveContainer>
           </div>

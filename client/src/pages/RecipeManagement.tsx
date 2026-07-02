@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
+import { PageHeader, PageContainer, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,9 +116,10 @@ export default function RecipeManagement() {
     onError: (e) => toast.error(e.message),
   });
 
-  // ── Archive ──
+  // ── Archive (AlertDialog confirm) ──
+  const [archiveTarget, setArchiveTarget] = useState<{ id: number; version: number } | null>(null);
   const archive = trpc.machineRecipe.recipes.archive.useMutation({
-    onSuccess: () => { toast.success(t("recipes.toastArchived")); invalidateAll(); },
+    onSuccess: () => { toast.success(t("recipes.toastArchived")); setArchiveTarget(null); invalidateAll(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -164,7 +165,7 @@ export default function RecipeManagement() {
 
   return (
     <DashboardLayout title={t("recipes.title")} navItems={navItems} currentPath="/recipes">
-    <div className="p-6 space-y-6">
+    <PageContainer>
       <PageHeader
         icon={<FlaskConical className="h-6 w-6" />}
         title={
@@ -182,7 +183,7 @@ export default function RecipeManagement() {
       />
 
       {/* SAFETY banner — HITL */}
-      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+      <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
         <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
         <span>{t("recipes.hitlBanner")}</span>
       </div>
@@ -263,7 +264,7 @@ export default function RecipeManagement() {
                         <Button
                           size="sm" variant="outline"
                           disabled={archive.isPending}
-                          onClick={() => { if (confirm(t("recipes.confirmArchive", { version: v.version }))) archive.mutate({ id: v.id }); }}
+                          onClick={() => setArchiveTarget({ id: v.id, version: v.version })}
                         >
                           {t("recipes.archive")}
                         </Button>
@@ -347,7 +348,7 @@ export default function RecipeManagement() {
                 value={form.payloadText}
                 onChange={(e) => { setForm({ ...form, payloadText: e.target.value }); setJsonError(null); }}
               />
-              {jsonError && <p className="text-xs text-rose-600 mt-1">{t("recipes.jsonError")}: {jsonError}</p>}
+              {jsonError && <p className="text-xs text-destructive mt-1">{t("recipes.jsonError")}: {jsonError}</p>}
             </div>
             <div>
               <Label>{t("recipes.notes")}</Label>
@@ -373,7 +374,7 @@ export default function RecipeManagement() {
             <DialogTitle>{t("recipes.deploy")}</DialogTitle>
             <DialogDescription>{t("recipes.deployDesc")}</DialogDescription>
           </DialogHeader>
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{t("recipes.hitlBanner")}</span>
           </div>
@@ -425,7 +426,27 @@ export default function RecipeManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {/* ── Archive confirm ── */}
+      <AlertDialog open={archiveTarget != null} onOpenChange={(o) => { if (!o) setArchiveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("recipes.archive")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {archiveTarget != null && t("recipes.confirmArchive", { version: archiveTarget.version })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("recipes.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (archiveTarget != null) archive.mutate({ id: archiveTarget.id }); }}
+            >
+              {t("recipes.archive")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageContainer>
     </DashboardLayout>
   );
 }

@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -733,7 +733,7 @@ export default function CorporateLayout() {
 
   return (
     <DashboardLayout title={t('corporate.corporateLayout')} navItems={navItems} currentPath="/corporate-layout">
-      <div className="space-y-6">
+      <PageContainer fluid>
         {/* Header */}
         <PageHeader
           icon={<Building2 className="h-6 w-6" />}
@@ -1273,7 +1273,7 @@ export default function CorporateLayout() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

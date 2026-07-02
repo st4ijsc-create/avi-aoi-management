@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,15 +75,15 @@ export default function AITimeSeriesPage() {
               </thead>
               <tbody>
                 {data.dataPoints.slice(0, 20).map((dp: any, idx: number) => (
-                  <tr key={idx} className={dp.isAnomaly ? "bg-red-500/10" : ""}>
+                  <tr key={idx} className={dp.isAnomaly ? "bg-destructive/10" : ""}>
                     <td className="px-3 py-1.5 text-xs font-mono">{dp.timestamp || dp.time || idx}</td>
                     <td className="px-3 py-1.5 text-right">{typeof dp.value === "number" ? dp.value.toFixed(3) : dp.value}</td>
                     {dp.predicted != null && (
-                      <td className="px-3 py-1.5 text-right text-blue-600">{dp.predicted.toFixed(3)}</td>
+                      <td className="px-3 py-1.5 text-right text-info">{dp.predicted.toFixed(3)}</td>
                     )}
                     {dp.isAnomaly != null && (
                       <td className="px-3 py-1.5 text-center">
-                        {dp.isAnomaly && <AlertTriangle className="h-4 w-4 text-red-500 inline" />}
+                        {dp.isAnomaly && <AlertTriangle className="h-4 w-4 text-destructive inline" />}
                       </td>
                     )}
                   </tr>
@@ -101,12 +102,12 @@ export default function AITimeSeriesPage() {
         {data.anomalies && Array.isArray(data.anomalies) && data.anomalies.length > 0 && (
           <div>
             <h3 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertTriangle className="h-4 w-4 text-destructive" />
               {t("ts.anomaliesFound", "Phát hiện bất thường")}: {data.anomalies.length}
             </h3>
             <div className="space-y-2">
               {data.anomalies.map((a: any, idx: number) => (
-                <div key={idx} className="border border-red-200 dark:border-red-900 rounded-lg p-3 bg-red-500/5">
+                <div key={idx} className="border border-destructive/30 rounded-lg p-3 bg-destructive/5">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-mono">{a.timestamp || a.time}</span>
                     <Badge variant="destructive">{a.severity || "anomaly"}</Badge>
@@ -122,7 +123,7 @@ export default function AITimeSeriesPage() {
         {data.changePoints && Array.isArray(data.changePoints) && data.changePoints.length > 0 && (
           <div>
             <h3 className="text-sm font-medium mb-2 flex items-center gap-1.5">
-              <GitBranch className="h-4 w-4 text-purple-500" />
+              <GitBranch className="h-4 w-4 text-primary" />
               {t("ts.changePoints", "Điểm thay đổi")}: {data.changePoints.length}
             </h3>
             <div className="space-y-2">
@@ -155,21 +156,13 @@ export default function AITimeSeriesPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-4 md:p-6">
+      <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-              <TrendingUp className="h-6 w-6 text-cyan-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{t("ts.title", "Phân tích chuỗi thời gian")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("ts.subtitle", "Phân tích xu hướng, dự báo, phát hiện bất thường bằng AI")}
-              </p>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          icon={<TrendingUp className="h-6 w-6" />}
+          title={t("ts.title", "Phân tích chuỗi thời gian")}
+          description={t("ts.subtitle", "Phân tích xu hướng, dự báo, phát hiện bất thường bằng AI")}
+        />
 
         {/* Controls */}
         <Card>
@@ -262,7 +255,7 @@ export default function AITimeSeriesPage() {
             </TabsContent>
           ))}
         </Tabs>
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

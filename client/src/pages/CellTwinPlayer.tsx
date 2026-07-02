@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PageContainer, PageHeader } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -304,29 +305,26 @@ export default function CellTwinPlayer() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 p-1">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <Workflow className="h-5 w-5 text-primary" /> {t("celltwin.title", "Cell Twin — Phát lại quy trình realtime")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("celltwin.subtitle", "Chọn một quy trình bất kỳ và xem bản sao số chạy theo thời gian thực (mô phỏng, không phát lệnh)")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={simLoading || !sim || sim.totalDurationMs <= 0} onClick={() => setRunning((r) => !r)}>
-              {running ? <><Pause className="h-4 w-4 mr-1" /> {t("celltwin.pause", "Tạm dừng")}</> : <><Play className="h-4 w-4 mr-1" /> {t("celltwin.play", "Chạy")}</>}
-            </Button>
-            <Button size="sm" variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-1" /> {t("celltwin.reset", "Đặt lại")}</Button>
-            <div className="flex items-center gap-1">
-              <Label className="text-xs text-muted-foreground">{t("celltwin.speed", "Tốc độ")}</Label>
-              {SPEEDS.map((s) => (
-                <Button key={s} size="sm" variant={speed === s ? "default" : "outline"} className="px-2 h-7" onClick={() => setSpeed(s)}>{s}×</Button>
-              ))}
-            </div>
-          </div>
-        </div>
+      <PageContainer fluid className="space-y-4">
+        <PageHeader
+          icon={<Workflow className="h-6 w-6" />}
+          title={t("celltwin.title", "Cell Twin — Phát lại quy trình realtime")}
+          description={t("celltwin.subtitle", "Chọn một quy trình bất kỳ và xem bản sao số chạy theo thời gian thực (mô phỏng, không phát lệnh)")}
+          actions={
+            <>
+              <Button size="sm" disabled={simLoading || !sim || sim.totalDurationMs <= 0} onClick={() => setRunning((r) => !r)}>
+                {running ? <><Pause className="h-4 w-4 mr-1" /> {t("celltwin.pause", "Tạm dừng")}</> : <><Play className="h-4 w-4 mr-1" /> {t("celltwin.play", "Chạy")}</>}
+              </Button>
+              <Button size="sm" variant="outline" onClick={reset}><RotateCcw className="h-4 w-4 mr-1" /> {t("celltwin.reset", "Đặt lại")}</Button>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">{t("celltwin.speed", "Tốc độ")}</Label>
+                {SPEEDS.map((s) => (
+                  <Button key={s} size="sm" variant={speed === s ? "default" : "outline"} className="px-2 h-7" onClick={() => setSpeed(s)}>{s}×</Button>
+                ))}
+              </div>
+            </>
+          }
+        />
 
         {/* workflow picker */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -523,7 +521,7 @@ export default function CellTwinPlayer() {
                     <p>—</p>
                   )}
                   {sim && !sim.valid && sim.errors.length > 0 && (
-                    <p className="text-red-600">{t("celltwin.invalid", "Quy trình không hợp lệ")}: {sim.errors[0]}</p>
+                    <p className="text-destructive">{t("celltwin.invalid", "Quy trình không hợp lệ")}: {sim.errors[0]}</p>
                   )}
                   <p>{t("celltwin.openStudio", "Mở /orchestration-studio để sửa/triển khai/chạy thật (qua dispatcher HITL).")}</p>
                 </CardContent>
@@ -531,7 +529,7 @@ export default function CellTwinPlayer() {
             </div>
           </div>
         )}
-      </div>
+      </PageContainer>
     </DashboardLayout>
   );
 }

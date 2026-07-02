@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { useTranslation } from 'react-i18next';
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -213,14 +214,19 @@ export default function InspectionDetail() {
     analyzeWithAIMutation.mutate({ id: measurementId });
   };
 
+  // Semantic theme tokens (CSS vars) so the point overlay tints follow the
+  // light/dark palette instead of hard-coded hex. Consumed in inline styles.
   const getResultColor = (result: string) => {
     switch (result) {
-      case "OK": return "#22c55e";
-      case "NG": return "#ef4444";
-      case "NTF": return "#f97316";
-      default: return "#6b7280";
+      case "OK": return "var(--success)";
+      case "NG": return "var(--destructive)";
+      case "NTF": return "var(--warning)";
+      default: return "var(--muted-foreground)";
     }
   };
+  // Same token at a low alpha for idle circle fills (color-mix keeps it theme-aware).
+  const getResultTint = (result: string, pct: number) =>
+    `color-mix(in oklab, ${getResultColor(result)} ${pct}%, transparent)`;
 
   const getResultBadge = (result: string, size: "sm" | "lg" = "sm") => {
     const baseClass = size === "lg" ? "text-base px-4 py-2" : "";
@@ -322,64 +328,63 @@ export default function InspectionDetail() {
 
   return (
     <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
-      <div className="space-y-6">
+      <PageContainer>
+        {/* Back link (kept above the title; PageHeader's icon chip is decorative). */}
+        <Link href="/history">
+          <Button variant="outline" size="sm" className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            {t('inspection.goBack')}
+          </Button>
+        </Link>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/history">
-              <Button variant="outline" size="icon">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{t('inspection.inspectionDetail')}</h1>
-              <p className="text-muted-foreground">SN: {inspection.serialNumber}</p>
-            </div>
-          </div>
-          
-          {inspection.overallResult === "NG" && inspection.originalResult === "NG" && (
-            <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
-                  <AlertTriangle className="h-4 w-4" />
-                  {t('inspection.confirmNTF')}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t('inspection.confirmNTFTitle')}</DialogTitle>
-                  <DialogDescription>
-                    {t('inspection.confirmNTFDescription')}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t('inspection.ntfReasonLabel')}</label>
-                    <Textarea
-                      placeholder={t('inspection.ntfReasonPlaceholder')}
-                      value={ntfReason}
-                      onChange={(e) => setNtfReason(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setNtfDialogOpen(false)}>
-                    {t('common.cancel')}
-                  </Button>
-                  <Button 
-                    onClick={handleConfirmNTF}
-                    disabled={confirmNTFMutation.isPending}
-                    className="gap-2"
-                  >
-                    {confirmNTFMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+        <PageHeader
+          title={t('inspection.inspectionDetail')}
+          description={`SN: ${inspection.serialNumber}`}
+          actions={
+            inspection.overallResult === "NG" && inspection.originalResult === "NG" ? (
+              <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
+                    <AlertTriangle className="h-4 w-4" />
                     {t('inspection.confirmNTF')}
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t('inspection.confirmNTFTitle')}</DialogTitle>
+                    <DialogDescription>
+                      {t('inspection.confirmNTFDescription')}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{t('inspection.ntfReasonLabel')}</label>
+                      <Textarea
+                        placeholder={t('inspection.ntfReasonPlaceholder')}
+                        value={ntfReason}
+                        onChange={(e) => setNtfReason(e.target.value)}
+                        rows={4}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setNtfDialogOpen(false)}>
+                      {t('common.cancel')}
+                    </Button>
+                    <Button
+                      onClick={handleConfirmNTF}
+                      disabled={confirmNTFMutation.isPending}
+                      className="gap-2"
+                    >
+                      {confirmNTFMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {t('inspection.confirmNTF')}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : undefined
+          }
+        />
 
         {/* Row 1: Inspection Info + Machine Info */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -520,16 +525,16 @@ export default function InspectionDetail() {
                             className="absolute inset-0 rounded-full border-2 flex items-center justify-center transition-all shadow-lg"
                             style={{
                               borderColor: getResultColor(m.result),
-                              backgroundColor: isActive || isHovered 
-                                ? getResultColor(m.result) 
-                                : `${getResultColor(m.result)}30`,
+                              backgroundColor: isActive || isHovered
+                                ? getResultColor(m.result)
+                                : getResultTint(m.result, 19),
                               transform: isActive || isHovered ? 'scale(1.3)' : 'scale(1)',
                             }}
                           >
-                            <span 
+                            <span
                               className="text-xs font-bold"
-                              style={{ 
-                                color: isActive || isHovered ? '#fff' : getResultColor(m.result) 
+                              style={{
+                                color: isActive || isHovered ? 'white' : getResultColor(m.result)
                               }}
                             >
                               {index + 1}
@@ -620,10 +625,10 @@ export default function InspectionDetail() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span 
+                            <span
                               className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                              style={{ 
-                                backgroundColor: `${getResultColor(measurement.result)}20`,
+                              style={{
+                                backgroundColor: getResultTint(measurement.result, 12),
                                 color: getResultColor(measurement.result),
                                 border: `2px solid ${getResultColor(measurement.result)}`
                               }}
@@ -686,12 +691,12 @@ export default function InspectionDetail() {
 
         {/* Row 3: AI Suggestions Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AISuggestionsPanel 
-            inspectionId={inspectionId} 
+          <AISuggestionsPanel
+            inspectionId={inspectionId}
             onFeedbackSubmitted={() => refetch()}
           />
         </div>
-      </div>
+      </PageContainer>
 
       {/* Image Compare Dialog */}
       <Dialog open={compareMode} onOpenChange={(open) => { 
@@ -918,14 +923,14 @@ export default function InspectionDetail() {
           <div className="flex items-center justify-between px-4 py-2 bg-black/80 shrink-0 z-10">
             <span className="text-white text-sm font-medium truncate max-w-[60%]">{lightboxTitle}</span>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomOut} title="Thu nhỏ">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomOut} title={t('inspectionDetail.zoomOut', 'Thu nhỏ')}>
                 <ZoomOut className="h-4 w-4" />
               </Button>
               <span className="text-white text-xs w-12 text-center tabular-nums">{Math.round(lightboxZoom * 100)}%</span>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomIn} title="Phóng to">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbZoomIn} title={t('inspectionDetail.zoomIn', 'Phóng to')}>
                 <ZoomIn className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbReset} title="Đặt lại">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbReset} title={t('inspectionDetail.resetZoom', 'Đặt lại')}>
                 <RotateCcw className="h-4 w-4" />
               </Button>
               {/* Switch to other image button */}
@@ -941,7 +946,7 @@ export default function InspectionDetail() {
                 );
               })()}
               <div className="w-px h-5 bg-white/20 mx-1" />
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={closeLightbox} title="Đóng">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={closeLightbox} title={t('common.close', 'Đóng')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -974,7 +979,7 @@ export default function InspectionDetail() {
             )}
           </div>
           {/* Hint */}
-          <p className="text-center text-white/40 text-xs pb-2 shrink-0">Cuộn chuột để zoom · Kéo để di chuyển</p>
+          <p className="text-center text-white/40 text-xs pb-2 shrink-0">{t('inspectionDetail.lightboxHint', 'Cuộn chuột để zoom · Kéo để di chuyển')}</p>
         </DialogContent>
       </Dialog>
 
