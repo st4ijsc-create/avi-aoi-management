@@ -195,7 +195,11 @@ function DashboardLayoutContent({
     <>
       <div className="relative" data-app-chrome="sidebar">
         <Sidebar
-          collapsible="icon"
+          // OFFCANVAS (not "icon"): the desktop nav is a cascading accordion/flyout that
+          // needs its full width — an icon-only collapse left the full-width rows spilling
+          // over the page content. Collapsing now slides the whole rail off-screen and the
+          // content reflows to full width; the header SidebarTrigger re-opens it.
+          collapsible="offcanvas"
           className="border-r border-sidebar-border"
         >
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
@@ -341,7 +345,10 @@ function DashboardLayoutContent({
       <SidebarInset className="bg-background">
         <div data-app-chrome="header" className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />}
+            {/* Always show the sidebar toggle: on mobile it opens the sheet; on desktop it
+                re-opens the offcanvas rail after it has been collapsed (the in-rail toggle
+                is gone once the rail slides away). */}
+            <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
             <span className="font-medium text-foreground text-sm sm:text-base truncate">
               {activeItem ? t(activeItem.label) : title}
             </span>
