@@ -277,8 +277,16 @@ Batch A `481d5be`, Batch B `3bd4bb0`. TSC 0 · build OK · tests pass.
 - **T3** — DTDL-v3-style twin schema (typed interfaces + capability telemetry + relationships, queryable) + USDA export; read-gated.
 - **T4** — real STEP/IGES→glTF via `occt-import-js` (OpenCASCADE WASM), registered into modelRegistry, WASM-guarded.
 
-### Commits (branch `automation-orchestration-r0`)
-`89cdf1b` doc-23 frontend · `d617560` W1 · `549242b` W2 · `481d5be` W3-A · `3bd4bb0` W3-B.
+### Wave 4 — DONE & GREEN + committed (2026-07-02) — **doc-24 program complete**
+Commit `2ec76f1`. TSC 0 · build OK · Wave-4 tests pass (89).
+- **AOI-F** — vision→control closed loop: gated NG/anomaly emits typed proposals (`reject_divert`, `spi_printer_offset`) **only** via propose→HITL→`commandDispatcher`; advisory-default (`VISION_CONTROL_ENABLED`), composes with C2 (uncommissioned ⇒ simulated, `writeTags` 0×); reuses `ai_pending_actions` (no migration); no gate bypassed.
+- **T5** — discrete-event throughput sim (seeded PRNG, event heap, queues/resources/stochastic yield) → bottleneck + cycle-time advisory to scheduling; read-gated `simulation` router.
+- **C5** — OPC-UA companion specs (Machinery/Robotics/Euromap-83) into the capability contract + PackML state → UNS-first Sparkplug channel (flag `UNS_PACKML_STATE_ENABLED`).
+- **P5** — block-level program version diff + 3-way merge (never drops a block) + read-gated tRPC + `IrDiffPanel`.
+- **T6 (Isaac sim-to-real) DEFERRED** per owner's "keep heavy external integrations light".
+- *Incident:* a sandbox overlay-FS discarded P5's files mid-run; recovered (tracked edits from a stash, new files re-written), reconciled, all green.
 
-### Wave 4 — PENDING (final wave). Per §6:
-AOI-F (vision→control closed loop, **gated actuation — safety-sensitive**) · T5 (DES throughput → scheduling feedback) · C5 (OPC-UA companion specs + UNS-first) · P5 (version diff/merge + collab). **T6 (Isaac sim-to-real) DEFERRED** per the owner's "keep heavy external integrations light" decision.
+### Commits (branch `automation-orchestration-r0`)
+`89cdf1b` doc-23 frontend · `d617560` W1 · `549242b` W2 · `481d5be` W3-A · `3bd4bb0` W3-B · `57b922f` docs · `2ec76f1` W4.
+
+### ✅ Doc-24 program COMPLETE (Waves 1–4; T6 Isaac deferred). All additive/flag-gated; TSC 0 / build OK throughout; both doc-22 P0 safety races stay closed. Live control/actuation remains sim/dry-run behind the commissioning gate until hardware FAT + flags. Migrations `0157`–`0161` authored (run when ready).
