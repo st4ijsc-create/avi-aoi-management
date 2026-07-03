@@ -306,11 +306,13 @@ Converts "real but dormant" → "real and running."
 5. **Twin live:** add a producer that streams a robot's joint vector onto the telemetry bus (lights T1's live articulation end-to-end); `TWIN_LIVE_ENABLED`.
 6. **Vision→control:** only after (2)+(4), enable `VISION_CONTROL_ENABLED`; validate a dry-run reject/printer-offset proposal through HITL.
 
-### Tier 1 — Finish the "documented-but-not-built" wiring/UI (small, high polish)
-- **T5 DES:** wire the what-if into `ProductionScheduling`; replace `RfTestCellSim`'s hard-coded defect rule with the stochastic model.
-- **Health/status UI + routes** for the new getters: store-forward status, connection-supervisor status, commissioning records (admin), model-health, DES scenario runner, USD/DTDL export download.
-- **P5:** merge-conflict resolution UI (dry-run merge API already shipped).
-- **P4:** a graphical ladder/FBD/SFC canvas in `/pou-studio` (PLCopen model + import/export shipped; visual editor is the stretch).
+### Tier 1 — ✅ DONE & GREEN + committed (2026-07-02, commit `5a90fa3`)
+- **T5 DES → UI:** "Throughput simulation (what-if)" panel in `ProductionScheduling` (line → `simulation.fromScene`/`scenario`: predicted throughput, bottleneck, cycle p50/p95, WIP, capacity reconciliation + before→after scenario deltas); `RfTestCellSim` fixed defect cadence → **seeded stochastic yield**. ✓
+- **Health/status:** new `/system-health` page + `systemHealthRouter` (store-and-forward status · OT connection supervisors · DINOv2 model health) + **commissioning admin panel** (sign/revoke FAT records) + **USD/DTDL twin export** download. ✓
+- **P5 merge UI:** `IrMergePanel` — per-conflict pick-a-side → **gated `saveFlow`** (no bypass), as a "Merge (3-way)" tab in the IR editor. ✓
+- **P4 graphical canvas:** `PouCanvas` (react-flow) LAD/FBD/SFC visual renderer + node-level editor with a **Canvas | JSON** toggle in `/pou-studio` (model stays source of truth). ✓
+- **i18n:** +242 keys en/vi; `nav.systemHealth` in all 3 locales. TSC 0 · build OK · JSON valid.
+- *Deferred polish:* free-form ladder-rung wire-drawing in PouCanvas; ProductionScheduling what-if is scoped to factory #1 for now.
 
 ### Tier 2 — Next engineering (deferred build items)
 - **AOI:** live GigE/GenICam frame acquisition; native 3D/SPI/AXI processing; patch-level PatchCore pixel heatmap; Cognex/Keyence/TRI adapters.
