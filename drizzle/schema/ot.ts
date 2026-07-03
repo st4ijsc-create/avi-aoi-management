@@ -276,3 +276,67 @@ export const commissioningRecords = pgTable("commissioning_records", {
 
 export type CommissioningRecord = typeof commissioningRecords.$inferSelect;
 export type InsertCommissioningRecord = typeof commissioningRecords.$inferInsert;
+
+// ─── Doc 24 / Connectivity — No-code Tag → UNS mapping designer ────────────────
+//
+// A HighByte-style "Intelligence Hub" model: map a raw OT adapter tag → an ISA-95
+// UNS topic + a Sparkplug metric name, with per-tag CONDITIONING (rename, scale,
+// offset, unit, type cast, deadband) configured in the UI instead of in code.
+//
+// SAFETY / SCOPE: this is a READ-DIRECTION publish concern ONLY. It reshapes how a
+// telemetry sample is PUBLISHED to the UNS; it opens NO control path and never
+// influences the inbound NCMD/DCMD → commandDispatcher safety. Consulted at publish
+// time ONLY when UNS_MAPPING_ENABLED === "true" (default OFF ⇒ today's normalization
+// is unchanged, and an unmapped tag always keeps the default behaviour).
+
+/**
+ * Per-tag conditioning applied to a raw value before it is published to the UNS.
+ * All fields optional; an empty transform is a pass-through (value unchanged).
+ *   - rename:   output metric/leaf name override (does NOT change the value); also
+ *               usable as the {rename} placeholder in a unsTopic template.
+ *   - scale/offset: numeric conditioning — value := value*scale + offset.
+ *   - unit:     unit label attached to the published (JSON) payload.
+ *   - cast:     coerce the final value to a concrete scalar type.
+ *   - deadband: suppress a publish when |new − lastPublished| < deadband (numeric).
+ */
+export interface UnsTagTransform {
+  rename?: string;
+  scale?: number;
+  offset?: number;
+  unit?: string;
+  cast?: "number" | "bool" | "string";
+  deadband?: number;
+}
+
+/**
+ * UNS Tag Mappings — one row maps (adapterId, tag) → a UNS topic template +
+ * Sparkplug metric name + a conditioning transform. Unique per (adapterId, tag).
+ */
+export const unsTagMappings = pgTable("uns_tag_mappings", {
+  id: serial("id").primaryKey(),
+  adapterId: integer("adapterId").notNull(),
+  /** Raw source tag key (matches deviceTags.tagKey / OtSample.tagKey). */
+  tag: varchar("tag", { length: 128 }).notNull(),
+  /**
+   * Target UNS topic — an ISA-95 path. May be a literal path
+   * (e.g. "AVI-AOI/Factory1/Line3/Press/temperature") or a template with
+   * {enterprise} {adapterCode} {tag} {rename} {machineId} placeholders.
+   */
+  unsTopic: varchar("unsTopic", { length: 500 }).notNull(),
+  /** Sparkplug-B metric name (nullable → falls back to rename, then tag). */
+  sparkplugMetric: varchar("sparkplugMetric", { length: 255 }),
+  /** Conditioning applied to the value before publish. */
+  transform: jsonb("transform").$type<UnsTagTransform>(),
+  enabled: boolean("enabled").default(true).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_uns_tag_mappings_adapter_tag").on(table.adapterId, table.tag),
+  index("idx_uns_tag_mappings_adapter").on(table.adapterId),
+  index("idx_uns_tag_mappings_enabled").on(table.enabled),
+]);
+
+export type UnsTagMapping = typeof unsTagMappings.$inferSelect;
+export type InsertUnsTagMapping = typeof unsTagMappings.$inferInsert;

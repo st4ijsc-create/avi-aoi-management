@@ -83,6 +83,7 @@
   Bot,
   Network,
   Globe,
+  Share2,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -580,6 +581,16 @@ export const navGroups: NavGroup[] = [
         label: "nav.deviceAdapters",
         icon: <Plug className="h-4 w-4" />,
         description: "nav.deviceAdaptersDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+        section: "onboarding",
+      },
+      {
+        // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (CONFIG + preview)
+        href: "/uns-mapping",
+        label: "nav.unsMapping",
+        icon: <Share2 className="h-4 w-4" />,
+        description: "nav.unsMappingDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "onboarding",

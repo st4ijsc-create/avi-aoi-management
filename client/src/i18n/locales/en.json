@@ -4448,6 +4448,52 @@
       "cause_prevented_by": "prevented by"
     }
   },
+  "unsMapping": {
+    "title": "Tag → UNS Mapping",
+    "add": "Add mapping",
+    "edit": "Edit mapping",
+    "selectAdapter": "Select adapter",
+    "selectAdapterPlaceholder": "— select OT adapter —",
+    "noAdapters": "No OT adapter yet. Create one on the Device Adapter page first.",
+    "mappingsTitle": "Mappings",
+    "empty": "No mappings for this adapter yet.",
+    "passthrough": "pass-through",
+    "dialogDesc": "Map a tag → UNS topic + metric, with conditioning. Preview the result against a sample value.",
+    "pickTag": "— select tag —",
+    "topicHint": "Placeholders: {enterprise} {adapterCode} {tag} {rename} {machineId}",
+    "metricPlaceholder": "(default = rename or tag)",
+    "conditioning": "Conditioning (transform)",
+    "enable": "Enable mapping",
+    "notes": "Notes",
+    "preview": "Preview (live)",
+    "sampleValue": "Sample raw value",
+    "sampleHint": "Number / true / false / string.",
+    "previewEmpty": "Enter tag, topic and a sample value to preview.",
+    "willPublish": "Will publish",
+    "suppressed": "Suppressed by deadband",
+    "deleteTitle": "Delete mapping?",
+    "deleteDesc": "Delete the mapping for tag \"{{tag}}\"? This action cannot be undone.",
+    "toast": {
+      "created": "Mapping created",
+      "updated": "Mapping updated",
+      "deleted": "Mapping deleted"
+    },
+    "col": {
+      "tag": "Source tag",
+      "topic": "UNS topic",
+      "metric": "Sparkplug metric",
+      "transform": "Condition",
+      "enabled": "Enabled"
+    },
+    "tr": {
+      "rename": "Rename",
+      "unit": "Unit",
+      "scale": "Scale (×)",
+      "offset": "Offset (+)",
+      "cast": "Cast type",
+      "deadband": "Deadband"
+    }
+  },
   "nav": {
     "section": {
       "mes": "MES",
@@ -4546,6 +4592,8 @@
     "andonBoardDesc": "Andon alert signals (alert-only, no machine control)",
     "deviceAdapters": "Device Adapter",
     "deviceAdaptersDesc": "Manage OT connection config and tag definitions",
+    "unsMapping": "UNS Mapping",
+    "unsMappingDesc": "No-code Tag → UNS topic mapping with live preview",
     "bomManagement": "BOM & Feeder",
     "bomManagementDesc": "BOM, feeder material and component genealogy (no machine write)",
     "masterData": "Master Data",

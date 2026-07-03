@@ -4219,6 +4219,8 @@
     "andonBoardDesc": "Andon 警报信号（仅警报，不控制设备）",
     "deviceAdapters": "设备适配器",
     "deviceAdaptersDesc": "管理 OT 连接配置和标签定义",
+    "unsMapping": "UNS 映射",
+    "unsMappingDesc": "无代码 Tag → UNS 主题映射，实时预览",
     "bomManagement": "BOM 与上料",
     "bomManagementDesc": "BOM、上料物料与元件谱系追溯（不写设备）",
     "masterData": "主数据",

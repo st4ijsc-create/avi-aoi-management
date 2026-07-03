@@ -68,12 +68,57 @@ export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): P
   // 1) Canonical path — ONE bus for every protocol (persist + broadcast).
   await ingestTelemetry([sampleToCanonical(adapter, sample)]);
 
-  // 2) Optional UNS republish (UNCHANGED behaviour). Isolated so it can't break (1).
+  // 2) Optional UNS republish (UNCHANGED default behaviour). Isolated so it can't break (1).
   if (process.env.OT_INGEST_TO_UNS === "true") {
     try {
       const { isUnsBridgeEnabled } = await import("../unsBridge");
       if (isUnsBridgeEnabled()) {
-        if (process.env.UNS_SPARKPLUG_ENABLED === "true") {
+        const sparkplugEnabled = process.env.UNS_SPARKPLUG_ENABLED === "true";
+
+        // Doc 24 (Connectivity) — no-code Tag → UNS mapping (flag UNS_MAPPING_ENABLED,
+        // default OFF). When ON and this tag has an ENABLED mapping, publish to the
+        // mapped topic/metric with the transform applied (deadband may suppress).
+        // An UNMAPPED tag (or flag OFF) falls through to the default normalization
+        // below — today's behaviour is completely unchanged. READ-DIRECTION only.
+        if (process.env.UNS_MAPPING_ENABLED === "true") {
+          const { getMappingForTag, applyMappingForPublish } = await import("../unsMappingService");
+          const mapping = await getMappingForTag(adapter.adapterId, sample.tagKey);
+          if (mapping) {
+            const tagDef = adapter.tags.find((t) => t.tagKey === sample.tagKey);
+            const decision = applyMappingForPublish(
+              mapping,
+              {
+                adapterId: adapter.adapterId,
+                adapterCode: adapter.code,
+                tag: sample.tagKey,
+                machineId: adapter.machineId ?? null,
+                rawValue: sample.value,
+                timestamp: sample.timestamp,
+                quality: sample.quality,
+                dataType: tagDef?.dataType,
+              },
+              { sparkplugEnabled },
+            );
+            if (decision.kind === "sparkplug") {
+              const { publishSparkplugDData } = await import("../unsPublisher");
+              publishSparkplugDData(decision.deviceId, [decision.metric]);
+              return;
+            }
+            if (decision.kind === "normalized") {
+              const { publishNormalized } = await import("../unsPublisher");
+              publishNormalized(decision.topic, decision.payload);
+              return;
+            }
+            if (decision.kind === "suppress") {
+              // Deadband suppressed this MAPPED sample — publish nothing (a mapped
+              // tag must NOT fall back to the default topic).
+              return;
+            }
+            // decision.kind === "default" (mapping disabled) → fall through to default.
+          }
+        }
+
+        if (sparkplugEnabled) {
           // F3a — Sparkplug-B DDATA (lazy DBIRTH in publisher). PUBLISH only.
           const { publishSparkplugDData } = await import("../unsPublisher");
           const { otTypeToSparkplug } = await import("../uns/sparkplugEncoder");

@@ -22,6 +22,10 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getVisionAdapter, listVisionAdapters } from "../services/vision";
 import "../services/vision"; // side-effect: register all built-in vendor adapters
+import {
+  isLiveAcquisitionEnabled,
+  listImageSourceKinds,
+} from "../services/vision/acquisition";
 import { machineApiRouter } from "./machineApiRouters";
 
 /** Master flag — default OFF. Ingest persists nothing unless explicitly enabled. */
@@ -37,6 +41,21 @@ export const visionAdapterRouter = router({
       return {
         enabled: visionAdaptersEnabled(),
         adapters: listVisionAdapters(),
+      };
+    }),
+
+  /**
+   * Read-only discovery of image-ACQUISITION source kinds (file / mock / genicam) + whether
+   * live acquisition is enabled. This is the UI seam for an "Acquisition sources" panel: it
+   * shows which sources are usable now (offline always; genicam only when the flag is on).
+   * Discovery only — it opens no source and touches no hardware.
+   */
+  listAcquisitionSources: protectedProcedure
+    .use(requirePermission("machine_alerts", "canView"))
+    .query(() => {
+      return {
+        liveEnabled: isLiveAcquisitionEnabled(),
+        sources: listImageSourceKinds(),
       };
     }),
 

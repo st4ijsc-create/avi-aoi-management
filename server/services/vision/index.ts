@@ -3,15 +3,20 @@
  *
  * Importing this module has the SIDE-EFFECT of registering every built-in vendor
  * adapter into the registry (mirrors server/services/ot/index.ts). Add new vendors
- * (Cognex, Keyence, TRI, Omron …) by writing an adapter in ./adapters and registering
- * it here.
+ * (Omron, Saki, Mirtec …) by writing an adapter in ./adapters and registering it here.
  */
 import { registerVisionAdapter } from "./visionAdapterRegistry";
 import { createGenericJsonAdapter } from "./adapters/genericJson";
 import { createKohYoungAdapter } from "./adapters/kohYoung";
+import { createCognexAdapter } from "./adapters/cognex";
+import { createKeyenceAdapter } from "./adapters/keyence";
+import { createTriAdapter } from "./adapters/tri";
 
 registerVisionAdapter("generic-json", createGenericJsonAdapter);
 registerVisionAdapter("koh-young", createKohYoungAdapter);
+registerVisionAdapter("cognex", createCognexAdapter);
+registerVisionAdapter("keyence", createKeyenceAdapter);
+registerVisionAdapter("tri", createTriAdapter);
 
 export {
   registerVisionAdapter,

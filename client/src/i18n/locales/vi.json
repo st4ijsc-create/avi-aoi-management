@@ -4448,6 +4448,52 @@
       "cause_prevented_by": "phòng ngừa bởi"
     }
   },
+  "unsMapping": {
+    "title": "Tag → UNS Mapping",
+    "add": "Thêm mapping",
+    "edit": "Sửa mapping",
+    "selectAdapter": "Chọn adapter",
+    "selectAdapterPlaceholder": "— chọn adapter OT —",
+    "noAdapters": "Chưa có adapter OT. Tạo adapter ở trang Device Adapter trước.",
+    "mappingsTitle": "Mapping",
+    "empty": "Chưa có mapping cho adapter này.",
+    "passthrough": "pass-through",
+    "dialogDesc": "Ánh xạ tag → UNS topic + metric, kèm điều kiện. Xem trước kết quả với một giá trị mẫu.",
+    "pickTag": "— chọn tag —",
+    "topicHint": "Placeholder: {enterprise} {adapterCode} {tag} {rename} {machineId}",
+    "metricPlaceholder": "(mặc định = rename hoặc tag)",
+    "conditioning": "Điều kiện (transform)",
+    "enable": "Bật mapping",
+    "notes": "Ghi chú",
+    "preview": "Xem trước (live)",
+    "sampleValue": "Giá trị thô mẫu",
+    "sampleHint": "Số / true / false / chuỗi.",
+    "previewEmpty": "Nhập tag, topic và giá trị mẫu để xem trước.",
+    "willPublish": "Sẽ phát",
+    "suppressed": "Bị deadband chặn",
+    "deleteTitle": "Xoá mapping?",
+    "deleteDesc": "Xoá mapping cho tag \"{{tag}}\"? Hành động này không thể hoàn tác.",
+    "toast": {
+      "created": "Đã tạo mapping",
+      "updated": "Đã cập nhật mapping",
+      "deleted": "Đã xoá mapping"
+    },
+    "col": {
+      "tag": "Tag nguồn",
+      "topic": "UNS topic",
+      "metric": "Sparkplug metric",
+      "transform": "Điều kiện",
+      "enabled": "Bật"
+    },
+    "tr": {
+      "rename": "Đổi tên",
+      "unit": "Đơn vị",
+      "scale": "Scale (×)",
+      "offset": "Offset (+)",
+      "cast": "Ép kiểu",
+      "deadband": "Deadband"
+    }
+  },
   "nav": {
     "section": {
       "mes": "MES",
@@ -4546,6 +4592,8 @@
     "andonBoardDesc": "Tín hiệu cảnh báo Andon (chỉ cảnh báo, không điều khiển máy)",
     "deviceAdapters": "Bộ chuyển đổi thiết bị",
     "deviceAdaptersDesc": "Quản lý cấu hình kết nối OT và định nghĩa tag",
+    "unsMapping": "UNS Mapping",
+    "unsMappingDesc": "Ánh xạ Tag → UNS topic không cần code, xem trước trực tiếp",
     "bomManagement": "BOM & Máng cấp",
     "bomManagementDesc": "BOM, vật liệu feeder và truy vết linh kiện (không ghi máy)",
     "masterData": "Dữ liệu chủ",

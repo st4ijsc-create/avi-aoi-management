@@ -80,3 +80,10 @@ export {
   type SecsGemConnector,
   type SecsGemFactory,
 } from "./secsGemRegistry";
+// GEM300 message-stream layer (S2 equipment control + S7 process program/recipe),
+// built on the SECS-II codec. Exposed under a namespace to avoid name collisions
+// with the legacy skeleton codec's re-exported `encodeItem`/`decodeItem`. Flag:
+// GEM300_ENABLED (default OFF). Host commands are gated HITL proposals — never
+// ungated actuations (see gem300.ts header). PP = a versioned recipe (reuses recipe
+// storage; no migration).
+export * as gem300 from "./gem300";
