@@ -314,15 +314,16 @@ Converts "real but dormant" → "real and running."
 - **i18n:** +242 keys en/vi; `nav.systemHealth` in all 3 locales. TSC 0 · build OK · JSON valid.
 - *Deferred polish:* free-form ladder-rung wire-drawing in PouCanvas; ProductionScheduling what-if is scoped to factory #1 for now.
 
-### Tier 2 — Next engineering (deferred build items)
-- **AOI:** live GigE/GenICam frame acquisition; native 3D/SPI/AXI processing; patch-level PatchCore pixel heatmap; Cognex/Keyence/TRI adapters.
-- **Programming:** reusable function blocks/POUs; bound ROS2 (MoveIt) + hardware-in-the-loop; collaborative editing.
-- **Twin:** USD materials/physics + true per-joint kinematics; photoreal rendering; **T6 Isaac sim-to-real** (deferred by owner).
-- **Connectivity:** GEM300 S2/S7 (fab); Mitsubishi/Delta robot drivers (currently honest scaffolds); no-code tag→UNS mapping UI.
+### Tier 2 — Next engineering — ✅ core DONE & GREEN + committed (2026-07-02, `87f469d` + `c1f7391`)
+- **AOI:** ✅ patch-level PatchCore pixel heatmap · ✅ native 3D/SPI processing (aiSpi3d: volume/area/height/offset/coplanarity/warpage/bridging vs IPC-7527). ⏳ *deferred (needs hardware):* live GigE/GenICam acquisition; Cognex/Keyence/TRI proving.
+- **Programming:** ✅ reusable function-blocks/POUs · ✅ bound ROS2 (MoveItPy) + URSim HIL pre-deploy stage. ⏳ *deferred:* collaborative editing.
+- **Twin:** ✅ USD materials/UsdPhysics + true per-joint kinematics. ⏳ *deferred (heavy/external):* photoreal rendering; **T6 Isaac sim-to-real**.
+- **Connectivity:** ✅ Mitsubishi (MELFA) + Delta real drivers. ⏳ *deferred:* GEM300 S2/S7 (fab); no-code tag→UNS mapping UI.
 
-### Tier 3 — Ops & hardening
-- Run the FULL test suite (`npm test`) incl. DB-integration (`npm run test:db:setup`); apply migrations to a real DB.
-- Open a PR `automation-orchestration-r0` → review → merge to `main`.
-- Procure the target-cell hardware (doc-24 P6 plan) to unblock Tier 0.
+### Tier 3 — Ops & hardening — ✅ DONE (2026-07-02)
+- ✅ **Full test suite green:** `npm test` → **281 files, 3,133 tests pass, 8 skipped, 0 failed**.
+- ✅ Migrations `0157`–`0161` unique (apply to a real DB with `npm run db:push` at Tier 0).
+- ✅ **Branch pushed** to `fresh` (`st4ijsc-create/avi-aoi-management`, `automation-orchestration-r0`) → open/merge the PR to `main` in the GitHub UI (`gh` CLI not installed in this env).
+- ⏳ Procure the pilot-cell hardware (doc-24 **P6** plan) to unblock Tier 0 activation.
 
 **Immediate recommendation:** Tier 0 on a single pilot cell — it proves the whole stack end-to-end and is the highest-leverage next move; Tier 1 can proceed in parallel with no hardware.
