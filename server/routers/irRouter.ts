@@ -48,6 +48,8 @@ import {
 import { lintFlow } from "../services/programming/ir/irSafetyLinter";
 import { previewTranspile, summariseFlow } from "../services/programming/ir/irAdapter";
 import { TRANSPILE_TARGETS, type TranspileTarget } from "../services/programming/ir/transpilers/registry";
+import { diffFlows } from "../services/programming/ir/irDiff";
+import { mergeFlows } from "../services/programming/ir/irMerge";
 
 /** Flag: the IR-specific MUTATIONS require DPC_IR_V2_ENABLED (default OFF). */
 export function dpcIrV2Enabled(): boolean {
@@ -82,6 +84,17 @@ function parseOrThrow(content: string | null): Flow {
     });
   }
   return parsed.flow;
+}
+
+/** Load one ir-flow artifact + its parsed Flow (NOT_FOUND / BAD_REQUEST on mismatch). */
+async function loadArtifactFlow(
+  d: Awaited<ReturnType<typeof db>>,
+  artifactId: number,
+): Promise<{ flow: Flow; branch: string; version: number; projectId: number }> {
+  const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
+  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${artifactId} not found` });
+  if (row.kind !== "ir-flow") throw new TRPCError({ code: "BAD_REQUEST", message: `Artifact ${artifactId} is not an ir-flow.` });
+  return { flow: parseOrThrow(row.content), branch: row.branch, version: row.version, projectId: row.projectId };
 }
 
 export const irRouter = router({
@@ -143,6 +156,70 @@ export const irRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ flow: flowSchema, target: TARGET.optional() }))
     .query(({ input }) => previewTranspile(input.flow, input.target)),
+
+  // ── P5: block-level DIFF + dry-run 3-way MERGE (pure reads; no persistence) ──
+
+  /**
+   * Block-level diff of two ad-hoc flows (e.g. the in-editor draft vs a saved version).
+   * PURE — no persistence, no device I/O. Deterministic.
+   */
+  diff: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ before: flowSchema, after: flowSchema }))
+    .query(({ input }) => diffFlows(input.before, input.after)),
+
+  /**
+   * Block-level diff of two STORED ir-flow versions (by artifact id). Reuses the existing
+   * append-only version storage — no new tables, no writes.
+   */
+  diffVersions: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ beforeArtifactId: z.number().int().positive(), afterArtifactId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const d = await db();
+      const before = await loadArtifactFlow(d, input.beforeArtifactId);
+      const after = await loadArtifactFlow(d, input.afterArtifactId);
+      return {
+        diff: diffFlows(before.flow, after.flow),
+        before: { artifactId: input.beforeArtifactId, branch: before.branch, version: before.version },
+        after: { artifactId: input.afterArtifactId, branch: after.branch, version: after.version },
+      };
+    }),
+
+  /**
+   * Dry-run 3-way merge of three ad-hoc flows (base + ours + theirs) → merged flow +
+   * conflicts. PURE — no persistence, no device I/O. Nothing is written; the caller decides
+   * whether to save the merged flow via the (gated) saveFlow path.
+   */
+  merge: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ base: flowSchema, ours: flowSchema, theirs: flowSchema }))
+    .query(({ input }) => mergeFlows(input.base, input.ours, input.theirs)),
+
+  /**
+   * Dry-run 3-way merge of two STORED branches against a common ancestor (all by artifact
+   * id). Reuses the existing version storage; NOTHING is written — this is a preview so a
+   * human can review conflicts before saving.
+   */
+  mergeVersions: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({
+      baseArtifactId: z.number().int().positive(),
+      oursArtifactId: z.number().int().positive(),
+      theirsArtifactId: z.number().int().positive(),
+    }))
+    .query(async ({ input }) => {
+      const d = await db();
+      const base = await loadArtifactFlow(d, input.baseArtifactId);
+      const ours = await loadArtifactFlow(d, input.oursArtifactId);
+      const theirs = await loadArtifactFlow(d, input.theirsArtifactId);
+      return {
+        result: mergeFlows(base.flow, ours.flow, theirs.flow),
+        base: { artifactId: input.baseArtifactId, branch: base.branch, version: base.version },
+        ours: { artifactId: input.oursArtifactId, branch: ours.branch, version: ours.version },
+        theirs: { artifactId: input.theirsArtifactId, branch: theirs.branch, version: theirs.version },
+      };
+    }),
 
   // ── MUTATIONS (gated: DPC_IR_V2_ENABLED + the EXISTING programming gate) ──
 

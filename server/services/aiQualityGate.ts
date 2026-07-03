@@ -23,6 +23,9 @@ import {
 import { runInference } from "./aiInferenceEngine";
 import { getAiModelById } from "../db/ai";
 import { selectCanaryVariant } from "./aiABTesting";
+// AOI-F (doc 24 Wave-4) — quality→control proposal (advisory by default; flag-gated).
+// isVisionControlEnabled has NO runtime top-level deps (type-only imports) → cycle-safe.
+import { isVisionControlEnabled, proposeControlForInspection } from "./qualityControlProposer";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -398,6 +401,21 @@ export async function processQualityGate(
     });
   }
 
+  // ── AOI-F (doc 24 Wave-4) — Quality → Control proposal (best-effort hook) ────
+  // When VISION_CONTROL_ENABLED (default OFF) AND the gate returned a hard NG, DRAFT
+  // a TYPED control proposal (reject_divert) and land it in the responsible users'
+  // inbox as an ai_pending_actions row — PROPOSE ONLY (never actuates; a human must
+  // confirm, and even then it stays simulated unless the adapter is commissioned +
+  // OT_CONTROL_ENABLED). Fire-and-forget: NEVER blocks/poisons the gate decision.
+  // Flag OFF ⇒ this branch is skipped entirely (today's behaviour: record + alert).
+  if (isVisionControlEnabled() && decision === "AUTO_NG") {
+    runQualityControlHook(inspectionId, { decision, confidence, topLabel }, config).catch((err) => {
+      console.warn(
+        `[QualityGate] quality→control proposal failed for inspection ${inspectionId}: ${(err as Error)?.message}`,
+      );
+    });
+  }
+
   return {
     decision,
     confidence,
@@ -609,6 +627,22 @@ async function runAnomalyHook(
   // Chỉ hành động khi phát hiện anomaly THẬT (không phải fallback degrade).
   if (!result.isAnomaly || result.degraded) return;
 
+  // ── AOI-F — propose a control action for a CONFIRMED anomaly (best-effort). ──
+  // Composes two flags: this hook already requires ANOMALY_DETECTION_ENABLED; the
+  // proposal additionally requires VISION_CONTROL_ENABLED. confidence=null (an
+  // anomaly score is NOT a 0..1 classifier confidence → honest provenance).
+  if (isVisionControlEnabled()) {
+    await proposeControlForInspection(
+      inspectionId,
+      { decision: "ANOMALY", confidence: null, topLabel: "anomaly", source: "anomaly" },
+      { modelId: config.modelId ?? null },
+    ).catch((err) => {
+      console.warn(
+        `[QualityGate] anomaly→control proposal failed for inspection ${inspectionId}: ${(err as Error)?.message}`,
+      );
+    });
+  }
+
   const anomalyMeta = {
     anomaly: {
       score: result.score,
@@ -657,4 +691,37 @@ async function runAnomalyHook(
       },
     });
   }
+}
+
+// ─── AOI-F — Quality → Control proposal hook (best-effort, HITL PROPOSE-ONLY) ────
+
+/**
+ * Draft a typed control proposal for a gated NG verdict and emit it via the HITL
+ * propose flow (ai_pending_actions). Resolves the model version for provenance
+ * (best-effort) then delegates to qualityControlProposer. NEVER actuates, NEVER
+ * throws into the caller (the caller already .catch()es). Reached ONLY when
+ * VISION_CONTROL_ENABLED (checked by the caller).
+ */
+async function runQualityControlHook(
+  inspectionId: number,
+  verdict: { decision: string; confidence: number; topLabel: string | null },
+  config: AiQualityGateConfig,
+): Promise<void> {
+  let modelVersion: string | null = null;
+  try {
+    const model = config.modelId != null ? await getAiModelById(config.modelId) : null;
+    modelVersion = (model as { version?: string | null } | null)?.version ?? null;
+  } catch {
+    /* best-effort — provenance modelVersion stays null */
+  }
+  await proposeControlForInspection(
+    inspectionId,
+    {
+      decision: verdict.decision,
+      confidence: verdict.confidence,
+      topLabel: verdict.topLabel,
+      source: "quality_gate",
+    },
+    { modelId: config.modelId ?? null, modelVersion },
+  );
 }

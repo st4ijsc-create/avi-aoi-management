@@ -30,6 +30,14 @@ import {
   type MachineTarget,
 } from "./uns/sparkplugCommand";
 import type { SparkplugMetric } from "./uns/sparkplugEncoder";
+import {
+  isUnsPackmlStateEnabled,
+  buildPackmlStateMessages,
+  packmlSparkplugDeviceId,
+  buildPackmlStateMetrics,
+  type PackmlTransition,
+  type PackmlIdentity,
+} from "./uns/packmlStateBridge";
 import { dispatch } from "./ot/commandDispatcher";
 import { getDb } from "../db/connection";
 import { machines, deviceAdapters } from "../../drizzle/schema";
@@ -414,6 +422,58 @@ export function publishAoiBridge(
     client.publish(ddata.topic, ddata.buffer, { qos: 0, retain: false });
   } catch (error) {
     console.error("[UNS] Sparkplug AOI bridge publish failed:", (error as Error)?.message || error);
+  }
+}
+
+/**
+ * C5 (doc 24 Wave-4) — UNS-first PackML STATE: publish a PackML state TRANSITION +
+ * machine IDENTITY as a first-class Sparkplug-B channel, so a UNS subscriber can
+ * reconstruct the machine's full PackML state + identity from DBIRTH/DDATA.
+ *
+ * GATE (default OFF → complete no-op, legacy behaviour unchanged):
+ *   1. UNS_PACKML_STATE_ENABLED — this channel's dedicated flag (checked FIRST), and
+ *   2. UNS_SPARKPLUG_ENABLED    — the Sparkplug transport this channel rides on (the
+ *      node/alias/DBIRTH machinery is reused; no new broker/publisher is created).
+ * When either is off, or the publisher is not connected, this returns without publishing.
+ *
+ * READ-DIRECTION only: it PUBLISHES state; it NEVER issues a PackML command and opens
+ * NO control path (a real command still routes through the gated commandDispatcher).
+ * Bọc try/catch — KHÔNG ném ra hot path.
+ */
+export function publishPackmlState(
+  transition: PackmlTransition,
+  identity: PackmlIdentity = {},
+): void {
+  // Dedicated flag first — default OFF ⇒ legacy (no UNS PackML publish).
+  if (!isUnsPackmlStateEnabled()) return;
+  // Rides the Sparkplug transport (node/client/connection). Honest: needs it enabled.
+  if (!isSparkplugEnabled() || !sparkplugNode || !client || !connected) return;
+  try {
+    const groupId = sparkplugGroupId();
+    const edgeNodeId = sparkplugEdgeNodeId();
+    const deviceId = packmlSparkplugDeviceId(identity);
+
+    const msgs = buildPackmlStateMessages(
+      sparkplugNode,
+      groupId,
+      edgeNodeId,
+      deviceId,
+      transition,
+      identity,
+    );
+    for (const m of msgs) {
+      client.publish(m.topic, m.buffer, { qos: 0, retain: false });
+    }
+
+    // Track the PackML metric names for this device so graceful NDEATH emits its DDEATH.
+    let birthed = birthedMetricsByDevice.get(deviceId);
+    if (!birthed) {
+      birthed = new Set<string>();
+      birthedMetricsByDevice.set(deviceId, birthed);
+    }
+    for (const d of buildPackmlStateMetrics(transition, identity).metricDefs) birthed.add(d.name);
+  } catch (error) {
+    console.error("[UNS] Sparkplug PackML state publish failed:", (error as Error)?.message || error);
   }
 }
 

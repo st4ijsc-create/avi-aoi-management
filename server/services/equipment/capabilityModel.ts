@@ -23,6 +23,7 @@
  */
 import type { PackmlState } from "./packml";
 import type { MachineCapabilities } from "../../../drizzle/schema/hierarchy";
+import { deriveCapabilityFromSpecs, type CompanionSpecId } from "./companionSpecs";
 
 /** The machineType values (mirror drizzle machineTypeEnum). */
 export type EquipmentClass =
@@ -450,6 +451,13 @@ export interface CapabilityOverride extends MachineCapabilities {
   extraTelemetry?: TelemetryDescriptor[];
   /** Command names to REMOVE from the default set. */
   disabledCommands?: string[];
+  /**
+   * C5 (doc 24 Wave-4) — OPC-UA COMPANION SPECS this machine's server implements
+   * (e.g. ["Machinery","Robotics"]). Their spec-derived telemetry channels + PackML
+   * states are UNIONED into the capability (additive; unknown ids ignored). This is a
+   * metadata/type derivation — see companionSpecs.ts (no live OPC-UA server needed).
+   */
+  companionSpecs?: Array<CompanionSpecId | string>;
 }
 
 /**
@@ -496,6 +504,18 @@ export function mergeCapability(
   if (Array.isArray(override.extraTelemetry)) {
     for (const t of override.extraTelemetry) if (t && typeof t.key === "string") addTelemetry(t);
   }
+
+  // C5 — companion-spec sourcing: a machine declaring OPC-UA companion spec(s) gets the
+  // spec-derived telemetry channels + PackML states UNIONED in (additive, backward-compat;
+  // unknown spec ids are ignored). Metadata derivation — no live OPC-UA server needed.
+  if (Array.isArray(override.companionSpecs) && override.companionSpecs.length) {
+    const derived = deriveCapabilityFromSpecs(override.companionSpecs);
+    for (const t of derived.telemetry) addTelemetry(t);
+    for (const s of derived.states) {
+      if (!merged.supportedStates.includes(s)) merged.supportedStates.push(s);
+    }
+  }
+
   if (Array.isArray(override.disabledCommands) && override.disabledCommands.length) {
     const disabled = new Set(override.disabledCommands);
     merged.supportedCommands = merged.supportedCommands.filter((c) => !disabled.has(c.name));

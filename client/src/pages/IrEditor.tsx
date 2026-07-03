@@ -44,7 +44,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
-  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical,
+  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -57,6 +57,7 @@ import {
   type TargetDeviceType, type Expr, type ExprBinOp, type NumericOrExpr,
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
+import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 
 // ── Typesafe shapes inferred from the ir router output ────────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -1103,6 +1104,15 @@ export default function IrEditor() {
               ))}
             </div>
           )}
+        </SectionCard>
+
+        {/* P5 — block-level version diff (added=success · removed=destructive · modified=warning · moved=primary) */}
+        <SectionCard
+          icon={<GitCompare className="h-4 w-4" />}
+          title={t("ir.diff.title", "Version diff")}
+          description={t("ir.diff.subtitle", "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree.")}
+        >
+          <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
         </SectionCard>
       </PageContainer>
     </DashboardLayout>
