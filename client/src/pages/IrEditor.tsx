@@ -44,7 +44,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
-  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare,
+  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare, GitMerge,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -58,6 +58,7 @@ import {
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
+import { IrMergePanel } from "@/components/programming/IrMergePanel";
 
 // ── Typesafe shapes inferred from the ir router output ────────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -683,6 +684,8 @@ export default function IrEditor() {
   // View toggle: the node-GRAPH canvas is the default (the "kéo thả khối" surface); the
   // nested TREE stays available. Both render the SAME AST via the SAME helpers.
   const [viewMode, setViewMode] = useState<"graph" | "tree">("graph");
+  // Compare surface: block-level "Version diff" vs the 3-way "Merge" resolution UI.
+  const [compareTab, setCompareTab] = useState<"diff" | "merge">("diff");
 
   const utils = trpc.useUtils();
 
@@ -1106,13 +1109,36 @@ export default function IrEditor() {
           )}
         </SectionCard>
 
-        {/* P5 — block-level version diff (added=success · removed=destructive · modified=warning · moved=primary) */}
+        {/* P5 version diff + Tier-1c 3-way merge — two tabs over the SAME typed IR AST. */}
         <SectionCard
-          icon={<GitCompare className="h-4 w-4" />}
-          title={t("ir.diff.title", "Version diff")}
-          description={t("ir.diff.subtitle", "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree.")}
+          icon={compareTab === "diff" ? <GitCompare className="h-4 w-4" /> : <GitMerge className="h-4 w-4" />}
+          title={t("ir.compare.title", "Compare & merge")}
+          description={
+            compareTab === "diff"
+              ? t("ir.diff.subtitle", "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree.")
+              : t("ir.merge.subtitle", "3-way merge a base (ancestor) with ours + theirs; resolve each conflict by picking a side, then save the merged flow as a new version.")
+          }
         >
-          <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
+          <Tabs value={compareTab} onValueChange={(v) => setCompareTab(v as "diff" | "merge")} className="gap-3">
+            <TabsList>
+              <TabsTrigger value="diff"><GitCompare className="mr-1 h-4 w-4" />{t("ir.diff.title", "Version diff")}</TabsTrigger>
+              <TabsTrigger value="merge"><GitMerge className="mr-1 h-4 w-4" />{t("ir.merge.tab", "Merge (3-way)")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="diff">
+              <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
+            </TabsContent>
+            <TabsContent value="merge">
+              <IrMergePanel
+                flows={flowsQ.data ?? []}
+                currentFlow={flow}
+                irProjects={irProjects}
+                canControl={canControl}
+                flagEnabled={flagEnabled}
+                onSaved={() => void flowsQ.refetch()}
+                t={t}
+              />
+            </TabsContent>
+          </Tabs>
         </SectionCard>
       </PageContainer>
     </DashboardLayout>

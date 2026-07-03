@@ -28,12 +28,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Cpu, Code2, FileCode2, ShieldCheck, AlertTriangle, XCircle, CheckCircle2,
-  Download, Upload, Copy, Lock, Info, RefreshCw,
+  Download, Upload, Copy, Lock, Info, RefreshCw, Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PouCanvas, type PouCanvasDiag } from "@/components/programming/PouCanvas";
+import type { PouProject } from "../../../server/services/programming/iec61131/pouModel";
 
 type RouterInputs = inferRouterInputs<AppRouter>;
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -124,8 +128,13 @@ export default function PouStudio() {
   const [jsonText, setJsonText] = useState<string>(() => pretty(SAMPLE_LAD));
   const [xmlText, setXmlText] = useState<string>("");
   const [rightTab, setRightTab] = useState<"transpile" | "plcopen">("transpile");
+  // View toggle: the graphical CANVAS is the default; the JSON editor stays available. Both
+  // are views over the SAME POU model (the single source of truth).
+  const [viewMode, setViewMode] = useState<"canvas" | "json">("canvas");
+  const [pouIndex, setPouIndex] = useState(0);
 
-  // Parse the JSON editor → a project object (or a parse error).
+  // Parse the JSON editor → a project object (or a parse error). Typed as the router INPUT
+  // shape (defaulted fields optional); the canvas boundary casts to the richer output type.
   const parsed = useMemo((): { ok: true; project: PouProjectInput } | { ok: false; error: string } => {
     try {
       return { ok: true, project: JSON.parse(jsonText) as PouProjectInput };
@@ -135,6 +144,9 @@ export default function PouStudio() {
   }, [jsonText]);
 
   const project = parsed.ok ? parsed.project : null;
+  const pous = parsed.ok ? parsed.project.pous : [];
+  const safePouIndex = pous.length ? Math.min(pouIndex, pous.length - 1) : 0;
+  const selPouName = pous[safePouIndex]?.name;
 
   // Pure server-side preview + lint (no persistence).
   const transpileQ = trpc.programming.pouTranspilePreview.useQuery(
@@ -158,8 +170,27 @@ export default function PouStudio() {
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
   const lintOk = lint?.ok ?? false;
 
+  // Group the selected POU's diagnostics by lint `ref` (rung / net / step) for canvas markers.
+  const diagsByRef = useMemo(() => {
+    const m = new Map<string, PouCanvasDiag[]>();
+    for (const d of lint?.diagnostics ?? []) {
+      if (selPouName && d.pou !== selPouName) continue;
+      const list = m.get(d.ref) ?? [];
+      list.push(d);
+      m.set(d.ref, list);
+    }
+    return m;
+  }, [lint, selPouName]);
+
+  // Canvas edits write straight back into the model → JSON view, PLCopen export and transpile
+  // all stay in sync (the model is the single source of truth; the canvas and JSON are views).
+  const handleModelChange = useCallback((next: PouProject) => {
+    setJsonText(pretty(next));
+  }, []);
+
   const loadSample = useCallback((s: unknown) => {
     setJsonText(pretty(s));
+    setPouIndex(0);
     toast.success(t("pou.sampleLoaded", "Sample POU loaded"));
   }, [t]);
 
@@ -172,6 +203,7 @@ export default function PouStudio() {
         return;
       }
       setJsonText(pretty(res.project));
+      setPouIndex(0);
       setRightTab("transpile");
       toast.success(t("pou.imported", "PLCopen XML imported into the model"));
     } catch (e) {
@@ -231,29 +263,68 @@ export default function PouStudio() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* LEFT — POU project JSON editor */}
+          {/* LEFT — POU editor: graphical canvas OR JSON (two views over one model) */}
           <SectionCard
             icon={<FileCode2 className="h-4 w-4" />}
-            title={t("pou.model", "POU project (JSON)")}
+            title={t("pou.editor", "POU editor")}
             description={
               parsed.ok
                 ? <span className="text-xs">{transpile?.summary.pous.map((p) => `${p.name} · ${p.language}`).join("  ·  ") ?? t("pou.parsed", "parsed")}</span>
                 : <span className="text-xs text-destructive">{t("pou.badJson", "Invalid JSON")}: {parsed.error}</span>
             }
             action={
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap items-center gap-1">
+                <div className="inline-flex shrink-0 rounded-md border border-border p-0.5">
+                  <Button size="sm" variant={viewMode === "canvas" ? "secondary" : "ghost"} className="h-7 gap-1 px-2 text-xs" onClick={() => setViewMode("canvas")} aria-pressed={viewMode === "canvas"}>
+                    <Workflow className="h-3.5 w-3.5" />{t("pou.viewCanvas", "Canvas")}
+                  </Button>
+                  <Button size="sm" variant={viewMode === "json" ? "secondary" : "ghost"} className="h-7 gap-1 px-2 text-xs" onClick={() => setViewMode("json")} aria-pressed={viewMode === "json"}>
+                    <Code2 className="h-3.5 w-3.5" />{t("pou.viewJson", "JSON")}
+                  </Button>
+                </div>
+                <span className="mx-1 h-4 w-px bg-border" />
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => loadSample(SAMPLE_LAD)}>LAD</Button>
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => loadSample(SAMPLE_FBD)}>FBD</Button>
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => loadSample(SAMPLE_SFC)}>SFC</Button>
               </div>
             }
           >
-            <Textarea
-              className="min-h-[460px] font-mono text-xs"
-              spellCheck={false}
-              value={jsonText}
-              onChange={(e) => setJsonText(e.target.value)}
-            />
+            {/* POU selector (multi-POU projects) — shared by both views */}
+            {parsed.ok && pous.length > 1 && (
+              <div className="mb-2 flex items-center gap-2">
+                <Label className="text-[11px] text-muted-foreground">{t("pou.selectPou", "POU")}</Label>
+                <Select value={String(safePouIndex)} onValueChange={(v) => setPouIndex(Number(v))}>
+                  <SelectTrigger className="h-8 w-64 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {pous.map((p, i) => <SelectItem key={i} value={String(i)}>{p.name} · {p.body.language}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {viewMode === "canvas" ? (
+              parsed.ok ? (
+                <PouCanvas
+                  key={`${safePouIndex}:${parsed.project.pous[safePouIndex]?.body.language}`}
+                  project={parsed.project as PouProject}
+                  pouIndex={safePouIndex}
+                  diagsByRef={diagsByRef}
+                  onChange={handleModelChange}
+                  t={t}
+                />
+              ) : (
+                <div className="flex h-[560px] items-center justify-center rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-6 text-center text-sm text-destructive">
+                  {t("pou.canvasBadJson", "Fix the JSON (switch to the JSON view) before the canvas can render.")}
+                </div>
+              )
+            ) : (
+              <Textarea
+                className="min-h-[560px] font-mono text-xs"
+                spellCheck={false}
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+              />
+            )}
             {/* Live lint indicator */}
             <div className="mt-2 flex items-center gap-2">
               <StatusBadge

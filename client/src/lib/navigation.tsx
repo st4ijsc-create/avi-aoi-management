@@ -501,6 +501,19 @@ export const navGroups: NavGroup[] = [
         engineerOriented: true,
         beta: true,
       },
+      {
+        // Tier-1b (doc 24): read-only system health — OT store-and-forward buffer +
+        // connection HA supervisors + DINOv2 model tier (+ commissioning ledger &
+        // twin export). View on machine_monitoring.
+        href: "/system-health",
+        label: "nav.systemHealth",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.systemHealthDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+        engineerOriented: true,
+      },
       // — MQTT / telemetry —
       {
         href: "/mqtt-dashboard",

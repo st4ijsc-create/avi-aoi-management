@@ -95,6 +95,7 @@ const MaintenanceHome = React.lazy(() => import("./pages/MaintenanceHome")); // 
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
+const SystemHealth = React.lazy(() => import("./pages/SystemHealth")); // Tier-1b (doc 24): OT store-and-forward + connection HA supervisors + DINOv2 model health + commissioning + twin export
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
@@ -260,6 +261,7 @@ function Router() {
       <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
       <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
+      <Route path="/system-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-control"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
       <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>

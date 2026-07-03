@@ -4578,7 +4578,9 @@
       "rfTestCell": "带机器人+测试仪回放的模拟 RF 测试单元（预览）",
       "cellTwin": "单个生产单元的实时孪生，可观看并回放（预览）",
       "federationDashboard": "跨多个已连接站点/工厂的汇总视图（预览）"
-    }
+    },
+    "systemHealth": "系统健康",
+    "systemHealthDesc": "只读内部健康：OT 存储转发、连接 HA/故障转移、DINOv2 视觉模型层"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",

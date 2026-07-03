@@ -131,6 +131,7 @@ import { ecosystemAdminRouter } from "./routers/ecosystemAdminRouter"; // U6-c (
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { commissioningRouter } from "./routers/commissioningRouter"; // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (OT_COMMISSIONING_REQUIRED, default ON; no device write path)
+import { systemHealthRouter } from "./routers/systemHealthRouter"; // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward buffer + connection HA supervisors + DINOv2 model tier
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
@@ -382,6 +383,7 @@ export const appRouter = router({
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   commissioning: commissioningRouter, // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (no device write path)
+  systemHealth: systemHealthRouter, // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward + connection HA supervisors + DINOv2 model tier
   robot: robotRouter,
   secsGem: secsGemRouter,
   vda5050: vda5050Router,

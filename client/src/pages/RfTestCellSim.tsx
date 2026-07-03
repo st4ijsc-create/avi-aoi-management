@@ -174,7 +174,31 @@ function tokenAt(sim: Sim, t: number, variant: "PASS" | "FAIL") {
 
 const SPEEDS = [0.5, 1, 2, 4];
 const CARTON_COLS = 6, CARTON_ROWS = 4, CARTON_SIZE = CARTON_COLS * CARTON_ROWS;
-const DEFECT_EVERY = 8; // 1 NG every 8 DUTs (~12.5% NG → ~87.5% yield)
+
+// ── Seeded stochastic yield ───────────────────────────────────────────────────────
+// Defects occur by PROBABILITY (a Bernoulli trial on `yieldRate`), NOT on a fixed
+// "1 NG every N DUTs" cadence. The run stays DETERMINISTIC under a fixed seed: a fresh
+// mulberry32 stream is seeded per cycle index, so the PASS/FAIL sequence is reproducible
+// across resets and independent of call order (a stateful stream is not needed).
+const YIELD_SEED = 0x51ec; // fixed seed → deterministic playback
+const DEFAULT_YIELD_RATE = 0.95; // ~95% good; tunable setpoint (control lives in the header)
+const YIELD_PRESETS = [0.9, 0.95, 0.98, 0.99];
+
+/** mulberry32 — one deterministic uniform in [0,1) from a 32-bit seed (same family as the DES engine). */
+function mulberry32(seed: number): number {
+  let a = seed >>> 0;
+  a = (a + 0x6d2b79f5) >>> 0;
+  let x = a;
+  x = Math.imul(x ^ (x >>> 15), x | 1);
+  x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+  return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+}
+
+/** Deterministic PASS/FAIL for cycle `idx`: Bernoulli(yieldRate) — PASS with probability = yieldRate. */
+function sampleVariant(idx: number, yieldRate: number): "PASS" | "FAIL" {
+  const u = mulberry32((YIELD_SEED ^ Math.imul(idx + 1, 0x9e3779b9)) >>> 0);
+  return u < yieldRate ? "PASS" : "FAIL";
+}
 
 export default function RfTestCellSim() {
   const { t } = useTranslation();
@@ -184,17 +208,21 @@ export default function RfTestCellSim() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [yieldRate, setYieldRate] = useState(DEFAULT_YIELD_RATE);
   const [view, setView] = useState({ t: 0, cycle: 0, variant: "PASS" as "PASS" | "FAIL", ok: 0, ng: 0, carton: 0, cartonsDone: 0 });
 
   // Refs the rAF loop reads/writes without re-rendering.
   const simsRef = useRef(sims); simsRef.current = sims;
   const runningRef = useRef(running); runningRef.current = running;
   const speedRef = useRef(speed); speedRef.current = speed;
+  const yieldRef = useRef(yieldRate); yieldRef.current = yieldRate;
   const stateRef = useRef({ t: 0, cycle: 0, variant: "PASS" as "PASS" | "FAIL", ok: 0, ng: 0, carton: 0, cartonsDone: 0 });
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
 
-  const pickVariant = (idx: number): "PASS" | "FAIL" => (idx % DEFECT_EVERY === DEFECT_EVERY - 1 ? "FAIL" : "PASS");
+  // Seeded Bernoulli on the current yield setpoint (read via ref so tuning yield mid-run
+  // takes effect without restarting the loop). Deterministic for a given (seed, idx, yield).
+  const pickVariant = (idx: number): "PASS" | "FAIL" => sampleVariant(idx, yieldRef.current);
 
   // Fetch the two predicted timelines (PASS / FAIL) from the pure twin.
   useEffect(() => {
@@ -293,6 +321,21 @@ export default function RfTestCellSim() {
                 <Label className="text-xs text-muted-foreground">{t("rfcell.speed", "Speed")}</Label>
                 {SPEEDS.map((s) => (
                   <Button key={s} size="sm" variant={speed === s ? "default" : "outline"} className="px-2 h-7" onClick={() => setSpeed(s)}>{s}×</Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">{t("rfcell.yieldControl", "Yield")}</Label>
+                {YIELD_PRESETS.map((y) => (
+                  <Button
+                    key={y}
+                    size="sm"
+                    variant={yieldRate === y ? "default" : "outline"}
+                    className="px-2 h-7"
+                    onClick={() => setYieldRate(y)}
+                    title={t("rfcell.yieldHint", "Target good-part probability (seeded, deterministic)")}
+                  >
+                    {Math.round(y * 100)}%
+                  </Button>
                 ))}
               </div>
             </>
@@ -430,6 +473,7 @@ export default function RfTestCellSim() {
                 <Kpi label="OK" value={String(view.ok)} cls="text-emerald-600" icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
                 <Kpi label="NG" value={String(view.ng)} cls="text-red-600" icon={<XCircle className="h-3.5 w-3.5" />} />
                 <Kpi label={t("rfcell.yield", "Yield")} value={`${yieldPct}%`} />
+                <Kpi label={t("rfcell.targetYield", "Target yield")} value={`${Math.round(yieldRate * 100)}%`} />
                 <Kpi label={t("rfcell.uph", "Throughput")} value={`${uph} UPH`} />
                 <Kpi label={t("rfcell.cartonsDone", "Cartons done")} value={String(view.cartonsDone)} />
                 <Kpi label={t("rfcell.inCarton", "In carton")} value={`${view.carton}/${CARTON_SIZE}`} />
