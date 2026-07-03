@@ -184,51 +184,61 @@ export async function releaseResource(deviceId: number, resourceId?: number): Pr
   const db = await getDb();
   if (!db) return { ok: false, enabled: true, released: 0, promoted: 0 };
 
-  const held = await db
-    .select()
-    .from(resourceReservations)
-    .where(
-      and(
-        eq(resourceReservations.deviceId, deviceId),
-        inArray(resourceReservations.status, ["active", "queued"]),
-        ...(resourceId != null ? [eq(resourceReservations.resourceId, resourceId)] : []),
-      ),
-    );
-  if (held.length === 0) return { ok: true, enabled: true, released: 0, promoted: 0 };
-
-  // Snapshot the resources whose ACTIVE claim we are about to free BEFORE the update
-  // (the update mutates the held rows' status, so read it first).
-  const freedResources = [...new Set(held.filter((h) => h.status === "active").map((h) => h.resourceId))];
-
-  const now = new Date();
-  await db
-    .update(resourceReservations)
-    .set({ status: "released", releasedAt: now })
-    .where(inArray(resourceReservations.id, held.map((h) => h.id)));
-
-  // For each resource whose ACTIVE claim we just freed, promote the oldest waiter.
-  let promoted = 0;
-  for (const rid of freedResources) {
-    const [next] = await db
+  // ATOMIC (W2-6 / doc 25 T5 — closes the release→promote race): the free + FIFO
+  // promote of the new owner runs in ONE transaction. For each freed resource we take
+  // the resource-row FOR UPDATE lock (the SAME lock claimResource holds) BEFORE picking
+  // and promoting the next waiter — so a concurrent claimer cannot double-own the
+  // resource and two releasers cannot both promote a waiter. Locked in ascending id
+  // order to avoid deadlock.
+  return db.transaction(async (tx) => {
+    const held = await tx
       .select()
       .from(resourceReservations)
-      .where(and(eq(resourceReservations.resourceId, rid), eq(resourceReservations.status, "queued")))
-      .orderBy(resourceReservations.createdAt)
-      .limit(1);
-    if (next) {
-      await db.update(resourceReservations).set({ status: "active" }).where(eq(resourceReservations.id, next.id));
-      await db
-        .update(sharedResources)
-        .set({ status: "in_use", currentOwnerDeviceId: next.deviceId, updatedAt: now })
-        .where(eq(sharedResources.id, rid));
-      promoted++;
-    } else {
-      await db
-        .update(sharedResources)
-        .set({ status: "available", currentOwnerDeviceId: null, updatedAt: now })
-        .where(eq(sharedResources.id, rid));
+      .where(
+        and(
+          eq(resourceReservations.deviceId, deviceId),
+          inArray(resourceReservations.status, ["active", "queued"]),
+          ...(resourceId != null ? [eq(resourceReservations.resourceId, resourceId)] : []),
+        ),
+      );
+    if (held.length === 0) return { ok: true, enabled: true, released: 0, promoted: 0 };
+
+    // Snapshot the resources whose ACTIVE claim we are about to free BEFORE the update
+    // (the update mutates the held rows' status, so read it first).
+    const freedResources = [...new Set(held.filter((h) => h.status === "active").map((h) => h.resourceId))].sort((a, b) => a - b);
+
+    const now = new Date();
+    await tx
+      .update(resourceReservations)
+      .set({ status: "released", releasedAt: now })
+      .where(inArray(resourceReservations.id, held.map((h) => h.id)));
+
+    // For each resource whose ACTIVE claim we just freed, promote the oldest waiter.
+    let promoted = 0;
+    for (const rid of freedResources) {
+      // Lock the resource row → serialize against claimResource + other releasers.
+      await tx.select().from(sharedResources).where(eq(sharedResources.id, rid)).for("update");
+      const [next] = await tx
+        .select()
+        .from(resourceReservations)
+        .where(and(eq(resourceReservations.resourceId, rid), eq(resourceReservations.status, "queued")))
+        .orderBy(resourceReservations.createdAt)
+        .limit(1);
+      if (next) {
+        await tx.update(resourceReservations).set({ status: "active" }).where(eq(resourceReservations.id, next.id));
+        await tx
+          .update(sharedResources)
+          .set({ status: "in_use", currentOwnerDeviceId: next.deviceId, updatedAt: now })
+          .where(eq(sharedResources.id, rid));
+        promoted++;
+      } else {
+        await tx
+          .update(sharedResources)
+          .set({ status: "available", currentOwnerDeviceId: null, updatedAt: now })
+          .where(eq(sharedResources.id, rid));
+      }
     }
-  }
-  console.log(`[Fleet] device ${deviceId} released ${held.length} resource claim(s), promoted ${promoted} waiter(s)`);
-  return { ok: true, enabled: true, released: held.length, promoted };
+    console.log(`[Fleet] device ${deviceId} released ${held.length} resource claim(s), promoted ${promoted} waiter(s)`);
+    return { ok: true, enabled: true, released: held.length, promoted };
+  });
 }

@@ -92,8 +92,34 @@ export const orchestrationRunSteps = pgTable("orchestration_run_steps", {
   unique("uq_orch_run_step").on(table.runId, table.stepId),
 ]);
 
+/**
+ * W3-11 (doc 25 · T3) — append-only VERSION history for orchestration workflows.
+ * deployWorkflow snapshots each deployed version here so the Studio can DIFF two
+ * versions and ROLL BACK (re-deploy an older snapshot as a new version). The "head"
+ * (latest) still lives on orchestrationWorkflows for startRun/getRun.
+ */
+export const orchestrationWorkflowVersions = pgTable("orchestration_workflow_versions", {
+  id: serial("id").primaryKey(),
+  workflowId: integer("workflowId").notNull(),
+  /** Denormalised ref (matches the parent workflow's ref at snapshot time). */
+  ref: varchar("ref", { length: 128 }).notNull(),
+  version: integer("version").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  /** The full WorkflowDefinition snapshot for THIS version. */
+  definitionJson: jsonb("definitionJson").$type<WorkflowDefinition>().notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_orch_wf_version").on(table.workflowId, table.version),
+  index("idx_orch_wf_versions_workflow").on(table.workflowId),
+  index("idx_orch_wf_versions_ref").on(table.ref),
+]);
+
 export type OrchestrationWorkflow = typeof orchestrationWorkflows.$inferSelect;
 export type InsertOrchestrationWorkflow = typeof orchestrationWorkflows.$inferInsert;
+export type OrchestrationWorkflowVersion = typeof orchestrationWorkflowVersions.$inferSelect;
+export type InsertOrchestrationWorkflowVersion = typeof orchestrationWorkflowVersions.$inferInsert;
 export type OrchestrationRun = typeof orchestrationRuns.$inferSelect;
 export type InsertOrchestrationRun = typeof orchestrationRuns.$inferInsert;
 export type OrchestrationRunStep = typeof orchestrationRunSteps.$inferSelect;

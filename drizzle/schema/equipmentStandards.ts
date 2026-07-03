@@ -40,7 +40,7 @@
 // migration stays additive (CREATE TABLE/INDEX/POLICY only, no ALTER TYPE), matching
 // fleet.ts (0142) / fleetResource (0143) / twin (0144) / safetyWorkforce (0145).
 // ════════════════════════════════════════════════════════════════════════════
-import { pgTable, serial, integer, varchar, text, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, jsonb, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CommandDescriptor, TelemetryDescriptor } from "../../server/services/equipment/capabilityModel";
 import type { PackmlState } from "../../server/services/equipment/packml";
 
@@ -150,6 +150,72 @@ export const alarmTaxonomy = pgTable("alarm_taxonomy", {
 ]);
 
 // ════════════════════════════════════════════════════════════════════════════
+// W5-21 (doc 25) — ISA-18.2 / EEMUA-191 MASTER ALARM DATABASE
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Master Alarm — ONE rationalized alarm point in the ISA-18.2 master alarm database.
+ * Where alarm_taxonomy is only a vendor dictionary (nativeCode → standardCode + severity),
+ * master_alarms adds the RATIONALIZATION core the standard requires:
+ *   • priority       — DERIVED from consequence × timeToRespond (EEMUA-191 matrix),
+ *                      stored so it is auditable. See alarmMasterService.derivePriority.
+ *   • setpoint       — the alarm trip point (free text: value + unit).
+ *   • deadband       — the return-to-normal hysteresis (free text) — chattering control.
+ *   • consequence    — severity of the consequence if the operator does NOT respond
+ *                      (none | minor | major | severe).
+ *   • timeToRespond  — minutes the operator has to act before the consequence occurs.
+ *   • rationalization— the free-text justification (why this alarm exists / what to do).
+ *   • shelvedUntil   — ISA-18.2 SHELVING: a temporary operator-set silence window. While
+ *                      in the future the runtime bridge does NOT raise this alarm.
+ *   • isSuppressed   — permanent design suppression (out-of-service / maintenance mode).
+ *
+ * alarmKey joins to alarm_taxonomy.standardCode (the normalized code the runtime raises).
+ * assetType scopes the master alarm to a machineType/deviceType class (nullable = global).
+ *
+ * SAFETY / NO-OP: this is GOVERNANCE + SIGNAL metadata only. Shelving/suppression only
+ * ever SUPPRESSES an Andon (a visual signal) — it opens no device-control path.
+ *
+ * status/priority/consequence are varchar (NOT new pg enums) → the migration stays
+ * additive (CREATE TABLE/INDEX/POLICY only), matching the sibling E1 tables above.
+ */
+export const masterAlarms = pgTable("master_alarms", {
+  id: serial("id").primaryKey(),
+  // Standard alarm code (joins alarm_taxonomy.standardCode) — the rationalized key.
+  alarmKey: varchar("alarmKey", { length: 64 }).notNull(),
+  // Optional asset class scope (machineType/deviceTypeKey). Null = applies to all.
+  assetType: varchar("assetType", { length: 48 }),
+  // Optional vendor+native correlation (so a raw vendor alarm can match a master row too).
+  vendor: varchar("vendor", { length: 48 }),
+  nativeCode: varchar("nativeCode", { length: 64 }),
+  label: varchar("label", { length: 128 }),
+  // DERIVED priority (low|medium|high|critical) — computed from consequence×timeToRespond.
+  priority: varchar("priority", { length: 16 }).notNull().default("low"),
+  // Consequence band if unattended: none|minor|major|severe.
+  consequence: varchar("consequence", { length: 16 }).notNull().default("minor"),
+  // Minutes the operator has to respond before the consequence occurs.
+  timeToRespond: integer("timeToRespond"),
+  // Free-text trip point + hysteresis (chattering control).
+  setpoint: varchar("setpoint", { length: 96 }),
+  deadband: varchar("deadband", { length: 96 }),
+  rationalization: text("rationalization"),
+  // ISA-18.2 shelving: silence until this instant (future = shelved). Null = not shelved.
+  shelvedUntil: timestamp("shelvedUntil"),
+  // Permanent design suppression (out-of-service). true = never raise.
+  isSuppressed: boolean("isSuppressed").notNull().default(false),
+  scope: varchar("scope", { length: 64 }),
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryId: integer("factoryId"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_masteralarm_key_asset").on(table.alarmKey, table.assetType),
+  index("idx_masteralarm_key").on(table.alarmKey),
+  index("idx_masteralarm_priority").on(table.priority),
+  index("idx_masteralarm_vendor").on(table.vendor),
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
 // E1-c — Equipment Standards Board change-request workflow
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -206,3 +272,5 @@ export type AlarmTaxonomyEntry = typeof alarmTaxonomy.$inferSelect;
 export type InsertAlarmTaxonomyEntry = typeof alarmTaxonomy.$inferInsert;
 export type DeviceTypeChangeRequest = typeof deviceTypeChangeRequests.$inferSelect;
 export type InsertDeviceTypeChangeRequest = typeof deviceTypeChangeRequests.$inferInsert;
+export type MasterAlarm = typeof masterAlarms.$inferSelect;
+export type InsertMasterAlarm = typeof masterAlarms.$inferInsert;

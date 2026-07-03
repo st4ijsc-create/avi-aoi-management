@@ -32,6 +32,7 @@ import {
   assessBackwardCompat,
   enforcePublish,
   buildPublishedNode,
+  applyProposalToNodes,
   generateCrKey,
 } from "./governanceService";
 import {
@@ -257,6 +258,56 @@ describe("governanceService — backward-compat (SemVer enforcement)", () => {
     const a = generateCrKey(), b = generateCrKey();
     expect(a).toMatch(/^CR-\d+-/);
     expect(a).not.toBe(b);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// W5-20 — CR proposedSchema overlay + SERVER-side conformance (governance fix)
+// ════════════════════════════════════════════════════════════════════════════
+describe("W5-20 — proposal overlay + server-side conformance", () => {
+  const seed = buildSeedTypes();
+
+  it("overlays a proposal as a PUBLISHED node WITHOUT emptying it (publish is non-empty)", () => {
+    const overlay = applyProposalToNodes("AOI", { attributesSchema: [{ name: "x", dataType: "int" }] }, seed);
+    const node = overlay.find((n) => n.typeKey === "AOI")!;
+    expect(node.status).toBe("published");
+    expect(node.attributesSchema.length).toBeGreaterThan(0);
+  });
+
+  it("PRESERVES the parent when the proposal omits parentTypeKey (hierarchy not severed)", () => {
+    // proposal carries NO parentTypeKey — the old bug would null it and detach the leaf.
+    const overlay = applyProposalToNodes("AOI", { attributesSchema: [{ name: "new_attr", dataType: "int" }] }, seed);
+    const node = overlay.find((n) => n.typeKey === "AOI")!;
+    expect(node.parentTypeKey).toBe("Inspection"); // preserved from seed
+    const resolved = resolveType("AOI", overlay)!;
+    // still inherits the Equipment base + Inspection chain — proof the tree survived.
+    expect(resolved.inheritanceChain).toEqual(expect.arrayContaining(["Equipment", "Inspection", "AOI"]));
+    const names = resolved.attributesSchema.map((a) => a.name);
+    expect(names).toContain("vendor"); // inherited from Equipment base
+    expect(names).toContain("new_attr"); // the proposed addition
+  });
+
+  it("computes conformance on the SERVER: an incomplete AOI proposal FAILS (no self-attest)", () => {
+    // client could self-attest 'pass', but the server resolves + runs the rules itself:
+    const overlay = applyProposalToNodes("AOI", {
+      attributesSchema: [{ name: "state", dataType: "string" }], // missing cycle_time
+      supportedCommands: [{ name: "start" }, { name: "stop" }],
+    }, seed);
+    const resolved = resolveType("AOI", overlay)!;
+    const conf = runConformance(subjectFromResolved(resolved));
+    expect(conf.pass).toBe(false);
+    expect(conf.violations.some((v) => v.detail.includes("cycle_time"))).toBe(true);
+  });
+
+  it("computes conformance on the SERVER: a complete AOI proposal PASSES", () => {
+    const overlay = applyProposalToNodes("AOI", {
+      attributesSchema: [{ name: "state", dataType: "string" }, { name: "cycle_time", dataType: "float" }],
+      supportedCommands: [{ name: "start" }, { name: "stop" }],
+      supportedStates: ["Idle", "Execute", "Stopped"],
+    }, seed);
+    const resolved = resolveType("AOI", overlay)!;
+    const conf = runConformance(subjectFromResolved(resolved));
+    expect(conf.pass).toBe(true);
   });
 });
 

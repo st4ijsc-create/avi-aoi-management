@@ -61,6 +61,8 @@ export interface NormalizedAlarmResult {
   andon: AndonEvent | null;
   /** True when EQ_INTEG_ENABLED was on and an Andon was raised. */
   raised: boolean;
+  /** W5-21: true when a master alarm SHELVED/SUPPRESSED this code → no Andon raised. */
+  suppressed?: boolean;
 }
 
 /**

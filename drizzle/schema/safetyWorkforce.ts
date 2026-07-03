@@ -81,6 +81,8 @@ export const operatorAssignments = pgTable("operator_assignments", {
   // Two-step confirm: a supervisor/operator confirms the planned assignment.
   confirmedBy: integer("confirmedBy"),
   confirmedAt: timestamp("confirmedAt"),
+  // Provenance của hành động close (ai đã đóng assignment) — W2-7 / migration 0166.
+  closedBy: integer("closedBy"),
   notes: text("notes"),
   // Tenant scope (mirrors fleet tables). `scope` is a free tag (e.g. corporate:factory).
   scope: varchar("scope", { length: 64 }),
@@ -123,6 +125,8 @@ export const collaborationSessions = pgTable("collaboration_sessions", {
   handshakeState: varchar("handshakeState", { length: 16 }).default("pending").notNull(),
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   endedAt: timestamp("endedAt"),
+  // Provenance của hành động abort (ai đã hủy phiên) — W2-7 / migration 0166.
+  abortedBy: integer("abortedBy"),
   notes: text("notes"),
   scope: varchar("scope", { length: 64 }),
   corporateCode: varchar("corporateCode", { length: 50 }),

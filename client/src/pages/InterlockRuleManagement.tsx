@@ -17,7 +17,7 @@
  *   delete = canDelete ; approve = admin-only.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -112,7 +112,11 @@ export default function InterlockRuleManagement() {
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
-  const eventsQuery = trpc.interlock.events.useQuery({ limit: 100 }, { enabled: canView });
+  // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem.
+  const eventsQuery = trpc.interlock.events.useQuery(
+    { limit: 100 },
+    { enabled: canView, refetchInterval: canView ? 5000 : false },
+  );
 
   const invalidateRules = () => void utils.interlock.list.invalidate();
   const invalidateEvents = () => void utils.interlock.events.invalidate();
@@ -225,6 +229,12 @@ export default function InterlockRuleManagement() {
 
   const rules = rulesQuery.data ?? [];
   const events = eventsQuery.data ?? [];
+  // Map id→tên rule để hiển thị tên thay vì #ruleId trong bảng sự kiện.
+  const ruleNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const r of rules) m.set(r.id, r.name);
+    return m;
+  }, [rules]);
 
   if (!canView) {
     return (
@@ -374,12 +384,18 @@ export default function InterlockRuleManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {events.length === 0 && (
+                  {eventsQuery.isError && (
+                    <TableRow><TableCell colSpan={7} className="text-center text-destructive">{t("common.loadError")}</TableCell></TableRow>
+                  )}
+                  {!eventsQuery.isError && eventsQuery.isLoading && (
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
+                  )}
+                  {!eventsQuery.isError && !eventsQuery.isLoading && events.length === 0 && (
                     <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
                   )}
                   {events.map((ev) => (
                     <TableRow key={ev.id}>
-                      <TableCell className="font-medium">#{ev.ruleId}</TableCell>
+                      <TableCell className="font-medium">{ruleNameById.get(ev.ruleId) ?? `#${ev.ruleId}`}</TableCell>
                       <TableCell className="text-xs">{ev.firedAt ? new Date(ev.firedAt).toLocaleString() : "—"}</TableCell>
                       <TableCell>{ev.observedValue ?? "—"}</TableCell>
                       <TableCell>{ev.threshold ?? "—"}</TableCell>

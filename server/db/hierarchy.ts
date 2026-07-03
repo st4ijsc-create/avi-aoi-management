@@ -7,6 +7,7 @@ import {
   stations, InsertStation,
   machines, InsertMachine,
   workstations, InsertWorkstation,
+  factoryZones, InsertFactoryZone,
 } from "../../drizzle/schema";
 
 // ============ FACTORY FUNCTIONS ============
@@ -40,6 +41,35 @@ export async function deleteFactory(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(factories).set({ isActive: false }).where(eq(factories.id, id));
+}
+
+// ============ FACTORY ZONE FUNCTIONS (W6-25) ============
+// Vùng polygon vẽ trên mặt bằng — CRUD gated ở tầng router bằng machine_control/canEdit.
+export async function getFactoryZones(factoryId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(factoryZones)
+    .where(eq(factoryZones.factoryId, factoryId))
+    .orderBy(factoryZones.id);
+}
+
+export async function createFactoryZone(data: InsertFactoryZone) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(factoryZones).values(data).returning({ id: factoryZones.id });
+  return result.id;
+}
+
+export async function updateFactoryZone(id: number, data: Partial<InsertFactoryZone>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(factoryZones).set({ ...data, updatedAt: new Date() }).where(eq(factoryZones.id, id));
+}
+
+export async function deleteFactoryZone(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(factoryZones).where(eq(factoryZones.id, id));
 }
 
 // ============ WORKSHOP FUNCTIONS ============

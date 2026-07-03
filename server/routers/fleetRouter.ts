@@ -19,16 +19,16 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { tasks, zones, zoneReservations } from "../../drizzle/schema";
+import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../drizzle/schema";
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
-import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks } from "../services/fleet/taskAllocator";
+import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";
 import { publishTaskEvent } from "../services/ecosystem/ecosystemEvents";
-import { reserveZone, releaseZone, getZoneOccupancy, detectDeadlocks } from "../services/fleet/trafficManager";
+import { reserveZone, releaseZone, getZoneOccupancy, detectDeadlocks, resolveDeadlock } from "../services/fleet/trafficManager";
 // G2 (doc 16 §7 c&d / §15 G2) — Skill/Resource/Charging. Flag: FLEET_RESOURCE_ENABLED.
 import { fleetResourceEnabled, resolveOperation } from "../services/fleet/skillRegistry";
 import { pickVariantForProgram, recordVariantOutcome } from "../services/fleet/variantPicker";
@@ -141,6 +141,47 @@ export const fleetRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .query(async () => detectDeadlocks()),
 
+  /**
+   * W4-18 (3) — live robot positions for the fleet MAP. Latest telemetry pose per
+   * enabled robot → { x,y } (from poseJson.cartesian), plus status/battery/zone. Read
+   * only (machine_monitoring/canView); returns [] when no db / no robots. Coordinates
+   * are null when a robot has no cartesian pose yet (rendered as "unlocated").
+   */
+  robotPositions: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async () => {
+      const d = await db();
+      const robotRows = await d.select().from(robots).where(eq(robots.isEnabled, true));
+      if (robotRows.length === 0) return [];
+      const ids = robotRows.map((r) => r.id);
+      const telRows = await d
+        .select()
+        .from(robotTelemetry)
+        .where(inArray(robotTelemetry.robotId, ids))
+        .orderBy(desc(robotTelemetry.timestamp));
+      const latest = new Map<number, (typeof telRows)[number]>();
+      for (const tel of telRows) if (!latest.has(tel.robotId)) latest.set(tel.robotId, tel);
+      return robotRows.map((r) => {
+        const tel = latest.get(r.id);
+        const pose = (tel?.poseJson ?? null) as Record<string, unknown> | null;
+        const cart = pose?.cartesian as { x?: number; y?: number } | undefined;
+        const b = pose?.battery as { charge?: number } | number | undefined;
+        const battery =
+          typeof b === "number" ? b : b && typeof b.charge === "number" ? b.charge : null;
+        return {
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          kind: r.kind as string,
+          status: r.status,
+          x: cart && typeof cart.x === "number" ? cart.x : null,
+          y: cart && typeof cart.y === "number" ? cart.y : null,
+          zoneId: tel?.safetyZoneId ?? null,
+          battery,
+        };
+      });
+    }),
+
   // ── TASKS (admin actions) — flag-gated ────────────────────────────────────
   createTask: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -204,6 +245,20 @@ export const fleetRouter = router({
       if (!t) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.taskId} not found` });
       if (["completed", "cancelled"].includes(t.status)) {
         throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} is terminal (${t.status})` });
+      }
+      // W4-18 (2) — VALIDATE the destination device before writing the assignment.
+      // (a) must exist AND be enabled, (b) must be online (not offline/estop),
+      // (c) its capability class must support the task's requiredCapability. This closes
+      // the gap where a manual reassign blindly wrote any deviceId (fake "success").
+      const [robot] = await d.select().from(robots).where(eq(robots.id, input.deviceId)).limit(1);
+      if (!robot || !robot.isEnabled) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Device ${input.deviceId} not found or not enabled` });
+      }
+      if (robot.status === "offline" || robot.status === "estop") {
+        throw new TRPCError({ code: "CONFLICT", message: `Device ${input.deviceId} is ${robot.status} — cannot assign work` });
+      }
+      if (!deviceSupportsCapability(robot.kind, t.requiredCapability)) {
+        throw new TRPCError({ code: "CONFLICT", message: `Device ${input.deviceId} (${robot.kind}) does not support capability "${t.requiredCapability}"` });
       }
       await d
         .update(tasks)
@@ -351,6 +406,18 @@ export const fleetRouter = router({
     .mutation(async ({ input }) => {
       requireFlag();
       return releaseZone(input.deviceId, input.zoneId);
+    }),
+
+  /**
+   * W4-18 (5) — ADVISORY deadlock resolution. Cancels the lowest-priority queued
+   * waiter in each detected cycle to break it (reservation STATE only, no device
+   * command). Flag-gated + machine_control/canCreate.
+   */
+  resolveDeadlock: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .mutation(async () => {
+      requireFlag();
+      return resolveDeadlock();
     }),
 
   // ══════════════════════════════════════════════════════════════════════════

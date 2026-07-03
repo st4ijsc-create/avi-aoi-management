@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { toast } from "sonner";
 import {
   Workflow,
@@ -57,7 +59,13 @@ import {
   Sparkles,
   Wand2,
   Copy,
+  History,
+  GitCompare,
+  RotateCcw,
+  ListTree,
+  Network,
 } from "lucide-react";
+import { LineDiff, prettyJson } from "@/components/diff/LineDiff";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -82,7 +90,9 @@ import {
   addChild,
   STEP_META,
   emptyDef,
+  ON_PRECONDITION_FAIL,
 } from "@/components/orchestration/workflowTypes";
+import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -406,6 +416,7 @@ function Inspector({
             </div>
           </div>
           <NumberField label={t("studio.timeoutMs", "Timeout (ms)")} value={step.timeoutMs ?? 30000} onChange={(n) => onPatch({ timeoutMs: n })} />
+          <NumberField label={t("studio.pollMs", "Poll interval (ms, optional)")} value={step.pollMs ?? 0} onChange={(n) => onPatch({ pollMs: n > 0 ? n : undefined })} />
         </>
       )}
 
@@ -418,6 +429,7 @@ function Inspector({
             t={t}
           />
           <NumberField label={t("studio.timeoutMs", "Timeout (ms)")} value={step.timeoutMs ?? 30000} onChange={(n) => onPatch({ timeoutMs: n })} />
+          <NumberField label={t("studio.pollMs", "Poll interval (ms, optional)")} value={step.pollMs ?? 0} onChange={(n) => onPatch({ pollMs: n > 0 ? n : undefined })} />
         </>
       )}
 
@@ -430,31 +442,216 @@ function Inspector({
       )}
 
       {step.type === "hitl_gate" && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">{t("studio.gatePrompt", "Prompt for the approver")}</Label>
-          <Textarea value={step.prompt ?? ""} onChange={(e) => onPatch({ prompt: e.target.value })} rows={3} />
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t("studio.gatePrompt", "Prompt for the approver")}</Label>
+            <Textarea value={step.prompt ?? ""} onChange={(e) => onPatch({ prompt: e.target.value })} rows={3} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t("studio.approverRoles", "Approver roles (advisory, comma-separated)")}</Label>
+            <Input
+              value={(step.approverRoles ?? []).join(", ")}
+              placeholder="supervisor, admin"
+              onChange={(e) => {
+                const roles = e.target.value.split(",").map((r) => r.trim()).filter(Boolean);
+                onPatch({ approverRoles: roles.length ? roles : undefined });
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground">{t("studio.approverRolesHint", "Advisory only — RBAC is enforced at the API.")}</p>
+          </div>
+        </>
+      )}
+
+      {step.type === "parallel" && (
+        <div className="flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
+          <div className="space-y-0.5">
+            <Label className="text-xs">{t("studio.failFast", "Fail fast")}</Label>
+            <p className="text-[10px] text-muted-foreground">{t("studio.failFastHint", "Fail the parallel on the FIRST failing branch (else only if all fail).")}</p>
+          </div>
+          <input type="checkbox" checked={Boolean(step.failFast)} onChange={(e) => onPatch({ failFast: e.target.checked || undefined })} />
         </div>
       )}
 
       {(step.type === "sequence" || step.type === "parallel") && (
         <p className="text-xs text-muted-foreground">{t("studio.containerHint", "Add / reorder child steps directly on the workflow tree on the left.")}</p>
       )}
+
+      <Separator />
+
+      {/* ── W4-16: Nâng cao — interlock / retry / bù trừ (mọi loại bước) ── */}
+      <AdvancedStepSection step={step} machines={machines} onPatch={onPatch} t={t} />
     </div>
   );
 }
 
+// ── W4-16: Section "Nâng cao" — precondition + onPreconditionFail + maxAttempts + compensation ──
+function AdvancedStepSection({
+  step, machines, onPatch, t,
+}: {
+  step: StudioStep;
+  machines: EquipmentRow[];
+  onPatch: (patch: Partial<StudioStep>) => void;
+  t: TFunction;
+}) {
+  const hasPrecondition = step.precondition != null;
+  const hasCompensation = step.compensation != null;
+
+  return (
+    <div className="space-y-3">
+      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.advanced", "Advanced")}</div>
+
+      {/* Precondition / interlock */}
+      <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">{t("studio.precondition", "Precondition (interlock)")}</Label>
+          <input
+            type="checkbox"
+            checked={hasPrecondition}
+            onChange={(e) => onPatch({ precondition: e.target.checked ? { source: "telemetry", key: "", op: "gt", value: 0 } : undefined })}
+          />
+        </div>
+        {hasPrecondition && (
+          <>
+            <ConditionEditor
+              condition={step.precondition}
+              machines={machines}
+              onChange={(c) => onPatch({ precondition: c })}
+              t={t}
+              title={t("studio.preconditionCond", "Must hold before running")}
+            />
+            <div className="space-y-1">
+              <Label className="text-[11px]">{t("studio.onPreconditionFail", "On precondition fail")}</Label>
+              <Select
+                value={step.onPreconditionFail ?? "hold"}
+                onValueChange={(v) => onPatch({ onPreconditionFail: v as StudioStep["onPreconditionFail"] })}
+              >
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ON_PRECONDITION_FAIL.map((o) => (
+                    <SelectItem key={o} value={o}>{t(`studio.onFail.${o}`, o)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* maxAttempts (retry) */}
+      <NumberField
+        label={t("studio.maxAttempts", "Max retry attempts (0 = no retry)")}
+        value={step.maxAttempts ?? 0}
+        onChange={(n) => onPatch({ maxAttempts: n > 0 ? n : undefined })}
+      />
+
+      {/* Compensation (saga undo) — chỉ hỗ trợ một lệnh bù trừ */}
+      <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">{t("studio.compensation", "Compensation (saga undo)")}</Label>
+          <input
+            type="checkbox"
+            checked={hasCompensation}
+            onChange={(e) => onPatch({
+              compensation: e.target.checked
+                ? { id: `${step.id}-comp`, type: "command", args: {} }
+                : undefined,
+            })}
+          />
+        </div>
+        {hasCompensation && step.compensation && (
+          <CompensationEditor
+            comp={step.compensation}
+            machines={machines}
+            onChange={(c) => onPatch({ compensation: c })}
+            t={t}
+          />
+        )}
+        {hasCompensation && (
+          <p className="text-[10px] text-muted-foreground">{t("studio.compensationHint", "Runs one command to undo THIS step if it fails.")}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Trình sửa bù trừ tối giản — một lệnh (máy + verb + args) chạy khi bước lỗi.
+function CompensationEditor({
+  comp, machines, onChange, t,
+}: {
+  comp: StudioStep;
+  machines: EquipmentRow[];
+  onChange: (c: StudioStep) => void;
+  t: TFunction;
+}) {
+  const selectedMachine = machines.find((m) => m.machineId === comp.machineId);
+  const commands = selectedMachine?.capability?.supportedCommands ?? [];
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label className="text-[11px]">{t("studio.machine", "Machine")}</Label>
+        <Select
+          value={comp.machineId ? String(comp.machineId) : ""}
+          onValueChange={(v) => onChange({ ...comp, machineId: Number(v), command: "", args: {} })}
+        >
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={t("studio.pickMachine", "Select machine…")} /></SelectTrigger>
+          <SelectContent>
+            {machines.map((m) => <SelectItem key={m.machineId} value={String(m.machineId)}>#{m.machineId} · {m.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label className="text-[11px]">{t("studio.command", "Command")}</Label>
+        <Select
+          value={comp.command ?? ""}
+          onValueChange={(v) => onChange({ ...comp, command: v, args: {} })}
+          disabled={!selectedMachine}
+        >
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={t("studio.pickCommand", "Select command…")} /></SelectTrigger>
+          <SelectContent>
+            {commands.map((c) => <SelectItem key={c.name} value={c.name}>{c.label ?? c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+// W4-16: validate MỘT tham số theo paramsSchema (required / kiểu / min-max). Trả thông
+// điệp lỗi (đã dịch) hoặc null nếu hợp lệ. PURE — dùng cho cả hiển thị inline.
+function validateArg(param: ParamDesc, value: unknown, t: TFunction): string | null {
+  const isNum = param.dataType === "int" || param.dataType === "float" || param.dataType === "number";
+  const isBool = param.dataType === "bool" || param.dataType === "boolean";
+  const empty = value === undefined || value === null || value === "";
+  if (param.required && empty && !isBool) return t("studio.argRequired", "Required");
+  if (empty) return null; // không bắt buộc + rỗng → ok
+  if (isNum) {
+    const n = typeof value === "number" ? value : Number(value);
+    if (Number.isNaN(n)) return t("studio.argNotNumber", "Must be a number");
+    if (param.dataType === "int" && !Number.isInteger(n)) return t("studio.argNotInt", "Must be an integer");
+    if (param.min != null && n < param.min) return t("studio.argMin", "Min {{min}}", { min: param.min });
+    if (param.max != null && n > param.max) return t("studio.argMax", "Max {{max}}", { max: param.max });
+  }
+  if (param.options && param.options.length && !param.options.some((o) => String(o) === String(value))) {
+    return t("studio.argOption", "Not an allowed value");
+  }
+  return null;
+}
+
 function ArgField({ param, value, onChange, t }: { param: ParamDesc; value: unknown; onChange: (v: unknown) => void; t: TFunction }) {
   const label = `${param.label ?? param.name}${param.unit ? ` (${param.unit})` : ""}${param.required ? " *" : ""}`;
+  const error = validateArg(param, value, t);
+  const errorEl = error ? <p className="text-[10px] text-destructive">{error}</p> : null;
   if (param.options && param.options.length) {
     return (
       <div className="space-y-1">
         <Label className="text-[11px]">{label}</Label>
         <Select value={value != null ? String(value) : ""} onValueChange={(v) => onChange(v)}>
-          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="…" /></SelectTrigger>
+          <SelectTrigger className={`h-8 text-sm ${error ? "border-destructive" : ""}`}><SelectValue placeholder="…" /></SelectTrigger>
           <SelectContent>
             {param.options.map((o) => <SelectItem key={String(o)} value={String(o)}>{String(o)}</SelectItem>)}
           </SelectContent>
         </Select>
+        {errorEl}
       </div>
     );
   }
@@ -472,13 +669,14 @@ function ArgField({ param, value, onChange, t }: { param: ParamDesc; value: unkn
     <div className="space-y-1">
       <Label className="text-[11px]">{label}</Label>
       <Input
-        className="h-8 text-sm"
+        className={`h-8 text-sm ${error ? "border-destructive" : ""}`}
         type={isNum ? "number" : "text"}
         value={value != null ? String(value) : ""}
         min={param.min}
         max={param.max}
         onChange={(e) => onChange(isNum ? (e.target.value === "" ? undefined : Number(e.target.value)) : e.target.value)}
       />
+      {errorEl}
     </div>
   );
 }
@@ -492,25 +690,35 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-// A simple LEAF condition builder (the safe-evaluator leaf shape).
-function ConditionEditor({
-  condition,
-  machines,
-  onChange,
-  t,
+// ── COMPOSITE condition builder (leaf + all/any/not) ─────────────────────────
+// Mirror server Condition: một LEAF (có `source`) HOẶC một combinator (all/any/not).
+type CondNode = Record<string, unknown>;
+
+function condMode(c?: CondNode): "leaf" | "all" | "any" | "not" {
+  if (!c) return "leaf";
+  if (Array.isArray(c.all)) return "all";
+  if (Array.isArray(c.any)) return "any";
+  if (c.not) return "not";
+  return "leaf";
+}
+
+const DEFAULT_LEAF: CondNode = { source: "telemetry", key: "", op: "gt", value: 0 };
+
+// Chỉ phần LEAF (một phép so sánh) — dùng lại bên trong composite.
+function LeafConditionEditor({
+  condition, machines, onChange, t,
 }: {
-  condition?: Record<string, unknown>;
+  condition?: CondNode;
   machines: EquipmentRow[];
-  onChange: (c: Record<string, unknown>) => void;
+  onChange: (c: CondNode) => void;
   t: TFunction;
 }) {
-  const c = (condition ?? { source: "telemetry", key: "", op: "gt", value: 0 }) as {
+  const c = (condition ?? DEFAULT_LEAF) as {
     source?: string; machineId?: number; key?: string; op?: string; value?: unknown;
   };
-  const set = (patch: Record<string, unknown>) => onChange({ ...c, ...patch });
+  const set = (patch: CondNode) => onChange({ ...c, ...patch });
   return (
-    <div className="space-y-2 rounded-md border bg-muted/30 p-2">
-      <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.condition", "Condition")}</div>
+    <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
           <Label className="text-[11px]">{t("studio.condSource", "Source")}</Label>
@@ -558,6 +766,137 @@ function ConditionEditor({
           }} />
         </div>
       )}
+    </div>
+  );
+}
+
+const COND_MODES: Array<{ key: "leaf" | "all" | "any" | "not"; labelKey: string; labelDefault: string }> = [
+  { key: "leaf", labelKey: "studio.condLeaf", labelDefault: "Leaf" },
+  { key: "all", labelKey: "studio.condAll", labelDefault: "AND (all)" },
+  { key: "any", labelKey: "studio.condAny", labelDefault: "OR (any)" },
+  { key: "not", labelKey: "studio.condNot", labelDefault: "NOT" },
+];
+
+// Editor đệ quy: leaf HOẶC combinator. `depth` giới hạn lồng ≤ 3 để UI gọn.
+function ConditionEditor({
+  condition,
+  machines,
+  onChange,
+  t,
+  depth = 0,
+  title,
+}: {
+  condition?: CondNode;
+  machines: EquipmentRow[];
+  onChange: (c: CondNode) => void;
+  t: TFunction;
+  depth?: number;
+  title?: string;
+}) {
+  const mode = condMode(condition);
+
+  const setMode = (m: "leaf" | "all" | "any" | "not") => {
+    if (m === mode) return;
+    const existingLeaf = mode === "leaf" && condition ? condition : null;
+    if (m === "leaf") onChange({ ...DEFAULT_LEAF });
+    else if (m === "all") onChange({ all: existingLeaf ? [existingLeaf] : [] });
+    else if (m === "any") onChange({ any: existingLeaf ? [existingLeaf] : [] });
+    else onChange({ not: existingLeaf ?? { ...DEFAULT_LEAF } });
+  };
+
+  const canNest = depth < 3; // chặn lồng quá sâu
+
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-semibold uppercase text-muted-foreground">{title ?? t("studio.condition", "Condition")}</div>
+        <div className="flex gap-0.5">
+          {COND_MODES.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              disabled={m.key !== "leaf" && !canNest}
+              onClick={() => setMode(m.key)}
+              className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                mode === m.key ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted disabled:opacity-40"
+              }`}
+            >
+              {t(m.labelKey, m.labelDefault)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === "leaf" && (
+        <LeafConditionEditor condition={condition} machines={machines} onChange={onChange} t={t} />
+      )}
+
+      {(mode === "all" || mode === "any") && (
+        <CompositeChildren
+          items={(condition?.[mode] as CondNode[]) ?? []}
+          machines={machines}
+          onChange={(items) => onChange({ [mode]: items })}
+          t={t}
+          depth={depth}
+        />
+      )}
+
+      {mode === "not" && (
+        <ConditionEditor
+          condition={(condition?.not as CondNode) ?? { ...DEFAULT_LEAF }}
+          machines={machines}
+          onChange={(c) => onChange({ not: c })}
+          t={t}
+          depth={depth + 1}
+          title={t("studio.condNotChild", "Negated condition")}
+        />
+      )}
+    </div>
+  );
+}
+
+// Danh sách con của all/any với thêm/xoá.
+function CompositeChildren({
+  items, machines, onChange, t, depth,
+}: {
+  items: CondNode[];
+  machines: EquipmentRow[];
+  onChange: (items: CondNode[]) => void;
+  t: TFunction;
+  depth: number;
+}) {
+  return (
+    <div className="space-y-2">
+      {items.length === 0 && (
+        <p className="text-[11px] text-muted-foreground">{t("studio.condNoChildren", "No sub-conditions yet — add one below.")}</p>
+      )}
+      {items.map((child, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium text-muted-foreground">#{i + 1}</span>
+            <Button
+              size="icon" variant="ghost" className="h-6 w-6 text-destructive"
+              onClick={() => onChange(items.filter((_, j) => j !== i))}
+              aria-label={t("common.delete", "Delete")}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+          <ConditionEditor
+            condition={child}
+            machines={machines}
+            onChange={(c) => onChange(items.map((x, j) => (j === i ? c : x)))}
+            t={t}
+            depth={depth + 1}
+          />
+        </div>
+      ))}
+      <Button
+        size="sm" variant="ghost" className="h-7 text-[11px] text-muted-foreground"
+        onClick={() => onChange([...items, { ...DEFAULT_LEAF }])}
+      >
+        <Plus className="mr-1 h-3.5 w-3.5" /> {t("studio.condAddChild", "Add sub-condition")}
+      </Button>
     </div>
   );
 }
@@ -691,6 +1030,12 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── Trạng thái run đã kết thúc → dừng poll để tránh refetch vô hạn ──
+const TERMINAL_RUN_STATUSES = new Set(["succeeded", "completed", "failed", "aborted"]);
+function isRunTerminal(status: string): boolean {
+  return TERMINAL_RUN_STATUSES.has(status);
+}
+
 export default function OrchestrationStudio() {
   const { t, i18n } = useTranslation();
   const { hasPermission } = usePermissions();
@@ -699,6 +1044,8 @@ export default function OrchestrationStudio() {
   const [def, setDef] = useState<StudioDef>(() => emptyDef());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sim, setSim] = useState<SimResult | null>(null);
+  // W4-16: view canvas — "tree" (mặc định an toàn) | "graph" (sơ đồ node react-flow).
+  const [canvasView, setCanvasView] = useState<"tree" | "graph">("tree");
 
   // ── E5: AI advisor state ──
   const [aiGoal, setAiGoal] = useState("");
@@ -715,7 +1062,16 @@ export default function OrchestrationStudio() {
   const machines = (equipmentQ.data ?? []) as unknown as EquipmentRow[];
 
   const workflowsQ = trpc.orchestration.listWorkflows.useQuery({ limit: 100 });
-  const runsQ = trpc.orchestration.listRuns.useQuery({ limit: 25 });
+  // Realtime: poll khi còn run chưa kết thúc; dừng khi tất cả đã terminal.
+  const runsQ = trpc.orchestration.listRuns.useQuery(
+    { limit: 25 },
+    {
+      refetchInterval: (q) => {
+        const rows = (q.state.data ?? []) as Array<Record<string, unknown>>;
+        return rows.some((r) => !isRunTerminal(String(r.status ?? ""))) ? 2000 : false;
+      },
+    },
+  );
 
   const utils = trpc.useUtils();
   const [simulating, setSimulating] = useState(false);
@@ -754,6 +1110,32 @@ export default function OrchestrationStudio() {
   });
   const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── W3-11: version history panel (diff 2 phiên bản + rollback) ──
+  const [versionsWf, setVersionsWf] = useState<{ id: number; ref: string } | null>(null);
+  const [vDiffBaseId, setVDiffBaseId] = useState<number | null>(null);
+  const [vDiffCompareId, setVDiffCompareId] = useState<number | null>(null);
+  const [rollbackVer, setRollbackVer] = useState<{ workflowId: number; version: number } | null>(null);
+  const versionsQ = trpc.orchestration.listVersions.useQuery(
+    { workflowId: versionsWf?.id ?? 0 },
+    { enabled: versionsWf != null },
+  );
+  const versionRows = (versionsQ.data ?? []) as Array<{ id: number; version: number; name: string; definitionJson: unknown }>;
+  const vDiffBase = versionRows.find((v) => v.id === vDiffBaseId) ?? null;
+  const vDiffCompare = versionRows.find((v) => v.id === vDiffCompareId) ?? null;
+  const rollbackWfM = trpc.orchestration.rollbackWorkflow.useMutation({
+    onSuccess: (r) => {
+      if (r?.ok) {
+        toast.success(t("studio.rollbackDone", "Đã khôi phục — tạo phiên bản mới từ bản cũ"));
+        setRollbackVer(null);
+        void workflowsQ.refetch();
+        void versionsQ.refetch();
+      } else {
+        toast.error(r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
+      }
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -887,6 +1269,7 @@ export default function OrchestrationStudio() {
         <PageHeader
           icon={<Workflow className="h-6 w-6" />}
           title={t("studio.title", "Orchestration Studio")}
+          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
           description={t("studio.subtitle", "Author multi-machine workflows visually, simulate them on the digital twin, then deploy & run")}
           actions={
             <>
@@ -1015,31 +1398,69 @@ export default function OrchestrationStudio() {
 
         {/* MAIN GRID — tree canvas + inspector */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* LEFT — step tree */}
+          {/* LEFT — step tree / node-graph (toggle Cây | Sơ đồ) */}
           <Card className="lg:col-span-2">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t("studio.canvas", "Workflow tree")}</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base">
+                {canvasView === "tree" ? t("studio.canvas", "Workflow tree") : t("studio.graphCanvas", "Workflow diagram")}
+              </CardTitle>
+              {/* Toggle view — cây là mặc định an toàn; sơ đồ là view đọc + chọn node */}
+              <div className="inline-flex overflow-hidden rounded-md border" role="tablist" aria-label={t("studio.viewToggle", "View")}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={canvasView === "tree"}
+                  onClick={() => setCanvasView("tree")}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
+                    canvasView === "tree" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <ListTree className="h-3.5 w-3.5" /> {t("studio.viewTree", "Tree")}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={canvasView === "graph"}
+                  onClick={() => setCanvasView("graph")}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
+                    canvasView === "graph" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Network className="h-3.5 w-3.5" /> {t("studio.viewGraph", "Diagram")}
+                </button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-1.5">
-              {def.steps.length === 0 && (
+              {canvasView === "tree" ? (
+                <>
+                  {def.steps.length === 0 && (
+                    <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
+                  )}
+                  {def.steps.map((s, i) => (
+                    <StepBlock
+                      key={s.id}
+                      step={s}
+                      depth={0}
+                      selectedId={selectedId}
+                      onSelect={setSelectedId}
+                      onMove={handleMove}
+                      onDelete={handleDelete}
+                      onAddChild={handleAddChild}
+                      siblingCount={def.steps.length}
+                      index={i}
+                      t={t}
+                    />
+                  ))}
+                  <AddStepMenu onAdd={handleAddTopLevel} t={t} />
+                </>
+              ) : def.steps.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
+              ) : (
+                <>
+                  <WorkflowGraphCanvas def={def} selectedId={selectedId} onSelect={setSelectedId} onDelete={handleDelete} t={t} />
+                  <p className="text-[11px] text-muted-foreground">{t("studio.graphHint", "Read-only view — click a node to configure it in the inspector. Add/reorder steps on the Tree view.")}</p>
+                </>
               )}
-              {def.steps.map((s, i) => (
-                <StepBlock
-                  key={s.id}
-                  step={s}
-                  depth={0}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onMove={handleMove}
-                  onDelete={handleDelete}
-                  onAddChild={handleAddChild}
-                  siblingCount={def.steps.length}
-                  index={i}
-                  t={t}
-                />
-              ))}
-              <AddStepMenu onAdd={handleAddTopLevel} t={t} />
             </CardContent>
           </Card>
 
@@ -1062,9 +1483,16 @@ export default function OrchestrationStudio() {
         {sim && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Digital twin — simulation result")}
-              </CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Digital twin — simulation result")}
+                </CardTitle>
+                {/* W6-26 — cross-link golden-thread: sim → xem phát lại trên twin viewer. */}
+                <span className="flex items-center gap-3 text-xs">
+                  <Link href="/cell-twin" className="font-medium text-primary hover:underline">{t("nav.cellTwin")}</Link>
+                  <Link href="/rf-test-cell" className="font-medium text-primary hover:underline">{t("nav.rfTestCell")}</Link>
+                </span>
+              </div>
             </CardHeader>
             <CardContent>
               <TwinView sim={sim} machines={machines} t={t} />
@@ -1095,6 +1523,15 @@ export default function OrchestrationStudio() {
                   <div className="flex shrink-0 items-center gap-1">
                     <Button size="sm" variant="outline" onClick={() => loadWorkflow(w as { definitionJson?: unknown })}>
                       {t("studio.load", "Load")}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title={t("studio.versions", "Versions")}
+                      onClick={() => { setVersionsWf({ id: Number(w.id), ref: String(w.ref) }); setVDiffBaseId(null); setVDiffCompareId(null); }}
+                    >
+                      <History className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       size="icon"
@@ -1148,9 +1585,9 @@ export default function OrchestrationStudio() {
           </Card>
         </div>
 
-        {/* future enhancement note */}
+        {/* editor note — cả cây lồng lẫn sơ đồ node đều xem chung một model */}
         <p className="text-center text-[11px] text-muted-foreground">
-          {t("studio.futureNote", "v1 uses a nested step tree. Future upgrade: graph-style editing (react-flow).")}
+          {t("studio.editorNote", "Author on the nested step tree, or switch to the node-graph diagram to visualize sequence / parallel / branch.")}
         </p>
       </PageContainer>
 
@@ -1194,6 +1631,100 @@ export default function OrchestrationStudio() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* W3-11 — Version history: diff 2 phiên bản + rollback */}
+      <Dialog open={versionsWf != null} onOpenChange={(o) => { if (!o) setVersionsWf(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t("studio.versionsTitle", "Version history")}</DialogTitle>
+            <DialogDescription>
+              {t("studio.versionsDesc", "Each deploy snapshots a version. Compare two versions or roll back (rollback re-deploys the old definition as a NEW version).")}
+              {versionsWf ? ` — ${versionsWf.ref}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {versionsQ.isLoading && <p className="py-3 text-center text-sm text-muted-foreground">{t("common.loading", "Loading…")}</p>}
+          {versionsQ.isError && <p className="py-3 text-center text-sm text-destructive">{t("common.loadError", "Failed to load")}</p>}
+          {!versionsQ.isLoading && !versionsQ.isError && versionRows.length === 0 && (
+            <p className="py-3 text-center text-sm text-muted-foreground">
+              {t("studio.noVersions", "No version snapshots yet (only versions deployed after this feature are recorded).")}
+            </p>
+          )}
+
+          {versionRows.length > 0 && (
+            <div className="space-y-3">
+              {/* Danh sách phiên bản + nút rollback */}
+              <div className="max-h-[180px] space-y-1 overflow-auto rounded-md border p-1.5">
+                {versionRows.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-muted/50">
+                    <span className="font-mono text-xs">v{v.version} <span className="text-muted-foreground">· {v.name}</span></span>
+                    <Button
+                      size="sm" variant="outline" className="h-7"
+                      disabled={!canControl || rollbackWfM.isPending}
+                      onClick={() => setRollbackVer({ workflowId: versionsWf!.id, version: v.version })}
+                    >
+                      <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {/* So sánh 2 phiên bản (diff định nghĩa JSON) */}
+              {versionRows.length >= 2 && (
+                <div className="rounded-md border bg-muted/20 p-2">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <GitCompare className="h-3.5 w-3.5" /> {t("studio.compareVersions", "Compare versions")}
+                    </span>
+                    <Select value={vDiffBaseId != null ? String(vDiffBaseId) : ""} onValueChange={(v) => setVDiffBaseId(Number(v))}>
+                      <SelectTrigger className="h-7 w-24 text-xs"><SelectValue placeholder={t("studio.diffBase", "Base")} /></SelectTrigger>
+                      <SelectContent>
+                        {versionRows.map((v) => <SelectItem key={v.id} value={String(v.id)}>v{v.version}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground">→</span>
+                    <Select value={vDiffCompareId != null ? String(vDiffCompareId) : ""} onValueChange={(v) => setVDiffCompareId(Number(v))}>
+                      <SelectTrigger className="h-7 w-24 text-xs"><SelectValue placeholder={t("studio.diffCompare", "Compare")} /></SelectTrigger>
+                      <SelectContent>
+                        {versionRows.map((v) => <SelectItem key={v.id} value={String(v.id)}>v{v.version}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {vDiffBase && vDiffCompare ? (
+                    <LineDiff left={prettyJson(vDiffBase.definitionJson)} right={prettyJson(vDiffCompare.definitionJson)} maxHeightClass="max-h-[280px]" />
+                  ) : (
+                    <p className="py-2 text-center text-xs text-muted-foreground">{t("studio.diffPick", "Pick two versions to compare.")}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVersionsWf(null)}>{t("common.close", "Close")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* W3-11 — Rollback confirm */}
+      <AlertDialog open={rollbackVer != null} onOpenChange={(o) => { if (!o) setRollbackVer(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("studio.rollbackTitle", "Roll back to this version?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("studio.rollbackConfirm", "This re-deploys version v{{version}}'s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.", { version: rollbackVer?.version ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (rollbackVer) rollbackWfM.mutate({ workflowId: rollbackVer.workflowId, version: rollbackVer.version }); }}
+            >
+              {t("studio.rollback", "Rollback")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
@@ -1226,7 +1757,18 @@ function RunRow({
   const [open, setOpen] = useState(false);
   const status = String(run.status ?? "");
   const runId = Number(run.id);
-  const detailQ = trpc.orchestration.getRun.useQuery({ runId }, { enabled: open });
+  // Realtime: khi panel mở và run chưa kết thúc → poll bước; dừng khi terminal/đóng.
+  const detailQ = trpc.orchestration.getRun.useQuery(
+    { runId },
+    {
+      enabled: open,
+      refetchInterval: (q) => {
+        const st = String((q.state.data as { run?: { status?: string } } | undefined)?.run?.status ?? status);
+        return open && !isRunTerminal(st) ? 1500 : false;
+      },
+    },
+  );
+  const currentStepId = detailQ.data?.run?.currentStepId ?? null;
   const awaiting = status === "awaiting_confirm" || status === "held";
 
   return (
@@ -1253,12 +1795,19 @@ function RunRow({
       {open && (
         <div className="border-t bg-muted/20 px-2 py-1.5">
           {detailQ.isLoading && <p className="text-xs text-muted-foreground">{t("common.loading", "Loading…")}</p>}
-          {(detailQ.data?.steps ?? []).map((s: { stepId: string; stepType: string; status: string }) => (
-            <div key={s.stepId} className="flex items-center justify-between py-0.5 text-xs">
-              <span className="font-mono text-[11px]">{s.stepId} <span className="text-muted-foreground">({s.stepType})</span></span>
-              <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
-            </div>
-          ))}
+          {detailQ.isError && <p className="text-xs text-destructive">{t("common.loadError", "Failed to load")}</p>}
+          {(detailQ.data?.steps ?? []).map((s: { stepId: string; stepType: string; status: string }) => {
+            const isCurrent = currentStepId != null && s.stepId === currentStepId;
+            return (
+              <div key={s.stepId} className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
+                <span className="font-mono text-[11px]">
+                  {isCurrent && <span className="mr-1 text-primary">▶</span>}
+                  {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
+                </span>
+                <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+              </div>
+            );
+          })}
           {detailQ.data && (detailQ.data.steps ?? []).length === 0 && (
             <p className="text-xs text-muted-foreground">{t("studio.noSteps", "No steps recorded yet.")}</p>
           )}

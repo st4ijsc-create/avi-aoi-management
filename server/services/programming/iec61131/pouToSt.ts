@@ -15,10 +15,18 @@
  * Lowering rules:
  *   • LAD contact→`v`/`NOT v`; series→`(a AND b)`; parallel→`(a OR b)`; coil→`v := <expr>;`
  *     (negated→`NOT`, set→`IF <expr> THEN v := TRUE;`, reset→`IF <expr> THEN v := FALSE;`).
- *   • FBD block DAG inlined to a fully-parenthesised expression (AND/OR/ADD/GT/MOVE/…); an
- *     unknown/FB type renders as a formal-parameter call `TYPE(IN1 := a, IN2 := b)`.
- *   • SFC → a `CASE <state> OF` scan-cycle state machine; N/S actions inline; a synthesised
- *     INT state var is emitted (documented). Other qualifiers inline with a note.
+ *   • FBD combinational block DAG inlined to a fully-parenthesised expression (AND/OR/ADD/GT/
+ *     MOVE/…). A STATEFUL standard FB (TON/TOF/TP/CTU/CTD/CTUD/R_TRIG/F_TRIG/RS/SR) is NOT
+ *     inlined — it gets a declared VAR instance + a per-scan instance call `inst(IN:=…);` and
+ *     every read of its output lowers to `inst.<pin>` (Q/QU/…). An unknown/other FB type still
+ *     renders as a formal-parameter call `TYPE(IN1 := a, IN2 := b)`.
+ *   • SFC → a `CASE <state> OF` scan-cycle state machine. Only the N (non-stored) qualifier is
+ *     lowered (executed while the step is active — semantically correct). The stored/edge/timed
+ *     qualifiers (S/R/P/L/D) are NOT lowered here: they require action-control state (S/R pairing
+ *     by action name) or a duration operand the model does not carry (L/D). pouLinter BLOCKS
+ *     transpile when any non-N qualifier is present (rule `unsupported-sfc-qualifier`) so we
+ *     NEVER emit silently-wrong ST; if lint is bypassed the action body is omitted with a loud
+ *     comment. A synthesised INT state var is emitted (documented).
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type {
@@ -131,7 +139,24 @@ const INFIX_OP: Record<string, string> = {
 };
 const ASSOCIATIVE = new Set(["AND", "OR", "XOR", "ADD", "MUL"]);
 
-function renderFbdSource(src: FbdSource, blocks: Map<string, FbdBlock>, seen: Set<string>): string {
+// Standard STATEFUL function blocks (IEC 61131-3 §2.5.2): they carry internal state across
+// scans, so they MUST be modelled as a declared VAR instance + a per-scan instance call — a
+// value that CANNOT be inlined as a pure sub-expression. Map = FB type → default primary
+// output pin (a `block` source may override with its own `pin`).
+const STATEFUL_FB: Record<string, string> = {
+  TON: "Q", TOF: "Q", TP: "Q",
+  CTU: "Q", CTD: "Q", CTUD: "QU",
+  R_TRIG: "Q", F_TRIG: "Q",
+  RS: "Q1", SR: "Q1",
+};
+export function isStatefulFb(type: string): boolean {
+  return Object.prototype.hasOwnProperty.call(STATEFUL_FB, type.toUpperCase());
+}
+
+/** A resolved FB instance: the declared instance variable name + the pin being read. */
+interface FbInst { instance: string; pin: string }
+
+function renderFbdSource(src: FbdSource, blocks: Map<string, FbdBlock>, seen: Set<string>, inst: Map<string, FbInst>): string {
   switch (src.kind) {
     case "var":
       return ident(src.name);
@@ -140,17 +165,20 @@ function renderFbdSource(src: FbdSource, blocks: Map<string, FbdBlock>, seen: Se
     case "block": {
       const b = blocks.get(src.blockId);
       if (!b) return `(* missing block ${src.blockId} *) FALSE`;
-      return renderFbdBlock(b, blocks, seen);
+      // Stateful FB → read its declared instance's output pin (never re-inline the call).
+      const fb = inst.get(src.blockId);
+      if (fb) return `${fb.instance}.${ident(src.pin ?? fb.pin)}`;
+      return renderFbdBlock(b, blocks, seen, inst);
     }
   }
 }
 
-function renderFbdBlock(block: FbdBlock, blocks: Map<string, FbdBlock>, seen: Set<string>): string {
+function renderFbdBlock(block: FbdBlock, blocks: Map<string, FbdBlock>, seen: Set<string>, inst: Map<string, FbInst>): string {
   if (seen.has(block.id)) return `(* cycle at ${block.id} *) FALSE`;
   const nextSeen = new Set(seen);
   nextSeen.add(block.id);
   const type = block.type.toUpperCase();
-  const args = block.inputs.map((i) => renderFbdSource(i.source, blocks, nextSeen));
+  const args = block.inputs.map((i) => renderFbdSource(i.source, blocks, nextSeen, inst));
   const infix = INFIX_OP[type];
 
   if (type === "NOT") {
@@ -167,24 +195,65 @@ function renderFbdBlock(block: FbdBlock, blocks: Map<string, FbdBlock>, seen: Se
     if (args.length === 2) return `(${args[0]} ${infix} ${args[1]})`;
     // Wrong arity for a binary op — degrade to a call form (still deterministic).
   }
-  // Unknown operator / function block → formal-parameter call.
+  // Unknown operator / function → formal-parameter call.
   const call = block.inputs
-    .map((i) => `${i.name} := ${renderFbdSource(i.source, blocks, nextSeen)}`)
+    .map((i) => `${i.name} := ${renderFbdSource(i.source, blocks, nextSeen, inst)}`)
     .join(", ");
   return `${type}(${call})`;
 }
 
-function lowerFbdNetwork(net: FbdNetwork, ref: string, indent: string, map: Record<string, string>): string[] {
+/** Lower one FBD network. Returns the ST lines + any synthesised STATEFUL-FB instance vars. */
+function lowerFbdNetwork(net: FbdNetwork, ref: string, indent: string, map: Record<string, string>):
+  { lines: string[]; instanceVars: PouVar[] } {
   const marker = iecComment("FBD", ref);
   map[marker] = ref;
   const lines: string[] = [`${indent}${marker}`];
   if (net.comment) lines.push(`${indent}(* ${net.comment} *)`);
   const blocks = new Map(net.blocks.map((b) => [b.id, b]));
+
+  // ── Resolve stateful-FB instances (declared VAR + per-scan call). Instance name is unique
+  //    per network (network ref + block id) so two networks never collide. ──
+  const inst = new Map<string, FbInst>();
+  for (const b of net.blocks) {
+    const upper = b.type.toUpperCase();
+    if (isStatefulFb(upper)) {
+      inst.set(b.id, { instance: ident(`fb_${ref}_${b.id}`), pin: STATEFUL_FB[upper] });
+    }
+  }
+
+  const instanceVars: PouVar[] = [];
+  if (inst.size > 0) {
+    // Emit the instance CALLS in dependency order (a stateful FB feeding another must run first
+    // so the downstream reads a fresh `.Q` this scan). DFS post-order over stateful deps only.
+    const emitted = new Set<string>();
+    const visit = (id: string) => {
+      if (emitted.has(id)) return;
+      emitted.add(id);
+      const b = blocks.get(id);
+      if (!b) return;
+      for (const i of b.inputs) {
+        if (i.source.kind === "block" && inst.has(i.source.blockId)) visit(i.source.blockId);
+      }
+      const fb = inst.get(id)!;
+      const callArgs = b.inputs.map((i) => `${ident(i.name)} := ${renderFbdSource(i.source, blocks, new Set(), inst)}`).join(", ");
+      lines.push(`${indent}${fb.instance}(${callArgs});`);
+      // NB: the FB type (e.g. TON) is not an elementary IEC type — renderVarLine emits it as the
+      // declared type token verbatim, which is exactly the ST instance-declaration form.
+      instanceVars.push({
+        name: fb.instance,
+        type: b.type.toUpperCase() as unknown as PouVar["type"],
+        section: "VAR",
+        comment: `synthesised FB instance for block ${b.id} (POU→ST lowering)`,
+      });
+    };
+    for (const b of net.blocks) if (inst.has(b.id)) visit(b.id);
+  }
+
   for (const out of net.outputs) {
-    const rhs = renderFbdSource(out.source, blocks, new Set());
+    const rhs = renderFbdSource(out.source, blocks, new Set(), inst);
     lines.push(`${indent}${ident(out.variable)} := ${rhs};`);
   }
-  return lines;
+  return { lines, instanceVars };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -207,10 +276,13 @@ function lowerSfc(body: SfcBody, pouName: string, indent: string, map: Record<st
   lines.push(`${indent}CASE ${stateName} OF`);
   body.steps.forEach((step: SfcStep, idx) => {
     lines.push(`${indent}  ${idx}: (* step ${step.name}${step.initial ? " [initial]" : ""} *)`);
-    // Step actions (N/S inline; other qualifiers inline with a note).
+    // Step actions. ONLY N (non-stored) is lowered — executed while the step is active, which
+    // is exactly correct. S/R/P/L/D are NOT lowered: pouLinter BLOCKS transpile when present
+    // (unsupported-sfc-qualifier); if lint is bypassed we OMIT the body (never emit wrong ST).
     for (const action of step.actions ?? []) {
-      if (action.qualifier !== "N" && action.qualifier !== "S") {
-        lines.push(`${indent}    (* action qualifier ${action.qualifier} — bind the IEC action-control FB on the target *)`);
+      if (action.qualifier !== "N") {
+        lines.push(`${indent}    (* action qualifier ${action.qualifier} — UNSUPPORTED in POU→ST lowering; not lowered (see pouLinter unsupported-sfc-qualifier) *)`);
+        continue;
       }
       for (const raw of action.actionText.split(/\r?\n/)) {
         const line = raw.trim();
@@ -271,7 +343,9 @@ function lowerPou(pou: Pou, map: Record<string, string>): string[] {
     }
     case "FBD": {
       body.networks.forEach((net, i) => {
-        bodyLines.push(...lowerFbdNetwork(net, net.id ?? `net${i + 1}`, IND, map));
+        const { lines: netLines, instanceVars } = lowerFbdNetwork(net, net.id ?? `net${i + 1}`, IND, map);
+        extraVars.push(...instanceVars);
+        bodyLines.push(...netLines);
       });
       break;
     }

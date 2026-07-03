@@ -200,6 +200,29 @@ export function buildPublishedNode(args: {
   };
 }
 
+/**
+ * Overlay a CR's proposed schema onto a node set as a PUBLISHED node for its typeKey,
+ * so the server can RESOLVE + run conformance on the *merged* proposal (not on a
+ * client-attested flag). Pure.
+ *
+ *   • builds the proposed node via buildPublishedNode (attributes/commands/parent/…);
+ *   • if the proposal omits parentTypeKey, KEEP the current node's parent so the
+ *     inheritance hierarchy is never silently severed;
+ *   • replaces any existing node(s) with the same typeKey by the proposed node.
+ */
+export function applyProposalToNodes(
+  targetTypeKey: string,
+  proposed: Record<string, unknown> | null | undefined,
+  nodes: DeviceTypeNode[],
+): DeviceTypeNode[] {
+  const node = buildPublishedNode({ targetTypeKey, newVersion: "1.0.0", proposed: (proposed ?? {}) as never });
+  if (node.parentTypeKey == null) {
+    const cur = nodes.find((n) => n.typeKey === targetTypeKey);
+    node.parentTypeKey = cur?.parentTypeKey ?? null;
+  }
+  return [...nodes.filter((n) => n.typeKey !== targetTypeKey), node];
+}
+
 /** Generate a stable CR key. */
 export function generateCrKey(): string {
   const rand = Math.random().toString(36).slice(2, 8);

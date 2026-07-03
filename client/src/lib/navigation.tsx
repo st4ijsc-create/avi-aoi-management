@@ -694,11 +694,29 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "machine_monitoring",
     // doc 22 P4 — engineering-heavy module: hidden in Simple mode.
     tier: "advanced",
+    // W6-26 (doc 25 T8) — 13 mục phẳng → 4 SECTION con theo tác vụ:
+    // authoring (soạn chương trình) · orchestration (điều phối) ·
+    // safetyStandards (an toàn & chuẩn hoá) · twin (twin & mô phỏng).
     sections: [
-      { key: "engineering", label: "nav.section.engineering" },
+      { key: "authoring", label: "nav.section.authoring" },
+      { key: "orchestration", label: "nav.section.orchestration" },
+      { key: "safetyStandards", label: "nav.section.safetyStandards" },
+      { key: "twin", label: "nav.section.twin" },
     ],
     items: [
-      // — Engineering & Control —
+      // — Engineering Hub — hub-and-spoke front door (items[0] → breadcrumb /
+      // role-home / BottomNav trỏ vào hub thay vì mở thẳng IDE). Giữ tối thiểu
+      // machine_monitoring như group để ai thấy nhóm đều mở được hub.
+      {
+        href: "/engineering-home",
+        label: "nav.engineeringHome",
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        description: "nav.engineeringHomeDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "authoring",
+      },
+      // — Authoring & Programming —
       {
         href: "/engineering",
         label: "nav.engineeringWorkspace",
@@ -706,7 +724,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.engineeringWorkspaceDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "engineering",
+        section: "authoring",
         hint: "nav.hint.engineeringWorkspace",
         engineerOriented: true,
       },
@@ -717,7 +735,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.recipesDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "engineering",
+        section: "authoring",
       },
       {
         href: "/interlock-rules",
@@ -726,7 +744,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.interlockRulesDesc",
         requiredPermission: "interlock",
         permissionCategory: "interlock",
-        section: "engineering",
+        section: "safetyStandards",
         hint: "nav.hint.interlockRules",
         engineerOriented: true,
       },
@@ -737,7 +755,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.orchestrationStudioDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "engineering",
+        section: "orchestration",
         hint: "nav.hint.orchestrationStudio",
         engineerOriented: true,
         beta: true,
@@ -752,7 +770,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.irEditorDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "authoring",
         hint: "nav.hint.irEditor",
         engineerOriented: true,
         beta: true,
@@ -767,7 +785,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.pouStudioDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "authoring",
         hint: "nav.hint.pouStudio",
         engineerOriented: true,
         beta: true,
@@ -781,7 +799,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.fleetOrchestrationDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "orchestration",
         hint: "nav.hint.fleetOrchestration",
         engineerOriented: true,
         beta: true,
@@ -795,7 +813,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.safetyWorkforceDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "safetyStandards",
         hint: "nav.hint.safetyWorkforce",
         engineerOriented: true,
         beta: true,
@@ -809,7 +827,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.equipmentStandardsDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "safetyStandards",
         hint: "nav.hint.equipmentStandards",
         engineerOriented: true,
         beta: true,
@@ -823,7 +841,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.equipmentIntegrationDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "safetyStandards",
         hint: "nav.hint.equipmentIntegration",
         engineerOriented: true,
         beta: true,
@@ -840,7 +858,7 @@ export const navGroups: NavGroup[] = [
         // which blocked monitoring users from reaching the page at all.
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "engineering",
+        section: "twin",
       },
       {
         href: "/rf-test-cell",
@@ -849,7 +867,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.rfTestCellDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "engineering",
+        section: "twin",
         hint: "nav.hint.rfTestCell",
         engineerOriented: true,
         beta: true,
@@ -861,7 +879,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.cellTwinDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "engineering",
+        section: "twin",
         hint: "nav.hint.cellTwin",
         engineerOriented: true,
         beta: true,

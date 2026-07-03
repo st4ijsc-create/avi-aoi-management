@@ -16,6 +16,11 @@
  *   • unreachable-step    — an SFC step that is neither the initial step nor the target of
  *                           any transition (dead state) → error.
  *   • undefined-step      — an SFC transition from/to a step name that does not exist.
+ *   • unsupported-sfc-qualifier — an SFC action with a qualifier the POU→ST lowering does not
+ *                           yet implement (any of S/R/P/L/D). Only N (non-stored) is lowered
+ *                           correctly; the stored/edge/timed qualifiers need action-control
+ *                           state (S/R pairing) or a duration operand the model lacks (L/D).
+ *                           BLOCKING so we never deploy silently-wrong logic (fail-closed).
  *
  * Advisory (warn, non-blocking): a duplicate declaration, no/multiple initial SFC steps.
  *
@@ -227,8 +232,11 @@ function lintPou(pou: Pou, diags: PouLintDiagnostic[]): void {
         if (!step.initial && !incoming.has(step.name)) {
           err(step.name, "unreachable-step", `step "${step.name}" is not initial and no transition targets it (unreachable).`);
         }
-        // action bodies — scan identifiers.
+        // action bodies — scan identifiers + BLOCK any qualifier the lowering can't honour.
         for (const action of step.actions ?? []) {
+          if ((action.qualifier ?? "N") !== "N") {
+            err(step.name, "unsupported-sfc-qualifier", `action in step "${step.name}" uses qualifier "${action.qualifier}", which the POU→ST lowering does not implement (only N is supported). Use N, or model the stored/timed behaviour explicitly (e.g. an SR/TON FB in an FBD network).`);
+          }
           for (const id of freeIdentifiers(action.actionText)) {
             if (!declared(id)) err(step.name, "undefined-variable", `action in step "${step.name}" references undeclared "${id}".`);
           }

@@ -14,8 +14,9 @@
  * 100% read-only / no dispatch: this is a simulation. Going live routes every command
  * through the HITL dispatcher; E-stop / interlock / motion stay on the PLC.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Play, Pause, RotateCcw, Radio, Bot, Cpu, CheckCircle2, XCircle, Activity, Info } from "lucide-react";
+import { Play, Pause, RotateCcw, Radio, Bot, Cpu, CheckCircle2, XCircle, Activity, Info, Waves, Download, ExternalLink } from "lucide-react";
 
 // ── Station model (inline — self-contained, no DB seeding needed) ─────────────────
 const FEEDER = 901, ROBOT = 902, RF = 903;
@@ -200,15 +201,93 @@ function sampleVariant(idx: number, yieldRate: number): "PASS" | "FAIL" {
   return u < yieldRate ? "PASS" : "FAIL";
 }
 
+// ── RF measurement trace (SIMULATED — deterministic per DUT) ────────────────────────
+// KHÔNG phải giá trị realtime: các số đo RF được SINH TẤT ĐỊNH từ seed theo chỉ số chu kỳ
+// (cùng họ mulberry32 với yield). Mỗi DUT phát 4 metric RF điển hình của bước "Measure…":
+// TX power, sai số tần số, EVM, biên spectrum-mask — kèm giới hạn để giải thích PASS/FAIL
+// bằng SỐ. Với DUT FAIL, đúng MỘT metric bị đẩy ra ngoài spec (lý do rớt), các metric còn lại đạt.
+
+/** Một metric RF đo được của một DUT (kèm giới hạn + kết luận đạt/rớt). */
+export interface RfMetric {
+  key: string; // hậu tố khoá i18n (rfcell.rf.<key>)
+  value: number;
+  unit: string;
+  low: number | null; // giới hạn dưới (null = không áp dụng)
+  high: number | null; // giới hạn trên (null = không áp dụng)
+  dispLo: number; // miền hiển thị của thanh đo
+  dispHi: number;
+  pass: boolean;
+}
+
+/** Bản ghi kết quả test một DUT trong phiên (để lưu History + export CSV). */
+export interface DutRecord {
+  cycle: number; // chỉ số chu kỳ (0-based)
+  serial: string;
+  variant: "PASS" | "FAIL";
+  ts: number; // wall-clock lúc ghi (nhật ký phiên)
+  metrics: RfMetric[];
+}
+
+/** Cấu hình 4 metric RF: đơn vị, giới hạn spec, miền hiển thị thanh đo. */
+const RF_METRICS = [
+  { key: "txPower", unit: "dBm", low: 15, high: 21, dispLo: 12, dispHi: 24 },
+  { key: "freqErr", unit: "ppm", low: -25, high: 25, dispLo: -45, dispHi: 45 },
+  { key: "evm", unit: "%", low: null as number | null, high: 5, dispLo: 0, dispHi: 8 },
+  { key: "maskMargin", unit: "dB", low: 0, high: null as number | null, dispLo: -3, dispHi: 8 },
+] as const;
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
+/** Uniform tất định trong [0,1) cho (chu kỳ idx, muối salt). */
+const rfRand = (idx: number, salt: number) => mulberry32((YIELD_SEED ^ Math.imul(idx + 1, salt >>> 0)) >>> 0);
+const SALTS = [0x85ebca6b, 0xc2b2ae35, 0x27d4eb2f, 0x165667b1];
+
+/**
+ * Sinh 4 số đo RF tất định cho DUT chu kỳ `idx` khớp với `variant`:
+ *   • PASS → cả 4 metric nằm trong spec (quanh giá trị danh định),
+ *   • FAIL → đúng một metric (chọn tất định) bị đẩy ra ngoài spec.
+ */
+function measureDut(idx: number, variant: "PASS" | "FAIL"): RfMetric[] {
+  const failMetric = variant === "FAIL" ? Math.floor(rfRand(idx, 0x2545f491) * RF_METRICS.length) % RF_METRICS.length : -1;
+  return RF_METRICS.map((m, i) => {
+    const u = rfRand(idx, SALTS[i]);
+    const failing = i === failMetric;
+    let value: number;
+    switch (m.key) {
+      case "txPower":
+        value = failing ? 12 + u * 2.5 : 16.5 + u * 3; // fail < 15 dBm
+        break;
+      case "freqErr": {
+        const sgn = rfRand(idx, 0x1b56c4e9) < 0.5 ? -1 : 1;
+        value = failing ? sgn * (27 + u * 12) : (u - 0.5) * 30; // fail |ppm| > 25
+        break;
+      }
+      case "evm":
+        value = failing ? 5.5 + u * 2 : 1.8 + u * 2; // fail > 5%
+        break;
+      default: // maskMargin
+        value = failing ? -0.4 - u * 2 : 2.5 + u * 3.3; // fail biên âm (vi phạm mask)
+        break;
+    }
+    value = round2(value);
+    const pass = (m.low === null || value >= m.low) && (m.high === null || value <= m.high);
+    return { key: m.key, value, unit: m.unit, low: m.low, high: m.high, dispLo: m.dispLo, dispHi: m.dispHi, pass };
+  });
+}
+
+const MAX_HISTORY = 500; // giới hạn bản ghi giữ trong phiên
+
 export default function RfTestCellSim() {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
 
   const [sims, setSims] = useState<{ pass: Sim; fail: Sim } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0); // tăng để thử tải lại twin (nút Retry)
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [yieldRate, setYieldRate] = useState(DEFAULT_YIELD_RATE);
+  const [mode, setMode] = useState<"twin" | "live">("twin"); // chế độ nguồn dữ liệu (Live: chưa map máy thật)
+  const [history, setHistory] = useState<DutRecord[]>([]); // nhật ký kết quả per-DUT trong phiên
   const [view, setView] = useState({ t: 0, cycle: 0, variant: "PASS" as "PASS" | "FAIL", ok: 0, ng: 0, carton: 0, cartonsDone: 0 });
 
   // Refs the rAF loop reads/writes without re-rendering.
@@ -217,6 +296,7 @@ export default function RfTestCellSim() {
   const speedRef = useRef(speed); speedRef.current = speed;
   const yieldRef = useRef(yieldRate); yieldRef.current = yieldRate;
   const stateRef = useRef({ t: 0, cycle: 0, variant: "PASS" as "PASS" | "FAIL", ok: 0, ng: 0, carton: 0, cartonsDone: 0 });
+  const historyRef = useRef<DutRecord[]>([]);
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
 
@@ -225,8 +305,10 @@ export default function RfTestCellSim() {
   const pickVariant = (idx: number): "PASS" | "FAIL" => sampleVariant(idx, yieldRef.current);
 
   // Fetch the two predicted timelines (PASS / FAIL) from the pure twin.
+  // reloadKey trong deps: nút Retry tăng nó để thử tải lại sau lỗi.
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     (async () => {
       try {
         const base = { workflow: WORKFLOW as unknown as Record<string, unknown>, machines: MACHINES as never, commandDurations: COMMAND_DURATIONS };
@@ -245,7 +327,7 @@ export default function RfTestCellSim() {
       }
     })();
     return () => { alive = false; };
-  }, [utils, t]);
+  }, [utils, t, reloadKey]);
 
   // The realtime playback loop.
   useEffect(() => {
@@ -259,7 +341,19 @@ export default function RfTestCellSim() {
       const dur = (st.variant === "FAIL" ? s.fail : s.pass).totalDurationMs;
       let nt = st.t + (ts - last) * speedRef.current;
       if (nt >= dur) {
-        // finalize the cycle
+        // finalize the cycle — ghi bản ghi DUT (số đo tất định khớp variant vừa chạy)
+        const rec: DutRecord = {
+          cycle: st.cycle,
+          serial: `DUT-${String(st.cycle + 1).padStart(4, "0")}`,
+          variant: st.variant,
+          ts: Date.now(),
+          metrics: measureDut(st.cycle, st.variant),
+        };
+        const nextHist = historyRef.current.concat(rec);
+        if (nextHist.length > MAX_HISTORY) nextHist.splice(0, nextHist.length - MAX_HISTORY);
+        historyRef.current = nextHist;
+        setHistory(nextHist);
+
         if (st.variant === "FAIL") st.ng += 1;
         else {
           st.ok += 1;
@@ -281,7 +375,29 @@ export default function RfTestCellSim() {
   const reset = () => {
     setRunning(false);
     stateRef.current = { t: 0, cycle: 0, variant: "PASS", ok: 0, ng: 0, carton: 0, cartonsDone: 0 };
+    historyRef.current = [];
+    setHistory([]);
     setView({ t: 0, cycle: 0, variant: "PASS", ok: 0, ng: 0, carton: 0, cartonsDone: 0 });
+  };
+
+  // Xuất nhật ký kết quả per-DUT ra CSV (khoá cột giữ tiếng Anh cho ổn định máy đọc).
+  const exportCsv = () => {
+    if (!history.length) return;
+    const cols = ["serial", "time", "result", ...RF_METRICS.map((m) => `${m.key}_${m.unit}`)];
+    const rows = history.map((r) => [
+      r.serial,
+      new Date(r.ts).toISOString(),
+      r.variant,
+      ...r.metrics.map((m) => String(m.value)),
+    ]);
+    const csv = [cols.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rf-test-cell-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const sim = sims ? (view.variant === "FAIL" ? sims.fail : sims.pass) : null;
@@ -303,16 +419,33 @@ export default function RfTestCellSim() {
   const rfTesting = !!(rfStart && rfMeasure && view.t >= rfStart.startMs && view.t < rfMeasure.endMs);
   const resultKnown = !!(waitResult && view.t >= waitResult.startMs);
 
+  // Số đo RF của DUT ĐANG chạy (tất định theo chu kỳ) — chỉ lộ khi bước đo hoàn tất.
+  const measurement = sim ? measureDut(view.cycle, view.variant) : [];
+  const failingMetric = measurement.find((m) => !m.pass);
+
   return (
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
           icon={<Radio className="h-6 w-6" />}
           title={t("rfcell.title", "RF Shielded Test Cell — Realtime Simulation")}
-          badge={<Badge variant="secondary" className="mt-1 text-[10px] uppercase tracking-wide">{t("common.beta", "Beta")}</Badge>}
           description={t("rfcell.subtitle", "FX5U XYZ feeder • pick&place robot • RF test chamber — a digital twin running in real time")}
           actions={
             <>
+              <div className="flex items-center gap-1" role="group" aria-label={t("rfcell.sourceMode", "Data source")}>
+                <Button size="sm" variant={mode === "twin" ? "default" : "outline"} className="px-2 h-7" onClick={() => setMode("twin")}>
+                  {t("rfcell.modeTwin", "Twin playback")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="px-2 h-7"
+                  disabled
+                  title={t("rfcell.modeLiveHint", "Live telemetry requires mapping this cell to real machines — not wired yet")}
+                >
+                  {t("rfcell.modeLive", "Live")}
+                </Button>
+              </div>
               <Button size="sm" disabled={loading || !sims} onClick={() => setRunning((r) => !r)}>
                 {running ? <><Pause className="h-4 w-4 mr-1" /> {t("rfcell.pause", "Pause")}</> : <><Play className="h-4 w-4 mr-1" /> {t("rfcell.play", "Play")}</>}
               </Button>
@@ -363,6 +496,9 @@ export default function RfTestCellSim() {
                   <XCircle className="h-8 w-8 text-muted-foreground" />
                   <p className="text-sm font-medium">{t("rfcell.loadFailedTitle", "Simulation unavailable")}</p>
                   <p className="max-w-sm text-xs text-muted-foreground">{t("rfcell.loadFailedBody", "The digital-twin simulation could not be loaded. Check that the orchestration twin service is reachable, then retry.")}</p>
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => setReloadKey((k) => k + 1)}>
+                    <RotateCcw className="h-4 w-4 mr-1" /> {t("rfcell.retry", "Retry")}
+                  </Button>
                 </div>
               ) : (
               <>
@@ -486,12 +622,144 @@ export default function RfTestCellSim() {
                 <p>{t("rfcell.programNote", "One cycle = a WorkflowDefinition (FOE/ISA-88) of 15 steps. The twin predicts cycle time, PackML state and the PASS/FAIL branch.")}</p>
                 <p className="font-mono text-[11px] text-foreground">ref: {WORKFLOW.ref} • {WORKFLOW.steps.length} steps</p>
                 <p>{t("rfcell.openStudio", "Open /orchestration-studio to edit / deploy / run it for real (via the HITL dispatcher).")}</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Link href="/orchestration-studio">
+                    <Button size="sm" variant="outline" className="h-7"><ExternalLink className="h-3.5 w-3.5 mr-1" /> {t("rfcell.linkStudio", "Orchestration Studio")}</Button>
+                  </Link>
+                  <Link href="/cell-twin">
+                    <Button size="sm" variant="outline" className="h-7"><ExternalLink className="h-3.5 w-3.5 mr-1" /> {t("rfcell.linkCellTwin", "Cell Twin")}</Button>
+                  </Link>
+                  <Link href="/factory-live-map">
+                    <Button size="sm" variant="outline" className="h-7"><ExternalLink className="h-3.5 w-3.5 mr-1" /> {t("rfcell.linkFactoryMap", "Factory Live Map")}</Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
+
+        {/* ── RF measurement trace (simulated) + per-DUT history ── */}
+        {sims && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* RF measurement trace of the CURRENT DUT */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Waves className="h-4 w-4" /> {t("rfcell.rf.title", "RF measurement trace (simulated)")}
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">DUT-{String(view.cycle + 1).padStart(4, "0")}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-[11px] text-muted-foreground">{t("rfcell.rf.note", "Deterministic twin measurements per DUT (seeded) — NOT live RF instrument data. Each metric is shown against its spec limit.")}</p>
+                {resultKnown ? (
+                  <>
+                    <div className="space-y-2.5">
+                      {measurement.map((m) => (
+                        <RfMetricRow key={m.key} m={m} label={t(`rfcell.rf.${m.key}`, m.key)} />
+                      ))}
+                    </div>
+                    {failingMetric ? (
+                      <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                        {t("rfcell.rf.failExplain", "{{metric}} out of spec: {{value}} {{unit}} → FAIL", { metric: t(`rfcell.rf.${failingMetric.key}`, failingMetric.key), value: failingMetric.value, unit: failingMetric.unit })}
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        {t("rfcell.rf.passExplain", "All 4 RF metrics within spec → PASS")}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+                    <Waves className="h-6 w-6" />
+                    <p className="text-xs">{t("rfcell.rf.measuring", "Measuring… TX power, frequency error, EVM, spectrum-mask margin.")}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Per-DUT result history + CSV export */}
+            <Card>
+              <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-sm">{t("rfcell.history", "Test history (this session)")} <span className="text-muted-foreground font-normal">({history.length})</span></CardTitle>
+                <Button size="sm" variant="outline" className="h-7" disabled={!history.length} onClick={exportCsv}>
+                  <Download className="h-3.5 w-3.5 mr-1" /> {t("rfcell.exportCsv", "Export CSV")}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {history.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+                    <Activity className="h-6 w-6" />
+                    <p className="max-w-xs text-xs">{t("rfcell.historyEmpty", "No DUTs tested yet. Press Play to run the cell — each completed DUT is logged here with its RF measurements.")}</p>
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-background">
+                        <tr className="text-left text-muted-foreground border-b">
+                          <th className="py-1 pr-3">{t("rfcell.col.serial", "Serial")}</th>
+                          <th className="py-1 pr-3">{t("rfcell.col.result", "Result")}</th>
+                          {RF_METRICS.map((m) => (
+                            <th key={m.key} className="py-1 pr-3 whitespace-nowrap">{t(`rfcell.rf.${m.key}`, m.key)}</th>
+                          ))}
+                          <th className="py-1 pr-3 whitespace-nowrap">{t("rfcell.col.time", "Time")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {history.slice().reverse().map((r) => (
+                          <tr key={r.cycle} className="border-b border-border/40">
+                            <td className="py-1 pr-3 font-mono whitespace-nowrap">{r.serial}</td>
+                            <td className="py-1 pr-3">
+                              <Badge variant="outline" className={r.variant === "PASS" ? "text-emerald-600 border-emerald-500/40" : "text-red-600 border-red-500/40"}>{r.variant}</Badge>
+                            </td>
+                            {r.metrics.map((m) => (
+                              <td key={m.key} className={`py-1 pr-3 font-mono whitespace-nowrap ${m.pass ? "" : "text-red-600 font-semibold"}`}>{m.value}</td>
+                            ))}
+                            <td className="py-1 pr-3 text-muted-foreground whitespace-nowrap">{new Date(r.ts).toLocaleTimeString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </PageContainer>
     </DashboardLayout>
+  );
+}
+
+/** Định dạng chuỗi giới hạn spec cho một metric. */
+function fmtSpec(m: RfMetric): string {
+  if (m.low !== null && m.high !== null) return `${m.low}…${m.high} ${m.unit}`;
+  if (m.high !== null) return `≤ ${m.high} ${m.unit}`;
+  if (m.low !== null) return `≥ ${m.low} ${m.unit}`;
+  return "—";
+}
+
+/** Một dòng metric RF: giá trị + badge PASS/FAIL + thanh đo vs dải spec. */
+function RfMetricRow({ m, label }: { m: RfMetric; label: string }) {
+  const span = m.dispHi - m.dispLo || 1;
+  const pct = (v: number) => Math.max(0, Math.min(100, ((v - m.dispLo) / span) * 100));
+  const bandLo = pct(m.low ?? m.dispLo);
+  const bandHi = pct(m.high ?? m.dispHi);
+  const markerPct = pct(m.value);
+  return (
+    <div className="text-xs">
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="font-medium">{label}</span>
+        <span className="flex items-center gap-2">
+          <span className={`font-mono font-semibold ${m.pass ? "text-emerald-600" : "text-red-600"}`}>{m.value} {m.unit}</span>
+          <Badge variant="outline" className={m.pass ? "text-emerald-600 border-emerald-500/40" : "text-red-600 border-red-500/40"}>{m.pass ? "PASS" : "FAIL"}</Badge>
+        </span>
+      </div>
+      <div className="relative h-2 w-full rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+        <div className="absolute top-0 h-full bg-emerald-500/25" style={{ left: `${bandLo}%`, width: `${Math.max(0, bandHi - bandLo)}%` }} />
+        <div className={`absolute -top-0.5 h-3 w-0.5 ${m.pass ? "bg-emerald-600" : "bg-red-600"}`} style={{ left: `${markerPct}%` }} />
+      </div>
+      <div className="mt-0.5 text-[10px] text-muted-foreground">{fmtSpec(m)}</div>
+    </div>
   );
 }
 

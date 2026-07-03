@@ -49,6 +49,7 @@
 // dispatch stays with robotCommandDispatcher / commandDispatcher (HITL + dry-run).
 // ════════════════════════════════════════════════════════════════════════════
 import { pgTable, serial, integer, varchar, text, jsonb, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 
 // ════════════════════════════════════════════════════════════════════════════
 // G2-a — Operation → Skill → Program registry
@@ -214,6 +215,9 @@ export const resourceReservations = pgTable("resource_reservations", {
   index("idx_res_res_resource_status").on(table.resourceId, table.status),
   index("idx_res_res_device").on(table.deviceId),
   index("idx_res_res_task").on(table.taskId),
+  // W2-6 (doc 25 T5, migration 0164): a shared resource has capacity 1 → at most ONE
+  // active reservation per resource (single owner). Backs the FOR-UPDATE-locked promote.
+  uniqueIndex("uq_res_res_active_resource").on(table.resourceId).where(sql`${table.status} = 'active'`),
 ]);
 
 // ════════════════════════════════════════════════════════════════════════════

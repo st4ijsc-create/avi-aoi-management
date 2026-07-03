@@ -28,6 +28,7 @@ import {
   robots,
   type OperatorAssignment,
 } from "../../../drizzle/schema";
+import { recordAuditEvent } from "../audit/controlAuditService";
 
 /** Flag — default OFF (mirrors fleetOrchEnabled). */
 export function workforceEnabled(): boolean {
@@ -228,18 +229,27 @@ export async function confirmAssignment(assignmentId: number, confirmedBy: numbe
   return row ?? null;
 }
 
-/** Close an assignment (terminal: completed). */
-export async function closeAssignment(assignmentId: number): Promise<OperatorAssignment | null> {
+/** Close an assignment (terminal: completed). Stamps closedBy + ghi audit bất biến. */
+export async function closeAssignment(assignmentId: number, closedBy?: number | null): Promise<OperatorAssignment | null> {
   if (!workforceEnabled()) return null;
   const d = await db();
   const [current] = await d.select().from(operatorAssignments).where(eq(operatorAssignments.id, assignmentId)).limit(1);
   if (!current) return null;
   if (current.status === "completed" || current.status === "cancelled") return current; // idempotent
+  const before = { ...current }; // snapshot bất biến TRƯỚC khi update (tránh alias mutation)
   const [row] = await d
     .update(operatorAssignments)
-    .set({ status: "completed", assignedEnd: current.assignedEnd ?? new Date(), updatedAt: new Date() })
+    .set({ status: "completed", closedBy: closedBy ?? null, assignedEnd: current.assignedEnd ?? new Date(), updatedAt: new Date() })
     .where(eq(operatorAssignments.id, assignmentId))
     .returning();
+  await recordAuditEvent(d, {
+    entityType: "operator_assignment",
+    entityId: assignmentId,
+    action: "close",
+    actorId: closedBy ?? null,
+    before,
+    after: row ?? null,
+  });
   return row ?? null;
 }
 

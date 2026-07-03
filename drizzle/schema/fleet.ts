@@ -28,7 +28,8 @@
 // additive (CREATE TABLE/INDEX only, no ALTER TYPE on an existing enum), matching
 // integration_outbox (0141) / federation (0138/0139).
 // ════════════════════════════════════════════════════════════════════════════
-import { pgTable, serial, integer, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 
 /**
  * Task — one unit of orchestratable work. Created (idempotently) by decomposing a
@@ -152,6 +153,10 @@ export const zoneReservations = pgTable("zone_reservations", {
   // A device's reservations (wait-graph + release on offline).
   index("idx_zone_res_device").on(table.deviceId),
   index("idx_zone_res_task").on(table.taskId),
+  // W2-6 (doc 25 T5, migration 0164): a device may hold at most ONE active slot in a
+  // zone (idempotent re-entry). Per-zone CAPACITY is a count, enforced in code under
+  // the zone-row FOR UPDATE lock — not expressible as a uniqueness constraint.
+  uniqueIndex("uq_zone_res_active_zone_device").on(table.zoneId, table.deviceId).where(sql`${table.status} = 'active'`),
 ]);
 
 export type Task = typeof tasks.$inferSelect;

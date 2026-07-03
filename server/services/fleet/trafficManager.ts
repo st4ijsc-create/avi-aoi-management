@@ -30,7 +30,7 @@
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { zones, zoneReservations } from "../../../drizzle/schema";
+import { zones, zoneReservations, tasks } from "../../../drizzle/schema";
 import { fleetOrchEnabled } from "./taskAllocator";
 // Pure planner deps — static imports (no DB side-effects at module load). Used by the
 // dynamic-obstacle planning seam below; the legacy planPath() stub keeps its lazy
@@ -182,44 +182,59 @@ export async function releaseZone(deviceId: number, zoneId?: number): Promise<Re
   const db = await getDb();
   if (!db) return { ok: false, enabled: true, released: 0, promoted: 0 };
 
-  const held = await db
-    .select()
-    .from(zoneReservations)
-    .where(
-      and(
-        eq(zoneReservations.deviceId, deviceId),
-        inArray(zoneReservations.status, ["active", "queued"]),
-        ...(zoneId != null ? [eq(zoneReservations.zoneId, zoneId)] : []),
-      ),
-    );
-  if (held.length === 0) return { ok: true, enabled: true, released: 0, promoted: 0 };
-
-  const now = new Date();
-  await db
-    .update(zoneReservations)
-    .set({ status: "released", releasedAt: now })
-    .where(inArray(zoneReservations.id, held.map((h) => h.id)));
-
-  // Promote the oldest queued waiter per freed zone (if capacity now allows).
-  let promoted = 0;
-  const freedZones = [...new Set(held.filter((h) => h.status === "active").map((h) => h.zoneId))];
-  for (const zid of freedZones) {
-    const [zone] = await db.select().from(zones).where(eq(zones.id, zid)).limit(1);
-    if (!zone) continue;
-    if ((await getZoneOccupancy(zid)) >= zone.maxConcurrentRobots) continue;
-    const [next] = await db
+  // ATOMIC (W2-6 / doc 25 T5 — closes the release→promote race): the whole free +
+  // FIFO promote runs in ONE transaction. For each freed zone we take the zone-row
+  // FOR UPDATE lock BEFORE counting occupancy + promoting a waiter — the SAME lock
+  // reserveZone holds — so a concurrent reserver cannot slip in and over-fill the
+  // zone while we promote (and two releasers cannot both promote a waiter into the
+  // same freed slot). freedZones are locked in ascending id order to avoid deadlock.
+  return db.transaction(async (tx) => {
+    const held = await tx
       .select()
       .from(zoneReservations)
-      .where(and(eq(zoneReservations.zoneId, zid), eq(zoneReservations.status, "queued")))
-      .orderBy(zoneReservations.createdAt)
-      .limit(1);
-    if (next) {
-      await db.update(zoneReservations).set({ status: "active" }).where(eq(zoneReservations.id, next.id));
-      promoted++;
+      .where(
+        and(
+          eq(zoneReservations.deviceId, deviceId),
+          inArray(zoneReservations.status, ["active", "queued"]),
+          ...(zoneId != null ? [eq(zoneReservations.zoneId, zoneId)] : []),
+        ),
+      );
+    if (held.length === 0) return { ok: true, enabled: true, released: 0, promoted: 0 };
+
+    // Snapshot the zones whose ACTIVE slot we are about to free BEFORE the update
+    // (the update mutates the held rows' status, so read it first).
+    const freedZones = [...new Set(held.filter((h) => h.status === "active").map((h) => h.zoneId))].sort((a, b) => a - b);
+
+    const now = new Date();
+    await tx
+      .update(zoneReservations)
+      .set({ status: "released", releasedAt: now })
+      .where(inArray(zoneReservations.id, held.map((h) => h.id)));
+
+    // Promote the oldest queued waiter per freed zone (if capacity now allows).
+    let promoted = 0;
+    for (const zid of freedZones) {
+      const [zone] = await tx.select().from(zones).where(eq(zones.id, zid)).for("update");
+      if (!zone) continue;
+      const activeRows = await tx
+        .select()
+        .from(zoneReservations)
+        .where(and(eq(zoneReservations.zoneId, zid), eq(zoneReservations.status, "active")));
+      if (activeRows.length >= zone.maxConcurrentRobots) continue;
+      const [next] = await tx
+        .select()
+        .from(zoneReservations)
+        .where(and(eq(zoneReservations.zoneId, zid), eq(zoneReservations.status, "queued")))
+        .orderBy(zoneReservations.createdAt)
+        .limit(1);
+      if (next) {
+        await tx.update(zoneReservations).set({ status: "active" }).where(eq(zoneReservations.id, next.id));
+        promoted++;
+      }
     }
-  }
-  console.log(`[Fleet] device ${deviceId} released ${held.length} reservation(s), promoted ${promoted} waiter(s)`);
-  return { ok: true, enabled: true, released: held.length, promoted };
+    console.log(`[Fleet] device ${deviceId} released ${held.length} reservation(s), promoted ${promoted} waiter(s)`);
+    return { ok: true, enabled: true, released: held.length, promoted };
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -295,6 +310,84 @@ export async function detectDeadlocks(): Promise<{ enabled: boolean; cycles: num
   }
   const edges: WaitEdge[] = queued.map((q) => ({ device: q.deviceId, zone: q.zoneId, holders: holdersByZone.get(q.zoneId) ?? [] }));
   return { enabled: true, cycles: detectDeadlockCycles(edges) };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DEADLOCK RESOLUTION (W4-18 §5, ADVISORY) — detectDeadlocks() only REPORTS cycles.
+// This is the documented priority/re-route hook: for each detected cycle it CANCELS
+// (status='rejected') the single QUEUED reservation belonging to the LOWEST-PRIORITY
+// waiter in that cycle, breaking the wait edge so the remaining devices can proceed.
+//
+// Priority is taken from the waiter's task (tasks.priority, higher number = more
+// important per the allocator's W_PRIORITY weight). A queued reservation with no task
+// is treated as priority 0 (least important → cancelled first). SAFETY: writes
+// reservation STATE only — no device command. No-op unless FLEET_ORCH_ENABLED.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface DeadlockAction {
+  cycle: number[];
+  cancelledDevice: number;
+  zoneId: number;
+  reservationId: number;
+  priority: number;
+  reason: string;
+}
+
+export interface ResolveDeadlockResult {
+  ok: boolean;
+  enabled: boolean;
+  cyclesFound: number;
+  resolved: number;
+  actions: DeadlockAction[];
+}
+
+/** Advisory resolver — break each deadlock cycle by cancelling its lowest-priority waiter. */
+export async function resolveDeadlock(): Promise<ResolveDeadlockResult> {
+  if (!fleetOrchEnabled()) return { ok: false, enabled: false, cyclesFound: 0, resolved: 0, actions: [] };
+  const db = await getDb();
+  if (!db) return { ok: false, enabled: true, cyclesFound: 0, resolved: 0, actions: [] };
+
+  const { cycles } = await detectDeadlocks();
+  if (cycles.length === 0) return { ok: true, enabled: true, cyclesFound: 0, resolved: 0, actions: [] };
+
+  // Snapshot every queued reservation + resolve each waiter's task priority.
+  const queued = await db.select().from(zoneReservations).where(eq(zoneReservations.status, "queued"));
+  const taskIds = [...new Set(queued.map((q) => q.taskId).filter((x): x is number => x != null))];
+  const priorityByTask = new Map<number, number>();
+  if (taskIds.length) {
+    const trows = await db.select().from(tasks).where(inArray(tasks.id, taskIds));
+    for (const tr of trows) priorityByTask.set(tr.id, tr.priority);
+  }
+  const priorityOf = (r: (typeof queued)[number]): number => (r.taskId != null ? (priorityByTask.get(r.taskId) ?? 0) : 0);
+
+  const actions: DeadlockAction[] = [];
+  const cancelledIds = new Set<number>();
+  const now = new Date();
+  for (const cycle of cycles) {
+    const inCycle = new Set(cycle);
+    // Waiters in THIS cycle that are still queued (not already cancelled for a prior cycle).
+    const candidates = queued.filter((q) => inCycle.has(q.deviceId) && !cancelledIds.has(q.id));
+    if (candidates.length === 0) continue;
+    // Lowest priority first; tie-break on lowest deviceId for determinism.
+    candidates.sort((a, b) => priorityOf(a) - priorityOf(b) || a.deviceId - b.deviceId);
+    const victim = candidates[0];
+    const pri = priorityOf(victim);
+    await db
+      .update(zoneReservations)
+      .set({ status: "rejected", releasedAt: now })
+      .where(eq(zoneReservations.id, victim.id));
+    cancelledIds.add(victim.id);
+    actions.push({
+      cycle,
+      cancelledDevice: victim.deviceId,
+      zoneId: victim.zoneId,
+      reservationId: victim.id,
+      priority: pri,
+      reason: `lowest-priority waiter (device ${victim.deviceId}, P${pri}) cancelled to break deadlock`,
+    });
+  }
+  console.log(`[Fleet] resolveDeadlock: ${cycles.length} cycle(s), cancelled ${actions.length} waiter(s)`);
+  return { ok: true, enabled: true, cyclesFound: cycles.length, resolved: actions.length, actions };
 }
 
 /**

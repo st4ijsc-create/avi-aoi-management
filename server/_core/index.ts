@@ -4638,6 +4638,27 @@ async function startServer() {
     console.error("[EdgeNodeHealth] init failed:", (err as any)?.message || err);
   }
 
+  // W4-17 — FOE DURABLE EXECUTION: rehydrate-on-boot. driveRun/resumeRun chạy trong-tiến-trình;
+  // một restart giữa chừng có thể để lại run FOE kẹt ở 'running'/'queued'/'compensating' mà
+  // không còn driver sống. Quét + đánh dấu 'interrupted' (held=resumable / failed=terminal) để
+  // không kẹt im lặng + cho phép resume thủ công. Fail-safe + non-blocking: không chặn/không
+  // crash khởi động (DB chưa nối → no-op).
+  try {
+    const { rehydrateInterruptedRuns } = await import("../services/orchestration/foe/foeEngine");
+    rehydrateInterruptedRuns()
+      .then((r) => {
+        if (r.scanned > 0) {
+          console.log(
+            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted} held(resumable), ` +
+              `${r.failed} failed. ids=${r.runIds.join(",")}`,
+          );
+        }
+      })
+      .catch((err) => console.error("[FOE] rehydrate failed:", (err as any)?.message || err));
+  } catch (err) {
+    console.error("[FOE] rehydrate wiring failed:", (err as any)?.message || err);
+  }
+
   // QW3 — Materialized view refresh (machine_status_latest, hourly_yield_cache).
   // Disabled by default; opt in via MATVIEW_REFRESH_ENABLED=true after 0111.
   try {
@@ -4759,6 +4780,16 @@ async function startServer() {
     startAutoProposer();
   } catch (err) {
     console.error("[aiAutoProposer] init failed:", (err as any)?.message || err);
+  }
+
+  // W1-3 (doc 25 T2) — Fail-fast: cảnh báo đỏ nếu *_CONTROL_ENABLED=true nhưng
+  // *_GATEWAY_ENABLED tắt (control trang bị đường ghi thật nhưng không adapter nào
+  // start → lệnh rơi ADAPTER_OFFLINE âm thầm). KHÔNG tự bật gateway (fail-closed).
+  try {
+    const { logControlGatewayConsistency } = await import("../services/controlGatewayConsistency");
+    logControlGatewayConsistency();
+  } catch (err) {
+    console.error("[ControlGatewayConsistency] check failed:", (err as any)?.message || err);
   }
 
   // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the

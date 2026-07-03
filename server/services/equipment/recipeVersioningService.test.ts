@@ -33,37 +33,85 @@ vi.mock("../../db/machineRecipe", () => ({
 // ── in-memory recipe_load_log ─────────────────────────────────────────────────
 let loadLog: any[] = [];
 let logSeq = 1;
+// W2-6: serialization chain + counter modelling the code-row FOR UPDATE lock in the fake.
+let txChain: Promise<unknown> = Promise.resolve();
+let txCount = 0;
 
 vi.mock("drizzle-orm", () => ({
-  desc: (c: any) => c,
-  eq: (col: any, val: any) => ({ col: col?.__c, val }),
+  desc: (c: any) => ({ __desc: c?.__c }),
+  eq: (col: any, val: any) => ({ __op: "eq", col: col?.__c, val }),
+  and: (...ps: any[]) => ({ __and: ps.filter(Boolean) }),
 }));
 
 vi.mock("../../../drizzle/schema", () => ({
-  machineRecipes: { id: { __c: "id" } },
-  recipeLoadLog: { recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" } },
+  machineRecipes: { __table: "machine_recipes", id: { __c: "id" }, code: { __c: "code" }, status: { __c: "status" }, version: { __c: "version" } },
+  recipeLoadLog: { __table: "recipe_load_log", recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" } },
 }));
 
-function fakeDb() {
-  return {
-    insert: () => ({ values: (vals: any) => ({ returning: async () => { const row = { id: logSeq++, ...vals, createdAt: new Date() }; loadLog.push(row); return [row]; } }) }),
-    // update machine_recipes status (release/rollback)
-    update: () => ({ set: (patch: any) => ({ where: (pred: any) => ({ returning: async () => {
-      const r = recipes.find((x) => x.id === pred.val); if (r) Object.assign(r, patch); return r ? [r] : [];
-    } }) }) }),
-    select: () => ({ from: () => { let preds: any[] = []; const b: any = {
-      where: (p: any) => { preds.push(p); return b; }, orderBy: () => b,
-      limit: async () => loadLog.filter((r) => preds.every((p) => r[p.col] === p.val)),
-      then: (res: any, rej?: any) => Promise.resolve(loadLog.filter((r) => preds.every((p) => r[p.col] === p.val))).then(res, rej),
-    }; return b; } }),
-  };
+function matches(row: any, pred: any): boolean {
+  if (!pred) return true;
+  if (pred.__and) return pred.__and.every((p: any) => matches(row, p));
+  if (pred.__op === "eq") return row[pred.col] === pred.val;
+  return true;
 }
-vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => fakeDb()) }));
+
+// Store-keyed fake so release/rollback (which now hit machine_recipes via `tx` directly)
+// AND the mocked machineRecipe helpers observe the SAME `recipes` array.
+function makeFakeDb() {
+  const arrOf = (t: any): any[] => (t?.__table === "machine_recipes" ? recipes : loadLog);
+  const db: any = {
+    select: (_cols?: any) => ({
+      from: (t: any) => {
+        let pred: any = null;
+        let order: any = null;
+        const q: any = {
+          where: (p: any) => { pred = p; return q; },
+          orderBy: (o: any) => { order = o; return q; },
+          limit: async (n: number) => run().slice(0, n),
+          for: (_s?: any, _c?: any) => q, // SELECT … FOR UPDATE (row lock) — no-op, still thenable
+          then: (res: any) => res(run()),
+        };
+        function run(): any[] {
+          let rows = arrOf(t).filter((r) => matches(r, pred));
+          if (order?.__desc) rows = [...rows].sort((a, b) => (b[order.__desc] ?? 0) - (a[order.__desc] ?? 0));
+          return rows;
+        }
+        return q;
+      },
+    }),
+    insert: (t: any) => ({
+      values: (vals: any) => {
+        const push = () => { const row = { id: logSeq++, ...vals, createdAt: new Date() }; arrOf(t).push(row); return [row]; };
+        return { returning: async () => push(), then: (res: any) => res(push()) };
+      },
+    }),
+    update: (t: any) => ({
+      set: (patch: any) => ({
+        where: (pred: any) => {
+          const apply = () => { const hit = arrOf(t).filter((r) => matches(r, pred)); for (const r of hit) Object.assign(r, patch); return hit; };
+          return { returning: async () => apply(), then: (res: any) => res(apply()) };
+        },
+      }),
+    }),
+  };
+  // release/rollback (W2-6) run inside db.transaction(). The fake SERIALIZES concurrent
+  // transactions on one global chain — a faithful model of the code-row FOR UPDATE lock,
+  // so two overlapping releases resolve deterministically to a single active/released row.
+  db.transaction = (cb: any) => {
+    txCount++;
+    const run = txChain.then(() => cb(db));
+    txChain = run.then(() => undefined, () => undefined);
+    return run;
+  };
+  return db;
+}
+vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
 
 import * as svc from "./recipeVersioningService";
 
 beforeEach(() => {
   recipes = []; loadLog = []; recipeSeq = 1; logSeq = 1;
+  txChain = Promise.resolve(); txCount = 0;
   process.env.EQ_INTEG_ENABLED = "true";
 });
 afterEach(() => { delete process.env.EQ_INTEG_ENABLED; vi.clearAllMocks(); });
@@ -132,6 +180,48 @@ describe("recipeVersioningService — create/release/rollback + genealogy", () =
     const hist = await svc.listLoadHistory(8);
     expect(hist.length).toBeGreaterThanOrEqual(1);
     expect(hist[0].machineId).toBe(8);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// W2-6 (doc 25 T5) — transaction + row-lock atomicity of release/rollback.
+//
+// The fake models the code-row FOR UPDATE lock by SERIALIZING transactions; real
+// row-locking + rollback-on-crash is enforced by Postgres + migration 0164's partial
+// unique index (uq_machine_recipes_active_code) and can only be fully proven there.
+// ════════════════════════════════════════════════════════════════════════════
+describe("recipeVersioningService — atomic release/rollback (W2-6)", () => {
+  it("releaseVersion runs inside exactly one transaction", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    txCount = 0;
+    await svc.releaseVersion(v1.id, 1);
+    expect(txCount).toBe(1);
+  });
+
+  it("two concurrent releases of the same code end with EXACTLY ONE released version", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    // Fire both releases "at once" — the serialized transaction (models the row lock)
+    // orders them, so they can NEVER both create a released (active) version.
+    await Promise.all([svc.releaseVersion(v1.id, 1), svc.releaseVersion(v2.id, 1)]);
+    const released = recipes.filter((r) => r.code === "R1" && r.status === "active");
+    expect(released).toHaveLength(1);
+  });
+
+  it("rollbackToVersion archives the current AND promotes the target atomically (one tx)", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    await svc.releaseVersion(v1.id, 1);
+    await svc.releaseVersion(v2.id, 1);
+    txCount = 0;
+    const { recipe } = await svc.rollbackToVersion(v1.id, 1);
+    expect(txCount).toBe(1);
+    expect(recipe.id).toBe(v1.id);
+    // Invariant holds: exactly one released, and it is the rolled-back-to version.
+    const released = recipes.filter((r) => r.code === "R1" && r.status === "active");
+    expect(released).toHaveLength(1);
+    expect(released[0].id).toBe(v1.id);
+    expect(recipes.find((r) => r.id === v2.id)!.status).toBe("archived");
   });
 });
 

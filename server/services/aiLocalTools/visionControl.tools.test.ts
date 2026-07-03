@@ -128,6 +128,14 @@ function schemaFactory() {
 vi.mock("../../../drizzle/schema", () => schemaFactory());
 vi.mock("../../drizzle/schema", () => schemaFactory());
 
+// Doc 25 T1 — cổng interlock inline (evaluateInterlockGate) được test riêng ở
+// interlockGate.test.ts + commandDispatcher.inlineInterlock.test.ts. Ở đây mock
+// cho luôn-qua để test vision-control không phụ thuộc drizzle-orm mock đầy đủ của
+// fetchObservation (thiếu gte/sql → throw → fail-closed). Giống 3 test dispatcher anh em.
+vi.mock("../interlock/interlockGate", () => ({
+  evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
+}));
+
 // ── accessControl (RBAC #1 + #2) ──
 const checkPermission = vi.fn(async () => true);
 vi.mock("../../_core/accessControl", () => ({ checkPermission: (...a: unknown[]) => (checkPermission as any)(...a) }));

@@ -19,12 +19,11 @@
  * edit of a released version).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   createRecipe,
   getRecipeById,
-  getActiveRecipe,
   archiveRecipe as dbArchiveRecipe,
   listRecipeVersions,
   deployRecipe,
@@ -58,6 +57,12 @@ async function db() {
   return d;
 }
 
+// Handle usable for both the top-level db and a transaction handle (W2-6) — a union so
+// recordEventOn accepts EITHER the pooled db (non-transactional callers) OR a tx handle.
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+type DbOrTx = Db | Tx;
+
 function requireFlag(): void {
   if (!isEqIntegEnabled()) {
     throw new Error("Equipment integration disabled (set EQ_INTEG_ENABLED=true)");
@@ -70,8 +75,9 @@ interface TenantTag {
   factoryId?: number | null;
 }
 
-/** Append ONE immutable genealogy row. Internal — every mutation calls this. */
-async function recordEvent(
+/** Append ONE immutable genealogy row on a specific db/tx handle. */
+async function recordEventOn(
+  dbh: DbOrTx,
   action: RecipeAction,
   recipe: { id?: number | null; code: string; version?: number | null; status?: string | null },
   ctx: {
@@ -83,8 +89,7 @@ async function recordEvent(
     meta?: Record<string, unknown> | null;
   } & TenantTag = {},
 ): Promise<RecipeLoadLog> {
-  const d = await db();
-  const [row] = await d
+  const [row] = await dbh
     .insert(recipeLoadLog)
     .values({
       action,
@@ -104,6 +109,23 @@ async function recordEvent(
     })
     .returning();
   return row;
+}
+
+/**
+ * Append ONE immutable genealogy row on its own connection (non-transactional callers).
+ *
+ * EXPORTED (W5-22 doc 25 (b)) so the /recipes control router (machineRecipeRouter) can
+ * unify EVERY recipe op (create/deploy/archive/rollback) into the SAME recipe_load_log
+ * genealogy trail. NOT flag-gated: genealogy is an audit trail and must record regardless
+ * of EQ_INTEG_ENABLED (the flag only gates the design-vocabulary MUTATIONS above).
+ */
+export async function recordEvent(
+  action: RecipeAction,
+  recipe: { id?: number | null; code: string; version?: number | null; status?: string | null },
+  ctx: Parameters<typeof recordEventOn>[3] = {},
+): Promise<RecipeLoadLog> {
+  const d = await db();
+  return recordEventOn(d, action, recipe, ctx);
 }
 
 // ── Mutations (flag-gated) ────────────────────────────────────────────────────
@@ -140,26 +162,43 @@ export async function releaseVersion(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog }> {
   requireFlag();
   const d = await db();
-  const target = await getRecipeById(recipeId);
-  if (!target) throw new Error(`Recipe #${recipeId} not found`);
+  // ATOMIC (W2-6 / doc 25 T5): lock every version of the code with FOR UPDATE, read the
+  // currently-released one UNDER the lock, archive it, promote the target, and append the
+  // genealogy event — all in ONE transaction. Two concurrent releases now serialize on
+  // the code lock (they cannot both create a released version), and a crash mid-way rolls
+  // back cleanly (never leaves the code with two released or zero released versions).
+  return d.transaction(async (tx) => {
+    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
+    if (!target) throw new Error(`Recipe #${recipeId} not found`);
 
-  const previouslyReleased = await getActiveRecipe({ code: target.code });
-  if (previouslyReleased && previouslyReleased.id !== target.id) {
-    await dbArchiveRecipe(previouslyReleased.id);
-  }
-  const [recipe] = await d
-    .update(machineRecipes)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(machineRecipes.id, target.id))
-    .returning();
+    // Row-lock ALL versions sharing this code → serialize concurrent promoters.
+    await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
 
-  const event = await recordEvent("release", recipe, {
-    performedBy,
-    fromRecipeId: previouslyReleased?.id ?? null,
-    fromVersion: previouslyReleased?.version ?? null,
-    ...tenant,
+    const [previouslyReleased] = await tx
+      .select()
+      .from(machineRecipes)
+      .where(and(eq(machineRecipes.code, target.code), eq(machineRecipes.status, "active")))
+      .limit(1);
+    if (previouslyReleased && previouslyReleased.id !== target.id) {
+      await tx
+        .update(machineRecipes)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(machineRecipes.id, previouslyReleased.id));
+    }
+    const [recipe] = await tx
+      .update(machineRecipes)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(machineRecipes.id, target.id))
+      .returning();
+
+    const event = await recordEventOn(tx, "release", recipe, {
+      performedBy,
+      fromRecipeId: previouslyReleased?.id ?? null,
+      fromVersion: previouslyReleased?.version ?? null,
+      ...tenant,
+    });
+    return { recipe, event };
   });
-  return { recipe, event };
 }
 
 /** ARCHIVE a version (→ archived). Records an 'archive' event. */
@@ -190,28 +229,45 @@ export async function rollbackToVersion(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog }> {
   requireFlag();
   const d = await db();
-  const target = await getRecipeById(toRecipeId);
-  if (!target) throw new Error(`Recipe #${toRecipeId} not found`);
+  // ATOMIC (W2-6 / doc 25 T5): same discipline as releaseVersion — lock the code, read
+  // the current released version UNDER the lock, archive it, promote the target, log the
+  // rollback. Serialized + crash-safe.
+  return d.transaction(async (tx) => {
+    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, toRecipeId)).limit(1);
+    if (!target) throw new Error(`Recipe #${toRecipeId} not found`);
 
-  const current = await getActiveRecipe({ code: target.code });
-  if (current && current.id === target.id) {
-    throw new Error(`Recipe #${toRecipeId} (${target.code} v${target.version}) is already the released version`);
-  }
-  if (current) await dbArchiveRecipe(current.id);
-  const [recipe] = await d
-    .update(machineRecipes)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(machineRecipes.id, target.id))
-    .returning();
+    // Row-lock ALL versions sharing this code → serialize concurrent promoters.
+    await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
 
-  const event = await recordEvent("rollback", recipe, {
-    performedBy,
-    fromRecipeId: current?.id ?? null,
-    fromVersion: current?.version ?? null,
-    notes: current ? `Rollback from v${current.version} to v${target.version}` : `Rollback to v${target.version}`,
-    ...tenant,
+    const [current] = await tx
+      .select()
+      .from(machineRecipes)
+      .where(and(eq(machineRecipes.code, target.code), eq(machineRecipes.status, "active")))
+      .limit(1);
+    if (current && current.id === target.id) {
+      throw new Error(`Recipe #${toRecipeId} (${target.code} v${target.version}) is already the released version`);
+    }
+    if (current) {
+      await tx
+        .update(machineRecipes)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(machineRecipes.id, current.id));
+    }
+    const [recipe] = await tx
+      .update(machineRecipes)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(machineRecipes.id, target.id))
+      .returning();
+
+    const event = await recordEventOn(tx, "rollback", recipe, {
+      performedBy,
+      fromRecipeId: current?.id ?? null,
+      fromVersion: current?.version ?? null,
+      notes: current ? `Rollback from v${current.version} to v${target.version}` : `Rollback to v${target.version}`,
+      ...tenant,
+    });
+    return { recipe, event };
   });
-  return { recipe, event };
 }
 
 /**

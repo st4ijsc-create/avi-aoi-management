@@ -27,7 +27,7 @@
  */
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { batteryChargingPlans } from "../../../drizzle/schema/fleetResource";
+import { batteryChargingPlans, chargerStations } from "../../../drizzle/schema/fleetResource";
 import { tasks, robots, robotTelemetry } from "../../../drizzle/schema";
 import { fleetResourceEnabled } from "./skillRegistry";
 
@@ -116,6 +116,16 @@ export async function sweepChargingPlans(): Promise<SweepResult> {
     if (t.assignedDeviceId != null) queueByDevice.set(t.assignedDeviceId, (queueByDevice.get(t.assignedDeviceId) ?? 0) + 1);
   }
 
+  // W4-18 (4) — charger assignment. Load AVAILABLE chargers + the set already claimed
+  // by an OPEN plan (planned/active), so we never point two plans at the same charger.
+  const availableChargers = await db.select().from(chargerStations).where(eq(chargerStations.status, "available"));
+  const openPlanRows = await db
+    .select()
+    .from(batteryChargingPlans)
+    .where(inArray(batteryChargingPlans.status, ["planned", "active"]));
+  const takenChargerIds = new Set<number>();
+  for (const p of openPlanRows) if (p.chargerStationId != null) takenChargerIds.add(p.chargerStationId);
+
   let scheduled = 0;
   let skipped = 0;
   for (const r of mobile) {
@@ -139,19 +149,29 @@ export async function sweepChargingPlans(): Promise<SweepResult> {
       .limit(1);
     if (openPlan) { skipped++; continue; }
 
+    // Pick a charger: prefer one in the robot's current zone (telemetry.safetyZoneId),
+    // otherwise any free available charger. Skip chargers already claimed by an open plan.
+    const robotZone = tel?.safetyZoneId ?? null;
+    const charger =
+      (robotZone != null
+        ? availableChargers.find((c) => !takenChargerIds.has(c.id) && c.locationZoneId === robotZone)
+        : undefined) ?? availableChargers.find((c) => !takenChargerIds.has(c.id));
+    if (charger) takenChargerIds.add(charger.id); // reserve within this sweep — no double-booking
+
     await db.insert(batteryChargingPlans).values({
       deviceId: r.id,
       deviceKind: "robot",
+      chargerStationId: charger?.id ?? null,
       plannedStartAt: new Date(),
       estimatedDurationMs: need.estimatedDurationMs,
       currentEnergyPct: Math.round(battery),
-      reason: need.reason,
+      reason: charger ? need.reason : `${need.reason} (no free charger — unassigned)`,
       status: "planned",
-      corporateCode: null,
-      factoryId: null,
+      corporateCode: charger?.corporateCode ?? null,
+      factoryId: charger?.factoryId ?? null,
     });
     scheduled++;
-    console.log(`[Fleet] charging plan for device ${r.id}: ${need.reason} (~${Math.round(need.estimatedDurationMs / 60000)}min)`);
+    console.log(`[Fleet] charging plan for device ${r.id}: ${need.reason} → charger ${charger?.code ?? "unassigned"} (~${Math.round(need.estimatedDurationMs / 60000)}min)`);
   }
   return { ok: true, enabled: true, scheduled, skipped };
 }

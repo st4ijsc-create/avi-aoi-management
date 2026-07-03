@@ -19,7 +19,7 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 type Row = Record<string, any>;
-const store: Record<string, Row[]> = { operator_assignments: [], user_certifications: [], collaboration_sessions: [], robots: [], tasks: [] };
+const store: Record<string, Row[]> = { operator_assignments: [], user_certifications: [], collaboration_sessions: [], robots: [], tasks: [], control_audit_log: [] };
 const seq: Record<string, number> = {};
 function nextId(t: string): number { seq[t] = (seq[t] ?? 0) + 1; return seq[t]; }
 function reset() { for (const k of Object.keys(store)) store[k] = []; for (const k of Object.keys(seq)) seq[k] = 0; }
@@ -192,8 +192,17 @@ describe("assignOperator (flag-gated, conflict + skill)", () => {
     const confirmed = await confirmAssignment(id, 99);
     expect(confirmed?.status).toBe("active");
     expect(confirmed?.confirmedBy).toBe(99);
-    const closed = await closeAssignment(id);
+    const closed = await closeAssignment(id, 77);
     expect(closed?.status).toBe("completed");
+    expect(closed?.closedBy).toBe(77);
+    // Đúng 1 dòng audit close với actor/before/after.
+    const audits = store.control_audit_log.filter((a) => a.action === "close");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entityType).toBe("operator_assignment");
+    expect(audits[0].entityId).toBe(String(id));
+    expect(audits[0].actorId).toBe(77);
+    expect(audits[0].beforeJson.status).toBe("active");
+    expect(audits[0].afterJson.status).toBe("completed");
   });
 
   it("reassign cancels the old + creates a new one", async () => {
@@ -257,8 +266,17 @@ describe("collaboration handover (flag-gated)", () => {
   it("abort jumps straight to done", async () => {
     process.env.WORKFORCE_ENABLED = "true";
     const r = await startCollaboration({ taskId: 2 });
-    const aborted = await abortCollaboration(r.session!.id, "operator cancelled");
+    const aborted = await abortCollaboration(r.session!.id, "operator cancelled", 88);
     expect(aborted?.phase).toBe("done");
     expect(aborted?.notes).toBe("operator cancelled");
+    expect(aborted?.abortedBy).toBe(88);
+    // Đúng 1 dòng audit abort với actor/reason/before/after.
+    const audits = store.control_audit_log.filter((a) => a.action === "abort");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entityType).toBe("collaboration_session");
+    expect(audits[0].actorId).toBe(88);
+    expect(audits[0].reason).toBe("operator cancelled");
+    expect(audits[0].beforeJson.phase).not.toBe("done");
+    expect(audits[0].afterJson.phase).toBe("done");
   });
 });

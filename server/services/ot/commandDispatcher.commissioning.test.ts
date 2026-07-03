@@ -127,6 +127,12 @@ vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) } : undefined)),
 }));
 
+// Doc 25 T1 — cổng interlock inline được test riêng; mock luôn-qua để giữ nguyên
+// ngữ nghĩa gate commissioning (không liên quan interlock).
+vi.mock("../interlock/interlockGate", () => ({
+  evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
+}));
+
 import { dispatch } from "./commandDispatcher";
 
 const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({

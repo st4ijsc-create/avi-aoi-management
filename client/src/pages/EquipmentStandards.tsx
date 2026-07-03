@@ -61,7 +61,7 @@ import {
 import {
   ShieldCheck, RefreshCw, Info, Lock, AlertTriangle, Plus, Search, Link2,
   Network, Bell, GitPullRequest, ClipboardCheck, ChevronRight, ChevronDown,
-  Boxes, Cpu, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Rocket, Layers,
+  Boxes, Cpu, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Rocket, Layers, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,6 +76,15 @@ type MappedAlarm = RouterOutputs["equipmentStandards"]["mapAlarm"];
 type ChangeRequest = RouterOutputs["equipmentStandards"]["listChangeRequests"][number];
 type Conformance = RouterOutputs["equipmentStandards"]["runConformance"];
 type Compliance = RouterOutputs["equipmentStandards"]["complianceMetrics"];
+type AlarmKpis = RouterOutputs["equipmentStandards"]["alarmKpis"];
+type MasterAlarmRow = RouterOutputs["equipmentStandards"]["listMasterAlarms"][number];
+
+const CONSEQUENCES = ["none", "minor", "major", "severe"] as const;
+type Consequence = (typeof CONSEQUENCES)[number];
+
+const PRIORITY_TONE: Record<string, "error" | "warning" | "info" | "success" | "default"> = {
+  critical: "error", high: "error", medium: "warning", low: "info",
+};
 
 const SEVERITIES = ["critical", "high", "medium", "low", "diagnostic"] as const;
 type Severity = (typeof SEVERITIES)[number];
@@ -113,6 +122,10 @@ export default function EquipmentStandards() {
   const [upsertAlarmOpen, setUpsertAlarmOpen] = useState(false);
   const [submitCrOpen, setSubmitCrOpen] = useState(false);
   const [runConfReq, setRunConfReq] = useState(false);
+  // W5-21 — alarm performance state
+  const [kpiWindow, setKpiWindow] = useState(7);
+  const [masterAlarmOpen, setMasterAlarmOpen] = useState(false);
+  const [editMaster, setEditMaster] = useState<MasterAlarmRow | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -140,6 +153,11 @@ export default function EquipmentStandards() {
     enabled: canView && runConfReq,
     retry: false,
   });
+  const kpisQ = trpc.equipmentStandards.alarmKpis.useQuery(
+    { windowDays: kpiWindow, operatorCount: 1 },
+    { enabled: canView },
+  );
+  const mastersQ = trpc.equipmentStandards.listMasterAlarms.useQuery(undefined, { enabled: canView });
 
   const tree = (treeQ.data?.tree ?? []) as TreeNode[];
   const resolved = resolveQ.data as ResolvedType | undefined;
@@ -149,6 +167,8 @@ export default function EquipmentStandards() {
   const crs = (crsQ.data ?? []) as ChangeRequest[];
   const compliance = complianceQ.data as Compliance | undefined;
   const conformance = conformanceQ.data as Conformance | undefined;
+  const kpis = kpisQ.data as AlarmKpis | undefined;
+  const masters = (mastersQ.data ?? []) as MasterAlarmRow[];
 
   const flagEnabled = statusQ.data?.enabled ?? true;
 
@@ -160,6 +180,8 @@ export default function EquipmentStandards() {
     void utils.equipmentStandards.listChangeRequests.invalidate();
     void utils.equipmentStandards.complianceMetrics.invalidate();
     void utils.equipmentStandards.runConformance.invalidate();
+    void utils.equipmentStandards.alarmKpis.invalidate();
+    void utils.equipmentStandards.listMasterAlarms.invalidate();
   };
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
@@ -198,6 +220,19 @@ export default function EquipmentStandards() {
       );
       refetchAll();
     },
+    onError: onMutationError,
+  });
+  // W5-21 — master alarm mutations
+  const upsertMasterM = trpc.equipmentStandards.upsertMasterAlarm.useMutation({
+    onSuccess: () => { toast.success(t("eqStandards.masterSaved", "Master alarm saved")); setMasterAlarmOpen(false); setEditMaster(null); refetchAll(); },
+    onError: onMutationError,
+  });
+  const shelveMasterM = trpc.equipmentStandards.shelveMasterAlarm.useMutation({
+    onSuccess: () => { toast.success(t("eqStandards.masterShelved", "Shelving updated")); refetchAll(); },
+    onError: onMutationError,
+  });
+  const deleteMasterM = trpc.equipmentStandards.deleteMasterAlarm.useMutation({
+    onSuccess: () => { toast.success(t("eqStandards.masterDeleted", "Master alarm deleted")); refetchAll(); },
     onError: onMutationError,
   });
 
@@ -323,6 +358,7 @@ export default function EquipmentStandards() {
           <TabsList className="flex-wrap">
             <TabsTrigger value="hierarchy"><Network className="mr-1 h-4 w-4" />{t("eqStandards.tab.hierarchy", "Hierarchy")}</TabsTrigger>
             <TabsTrigger value="alarms"><Bell className="mr-1 h-4 w-4" />{t("eqStandards.tab.alarms", "Alarm taxonomy")}</TabsTrigger>
+            <TabsTrigger value="alarmPerf"><Activity className="mr-1 h-4 w-4" />{t("eqStandards.tab.alarmPerf", "Alarm performance")}</TabsTrigger>
             <TabsTrigger value="crs"><GitPullRequest className="mr-1 h-4 w-4" />{t("eqStandards.tab.crs", "Change requests")}</TabsTrigger>
             <TabsTrigger value="compliance"><ClipboardCheck className="mr-1 h-4 w-4" />{t("eqStandards.tab.compliance", "Compliance")}</TabsTrigger>
           </TabsList>
@@ -465,6 +501,150 @@ export default function EquipmentStandards() {
             </SectionCard>
           </TabsContent>
 
+          {/* ════════════════ TAB: Alarm performance (W5-21, EEMUA-191) ════════════════ */}
+          <TabsContent value="alarmPerf" className="flex flex-col gap-4">
+            {/* KPI strip */}
+            <SectionCard
+              icon={<Activity className="h-4 w-4" />}
+              title={t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
+              action={
+                <select
+                  className="flex h-8 w-32 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+                  value={kpiWindow}
+                  onChange={(e) => setKpiWindow(Number(e.target.value))}
+                >
+                  {[1, 7, 30].map((d) => (
+                    <option key={d} value={d}>{t("eqStandards.lastNDays", "Last {{n}} days").replace("{{n}}", String(d))}</option>
+                  ))}
+                </select>
+              }
+            >
+              {kpisQ.isLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
+              {kpisQ.error && !kpisQ.isLoading && (
+                <Text tone="muted" variant="body-sm">{t("eqStandards.kpiError", "Could not load alarm KPIs.")}</Text>
+              )}
+              {kpis && !kpisQ.isLoading && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                    <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
+                    <MetricCard icon={<Activity className="h-4 w-4" />} label={t("eqStandards.kpi.perOpHour", "Alarms/op/hour")}
+                      value={kpis.alarmsPerOperatorHour.toFixed(1)}
+                      tone={kpis.alarmsPerOperatorHour > 12 ? "danger" : kpis.alarmsPerOperatorHour > 6 ? "warning" : "good"} />
+                    <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("eqStandards.kpi.flood", "Flood windows")}
+                      value={kpis.floodWindowCount} tone={kpis.floodWindowCount > 0 ? "danger" : "good"} />
+                    <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
+                      value={kpis.chattering.length} tone={kpis.chattering.length > 0 ? "warning" : "good"} />
+                    <MetricCard icon={<Lock className="h-4 w-4" />} label={t("eqStandards.kpi.standing", "Standing/stale")}
+                      value={kpis.standingCount} tone={kpis.standingCount > 0 ? "warning" : "good"} />
+                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.peakWindowCount} />
+                  </div>
+                  {/* Bad actors */}
+                  <div className="mt-4">
+                    <Heading level={6} className="mb-2">{t("eqStandards.badActors", "Top bad actors")}</Heading>
+                    {kpis.badActors.length === 0 ? (
+                      <Text tone="muted" variant="body-sm">{t("eqStandards.noAlarms", "No alarms in this window.")}</Text>
+                    ) : (
+                      <div className="space-y-1">
+                        {kpis.badActors.map((b) => (
+                          <div key={b.key} className="flex items-center gap-2 text-sm">
+                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.key}>{b.key}</span>
+                            <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.share * 100)}%` }} />
+                            </div>
+                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({pct(b.share)})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </SectionCard>
+
+            {/* Master alarm DB (rationalization) */}
+            <SectionCard
+              icon={<ClipboardCheck className="h-4 w-4" />}
+              title={t("eqStandards.masterTitle", "Master alarm database (rationalization)")}
+              contentClassName="p-0"
+              action={canControl ? (
+                <Button size="sm" variant="outline" className="h-8" onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
+                  <Plus className="mr-1 h-4 w-4" />{t("eqStandards.addMaster", "Add master alarm")}
+                </Button>
+              ) : undefined}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("eqStandards.col.alarmKey", "Alarm key")}</TableHead>
+                    <TableHead>{t("eqStandards.col.priority", "Priority")}</TableHead>
+                    <TableHead>{t("eqStandards.col.consequence", "Consequence")}</TableHead>
+                    <TableHead>{t("eqStandards.col.ttr", "Time-to-respond")}</TableHead>
+                    <TableHead>{t("eqStandards.col.setpoint", "Setpoint / deadband")}</TableHead>
+                    <TableHead>{t("eqStandards.col.shelve", "Shelved / suppressed")}</TableHead>
+                    <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mastersQ.isLoading && (
+                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.loading", "Loading…")}</TableCell></TableRow>
+                  )}
+                  {!mastersQ.isLoading && masters.length === 0 && (
+                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.masterEmpty", "No master alarms rationalized yet.")}</TableCell></TableRow>
+                  )}
+                  {masters.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-mono text-xs font-medium">
+                        {m.alarmKey}{m.assetType ? <span className="ml-1 text-muted-foreground">/{m.assetType}</span> : null}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={m.priority} tone={PRIORITY_TONE[m.priority] ?? "default"} label={t(`eqStandards.priority.${m.priority}`, m.priority)} />
+                      </TableCell>
+                      <TableCell className="text-xs">{t(`eqStandards.consequenceVal.${m.consequence}`, m.consequence)}</TableCell>
+                      <TableCell className="text-xs">{m.timeToRespond != null ? `${m.timeToRespond} ${t("eqStandards.min", "min")}` : "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{m.setpoint ?? "—"}{m.deadband ? ` / ±${m.deadband}` : ""}</TableCell>
+                      <TableCell>
+                        {m.isSuppressed ? (
+                          <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive text-xs">{t("eqStandards.suppressed", "Suppressed")}</Badge>
+                        ) : m.isShelvedNow ? (
+                          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs">{t("eqStandards.shelved", "Shelved")}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {canControl ? (
+                          <div className="flex justify-end gap-1">
+                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setEditMaster(m); setMasterAlarmOpen(true); }}>
+                              <Eye className="mr-1 h-3.5 w-3.5" />{t("eqStandards.edit", "Edit")}
+                            </Button>
+                            {m.isShelvedNow ? (
+                              <Button size="sm" variant="ghost" className="h-7" disabled={shelveMasterM.isPending}
+                                onClick={() => shelveMasterM.mutate({ id: m.id, shelvedUntil: null })}>
+                                {t("eqStandards.unshelve", "Un-shelve")}
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="ghost" className="h-7" disabled={shelveMasterM.isPending}
+                                title={t("eqStandards.shelve8hTip", "Shelve for 8 hours")}
+                                onClick={() => shelveMasterM.mutate({ id: m.id, shelvedUntil: new Date(Date.now() + 8 * 3600_000).toISOString() })}>
+                                {t("eqStandards.shelve8h", "Shelve 8h")}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" className="h-7" disabled={deleteMasterM.isPending}
+                              onClick={() => deleteMasterM.mutate({ id: m.id })}>
+                              <XCircle className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{t("eqStandards.viewOnly", "View only")}</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </SectionCard>
+          </TabsContent>
+
           {/* ════════════════ TAB: Change requests (E1-c) ════════════════ */}
           <TabsContent value="crs" className="flex flex-col gap-4">
             <SectionCard
@@ -542,8 +722,8 @@ export default function EquipmentStandards() {
                                     </Button>
                                   )}
                                   <Button size="sm" variant="ghost" className="h-7" disabled={reviewCrM.isPending}
-                                    title={t("eqStandards.approveTip", "Approve (records conformance pass)")}
-                                    onClick={() => reviewCrM.mutate({ crId: cr.id, to: "approved", conformanceStatus: "pass" })}>
+                                    title={t("eqStandards.approveTip", "Approve — the server computes the conformance gate from the proposed schema")}
+                                    onClick={() => reviewCrM.mutate({ crId: cr.id, to: "approved" })}>
                                     <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("eqStandards.approve", "Approve")}
                                   </Button>
                                   <Button size="sm" variant="ghost" className="h-7" disabled={reviewCrM.isPending}
@@ -666,9 +846,19 @@ export default function EquipmentStandards() {
       )}
       {submitCrOpen && (
         <SubmitCrDialog
+          parentOptions={tree}
+          canView={canView}
           pending={submitCrM.isPending}
           onClose={() => setSubmitCrOpen(false)}
           onSubmit={(v) => submitCrM.mutate(v)}
+        />
+      )}
+      {masterAlarmOpen && (
+        <MasterAlarmDialog
+          initial={editMaster}
+          pending={upsertMasterM.isPending}
+          onClose={() => { setMasterAlarmOpen(false); setEditMaster(null); }}
+          onSubmit={(v) => upsertMasterM.mutate(v)}
         />
       )}
     </DashboardLayout>
@@ -988,36 +1178,257 @@ function UpsertAlarmDialog({
   );
 }
 
-// ── Submit change-request dialog ──────────────────────────────────────────────
-function SubmitCrDialog({
-  pending, onClose, onSubmit,
+// ── Master alarm dialog (W5-21) ───────────────────────────────────────────────
+// Client-side mirror of the server EEMUA-191 matrix — PREVIEW ONLY (the server
+// re-derives priority authoritatively on upsert).
+function previewPriority(consequence: Consequence, ttr: number | null): string {
+  const band = ttr == null ? "medium" : ttr < 10 ? "short" : ttr <= 30 ? "medium" : "long";
+  const M: Record<Consequence, Record<string, string>> = {
+    severe: { short: "critical", medium: "critical", long: "high" },
+    major: { short: "high", medium: "high", long: "medium" },
+    minor: { short: "medium", medium: "low", long: "low" },
+    none: { short: "low", medium: "low", long: "low" },
+  };
+  return M[consequence][band];
+}
+
+interface MasterAlarmValue {
+  alarmKey: string;
+  assetType?: string;
+  vendor?: string;
+  nativeCode?: string;
+  label?: string;
+  consequence: Consequence;
+  timeToRespond?: number;
+  setpoint?: string;
+  deadband?: string;
+  rationalization?: string;
+  isSuppressed?: boolean;
+}
+
+function MasterAlarmDialog({
+  initial, pending, onClose, onSubmit,
 }: {
+  initial: MasterAlarmRow | null;
   pending: boolean;
   onClose: () => void;
-  onSubmit: (v: { targetTypeKey: string; kind: "new_type" | "modify" | "deprecate"; semverBump?: "major" | "minor" | "patch" }) => void;
+  onSubmit: (v: MasterAlarmValue) => void;
+}) {
+  const { t } = useTranslation();
+  const [alarmKey, setAlarmKey] = useState(initial?.alarmKey ?? "");
+  const [assetType, setAssetType] = useState(initial?.assetType ?? "");
+  const [vendor, setVendor] = useState(initial?.vendor ?? "");
+  const [nativeCode, setNativeCode] = useState(initial?.nativeCode ?? "");
+  const [label, setLabel] = useState(initial?.label ?? "");
+  const [consequence, setConsequence] = useState<Consequence>((initial?.consequence as Consequence) ?? "minor");
+  const [ttr, setTtr] = useState<string>(initial?.timeToRespond != null ? String(initial.timeToRespond) : "");
+  const [setpoint, setSetpoint] = useState(initial?.setpoint ?? "");
+  const [deadband, setDeadband] = useState(initial?.deadband ?? "");
+  const [rationalization, setRationalization] = useState(initial?.rationalization ?? "");
+  const [isSuppressed, setIsSuppressed] = useState<boolean>(initial?.isSuppressed ?? false);
+
+  const ttrNum = ttr.trim() === "" ? null : Number(ttr);
+  const preview = previewPriority(consequence, ttrNum != null && Number.isFinite(ttrNum) ? ttrNum : null);
+
+  const submit = () => {
+    if (!alarmKey.trim()) { toast.error(t("eqStandards.alarmKeyRequired", "Alarm key is required.")); return; }
+    onSubmit({
+      alarmKey: alarmKey.trim(),
+      assetType: assetType.trim() || undefined,
+      vendor: vendor.trim() || undefined,
+      nativeCode: nativeCode.trim() || undefined,
+      label: label.trim() || undefined,
+      consequence,
+      timeToRespond: ttrNum != null && Number.isFinite(ttrNum) ? ttrNum : undefined,
+      setpoint: setpoint.trim() || undefined,
+      deadband: deadband.trim() || undefined,
+      rationalization: rationalization.trim() || undefined,
+      isSuppressed,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4" />
+            {initial ? t("eqStandards.editMasterTitle", "Edit master alarm") : t("eqStandards.addMasterTitle", "Rationalize a master alarm")}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.alarmKey", "Alarm key (standard code)")}</Label>
+              <Input value={alarmKey} placeholder="COLLISION_DETECT" onChange={(e) => setAlarmKey(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.assetType", "Asset type (optional)")}</Label>
+              <Input value={assetType} placeholder="ROBOT" onChange={(e) => setAssetType(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.consequence", "Consequence")}</Label>
+              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+                value={consequence} onChange={(e) => setConsequence(e.target.value as Consequence)}>
+                {CONSEQUENCES.map((c) => <option key={c} value={c}>{t(`eqStandards.consequenceVal.${c}`, c)}</option>)}
+              </select>
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.ttr", "Time-to-respond (min)")}</Label>
+              <Input type="number" min={0} value={ttr} placeholder="10" onChange={(e) => setTtr(e.target.value)} />
+            </div>
+          </div>
+          {/* Derived priority preview */}
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 text-sm">
+            <span className="text-xs text-muted-foreground">{t("eqStandards.derivedPriority", "Derived priority (EEMUA-191):")}</span>
+            <StatusBadge status={preview} tone={PRIORITY_TONE[preview] ?? "default"} label={t(`eqStandards.priority.${preview}`, preview)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.setpoint", "Setpoint")}</Label>
+              <Input value={setpoint} placeholder="85 °C" onChange={(e) => setSetpoint(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.deadband", "Deadband")}</Label>
+              <Input value={deadband} placeholder="2 °C" onChange={(e) => setDeadband(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.vendor", "Vendor (optional)")}</Label>
+              <Input value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.nativeCode", "Native code (optional)")}</Label>
+              <Input value={nativeCode} placeholder="SRVO-050" onChange={(e) => setNativeCode(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("eqStandards.label", "Label")}</Label>
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("eqStandards.rationalization", "Rationalization")}</Label>
+            <Input value={rationalization} placeholder={t("eqStandards.rationalizationHint", "Why this alarm exists / operator action")} onChange={(e) => setRationalization(e.target.value)} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={isSuppressed} onChange={(e) => setIsSuppressed(e.target.checked)} />
+            {t("eqStandards.suppressDesign", "Design suppression (out-of-service — never raises)")}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.save", "Save mapping")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Submit change-request dialog ──────────────────────────────────────────────
+type AttrDataType = "bool" | "int" | "float" | "string" | "json" | "enum";
+const ATTR_DATA_TYPES: AttrDataType[] = ["string", "int", "float", "bool", "json", "enum"];
+interface AttrRow { name: string; dataType: AttrDataType; unit: string; required: boolean; }
+
+/** Payload the CR carries — a REAL proposed schema (no longer an empty {} default). */
+interface SubmitCrValue {
+  targetTypeKey: string;
+  kind: "new_type" | "modify" | "deprecate";
+  semverBump?: "major" | "minor" | "patch";
+  proposedSchema: {
+    parentTypeKey?: string;
+    attributesSchema: Array<{ name: string; dataType: AttrDataType; unit?: string; required?: boolean }>;
+    supportedCommands: Array<{ name: string }>;
+  };
+}
+
+function SubmitCrDialog({
+  parentOptions, canView, pending, onClose, onSubmit,
+}: {
+  parentOptions: TreeNode[];
+  canView: boolean;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (v: SubmitCrValue) => void;
 }) {
   const { t } = useTranslation();
   const [targetTypeKey, setTargetTypeKey] = useState("");
   const [kind, setKind] = useState<"new_type" | "modify" | "deprecate">("modify");
   const [semverBump, setSemverBump] = useState<"major" | "minor" | "patch">("minor");
+  const [parentTypeKey, setParentTypeKey] = useState("");
+  const [attrs, setAttrs] = useState<AttrRow[]>([]);
+  const [cmds, setCmds] = useState<string[]>([]);
+
+  // Flatten the tree for the parent <select>.
+  const flatKeys = useMemo(() => {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => { for (const n of nodes) { out.push(n.typeKey); walk(n.children); } };
+    walk(parentOptions);
+    return out;
+  }, [parentOptions]);
+
+  // Prefill source — resolve the current published type for the entered targetTypeKey.
+  const key = targetTypeKey.trim();
+  const resolveQ = trpc.equipmentStandards.resolveType.useQuery(
+    { typeKey: key },
+    { enabled: canView && key.length > 0, retry: false },
+  );
+  const resolved = resolveQ.data as ResolvedType | undefined;
+  const hasResolved = !!resolved && !resolveQ.isError;
+
+  // Copy the merged current schema into the editors so the change ADDS to (never
+  // silently replaces/empties) the existing type — the fix for the hierarchy-wipe bug.
+  const prefill = () => {
+    if (!resolved) return;
+    setAttrs(resolved.attributesSchema.map((a) => ({
+      name: a.name, dataType: (a.dataType as AttrDataType) ?? "string", unit: a.unit ?? "", required: a.required ?? false,
+    })));
+    setCmds(resolved.supportedCommands.map((c) => c.name));
+    // Parent = the node just above self in the resolved inheritance chain.
+    const chain = resolved.inheritanceChain;
+    setParentTypeKey(chain.length >= 2 ? chain[chain.length - 2] : "");
+    toast.success(t("eqStandards.crPrefilled", "Loaded current schema — edit below."));
+  };
 
   const submit = () => {
-    if (!targetTypeKey.trim()) { toast.error(t("eqStandards.targetRequired", "Target type key is required.")); return; }
-    onSubmit({ targetTypeKey: targetTypeKey.trim(), kind, semverBump });
+    if (!key) { toast.error(t("eqStandards.targetRequired", "Target type key is required.")); return; }
+    const attributesSchema = attrs
+      .filter((a) => a.name.trim())
+      .map((a) => ({ name: a.name.trim(), dataType: a.dataType, unit: a.unit.trim() || undefined, required: a.required || undefined }));
+    const supportedCommands = cmds.filter((c) => c.trim()).map((c) => ({ name: c.trim() }));
+    onSubmit({
+      targetTypeKey: key, kind, semverBump,
+      proposedSchema: { parentTypeKey: parentTypeKey.trim() || undefined, attributesSchema, supportedCommands },
+    });
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><GitPullRequest className="h-4 w-4" />{t("eqStandards.submitCrTitle", "Submit change request")}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 py-2">
           <div className="grid gap-1">
             <Label>{t("eqStandards.targetType", "Target type key")}</Label>
-            <Input value={targetTypeKey} placeholder="Robot" onChange={(e) => setTargetTypeKey(e.target.value)} />
+            <div className="flex items-center gap-2">
+              <Input value={targetTypeKey} placeholder="Robot" onChange={(e) => setTargetTypeKey(e.target.value)} />
+              <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" disabled={!hasResolved} onClick={prefill}>
+                <Layers className="mr-1 h-4 w-4" />{t("eqStandards.crPrefill", "Prefill")}
+              </Button>
+            </div>
+            {key.length > 0 && resolveQ.isFetching && (
+              <Text tone="muted" variant="caption">{t("eqStandards.loading", "Loading…")}</Text>
+            )}
+            {key.length > 0 && !resolveQ.isFetching && !hasResolved && (
+              <Text tone="muted" variant="caption">{t("eqStandards.crNoResolve", "No existing published type for this key — a new type will be created on publish.")}</Text>
+            )}
+            {hasResolved && !resolveQ.isFetching && (
+              <Text tone="muted" variant="caption">{t("eqStandards.crPrefillHint", "Click Prefill to load current attributes/commands so your change adds to them instead of replacing the type.")}</Text>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="grid gap-1">
               <Label>{t("eqStandards.kind", "Kind")}</Label>
               <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
@@ -1034,7 +1445,81 @@ function SubmitCrDialog({
                 {(["major", "minor", "patch"] as const).map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            <div className="grid gap-1">
+              <Label>{t("eqStandards.parent", "Parent type")}</Label>
+              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+                value={parentTypeKey} onChange={(e) => setParentTypeKey(e.target.value)}>
+                <option value="">{t("eqStandards.noParent", "(none — root)")}</option>
+                {flatKeys.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
           </div>
+
+          {/* Attributes editor */}
+          <div className="grid gap-1">
+            <div className="flex items-center justify-between">
+              <Label>{t("eqStandards.attributes", "Attributes")} ({attrs.length})</Label>
+              <Button type="button" variant="ghost" size="sm" className="h-7"
+                onClick={() => setAttrs((a) => [...a, { name: "", dataType: "string", unit: "", required: false }])}>
+                <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addAttr", "Add attribute")}
+              </Button>
+            </div>
+            {attrs.length === 0 ? (
+              <Text tone="muted" variant="caption">{t("eqStandards.crNoAttrs", "No attributes yet — prefill or add rows.")}</Text>
+            ) : (
+              <div className="space-y-1">
+                {attrs.map((a, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <Input className="h-8 flex-1" placeholder={t("eqStandards.attrName", "name")} value={a.name}
+                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                    <select className="flex h-8 w-24 rounded-md border border-input bg-transparent px-1 text-xs"
+                      value={a.dataType}
+                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, dataType: e.target.value as AttrDataType } : x))}>
+                      {ATTR_DATA_TYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
+                    </select>
+                    <Input className="h-8 w-20" placeholder={t("eqStandards.unit", "unit")} value={a.unit}
+                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} />
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground" title={t("eqStandards.required", "Required")}>
+                      <input type="checkbox" checked={a.required}
+                        onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
+                      {t("eqStandards.reqShort", "req")}
+                    </label>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                      onClick={() => setAttrs((arr) => arr.filter((_, j) => j !== i))}>
+                      <XCircle className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Commands editor */}
+          <div className="grid gap-1">
+            <div className="flex items-center justify-between">
+              <Label>{t("eqStandards.commands", "Commands")} ({cmds.length})</Label>
+              <Button type="button" variant="ghost" size="sm" className="h-7" onClick={() => setCmds((c) => [...c, ""])}>
+                <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addCmd", "Add command")}
+              </Button>
+            </div>
+            {cmds.length === 0 ? (
+              <Text tone="muted" variant="caption">{t("eqStandards.crNoCmds", "No commands yet — prefill or add rows.")}</Text>
+            ) : (
+              <div className="space-y-1">
+                {cmds.map((c, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <Input className="h-8 flex-1" placeholder={t("eqStandards.cmdName", "command name")} value={c}
+                      onChange={(e) => setCmds((arr) => arr.map((x, j) => j === i ? e.target.value : x))} />
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                      onClick={() => setCmds((arr) => arr.filter((_, j) => j !== i))}>
+                      <XCircle className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <p className="text-xs text-muted-foreground">
             {t("eqStandards.crHint", "After submission the CR goes pending → in-review → approved, then publish enforces the conformance + backward-compatibility gate.")}
           </p>

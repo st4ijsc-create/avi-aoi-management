@@ -14,7 +14,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -26,6 +26,8 @@ import {
   programSimRuns,
   programDeployments,
   programSymbols,
+  users,
+  permissions,
 } from "../../drizzle/schema";
 import {
   programmingRegistry,
@@ -49,6 +51,8 @@ import {
   explainProgram,
   copilotEnabled,
 } from "../services/programming/aiProgrammingCopilot";
+// ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
+import { getEngineeringStreamManager } from "../services/programming/engineeringStream";
 // ── P4 (doc 24 Wave-3) — structured IEC 61131-3 POU (LAD/FBD/SFC) + PLCopen XML round-trip ──
 import { pouProjectSchema } from "../services/programming/iec61131/pouModel";
 import { lintPouProject } from "../services/programming/iec61131/pouLinter";
@@ -289,6 +293,8 @@ export const programmingRouter = router({
         /** HITL sign-off: the confirming user. Required for a REAL deploy. */
         confirmedBy: z.number().int().positive().optional(),
         actionId: z.string().min(1).max(128),
+        /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
+        reason: z.string().max(2000).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -298,10 +304,35 @@ export const programmingRouter = router({
           stage: input.stage,
           idempotencyKey: input.idempotencyKey,
           deviceId: input.deviceId,
-          hitl: { actionId: input.actionId, requestedBy: ctx.user.id, confirmedBy: input.confirmedBy },
+          hitl: {
+            actionId: input.actionId,
+            requestedBy: ctx.user.id,
+            confirmedBy: input.confirmedBy,
+            reason: input.reason,
+          },
         },
         toDpcUser(ctx.user),
       );
+    }),
+
+  /**
+   * W2-9 (doc 25 T6) — danh sách người đủ quyền KÝ DUYỆT deploy (second-approver).
+   * = admin (được cấp toàn quyền) hoặc user có quyền machine_control (canCreate).
+   * Chỉ đọc; client dùng để render picker "người ký duyệt" cho deploy production.
+   */
+  listApprovers: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async () => {
+      const d = await db();
+      return d
+        .select({ id: users.id, username: users.username, name: users.name, role: users.role })
+        .from(users)
+        .leftJoin(
+          permissions,
+          and(eq(permissions.userId, users.id), eq(permissions.moduleName, "machine_control")),
+        )
+        .where(and(eq(users.isActive, true), or(eq(users.role, "admin"), eq(permissions.canCreate, true))))
+        .orderBy(users.username);
     }),
 
   rollbackDeployment: protectedProcedure
@@ -380,6 +411,51 @@ export const programmingRouter = router({
       const d = await db();
       await d.delete(programSymbols).where(eq(programSymbols.id, input.id));
       return { ok: true, id: input.id };
+    }),
+
+  // ── Online Monitor (D6, doc 25 T4) — open/close a high-rate WATCH session ──
+  //
+  // READ-ONLY: a watch only READS the chosen symbols and pushes samples to the socket room
+  // `engineering:{machineId}` (see emitEngineeringSamples). NO device write (force() is a
+  // separate, heavily-gated path). Gated by DPC_STREAMING_ENABLED — a no-op when off. The
+  // default sample source returns [] without a reachable device, so the loop is HONEST:
+  // it never fabricates values (real OPC-UA / MC fast-scan source lands after HW validation).
+  startWatch: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        projectId: z.number().int().positive(),
+        symbols: z.array(z.string().min(1).max(128)).min(1).max(200),
+        intervalMs: z.number().int().min(100).max(5000).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      if (!dpcStreamingEnabled()) {
+        return { started: false as const, reason: "streaming_disabled" as const, machineId: null };
+      }
+      const d = await db();
+      const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
+      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      const machineId = proj.deviceId;
+      // Không gắn thiết bị → không có nguồn để đọc (báo trung thực về UI).
+      if (machineId == null) {
+        return { started: false as const, reason: "no_device" as const, machineId: null };
+      }
+      const started = getEngineeringStreamManager().startWatch({
+        sessionId: `proj-${input.projectId}`,
+        machineId,
+        symbols: input.symbols,
+        intervalMs: input.intervalMs,
+      });
+      return { started, reason: started ? null : ("not_started" as const), machineId };
+    }),
+
+  stopWatch: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ projectId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      getEngineeringStreamManager().stopWatch(`proj-${input.projectId}`);
+      return { ok: true as const };
     }),
 
   // ── AI Engineering Copilot (D7) — ADVISORY ONLY (HITL absolute; no deploy path) ──

@@ -159,7 +159,7 @@ export interface DeployRequest {
   stage: "staging" | "production";
   idempotencyKey: string;
   /** HITL provenance — the human confirming the deploy (== sign-off). */
-  hitl: { actionId: string; requestedBy: number; confirmedBy?: number };
+  hitl: { actionId: string; requestedBy: number; confirmedBy?: number; reason?: string };
   deviceId?: number;
 }
 
@@ -208,6 +208,33 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
 
   const signedOff = req.hitl.confirmedBy != null;
   const realDeploy = dpcDeployEnabled() && signedOff;
+
+  // W2-9 (doc 25 T6) — SEGREGATION OF DUTIES. A REAL production deploy may NOT be
+  // self-approved: the human who signs off (confirmedBy) must differ from the requester.
+  // Closes the HITL "tự ký" loophole (người yêu cầu tự duyệt deploy của chính mình).
+  // Staging / simulated deploys are unaffected — the two-person control applies to
+  // production hardware writes only.
+  if (realDeploy && req.stage === "production" && req.hitl.confirmedBy === req.hitl.requestedBy) {
+    const [row] = await d
+      .insert(programDeployments)
+      .values({
+        buildId: req.buildId,
+        projectId: art.projectId,
+        deviceId: req.deviceId ?? projectDeviceId,
+        stage: req.stage,
+        status: "rejected",
+        simulated: true,
+        signedOffBy: req.hitl.confirmedBy ?? null,
+        requestedBy: user.id,
+        idempotencyKey: req.idempotencyKey,
+        error:
+          "Segregation of duties — người ký duyệt deploy production phải KHÁC người yêu cầu (không được tự ký).",
+        detailJson: req.hitl.reason ? { approvalReason: req.hitl.reason } : null,
+      })
+      .returning();
+    publishDeployed(row);
+    return row;
+  }
 
   // P0 — ENFORCE THE SIMULATION GATE. A real (hardware) deploy is refused unless the
   // most-recent simulation run for this build PASSED (program_sim_runs.ok === true).
@@ -282,12 +309,22 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
       signedOffBy: signedOff ? req.hitl.confirmedBy : null,
       requestedBy: user.id,
       idempotencyKey: req.idempotencyKey,
-      detailJson: result.detail ?? null,
+      // W2-9 — ghi kèm lý do duyệt (nếu có) vào detailJson để lưu vết SoD.
+      detailJson: mergeApprovalReason(result.detail ?? null, req.hitl.reason),
       error: result.error ?? null,
     })
     .returning();
   publishDeployed(row);
   return row;
+}
+
+/** Gộp lý do duyệt vào detailJson (giữ null khi cả hai trống). */
+function mergeApprovalReason(
+  detail: Record<string, unknown> | null,
+  reason?: string,
+): Record<string, unknown> | null {
+  if (!reason) return detail;
+  return { ...(detail ?? {}), approvalReason: reason };
 }
 
 /**

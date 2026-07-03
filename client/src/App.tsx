@@ -105,6 +105,7 @@ const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Ma
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
+const EngineeringHub = React.lazy(() => import("./pages/EngineeringHub")); // W6-26 (doc 25 T8): Engineering hub-and-spoke front door (task-grouped tiles + golden-thread)
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
 const IrEditor = React.lazy(() => import("./pages/IrEditor")); // D1 (doc 16 §11.1 Khối 6): Visual IR Editor — author motion/IO blocks, lint + transpile preview (mutations gated by DPC_IR_V2_ENABLED)
 const PouStudio = React.lazy(() => import("./pages/PouStudio")); // P4 (doc 24 Wave-3): IEC 61131 POU Studio — structured LAD/FBD/SFC + PLCopen XML round-trip + transpile-to-ST (pure preview, open runtime only)
@@ -272,6 +273,7 @@ function Router() {
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-standards"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-integration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
       <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>

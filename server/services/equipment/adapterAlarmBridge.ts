@@ -31,6 +31,8 @@ import {
   type NormalizedAlarmResult,
   type RawVendorAlarm,
 } from "./alarmNormalizer";
+import { mapAlarm } from "../standards/alarmTaxonomy";
+import { loadRuntimeAlarmContext, isAlarmSuppressed } from "../standards/alarmMasterService";
 
 /** No-op result when the flag is off (matches normalizeAndRaise's off-path shape). */
 function noop(vendor: string, nativeCode: string): NormalizedAlarmResult {
@@ -46,6 +48,32 @@ function noop(vendor: string, nativeCode: string): NormalizedAlarmResult {
     andon: null,
     raised: false,
   };
+}
+
+/**
+ * W5-21 — the SINGLE runtime seam every adapter bridge routes through. It:
+ *   1. loads the SEED ∪ DB taxonomy (so a user-authored mapping reaches the Andon), plus
+ *      the master alarm DB (for shelving/suppression), FAIL-SAFE to seed/empty;
+ *   2. resolves the standard code and, if a master alarm SHELVES/SUPPRESSES it, returns
+ *      WITHOUT raising an Andon (a shelved alarm must raise nothing);
+ *   3. otherwise raises the normalized Andon via the SAME normalizeAndRaise path, now
+ *      fed the merged entries instead of the pure seed.
+ * NO-OP passthrough when the flag is off (never touches the DB).
+ */
+async function raiseNormalized(raw: RawVendorAlarm): Promise<NormalizedAlarmResult> {
+  if (!isEqIntegEnabled()) return noop(raw.vendor, raw.nativeCode);
+  const { entries, masters } = await loadRuntimeAlarmContext();
+  const normalized = mapAlarm(raw.vendor, raw.nativeCode, entries);
+  const sup = isAlarmSuppressed(masters, {
+    standardCode: normalized.standardCode,
+    vendor: raw.vendor,
+    nativeCode: raw.nativeCode,
+  });
+  if (sup.suppressed) {
+    // Shelved/suppressed → KHÔNG raise Andon (chỉ là tín hiệu, an toàn).
+    return { normalized, vendor: raw.vendor, nativeCode: raw.nativeCode, andon: null, raised: false, suppressed: true };
+  }
+  return normalizeAndRaise(raw, entries);
 }
 
 /**
@@ -69,7 +97,7 @@ export async function raiseFromMtconnectCondition(input: {
     machineId: input.machineId ?? null,
     adapterKind: "mtconnect",
   };
-  return normalizeAndRaise(raw);
+  return raiseNormalized(raw);
 }
 
 /**
@@ -93,7 +121,7 @@ export async function raiseFromEuromapAlarm(input: {
     machineId: input.machineId ?? null,
     adapterKind: "euromap",
   };
-  return normalizeAndRaise(raw);
+  return raiseNormalized(raw);
 }
 
 /** The subset of a gemModel.GemAlarmRecord this bridge consumes (avoids a hard dep). */
@@ -123,5 +151,5 @@ export async function raiseFromGemAlarm(alarm: GemAlarmLike): Promise<Normalized
     machineId: alarm.machineId ?? null,
     adapterKind: "secsgem",
   };
-  return normalizeAndRaise(raw);
+  return raiseNormalized(raw);
 }

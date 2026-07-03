@@ -5,7 +5,8 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
+import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
+import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
 
 /**
@@ -140,6 +141,15 @@ export const machineRecipes = pgTable("machine_recipes", {
   status: recipeStatusEnum("status").default("draft").notNull(),
   notes: text("notes"),
   createdBy: integer("createdBy"),
+  // W5-22 (doc 25 (a), migration 0170) — cờ GOLDEN/master: đánh dấu phiên bản
+  // baseline (bộ tham số chuẩn) của một code để đối chiếu khi deploy/diff. Curator
+  // flag ở tầng app (không ràng buộc unique ở DB).
+  isGolden: boolean("isGolden").default(false).notNull(),
+  // W2-9 (doc 25 T6, migration 0165) — second-approver (segregation of duties):
+  // recipe phải được một người KHÁC người tạo (createdBy) trình duyệt trước khi deploy.
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  approvalNote: text("approvalNote"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -147,6 +157,12 @@ export const machineRecipes = pgTable("machine_recipes", {
   index("idx_machine_recipes_machine").on(table.machineId),
   index("idx_machine_recipes_type").on(table.machineType),
   index("idx_machine_recipes_status").on(table.status),
+  // W2-6 (doc 25 T5, migration 0164): DB-level guard for the "exactly one active
+  // (=released) version per code" invariant. Also covers the equipment-integration
+  // 'released' status which maps 1:1 onto the DB enum value 'active'.
+  uniqueIndex("uq_machine_recipes_active_code").on(table.code).where(sql`${table.status} = 'active'`),
+  // W5-22 (0170) — tra cứu nhanh phiên bản golden theo code.
+  index("idx_machine_recipes_golden").on(table.code).where(sql`${table.isGolden} = true`),
 ]);
 
 export type MachineRecipe = typeof machineRecipes.$inferSelect;

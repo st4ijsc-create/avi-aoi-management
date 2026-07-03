@@ -45,12 +45,19 @@ export const COMPARE_OPS = ["eq", "neq", "lt", "lte", "gt", "gte", "in", "nin", 
  * A single editor step — a superset of every server step type, with all
  * type-specific fields optional (the editor fills them in over time).
  */
+/** Hành vi khi precondition/interlock KHÔNG thỏa (mirror server OnPreconditionFail). */
+export type OnPreconditionFail = "hold" | "abort" | "skip";
+export const ON_PRECONDITION_FAIL: OnPreconditionFail[] = ["hold", "abort", "skip"];
+
 export interface StudioStep {
   id: string;
   type: StepKind;
   label?: string;
+  // ── base (mọi loại) — mirror server BaseStep ──
   precondition?: Record<string, unknown>;
+  onPreconditionFail?: OnPreconditionFail;
   compensation?: StudioStep;
+  maxAttempts?: number;
   // command
   machineId?: number;
   command?: string;
@@ -62,13 +69,15 @@ export interface StudioStep {
   condition?: Record<string, unknown>;
   then?: StudioStep[];
   else?: StudioStep[];
-  // wait_state
+  // wait_state / wait_telemetry
   targetStates?: string[];
   timeoutMs?: number;
+  pollMs?: number;
   // delay
   ms?: number;
   // hitl_gate
   prompt?: string;
+  approverRoles?: string[];
 }
 
 export interface StudioParam {
@@ -211,8 +220,11 @@ export function addChild(steps: StudioStep[], parentId: string, slot: "steps" | 
 function serializeStep(s: StudioStep): Record<string, unknown> {
   const out: Record<string, unknown> = { id: s.id, type: s.type };
   if (s.label) out.label = s.label;
+  // ── base optional fields (mirror server BaseStep) — chỉ emit khi có giá trị ──
   if (s.precondition) out.precondition = s.precondition;
+  if (s.onPreconditionFail) out.onPreconditionFail = s.onPreconditionFail;
   if (s.compensation) out.compensation = serializeStep(s.compensation);
+  if (typeof s.maxAttempts === "number" && s.maxAttempts > 0) out.maxAttempts = s.maxAttempts;
   switch (s.type) {
     case "command":
       out.machineId = s.machineId;
@@ -233,13 +245,16 @@ function serializeStep(s: StudioStep): Record<string, unknown> {
       out.machineId = s.machineId;
       out.targetStates = s.targetStates ?? [];
       out.timeoutMs = s.timeoutMs ?? 30000;
+      if (typeof s.pollMs === "number" && s.pollMs > 0) out.pollMs = s.pollMs;
       break;
     case "wait_telemetry":
       out.condition = s.condition;
       out.timeoutMs = s.timeoutMs ?? 30000;
+      if (typeof s.pollMs === "number" && s.pollMs > 0) out.pollMs = s.pollMs;
       break;
     case "hitl_gate":
       out.prompt = s.prompt ?? "";
+      if (s.approverRoles && s.approverRoles.length) out.approverRoles = s.approverRoles;
       break;
     case "delay":
       out.ms = s.ms ?? 0;

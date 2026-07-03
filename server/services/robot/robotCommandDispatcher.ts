@@ -5,7 +5,9 @@
  * mutation — reachable only from an internal caller (an AI write-tool after HITL
  * confirm, or a server-side operator action). Gates, in order:
  *   1. idempotency (per key, terminal job returned as-is — no blind re-run),
- *   2. HITL: triggerKind='hitl' requires a confirmedBy user,
+ *   2. HITL: triggerKind='hitl' requires a confirmedBy user AND — when an actionId is
+ *      supplied — a re-verified ai_pending_actions row (confirmed/executed + owner match),
+ *      symmetric to the OT commandDispatcher (doc 25 T1); fail-closed on any mismatch,
  *   3. active + connected driver,
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
@@ -14,7 +16,7 @@
  */
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { robotJobs, robots } from "../../../drizzle/schema";
+import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotJobResult } from "./robotDriver";
 
@@ -117,10 +119,37 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
     }
   }
 
-  // 2) HITL gate.
-  if (triggerKind === "hitl" && !input.confirmedBy) {
-    const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
-    return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+  // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
+  if (triggerKind === "hitl") {
+    // 2.a Bắt buộc có người xác nhận.
+    if (!input.confirmedBy) {
+      const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
+      return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+    }
+    // 2.b Defense-in-depth: khi có actionId, PHẢI tái-xác-minh bản ghi ai_pending_actions
+    //     đã confirmed/executed VÀ đúng owner (=confirmedBy) — hệt OT. KHÔNG tin confirmedBy
+    //     tự-điền vô điều kiện (trước đây robot bỏ qua bước này → lệnh FOE robot lọt trong khi
+    //     FOE OT bị chặn). Fail-closed: DB không sẵn / bản ghi thiếu / sai owner → TỪ CHỐI.
+    if (input.actionId) {
+      const db = await getDb();
+      if (!db) {
+        const jobId = await record(input, "rejected", undefined, "DB unavailable — HITL verify fail-closed");
+        return { ok: false, status: "rejected", jobId, error: "HITL verify unavailable" };
+      }
+      const [pending] = await db
+        .select()
+        .from(aiPendingActions)
+        .where(eq(aiPendingActions.id, input.actionId))
+        .limit(1);
+      const confirmedOk =
+        !!pending &&
+        (pending.status === "confirmed" || pending.status === "executed") &&
+        pending.userId === input.confirmedBy;
+      if (!confirmedOk) {
+        const jobId = await record(input, "rejected", undefined, "HITL action not confirmed or owner mismatch");
+        return { ok: false, status: "rejected", jobId, error: "NOT_CONFIRMED" };
+      }
+    }
   }
 
   // 2b) X1-e (doc 16 §5) — COMMAND-LEVEL AUTHORIZATION (ADDITIVE, flag-gated).

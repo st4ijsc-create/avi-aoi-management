@@ -80,7 +80,15 @@ export type SignalCondition = z.infer<typeof signalConditionSchema>;
 // stable handle. A recursive z.lazy() union expresses the nesting (branches / loop
 // body) without a forward-declaration cycle.
 
-const baseBlockFields = { id: z.string().optional() };
+/**
+ * W4-19 (audit doc 25): toạ độ node phụ trợ (UI-only) để LƯU vị trí kéo-thả trên canvas
+ * graph. OPTIONAL + additive — linter/transpiler bỏ qua; một flow không có `ui` parse +
+ * transpile byte-identical như trước. Không phải đường thiết bị, không ảnh hưởng an toàn.
+ */
+export const nodeUiSchema = z.object({ x: z.number(), y: z.number() });
+export type NodeUi = z.infer<typeof nodeUiSchema>;
+
+const baseBlockFields = { id: z.string().optional(), ui: nodeUiSchema.optional() };
 
 export const moveLinearBlockSchema = z.object({
   ...baseBlockFields,
@@ -286,6 +294,7 @@ export type SetAnalogBlock = z.infer<typeof setAnalogBlockSchema>;
 export type PidControlBlock = z.infer<typeof pidControlBlockSchema>;
 export interface IfConditionBlock {
   id?: string;
+  ui?: NodeUi;
   type: "if_condition";
   signal_ref: string;
   operator: CompareOperator;
@@ -295,6 +304,7 @@ export interface IfConditionBlock {
 }
 export interface LoopBlock {
   id?: string;
+  ui?: NodeUi;
   type: "loop";
   count?: number;
   while?: SignalCondition;

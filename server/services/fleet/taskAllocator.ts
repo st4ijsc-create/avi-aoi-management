@@ -123,6 +123,15 @@ function hasCapability(capabilityClass: string, verb: string): boolean {
   return resolveProfile(capabilityClass).supportedCommands.some((c) => c.name === verb);
 }
 
+/**
+ * W4-18 (2) — Does a robot of `kind` support the capability verb? Exported so the
+ * fleetRouter.assign path can HARD-validate a manual (re)assignment against the same
+ * capability model the allocator uses, instead of blindly writing the assignment.
+ */
+export function deviceSupportsCapability(kind: string | null | undefined, verb: string): boolean {
+  return hasCapability(robotKindToCapabilityClass(kind), verb);
+}
+
 function distance(a?: { x: number; y: number } | null, b?: { x: number; y: number } | null): number | null {
   if (!a || !b) return null;
   return Math.hypot(a.x - b.x, a.y - b.y);

@@ -21,6 +21,11 @@ import {
 } from "lucide-react";
 
 // ── Local IR types (mirror the server irModel input shape) ────────────────────
+/**
+ * W4-19: vị trí node phụ trợ (UI-only) để LƯU toạ độ kéo-thả trên canvas graph.
+ * Optional + additive — transpile/lint bỏ qua; một flow không có `ui` round-trip y hệt.
+ */
+export type NodeUi = { x: number; y: number };
 export type Pose = { x: number; y: number; z: number; rx: number; ry: number; rz: number };
 export type CompareOp = "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
 export type SignalCondition = { signal_ref: string; operator: CompareOp; value: number | boolean | string };
@@ -62,23 +67,23 @@ export function exprToText(v: NumericOrExpr): string {
   }
 }
 
-export type MoveLinearBlock = { id?: string; type: "move_linear"; target_pose: Pose; speed_mms: number; acceleration: number; blend_radius: number };
-export type MoveJointBlock = { id?: string; type: "move_joint"; joints: number[]; speed_pct: number };
-export type GripBlock = { id?: string; type: "grip"; tool_id: string; force_limit_n: number; timeout_ms: number };
-export type ReleaseBlock = { id?: string; type: "release"; tool_id?: string };
-export type SetOutputBlock = { id?: string; type: "set_output"; signal: string; value: NumericOrExpr };
-export type WaitBlock = { id?: string; type: "wait"; signal_ref?: string; ms?: number | Expr };
-export type IfConditionBlock = { id?: string; type: "if_condition"; signal_ref: string; operator: CompareOp; value: number | boolean | string; true_branch: IrBlock[]; false_branch: IrBlock[] };
-export type LoopBlock = { id?: string; type: "loop"; count?: number; while?: SignalCondition; body: IrBlock[] };
+export type MoveLinearBlock = { id?: string; ui?: NodeUi; type: "move_linear"; target_pose: Pose; speed_mms: number; acceleration: number; blend_radius: number };
+export type MoveJointBlock = { id?: string; ui?: NodeUi; type: "move_joint"; joints: number[]; speed_pct: number };
+export type GripBlock = { id?: string; ui?: NodeUi; type: "grip"; tool_id: string; force_limit_n: number; timeout_ms: number };
+export type ReleaseBlock = { id?: string; ui?: NodeUi; type: "release"; tool_id?: string };
+export type SetOutputBlock = { id?: string; ui?: NodeUi; type: "set_output"; signal: string; value: NumericOrExpr };
+export type WaitBlock = { id?: string; ui?: NodeUi; type: "wait"; signal_ref?: string; ms?: number | Expr };
+export type IfConditionBlock = { id?: string; ui?: NodeUi; type: "if_condition"; signal_ref: string; operator: CompareOp; value: number | boolean | string; true_branch: IrBlock[]; false_branch: IrBlock[] };
+export type LoopBlock = { id?: string; ui?: NodeUi; type: "loop"; count?: number; while?: SignalCondition; body: IrBlock[] };
 // P3 additions (all leaf blocks)
-export type SetVariableBlock = { id?: string; type: "set_variable"; name: string; expr: Expr };
-export type CounterBlock = { id?: string; type: "counter"; name: string; op: "increment" | "reset"; amount: number };
-export type WaitUntilBlock = { id?: string; type: "wait_until"; condition: Expr; timeout_ms: number; poll_ms: number };
-export type SetAnalogBlock = { id?: string; type: "set_analog"; channel: string; value: NumericOrExpr; unit?: string };
-export type PidControlBlock = { id?: string; type: "pid_control"; output_channel: string; input_channel: string; setpoint: NumericOrExpr; kp: number; ki: number; kd: number; output_min: number; output_max: number };
+export type SetVariableBlock = { id?: string; ui?: NodeUi; type: "set_variable"; name: string; expr: Expr };
+export type CounterBlock = { id?: string; ui?: NodeUi; type: "counter"; name: string; op: "increment" | "reset"; amount: number };
+export type WaitUntilBlock = { id?: string; ui?: NodeUi; type: "wait_until"; condition: Expr; timeout_ms: number; poll_ms: number };
+export type SetAnalogBlock = { id?: string; ui?: NodeUi; type: "set_analog"; channel: string; value: NumericOrExpr; unit?: string };
+export type PidControlBlock = { id?: string; ui?: NodeUi; type: "pid_control"; output_channel: string; input_channel: string; setpoint: NumericOrExpr; kp: number; ki: number; kd: number; output_min: number; output_max: number };
 // Tier-1c: reusable function-block (POU) CALL site — a leaf block.
 export type CallArg = { name: string; value: NumericOrExpr };
-export type CallBlock = { id?: string; type: "call_block"; fb_name: string; args: CallArg[] };
+export type CallBlock = { id?: string; ui?: NodeUi; type: "call_block"; fb_name: string; args: CallArg[] };
 
 export type IrBlock =
   | MoveLinearBlock | MoveJointBlock | GripBlock | ReleaseBlock

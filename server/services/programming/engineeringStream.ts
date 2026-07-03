@@ -119,3 +119,26 @@ export async function defaultSampleSource(machineId: number, symbols: string[]):
     return [];
   }
 }
+
+/**
+ * Boot SINGLETON — the manager bound to the honest default source + the Socket.IO room sink
+ * (`emitEngineeringSamples`). Created lazily on first use so headless/test contexts that never
+ * open a watch pay nothing. The sink is imported lazily to avoid a socket↔stream import cycle.
+ * Every emit is still gated by DPC_STREAMING_ENABLED inside startWatch, and the default source
+ * returns [] without a reachable device (never fabricates values).
+ */
+let singletonManager: EngineeringStreamManager | null = null;
+
+export function getEngineeringStreamManager(): EngineeringStreamManager {
+  if (!singletonManager) {
+    const sink: SampleSink = (machineId, samples) => {
+      import("../../_core/socket")
+        .then(({ emitEngineeringSamples }) => emitEngineeringSamples(machineId, samples))
+        .catch(() => {
+          // Không có socket server (headless/test) → bỏ qua, không phá watch loop.
+        });
+    };
+    singletonManager = new EngineeringStreamManager(defaultSampleSource, sink);
+  }
+  return singletonManager;
+}

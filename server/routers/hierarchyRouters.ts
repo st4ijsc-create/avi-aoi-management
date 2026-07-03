@@ -6,6 +6,27 @@ import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
 import { MACHINE_TYPES } from "../constants/machineTypes";
+import { requirePermission } from "../_core/accessControl";
+import {
+  eqGovernEnabled,
+  buildSeedTypes,
+  resolveType,
+} from "../services/standards/deviceTypeRegistry";
+import { runConformance, subjectFromResolved } from "../services/standards/conformanceTest";
+
+/**
+ * W5-20 (4) — Enforcement nghiệm thu khi tạo máy. Khi EQ_GOVERN_ENABLED bật, kiểm tra
+ * machineType có device-type đã xuất bản + đạt conformance. Ở mức CẢNH BÁO (không chặn)
+ * — trả về chuỗi cảnh báo để UI hiển thị; không lưu deviceTypeVersion (cần migration).
+ */
+function commissionGovernanceWarning(machineType: string): string | undefined {
+  if (!eqGovernEnabled()) return undefined;
+  const resolved = resolveType(machineType, buildSeedTypes());
+  if (!resolved) return `No published device type for machineType '${machineType}'`;
+  const conf = runConformance(subjectFromResolved(resolved));
+  if (!conf.pass) return `Device type '${machineType}' fails conformance: ${conf.violations.map((v) => v.rule).join("; ")}`;
+  return undefined;
+}
 
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
@@ -65,6 +86,44 @@ export const factoryRouter = router({
       return { success: true };
     }),
 
+  // W6-25 — Upload ảnh nền mặt bằng (CAD/ảnh). Gated machine_control/canEdit như layout máy.
+  // Mẫu theo machine.uploadImage: nhận base64, đẩy storagePut, lưu url+key vào factory.
+  uploadFloorPlan: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      imageData: z.string(), // base64
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().min(1).max(100),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, imageData, fileName, contentType } = input;
+      const buffer = Buffer.from(imageData, "base64");
+      const fileKey = `factories/${id}/floorplan-${Date.now()}-${fileName}`;
+      const { url } = await storagePut(fileKey, buffer, contentType);
+      await db.updateFactory(id, { floorPlanImageUrl: url, floorPlanImageKey: fileKey });
+      return { url, key: fileKey };
+    }),
+
+  // W6-25 — Kích thước sàn thật (mét) + tuỳ chọn xoá ảnh nền. Gated machine_control/canEdit.
+  updateFloorDims: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      floorWidthM: z.number().positive().max(10000).optional(),
+      floorDepthM: z.number().positive().max(10000).optional(),
+      clearImage: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, floorWidthM, floorDepthM, clearImage } = input;
+      const data: Record<string, unknown> = {};
+      if (floorWidthM !== undefined) data.floorWidthM = floorWidthM.toString();
+      if (floorDepthM !== undefined) data.floorDepthM = floorDepthM.toString();
+      if (clearImage) { data.floorPlanImageUrl = null; data.floorPlanImageKey = null; }
+      await db.updateFactory(id, data);
+      return { success: true };
+    }),
+
   delete: adminProcedure
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input }) => {
@@ -90,6 +149,61 @@ export const factoryRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.restoreFactory(input.id);
+      return { success: true };
+    }),
+});
+
+// ============ FACTORY ZONE ROUTER (W6-25) ============
+// Vùng polygon vẽ trên mặt bằng. Đọc mở cho user đăng nhập; ghi phải machine_control/canEdit.
+const zonePointsSchema = z.array(z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+})).max(200);
+
+export const factoryZoneRouter = router({
+  listByFactory: protectedProcedure
+    .input(z.object({ factoryId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getFactoryZones(input.factoryId);
+    }),
+
+  create: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      factoryId: z.number(),
+      name: z.string().min(1).max(120),
+      color: z.string().min(1).max(24).optional(),
+      points: zonePointsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createFactoryZone({
+        factoryId: input.factoryId,
+        name: input.name,
+        color: input.color ?? "#0ea5e9",
+        points: input.points ?? [],
+      });
+      return { id };
+    }),
+
+  update: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(120).optional(),
+      color: z.string().min(1).max(24).optional(),
+      points: zonePointsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...rest } = input;
+      await db.updateFactoryZone(id, rest);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteFactoryZone(input.id);
       return { success: true };
     }),
 });
@@ -462,9 +576,10 @@ export const machineRouter = router({
       image3DKey: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      const governanceWarning = commissionGovernanceWarning(input.machineType);
       const apiKey = `mach_${nanoid(32)}`;
       const id = await db.createMachine({ ...input, apiKey });
-      return { id, apiKey };
+      return { id, apiKey, governanceWarning };
     }),
 
   regenerateApiKey: adminProcedure
@@ -553,8 +668,9 @@ export const machineRouter = router({
       return { success: true };
     }),
 
-  // Update machine layout position
+  // Update machine layout position — ghi vị trí máy nên phải có quyền machine_control/canEdit
   updateLayoutPosition: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       id: z.number(),
       layoutPositionX: z.number().min(0).max(1),
@@ -572,6 +688,7 @@ export const machineRouter = router({
   // Full floor-plan transform: position (0–1) + rotation + footprint. Writes the
   // x/y decimal columns (for legacy consumers) AND a `layout` jsonb with the rest.
   updateLayout: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       id: z.number(),
       x: z.number().min(0).max(1),

@@ -230,6 +230,71 @@ describe("POU → ST transpile (golden lowering + provenance + determinism)", ()
     expect(code).toContain("FUNCTION_BLOCK Compute");
   });
 
+  it("FBD stateful FB (TON) → declared VAR instance + per-scan call + `.Q` read (not inlined)", () => {
+    const p = parsePouProject({
+      name: "TimerProj", pous: [{
+        name: "Delay", pouType: "program",
+        vars: [
+          { name: "Trig", type: "BOOL", section: "VAR_INPUT" },
+          { name: "Pre", type: "TIME", section: "VAR_INPUT" },
+          { name: "Q", type: "BOOL", section: "VAR_OUTPUT" },
+        ],
+        body: { language: "FBD", networks: [{
+          blocks: [{ id: "t1", type: "TON", inputs: [
+            { name: "IN", source: { kind: "var", name: "Trig" } },
+            { name: "PT", source: { kind: "var", name: "Pre" } },
+          ] }],
+          outputs: [{ variable: "Q", source: { kind: "block", blockId: "t1", pin: "Q" } }],
+        }] },
+      }],
+    } as unknown).project as PouProject;
+    // The linter must NOT block a stateful FB (feature is reachable through the gated flow).
+    expect(lintPouProject(p).ok).toBe(true);
+    const { code } = transpilePouProject(p);
+    // instance declared in VAR (with the FB type as the declared type token)
+    expect(code).toContain("fb_net1_t1 : TON;");
+    // per-scan instance call (never re-inlined as a sub-expression)
+    expect(code).toContain("fb_net1_t1(IN := Trig, PT := Pre);");
+    // the output reads the instance pin, not a fresh call
+    expect(code).toContain("Q := fb_net1_t1.Q;");
+    // regression: no inline formal call for the timer
+    expect(code).not.toContain("TON(IN");
+  });
+
+  it("FBD chained stateful FBs emit calls in dependency order (feeding FB first)", () => {
+    const p = parsePouProject({
+      name: "Chain", pous: [{
+        name: "C", pouType: "program",
+        vars: [
+          { name: "In1", type: "BOOL", section: "VAR_INPUT" },
+          { name: "Pre", type: "TIME", section: "VAR_INPUT" },
+          { name: "Cnt", type: "INT", section: "VAR_OUTPUT" },
+        ],
+        body: { language: "FBD", networks: [{
+          blocks: [
+            { id: "t1", type: "TON", inputs: [
+              { name: "IN", source: { kind: "var", name: "In1" } },
+              { name: "PT", source: { kind: "var", name: "Pre" } },
+            ] },
+            // CTU counts the timer's rising Q → its CU input reads t1.Q
+            { id: "c1", type: "CTU", inputs: [
+              { name: "CU", source: { kind: "block", blockId: "t1", pin: "Q" } },
+              { name: "PV", source: { kind: "const", value: 10 } },
+            ] },
+          ],
+          outputs: [{ variable: "Cnt", source: { kind: "block", blockId: "c1", pin: "CV" } }],
+        }] },
+      }],
+    } as unknown).project as PouProject;
+    const { code } = transpilePouProject(p);
+    const iTon = code.indexOf("fb_net1_t1(");
+    const iCtu = code.indexOf("fb_net1_c1(");
+    expect(iTon).toBeGreaterThanOrEqual(0);
+    expect(iCtu).toBeGreaterThan(iTon); // feeding FB called before the consumer
+    expect(code).toContain("fb_net1_c1(CU := fb_net1_t1.Q, PV := 10);");
+    expect(code).toContain("Cnt := fb_net1_c1.CV;");
+  });
+
   it("SFC lowers to a CASE-of-state machine with a synthesised state var", () => {
     const { code } = transpilePouProject(sfcPou());
     expect(code).toContain("(* [IEC SFC #Sequence] *)");
@@ -298,6 +363,50 @@ describe("POU semantic linter (blocking gate)", () => {
     const r2 = lintPouProject(logicBad);
     expect(r2.ok).toBe(false);
     expect(r2.diagnostics.some((d) => d.rule === "type-mismatch")).toBe(true);
+  });
+
+  it("BLOCKS an unsupported SFC action qualifier (S/R/P/L/D) — only N is lowered", () => {
+    for (const q of ["S", "R", "P", "L", "D"]) {
+      const p = parsePouProject({
+        name: "Q", pous: [{
+          name: "P", pouType: "program",
+          vars: [{ name: "Go", type: "BOOL", section: "VAR_INPUT" }, { name: "Lamp", type: "BOOL", section: "VAR_OUTPUT" }],
+          body: { language: "SFC",
+            steps: [
+              { name: "Init", initial: true, actions: [] },
+              { name: "Run", actions: [{ qualifier: q, actionText: "Lamp := TRUE;" }] },
+            ],
+            transitions: [{ from: "Init", to: "Run", condition: "Go" }, { from: "Run", to: "Init", condition: "NOT Go" }],
+          },
+        }],
+      } as unknown).project as PouProject;
+      const r = lintPouProject(p);
+      expect(r.ok, `qualifier ${q} must block`).toBe(false);
+      expect(r.diagnostics.some((d) => d.rule === "unsupported-sfc-qualifier")).toBe(true);
+    }
+  });
+
+  it("does NOT block the N qualifier (the correct, supported path stays green)", () => {
+    expect(lintPouProject(sfcPou()).ok).toBe(true); // sfcPou uses only N actions
+  });
+
+  it("if lint is bypassed, transpile OMITS a non-N action body (never silently-wrong ST)", () => {
+    const p = parsePouProject({
+      name: "Q", pous: [{
+        name: "P", pouType: "program",
+        vars: [{ name: "Go", type: "BOOL", section: "VAR_INPUT" }, { name: "Lamp", type: "BOOL", section: "VAR_OUTPUT" }],
+        body: { language: "SFC",
+          steps: [
+            { name: "Init", initial: true, actions: [] },
+            { name: "Run", actions: [{ qualifier: "S", actionText: "Lamp := TRUE;" }] },
+          ],
+          transitions: [{ from: "Init", to: "Run", condition: "Go" }, { from: "Run", to: "Init", condition: "NOT Go" }],
+        },
+      }],
+    } as unknown).project as PouProject;
+    const { code } = transpilePouProject(p);
+    expect(code).not.toContain("Lamp := TRUE;"); // the wrong body is NOT emitted
+    expect(code).toContain("UNSUPPORTED in POU→ST lowering");
   });
 
   it("catches an UNREACHABLE SFC step (no incoming transition, not initial)", () => {

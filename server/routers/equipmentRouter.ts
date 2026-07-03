@@ -72,6 +72,9 @@ export const equipmentRouter = router({
           name: m.name,
           machineType: m.machineType,
           operationStatus: m.operationStatus,
+          // Toạ độ layout đã lưu (0–1) từ Factory Floor Editor — dùng cho cell-twin đặt trạm theo vị trí thật.
+          layoutPositionX: m.layoutPositionX,
+          layoutPositionY: m.layoutPositionY,
           adapterKind: capability.adapterKind,
           commandCount: capability.supportedCommands.length,
           telemetryCount: capability.telemetryTags.length,

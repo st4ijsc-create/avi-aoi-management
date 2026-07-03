@@ -51,7 +51,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck, RefreshCw, ListChecks, Layers, AlertTriangle, ShieldAlert, Info,
   Play, Send, Ban, MapPin, Bot, Clock, Activity, Lock, CheckCircle2,
-  Wrench, Workflow, BatteryCharging, Plus, Search, Link2, Zap, Package,
+  Wrench, Workflow, BatteryCharging, Plus, Search, Link2, Zap, Package, Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +67,9 @@ type FleetResource = RouterOutputs["fleet"]["listResources"][number];
 type FleetResReservation = RouterOutputs["fleet"]["listResourceReservations"][number];
 type FleetCharger = RouterOutputs["fleet"]["listChargers"][number];
 type FleetChargingPlan = RouterOutputs["fleet"]["listChargingPlans"][number];
+// W4-18 (3) — MAP shapes
+type FleetRobotPos = RouterOutputs["fleet"]["robotPositions"][number];
+type FleetOccupancyGrid = RouterOutputs["twin"]["occupancyGrid"];
 
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
@@ -206,23 +209,42 @@ export default function FleetOrchestration() {
   const [createResourceOpen, setCreateResourceOpen] = useState(false);
   const [reserveResourceTarget, setReserveResourceTarget] = useState<FleetResource | null>(null);
   const [createChargerOpen, setCreateChargerOpen] = useState(false);
+  // W4-18 (3) — factory chọn cho bản đồ (null = tự suy từ zone đầu tiên có factoryId).
+  const [mapFactoryId, setMapFactoryId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
-  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView });
+  // Realtime: poll các query trạng thái động mỗi 5s khi có quyền xem; dừng khi mất quyền.
+  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
   const tasksQ = trpc.fleet.listTasks.useQuery(
     { status: (statusFilter || undefined) as (typeof TASK_STATUSES)[number] | undefined, limit: 200 },
-    { enabled: canView },
+    { enabled: canView, refetchInterval: canView ? 5000 : false },
   );
-  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView });
-  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView });
-  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView });
+  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
+  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, refetchInterval: canView ? 5000 : false });
+  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
 
   const tasks = (tasksQ.data ?? []) as FleetTask[];
   const zones = (zonesQ.data ?? []) as FleetZone[];
   const reservations = (reservationsQ.data ?? []) as FleetReservation[];
   const deadlocks = deadlocksQ.data;
+
+  // ── W4-18 (3) MAP reads — factory list + effective factory + grid + live robot poses.
+  const factoryIds = useMemo(
+    () => [...new Set(zones.map((z) => z.factoryId).filter((f): f is number => f != null))].sort((a, b) => a - b),
+    [zones],
+  );
+  const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? 1;
+  const mapActive = canView && tab === "map";
+  const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
+    { factoryId: effectiveFactoryId },
+    { enabled: mapActive, retry: false },
+  );
+  const robotPositionsQ = trpc.fleet.robotPositions.useQuery(undefined, {
+    enabled: mapActive,
+    refetchInterval: mapActive ? 5000 : false,
+  });
 
   // ── G2 reads (read RBAC is the same — machine_monitoring/canView) ─────────────
   const resourceStatusQ = trpc.fleet.resourceStatus.useQuery(undefined, { enabled: canView });
@@ -281,7 +303,16 @@ export default function FleetOrchestration() {
   };
 
   const allocateM = trpc.fleet.allocate.useMutation({
-    onSuccess: () => { toast.success(t("fleet.allocated", "Allocation run")); refetchAll(); },
+    // W4-18 (1) — allocateTask trả {ok:false} khi không có thiết bị phù hợp mà KHÔNG throw;
+    // đọc kết quả thật thay vì luôn toast xanh giả.
+    onSuccess: (res) => {
+      if (res && res.ok === false) {
+        toast.warning(t("fleet.allocateNoDevice", "No eligible device for this task") + (res.message ? ` — ${res.message}` : ""));
+      } else {
+        toast.success(t("fleet.allocated", "Allocation run") + (res && res.assignedDeviceId != null ? ` → #${res.assignedDeviceId}` : ""));
+      }
+      refetchAll();
+    },
     onError: onMutationError,
   });
   const assignM = trpc.fleet.assign.useMutation({
@@ -293,11 +324,35 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
   const reserveM = trpc.fleet.reserve.useMutation({
-    onSuccess: () => { toast.success(t("fleet.reserved", "Reservation requested")); setReserveZoneTarget(null); refetchAll(); },
+    // W4-18 (1) — reserveZone trả {ok,status}: rejected → error, queued → warning, active → success.
+    onSuccess: (res) => {
+      if (res && (res.ok === false || res.status === "rejected")) {
+        toast.error(t("fleet.reserveRejected", "Reservation rejected") + (res.message ? ` — ${res.message}` : ""));
+      } else if (res && res.status === "queued") {
+        toast.warning(t("fleet.reserveQueued", "Zone at capacity — reservation queued"));
+        setReserveZoneTarget(null);
+      } else {
+        toast.success(t("fleet.reserved", "Reservation active"));
+        setReserveZoneTarget(null);
+      }
+      refetchAll();
+    },
     onError: onMutationError,
   });
   const releaseM = trpc.fleet.release.useMutation({
     onSuccess: () => { toast.success(t("fleet.released", "Released")); refetchAll(); },
+    onError: onMutationError,
+  });
+  // W4-18 (5) — advisory deadlock resolver (huỷ waiter ưu tiên thấp nhất trong mỗi chu trình).
+  const resolveDeadlockM = trpc.fleet.resolveDeadlock.useMutation({
+    onSuccess: (res) => {
+      if (res && res.ok && res.resolved > 0) {
+        toast.success(t("fleet.deadlockResolved", "Deadlock resolved") + ` — ${res.resolved} ${t("fleet.waiterCancelled", "waiter(s) cancelled")}`);
+      } else {
+        toast.info(t("fleet.deadlockNone", "No deadlock cycle to resolve"));
+      }
+      refetchAll();
+    },
     onError: onMutationError,
   });
 
@@ -315,7 +370,19 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
   const reserveResourceM = trpc.fleet.reserveResource.useMutation({
-    onSuccess: () => { toast.success(t("fleet.resourceReserved", "Resource claim requested")); setReserveResourceTarget(null); refetchAll(); },
+    // W4-18 (1) — claimResource trả {ok,status}: rejected → error, queued → warning, active → success.
+    onSuccess: (res) => {
+      if (res && (res.ok === false || res.status === "rejected")) {
+        toast.error(t("fleet.resourceRejected", "Resource claim rejected") + (res.message ? ` — ${res.message}` : ""));
+      } else if (res && res.status === "queued") {
+        toast.warning(t("fleet.resourceQueued", "Resource in use — claim queued"));
+        setReserveResourceTarget(null);
+      } else {
+        toast.success(t("fleet.resourceReserved", "Resource claimed"));
+        setReserveResourceTarget(null);
+      }
+      refetchAll();
+    },
     onError: onMutationError,
   });
   const releaseResourceM = trpc.fleet.releaseResource.useMutation({
@@ -471,6 +538,16 @@ export default function FleetOrchestration() {
                   </div>
                 ))}
               </div>
+              {/* W4-18 (5) — advisory resolve: huỷ waiter ưu tiên thấp nhất để phá deadlock. */}
+              {canControl && (
+                <Button
+                  size="sm" variant="destructive" className="mt-2 h-7"
+                  disabled={resolveDeadlockM.isPending}
+                  onClick={() => resolveDeadlockM.mutate()}
+                >
+                  <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -492,10 +569,26 @@ export default function FleetOrchestration() {
         <Tabs value={tab} onValueChange={setTab} className="gap-4">
           <TabsList className="flex-wrap">
             <TabsTrigger value="tasks"><ListChecks className="mr-1 h-4 w-4" />{t("fleet.tab.tasks", "Tasks & Zones")}</TabsTrigger>
+            <TabsTrigger value="map"><MapIcon className="mr-1 h-4 w-4" />{t("fleet.tab.map", "Map")}</TabsTrigger>
             <TabsTrigger value="operations"><Workflow className="mr-1 h-4 w-4" />{t("fleet.tab.operations", "Operations")}</TabsTrigger>
             <TabsTrigger value="resources"><Wrench className="mr-1 h-4 w-4" />{t("fleet.tab.resources", "Resources")}</TabsTrigger>
             <TabsTrigger value="charging"><BatteryCharging className="mr-1 h-4 w-4" />{t("fleet.tab.charging", "Charging")}</TabsTrigger>
           </TabsList>
+
+          {/* ════════════════ TAB: Map (W4-18 §3) ════════════════ */}
+          <TabsContent value="map" className="flex flex-col gap-4">
+            <FleetMap
+              grid={occupancyGridQ.data}
+              gridLoading={occupancyGridQ.isLoading}
+              gridError={occupancyGridQ.error?.message ?? null}
+              robots={(robotPositionsQ.data ?? []) as FleetRobotPos[]}
+              robotsLoading={robotPositionsQ.isLoading}
+              zones={zones}
+              factoryIds={factoryIds}
+              factoryId={effectiveFactoryId}
+              onFactoryChange={setMapFactoryId}
+            />
+          </TabsContent>
 
           {/* ════════════════ TAB: Tasks & Zones (G1) ════════════════ */}
           <TabsContent value="tasks" className="flex flex-col gap-4">
@@ -946,6 +1039,188 @@ function ReserveDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// W4-18 (3) — FLEET MAP (2D occupancy grid + zone occupancy overlays + live robot
+// markers). Read-only visualisation over twinRouter.occupancyGrid + fleet.robotPositions.
+// Renders with plain inline SVG in WORLD coordinates (Y flipped so higher-y is up) so
+// there are no mirrored labels — no extra deps. Degrades to an honest empty state when
+// there is no grid geometry / no located robots.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Occupancy tint (green → amber → red) for a zone's occupancy ratio. */
+function occTint(ratio: number): string {
+  if (ratio >= 1) return "#ef4444";
+  if (ratio >= 0.6) return "#f59e0b";
+  return "#10b981";
+}
+/** Marker colour by robot registry status. */
+function robotColor(status: string): string {
+  switch (status) {
+    case "estop": return "#ef4444";
+    case "offline": return "#94a3b8";
+    case "busy":
+    case "running": return "#3b82f6";
+    default: return "#10b981"; // idle / online
+  }
+}
+/** Coerce a zone `bounds` jsonb into {x,y,w,h} (mirrors server boundsToRect shapes). */
+function boundsToRectLike(bounds: Record<string, unknown> | null | undefined): { x: number; y: number; w: number; h: number } | null {
+  if (!bounds) return null;
+  if (typeof bounds.x === "number" && typeof bounds.y === "number" && typeof bounds.w === "number" && typeof bounds.h === "number") {
+    return { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h };
+  }
+  const min = bounds.min as number[] | undefined;
+  const max = bounds.max as number[] | undefined;
+  if (Array.isArray(min) && Array.isArray(max) && min.length >= 2 && max.length >= 2) {
+    return { x: min[0], y: min[1], w: max[0] - min[0], h: max[1] - min[1] };
+  }
+  return null;
+}
+
+function FleetMap({
+  grid, gridLoading, gridError, robots, robotsLoading, zones, factoryIds, factoryId, onFactoryChange,
+}: {
+  grid: FleetOccupancyGrid | undefined;
+  gridLoading: boolean;
+  gridError: string | null;
+  robots: FleetRobotPos[];
+  robotsLoading: boolean;
+  zones: FleetZone[];
+  factoryIds: number[];
+  factoryId: number;
+  onFactoryChange: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const g = grid?.grid ?? null;
+
+  // Zones with a rectangular bounds blob → drawable overlays tinted by occupancy.
+  const zoneRects = useMemo(() => {
+    const out: Array<{ id: number; code: string; x: number; y: number; w: number; h: number; ratio: number }> = [];
+    for (const z of zones) {
+      const r = boundsToRectLike(z.bounds as Record<string, unknown> | null | undefined);
+      if (!r) continue;
+      const ratio = z.maxConcurrentRobots > 0 ? Math.min(1, z.occupancy / z.maxConcurrentRobots) : 0;
+      out.push({ id: z.id, code: z.code, ...r, ratio });
+    }
+    return out;
+  }, [zones]);
+
+  const locatedRobots = useMemo(
+    () => robots.filter((r) => r.x != null && r.y != null) as Array<FleetRobotPos & { x: number; y: number }>,
+    [robots],
+  );
+
+  // World bounding box over grid + zones + robots (pad slightly).
+  const bbox = useMemo(() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const acc = (x: number, y: number) => { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); };
+    if (g) { acc(g.originX, g.originY); acc(g.originX + g.cols * g.cellSize, g.originY + g.rows * g.cellSize); }
+    for (const zr of zoneRects) { acc(zr.x, zr.y); acc(zr.x + zr.w, zr.y + zr.h); }
+    for (const r of locatedRobots) acc(r.x, r.y);
+    if (!Number.isFinite(minX)) return null;
+    const padX = Math.max(1, (maxX - minX) * 0.05);
+    const padY = Math.max(1, (maxY - minY) * 0.05);
+    return { minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY };
+  }, [g, zoneRects, locatedRobots]);
+
+  const VIEW_W = 720;
+  const worldW = bbox ? bbox.maxX - bbox.minX : 1;
+  const worldH = bbox ? bbox.maxY - bbox.minY : 1;
+  const scale = bbox && worldW > 0 ? VIEW_W / worldW : 1;
+  const VIEW_H = bbox ? Math.max(160, Math.min(560, worldH * scale)) : 200;
+  // world → screen (flip Y so higher world-y renders upward → no mirrored text)
+  const sx = (wx: number) => (wx - (bbox?.minX ?? 0)) * scale;
+  const sy = (wy: number) => ((bbox?.maxY ?? 0) - wy) * scale;
+
+  const hasAnything = bbox != null && (g != null || zoneRects.length > 0 || locatedRobots.length > 0);
+  const loading = gridLoading || robotsLoading;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MapIcon className="h-4 w-4" />{t("fleet.map.title", "Fleet map")}
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground">{t("fleet.map.factory", "Factory")}</Label>
+          <select
+            className="flex h-8 w-28 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+            value={String(factoryId)}
+            onChange={(e) => onFactoryChange(Number(e.target.value))}
+          >
+            {(factoryIds.length ? factoryIds : [factoryId]).map((f) => (
+              <option key={f} value={f}>#{f}</option>
+            ))}
+          </select>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {loading && <p className="py-8 text-center text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>}
+        {!loading && gridError && <p className="py-3 text-center text-sm text-muted-foreground">{gridError}</p>}
+        {!loading && !hasAnything && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t("fleet.map.empty", "No map geometry or located robots yet. Add zone bounds and robot telemetry poses to populate the map.")}
+          </p>
+        )}
+        {!loading && hasAnything && (
+          <div className="overflow-x-auto">
+            <svg
+              width={VIEW_W} height={VIEW_H}
+              className="rounded-md border border-border bg-muted/20 text-foreground"
+              role="img" aria-label={t("fleet.map.title", "Fleet map")}
+            >
+              {/* blocked grid cells */}
+              {g?.cells && g.cells.map((row, r) =>
+                row.map((blocked, c) => blocked ? (
+                  <rect
+                    key={`c-${r}-${c}`}
+                    x={sx(g.originX + c * g.cellSize)}
+                    y={sy(g.originY + (r + 1) * g.cellSize)}
+                    width={g.cellSize * scale}
+                    height={g.cellSize * scale}
+                    fill="currentColor" fillOpacity={0.22}
+                  />
+                ) : null),
+              )}
+              {/* zone overlays tinted by occupancy */}
+              {zoneRects.map((zr) => (
+                <g key={`z-${zr.id}`}>
+                  <rect
+                    x={sx(zr.x)} y={sy(zr.y + zr.h)}
+                    width={zr.w * scale} height={zr.h * scale}
+                    fill={occTint(zr.ratio)} fillOpacity={0.3}
+                    stroke={occTint(zr.ratio)} strokeOpacity={0.8}
+                  />
+                  <text x={sx(zr.x) + 3} y={sy(zr.y + zr.h) + 12} fill="currentColor" className="text-[10px]">{zr.code}</text>
+                </g>
+              ))}
+              {/* live robot markers */}
+              {locatedRobots.map((r) => (
+                <g key={`r-${r.id}`}>
+                  <circle cx={sx(r.x)} cy={sy(r.y)} r={6} fill={robotColor(r.status)} stroke="white" strokeWidth={1.5}>
+                    <title>{`#${r.id} ${r.code} · ${r.status}${r.battery != null ? ` · ${Math.round(r.battery)}%` : ""}`}</title>
+                  </circle>
+                  <text x={sx(r.x) + 8} y={sy(r.y) + 3} fill="currentColor" className="text-[10px]">{r.code}</text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        )}
+        {/* legend + honest note */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />{t("fleet.map.online", "Online")}</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />{t("fleet.map.busy", "Busy")}</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" />{t("fleet.map.offline", "Offline")}</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />{t("fleet.map.estop", "E-stop")}</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-foreground/25" />{t("fleet.map.blocked", "Blocked cell")}</span>
+          <span>· {t("fleet.map.locatedRobots", "Located robots")}: {locatedRobots.length}/{robots.length}</span>
+        </div>
+        {grid?.note && <p className="text-xs text-muted-foreground">{grid.note}</p>}
+      </CardContent>
+    </Card>
   );
 }
 

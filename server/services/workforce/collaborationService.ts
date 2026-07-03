@@ -25,6 +25,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { collaborationSessions, type CollaborationSession } from "../../../drizzle/schema";
 import { workforceEnabled } from "./workforceService";
+import { recordAuditEvent } from "../audit/controlAuditService";
 
 export type CollabPhase = "human_prep" | "robot_work" | "human_verify" | "done";
 export type HandshakeState = "pending" | "ack" | "clear";
@@ -122,17 +123,27 @@ export async function advancePhase(sessionId: number): Promise<{ ok: boolean; se
   return { ok: true, session: row ?? null };
 }
 
-/** Abort a session → jump straight to done (records a note). */
-export async function abortCollaboration(sessionId: number, reason?: string): Promise<CollaborationSession | null> {
+/** Abort a session → jump straight to done. Stamps abortedBy + ghi audit bất biến. */
+export async function abortCollaboration(sessionId: number, reason?: string, abortedBy?: number | null): Promise<CollaborationSession | null> {
   if (!workforceEnabled()) return null;
   const d = await db();
   const [current] = await d.select().from(collaborationSessions).where(eq(collaborationSessions.id, sessionId)).limit(1);
   if (!current) return null;
   if (current.phase === "done") return current;
+  const before = { ...current }; // snapshot bất biến TRƯỚC khi update (tránh alias mutation)
   const [row] = await d
     .update(collaborationSessions)
-    .set({ phase: "done", handshakeState: "clear", endedAt: new Date(), notes: reason ?? current.notes, updatedAt: new Date() })
+    .set({ phase: "done", handshakeState: "clear", endedAt: new Date(), abortedBy: abortedBy ?? null, notes: reason ?? current.notes, updatedAt: new Date() })
     .where(eq(collaborationSessions.id, sessionId))
     .returning();
+  await recordAuditEvent(d, {
+    entityType: "collaboration_session",
+    entityId: sessionId,
+    action: "abort",
+    actorId: abortedBy ?? null,
+    before,
+    after: row ?? null,
+    reason: reason ?? null,
+  });
   return row ?? null;
 }

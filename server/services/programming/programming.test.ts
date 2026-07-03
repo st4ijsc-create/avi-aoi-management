@@ -316,4 +316,49 @@ describe("programmingService", () => {
     expect(spy).not.toHaveBeenCalled();
     expect(dep.status).toBe("simulated");
   });
+
+  // ── W2-9 (doc 25 T6) — segregation of duties for PRODUCTION real deploys ──
+  it("SoD: production + flag ON + self-approval (confirmedBy === requestedBy) → rejected, adapter NOT invoked", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedArtifact("A\nB");
+    const b = await buildArtifact(1, USER);
+    await simulateBuild(b.id, {}, USER); // passing sim gate — isolate the SoD check
+    const spy = vi.spyOn(programmingRegistry.getAdapter("stub"), "deploy");
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "production", idempotencyKey: "idem-sod-1", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+      USER,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    expect(dep.status).toBe("rejected");
+    expect(dep.simulated).toBe(true);
+    expect(dep.error).toMatch(/[Ss]egregation of duties/);
+  });
+
+  it("SoD: production + flag ON + DIFFERENT approver + passing sim → adapter invoked", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedArtifact("A\nB");
+    const b = await buildArtifact(1, USER);
+    await simulateBuild(b.id, {}, USER);
+    const spy = vi.spyOn(programmingRegistry.getAdapter("stub"), "deploy");
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "production", idempotencyKey: "idem-sod-2", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 8, reason: "duyệt bởi trưởng ca" } },
+      USER,
+    );
+    expect(spy).toHaveBeenCalled();
+    expect(dep.status).not.toBe("rejected");
+    // Lý do duyệt được ghi vào detailJson (lưu vết SoD).
+    expect((dep.detailJson as any)?.approvalReason).toBe("duyệt bởi trưởng ca");
+  });
+
+  it("SoD: staging self-approval is UNAFFECTED (two-person control applies to production only)", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedArtifact("A\nB");
+    const b = await buildArtifact(1, USER);
+    await simulateBuild(b.id, {}, USER);
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "staging", idempotencyKey: "idem-sod-3", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+      USER,
+    );
+    expect(dep.status).not.toBe("rejected");
+  });
 });

@@ -45,10 +45,13 @@ const store: Record<string, Row[]> = {
 };
 const seq: Record<string, number> = {};
 function nextId(table: string): number { seq[table] = (seq[table] ?? 0) + 1; return seq[table]; }
+// W2-6: counts db.transaction() invocations (atomicity assertions).
+let txCount = 0;
 
 function reset() {
   for (const k of Object.keys(store)) store[k] = [];
   for (const k of Object.keys(seq)) seq[k] = 0;
+  txCount = 0;
 }
 
 function tableName(t: any): string {
@@ -110,9 +113,10 @@ function makeFakeDb() {
       }),
     }),
   };
-  // Reservation atomicity (P0): claimResource/reserveZone run inside db.transaction();
-  // the fake runs the callback synchronously against the same in-memory store.
-  db.transaction = async (cb: any) => cb(db);
+  // Reservation atomicity (P0) + release→promote atomicity (W2-6): claimResource /
+  // releaseResource run inside db.transaction(); the fake runs the callback synchronously
+  // against the same in-memory store and counts invocations for the atomicity assertions.
+  db.transaction = async (cb: any) => { txCount++; return cb(db); };
   return db;
 }
 
@@ -286,10 +290,14 @@ describe("resourceManager claim/conflict/release+promote (flag-gated)", () => {
     expect(avail?.activeCount).toBe(1);
     expect(avail?.queuedCount).toBe(1);
 
+    txCount = 0;
     const rel = await releaseResource(1, 1);
+    expect(txCount).toBe(1); // W2-6: free + promote wrapped in a single transaction
     expect(rel.released).toBe(1);
     expect(rel.promoted).toBe(1);
     expect(store.shared_resources[0].currentOwnerDeviceId).toBe(2); // waiter is new owner
+    // single-owner invariant: exactly one active reservation on the resource.
+    expect(store.resource_reservations.filter((r) => r.resourceId === 1 && r.status === "active")).toHaveLength(1);
   });
 
   it("flag ON → rejects (not queues) when queueIfFull=false and resource in use", async () => {

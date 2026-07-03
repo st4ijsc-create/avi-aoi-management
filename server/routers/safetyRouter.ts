@@ -625,9 +625,9 @@ export const safetyRouter = router({
   abortCollaboration: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ sessionId: z.number().int().positive(), reason: z.string().max(2000).optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      const row = await abortCollaboration(input.sessionId, input.reason);
+      const row = await abortCollaboration(input.sessionId, input.reason, ctx.user.id);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Collaboration ${input.sessionId} not found` });
       return row;
     }),
@@ -737,9 +737,9 @@ export const safetyRouter = router({
   closeAssignment: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ assignmentId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      const row = await closeAssignment(input.assignmentId);
+      const row = await closeAssignment(input.assignmentId, ctx.user.id);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Assignment ${input.assignmentId} not found` });
       return row;
     }),

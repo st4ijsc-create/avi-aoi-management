@@ -47,3 +47,5 @@ export * from "./fieldHealth";
 export * from "./aiLoop";
 export * from "./goldenSample";
 export * from "./aiEmbeddingHead";
+export * from "./controlAudit";
+export * from "./factoryZones";

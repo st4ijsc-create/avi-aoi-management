@@ -108,6 +108,13 @@ vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) } : undefined)),
 }));
 
+// Doc 25 T1 — cổng interlock inline chỉ áp cho kind='hitl'; các test dưới đây dùng
+// kind='interlock' (verifyInterlockAuthorization, không phải cổng inline). Mock cho
+// luôn-qua để không ảnh hưởng, trừ test HITL regression (cũng mong không bị chặn).
+vi.mock("../interlock/interlockGate", () => ({
+  evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
+}));
+
 import { dispatch } from "./commandDispatcher";
 
 // A fully-authorized interlock rule + event + writable tag on adapter 10.

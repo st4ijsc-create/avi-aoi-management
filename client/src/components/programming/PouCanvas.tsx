@@ -54,7 +54,7 @@ import {
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Plus, Trash2, GitBranch, Info } from "lucide-react";
+import { Plus, Trash2, GitBranch, Info, Variable, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,7 +67,7 @@ import {
 // no server runtime is bundled into the client — the same convention PouStudio uses for the
 // tRPC AppRouter type.
 import type {
-  PouProject, PouBody,
+  PouProject, PouBody, PouVar, VarSection, IecType,
   LadBody, LadElement, LadContact, LadCoil,
   FbdBody, FbdSource,
   SfcBody, SfcAction, SfcQualifier,
@@ -738,6 +738,16 @@ function sfcRemoveTransition(body: SfcBody, i: number): SfcBody {
 // ══════════════════════════════════════════════════════════════════════════════
 const FBD_OPS = ["AND", "OR", "XOR", "NOT", "ADD", "SUB", "MUL", "DIV", "MOD", "GT", "LT", "GE", "LE", "EQ", "NE", "MOVE"];
 const QUALIFIERS: SfcQualifier[] = ["N", "S", "R", "P", "L", "D"];
+// IEC 61131-3 elementary types + variable sections (mirror pouModel's zod enums) for the
+// Variables panel selects. Order = the common-first authoring order.
+const IEC_TYPES: IecType[] = [
+  "BOOL", "INT", "DINT", "REAL", "LREAL", "TIME",
+  "BYTE", "WORD", "DWORD", "LWORD", "SINT", "LINT",
+  "USINT", "UINT", "UDINT", "ULINT", "DATE", "TOD", "DT", "STRING", "WSTRING",
+];
+const VAR_SECTIONS: VarSection[] = [
+  "VAR", "VAR_INPUT", "VAR_OUTPUT", "VAR_IN_OUT", "VAR_TEMP", "VAR_GLOBAL", "VAR_EXTERNAL",
+];
 
 /** A text field with a datalist of declared variables (free entry still allowed). */
 function VarInput({ value, vars, onChange, placeholder }: { value: string; vars: string[]; onChange: (v: string) => void; placeholder?: string }) {
@@ -777,6 +787,59 @@ function SourceEditor({ source, onChange, vars, blockIds, t }: { source: FbdSour
   );
 }
 
+/**
+ * VARIABLES panel — add / edit / delete the POU's VAR_* declarations (name + type + section +
+ * initial + address). Writes straight back into `PouProject.pous[i].vars` via `onChange`, so the
+ * declared identifiers immediately feed the contact/coil/source datalists and the linter.
+ */
+function VarsEditor({ vars, onChange, t }: { vars: PouVar[]; onChange: (next: PouVar[]) => void; t: TFunction }) {
+  const uniqueName = (base = "Var"): string => {
+    const names = new Set(vars.map((v) => v.name));
+    let n = 1;
+    while (names.has(`${base}${n}`)) n++;
+    return `${base}${n}`;
+  };
+  const add = () => onChange([...vars, { name: uniqueName(), type: "BOOL", section: "VAR" }]);
+  const update = (i: number, patch: Partial<PouVar>) => onChange(vars.map((v, j) => (j === i ? { ...v, ...patch } : v)));
+  const remove = (i: number) => onChange(vars.filter((_, j) => j !== i));
+  return (
+    <div className="space-y-1.5">
+      <div className="max-h-[220px] space-y-1.5 overflow-y-auto pr-1">
+        {vars.length === 0 && (
+          <div className="rounded border border-dashed border-border/70 p-2 text-center text-[11px] text-muted-foreground">
+            {t("pou.vars.empty", "No variables declared yet.")}
+          </div>
+        )}
+        {vars.map((v, i) => (
+          <div key={i} className="space-y-1 rounded border border-border/60 p-1.5">
+            <div className="flex items-center gap-1">
+              <Input className="h-7 flex-1 font-mono text-xs" value={v.name} placeholder={t("pou.vars.name", "name")} onChange={(e) => update(i, { name: e.target.value })} />
+              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-destructive" onClick={() => remove(i)} aria-label={t("common.delete", "Delete")}><Trash2 className="h-3 w-3" /></Button>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <Select value={v.type} onValueChange={(x) => update(i, { type: x as IecType })}>
+                <SelectTrigger className="h-7 text-xs" aria-label={t("pou.vars.type", "Type")}><SelectValue /></SelectTrigger>
+                <SelectContent>{IEC_TYPES.map((ty) => <SelectItem key={ty} value={ty}>{ty}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={v.section ?? "VAR"} onValueChange={(x) => update(i, { section: x as VarSection })}>
+                <SelectTrigger className="h-7 text-xs" aria-label={t("pou.vars.section", "Section")}><SelectValue /></SelectTrigger>
+                <SelectContent>{VAR_SECTIONS.map((se) => <SelectItem key={se} value={se}>{se}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <Input className="h-7 font-mono text-[11px]" value={v.initial ?? ""} placeholder={t("pou.vars.initial", "initial")} onChange={(e) => update(i, { initial: e.target.value || undefined })} />
+              <Input className="h-7 font-mono text-[11px]" value={v.address ?? ""} placeholder={t("pou.vars.address", "%IX0.0")} onChange={(e) => update(i, { address: e.target.value || undefined })} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button size="sm" variant="outline" className="h-7 w-full justify-start gap-1 text-xs" onClick={add}>
+        <Plus className="h-3.5 w-3.5" />{t("pou.vars.add", "Add variable")}
+      </Button>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CANVAS (inner — under a ReactFlowProvider)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -793,6 +856,7 @@ const PANEL_CARD = "rounded-md border border-border bg-card/95 p-2 shadow-md bac
 
 function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showVars, setShowVars] = useState(false); // Variables panel (collapsed by default)
 
   const pou = project.pous[pouIndex];
   const body = pou?.body;
@@ -812,6 +876,12 @@ function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasPr
   const commit = useCallback((next: PouBody) => {
     if (!pou) return;
     onChange({ ...project, pous: project.pous.map((p, i) => (i === pouIndex ? { ...p, body: next } : p)) });
+  }, [project, pouIndex, pou, onChange]);
+
+  // Variables edits write back into pous[i].vars (same single-source-of-truth path as body edits).
+  const commitVars = useCallback((nextVars: PouVar[]) => {
+    if (!pou) return;
+    onChange({ ...project, pous: project.pous.map((p, i) => (i === pouIndex ? { ...p, vars: nextVars } : p)) });
   }, [project, pouIndex, pou, onChange]);
 
   const deleteNode = useCallback((id: string) => {
@@ -1083,6 +1153,21 @@ function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasPr
         />
         <Controls className="!border-border" />
         <Panel position="top-left"><div className={PANEL_CARD}>{renderPalette()}</div></Panel>
+        {/* Variables panel (collapsible) — declare/edit VAR_* rows that feed the datalists + linter */}
+        <Panel position="bottom-left">
+          <div className={PANEL_CARD}>
+            <button
+              type="button"
+              onClick={() => setShowVars((s) => !s)}
+              className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+              aria-expanded={showVars}
+            >
+              <Variable className="h-3 w-3" />{t("pou.vars.title", "Variables")} · {pou?.vars?.length ?? 0}
+              <ChevronDown className={`h-3 w-3 transition-transform ${showVars ? "" : "-rotate-90"}`} />
+            </button>
+            {showVars && <div className="mt-1.5 w-[300px]"><VarsEditor vars={pou?.vars ?? []} onChange={commitVars} t={t} /></div>}
+          </div>
+        </Panel>
         {selectedId && (
           <Panel position="top-right">
             <div className={`${PANEL_CARD} max-h-[520px] w-[280px] overflow-y-auto`}>

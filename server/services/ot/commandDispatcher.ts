@@ -72,6 +72,10 @@ import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTra
 import type { OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
+// Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
+// Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
+// không tạo vòng phụ thuộc).
+import { evaluateInterlockGate } from "../interlock/interlockGate";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -350,6 +354,41 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
       "not_commissioned",
       "adapter has no active, non-expired, signed commissioning record — real write refused (recorded simulated)",
     );
+  }
+
+  // ── (5a-bis) INLINE INTERLOCK GATE (doc 25 T1) — fail-closed, ĐỒNG BỘ, TRƯỚC
+  //         mọi real-write cho lệnh HITL. Reachable ONLY khi OT_CONTROL_ENABLED==="true"
+  //         VÀ adapter đã commissioned (bước 5/5a đã trả simulated nếu không). Đánh giá
+  //         ĐỒNG BỘ các interlock rule enabled+approved có action chặn/dừng nhắm tới
+  //         máy/thiết bị này (theo targetAdapterId/targetMachineId/commandTag). Nếu có
+  //         rule đang vi phạm → TỪ CHỐI fail-closed (INTERLOCK_BLOCKED), driver.writeTags
+  //         KHÔNG được gọi. Lỗi đánh giá → cũng fail-closed (an toàn).
+  //         LƯU Ý: chỉ áp cho kind='hitl'. Lệnh kind='interlock' CHÍNH LÀ hành động
+  //         interlock (đã qua verifyInterlockAuthorization) — nếu chặn nó bằng cổng này
+  //         thì lệnh an toàn không bao giờ ghi được (tự khoá). Cổng KHÔNG áp cho
+  //         dry-run/emulator (đường đó đã trả simulated ở bước 5, không có real-write).
+  if (input.triggeredBy.kind === "hitl") {
+    const gate = await evaluateInterlockGate({
+      adapterId: input.adapterId,
+      machineId: input.machineId ?? null,
+      tagKeys: input.writes.map((w) => w.tagKey),
+    });
+    if (gate.blocked) {
+      const detail = gate.failClosed
+        ? "interlock evaluation error — fail-closed (no write)"
+        : `blocked by active interlock rule(s): ${gate.violations
+            .map((v) => `#${v.ruleId}(${v.action})`)
+            .join(", ")}`;
+      const ids = await writeRejected(db, input, "INTERLOCK_BLOCKED", detail);
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "INTERLOCK_BLOCKED",
+        results: failedResults(input, "INTERLOCK_BLOCKED"),
+        commandLogIds: ids,
+      };
+    }
   }
 
   // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"

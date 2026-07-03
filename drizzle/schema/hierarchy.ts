@@ -64,6 +64,11 @@ export const factories = pgTable("factories", {
   timezone: varchar("timezone", { length: 64 }).default("Asia/Ho_Chi_Minh"), // IANA timezone for shift boundary calc
   mapPositionX: decimal("mapPositionX", { precision: 10, scale: 4 }), // Vị trí X trên bản đồ (0-1)
   mapPositionY: decimal("mapPositionY", { precision: 10, scale: 4 }), // Vị trí Y trên bản đồ (0-1)
+  // W6-25 — Floor-plan editor: ảnh nền (CAD/ảnh) + kích thước sàn thật (mét)
+  floorPlanImageUrl: text("floorPlanImageUrl"), // Ảnh nền mặt bằng đã upload
+  floorPlanImageKey: varchar("floorPlanImageKey", { length: 255 }), // Storage key của ảnh nền
+  floorWidthM: decimal("floorWidthM", { precision: 10, scale: 2 }), // Chiều rộng sàn (mét thật)
+  floorDepthM: decimal("floorDepthM", { precision: 10, scale: 2 }), // Chiều sâu sàn (mét thật)
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

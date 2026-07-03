@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -42,10 +43,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
-  FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare, GitMerge,
-  Boxes, ArrowLeft, Pencil,
+  FolderOpen, FolderPlus, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare, GitMerge,
+  Boxes, ArrowLeft, Pencil, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,6 +66,7 @@ import {
   type FunctionBlockDef, type FbParam, type CallArg, type CallBlock,
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
+import { useFlowHistory } from "@/components/programming/flowHistory";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 import { IrMergePanel } from "@/components/programming/IrMergePanel";
 
@@ -872,10 +877,18 @@ export default function IrEditor() {
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
 
-  const [flow, setFlow] = useState<Flow>(() => emptyFlow());
+  // W4-19: Flow được bọc bằng history (past/present/future) → undo/redo. `setFlow` giữ
+  // API cũ (nhận updater) nên mọi mutate hiện có không đổi; `resetFlow` đặt baseline mới
+  // + xoá history (dùng khi nạp flow).
+  const { state: flow, set: setFlow, undo, redo, reset: resetFlow, canUndo, canRedo } =
+    useFlowHistory<Flow>(() => emptyFlow());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<"inspector" | "preview">("inspector");
   const [saveProjectId, setSaveProjectId] = useState<string>("");
+  // W3-12: tạo nhanh project kind "ir-flow" ngay tại đây (bỏ dead-end "No ir-flow projects").
+  const [newProjOpen, setNewProjOpen] = useState(false);
+  const [newProjCode, setNewProjCode] = useState("");
+  const [newProjName, setNewProjName] = useState("");
   // Tier-1c: the canvas edits either the MAIN flow or one function-block's body. Both are
   // rendered by the SAME tree/graph over the SAME AST — only the active block list differs.
   const [editScope, setEditScope] = useState<EditScope>({ kind: "main" });
@@ -950,6 +963,24 @@ export default function IrEditor() {
     onError: onMutationError,
   });
 
+  // W3-12: tạo project "ir-flow" → tự chọn làm đích lưu + làm mới danh sách project.
+  const createProjectM = trpc.programming.createProject.useMutation({
+    onSuccess: async (proj) => {
+      setSaveProjectId(String(proj.id));
+      setNewProjOpen(false);
+      setNewProjCode(""); setNewProjName("");
+      await utils.programming.listProjects.invalidate();
+      toast.success(t("ir.projectCreated", "Project created — selected as the save target."));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const doCreateProject = () => {
+    const code = newProjCode.trim();
+    const name = newProjName.trim();
+    if (!code || !name) { toast.error(t("ir.newProjectFields", "Enter a project code and name.")); return; }
+    createProjectM.mutate({ code, name, kind: "ir-flow" });
+  };
+
   // ── Editing scope (main flow OR a function-block body) ─────────────────────
   const functionBlocks = flow.function_blocks ?? [];
   const activeFb = editScope.kind === "fb" ? functionBlocks.find((fb) => fb.id === editScope.fbId) ?? null : null;
@@ -1002,6 +1033,10 @@ export default function IrEditor() {
   const handleReorderToSibling = useCallback((sourceId: string, targetId: string) => {
     mutateActiveBlocks((blocks) => reorderRelativeToSibling(blocks, sourceId, targetId));
   }, [mutateActiveBlocks]);
+  // W4-19: LƯU toạ độ kéo-thả node vào field UI phụ block.ui (không phá transpile/lint).
+  const handleMoveNode = useCallback((id: string, pos: { x: number; y: number }) => {
+    mutateActiveBlocks((blocks) => updateBlock(blocks, id, { ui: { x: pos.x, y: pos.y } } as Partial<IrBlock>));
+  }, [mutateActiveBlocks]);
 
   // ── Function-block (POU) definition mutators (flow-level) ───────────────────
   const handleNewFb = useCallback(() => {
@@ -1027,11 +1062,28 @@ export default function IrEditor() {
     setSelectedId(null);
   }, []);
 
+  // W4-19: phím tắt Undo (Ctrl/Cmd+Z) / Redo (Ctrl/Cmd+Y hoặc Ctrl/Cmd+Shift+Z).
+  // Bỏ qua khi con trỏ đang ở ô nhập liệu để không nuốt undo văn bản của trình duyệt.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((key === "z" && e.shiftKey) || key === "y") { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
   const loadFlow = async (artifactId: number) => {
     try {
       const res = await utils.ir.getFlow.fetch({ artifactId });
       if (res.flow) {
-        setFlow(res.flow as Flow);
+        // Nạp flow = baseline MỚI: đặt lại + xoá history (không undo ngược qua lần nạp).
+        resetFlow(res.flow as Flow);
         setSelectedId(null);
         toast.success(t("ir.loaded", "Flow loaded into the editor"));
       } else {
@@ -1078,6 +1130,18 @@ export default function IrEditor() {
             </Button>
           }
         />
+
+        {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (IR = motion/IO cấp thấp). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-start gap-1.5">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+            {t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}
+          </span>
+          <span className="inline-flex items-center gap-3">
+            <Link href="/engineering" className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+            <Link href="/pou-studio" className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
+          </span>
+        </div>
 
         {/* Flag-off preview banner (honest) */}
         {!statusQ.isLoading && !flagEnabled && (
@@ -1137,6 +1201,30 @@ export default function IrEditor() {
                 )}
               </div>
 
+              {/* W4-19: Undo / Redo (phím tắt Ctrl/Cmd+Z · Ctrl/Cmd+Y) */}
+              <div className="inline-flex rounded-md border border-border p-0.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title={t("ir.undoTip", "Undo (Ctrl/Cmd+Z)")}
+                >
+                  <Undo2 className="h-3.5 w-3.5" />{t("ir.undo", "Undo")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  title={t("ir.redoTip", "Redo (Ctrl/Cmd+Y)")}
+                >
+                  <Redo2 className="h-3.5 w-3.5" />{t("ir.redo", "Redo")}
+                </Button>
+              </div>
+
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {/* Save target project */}
                 <Select value={saveProjectId} onValueChange={setSaveProjectId}>
@@ -1146,6 +1234,12 @@ export default function IrEditor() {
                     {irProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {/* W3-12: tạo nhanh project ir-flow (nối dead-end "No ir-flow projects") */}
+                <Button variant="outline" onClick={() => setNewProjOpen(true)}
+                  disabled={!canControl}
+                  title={!canControl ? t("ir.needControl", "Requires machine_control permission") : t("ir.newProjectTip", "Create a new ir-flow project to save into")}>
+                  <FolderPlus className="mr-1.5 h-4 w-4" />{t("ir.newProject", "New ir-flow project")}
+                </Button>
                 <Button variant="outline" onClick={doSave}
                   disabled={!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0}
                   title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : undefined}>
@@ -1215,7 +1309,7 @@ export default function IrEditor() {
           <SectionCard
             className="lg:col-span-5"
             icon={editScope.kind === "fb" ? <Boxes className="h-4 w-4" /> : viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
-            title={editScope.kind === "fb" ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}` : t("ir.canvas", "Flow canvas")}
+            title={editScope.kind === "fb" ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}` : t("ir.canvas.title", "Flow canvas")}
             description={
               <span className="flex flex-wrap items-center gap-2 text-xs">
                 {editScope.kind === "fb" && (
@@ -1266,6 +1360,7 @@ export default function IrEditor() {
                 onAddTopLevel={addTopLevel}
                 onAddChild={handleAddChild}
                 onReorderToSibling={handleReorderToSibling}
+                onMoveNode={handleMoveNode}
                 t={t}
               />
             ) : activeBlocks.length === 0 ? (
@@ -1420,6 +1515,35 @@ export default function IrEditor() {
             </TabsContent>
           </Tabs>
         </SectionCard>
+
+        {/* W3-12: dialog tạo nhanh project kind "ir-flow" */}
+        <Dialog open={newProjOpen} onOpenChange={setNewProjOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("ir.newProjectTitle", "Create ir-flow project")}</DialogTitle>
+              <DialogDescription>
+                {t("ir.newProjectDesc", "A programming project (kind “ir-flow”) is the container your saved flows and builds live in. After creating it, save the current flow into it, then Request build below.")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("ir.projectCode", "Project code")}</Label>
+                <Input className="h-9 font-mono" value={newProjCode} onChange={(e) => setNewProjCode(e.target.value)} placeholder="pick-place" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("ir.projectName", "Project name")}</Label>
+                <Input className="h-9" value={newProjName} onChange={(e) => setNewProjName(e.target.value)} placeholder={t("ir.projectNamePh", "Pick & place cell") as string} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setNewProjOpen(false)} disabled={createProjectM.isPending}>{t("common.cancel", "Cancel")}</Button>
+              <Button onClick={doCreateProject} disabled={createProjectM.isPending || !canControl}>
+                {createProjectM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-1.5 h-4 w-4" />}
+                {t("ir.create", "Create project")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageContainer>
     </DashboardLayout>
   );

@@ -50,6 +50,7 @@ import { previewTranspile, summariseFlow } from "../services/programming/ir/irAd
 import { TRANSPILE_TARGETS, type TranspileTarget } from "../services/programming/ir/transpilers/registry";
 import { diffFlows } from "../services/programming/ir/irDiff";
 import { mergeFlows } from "../services/programming/ir/irMerge";
+import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 /** Flag: the IR-specific MUTATIONS require DPC_IR_V2_ENABLED (default OFF). */
 export function dpcIrV2Enabled(): boolean {
@@ -267,6 +268,26 @@ export const irRouter = router({
 
       // Validate through the EXISTING service (persists diagnostics + status).
       const validation = await validateArtifact(row.id);
+
+      // W4-19: audit bất biến cho lần LƯU flow (ai · artifact nào · tóm tắt sau).
+      await recordAuditEvent(d, {
+        entityType: "ir_flow",
+        entityId: row.id,
+        action: "save",
+        actorId: ctx.user.id,
+        before: null,
+        after: {
+          artifactId: row.id,
+          projectId: input.projectId,
+          branch: input.branch,
+          version: nextVersion,
+          contentHash: row.contentHash,
+          summary: summariseFlow(input.flow),
+          validationOk: validation?.ok ?? null,
+        },
+        reason: validation?.ok === false ? "saved with lint issues" : null,
+      });
+
       return { artifact: row, validation };
     }),
 
@@ -286,6 +307,20 @@ export const irRouter = router({
       if (art.kind !== "ir-flow") throw new TRPCError({ code: "BAD_REQUEST", message: `Artifact ${input.artifactId} is not an ir-flow.` });
       // Shape-check early so we return a clean 400 rather than a failed build for garbage.
       parseOrThrow(art.content);
-      return buildArtifact(input.artifactId, toDpcUser(ctx.user));
+      const build = await buildArtifact(input.artifactId, toDpcUser(ctx.user));
+
+      // W4-19: audit bất biến cho lần YÊU CẦU BUILD (transpile) — kết quả ok/không.
+      const buildOk = (build as { ok?: boolean } | null)?.ok ?? null;
+      await recordAuditEvent(d, {
+        entityType: "ir_flow",
+        entityId: input.artifactId,
+        action: "request_build",
+        actorId: ctx.user.id,
+        before: null,
+        after: { artifactId: input.artifactId, projectId: art.projectId, branch: art.branch, version: art.version, buildOk },
+        reason: buildOk === false ? "build did not pass linter/transpile" : null,
+      });
+
+      return build;
     }),
 });

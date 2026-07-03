@@ -17,6 +17,7 @@
  */
 import { useMemo, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, Link } from "wouter";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -28,12 +29,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Cpu, Code2, FileCode2, ShieldCheck, AlertTriangle, XCircle, CheckCircle2,
-  Download, Upload, Copy, Lock, Info, RefreshCw, Workflow,
+  Download, Upload, Copy, Lock, Info, RefreshCw, Workflow, Save, Hammer, FolderPlus, ExternalLink, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PouCanvas, type PouCanvasDiag } from "@/components/programming/PouCanvas";
@@ -120,6 +125,7 @@ function pretty(obj: unknown): string {
 
 export default function PouStudio() {
   const { t } = useTranslation();
+  const [, navigate] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -128,6 +134,13 @@ export default function PouStudio() {
   const [jsonText, setJsonText] = useState<string>(() => pretty(SAMPLE_LAD));
   const [xmlText, setXmlText] = useState<string>("");
   const [rightTab, setRightTab] = useState<"transpile" | "plcopen">("transpile");
+  // W3-12: lưu POU thành artifact "iec61131-pou" → build/deploy qua Engineering (pipeline gated).
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [savePid, setSavePid] = useState<string>("");
+  const [createNew, setCreateNew] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newName, setNewName] = useState("");
+  const [savedProjectId, setSavedProjectId] = useState<number | null>(null);
   // View toggle: the graphical CANVAS is the default; the JSON editor stays available. Both
   // are views over the SAME POU model (the single source of truth).
   const [viewMode, setViewMode] = useState<"canvas" | "json">("canvas");
@@ -220,6 +233,44 @@ export default function PouStudio() {
     );
   }, [exportQ.data, t]);
 
+  // ── W3-12: save POU into a gated programming project ("iec61131-pou") ───────
+  const projectsQ = trpc.programming.listProjects.useQuery({ limit: 200 }, { enabled: canView });
+  const pouProjects = useMemo(
+    () => (projectsQ.data ?? []).filter((p) => p.kind === "iec61131-pou"),
+    [projectsQ.data],
+  );
+  const createProjectM = trpc.programming.createProject.useMutation();
+  const createArtifactM = trpc.programming.createArtifact.useMutation();
+  const saving = createProjectM.isPending || createArtifactM.isPending;
+
+  // Tạo/chọn project → tạo artifact (draft) từ JSON model hiện tại; deploy vẫn là bước gated riêng.
+  const doSaveToProject = useCallback(async () => {
+    if (!parsed.ok) { toast.error(t("pou.badJson", "Invalid JSON")); return; }
+    try {
+      let pid: number;
+      if (createNew) {
+        const code = newCode.trim();
+        const name = newName.trim();
+        if (!code || !name) { toast.error(t("pou.newProjectFields", "Enter a project code and name.")); return; }
+        const proj = await createProjectM.mutateAsync({ code, name, kind: "iec61131-pou" });
+        pid = proj.id;
+      } else {
+        pid = Number(savePid);
+        if (!Number.isInteger(pid) || pid <= 0) { toast.error(t("pou.pickProject", "Pick or create a project first.")); return; }
+      }
+      const art = await createArtifactM.mutateAsync({ projectId: pid, branch: "main", language: "pou-json", content: jsonText });
+      setSavedProjectId(pid);
+      setSaveOpen(false);
+      setCreateNew(false);
+      setNewCode(""); setNewName("");
+      setSavePid(String(pid));
+      await utils.programming.listProjects.invalidate();
+      toast.success(t("pou.savedVersion", "Saved as draft v{{v}} — build & deploy in Engineering.", { v: art.version }));
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }, [parsed, createNew, newCode, newName, savePid, jsonText, createProjectM, createArtifactM, utils, t]);
+
   if (!canView) {
     return (
       <DashboardLayout>
@@ -242,11 +293,38 @@ export default function PouStudio() {
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
           description={t("pou.subtitle", "Author structured LAD/FBD/SFC POUs, lint them, exchange PLCopen TC6 XML, and preview the transpile to Structured Text — a preview, not a device write.")}
           actions={
-            <Button size="icon" variant="ghost" onClick={() => { void transpileQ.refetch(); void lintQ.refetch(); }} title={t("common.refresh", "Refresh")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {savedProjectId != null && (
+                <Button size="sm" variant="outline" onClick={() => navigate("/engineering")} title={t("pou.goEngineeringTip", "Open Engineering to build & deploy this artifact")}>
+                  <ExternalLink className="mr-1.5 h-4 w-4" />{t("pou.goEngineering", "Build/Deploy in Engineering")}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => setSaveOpen(true)}
+                disabled={!canControl || !parsed.ok}
+                title={!canControl ? t("pou.needControl", "Requires machine_control permission") : !parsed.ok ? t("pou.badJson", "Invalid JSON") : undefined}
+              >
+                <Save className="mr-1.5 h-4 w-4" />{t("pou.saveToProject", "Save into project → Build/Deploy")}
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => { void transpileQ.refetch(); void lintQ.refetch(); }} title={t("common.refresh", "Refresh")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           }
         />
+
+        {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (POU = IEC 61131 LAD/FBD/SFC). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-start gap-1.5">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+            {t("pou.whenToUse", "When to use — IEC 61131 LAD/FBD/SFC POUs. For low-level motion/IO use the IR Editor; build & deploy in the Engineering Workspace.")}
+          </span>
+          <span className="inline-flex items-center gap-3">
+            <Link href="/engineering" className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+            <Link href="/ir-editor" className="font-medium text-primary hover:underline">{t("nav.irEditor")}</Link>
+          </span>
+        </div>
 
         {/* Persistent honesty / safety caveat */}
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -436,6 +514,71 @@ export default function PouStudio() {
             </CardContent>
           </Card>
         </div>
+
+        {/* W3-12: dialog lưu POU vào project gated → build/deploy ở Engineering */}
+        <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("pou.saveDialogTitle", "Save POU into a programming project")}</DialogTitle>
+              <DialogDescription>
+                {t("pou.saveDialogDesc", "Appends the current model as a draft “iec61131-pou” artifact. Build and gated deploy happen in the Engineering workspace — this screen never writes to a device.")}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="inline-flex rounded-md border border-border p-0.5">
+                <Button size="sm" variant={!createNew ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setCreateNew(false)}>
+                  {t("pou.useExisting", "Existing project")}
+                </Button>
+                <Button size="sm" variant={createNew ? "secondary" : "ghost"} className="h-7 gap-1 px-2 text-xs" onClick={() => setCreateNew(true)}>
+                  <FolderPlus className="h-3.5 w-3.5" />{t("pou.newProject", "New project")}
+                </Button>
+              </div>
+
+              {!createNew ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t("pou.projectLabel", "POU project (iec61131-pou)")}</Label>
+                  {pouProjects.length === 0 ? (
+                    <p className="rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
+                      {t("pou.noPouProjects", "No iec61131-pou projects yet — switch to “New project” to create one.")}
+                    </p>
+                  ) : (
+                    <Select value={savePid} onValueChange={setSavePid}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder={t("pou.pickProjectPlaceholder", "Pick a project…")} /></SelectTrigger>
+                      <SelectContent>
+                        {pouProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t("pou.projectCode", "Project code")}</Label>
+                    <Input className="h-9 font-mono" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="motor-ctrl" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t("pou.projectName", "Project name")}</Label>
+                    <Input className="h-9" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("pou.projectNamePh", "Motor control POU") as string} />
+                  </div>
+                </div>
+              )}
+
+              <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                <Hammer className="mt-0.5 h-3 w-3 shrink-0" />
+                {t("pou.saveHint", "The saved draft still passes through the gated pipeline: build → HITL sign-off → gated deploy. Nothing is deployed by saving here.")}
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setSaveOpen(false)} disabled={saving}>{t("common.cancel", "Cancel")}</Button>
+              <Button onClick={() => void doSaveToProject()} disabled={saving || !canControl}>
+                {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+                {createNew ? t("pou.createAndSave", "Create project & save") : t("pou.saveVersion", "Save version")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageContainer>
     </DashboardLayout>
   );

@@ -21,9 +21,10 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { orchestrationWorkflows, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
+import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
+  rollbackWorkflow,
   startRun,
   resumeRun,
   abortRun,
@@ -91,6 +92,49 @@ export const orchestrationRouter = router({
         toFoeUser(ctx.user),
       );
       return result;
+    }),
+
+  /**
+   * W3-11 — list the VERSION snapshots of a workflow (newest first). Read-only.
+   * Backs the version diff + rollback panel in the Studio.
+   */
+  listVersions: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ workflowId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const d = await db();
+      const rows = await d
+        .select()
+        .from(orchestrationWorkflowVersions)
+        .where(eq(orchestrationWorkflowVersions.workflowId, input.workflowId))
+        .orderBy(desc(orchestrationWorkflowVersions.version));
+      return rows;
+    }),
+
+  /** W3-11 — get one version snapshot (with its full definition). Read-only. */
+  getVersion: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const d = await db();
+      const [row] = await d
+        .select()
+        .from(orchestrationWorkflowVersions)
+        .where(eq(orchestrationWorkflowVersions.id, input.id))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Version ${input.id} not found` });
+      return row;
+    }),
+
+  /**
+   * W3-11 — ROLL BACK a workflow to an earlier version by re-deploying that version's
+   * definition as a NEW version (append-only). Flag-gated; machine_control/canCreate.
+   */
+  rollbackWorkflow: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ workflowId: z.number().int().positive(), version: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      return rollbackWorkflow(input.workflowId, input.version, toFoeUser(ctx.user));
     }),
 
   /** List runs (optionally filtered by workflowId), newest first. */

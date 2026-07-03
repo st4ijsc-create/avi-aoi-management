@@ -30,7 +30,7 @@
  * Semantic tokens only (dark-first). No raw hex / palette classes.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { useCallback, useMemo, useRef, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, type DragEvent } from "react";
 import type { TFunction } from "i18next";
 import {
   ReactFlow,
@@ -42,6 +42,7 @@ import {
   Handle,
   Position,
   useReactFlow,
+  useNodesState,
   type Node,
   type Edge,
   type NodeProps,
@@ -132,10 +133,13 @@ export function flowToGraph(
         label: slotLabelText(slot, t),
         count: getChildren(block, slot).length,
       }));
+      // W4-19: nếu block đã có toạ độ kéo-thả đã lưu (block.ui) thì DÙNG nó; nếu chưa
+      // thì dùng vị trí layout deterministic tính ở đây.
+      const pos = block.ui ? { x: block.ui.x, y: block.ui.y } : { x, y };
       nodes.push({
         id,
         type: "irBlock",
-        position: { x, y },
+        position: pos,
         data: {
           block, hasError, hasWarn, selected: selectedId === id, t, onDelete, slotLabel,
           slots: nodeSlots,
@@ -286,25 +290,41 @@ export interface IrGraphCanvasProps {
   onAddChild: (parentId: string, slot: Slot, type: BlockType) => void;
   /** Reorder a block relative to a sibling by reconnecting the `next` edge. */
   onReorderToSibling: (sourceId: string, targetId: string) => void;
+  /** W4-19: LƯU vị trí node sau khi kéo-thả (ghi vào block.ui trong AST). */
+  onMoveNode: (id: string, pos: { x: number; y: number }) => void;
   t: TFunction;
 }
 
 // The inner canvas — needs to sit under a ReactFlowProvider to use useReactFlow().
 function CanvasInner({
   flow, selectedId, diagsByBlock, onSelect, onDelete,
-  onAddTopLevel, onAddChild, onReorderToSibling, t,
+  onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
 }: IrGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
 
-  const { nodes, edges } = useMemo(
+  // Nodes + edges DERIVE từ AST (nguồn sự thật). `builtNodes` chỉ đổi khi AST/lựa
+  // chọn/chẩn đoán đổi — KHÔNG đổi khi đang kéo (kéo chỉ cập nhật state cục bộ).
+  const { nodes: builtNodes, edges } = useMemo(
     () => flowToGraph(flow, selectedId, diagsByBlock, t, onDelete),
     [flow, selectedId, diagsByBlock, t, onDelete],
   );
 
+  // W4-19: state node CỤC BỘ cho react-flow (onNodesChange=applyNodeChanges) để kéo
+  // mượt. Đồng bộ lại từ AST mỗi khi `builtNodes` đổi (thêm/xoá/undo/redo/di chuyển).
+  const [nodes, setNodes, onNodesChange] = useNodesState(builtNodes);
+  useEffect(() => {
+    setNodes(builtNodes);
+  }, [builtNodes, setNodes]);
+
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => {
     onSelect(node.id);
   }, [onSelect]);
+
+  // Kết thúc kéo → PERSIST toạ độ vào AST (block.ui). Một entry undo mỗi lần thả.
+  const onNodeDragStop = useCallback((_e: unknown, node: Node) => {
+    onMoveNode(node.id, { x: node.position.x, y: node.position.y });
+  }, [onMoveNode]);
 
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -364,7 +384,9 @@ function CanvasInner({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
+        onNodeDragStop={onNodeDragStop}
         onNodesDelete={onNodesDelete}
         onConnect={onConnect}
         onDrop={onDrop}

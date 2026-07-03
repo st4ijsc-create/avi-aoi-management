@@ -80,6 +80,7 @@ import {
   type KinematicModel,
 } from "../programming/sim/kinematicModel";
 import { mapAlarm, asSeverity, type AlarmSeverity } from "../standards/alarmTaxonomy";
+import { loadAlarmMappings } from "../standards/alarmMasterService";
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED WRAPPER — every section reports its source + availability (honest null).
@@ -213,6 +214,8 @@ export async function robotAlarms(robotId: number, vendor: string, limit = 50): 
   if (!db) return [];
   const cap = Math.max(1, Math.min(limit, 200));
   const out: NormalizedAssetAlarm[] = [];
+  // W5-21: nạp taxonomy SEED ∪ DB để mapping người dùng tạo cũng tác động vào cockpit.
+  const entries = await loadAlarmMappings();
   try {
     const rows = await db
       .select({
@@ -228,7 +231,7 @@ export async function robotAlarms(robotId: number, vendor: string, limit = 50): 
       .limit(cap);
     for (const r of rows) {
       // Try the vendor taxonomy first (e.g. an e-stop native code), else derive.
-      const mapped = mapAlarm(vendor, r.eventType);
+      const mapped = mapAlarm(vendor, r.eventType, entries);
       const standardCode = mapped.mapped ? mapped.standardCode : `SAFETY_${(r.eventType ?? "EVENT").toUpperCase()}`;
       const severity: AlarmSeverity = mapped.mapped
         ? asSeverity(mapped.severity)

@@ -25,18 +25,27 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { machines } from "../../drizzle/schema";
+import { machines, andonEvents } from "../../drizzle/schema";
 import {
   deviceTypes,
   alarmTaxonomy,
   deviceTypeChangeRequests,
+  masterAlarms,
   type DeviceType,
 } from "../../drizzle/schema/equipmentStandards";
+import {
+  loadAlarmMappings,
+  loadMasterAlarms,
+  computeAlarmKpis,
+  derivePriority,
+  ALARM_CONSEQUENCES,
+  type AlarmKpiEvent,
+} from "../services/standards/alarmMasterService";
 import {
   eqGovernEnabled,
   buildSeedTypes,
@@ -49,11 +58,11 @@ import {
   mapAlarm,
   listVendors,
   SEED_ALARM_MAPPINGS,
-  asSeverity,
   ALARM_SEVERITIES,
-  type AlarmMapping,
 } from "../services/standards/alarmTaxonomy";
 import {
+  runConformance,
+  subjectFromResolved,
   runConformanceAcrossSeed,
   runConformanceAcrossCapabilityProfiles,
 } from "../services/standards/conformanceTest";
@@ -62,10 +71,12 @@ import {
   nextStatus,
   enforcePublish,
   buildPublishedNode,
+  applyProposalToNodes,
   type CrStatus,
   type SemverBump,
 } from "../services/standards/governanceService";
 import { computeCompliance } from "../services/standards/complianceService";
+import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 async function db() {
   const d = await getDb();
@@ -111,24 +122,24 @@ async function loadNodeSet(): Promise<DeviceTypeNode[]> {
   return [...seed, ...rows.map(rowToNode)];
 }
 
-/** Load alarm mappings = SEED ∪ persisted rows (persisted rows override by vendor+native). */
-async function loadAlarmMappings(): Promise<AlarmMapping[]> {
-  const d = await getDb();
-  if (!d) return SEED_ALARM_MAPPINGS;
-  const rows = await d.select().from(alarmTaxonomy);
-  const merged = new Map<string, AlarmMapping>();
-  for (const m of SEED_ALARM_MAPPINGS) merged.set(`${m.vendor.toLowerCase()}::${m.nativeCode}`, m);
-  for (const r of rows) {
-    merged.set(`${r.vendor.toLowerCase()}::${r.nativeCode}`, {
-      vendor: r.vendor, machineType: r.machineType, deviceTypeKey: r.deviceTypeKey,
-      nativeCode: r.nativeCode, standardCode: r.standardCode, severity: asSeverity(r.severity),
-      description: r.description ?? undefined, recommendedAction: r.recommendedAction ?? undefined,
-    });
-  }
-  return Array.from(merged.values());
+/**
+ * Compute the conformance gate for a CR ON THE SERVER (never trust a client attestation):
+ * overlay the CR's proposedSchema onto the live node set, RESOLVE the merged type with
+ * inheritance, and run the standard conformance rule set. Returns 'pass' | 'fail'.
+ */
+function computeCrConformanceStatus(
+  targetTypeKey: string,
+  proposedSchema: Record<string, unknown> | null | undefined,
+  nodes: DeviceTypeNode[],
+): "pass" | "fail" {
+  const overlay = applyProposalToNodes(targetTypeKey, proposedSchema, nodes);
+  const resolved = resolveType(targetTypeKey, overlay);
+  if (!resolved) return "fail";
+  return runConformance(subjectFromResolved(resolved)).pass ? "pass" : "fail";
 }
 
 const SEVERITY_ENUM = z.enum(ALARM_SEVERITIES as unknown as [string, ...string[]]);
+const CONSEQUENCE_ENUM = z.enum(ALARM_CONSEQUENCES as unknown as [string, ...string[]]);
 
 export const equipmentStandardsRouter = router({
   /** UI gating hint — is the governance flag on? */
@@ -225,6 +236,157 @@ export const equipmentStandardsRouter = router({
       return row;
     }),
 
+  // ── W5-21 — ISA-18.2 master alarm DB + rationalization + shelving ────────────
+  /** List rationalized master alarms (optionally filtered by alarmKey / assetType). */
+  listMasterAlarms: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ alarmKey: z.string().max(64).optional(), assetType: z.string().max(48).optional() }).optional())
+    .query(async ({ input }) => {
+      const rows = await loadMasterAlarms();
+      const now = Date.now();
+      let filtered = rows;
+      if (input?.alarmKey) filtered = filtered.filter((r) => r.alarmKey.toLowerCase() === input.alarmKey!.toLowerCase());
+      if (input?.assetType) filtered = filtered.filter((r) => (r.assetType ?? "").toLowerCase() === input.assetType!.toLowerCase());
+      // Đính kèm cờ 'đang bị shelve' đã tính sẵn (shelvedUntil > now) cho UI.
+      return filtered
+        .map((r) => ({ ...r, isShelvedNow: r.shelvedUntil != null && new Date(r.shelvedUntil).getTime() > now }))
+        .sort((a, b) => a.alarmKey.localeCompare(b.alarmKey));
+    }),
+
+  /**
+   * Upsert a master alarm. PRIORITY is DERIVED on the server from consequence ×
+   * timeToRespond (EEMUA-191) — never trusted from the client. Keyed by (alarmKey, assetType).
+   */
+  upsertMasterAlarm: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({
+      alarmKey: z.string().min(1).max(64),
+      assetType: z.string().max(48).optional(),
+      vendor: z.string().max(48).optional(),
+      nativeCode: z.string().max(64).optional(),
+      label: z.string().max(128).optional(),
+      consequence: CONSEQUENCE_ENUM,
+      timeToRespond: z.number().int().min(0).max(100000).optional(),
+      setpoint: z.string().max(96).optional(),
+      deadband: z.string().max(96).optional(),
+      rationalization: z.string().optional(),
+      shelvedUntil: z.string().datetime().optional(),
+      isSuppressed: z.boolean().optional(),
+      scope: z.string().max(64).optional(),
+      corporateCode: z.string().max(50).optional(),
+      factoryId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      requireFlag();
+      const d = await db();
+      const assetType = input.assetType?.trim() || null;
+      // Priority suy diễn ở server (không tin client) theo consequence × time-to-respond.
+      const priority = derivePriority(input.consequence, input.timeToRespond ?? null);
+      const values = {
+        alarmKey: input.alarmKey.trim(),
+        assetType,
+        vendor: input.vendor?.trim().toLowerCase() || null,
+        nativeCode: input.nativeCode?.trim() || null,
+        label: input.label,
+        priority,
+        consequence: input.consequence,
+        timeToRespond: input.timeToRespond ?? null,
+        setpoint: input.setpoint,
+        deadband: input.deadband,
+        rationalization: input.rationalization,
+        shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null,
+        isSuppressed: input.isSuppressed ?? false,
+        scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
+        createdBy: ctx.user.id, updatedAt: new Date(),
+      };
+      const [existing] = await d.select().from(masterAlarms)
+        .where(assetType
+          ? and(eq(masterAlarms.alarmKey, values.alarmKey), eq(masterAlarms.assetType, assetType))
+          : and(eq(masterAlarms.alarmKey, values.alarmKey), isNull(masterAlarms.assetType)))
+        .limit(1);
+      let row;
+      if (existing) {
+        [row] = await d.update(masterAlarms).set(values).where(eq(masterAlarms.id, existing.id)).returning();
+      } else {
+        [row] = await d.insert(masterAlarms).values(values).returning();
+      }
+      // Audit bất biến: upsert master alarm (rationalization / shelving).
+      await recordAuditEvent(d, { entityType: "master_alarm", entityId: row.id, action: existing ? "update" : "create", actorId: ctx.user.id, before: existing ?? null, after: row });
+      return row;
+    }),
+
+  /** Shelve / un-shelve a master alarm (ISA-18.2 temporary silence). shelvedUntil=null clears. */
+  shelveMasterAlarm: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ id: z.number().int().positive(), shelvedUntil: z.string().datetime().nullable() }))
+    .mutation(async ({ input, ctx }) => {
+      requireFlag();
+      const d = await db();
+      const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
+      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      const [row] = await d.update(masterAlarms)
+        .set({ shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null, updatedAt: new Date() })
+        .where(eq(masterAlarms.id, input.id)).returning();
+      await recordAuditEvent(d, { entityType: "master_alarm", entityId: input.id, action: input.shelvedUntil ? "shelve" : "unshelve", actorId: ctx.user.id, before, after: row });
+      return row;
+    }),
+
+  /** Delete a master alarm. */
+  deleteMasterAlarm: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      requireFlag();
+      const d = await db();
+      const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
+      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      await d.delete(masterAlarms).where(eq(masterAlarms.id, input.id));
+      await recordAuditEvent(d, { entityType: "master_alarm", entityId: input.id, action: "delete", actorId: ctx.user.id, before, after: null });
+      return { id: input.id, deleted: true };
+    }),
+
+  /**
+   * Alarm performance KPIs (EEMUA-191) computed from the Andon history over a window:
+   * alarms/operator/hour, flood windows, chattering, standing/stale, top bad-actors.
+   */
+  alarmKpis: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({
+      windowDays: z.number().int().min(1).max(90).default(7),
+      operatorCount: z.number().int().min(1).max(500).default(1),
+    }).optional())
+    .query(async ({ input }) => {
+      const windowDays = input?.windowDays ?? 7;
+      const operatorCount = input?.operatorCount ?? 1;
+      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+      const d = await getDb();
+      const events: AlarmKpiEvent[] = [];
+      if (d) {
+        try {
+          const rows = await d
+            .select({
+              reason: andonEvents.reason, title: andonEvents.title, machineId: andonEvents.machineId,
+              raisedAt: andonEvents.raisedAt, resolvedAt: andonEvents.resolvedAt,
+            })
+            .from(andonEvents)
+            .where(gte(andonEvents.raisedAt, since))
+            .orderBy(desc(andonEvents.raisedAt))
+            .limit(20000);
+          for (const r of rows) {
+            const raised = r.raisedAt instanceof Date ? r.raisedAt.getTime() : new Date(r.raisedAt as never).getTime();
+            events.push({
+              key: (r.title || r.reason || "UNKNOWN").toString(),
+              machineId: r.machineId ?? null,
+              raisedAt: raised,
+              resolvedAt: r.resolvedAt ? new Date(r.resolvedAt).getTime() : null,
+            });
+          }
+        } catch { /* andon table absent → empty KPIs */ }
+      }
+      const kpis = computeAlarmKpis(events, { operatorCount });
+      return { windowDays, since: since.getTime(), ...kpis };
+    }),
+
   // ── E1-a — register a device type (draft) ────────────────────────────────────
   registerDeviceType: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -259,6 +421,8 @@ export const equipmentStandardsRouter = router({
         scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
         createdBy: ctx.user.id,
       }).returning();
+      // Audit bất biến: đăng ký device type (draft).
+      await recordAuditEvent(d, { entityType: "device_type", entityId: row.id, action: "register", actorId: ctx.user.id, before: null, after: row });
       return row;
     }),
 
@@ -295,17 +459,22 @@ export const equipmentStandardsRouter = router({
         status: "pending", conformanceStatus: "pending", stage: "none", semverBump: input.semverBump,
         scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
       }).returning();
+      // Audit bất biến: submit change-request (dùng crKey làm entityId).
+      await recordAuditEvent(d, { entityType: "device_type_cr", entityId: row.crKey, action: "submit", actorId: ctx.user.id, before: null, after: row });
       return row;
     }),
 
-  /** Move a CR through review (in_review → approved | rejected). Records conformance gate. */
+  /**
+   * Move a CR through review (in_review → approved | rejected). On APPROVE the
+   * conformance gate is computed ON THE SERVER from the proposed schema (no client
+   * self-attestation — the old `conformanceStatus` input has been removed).
+   */
   reviewChangeRequest: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({
       crId: z.number().int().positive(),
       to: z.enum(["in_review", "approved", "rejected"]),
       reviewNotes: z.string().optional(),
-      conformanceStatus: z.enum(["pending", "pass", "fail"]).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       requireFlag();
@@ -314,11 +483,19 @@ export const equipmentStandardsRouter = router({
       if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
       const ns = nextStatus(cr.status as CrStatus, input.to);
       if (!ns) throw new TRPCError({ code: "CONFLICT", message: `Illegal CR transition ${cr.status} → ${input.to}` });
+      // Conformance được tính ở SERVER khi duyệt — bỏ hoàn toàn self-attest từ client.
+      let conformanceStatus = cr.conformanceStatus;
+      if (ns === "approved") {
+        const nodes = await loadNodeSet();
+        conformanceStatus = computeCrConformanceStatus(cr.targetTypeKey, cr.proposedSchema as Record<string, unknown>, nodes);
+      }
       const [row] = await d.update(deviceTypeChangeRequests).set({
         status: ns, reviewedBy: ctx.user.id, reviewNotes: input.reviewNotes,
-        conformanceStatus: input.conformanceStatus ?? cr.conformanceStatus,
+        conformanceStatus,
         reviewedAt: new Date(), updatedAt: new Date(),
       }).where(eq(deviceTypeChangeRequests.id, input.crId)).returning();
+      // Audit bất biến: review/approve/reject — action = trạng thái đích (in_review|approved|rejected).
+      await recordAuditEvent(d, { entityType: "device_type_cr", entityId: cr.crKey, action: ns, actorId: ctx.user.id, before: cr, after: row, reason: input.reviewNotes ?? null });
       return row;
     }),
 
@@ -330,55 +507,73 @@ export const equipmentStandardsRouter = router({
   publishChangeRequest: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ crId: z.number().int().positive(), stage: z.enum(["staging", "production"]).default("staging") }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
-      const [cr] = await d.select().from(deviceTypeChangeRequests).where(eq(deviceTypeChangeRequests.id, input.crId)).limit(1);
-      if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
-      if (cr.status !== "approved") {
-        throw new TRPCError({ code: "CONFLICT", message: `CR must be 'approved' to publish (is '${cr.status}')` });
-      }
-      // current published version for this type (highest published SemVer), else 1.0.0 baseline.
-      const existing = await d.select().from(deviceTypes)
-        .where(and(eq(deviceTypes.typeKey, cr.targetTypeKey), eq(deviceTypes.status, "published")));
-      const seed = buildSeedTypes().find((n) => n.typeKey === cr.targetTypeKey);
-      let currentVersion = seed?.version ?? "1.0.0";
-      let publishedAttrs = seed?.attributesSchema ?? [];
-      for (const e of existing) {
-        publishedAttrs = (e.attributesSchema ?? publishedAttrs) as never;
-        currentVersion = e.version;
-      }
-      const proposed = (cr.proposedSchema ?? {}) as Record<string, unknown>;
-      const proposedAttrs = (proposed.attributesSchema ?? []) as never;
-      const declaredBump = (cr.semverBump as SemverBump) ?? "minor";
+      // Node set (SEED ∪ published) đọc ngoài TX — dùng để tính conformance ở server.
+      const nodes = await loadNodeSet();
+      // Toàn bộ publish là ATOMIC + optimistic-lock (SELECT … FOR UPDATE khoá dòng CR
+      // để hai publish đồng thời không cùng tạo phiên bản / mất-cập-nhật).
+      const result = await d.transaction(async (tx) => {
+        const [cr] = await tx.select().from(deviceTypeChangeRequests)
+          .where(eq(deviceTypeChangeRequests.id, input.crId)).for("update").limit(1);
+        if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+        if (cr.status !== "approved") {
+          throw new TRPCError({ code: "CONFLICT", message: `CR must be 'approved' to publish (is '${cr.status}')` });
+        }
+        const proposed = (cr.proposedSchema ?? {}) as Record<string, unknown>;
+        // Conformance được TÍNH LẠI ở server ngay trước publish (không tin cờ đã lưu).
+        const conformance = computeCrConformanceStatus(cr.targetTypeKey, proposed, nodes);
 
-      const decision = enforcePublish({
-        currentVersion, declaredBump, conformance: cr.conformanceStatus as "pending" | "pass" | "fail",
-        publishedAttrs, proposedAttrs,
-      });
-      if (!decision.ok) {
-        throw new TRPCError({ code: "CONFLICT", message: `Publish rejected: ${decision.rejection}` });
-      }
-      // archive prior published rows of this type
-      if (existing.length) {
-        await d.update(deviceTypes).set({ status: "archived", updatedAt: new Date() })
+        // current published version for this type (highest published SemVer), else 1.0.0 baseline.
+        const existing = await tx.select().from(deviceTypes)
           .where(and(eq(deviceTypes.typeKey, cr.targetTypeKey), eq(deviceTypes.status, "published")));
-      }
-      const node = buildPublishedNode({ targetTypeKey: cr.targetTypeKey, newVersion: decision.newVersion, proposed });
-      const [row] = await d.insert(deviceTypes).values({
-        typeKey: node.typeKey, parentTypeKey: node.parentTypeKey, version: node.version,
-        status: "published", origin: "manual", label: node.label, description: node.description,
-        attributesSchema: node.attributesSchema as never, supportedCommands: node.supportedCommands as never,
-        supportedStates: node.supportedStates as never, extensionFields: node.extensionFields as never,
-        mappedMachineTypes: node.mappedMachineTypes as never, adapterKind: node.adapterKind,
-        changelog: `Published from ${cr.crKey} (${decision.effectiveBump}). ${decision.reasons.join("; ")}`,
-        publishedAt: new Date(), scope: cr.scope, corporateCode: cr.corporateCode, factoryId: cr.factoryId,
-      }).returning();
-      await d.update(deviceTypeChangeRequests).set({
-        status: "published", stage: input.stage, publishedVersion: decision.newVersion,
-        backwardIncompatible: decision.breaking ? "true" : "false", publishedAt: new Date(), updatedAt: new Date(),
-      }).where(eq(deviceTypeChangeRequests.id, input.crId));
-      return { deviceType: row, decision };
+        const seed = buildSeedTypes().find((n) => n.typeKey === cr.targetTypeKey);
+        let currentVersion = seed?.version ?? "1.0.0";
+        let publishedAttrs = seed?.attributesSchema ?? [];
+        for (const e of existing) {
+          publishedAttrs = (e.attributesSchema ?? publishedAttrs) as never;
+          currentVersion = e.version;
+        }
+        const proposedAttrs = (proposed.attributesSchema ?? []) as never;
+        const declaredBump = (cr.semverBump as SemverBump) ?? "minor";
+
+        const decision = enforcePublish({
+          currentVersion, declaredBump, conformance,
+          publishedAttrs, proposedAttrs,
+        });
+        if (!decision.ok) {
+          throw new TRPCError({ code: "CONFLICT", message: `Publish rejected: ${decision.rejection}` });
+        }
+        // archive prior published rows of this type
+        if (existing.length) {
+          await tx.update(deviceTypes).set({ status: "archived", updatedAt: new Date() })
+            .where(and(eq(deviceTypes.typeKey, cr.targetTypeKey), eq(deviceTypes.status, "published")));
+        }
+        const node = buildPublishedNode({ targetTypeKey: cr.targetTypeKey, newVersion: decision.newVersion, proposed });
+        const [row] = await tx.insert(deviceTypes).values({
+          typeKey: node.typeKey, parentTypeKey: node.parentTypeKey, version: node.version,
+          status: "published", origin: "manual", label: node.label, description: node.description,
+          attributesSchema: node.attributesSchema as never, supportedCommands: node.supportedCommands as never,
+          supportedStates: node.supportedStates as never, extensionFields: node.extensionFields as never,
+          mappedMachineTypes: node.mappedMachineTypes as never, adapterKind: node.adapterKind,
+          changelog: `Published from ${cr.crKey} (${decision.effectiveBump}). ${decision.reasons.join("; ")}`,
+          publishedAt: new Date(), scope: cr.scope, corporateCode: cr.corporateCode, factoryId: cr.factoryId,
+        }).returning();
+        // Optimistic-lock: chỉ chuyển sang published nếu CR VẪN 'approved' (chống race).
+        const updated = await tx.update(deviceTypeChangeRequests).set({
+          status: "published", stage: input.stage, publishedVersion: decision.newVersion,
+          conformanceStatus: conformance,
+          backwardIncompatible: decision.breaking ? "true" : "false", publishedAt: new Date(), updatedAt: new Date(),
+        }).where(and(eq(deviceTypeChangeRequests.id, input.crId), eq(deviceTypeChangeRequests.status, "approved"))).returning();
+        if (updated.length === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: "CR was concurrently modified — publish aborted" });
+        }
+        return { cr, deviceType: row, decision };
+      });
+      // Audit bất biến: publish CR → phiên bản device type mới (sau khi TX commit).
+      await recordAuditEvent(d, { entityType: "device_type_cr", entityId: result.cr.crKey, action: "publish", actorId: ctx.user.id, before: result.cr, after: { deviceType: result.deviceType, decision: result.decision } });
+      return { deviceType: result.deviceType, decision: result.decision };
     }),
 
   // ── E1-d — conformance ───────────────────────────────────────────────────────

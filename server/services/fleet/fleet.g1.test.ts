@@ -28,10 +28,13 @@ type Row = Record<string, any>;
 const store: Record<string, Row[]> = { tasks: [], zones: [], robots: [], robot_telemetry: [], zone_reservations: [], production_orders: [] };
 const seq: Record<string, number> = {};
 function nextId(table: string): number { seq[table] = (seq[table] ?? 0) + 1; return seq[table]; }
+// W2-6: counts db.transaction() invocations (atomicity assertions).
+let txCount = 0;
 
 function reset() {
   for (const k of Object.keys(store)) store[k] = [];
   for (const k of Object.keys(seq)) seq[k] = 0;
+  txCount = 0;
 }
 
 function tableName(t: any): string {
@@ -92,9 +95,10 @@ function makeFakeDb() {
       }),
     }),
   };
-  // Reservation atomicity (P0): reserveZone/claimResource run inside db.transaction();
-  // the fake runs the callback synchronously against the same in-memory store.
-  db.transaction = async (cb: any) => cb(db);
+  // Reservation atomicity (P0) + release→promote atomicity (W2-6): reserveZone /
+  // releaseZone run inside db.transaction(); the fake runs the callback synchronously
+  // against the same in-memory store and counts invocations for the atomicity assertions.
+  db.transaction = async (cb: any) => { txCount++; return cb(db); };
   return db;
 }
 
@@ -108,7 +112,7 @@ import {
   _clearProfileCache,
   type AllocCandidate,
 } from "./taskAllocator";
-import { detectDeadlockCycles, planPath, reserveZone } from "./trafficManager";
+import { detectDeadlockCycles, planPath, reserveZone, releaseZone } from "./trafficManager";
 import { decomposeOrderToTasks } from "./fleetOrchestrator";
 
 beforeEach(() => {
@@ -333,5 +337,51 @@ describe("reserveZone (concurrency + conflict)", () => {
     const r = await reserveZone({ zoneId: 12, deviceId: 1 });
     expect(r.enabled).toBe(false);
     expect(store.zone_reservations.length).toBe(0);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// DB-FLOW — releaseZone (W2-6): atomic free + FIFO promote under a zone row-lock.
+//
+// The fake models the zone-row FOR UPDATE lock with a synchronous transaction; real
+// row-locking is enforced by Postgres. Migration 0164 adds the partial unique index
+// uq_zone_res_active_zone_device (one active slot per zone+device).
+// ════════════════════════════════════════════════════════════════════════════
+describe("releaseZone (atomic free + promote)", () => {
+  beforeEach(() => { process.env.FLEET_ORCH_ENABLED = "true"; });
+
+  it("frees the active slot and promotes the oldest queued waiter, in ONE transaction", async () => {
+    store.zones.push({ id: 20, code: "Z20", name: "Z", maxConcurrentRobots: 1 });
+    const a = await reserveZone({ zoneId: 20, deviceId: 1 });
+    expect(a.status).toBe("active");
+    const b = await reserveZone({ zoneId: 20, deviceId: 2 }); // queued (cap 1)
+    expect(b.status).toBe("queued");
+
+    txCount = 0;
+    const rel = await releaseZone(1, 20);
+    expect(txCount).toBe(1); // whole free+promote wrapped in a single transaction
+    expect(rel.released).toBe(1);
+    expect(rel.promoted).toBe(1);
+
+    // device 1 released, device 2 promoted to active → occupancy invariant (≤ cap) holds.
+    const active = store.zone_reservations.filter((r) => r.zoneId === 20 && r.status === "active");
+    expect(active).toHaveLength(1);
+    expect(active[0].deviceId).toBe(2);
+    expect(store.zone_reservations.find((r) => r.deviceId === 1)!.status).toBe("released");
+  });
+
+  it("does NOT over-promote past capacity when nothing is queued", async () => {
+    store.zones.push({ id: 21, code: "Z21", name: "Z", maxConcurrentRobots: 1 });
+    await reserveZone({ zoneId: 21, deviceId: 1 });
+    const rel = await releaseZone(1, 21);
+    expect(rel.released).toBe(1);
+    expect(rel.promoted).toBe(0);
+    expect(store.zone_reservations.filter((r) => r.zoneId === 21 && r.status === "active")).toHaveLength(0);
+  });
+
+  it("flag OFF → releaseZone is a no-op", async () => {
+    delete process.env.FLEET_ORCH_ENABLED;
+    const rel = await releaseZone(1, 20);
+    expect(rel.enabled).toBe(false);
   });
 });
