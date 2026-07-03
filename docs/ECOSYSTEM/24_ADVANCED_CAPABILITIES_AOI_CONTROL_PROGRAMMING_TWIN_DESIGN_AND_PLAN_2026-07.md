@@ -290,3 +290,37 @@ Commit `2ec76f1`. TSC 0 · build OK · Wave-4 tests pass (89).
 `89cdf1b` doc-23 frontend · `d617560` W1 · `549242b` W2 · `481d5be` W3-A · `3bd4bb0` W3-B · `57b922f` docs · `2ec76f1` W4.
 
 ### ✅ Doc-24 program COMPLETE (Waves 1–4; T6 Isaac deferred). All additive/flag-gated; TSC 0 / build OK throughout; both doc-22 P0 safety races stay closed. Live control/actuation remains sim/dry-run behind the commissioning gate until hardware FAT + flags. Migrations `0157`–`0161` authored (run when ready).
+
+---
+
+## 10. Remaining work / next steps (as of 2026-07-02)
+
+The **code** for all four pillars is complete, green, and committed — but per the original audit's core finding, everything ships **flag-OFF and unproven on real hardware**. So the dominant remaining theme is **ACTIVATION + COMMISSIONING, not more building.** Prioritized:
+
+### Tier 0 — Activate & prove on ONE real cell (highest value; needs hardware per the doc-24 P6 procurement plan)
+Converts "real but dormant" → "real and running."
+1. **Run migrations** `0157`–`0161` (`npm run db:push`), against a DB.
+2. **AOI:** drop a real DINOv2 ONNX at `AI_DINOV2_MODEL_PATH` → `node scripts/ai-kb/register-dinov2.mjs` (row → ACTIVE) → enable `AOI_EMBEDDING_ENABLED` + `ANOMALY_DETECTION_ENABLED`; set golden samples + `ALIGN_BEFORE_DIFF=true`; label defects → train the DL head (`AOI_DL_HEAD_ENABLED`) → A/B → promote.
+3. **Programming/twin:** provide a real URDF + per-device `LimitProfile`; enable `DPC_IR_V2_ENABLED` + `SIM_KINEMATIC_ENABLED` + `SIM_PHYSICS_ENABLED`; author on the node-graph canvas → sim-gate → deploy to URSim (HIL).
+4. **Connectivity:** enable `OT_STORE_FORWARD_ENABLED` + `OT_CONN_HA_ENABLED`; connect one OPC-UA + one Modbus device; run FAT/soak → **sign a commissioning record** → then `OT_CONTROL_ENABLED` for that adapter; read-back-verify a real write.
+5. **Twin live:** add a producer that streams a robot's joint vector onto the telemetry bus (lights T1's live articulation end-to-end); `TWIN_LIVE_ENABLED`.
+6. **Vision→control:** only after (2)+(4), enable `VISION_CONTROL_ENABLED`; validate a dry-run reject/printer-offset proposal through HITL.
+
+### Tier 1 — Finish the "documented-but-not-built" wiring/UI (small, high polish)
+- **T5 DES:** wire the what-if into `ProductionScheduling`; replace `RfTestCellSim`'s hard-coded defect rule with the stochastic model.
+- **Health/status UI + routes** for the new getters: store-forward status, connection-supervisor status, commissioning records (admin), model-health, DES scenario runner, USD/DTDL export download.
+- **P5:** merge-conflict resolution UI (dry-run merge API already shipped).
+- **P4:** a graphical ladder/FBD/SFC canvas in `/pou-studio` (PLCopen model + import/export shipped; visual editor is the stretch).
+
+### Tier 2 — Next engineering (deferred build items)
+- **AOI:** live GigE/GenICam frame acquisition; native 3D/SPI/AXI processing; patch-level PatchCore pixel heatmap; Cognex/Keyence/TRI adapters.
+- **Programming:** reusable function blocks/POUs; bound ROS2 (MoveIt) + hardware-in-the-loop; collaborative editing.
+- **Twin:** USD materials/physics + true per-joint kinematics; photoreal rendering; **T6 Isaac sim-to-real** (deferred by owner).
+- **Connectivity:** GEM300 S2/S7 (fab); Mitsubishi/Delta robot drivers (currently honest scaffolds); no-code tag→UNS mapping UI.
+
+### Tier 3 — Ops & hardening
+- Run the FULL test suite (`npm test`) incl. DB-integration (`npm run test:db:setup`); apply migrations to a real DB.
+- Open a PR `automation-orchestration-r0` → review → merge to `main`.
+- Procure the target-cell hardware (doc-24 P6 plan) to unblock Tier 0.
+
+**Immediate recommendation:** Tier 0 on a single pilot cell — it proves the whole stack end-to-end and is the highest-leverage next move; Tier 1 can proceed in parallel with no hardware.
