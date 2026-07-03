@@ -167,7 +167,13 @@ describe("transpiler golden regression", () => {
     const { code, irCommentMap } = transpileToRos2(SAMPLE_FLOW);
     expect(code).toBe(goldenRos);
     expect(code).toContain("# [IR grip #b3]");
-    expect(code).toContain("self.send_pose_goal(");
+    // BOUND MoveIt program (Doc 24 Tier-2): real MoveGroupCommander motion + plan/execute.
+    expect(code).toContain("import moveit_commander");
+    expect(code).toContain("moveit_commander.MoveGroupCommander(PLANNING_GROUP)");
+    expect(code).toContain("self.move_group.set_pose_target([");
+    expect(code).toContain("self.move_group.set_joint_value_target([");
+    expect(code).toContain("self.move_group.plan()");
+    expect(code).toContain("self.move_group.execute(");
     expect(irCommentMap["# [IR grip #b3]"]).toBe("b3");
   });
 

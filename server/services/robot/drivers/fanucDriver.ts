@@ -4,7 +4,8 @@
  * Implements the FANUC **Robot Motion Interface (RMI)** — the R-30iB / R-30iB Plus
  * controller option that exposes a TCP socket speaking newline-terminated JSON
  * packets. This is the SECOND vendor (after Techman) wired end-to-end against the
- * RobotDriver contract; Mitsubishi + Delta remain honest NotImplemented scaffolds.
+ * RobotDriver contract; Mitsubishi (MELFA R3) + Delta (ASCII/TCP) are now real
+ * drivers too (doc 24 Tier-2), leaving no NotImplemented robot vendor.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * RMI WIRE PROTOCOL (as implemented here)

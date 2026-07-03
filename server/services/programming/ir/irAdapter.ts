@@ -40,6 +40,7 @@ import { lintFlow, type LintDiagnostic } from "./irSafetyLinter";
 import { transpileFlow, defaultTargetFor, type TranspileTarget } from "./transpilers/registry";
 import { simKinematicEnabled, runGateForFlow, runGateForFlowAsync, type SimScene, type SimGateResult } from "../sim/kinematicSimGate";
 import { EMPTY_SCENE } from "../sim/sceneAdapter";
+import { dpcHilEnabled, runHilStage, type HilStageDeps } from "./hilGate";
 
 const IR_CAPS: ProgrammingCapability = {
   canCompile: true,
@@ -64,6 +65,17 @@ function toProgDiagnostic(d: LintDiagnostic): ProgDiagnostic {
 export class IrProgrammingAdapter implements ProgrammingAdapter {
   readonly kind = "ir-flow" as const;
   readonly capabilities: ProgrammingCapability = IR_CAPS;
+
+  /**
+   * Injectable HIL seams (validator + endpoint resolver + timing). Default {} → the HIL
+   * stage reads URSIM_* from env and uses the real validateUrscriptOnUrsim (production). A
+   * test injects a mock URSim here to exercise the gate without hardware.
+   */
+  private readonly hilDeps: HilStageDeps;
+
+  constructor(deps: { hil?: HilStageDeps } = {}) {
+    this.hilDeps = deps.hil ?? {};
+  }
 
   private parse(src: ProgramSource):
     | { ok: true; flow: Flow }
@@ -204,13 +216,88 @@ export class IrProgrammingAdapter implements ProgrammingAdapter {
     };
   }
 
-  async deploy(_build: BuildResult, _opts: ProgDeployOpts): Promise<ProgDeployResult> {
-    // No device path in D1 (like the stub). The gated service records 'simulated'.
+  async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    // ── BACKWARD-COMPAT: HIL flag OFF → EXACTLY today's behaviour ─────────────────────
+    // No device path in D1 (like the stub). The gated service records 'simulated'. Byte-for
+    // byte the pre-Tier-2 deploy result (no sim-gate/HIL re-run) so nothing changes when the
+    // flag is off (default).
+    if (!dpcHilEnabled()) {
+      return {
+        ok: true,
+        status: "simulated",
+        simulated: true,
+        detail: { note: "IR adapter (D1) has no device path; deploy is always simulated. Real push routes through the gated service in a later phase." },
+      };
+    }
+
+    // ── HIL PRE-DEPLOY STAGE (DPC_HIL_ENABLED on) — a SECOND gate that COMPOSES on top of ──
+    // the Simulation Gate; it NEVER replaces or weakens it. Ordering:
+    //     Simulation Gate PASS (hard precondition) → HIL (UR only) → deploy.
+    // Nothing here writes to real hardware: HIL validates on a VIRTUAL URSim controller and
+    // the deploy itself stays 'simulated' (the IR adapter has no real device path).
+    const flow = build.meta?.flow as Flow | undefined;
+    if (!flow) {
+      // No parsed flow in meta (e.g. reached via programmingService with a stripped
+      // BuildResult — the service already enforced the sim-gate before calling deploy). We
+      // cannot re-run the adapter-local gates here → honest simulated no-op.
+      return {
+        ok: true,
+        status: "simulated",
+        simulated: true,
+        detail: {
+          note: "DPC_HIL_ENABLED on but the build carries no parsed flow — HIL/sim-gate not re-run here (the service enforces the sim-gate before deploy). Recorded simulated.",
+          hil: { ran: false },
+        },
+      };
+    }
+
+    // 1) HARD PRECONDITION — the Simulation Gate must PASS. This is the SAME kinematic gate
+    //    simulate() runs; re-checked at the deploy boundary so HIL can NEVER bypass it. A
+    //    gate FAIL blocks the deploy and HIL is NOT run. (Additive enforcement — not a
+    //    relaxation: the sim-gate remains the hard precondition.)
+    const scene = ((opts as { scene?: SimScene }).scene) ?? EMPTY_SCENE;
+    const gate = await runGateForFlowAsync(flow, scene);
+    if (!gate.pass) {
+      return {
+        ok: false,
+        status: "rejected",
+        simulated: true,
+        error: "Simulation Gate not passed — refusing deploy (HIL pre-stage not run).",
+        detail: { simGatePassed: false, simGate: gate, hil: { ran: false, reason: "sim-gate failed; HIL skipped" } },
+      };
+    }
+
+    // 2) HIL SECOND GATE (UR only) — send the EXACT transpiled URScript to a virtual URSim
+    //    controller and require accept/run. A broken transpile is rejected there → HIL fails.
+    const targetIsUr =
+      String(build.meta?.target) === "urscript" || String(build.meta?.targetDeviceType) === "universal-robots";
+    const urscript = typeof build.meta?.code === "string" ? (build.meta.code as string) : "";
+    const hil = await runHilStage(urscript, targetIsUr, this.hilDeps);
+    if (!hil.pass) {
+      // HIL failed (or could not run, fail-closed) → block the (simulated) deploy.
+      const status: ProgDeployResult["status"] = hil.ran ? "failed" : "rejected";
+      return {
+        ok: false,
+        status,
+        simulated: true,
+        error: `HIL pre-deploy gate failed: ${hil.reason}`,
+        detail: { simGatePassed: true, hil },
+      };
+    }
+
+    // 3) Sim-gate PASS + HIL PASS (or not-applicable) → proceed with the still-simulated deploy.
     return {
       ok: true,
       status: "simulated",
       simulated: true,
-      detail: { note: "IR adapter (D1) has no device path; deploy is always simulated. Real push routes through the gated service in a later phase." },
+      detail: {
+        note:
+          "Sim-gate PASS + HIL pre-deploy stage " +
+          (hil.ran ? "PASS" : "not-applicable") +
+          " — deploy recorded simulated (IR adapter has no real device path).",
+        simGatePassed: true,
+        hil,
+      },
     };
   }
 }

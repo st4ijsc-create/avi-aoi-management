@@ -3,7 +3,8 @@
  *
  * This is the first vendor robot driver wired end-to-end (per audit doc 07 §②:
  * "wire one real robot vendor to validate the dry-run→live path"). The other
- * vendor drivers (Fanuc / Mitsubishi / Delta) remain NotImplemented scaffolds.
+ * vendor drivers (Fanuc RMI, Mitsubishi MELFA R3, Delta ASCII/TCP) are now wired
+ * end-to-end too (doc 24 C4 + Tier-2).
  *
  * ──────────────────────────────────────────────────────────────────────────
  * INTEGRATION APPROACH (TM Robot / TMflow)

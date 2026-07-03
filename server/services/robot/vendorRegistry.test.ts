@@ -1,9 +1,10 @@
 /**
- * doc 24 C4 — robot vendor coverage:
+ * doc 24 C4 / Tier-2 — robot vendor coverage:
  *   (a) the DB `robotvendorenum` now includes "vda5050" (migration 0161), and the
  *       vda5050 driver is SELECTABLE through the standard robot driver registry;
  *   (b) FANUC is now a REAL RMI driver (not a NotImplemented scaffold);
- *   (c) Mitsubishi/Delta remain honest scaffolds (connect() throws explicitly).
+ *   (c) Mitsubishi (MELFA R3) and Delta (ASCII/TCP) are now REAL drivers too — they
+ *       resolve to their real classes, not the NotImplemented scaffold.
  */
 import { describe, it, expect } from "vitest";
 import { robotVendorEnum } from "../../../drizzle/schema/robot";
@@ -32,13 +33,22 @@ describe("robot vendor enum + registry (doc 24 C4)", () => {
     expect(driver.vendor).toBe("fanuc");
   });
 
-  it("mitsubishi/delta remain honest scaffolds — connect throws explicitly", async () => {
-    for (const vendor of ["mitsubishi", "delta"] as const) {
-      const driver = createRobotDriver(vendor);
-      await expect(driver.connect({ endpoint: "127.0.0.1" })).rejects.toThrow(/not (wired|available)|not implemented|scaffold/i);
-      // runJob is a non-throwing honest failure, not a silent success
+  it("mitsubishi + delta now resolve to REAL drivers (not the NotImplemented scaffold)", async () => {
+    const mit = createRobotDriver("mitsubishi");
+    expect(mit.constructor.name).toBe("MitsubishiDriver");
+    expect(mit.vendor).toBe("mitsubishi");
+
+    const delta = createRobotDriver("delta");
+    expect(delta.constructor.name).toBe("DeltaDriver");
+    expect(delta.vendor).toBe("delta");
+
+    // Neither is the scaffold — but runJob (not connected) is still a non-throwing
+    // honest failure, not a silent success or a throw.
+    for (const driver of [mit, delta]) {
+      expect(driver.constructor.name).not.toBe("NotImplementedRobotDriver");
       const res = await driver.runJob({ jobType: "home" });
       expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/not connected/);
     }
   });
 });

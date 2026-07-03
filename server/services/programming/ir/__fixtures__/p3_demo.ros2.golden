@@ -1,13 +1,56 @@
-# ROS2 (rclpy) node generated from IR flow "p3_demo" v1
-# NOTE: structural skeleton — bind to a concrete MoveIt config before use.
-# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+# ROS2 MoveIt program generated from IR flow "p3_demo" v1
+# BOUND to MoveIt: motion (if any) emits real set_pose_target / set_joint_value_target
+#   -> plan() -> execute() on a MoveGroupCommander; I/O via std_msgs publishers;
+#   if/loop -> Python control flow. Each group carries its "# [IR ...]" marker.
+# HONEST: deterministic GENERATED MoveIt Python source (not a live ROS2 runtime) —
+#   bind the planning group + IO topics to your MoveIt config and validate before use.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL + sim-gate).
 import rclpy
 from rclpy.node import Node
+import time
+from std_msgs.msg import Bool, Float64
 
 
 class P3DemoNode(Node):
     def __init__(self):
         super().__init__("p3_demo")
+        self._io_pubs = {}
+        self._io_state = {}
+
+    def _io_pub(self, name, msg_type):
+        pub = self._io_pubs.get(name)
+        if pub is None:
+            pub = self.create_publisher(msg_type, "io/" + str(name), 10)
+            self._io_pubs[name] = pub
+        return pub
+
+    def set_io(self, signal, value):
+        msg = Bool()
+        msg.data = bool(value)
+        self._io_pub(signal, Bool).publish(msg)
+
+    def set_analog(self, channel, value):
+        msg = Float64()
+        msg.data = float(value)
+        self._io_pub(channel, Float64).publish(msg)
+
+    def wait_until(self, predicate, timeout_ms, poll_ms):
+        deadline = time.time() + timeout_ms / 1000.0
+        while not predicate():
+            if time.time() >= deadline:
+                break
+            rclpy.spin_once(self, timeout_sec=poll_ms / 1000.0)
+
+    def pid_control(self, output_channel, input_channel, setpoint, kp, ki, kd, output_min, output_max):
+        pv = self._io_state.get(str(input_channel), 0.0)
+        err = setpoint - pv
+        self._pid_i = getattr(self, "_pid_i", 0.0) + err
+        deriv = err - getattr(self, "_pid_prev", 0.0)
+        out = kp * err + ki * self._pid_i + kd * deriv
+        out = max(output_min, min(output_max, out))
+        self.set_analog(output_channel, out)
+        self._pid_prev = err
+        return out
 
     def run(self):
         # [IR counter #b1]
@@ -15,11 +58,11 @@ class P3DemoNode(Node):
         # [IR set_variable #b2]
         target = 5
         # [IR set_analog #b3]
-        self.set_analog("AO1", (target + 1), unit="V")
+        self.set_analog("AO1", (target + 1))  # unit=V
         # [IR counter #b4]
         cycles = cycles + 1
         # [IR wait #b5]
-        self.wait_ms((target * 100))
+        time.sleep(((target * 100)) / 1000.0)
         # [IR wait_until #b6]
         self.wait_until(lambda: (cycles >= target), timeout_ms=5000, poll_ms=100)
         # [IR set_output #b7]
