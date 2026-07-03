@@ -35,6 +35,14 @@
  *   • pid_control   — a first-class PID block (setpoint, Kp/Ki/Kd, bounded output channel).
  * Existing param slots (wait.ms, set_output.value) may now ALSO carry an expression
  * (numericOrExprSchema) — additive + backward-compatible (bare literals parse unchanged).
+ *
+ * Doc 24 Tier-1c — reusable FUNCTION BLOCKS (POUs, the CODESYS/TIA "reusable POU" idea):
+ *   • function_blocks — flow-level DEFINITIONS: a named, parameterized sub-flow (a typed
+ *     {name,kind,type} param list + a recursively-IR body) declared ONCE.
+ *   • call_block      — a LEAF block that INVOKES a defined function_block by name with
+ *     per-parameter argument bindings (literal OR a safe irExpr). Lowered to a URScript
+ *     procedure call / a ROS2 method call. Additive + backward-compatible: a flow with no
+ *     definitions and no call_block transpiles byte-identically to before.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
@@ -192,6 +200,29 @@ export const pidControlBlockSchema = z
     message: "pid_control output_min must be < output_max",
   });
 
+// ── Tier-1c: reusable Function Blocks (POUs) — the CALL site ────────────────────
+
+/** One argument binding for a call_block: a declared parameter name → a literal|expression. */
+export const callArgSchema = z.object({
+  name: z.string().min(1),
+  value: numericOrExprSchema,
+});
+export type CallArg = z.infer<typeof callArgSchema>;
+
+/**
+ * Invoke a defined function_block by name with argument bindings. A LEAF block (no child
+ * slots — the callee's body lives in its definition, not inline). Undefined-fb / arg
+ * mismatch / recursion are caught by the semantic linter, not the shape.
+ */
+export const callBlockSchema = z.object({
+  ...baseBlockFields,
+  type: z.literal("call_block"),
+  /** name of the function_block being invoked (must match a flow-level definition). */
+  fb_name: z.string().min(1),
+  args: z.array(callArgSchema).default([]),
+});
+export type CallBlock = z.infer<typeof callBlockSchema>;
+
 // if_condition + loop nest a body of blocks → recursive union via z.lazy.
 export const ifConditionBlockSchema: z.ZodType<IfConditionBlock> = z.lazy(() =>
   z.object({
@@ -236,6 +267,8 @@ export const irBlockSchema: z.ZodType<IrBlock> = z.lazy(() =>
     waitUntilBlockSchema,
     setAnalogBlockSchema,
     pidControlBlockSchema,
+    // Tier-1c: reusable function-block call site (a leaf)
+    callBlockSchema,
   ]),
 );
 
@@ -281,12 +314,53 @@ export type IrBlock =
   | CounterBlock
   | WaitUntilBlock
   | SetAnalogBlock
-  | PidControlBlock;
+  | PidControlBlock
+  // Tier-1c: reusable function-block call site (a leaf)
+  | CallBlock;
 
 export type IrBlockType = IrBlock["type"];
 
 // Re-export the expression types so consumers import them from the IR model surface.
 export type { Expr, NumericOrExpr } from "./irExpr";
+
+// ── Tier-1c: reusable Function Blocks (POUs) — the DEFINITION ───────────────────
+
+/** IEC-ish parameter direction of a function-block parameter. */
+export const fbParamKindSchema = z.enum(["input", "output", "inout"]);
+export type FbParamKind = z.infer<typeof fbParamKindSchema>;
+
+/** A simple static type tag for a function-block parameter (drives light arg checks). */
+export const fbParamTypeSchema = z.enum(["number", "bool", "signal"]);
+export type FbParamType = z.infer<typeof fbParamTypeSchema>;
+
+/** One typed parameter of a function-block definition (IEC-ish {name,kind,type}). */
+export const fbParamSchema = z.object({
+  name: z.string().min(1),
+  kind: fbParamKindSchema.default("input"),
+  type: fbParamTypeSchema.default("number"),
+});
+export type FbParam = z.infer<typeof fbParamSchema>;
+
+/**
+ * A reusable function-block DEFINITION (a named, parameterized sub-flow / POU). The body is
+ * recursively the same IR block list, so a definition can itself contain motion / IO /
+ * control / (non-recursive) call_block blocks. Declared ONCE at the flow level, invoked by
+ * a `call_block`. Hand-written interface (its `body` is the recursive IrBlock union).
+ */
+export interface FunctionBlockDef {
+  id?: string;
+  name: string;
+  params: FbParam[];
+  body: IrBlock[];
+}
+export const functionBlockDefSchema: z.ZodType<FunctionBlockDef> = z.lazy(() =>
+  z.object({
+    id: z.string().optional(),
+    name: z.string().min(1),
+    params: z.array(fbParamSchema),
+    body: z.array(irBlockSchema),
+  }),
+);
 
 // ── Flow (the top-level program) ────────────────────────────────────────────────
 
@@ -301,6 +375,12 @@ export const flowSchema = z.object({
   author: z.string().min(1).optional(),
   /** Optional link to the equipment CommandDescriptor / capability this flow drives. */
   linked_capability: z.string().min(1).optional(),
+  /**
+   * Tier-1c: reusable function-block DEFINITIONS (POUs), each callable from `blocks` (or
+   * another definition's body) via a `call_block`. OPTIONAL + additive — a pre-Tier-1c flow
+   * omits this key entirely and round-trips / transpiles byte-identically.
+   */
+  function_blocks: z.array(functionBlockDefSchema).optional(),
   blocks: z.array(irBlockSchema),
 });
 export type Flow = z.infer<typeof flowSchema>;
@@ -354,6 +434,11 @@ export function walkBlocks(
  * Assign a stable deterministic id (b1, b2, …) to EVERY block that lacks one, in
  * depth-first order. Returns a NEW Flow (does not mutate the input). Idempotent for a
  * flow that is already fully id'd.
+ *
+ * Function-block bodies are id'd with the SAME running `b` counter AFTER the main blocks
+ * (still unique + deterministic); definitions themselves get `fb1, fb2, …`. A flow with no
+ * `function_blocks` key takes the early-return path → byte-identical to the pre-Tier-1c
+ * behaviour (no injected empty array).
  */
 export function assignIds(flow: Flow): Flow {
   let counter = 0;
@@ -368,14 +453,23 @@ export function assignIds(flow: Flow): Flow {
     }
     return { ...block, id };
   };
-  return { ...flow, blocks: flow.blocks.map(withId) };
+  const blocks = flow.blocks.map(withId);
+  if (!flow.function_blocks || flow.function_blocks.length === 0) {
+    return { ...flow, blocks };
+  }
+  let fbCounter = 0;
+  const function_blocks: FunctionBlockDef[] = flow.function_blocks.map((fb) => {
+    fbCounter += 1;
+    return { ...fb, id: fb.id ?? `fb${fbCounter}`, body: fb.body.map(withId) };
+  });
+  return { ...flow, blocks, function_blocks };
 }
 
-/** Total block count (including nested). */
+/** Total block count (main blocks + every function-block body, all nested). */
 export function countBlocks(flow: Flow): number {
   let n = 0;
-  walkBlocks(flow.blocks, () => {
-    n += 1;
-  });
+  const tally = () => { n += 1; };
+  walkBlocks(flow.blocks, tally);
+  for (const fb of flow.function_blocks ?? []) walkBlocks(fb.body, tally);
   return n;
 }

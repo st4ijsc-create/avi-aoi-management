@@ -18,7 +18,7 @@
  * mm/s → m/s.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, CompareOperator, NumericOrExpr } from "../irModel";
+import type { Flow, IrBlock, CompareOperator, NumericOrExpr, FunctionBlockDef } from "../irModel";
 import { assignIds } from "../irModel";
 import { isExpr, renderSlot, sanitizeVar } from "../irExpr";
 
@@ -72,6 +72,8 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
   const lines: string[] = [];
   const irCommentMap: Record<string, string> = {};
   const IND = "  ";
+  // Tier-1c: name → definition, so a call_block can order its by-name args positionally.
+  const fbByName = new Map<string, FunctionBlockDef>((flow.function_blocks ?? []).map((fb) => [fb.name, fb]));
 
   const comment = (block: IrBlock, indent: string) => {
     const marker = irComment(block);
@@ -156,6 +158,17 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
         lines.push(`${indent}set_analog_out(${block.channel}, ${val})${unit}`);
         break;
       }
+      case "call_block": {
+        // Invoke the URScript procedure emitted for the definition. IR args are by NAME;
+        // URScript procs are POSITIONAL → order the args by the definition's param list.
+        const def = fbByName.get(block.fb_name);
+        const argByName = new Map(block.args.map((a) => [a.name, a.value] as const));
+        const ordered = def
+          ? def.params.map((p) => slotUr(argByName.get(p.name) ?? 0))
+          : block.args.map((a) => slotUr(a.value));
+        lines.push(`${indent}${sanitizeName(block.fb_name)}(${ordered.join(", ")})`);
+        break;
+      }
       case "pid_control": {
         // URScript has no native PID primitive — emit a clearly-marked, deterministic
         // skeleton discrete-PID step (still under the # [IR pid_control #id] provenance
@@ -206,6 +219,15 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
   lines.push(`# URScript generated from IR flow "${flow.flow_id}" v${flow.version}`);
   lines.push(`# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.`);
   lines.push(`# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).`);
+  // Tier-1c: reusable function-block DEFINITIONS → URScript procedures, emitted ONCE before
+  // the main routine. A flow with none emits nothing here → byte-identical to pre-Tier-1c.
+  for (const fb of flow.function_blocks ?? []) {
+    lines.push(`# [IR function_block #${fb.id ?? "?"}] ${fb.name}`);
+    lines.push(`def ${sanitizeName(fb.name)}(${fb.params.map((p) => sanitizeVar(p.name)).join(", ")}):`);
+    for (const b of fb.body) emit(b, IND);
+    lines.push(`end`);
+    lines.push(``);
+  }
   lines.push(`def ${sanitizeName(flow.flow_id)}():`);
   for (const block of flow.blocks) emit(block, IND);
   lines.push(`end`);

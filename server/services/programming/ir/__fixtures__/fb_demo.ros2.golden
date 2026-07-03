@@ -1,0 +1,23 @@
+# ROS2 (rclpy) node generated from IR flow "fb_demo" v1
+# NOTE: structural skeleton — bind to a concrete MoveIt config before use.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+import rclpy
+from rclpy.node import Node
+
+
+class FbDemoNode(Node):
+    def __init__(self):
+        super().__init__("fb_demo")
+
+    # [IR function_block #fb1] pulse
+    def pulse(self, level, hold_ms):
+        # [IR set_analog #d1]
+        self.set_analog("AO1", level, unit="V")
+        # [IR wait #d2]
+        self.wait_ms(hold_ms)
+
+    def run(self):
+        # [IR call_block #c1]
+        self.pulse(5, 100)
+        # [IR call_block #c2]
+        self.pulse(8, 250)

@@ -304,7 +304,9 @@ export const twinRouter = router({
     }),
 
   // ── T3 USD (USDA) EXPORT (read-only, interchange) ──────────────────────────
-  //   Emit the scene-graph as a valid USDA (ASCII USD) stage for Omniverse/Isaac.
+  //   Emit the scene-graph as a valid USDA (ASCII USD) stage for Omniverse/Isaac —
+  //   enriched with UsdPreviewSurface materials (per device state) + TRUE per-joint
+  //   kinematics, and an OPT-IN UsdPhysics layer (rigid bodies + articulation joints).
   //   Returns the text + basic metrics (no device control, no writes).
   usdExport: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
@@ -313,14 +315,26 @@ export const twinRouter = router({
         factoryId: z.number().int().positive(),
         upAxis: z.enum(["Y", "Z"]).optional(),
         metersPerUnit: z.number().positive().max(1000).optional(),
+        /** Emit UsdPreviewSurface materials + bind them per device state (default on). */
+        includeMaterials: z.boolean().optional(),
+        /** Emit the opt-in UsdPhysics layer (PhysicsScene + rigid bodies + joints). */
+        includePhysics: z.boolean().optional(),
       }),
     )
     .query(async ({ input }) => {
       const usda = await buildFactoryUsda(input.factoryId, {
         upAxis: input.upAxis,
         metersPerUnit: input.metersPerUnit,
+        includeMaterials: input.includeMaterials,
+        includePhysics: input.includePhysics,
       });
-      return { usda, byteLength: Buffer.byteLength(usda, "utf8"), format: "usda" as const };
+      return {
+        usda,
+        byteLength: Buffer.byteLength(usda, "utf8"),
+        format: "usda" as const,
+        includedPhysics: input.includePhysics ?? false,
+        includedMaterials: input.includeMaterials ?? true,
+      };
     }),
 
   // ── REPLAY (read-only, size-capped) ────────────────────────────────────────

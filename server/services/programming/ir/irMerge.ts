@@ -294,6 +294,11 @@ export function mergeFlows(baseInput: Flow, oursInput: Flow, theirsInput: Flow):
   if (mergedAuthor !== undefined) merged.author = mergedAuthor;
   const mergedCap = mergeScalar("linked_capability", baseInput.linked_capability, oursInput.linked_capability, theirsInput.linked_capability, conflicts);
   if (mergedCap !== undefined) merged.linked_capability = mergedCap;
+  // Tier-1c: block-level diff/merge operates on the main `blocks` tree only; carry the
+  // function-block DEFINITIONS through (prefer ours → theirs → base) so a merge never
+  // silently drops a POU. A deep per-definition merge is a later slice.
+  const mergedFbs = oursInput.function_blocks ?? theirsInput.function_blocks ?? baseInput.function_blocks;
+  if (mergedFbs !== undefined) merged.function_blocks = mergedFbs;
 
   stats.conflicted = conflicts.length;
   return { merged, conflicts, clean: conflicts.length === 0, stats };

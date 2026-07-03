@@ -45,6 +45,7 @@ import {
   Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
   FolderOpen, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare, GitMerge,
+  Boxes, ArrowLeft, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -53,8 +54,12 @@ import {
   EXPR_BINOPS, EXPR_OP_LABEL, isExpr,
   newBlock, findBlock, updateBlock, deleteBlock, moveBlock, addChild, cloneBlocks,
   reorderRelativeToSibling, childSlots, getChildren, summarize,
+  // Tier-1c: reusable function-block (POU) model + helpers.
+  FB_PARAM_KINDS, FB_PARAM_TYPES,
+  newFunctionBlock, newFbParam, addFunctionBlock, updateFunctionBlock, deleteFunctionBlock, defaultArgsFor,
   type Pose, type CompareOp, type IrBlock, type BlockType, type Slot, type Flow,
   type TargetDeviceType, type Expr, type ExprBinOp, type NumericOrExpr,
+  type FunctionBlockDef, type FbParam, type CallArg, type CallBlock,
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
@@ -324,7 +329,73 @@ function parseLeaf(raw: string): Expr {
   return { kind: "var", name: s };
 }
 
-function Inspector({ block, onPatch, t }: { block: IrBlock; onPatch: (patch: Partial<IrBlock>) => void; t: TFunction }) {
+// ── Tier-1c: call_block arg-binding inspector (pick a definition + bind its inputs) ──
+function CallBlockInspector({
+  block, functionBlocks, onPatch, t,
+}: {
+  block: CallBlock;
+  functionBlocks: FunctionBlockDef[];
+  onPatch: (patch: Partial<IrBlock>) => void;
+  t: TFunction;
+}) {
+  const def = functionBlocks.find((f) => f.name === block.fb_name) ?? null;
+  const inputParams = def ? def.params.filter((p) => p.kind !== "output") : [];
+  const argValue = (name: string): NumericOrExpr => block.args.find((a) => a.name === name)?.value ?? 0;
+  const setArg = (name: string, value: NumericOrExpr) => {
+    // Rebuild args in the definition's declared order (single source of truth = the def).
+    const next: CallArg[] = def
+      ? inputParams.map((p) => ({ name: p.name, value: p.name === name ? value : argValue(p.name) }))
+      : [...block.args.filter((a) => a.name !== name), { name, value }];
+    onPatch({ args: next } as Partial<IrBlock>);
+  };
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <Label className="text-[11px]">{t("ir.call.fb", "Function block")}</Label>
+        {functionBlocks.length === 0 ? (
+          <p className="rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
+            {t("ir.call.none", "No function blocks defined yet. Create one in the Function blocks panel below, then bind it here.")}
+          </p>
+        ) : (
+          <Select
+            value={block.fb_name || undefined}
+            onValueChange={(v) => {
+              const d = functionBlocks.find((f) => f.name === v);
+              onPatch({ fb_name: v, args: d ? defaultArgsFor(d) : [] } as Partial<IrBlock>);
+            }}
+          >
+            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={t("ir.call.pick", "Pick a function block…")} /></SelectTrigger>
+            <SelectContent>{functionBlocks.map((f) => <SelectItem key={f.id ?? f.name} value={f.name}>{f.name}</SelectItem>)}</SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {def && inputParams.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("ir.call.args", "Arguments")}</div>
+          {inputParams.map((p) => (
+            <ExprField
+              key={p.name}
+              label={`${p.name} · ${p.type}${p.kind === "inout" ? " (inout)" : ""}`}
+              value={argValue(p.name)}
+              allowBool={p.type === "bool"}
+              onChange={(v) => setArg(p.name, v)}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
+      {def && inputParams.length === 0 && (
+        <p className="text-[10px] text-muted-foreground">{t("ir.call.noParams", "This function block takes no input parameters.")}</p>
+      )}
+      <p className="text-[10px] text-muted-foreground">
+        {t("ir.call.hint", "Invokes the definition once per call site. The linter checks the name, argument count/type, and forbids recursion.")}
+      </p>
+    </div>
+  );
+}
+
+function Inspector({ block, functionBlocks, onPatch, t }: { block: IrBlock; functionBlocks: FunctionBlockDef[]; onPatch: (patch: Partial<IrBlock>) => void; t: TFunction }) {
   const patchPose = (k: keyof Pose, v: number) => {
     if (block.type !== "move_linear") return;
     onPatch({ target_pose: { ...block.target_pose, [k]: v } } as Partial<IrBlock>);
@@ -567,6 +638,10 @@ function Inspector({ block, onPatch, t }: { block: IrBlock; onPatch: (patch: Par
           <p className="text-[10px] text-muted-foreground">{t("ir.field.bodyHint", "Add blocks into the loop body on the canvas.")}</p>
         </div>
       )}
+
+      {block.type === "call_block" && (
+        <CallBlockInspector block={block} functionBlocks={functionBlocks} onPatch={onPatch} t={t} />
+      )}
     </div>
   );
 }
@@ -665,11 +740,131 @@ function TranspilePreview({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// FUNCTION BLOCKS (POUs) — define reusable, parameterized sub-flows once
+// ══════════════════════════════════════════════════════════════════════════════
+function FunctionBlocksPanel({
+  functionBlocks, activeFbId, diagsByBlock, canEdit,
+  onNew, onUpdateFb, onDeleteFb, onEditBody, t,
+}: {
+  functionBlocks: FunctionBlockDef[];
+  activeFbId: string | null;
+  diagsByBlock: Map<string, IrDiagnostic[]>;
+  canEdit: boolean;
+  onNew: () => void;
+  onUpdateFb: (fbId: string, patch: Partial<FunctionBlockDef>) => void;
+  onDeleteFb: (fbId: string) => void;
+  onEditBody: (fbId: string) => void;
+  t: TFunction;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          {t("ir.fb.intro", "Define a named, parameterized sub-flow ONCE, then invoke it anywhere with a Call function block. Edit a definition's body on the canvas above.")}
+        </p>
+        <Button size="sm" variant="outline" onClick={onNew} disabled={!canEdit}>
+          <Plus className="mr-1 h-3.5 w-3.5" />{t("ir.fb.new", "New function block")}
+        </Button>
+      </div>
+
+      {functionBlocks.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.fb.empty", "No function blocks yet. Create one to reuse a sub-flow across call sites.")}</p>
+      ) : (
+        <div className="space-y-2">
+          {functionBlocks.map((fb) => {
+            const active = fb.id === activeFbId;
+            // Surface any lint error/warn on this definition's body blocks.
+            let errs = 0; let warns = 0;
+            const scan = (blocks: IrBlock[]) => {
+              for (const b of blocks) {
+                for (const d of (b.id ? diagsByBlock.get(b.id) ?? [] : [])) {
+                  if (d.severity === "error") errs += 1; else warns += 1;
+                }
+                for (const slot of childSlots(b)) scan(getChildren(b, slot));
+              }
+            };
+            scan(fb.body);
+            return (
+              <div key={fb.id} className={`rounded-md border p-2.5 ${active ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Boxes className="h-4 w-4 text-primary" />
+                  <Input
+                    className="h-8 w-48 font-mono text-sm"
+                    value={fb.name}
+                    disabled={!canEdit}
+                    onChange={(e) => fb.id && onUpdateFb(fb.id, { name: e.target.value })}
+                    placeholder="block_name"
+                  />
+                  <span className="font-mono text-[10px] text-muted-foreground">{fb.id}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {fb.params.length} {t("ir.fb.paramsShort", "param(s)")} · {fb.body.length} {t("ir.fb.bodyShort", "body block(s)")}
+                  </span>
+                  {errs > 0 && <Badge variant="outline" className="border-destructive/40 text-destructive">{errs} {t("ir.errorsShort", "error(s)")}</Badge>}
+                  {errs === 0 && warns > 0 && <Badge variant="outline" className="border-warning/40 text-warning">{warns} {t("ir.warnsShort", "warning(s)")}</Badge>}
+                  <div className="ml-auto flex items-center gap-1">
+                    <Button size="sm" variant={active ? "secondary" : "outline"} className="h-7" onClick={() => fb.id && onEditBody(fb.id)}>
+                      <Pencil className="mr-1 h-3.5 w-3.5" />{active ? t("ir.fb.editing", "Editing body") : t("ir.fb.editBody", "Edit body")}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canEdit} onClick={() => fb.id && onDeleteFb(fb.id)} aria-label={t("common.delete", "Delete")}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Parameters editor */}
+                <div className="mt-2 space-y-1.5 border-t border-dashed border-border/70 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("ir.fb.params", "Parameters")}</span>
+                    <Button size="sm" variant="ghost" className="h-6 text-[11px]" disabled={!canEdit}
+                      onClick={() => fb.id && onUpdateFb(fb.id, { params: [...fb.params, newFbParam(fb.params)] })}>
+                      <Plus className="mr-1 h-3 w-3" />{t("ir.fb.addParam", "Add parameter")}
+                    </Button>
+                  </div>
+                  {fb.params.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">{t("ir.fb.noParams", "No parameters (a zero-arg subroutine).")}</p>
+                  ) : (
+                    fb.params.map((p, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-1.5">
+                        <Input
+                          className="h-7 font-mono text-[12px]"
+                          value={p.name}
+                          disabled={!canEdit}
+                          onChange={(e) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, name: e.target.value } : q) })}
+                        />
+                        <Select value={p.kind} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, kind: v as FbParam["kind"] } : q) })}>
+                          <SelectTrigger className="h-7 w-24 text-[12px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>{FB_PARAM_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <Select value={p.type} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, type: v as FbParam["type"] } : q) })}>
+                          <SelectTrigger className="h-7 w-24 text-[12px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>{FB_PARAM_TYPES.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canEdit}
+                          onClick={() => fb.id && onUpdateFb(fb.id, { params: fb.params.filter((_, j) => j !== i) })} aria-label={t("common.delete", "Delete")}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 function emptyFlow(): Flow {
   return { flow_id: "flow-1", target_device_type: "universal-robots", version: 1, blocks: [] };
 }
+
+/** The editing scope: the main flow, or one function-block's body. */
+type EditScope = { kind: "main" } | { kind: "fb"; fbId: string };
 
 export default function IrEditor() {
   const { t } = useTranslation();
@@ -681,6 +876,9 @@ export default function IrEditor() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<"inspector" | "preview">("inspector");
   const [saveProjectId, setSaveProjectId] = useState<string>("");
+  // Tier-1c: the canvas edits either the MAIN flow or one function-block's body. Both are
+  // rendered by the SAME tree/graph over the SAME AST — only the active block list differs.
+  const [editScope, setEditScope] = useState<EditScope>({ kind: "main" });
   // View toggle: the node-GRAPH canvas is the default (the "kéo thả khối" surface); the
   // nested TREE stays available. Both render the SAME AST via the SAME helpers.
   const [viewMode, setViewMode] = useState<"graph" | "tree">("graph");
@@ -752,34 +950,81 @@ export default function IrEditor() {
     onError: onMutationError,
   });
 
-  // ── Mutators over the flow tree ────────────────────────────────────────────
-  const selectedBlock = selectedId ? findBlock(flow.blocks, selectedId) : null;
+  // ── Editing scope (main flow OR a function-block body) ─────────────────────
+  const functionBlocks = flow.function_blocks ?? [];
+  const activeFb = editScope.kind === "fb" ? functionBlocks.find((fb) => fb.id === editScope.fbId) ?? null : null;
+  // If the active fb was deleted out from under us, fall back to the main flow.
+  useEffect(() => {
+    if (editScope.kind === "fb" && !activeFb) setEditScope({ kind: "main" });
+  }, [editScope, activeFb]);
+  const activeBlocks = editScope.kind === "main" ? flow.blocks : (activeFb?.body ?? []);
+  // The tree + graph render whatever `flow.blocks` they are given — feed them the active
+  // list so ONE set of views serves both the main flow and a function-block body.
+  const canvasFlow: Flow = editScope.kind === "main" ? flow : { ...flow, blocks: activeBlocks };
+
+  // ── Mutators over the ACTIVE block list (main flow OR the active fb body) ────
+  const selectedBlock = selectedId ? findBlock(activeBlocks, selectedId) : null;
+
+  /** Apply a pure block-list transform to whichever list is currently being edited. */
+  const mutateActiveBlocks = useCallback((fn: (blocks: IrBlock[]) => IrBlock[]) => {
+    setFlow((f) => {
+      if (editScope.kind === "main") return { ...f, blocks: fn(f.blocks) };
+      return {
+        ...f,
+        function_blocks: (f.function_blocks ?? []).map((fb) => (fb.id === editScope.fbId ? { ...fb, body: fn(fb.body) } : fb)),
+      };
+    });
+  }, [editScope]);
 
   const addTopLevel = useCallback((type: BlockType) => {
     const b = newBlock(type);
-    setFlow((f) => ({ ...f, blocks: [...cloneBlocks(f.blocks), b] }));
+    mutateActiveBlocks((blocks) => [...cloneBlocks(blocks), b]);
     setSelectedId(b.id ?? null);
-  }, []);
+  }, [mutateActiveBlocks]);
   const handleAddChild = useCallback((parentId: string, slot: Slot, type: BlockType) => {
     const b = newBlock(type);
-    setFlow((f) => ({ ...f, blocks: addChild(f.blocks, parentId, slot, b) }));
+    mutateActiveBlocks((blocks) => addChild(blocks, parentId, slot, b));
     setSelectedId(b.id ?? null);
-  }, []);
+  }, [mutateActiveBlocks]);
   const handlePatch = useCallback((patch: Partial<IrBlock>) => {
     if (!selectedId) return;
-    setFlow((f) => ({ ...f, blocks: updateBlock(f.blocks, selectedId, patch) }));
-  }, [selectedId]);
+    mutateActiveBlocks((blocks) => updateBlock(blocks, selectedId, patch));
+  }, [mutateActiveBlocks, selectedId]);
   const handleDelete = useCallback((id: string) => {
-    setFlow((f) => ({ ...f, blocks: deleteBlock(f.blocks, id) }));
+    mutateActiveBlocks((blocks) => deleteBlock(blocks, id));
     setSelectedId((cur) => (cur === id ? null : cur));
-  }, []);
+  }, [mutateActiveBlocks]);
   const handleMove = useCallback((id: string, dir: -1 | 1) => {
-    setFlow((f) => ({ ...f, blocks: moveBlock(f.blocks, id, dir) }));
-  }, []);
+    mutateActiveBlocks((blocks) => moveBlock(blocks, id, dir));
+  }, [mutateActiveBlocks]);
   // Graph canvas: reconnecting a `next` edge between two SIBLINGS reorders them (no-op
   // across lists). Routes through the same immutable AST helper as the tree's up/down.
   const handleReorderToSibling = useCallback((sourceId: string, targetId: string) => {
-    setFlow((f) => ({ ...f, blocks: reorderRelativeToSibling(f.blocks, sourceId, targetId) }));
+    mutateActiveBlocks((blocks) => reorderRelativeToSibling(blocks, sourceId, targetId));
+  }, [mutateActiveBlocks]);
+
+  // ── Function-block (POU) definition mutators (flow-level) ───────────────────
+  const handleNewFb = useCallback(() => {
+    const def = newFunctionBlock(flow.function_blocks ?? []);
+    setFlow((f) => addFunctionBlock(f, def));
+    // jump straight into editing the new definition's body.
+    setEditScope({ kind: "fb", fbId: def.id! });
+    setSelectedId(null);
+  }, [flow.function_blocks]);
+  const handleUpdateFb = useCallback((fbId: string, patch: Partial<FunctionBlockDef>) => {
+    setFlow((f) => updateFunctionBlock(f, fbId, patch));
+  }, []);
+  const handleDeleteFb = useCallback((fbId: string) => {
+    setFlow((f) => deleteFunctionBlock(f, fbId));
+    setEditScope((s) => (s.kind === "fb" && s.fbId === fbId ? { kind: "main" } : s));
+  }, []);
+  const handleEditBody = useCallback((fbId: string) => {
+    setEditScope({ kind: "fb", fbId });
+    setSelectedId(null);
+  }, []);
+  const backToMain = useCallback(() => {
+    setEditScope({ kind: "main" });
+    setSelectedId(null);
   }, []);
 
   const loadFlow = async (artifactId: number) => {
@@ -931,6 +1176,12 @@ export default function IrEditor() {
                   ? t("ir.paletteHintGraph", "Drag a block onto the canvas — drop on an if/loop to nest it.")
                   : t("ir.paletteHintTree", "Click a block to append it at the top level.")}
               </p>
+              {editScope.kind === "fb" && (
+                <p className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] text-primary">
+                  <Boxes className="h-3 w-3" />
+                  {t("ir.paletteHintFb", "Adding to function block “{{name}}”.", { name: activeFb?.name ?? "" })}
+                </p>
+              )}
               {PALETTE_GROUPS.map((g) => (
                 <div key={g.label.def} className="space-y-1">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t(g.label.key, g.label.def)}</div>
@@ -963,41 +1214,51 @@ export default function IrEditor() {
           {/* CENTER — canvas (Graph | Tree — two views over ONE AST) */}
           <SectionCard
             className="lg:col-span-5"
-            icon={viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
-            title={t("ir.canvas", "Flow canvas")}
+            icon={editScope.kind === "fb" ? <Boxes className="h-4 w-4" /> : viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
+            title={editScope.kind === "fb" ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}` : t("ir.canvas", "Flow canvas")}
             description={
-              <span className="flex flex-wrap gap-2 text-xs">
-                <span>{flow.blocks.length} {t("ir.topLevelBlocks", "top-level block(s)")}</span>
+              <span className="flex flex-wrap items-center gap-2 text-xs">
+                {editScope.kind === "fb" && (
+                  <Badge variant="outline" className="border-primary/40 text-primary">{t("ir.canvas.editingFb", "Editing POU body")}</Badge>
+                )}
+                <span>{activeBlocks.length} {editScope.kind === "fb" ? t("ir.bodyBlocks", "body block(s)") : t("ir.topLevelBlocks", "top-level block(s)")}</span>
                 {errorCount > 0 && <span className="text-destructive">· {errorCount} {t("ir.errorsShort", "error(s)")}</span>}
                 {warnCount > 0 && <span className="text-warning">· {warnCount} {t("ir.warnsShort", "warning(s)")}</span>}
               </span>
             }
             action={
-              <div className="inline-flex shrink-0 rounded-md border border-border p-0.5">
-                <Button
-                  size="sm"
-                  variant={viewMode === "graph" ? "secondary" : "ghost"}
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setViewMode("graph")}
-                  aria-pressed={viewMode === "graph"}
-                >
-                  <Network className="h-3.5 w-3.5" />{t("ir.viewGraph", "Graph")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={viewMode === "tree" ? "secondary" : "ghost"}
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setViewMode("tree")}
-                  aria-pressed={viewMode === "tree"}
-                >
-                  <ListTree className="h-3.5 w-3.5" />{t("ir.viewTree", "Tree")}
-                </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {editScope.kind === "fb" && (
+                  <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={backToMain}>
+                    <ArrowLeft className="h-3.5 w-3.5" />{t("ir.canvas.backToMain", "Main flow")}
+                  </Button>
+                )}
+                <div className="inline-flex rounded-md border border-border p-0.5">
+                  <Button
+                    size="sm"
+                    variant={viewMode === "graph" ? "secondary" : "ghost"}
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setViewMode("graph")}
+                    aria-pressed={viewMode === "graph"}
+                  >
+                    <Network className="h-3.5 w-3.5" />{t("ir.viewGraph", "Graph")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={viewMode === "tree" ? "secondary" : "ghost"}
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setViewMode("tree")}
+                    aria-pressed={viewMode === "tree"}
+                  >
+                    <ListTree className="h-3.5 w-3.5" />{t("ir.viewTree", "Tree")}
+                  </Button>
+                </div>
               </div>
             }
           >
             {viewMode === "graph" ? (
               <IrGraphCanvas
-                flow={flow}
+                flow={canvasFlow}
                 selectedId={selectedId}
                 diagsByBlock={diagsByBlock}
                 onSelect={(id) => { setSelectedId(id); setRightTab("inspector"); }}
@@ -1007,18 +1268,18 @@ export default function IrEditor() {
                 onReorderToSibling={handleReorderToSibling}
                 t={t}
               />
-            ) : flow.blocks.length === 0 ? (
+            ) : activeBlocks.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.emptyCanvas", "No blocks yet. Add one from the palette on the left.")}</p>
             ) : (
               <ScrollArea className="max-h-[560px] pr-2">
                 <div className="space-y-1.5">
-                  {flow.blocks.map((b, i) => (
+                  {activeBlocks.map((b, i) => (
                     <BlockCard
                       key={b.id}
                       block={b}
                       selectedId={selectedId}
                       index={i}
-                      siblingCount={flow.blocks.length}
+                      siblingCount={activeBlocks.length}
                       diagsByBlock={diagsByBlock}
                       onSelect={(id) => { setSelectedId(id); setRightTab("inspector"); }}
                       onMove={handleMove}
@@ -1042,7 +1303,7 @@ export default function IrEditor() {
                 </TabsList>
                 <TabsContent value="inspector">
                   {selectedBlock ? (
-                    <Inspector block={selectedBlock} onPatch={handlePatch} t={t} />
+                    <Inspector block={selectedBlock} functionBlocks={functionBlocks} onPatch={handlePatch} t={t} />
                   ) : (
                     <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.selectBlock", "Select a block on the canvas to edit its parameters.")}</p>
                   )}
@@ -1054,6 +1315,25 @@ export default function IrEditor() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Tier-1c — reusable function blocks (POUs): define once, call anywhere */}
+        <SectionCard
+          icon={<Boxes className="h-4 w-4" />}
+          title={t("ir.fb.title", "Function blocks (reusable POUs)")}
+          description={t("ir.fb.subtitle", "A named, parameterized sub-flow declared ONCE and invoked via a Call function block — the CODESYS/TIA reusable-POU idea, over the same typed IR.")}
+        >
+          <FunctionBlocksPanel
+            functionBlocks={functionBlocks}
+            activeFbId={editScope.kind === "fb" ? editScope.fbId : null}
+            diagsByBlock={diagsByBlock}
+            canEdit={canControl}
+            onNew={handleNewFb}
+            onUpdateFb={handleUpdateFb}
+            onDeleteFb={handleDeleteFb}
+            onEditBody={handleEditBody}
+            t={t}
+          />
+        </SectionCard>
 
         {/* KPI strip + saved flows */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

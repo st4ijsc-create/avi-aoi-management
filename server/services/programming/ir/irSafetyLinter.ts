@@ -29,6 +29,18 @@
  *   • set_analog value present        (bare literal or a valid expression — shape already
  *     enforces the type; the linter flags an unresolved variable inside it).
  *
+ * Tier-1c (Doc 24) — reusable FUNCTION BLOCKS (POUs):
+ *   • undefined-function-block        (a call_block whose fb_name has no definition → ERROR).
+ *   • duplicate-function-block        (two definitions share a name → ERROR).
+ *   • arg-count / arg-name            (a call_block missing an argument for a required
+ *     input/inout param, a duplicate arg, or an arg naming no declared param → ERROR).
+ *   • arg-type                        (a LITERAL arg whose type contradicts the param's
+ *     declared number/bool type → ERROR; expression args aren't statically typed → skipped).
+ *   • recursion                       (a self- or mutually-recursive call cycle among the
+ *     definitions → ERROR; there is no runtime call stack to bound infinite recursion).
+ *   Each function-block BODY is linted with its own variable scope SEEDED by its params (so
+ *   a param reference is in-scope, and every motion/IO/PID rule above applies inside a POU).
+ *
  * The speed/force ceilings come from a resolved LimitProfile: (1) a per-device-type
  * default, (2) overridden by env tunables, (3) overridden by an explicit caller profile
  * (e.g. from a robot class's safety-rated speed when the capability model exposes it).
@@ -40,9 +52,9 @@
  * profile, no rule change needed.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, Pose, TargetDeviceType, NumericOrExpr } from "./irModel";
+import type { Flow, IrBlock, Pose, TargetDeviceType, NumericOrExpr, FunctionBlockDef, FbParamType } from "./irModel";
 import { assignIds, walkBlocks } from "./irModel";
-import { slotFreeVars } from "./irExpr";
+import { slotFreeVars, isExpr } from "./irExpr";
 
 /** One linter finding. `error` blocks transpile; `warn` is advisory. */
 export interface LintDiagnostic {
@@ -154,12 +166,65 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
   const push = (blockId: string | undefined, severity: LintDiagnostic["severity"], rule: string, message: string) =>
     diags.push({ blockId: blockId ?? "?", severity, rule, message });
 
+  // ── Tier-1c: reusable function-block DEFINITIONS ──────────────────────────────
+  const fbDefs: FunctionBlockDef[] = idFlow.function_blocks ?? [];
+  const fbByName = new Map<string, FunctionBlockDef>();
+  for (const fb of fbDefs) {
+    if (fbByName.has(fb.name)) {
+      push(fb.id, "error", "duplicate-function-block",
+        `function_block "${fb.name}" is defined more than once — names must be unique.`);
+    } else {
+      fbByName.set(fb.name, fb);
+    }
+  }
+  // Recursion guard: build the call graph among DEFINED function blocks and flag any cycle
+  // (direct self-call or a mutual A→B→A). There is no runtime call stack to bound infinite
+  // recursion, so a cycle is a hard error.
+  const directCalls = (blocks: IrBlock[]): Set<string> => {
+    const out = new Set<string>();
+    walkBlocks(blocks, (b) => { if (b.type === "call_block") out.add(b.fb_name); });
+    return out;
+  };
+  const graph = new Map<string, string[]>();
+  for (const fb of fbByName.values()) {
+    graph.set(fb.name, [...directCalls(fb.body)].filter((n) => fbByName.has(n)));
+  }
+  const color = new Map<string, 0 | 1 | 2>(); // 0 unvisited · 1 on-stack · 2 done
+  const reportedCycle = new Set<string>();
+  const dfs = (name: string, stack: string[]) => {
+    color.set(name, 1);
+    stack.push(name);
+    for (const next of graph.get(name) ?? []) {
+      const c = color.get(next) ?? 0;
+      if (c === 1) {
+        if (!reportedCycle.has(next)) {
+          reportedCycle.add(next);
+          push(fbByName.get(next)?.id, "error", "recursion",
+            `function_block "${next}" is part of a recursive call cycle (${[...stack, next].join(" → ")}) — recursion is not allowed.`);
+        }
+      } else if (c === 0) {
+        dfs(next, stack);
+      }
+    }
+    stack.pop();
+    color.set(name, 2);
+  };
+  for (const fb of fbByName.values()) if ((color.get(fb.name) ?? 0) === 0) dfs(fb.name, []);
+
+  // Static literal-arg type check (expressions can't be typed statically → skipped).
+  const argTypeError = (paramType: FbParamType, v: NumericOrExpr): string | null => {
+    if (isExpr(v)) return null;
+    if (paramType === "bool" && typeof v !== "boolean") return "expected a boolean";
+    if (paramType === "number" && typeof v !== "number") return "expected a number";
+    return null; // "signal" accepts either literal form
+  };
+
   // P3 — variable SCOPE. `walkBlocks` visits parent-before-children in program order, so a
   // running set of declared names approximates lexical/program scope: a var used before it
   // is ever assigned (by set_variable / counter) is UNDEFINED → error. Fail-closed: unknown
-  // names are surfaced, never silently defaulted.
-  const declared = new Set<string>();
-  const checkSlotVars = (blockId: string | undefined, slotName: string, value: NumericOrExpr) => {
+  // names are surfaced, never silently defaulted. The `declared` set is PER SCOPE — the main
+  // block list gets a fresh set; each function-block body gets one SEEDED with its params.
+  const checkSlotVars = (declared: Set<string>, blockId: string | undefined, slotName: string, value: NumericOrExpr) => {
     for (const name of slotFreeVars(value)) {
       if (!declared.has(name)) {
         push(blockId, "error", "undefined-variable",
@@ -168,7 +233,7 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
     }
   };
 
-  const inspect = (block: IrBlock) => {
+  const inspectWith = (declared: Set<string>) => (block: IrBlock) => {
     switch (block.type) {
       case "move_linear": {
         if (block.speed_mms > limits.maxSpeedMms) {
@@ -227,18 +292,18 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
       }
       case "set_output": {
         // value may be an expression referencing variables.
-        checkSlotVars(block.id, "set_output value", block.value);
+        checkSlotVars(declared, block.id, "set_output value", block.value);
         break;
       }
       case "wait": {
-        if (block.ms !== undefined) checkSlotVars(block.id, "wait duration", block.ms);
+        if (block.ms !== undefined) checkSlotVars(declared, block.id, "wait duration", block.ms);
         break;
       }
       // ── P3 blocks ──────────────────────────────────────────────────────────
       case "set_variable": {
         // The RHS may reference PRIOR variables (self-reference is allowed for accumulators
         // only if the name was already declared — checked before declaring below).
-        checkSlotVars(block.id, "set_variable expression", block.expr);
+        checkSlotVars(declared, block.id, "set_variable expression", block.expr);
         declared.add(block.name); // now in scope for subsequent blocks
         break;
       }
@@ -253,7 +318,7 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
         break;
       }
       case "wait_until": {
-        checkSlotVars(block.id, "wait_until condition", block.condition);
+        checkSlotVars(declared, block.id, "wait_until condition", block.condition);
         if (block.timeout_ms > limits.maxWaitTimeoutMs) {
           push(block.id, "error", "wait-timeout",
             `wait_until timeout_ms ${block.timeout_ms} exceeds ceiling ${limits.maxWaitTimeoutMs} ms.`);
@@ -265,11 +330,51 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
         break;
       }
       case "set_analog": {
-        checkSlotVars(block.id, "set_analog value", block.value);
+        checkSlotVars(declared, block.id, "set_analog value", block.value);
+        break;
+      }
+      case "call_block": {
+        // Tier-1c — validate the call against the named definition.
+        const def = fbByName.get(block.fb_name);
+        if (!def) {
+          push(block.id, "error", "undefined-function-block",
+            `call_block invokes "${block.fb_name}", but no function_block with that name is defined.`);
+          // still scope-check arg expressions so a caller typo doesn't mask an undefined var.
+          for (const arg of block.args) checkSlotVars(declared, block.id, `call_block arg "${arg.name}"`, arg.value);
+          break;
+        }
+        const paramByName = new Map(def.params.map((p) => [p.name, p] as const));
+        const seen = new Set<string>();
+        for (const arg of block.args) {
+          const p = paramByName.get(arg.name);
+          if (!p) {
+            push(block.id, "error", "arg-name",
+              `call_block "${block.fb_name}" binds argument "${arg.name}", which is not a declared parameter.`);
+          } else {
+            const typeErr = argTypeError(p.type, arg.value);
+            if (typeErr) {
+              push(block.id, "error", "arg-type",
+                `call_block "${block.fb_name}" argument "${arg.name}" (${p.type}) ${typeErr}.`);
+            }
+          }
+          if (seen.has(arg.name)) {
+            push(block.id, "error", "arg-name", `call_block "${block.fb_name}" binds argument "${arg.name}" more than once.`);
+          }
+          seen.add(arg.name);
+          // Arg expressions read from the CALLER's variable scope.
+          checkSlotVars(declared, block.id, `call_block arg "${arg.name}"`, arg.value);
+        }
+        // Every input / inout parameter must receive an argument (outputs are optional).
+        for (const p of def.params) {
+          if ((p.kind === "input" || p.kind === "inout") && !seen.has(p.name)) {
+            push(block.id, "error", "arg-count",
+              `call_block "${block.fb_name}" is missing an argument for ${p.kind} parameter "${p.name}".`);
+          }
+        }
         break;
       }
       case "pid_control": {
-        checkSlotVars(block.id, "pid_control setpoint", block.setpoint);
+        checkSlotVars(declared, block.id, "pid_control setpoint", block.setpoint);
         for (const [g, v] of [["kp", block.kp], ["ki", block.ki], ["kd", block.kd]] as const) {
           if (!Number.isFinite(v)) {
             push(block.id, "error", "pid-gain", `pid_control ${g} must be a finite number.`);
@@ -296,7 +401,13 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
     }
   };
 
-  walkBlocks(idFlow.blocks, inspect);
+  // Main block list — a fresh, empty variable scope.
+  walkBlocks(idFlow.blocks, inspectWith(new Set<string>()));
+  // Each function-block body — its own scope, SEEDED with the definition's parameter names
+  // (so a param reference is in-scope) and the same motion/IO/PID/expression rules apply.
+  for (const fb of fbDefs) {
+    walkBlocks(fb.body, inspectWith(new Set<string>(fb.params.map((p) => p.name))));
+  }
 
   return { ok: !diags.some((d) => d.severity === "error"), diagnostics: diags };
 }

@@ -1,0 +1,17 @@
+# URScript generated from IR flow "fb_demo" v1
+# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.
+# SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
+# [IR function_block #fb1] pulse
+def pulse(level, hold_ms):
+  # [IR set_analog #d1]
+  set_analog_out(AO1, level) # unit=V
+  # [IR wait #d2]
+  sleep((hold_ms) / 1000.0)
+end
+
+def fb_demo():
+  # [IR call_block #c1]
+  pulse(5, 100)
+  # [IR call_block #c2]
+  pulse(8, 250)
+end

@@ -17,7 +17,7 @@
  * real controller is deferred (needs hardware / a ROS2 stack → T2 physics-sim territory).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import type { Flow, IrBlock, CompareOperator, NumericOrExpr } from "../irModel";
+import type { Flow, IrBlock, CompareOperator, NumericOrExpr, FunctionBlockDef } from "../irModel";
 import { assignIds } from "../irModel";
 import { irComment, type TranspileResult } from "./irToUrscript";
 import { isExpr, renderSlot, sanitizeVar } from "../irExpr";
@@ -51,6 +51,8 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
   const lines: string[] = [];
   const irCommentMap: Record<string, string> = {};
   const IND = "    "; // 4-space, PEP8
+  // Tier-1c: name → definition, so a call_block can order its by-name args positionally.
+  const fbByName = new Map<string, FunctionBlockDef>((flow.function_blocks ?? []).map((fb) => [fb.name, fb]));
 
   const comment = (block: IrBlock, indent: string) => {
     const marker = irComment(block);
@@ -115,6 +117,17 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         lines.push(`${indent}self.set_analog("${block.channel}", ${slotPy(block.value)}${unit})`);
         break;
       }
+      case "call_block": {
+        // Invoke the method emitted for the definition (see the class body). IR args are by
+        // NAME; the generated method is positional → order the args by the param list.
+        const def = fbByName.get(block.fb_name);
+        const argByName = new Map(block.args.map((a) => [a.name, a.value] as const));
+        const ordered = def
+          ? def.params.map((p) => slotPy(argByName.get(p.name) ?? 0))
+          : block.args.map((a) => slotPy(a.value));
+        lines.push(`${indent}self.${sanitizeName(block.fb_name)}(${ordered.join(", ")})`);
+        break;
+      }
       case "pid_control": {
         // ROS2 side delegates to a bounded PID helper on the node (setpoint + gains +
         // output clamp). Structural skeleton — bind a concrete controller before use.
@@ -159,6 +172,16 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
   lines.push(`${IND}def __init__(self):`);
   lines.push(`${IND}${IND}super().__init__("${sanitizeName(flow.flow_id)}")`);
   lines.push(``);
+  // Tier-1c: reusable function-block DEFINITIONS → one node METHOD each, emitted ONCE before
+  // run(). A flow with none emits nothing here → byte-identical to pre-Tier-1c.
+  for (const fb of flow.function_blocks ?? []) {
+    lines.push(`${IND}# [IR function_block #${fb.id ?? "?"}] ${fb.name}`);
+    const params = fb.params.map((p) => sanitizeVar(p.name)).join(", ");
+    lines.push(`${IND}def ${sanitizeName(fb.name)}(self${params ? `, ${params}` : ""}):`);
+    if (fb.body.length === 0) lines.push(`${IND}${IND}pass`);
+    for (const b of fb.body) emit(b, IND + IND);
+    lines.push(``);
+  }
   lines.push(`${IND}def run(self):`);
   if (flow.blocks.length === 0) lines.push(`${IND}${IND}pass`);
   for (const block of flow.blocks) emit(block, IND + IND);

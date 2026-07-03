@@ -17,7 +17,7 @@
 import type { TFunction } from "i18next";
 import {
   Move, Rotate3d, Hand, HandMetal, ToggleRight, Hourglass, GitBranch, Repeat,
-  Variable, Sigma, TimerReset, Gauge, SlidersHorizontal,
+  Variable, Sigma, TimerReset, Gauge, SlidersHorizontal, Boxes,
 } from "lucide-react";
 
 // ── Local IR types (mirror the server irModel input shape) ────────────────────
@@ -76,12 +76,24 @@ export type CounterBlock = { id?: string; type: "counter"; name: string; op: "in
 export type WaitUntilBlock = { id?: string; type: "wait_until"; condition: Expr; timeout_ms: number; poll_ms: number };
 export type SetAnalogBlock = { id?: string; type: "set_analog"; channel: string; value: NumericOrExpr; unit?: string };
 export type PidControlBlock = { id?: string; type: "pid_control"; output_channel: string; input_channel: string; setpoint: NumericOrExpr; kp: number; ki: number; kd: number; output_min: number; output_max: number };
+// Tier-1c: reusable function-block (POU) CALL site — a leaf block.
+export type CallArg = { name: string; value: NumericOrExpr };
+export type CallBlock = { id?: string; type: "call_block"; fb_name: string; args: CallArg[] };
 
 export type IrBlock =
   | MoveLinearBlock | MoveJointBlock | GripBlock | ReleaseBlock
   | SetOutputBlock | WaitBlock | IfConditionBlock | LoopBlock
-  | SetVariableBlock | CounterBlock | WaitUntilBlock | SetAnalogBlock | PidControlBlock;
+  | SetVariableBlock | CounterBlock | WaitUntilBlock | SetAnalogBlock | PidControlBlock
+  | CallBlock;
 export type BlockType = IrBlock["type"];
+
+// ── Tier-1c: reusable function-block (POU) DEFINITION (mirrors server irModel) ──
+export type FbParamKind = "input" | "output" | "inout";
+export type FbParamType = "number" | "bool" | "signal";
+export type FbParam = { name: string; kind: FbParamKind; type: FbParamType };
+export type FunctionBlockDef = { id?: string; name: string; params: FbParam[]; body: IrBlock[] };
+export const FB_PARAM_KINDS: FbParamKind[] = ["input", "output", "inout"];
+export const FB_PARAM_TYPES: FbParamType[] = ["number", "bool", "signal"];
 
 export type TargetDeviceType = "universal-robots" | "ros2" | "generic";
 export type Flow = {
@@ -90,6 +102,8 @@ export type Flow = {
   version: number;
   author?: string;
   linked_capability?: string;
+  /** Tier-1c: reusable function-block definitions, callable via a call_block. */
+  function_blocks?: FunctionBlockDef[];
   blocks: IrBlock[];
 };
 
@@ -109,6 +123,8 @@ export const BLOCK_ICON: Record<BlockType, typeof Move> = {
   wait_until: TimerReset,
   set_analog: Gauge,
   pid_control: SlidersHorizontal,
+  // Tier-1c
+  call_block: Boxes,
 };
 
 export const BLOCK_LABEL: Record<BlockType, { key: string; def: string }> = {
@@ -126,6 +142,8 @@ export const BLOCK_LABEL: Record<BlockType, { key: string; def: string }> = {
   wait_until: { key: "ir.block.wait_until", def: "Wait until" },
   set_analog: { key: "ir.block.set_analog", def: "Set analog" },
   pid_control: { key: "ir.block.pid_control", def: "PID control" },
+  // Tier-1c
+  call_block: { key: "ir.block.call_block", def: "Call function block" },
 };
 
 export const PALETTE_GROUPS: Array<{ label: { key: string; def: string }; types: BlockType[] }> = [
@@ -133,6 +151,7 @@ export const PALETTE_GROUPS: Array<{ label: { key: string; def: string }; types:
   { label: { key: "ir.group.io", def: "I/O" }, types: ["grip", "release", "set_output", "set_analog", "wait"] },
   { label: { key: "ir.group.data", def: "Data & timing" }, types: ["set_variable", "counter", "wait_until"] },
   { label: { key: "ir.group.control", def: "Control" }, types: ["if_condition", "loop", "pid_control"] },
+  { label: { key: "ir.group.subroutines", def: "Subroutines" }, types: ["call_block"] },
 ];
 
 export const COMPARE_OPS: CompareOp[] = ["eq", "neq", "lt", "lte", "gt", "gte"];
@@ -175,7 +194,56 @@ export function newBlock(type: BlockType): IrBlock {
       return { id, type, channel: "AO1", value: 0, unit: "V" };
     case "pid_control":
       return { id, type, output_channel: "AO1", input_channel: "AI1", setpoint: 0, kp: 1, ki: 0, kd: 0, output_min: 0, output_max: 10 };
+    // Tier-1c — an unbound call (the inspector picks the function block + fills args).
+    case "call_block":
+      return { id, type, fb_name: "", args: [] };
   }
+}
+
+// ── Tier-1c: function-block (POU) factories + flow-level pure helpers ───────────
+
+/** A new empty function-block definition with a unique default name. */
+export function newFunctionBlock(existing: FunctionBlockDef[] = []): FunctionBlockDef {
+  let n = existing.length + 1;
+  const taken = new Set(existing.map((f) => f.name));
+  while (taken.has(`block_${n}`)) n += 1;
+  return { id: nextId(), name: `block_${n}`, params: [], body: [] };
+}
+
+/** A new function-block parameter (default input:number). */
+export function newFbParam(existing: FbParam[] = []): FbParam {
+  let n = existing.length + 1;
+  const taken = new Set(existing.map((p) => p.name));
+  while (taken.has(`p${n}`)) n += 1;
+  return { name: `p${n}`, kind: "input", type: "number" };
+}
+
+/** Append a function-block definition (immutable). */
+export function addFunctionBlock(flow: Flow, def: FunctionBlockDef): Flow {
+  return { ...flow, function_blocks: [...(flow.function_blocks ?? []), def] };
+}
+
+/** Patch a function-block definition by id (immutable). */
+export function updateFunctionBlock(flow: Flow, fbId: string, patch: Partial<FunctionBlockDef>): Flow {
+  return {
+    ...flow,
+    function_blocks: (flow.function_blocks ?? []).map((fb) => (fb.id === fbId ? { ...fb, ...patch } : fb)),
+  };
+}
+
+/** Delete a function-block definition by id (immutable). */
+export function deleteFunctionBlock(flow: Flow, fbId: string): Flow {
+  return { ...flow, function_blocks: (flow.function_blocks ?? []).filter((fb) => fb.id !== fbId) };
+}
+
+/**
+ * Build the DEFAULT argument bindings for a call to `def`: one entry per input/inout
+ * parameter, seeded with a type-appropriate literal. Outputs are omitted (they are results).
+ */
+export function defaultArgsFor(def: FunctionBlockDef): CallArg[] {
+  return def.params
+    .filter((p) => p.kind !== "output")
+    .map((p) => ({ name: p.name, value: (p.type === "bool" ? false : 0) as NumericOrExpr }));
 }
 
 // ── Pure tree ops (child-list aware: true_branch / false_branch / body) ────────
@@ -340,5 +408,9 @@ export function summarize(b: IrBlock, t: TFunction): string {
       return `${b.channel} = ${exprToText(b.value)}${b.unit ? ` ${b.unit}` : ""}`;
     case "pid_control":
       return `PID ${b.output_channel} · Kp ${b.kp} Ki ${b.ki} Kd ${b.kd} · [${b.output_min}, ${b.output_max}]`;
+    case "call_block": {
+      const args = b.args.map((a) => `${a.name}=${exprToText(a.value)}`).join(", ");
+      return `${b.fb_name || t("ir.call.unbound", "(pick a block)")}(${args})`;
+    }
   }
 }

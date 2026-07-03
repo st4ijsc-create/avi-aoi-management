@@ -18,6 +18,7 @@ import {
   getAnomalyStats,
   anomalyModelCode,
 } from "../services/aiAnomalyDetection";
+import { buildPatchMemoryBank } from "../services/aiPatchAnomaly";
 import { getProfile, deleteScope } from "../db/aiAnomaly";
 import { getDb } from "../db/connection";
 import { sql } from "drizzle-orm";
@@ -312,6 +313,31 @@ export const aiAnomalyRouter = router({
         productModelId: input.productModelId ?? null,
         modelCode: input.modelCode,
         limit: input.limit,
+      });
+    }),
+
+  // ── buildPatchBank (admin) — patch-level (pixel-localizing) memory bank ───────
+  // Tiles each OK image into a grid of patches, embeds each patch (same honest tier
+  // ladder), and pools them into a PATCH memory bank (scope modelCode carries ":patch:"
+  // + grid → isolated from the whole-image bank). Enables the heatmap on `score` when
+  // ANOMALY_PATCH_ENABLED=true. Additive; default flag OFF leaves scoring unchanged.
+  buildPatchBank: adminProcedure
+    .input(scopeInput.extend({
+      images: z.array(base64Image).min(1).max(MAX_BANK_IMAGES),
+      grid: z.number().int().min(2).max(32).optional(),
+      coresetRatio: z.number().min(0.01).max(1).optional(),
+      k: z.number().int().min(1).max(50).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffers = input.images.map((img, i) => ({ buffer: decodeBase64Image(img), imageUrl: `upload:${i}` }));
+      return buildPatchMemoryBank({
+        productModelId: input.productModelId ?? null,
+        machineId: input.machineId ?? null,
+        modelId: input.modelId ?? null,
+        images: buffers,
+        grid: input.grid,
+        coresetRatio: input.coresetRatio,
+        k: input.k,
       });
     }),
 
