@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Factory Alert</string>
+    <string name="app_name_full">Factory Alert System</string>
+    
+    <!-- Notification channels -->
+    <string name="channel_critical">Critical Alerts</string>
+    <string name="channel_critical_desc">Cảnh báo nghiêm trọng - Máy dừng khẩn cấp</string>
+    <string name="channel_high">High Priority Alerts</string>
+    <string name="channel_high_desc">Cảnh báo cao - Lỗi nghiêm trọng</string>
+    <string name="channel_medium">Medium Priority Alerts</string>
+    <string name="channel_medium_desc">Cảnh báo trung bình</string>
+    <string name="channel_low">Low Priority Alerts</string>
+    <string name="channel_low_desc">Cảnh báo thấp</string>
+    <string name="channel_info">Information</string>
+    <string name="channel_info_desc">Thông tin hệ thống</string>
+</resources>

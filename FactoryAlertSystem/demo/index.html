@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Factory Alert System - Demo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2563EB;
+            --primary-dark: #1D4ED8;
+            --success: #22C55E;
+            --warning: #EAB308;
+            --error: #DC2626;
+            --critical: #DC2626;
+            --high: #EA580C;
+            --medium: #FBBF24;
+            --low: #2563EB;
+            --info: #6B7280;
+            --background: #F8FAFC;
+            --surface: #FFFFFF;
+            --surface-variant: #F1F5F9;
+            --text: #1E293B;
+            --text-secondary: #64748B;
+            --text-muted: #94A3B8;
+            --border: #E2E8F0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .phone-frame {
+            width: 375px;
+            height: 812px;
+            background: var(--background);
+            border-radius: 40px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .phone-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #000;
+            border-radius: 0 0 20px 20px;
+            z-index: 100;
+        }
+
+        .status-bar {
+            height: 44px;
+            background: var(--surface);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 20px 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .header {
+            background: var(--surface);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .header-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .header-subtitle {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            background: var(--surface-variant);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+
+        .kpi-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .kpi-card {
+            flex: 1;
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .kpi-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+        }
+
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .severity-stats {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .severity-stat {
+            flex: 1;
+            padding: 8px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .severity-stat-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .severity-stat-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .alert-card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid var(--high);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .alert-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .alert-card.critical { border-left-color: var(--critical); }
+        .alert-card.high { border-left-color: var(--high); }
+        .alert-card.medium { border-left-color: var(--medium); }
+        .alert-card.low { border-left-color: var(--low); }
+        .alert-card.info { border-left-color: var(--info); }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .severity-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .severity-badge.critical { background: var(--critical); color: white; }
+        .severity-badge.high { background: var(--high); color: white; }
+        .severity-badge.medium { background: var(--medium); color: #000; }
+        .severity-badge.low { background: var(--low); color: white; }
+        .severity-badge.info { background: var(--info); color: white; }
+
+        .alert-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .alert-error-code {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .alert-error-type {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .alert-description {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .alert-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .alert-info-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .alert-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .action-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+
+        .action-btn.acknowledge {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+
+        .action-btn.dismiss {
+            background: rgba(220, 38, 38, 0.15);
+            color: var(--error);
+        }
+
+        .bottom-nav {
+            display: flex;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 8px 0 20px;
+        }
+
+        .nav-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: color 0.2s;
+            position: relative;
+        }
+
+        .nav-item.active {
+            color: var(--primary);
+        }
+
+        .nav-item i {
+            font-size: 22px;
+        }
+
+        .nav-item span {
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .nav-badge {
+            position: absolute;
+            top: 4px;
+            right: 50%;
+            transform: translateX(14px);
+            background: var(--error);
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .empty-icon {
+            width: 80px;
+            height: 80px;
+            background: rgba(34, 197, 94, 0.15);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            font-size: 40px;
+            color: var(--success);
+        }
+
+        .empty-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .empty-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Simulator Panel */
+        .simulator-panel {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 300px;
+        }
+
+        .simulator-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .simulator-row {
+            margin-bottom: 12px;
+        }
+
+        .simulator-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .simulator-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--surface);
+        }
+
+        .simulator-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .simulator-btn:active {
+            transform: scale(0.98);
+        }
+
+        .simulator-btn.primary {
+            background: var(--primary);
+            color: white;
+            margin-bottom: 8px;
+        }
+
+        .simulator-btn.danger {
+            background: rgba(220, 38, 38, 0.15);
+            color: var(--error);
+        }
+
+        .notification-popup {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 350px;
+            display: none;
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+        }
+
+        .notification-popup.show {
+            display: block;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .notification-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: white;
+        }
+
+        .notification-title {
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .notification-body {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        @media (max-width: 900px) {
+            .simulator-panel {
+                position: fixed;
+                right: 10px;
+                left: 10px;
+                top: auto;
+                bottom: 10px;
+                transform: none;
+                width: auto;
+            }
+
+            body {
+                padding: 10px;
+                align-items: flex-start;
+                padding-top: 40px;
+            }
+
+            .phone-frame {
+                width: 100%;
+                max-width: 400px;
+                height: 700px;
+                margin-bottom: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Phone Frame -->
+    <div class="phone-frame">
+        <div class="phone-notch"></div>
+        
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span>9:41</span>
+            <span><i class="ri-wifi-line"></i> <i class="ri-battery-fill"></i></span>
+        </div>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <div class="header-icon">
+                    <i class="ri-building-2-fill"></i>
+                </div>
+                <div>
+                    <div class="header-title">Factory Alert System</div>
+                    <div class="header-subtitle">Hệ thống thông báo lỗi</div>
+                </div>
+            </div>
+            <div class="connection-status" id="connectionStatus">
+                <div class="connection-dot"></div>
+                <i class="ri-wifi-line"></i>
+                <span>Đã kết nối</span>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content" id="mainContent">
+            <!-- Dashboard -->
+            <div class="section-title">📊 Bảng điều khiển</div>
+            
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-icon" style="background: rgba(59, 130, 246, 0.15); color: var(--primary);">
+                        <i class="ri-alert-line"></i>
+                    </div>
+                    <div>
+                        <div class="kpi-value" id="totalCount">0</div>
+                        <div class="kpi-label">Tổng cảnh báo</div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon" style="background: rgba(234, 179, 8, 0.15); color: var(--warning);">
+                        <i class="ri-time-line"></i>
+                    </div>
+                    <div>
+                        <div class="kpi-value" id="pendingCount">0</div>
+                        <div class="kpi-label">Chờ xử lý</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="severity-stats">
+                <div class="severity-stat" style="background: rgba(220, 38, 38, 0.15);">
+                    <div class="severity-stat-value" style="color: var(--critical);" id="criticalCount">0</div>
+                    <div class="severity-stat-label">Critical</div>
+                </div>
+                <div class="severity-stat" style="background: rgba(234, 88, 12, 0.15);">
+                    <div class="severity-stat-value" style="color: var(--high);" id="highCount">0</div>
+                    <div class="severity-stat-label">High</div>
+                </div>
+                <div class="severity-stat" style="background: rgba(251, 191, 36, 0.15);">
+                    <div class="severity-stat-value" style="color: #B45309;" id="mediumCount">0</div>
+                    <div class="severity-stat-label">Medium</div>
+                </div>
+                <div class="severity-stat" style="background: rgba(37, 99, 235, 0.15);">
+                    <div class="severity-stat-value" style="color: var(--low);" id="lowCount">0</div>
+                    <div class="severity-stat-label">Low</div>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="section-title">🚨 Cảnh báo gần đây</div>
+            <div id="alertsList">
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <i class="ri-checkbox-circle-line"></i>
+                    </div>
+                    <div class="empty-title">Không có cảnh báo</div>
+                    <div class="empty-desc">Tất cả hệ thống đang hoạt động bình thường</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="nav-item active">
+                <i class="ri-home-5-fill"></i>
+                <span>Trang chủ</span>
+            </div>
+            <div class="nav-item">
+                <i class="ri-notification-3-line"></i>
+                <span>Cảnh báo</span>
+                <div class="nav-badge" id="navBadge" style="display: none;">0</div>
+            </div>
+            <div class="nav-item">
+                <i class="ri-settings-3-line"></i>
+                <span>Cài đặt</span>
+            </div>
+            <div class="nav-item">
+                <i class="ri-flask-line"></i>
+                <span>Mô phỏng</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Simulator Panel -->
+    <div class="simulator-panel">
+        <div class="simulator-title">
+            <i class="ri-flask-fill" style="color: var(--primary);"></i>
+            Alert Simulator
+        </div>
+
+        <div class="simulator-row">
+            <div class="simulator-label">Station</div>
+            <select class="simulator-select" id="stationSelect">
+                <option value="ST-A-001">ST-A-001 - Wire Cutting A1</option>
+                <option value="ST-A-002">ST-A-002 - Wire Cutting A2</option>
+                <option value="ST-B-001">ST-B-001 - Assembly B1</option>
+                <option value="ST-B-002">ST-B-002 - Assembly B2</option>
+                <option value="ST-C-001">ST-C-001 - Packaging C1</option>
+            </select>
+        </div>
+
+        <div class="simulator-row">
+            <div class="simulator-label">Error Type</div>
+            <select class="simulator-select" id="errorSelect">
+                <option value="E-CUT-001|Cutting Error|Wire length mismatch">E-CUT-001 - Wire length mismatch</option>
+                <option value="E-CRM-001|Crimping Error|Crimp height out of tolerance">E-CRM-001 - Crimp height error</option>
+                <option value="E-ASM-001|Assembly Error|Component mismatch">E-ASM-001 - Component mismatch</option>
+                <option value="E-MCH-001|Machine Error|Emergency stop activated">E-MCH-001 - Emergency stop</option>
+                <option value="E-QLT-001|Quality Issue|Visual defect detected">E-QLT-001 - Visual defect</option>
+            </select>
+        </div>
+
+        <div class="simulator-row">
+            <div class="simulator-label">Severity</div>
+            <select class="simulator-select" id="severitySelect">
+                <option value="critical">🔴 Critical</option>
+                <option value="high" selected>🟠 High</option>
+                <option value="medium">🟡 Medium</option>
+                <option value="low">🔵 Low</option>
+                <option value="info">⚫ Info</option>
+            </select>
+        </div>
+
+        <button class="simulator-btn primary" onclick="generateAlert()">
+            <i class="ri-add-circle-line"></i>
+            Tạo Cảnh báo
+        </button>
+
+        <button class="simulator-btn primary" onclick="generateRandomAlert()" style="background: var(--success);">
+            <i class="ri-shuffle-line"></i>
+            Tạo Ngẫu nhiên
+        </button>
+
+        <button class="simulator-btn danger" onclick="clearAllAlerts()">
+            <i class="ri-delete-bin-line"></i>
+            Xóa tất cả
+        </button>
+    </div>
+
+    <!-- Notification Popup -->
+    <div class="notification-popup" id="notificationPopup">
+        <div class="notification-header">
+            <div class="notification-icon" id="notifIcon" style="background: var(--high);">
+                <i class="ri-alert-fill"></i>
+            </div>
+            <div>
+                <div class="notification-title" id="notifTitle">HIGH: Cutting Error</div>
+            </div>
+        </div>
+        <div class="notification-body" id="notifBody">
+            Wire Cutting Station A1<br>Wire length mismatch - measured length differs from specification
+        </div>
+    </div>
+
+    <script>
+        // Alert data store
+        let alerts = [];
+        let alertIdCounter = 1000;
+
+        const stations = {
+            'ST-A-001': { name: 'Wire Cutting Station A1', line: 'Line A' },
+            'ST-A-002': { name: 'Wire Cutting Station A2', line: 'Line A' },
+            'ST-B-001': { name: 'Assembly Station B1', line: 'Line B' },
+            'ST-B-002': { name: 'Assembly Station B2', line: 'Line B' },
+            'ST-C-001': { name: 'Packaging Station C1', line: 'Line C' },
+        };
+
+        const products = [
+            { id: 'PRD-WH-001', name: 'Wire Harness Model X' },
+            { id: 'PRD-WH-002', name: 'Wire Harness Model Y' },
+            { id: 'PRD-CB-001', name: 'Cable Assembly Type A' },
+        ];
+
+        const severityColors = {
+            critical: '#DC2626',
+            high: '#EA580C',
+            medium: '#FBBF24',
+            low: '#2563EB',
+            info: '#6B7280'
+        };
+
+        const severityLabels = {
+            critical: 'NGHIÊM TRỌNG',
+            high: 'CAO',
+            medium: 'TRUNG BÌNH',
+            low: 'THẤP',
+            info: 'THÔNG TIN'
+        };
+
+        function generateAlert() {
+            const stationId = document.getElementById('stationSelect').value;
+            const errorData = document.getElementById('errorSelect').value.split('|');
+            const severity = document.getElementById('severitySelect').value;
+
+            const station = stations[stationId];
+            const product = products[Math.floor(Math.random() * products.length)];
+
+            const alert = {
+                id: `ALT-2026-${++alertIdCounter}`,
+                timestamp: new Date().toISOString(),
+                station: {
+                    id: stationId,
+                    name: station.name,
+                    line: station.line
+                },
+                product: product,
+                error: {
+                    code: errorData[0],
+                    type: errorData[1],
+                    description: errorData[2]
+                },
+                severity: severity,
+                status: 'pending'
+            };
+
+            addAlert(alert);
+        }
+
+        function generateRandomAlert() {
+            const stationIds = Object.keys(stations);
+            const stationId = stationIds[Math.floor(Math.random() * stationIds.length)];
+            const station = stations[stationId];
+            const product = products[Math.floor(Math.random() * products.length)];
+            const severities = ['critical', 'high', 'medium', 'low', 'info'];
+            const severity = severities[Math.floor(Math.random() * severities.length)];
+
+            const errors = [
+                { code: 'E-CUT-001', type: 'Cutting Error', description: 'Wire length mismatch - measured length differs from specification' },
+                { code: 'E-CRM-001', type: 'Crimping Error', description: 'Crimp height out of tolerance' },
+                { code: 'E-ASM-001', type: 'Assembly Error', description: 'Component mismatch detected' },
+                { code: 'E-MCH-001', type: 'Machine Error', description: 'Emergency stop activated' },
+                { code: 'E-QLT-001', type: 'Quality Issue', description: 'Visual defect detected' },
+                { code: 'E-TST-001', type: 'Testing Error', description: 'Continuity test failed' },
+            ];
+            const error = errors[Math.floor(Math.random() * errors.length)];
+
+            const alert = {
+                id: `ALT-2026-${++alertIdCounter}`,
+                timestamp: new Date().toISOString(),
+                station: {
+                    id: stationId,
+                    name: station.name,
+                    line: station.line
+                },
+                product: product,
+                error: error,
+                severity: severity,
+                status: 'pending'
+            };
+
+            addAlert(alert);
+        }
+
+        function addAlert(alert) {
+            alerts.unshift(alert);
+            updateUI();
+            showNotification(alert);
+            playSound(alert.severity);
+        }
+
+        function acknowledgeAlert(id) {
+            const alert = alerts.find(a => a.id === id);
+            if (alert) {
+                alert.status = 'acknowledged';
+                updateUI();
+            }
+        }
+
+        function dismissAlert(id) {
+            alerts = alerts.filter(a => a.id !== id);
+            updateUI();
+        }
+
+        function clearAllAlerts() {
+            alerts = [];
+            updateUI();
+        }
+
+        function updateUI() {
+            const totalCount = alerts.length;
+            const pendingCount = alerts.filter(a => a.status === 'pending').length;
+            const criticalCount = alerts.filter(a => a.severity === 'critical' && a.status === 'pending').length;
+            const highCount = alerts.filter(a => a.severity === 'high' && a.status === 'pending').length;
+            const mediumCount = alerts.filter(a => a.severity === 'medium' && a.status === 'pending').length;
+            const lowCount = alerts.filter(a => a.severity === 'low' && a.status === 'pending').length;
+
+            document.getElementById('totalCount').textContent = totalCount;
+            document.getElementById('pendingCount').textContent = pendingCount;
+            document.getElementById('criticalCount').textContent = criticalCount;
+            document.getElementById('highCount').textContent = highCount;
+            document.getElementById('mediumCount').textContent = mediumCount;
+            document.getElementById('lowCount').textContent = lowCount;
+
+            // Update nav badge
+            const navBadge = document.getElementById('navBadge');
+            if (pendingCount > 0) {
+                navBadge.style.display = 'block';
+                navBadge.textContent = pendingCount;
+            } else {
+                navBadge.style.display = 'none';
+            }
+
+            // Update alerts list
+            const alertsList = document.getElementById('alertsList');
+            if (alerts.length === 0) {
+                alertsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">
+                            <i class="ri-checkbox-circle-line"></i>
+                        </div>
+                        <div class="empty-title">Không có cảnh báo</div>
+                        <div class="empty-desc">Tất cả hệ thống đang hoạt động bình thường</div>
+                    </div>
+                `;
+            } else {
+                alertsList.innerHTML = alerts.slice(0, 5).map(alert => `
+                    <div class="alert-card ${alert.severity}">
+                        <div class="alert-header">
+                            <span class="severity-badge ${alert.severity}">
+                                <i class="ri-alert-fill"></i>
+                                ${severityLabels[alert.severity]}
+                            </span>
+                            <span class="alert-time">${formatRelativeTime(alert.timestamp)}</span>
+                        </div>
+                        <div class="alert-error-code">
+                            <i class="ri-code-line"></i>
+                            ${alert.error.code}
+                        </div>
+                        <div class="alert-error-type">${alert.error.type}</div>
+                        <div class="alert-description">${alert.error.description}</div>
+                        <div class="alert-info">
+                            <div class="alert-info-row">
+                                <i class="ri-building-2-line"></i>
+                                ${alert.station.name} • ${alert.station.line}
+                            </div>
+                            <div class="alert-info-row">
+                                <i class="ri-box-3-line"></i>
+                                ${alert.product.name}
+                            </div>
+                        </div>
+                        ${alert.status === 'pending' ? `
+                        <div class="alert-actions">
+                            <button class="action-btn acknowledge" onclick="acknowledgeAlert('${alert.id}')">
+                                <i class="ri-check-line"></i>
+                                Xác nhận
+                            </button>
+                            <button class="action-btn dismiss" onclick="dismissAlert('${alert.id}')">
+                                <i class="ri-close-line"></i>
+                                Bỏ qua
+                            </button>
+                        </div>
+                        ` : `
+                        <div class="alert-actions" style="justify-content: flex-start;">
+                            <span style="color: var(--success); font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                                <i class="ri-check-double-line"></i>
+                                Đã xác nhận
+                            </span>
+                        </div>
+                        `}
+                    </div>
+                `).join('');
+            }
+        }
+
+        function formatRelativeTime(isoString) {
+            const date = new Date(isoString);
+            const now = new Date();
+            const diffSeconds = Math.floor((now - date) / 1000);
+
+            if (diffSeconds < 60) return 'Vừa xong';
+            if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)} phút trước`;
+            if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)} giờ trước`;
+            return `${Math.floor(diffSeconds / 86400)} ngày trước`;
+        }
+
+        function showNotification(alert) {
+            const popup = document.getElementById('notificationPopup');
+            const icon = document.getElementById('notifIcon');
+            const title = document.getElementById('notifTitle');
+            const body = document.getElementById('notifBody');
+
+            icon.style.background = severityColors[alert.severity];
+            title.textContent = `${severityLabels[alert.severity]}: ${alert.error.type}`;
+            body.innerHTML = `${alert.station.name}<br>${alert.error.description}`;
+
+            popup.classList.add('show');
+
+            setTimeout(() => {
+                popup.classList.remove('show');
+            }, 4000);
+        }
+
+        function playSound(severity) {
+            // In a real app, this would play actual sounds
+            // For demo, we'll use browser notification sound simulation
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                const frequencies = {
+                    critical: [880, 660, 880],
+                    high: [660, 880],
+                    medium: [440],
+                    low: [330],
+                    info: [220]
+                };
+
+                oscillator.frequency.value = frequencies[severity][0];
+                gainNode.gain.value = 0.1;
+                
+                oscillator.start();
+                setTimeout(() => {
+                    oscillator.stop();
+                }, severity === 'critical' ? 500 : 200);
+            } catch (e) {
+                console.log('Audio not supported');
+            }
+        }
+
+        // Initialize
+        updateUI();
+    </script>
+</body>
+</html>

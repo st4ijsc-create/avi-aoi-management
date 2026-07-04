@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MB7 (doc 27 Đợt 6) — Transport security decision, documented honestly:
+
+  This app talks to a *user-configured LAN broker/server* (private RFC1918 IPs
+  that differ per factory site, e.g. 192.168.x.x). Android's Network Security
+  Config CANNOT express "cleartext allowed only for private IP ranges":
+  <domain-config> accepts hostnames / literal IPs only — no CIDR ranges, no
+  wildcards over IPs. Because the IP is entered at runtime in Settings, we
+  cannot enumerate domains at build time.
+
+  Decision:
+   - base-config keeps cleartextTrafficPermitted="true" (functionally the same
+     as the old android:usesCleartextTraffic="true", but now explicit and
+     documented in one place).
+   - TLS IS supported end-to-end already: MQTT via mqtts:// (TCP+SSL) or wss://
+     (WebSocket+SSL) through the "useSSL" connection setting, and HTTPS for the
+     REST/update endpoints. TLS should be the DEFAULT for new site deployments
+     (connection-config UI/default is owned by the settings screen).
+   - Note: the raw TCP MQTT path (react-native-tcp-socket) does not consult
+     this policy at all — only fetch/WebSocket (OkHttp) do. Setting base-config
+     to false would break ws:// LAN MQTT and LAN HTTP APIs while NOT protecting
+     the tcp:// path, i.e. pain without gain.
+
+  Tighten-later path (when sites provision TLS or a stable hostname):
+   1. Give the LAN server a hostname (mDNS/hosts/DNS) or fixed IP per site.
+   2. Flip base-config to cleartextTrafficPermitted="false" and add:
+        <domain-config cleartextTrafficPermitted="true">
+          <domain includeSubdomains="false">192.168.8.7</domain>
+        </domain-config>
+      per site (literal IPs are accepted as <domain> entries), or drop the
+      exception entirely once TLS is mandatory.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

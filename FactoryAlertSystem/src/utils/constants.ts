@@ -1,0 +1,1745 @@
+/**
+ * Factory Alert System - Constants & Default Configurations
+ * Chứa tất cả hằng số, config mặc định, translations
+ */
+
+import {
+  AlertSeverity,
+  Settings,
+  MqttConfig,
+  NotificationConfig,
+  AppSettings,
+  NetworkMonitorConfig,
+  SoundConfig,
+  Station,
+  Product,
+  ErrorInfo,
+  AlertTemplate,
+} from '../types';
+
+// ============================================
+// MQTT DEFAULTS
+// ============================================
+
+// Default device info for local Aedes broker authentication
+// Format: deviceId:deviceName:deviceModel
+// NOTE: deviceId here is only a PLACEHOLDER. The actual unique deviceId is generated
+// per device by mqttService.initDeviceInfo() and cached in AsyncStorage.
+// The connect() flow always uses buildLocalBrokerUsername() with the real deviceInfo.
+export const DEFAULT_DEVICE_INFO = {
+  deviceId: 'factory-alert-app-default',
+  deviceName: 'FactoryAlertApp',
+  deviceModel: 'Mobile',
+};
+
+export const DEFAULT_MQTT_CONFIG: MqttConfig = {
+  // MB4 (doc 27): NO baked-in customer LAN IP. Empty = unconfigured →
+  // the app gates on the Onboarding screen until a broker/server is set.
+  brokerAddress: '',
+  port: 1883,
+  protocol: 'tcp',
+  useSSL: false,
+  // Username format for local Aedes broker: deviceId:deviceName:deviceModel
+  // This matches the working test: 'test-device-123:TestDevice:TestModel'
+  username: `${DEFAULT_DEVICE_INFO.deviceId}:${DEFAULT_DEVICE_INFO.deviceName}:${DEFAULT_DEVICE_INFO.deviceModel}`,
+  password: '',
+  clientId: `factory_alert_${Date.now()}`,
+  // Topics theo format hệ thống: avi/{factoryId}/workshop/{workshopId}/station/{stationId}/{messageType}
+  topics: [
+    'avi/factory/+/workshop/+/station/+/errors',     // Format mới có factory segment
+    'avi/factory/+/workshop/+/station/+/alerts',
+    'avi/factory/+/workshop/+/station/+/status',
+    'avi/factory/+/workshop/+/station/+/bulletins',
+    'avi/factory/+/workshop/+/station/+/bulletin/periodic', // B1: bản tin định kỳ (server topic format)
+    'avi/factory/+/workshop/+/station/+/ng-rate-alert', // NG rate vượt ngưỡng (local broker)
+    'avi-aoi/factory/+/workshop/+/station/+/ng-rate-alert', // NG rate vượt ngưỡng (external broker)
+    'avi/+/workshop/+/station/+/errors',   // Tất cả lỗi
+    'avi/+/workshop/+/station/+/alerts',   // Tất cả cảnh báo  
+    'avi/+/workshop/+/station/+/status',   // Trạng thái
+    'avi/+/workshop/+/station/+/bulletins', // Bản tin định kỳ
+    'avi/+/workshop/+/station/+/bulletin/periodic', // B1: bản tin định kỳ (server topic format)
+    'avi-aoi/#',                            // Fallback topic cũ
+    'avi/test/#',                           // Test topic
+    'avi/escalations/#',                    // Cảnh báo leo thang từ server (retained, doc 27 MB6)
+  ],
+  keepAlive: 60, // 60s — MQTT PINGREQ interval; tolerates weak WiFi delays better (detection ~90s = 1.5×60)
+  reconnectPeriod: 5000,
+  connectTimeout: 15000,
+};
+
+export const MQTT_QOS = {
+  AT_MOST_ONCE: 0,
+  AT_LEAST_ONCE: 1,
+  EXACTLY_ONCE: 2,
+} as const;
+
+export const RECONNECT_CONFIG = {
+  MAX_ATTEMPTS: 10,
+  BASE_DELAY: 1000,
+  MAX_DELAY: 30000,
+} as const;
+
+// ============================================
+// NOTIFICATION DEFAULTS
+// ============================================
+
+export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  enabled: true,
+  sound: true,
+  vibration: true,
+  severityFilter: ['critical', 'high', 'medium', 'low', 'info'],
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '06:00',
+  stationFilterEnabled: false,
+  stationFilters: [],
+  floatingBubbleEnabled: true,
+  showAlertDialog: true,
+  overlayDisplayDuration: 15,
+  floatingPanelSections: {
+    statistics: true,
+    trend: true,
+    defects: true,
+    captures: true,
+    measurements: true,
+    events: true,
+  },
+};
+
+// ============================================
+// APP DEFAULTS
+// ============================================
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  language: 'vi',
+  theme: 'light',
+  autoReconnect: true,
+  keepScreenOn: true,
+  maxQueueSize: 100,
+  alertRetentionDays: 7,
+  // MB4 (doc 27): empty defaults — no customer LAN IP, no baked-in master key.
+  // Both are collected on the first-run Onboarding screen (or in Settings).
+  // Installs that previously SAVED a server address keep it (settings merge).
+  apiBaseUrl: '',
+  apiKey: '',
+  apiUsername: '',
+  apiPassword: '',
+  subscriptionMode: 'hierarchy',
+  hierarchySelectedKeys: [],
+  ngFlashDurationMs: 5000,
+  ngBubbleDismissSec: 0,
+  ngExplosionDismissSec: 5,
+  ngAutoClearColor: false,
+  ngMarkerScale: 1.5,
+  alertAnimationEnabled: true,
+  alertAnimationType: 'bomb',
+  alertAnimationDurationSec: 3,
+  proactivePollingEnabled: true,
+  proactivePollingIntervalSec: 60,
+  workstationId: null,
+  filterPointsByWorkstation: false,
+  slowNetworkMode: false,
+  canvasImageMode: 'fit',
+  updateServerUrl: '',
+  autoCheckUpdate: true,
+  autoUpdate: true,
+  useCustomApiIp: false,
+  useCustomUpdateIp: false,
+  debugMode: false,
+  mqttHealthCheckInterval: 15000,
+  mqttRetryMaxAttempts: 5,
+  mqttRetryInterval: 10000,
+};
+
+// ============================================
+// NETWORK MONITOR DEFAULTS
+// ============================================
+
+export const DEFAULT_NETWORK_MONITOR_CONFIG: NetworkMonitorConfig = {
+  enabled: false,
+  netInfoEnabled: true,
+  continuousMonitorEnabled: true,
+  throughputTestEnabled: true,
+  mqttRttEnabled: true,
+  dnsTestEnabled: true,
+  serverHealthEnabled: true,
+  monitorIntervalSec: 30,
+  throughputTestSizeKB: 100,
+  latencyThresholdGood: 200,
+  latencyThresholdFair: 500,
+  pingCount: 5,
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+  mqtt: DEFAULT_MQTT_CONFIG,
+  notifications: DEFAULT_NOTIFICATION_CONFIG,
+  app: DEFAULT_APP_SETTINGS,
+  networkMonitor: DEFAULT_NETWORK_MONITOR_CONFIG,
+};
+
+// ============================================
+// SEVERITY CONFIG
+// ============================================
+
+export const SEVERITY_CONFIG: Record<AlertSeverity, {
+  color: string;
+  bgColor: string;
+  icon: string;
+  label: string;
+  labelEn: string;
+  labelZh: string;
+  priority: number;
+}> = {
+  critical: {
+    color: '#FFFFFF',
+    bgColor: '#DC2626',
+    icon: 'alert-octagon',
+    label: 'NGHIÊM TRỌNG',
+    labelEn: 'CRITICAL',
+    labelZh: '严重',
+    priority: 5,
+  },
+  high: {
+    color: '#FFFFFF',
+    bgColor: '#EA580C',
+    icon: 'alert-circle',
+    label: 'CAO',
+    labelEn: 'HIGH',
+    labelZh: '高',
+    priority: 4,
+  },
+  medium: {
+    color: '#000000',
+    bgColor: '#FBBF24',
+    icon: 'alert',
+    label: 'TRUNG BÌNH',
+    labelEn: 'MEDIUM',
+    labelZh: '中等',
+    priority: 3,
+  },
+  low: {
+    color: '#FFFFFF',
+    bgColor: '#2563EB',
+    icon: 'information',
+    label: 'THẤP',
+    labelEn: 'LOW',
+    labelZh: '低',
+    priority: 2,
+  },
+  info: {
+    color: '#FFFFFF',
+    bgColor: '#6B7280',
+    icon: 'information-outline',
+    label: 'THÔNG TIN',
+    labelEn: 'INFO',
+    labelZh: '信息',
+    priority: 1,
+  },
+};
+
+// ============================================
+// SOUND CONFIG
+// ============================================
+
+export const SOUND_CONFIG: SoundConfig[] = [
+  {
+    severity: 'critical',
+    soundFile: 'alarm_critical.mp3',
+    repeatCount: 3,
+    vibrationPattern: [500, 200, 500, 200],
+  },
+  {
+    severity: 'high',
+    soundFile: 'alert_high.mp3',
+    repeatCount: 2,
+    vibrationPattern: [400, 200, 400, 200],
+  },
+  {
+    severity: 'medium',
+    soundFile: 'beep_medium.mp3',
+    repeatCount: 1,
+    vibrationPattern: [300, 100],
+  },
+  {
+    severity: 'low',
+    soundFile: 'tone_low.mp3',
+    repeatCount: 1,
+    vibrationPattern: [200, 100],
+  },
+  {
+    severity: 'info',
+    soundFile: '',
+    repeatCount: 0,
+    vibrationPattern: [100, 50],
+  },
+];
+
+// ============================================
+// CONNECTION STATUS CONFIG
+// ============================================
+
+export const CONNECTION_STATUS_CONFIG = {
+  connected: {
+    color: '#22C55E',
+    icon: 'wifi',
+    label: 'Đã kết nối',
+    labelEn: 'Connected',
+    labelZh: '已连接',
+  },
+  connecting: {
+    color: '#EAB308',
+    icon: 'wifi-strength-1',
+    label: 'Đang kết nối...',
+    labelEn: 'Connecting...',
+    labelZh: '连接中...',
+  },
+  disconnected: {
+    color: '#EF4444',
+    icon: 'wifi-off',
+    label: 'Mất kết nối',
+    labelEn: 'Disconnected',
+    labelZh: '断开连接',
+  },
+  error: {
+    color: '#991B1B',
+    icon: 'wifi-alert',
+    label: 'Lỗi kết nối',
+    labelEn: 'Connection Error',
+    labelZh: '连接错误',
+  },
+};
+
+// ============================================
+// STORAGE KEYS
+// ============================================
+
+export const STORAGE_KEYS = {
+  ALERTS: '@factory_alerts',
+  SETTINGS: '@factory_settings',
+  ALERT_QUEUE: '@alert_queue',
+  LAST_SYNC: '@last_sync',
+} as const;
+
+// ============================================
+// SAMPLE DATA FOR SIMULATOR
+// ============================================
+
+export const SAMPLE_STATIONS: Station[] = [
+  { id: 'ST-A-001', name: 'Wire Cutting Station A1', line: 'Line A', area: 'Zone 1' },
+  { id: 'ST-A-002', name: 'Wire Cutting Station A2', line: 'Line A', area: 'Zone 1' },
+  { id: 'ST-A-003', name: 'Crimping Station A3', line: 'Line A', area: 'Zone 1' },
+  { id: 'ST-B-001', name: 'Assembly Station B1', line: 'Line B', area: 'Zone 2' },
+  { id: 'ST-B-002', name: 'Assembly Station B2', line: 'Line B', area: 'Zone 2' },
+  { id: 'ST-B-003', name: 'Testing Station B3', line: 'Line B', area: 'Zone 2' },
+  { id: 'ST-C-001', name: 'Packaging Station C1', line: 'Line C', area: 'Zone 3' },
+  { id: 'ST-C-002', name: 'Quality Check C2', line: 'Line C', area: 'Zone 3' },
+];
+
+export const SAMPLE_PRODUCTS: Product[] = [
+  { id: 'PRD-WH-001', name: 'Wire Harness Model X', customer: 'Toyota' },
+  { id: 'PRD-WH-002', name: 'Wire Harness Model Y', customer: 'Honda' },
+  { id: 'PRD-WH-003', name: 'Wire Harness Model Z', customer: 'Nissan' },
+  { id: 'PRD-CB-001', name: 'Cable Assembly Type A', customer: 'Mitsubishi' },
+  { id: 'PRD-CB-002', name: 'Cable Assembly Type B', customer: 'Suzuki' },
+];
+
+export const SAMPLE_ERRORS: ErrorInfo[] = [
+  { code: 'E-CUT-001', type: 'Cutting Error', description: 'Wire length mismatch - measured length differs from specification' },
+  { code: 'E-CUT-002', type: 'Cutting Error', description: 'Blade worn - cutting quality degraded' },
+  { code: 'E-CRM-001', type: 'Crimping Error', description: 'Crimp height out of tolerance' },
+  { code: 'E-CRM-002', type: 'Crimping Error', description: 'Terminal feeding jam' },
+  { code: 'E-ASM-001', type: 'Assembly Error', description: 'Component mismatch detected' },
+  { code: 'E-ASM-002', type: 'Assembly Error', description: 'Missing component in assembly' },
+  { code: 'E-TST-001', type: 'Testing Error', description: 'Continuity test failed' },
+  { code: 'E-TST-002', type: 'Testing Error', description: 'Insulation resistance below threshold' },
+  { code: 'E-MCH-001', type: 'Machine Error', description: 'Emergency stop activated' },
+  { code: 'E-MCH-002', type: 'Machine Error', description: 'Motor overload detected' },
+  { code: 'E-MTL-001', type: 'Material Error', description: 'Wire spool running low' },
+  { code: 'E-MTL-002', type: 'Material Error', description: 'Wrong material loaded' },
+  { code: 'E-QLT-001', type: 'Quality Issue', description: 'Visual defect detected' },
+  { code: 'E-QLT-002', type: 'Quality Issue', description: 'Dimension out of spec' },
+];
+
+export const ALERT_TEMPLATES: AlertTemplate[] = [
+  {
+    id: 'TPL-001',
+    name: 'Cutting Error - Length Mismatch',
+    station: SAMPLE_STATIONS[0],
+    product: SAMPLE_PRODUCTS[0],
+    error: SAMPLE_ERRORS[0],
+    severity: 'high',
+  },
+  {
+    id: 'TPL-002',
+    name: 'Quality Issue - Visual Defect',
+    station: SAMPLE_STATIONS[7],
+    product: SAMPLE_PRODUCTS[1],
+    error: SAMPLE_ERRORS[12],
+    severity: 'medium',
+  },
+  {
+    id: 'TPL-003',
+    name: 'Emergency Stop',
+    station: SAMPLE_STATIONS[3],
+    product: SAMPLE_PRODUCTS[2],
+    error: SAMPLE_ERRORS[8],
+    severity: 'critical',
+  },
+  {
+    id: 'TPL-004',
+    name: 'Material Running Low',
+    station: SAMPLE_STATIONS[1],
+    product: SAMPLE_PRODUCTS[0],
+    error: SAMPLE_ERRORS[10],
+    severity: 'low',
+  },
+];
+
+// ============================================
+// TRANSLATIONS
+// ============================================
+
+export const TRANSLATIONS = {
+  vi: {
+    // App
+    appName: 'Factory Alert System',
+    appSubtitle: 'Hệ thống thông báo lỗi',
+    
+    // Tabs
+    home: 'Trang chủ',
+    alerts: 'Cảnh báo',
+    bulletins: 'Bản tin',
+    settings: 'Cài đặt',
+    simulator: 'Mô phỏng',
+    notificationCenter: 'Thông báo',
+    stations: 'Trạm AVI/AOI',
+    useCustomIp: 'Dùng IP riêng',
+    useCustomIpHint: 'Bỏ chọn để tự động dùng IP từ MQTT Broker',
+    autoFromMqtt: 'Tự động từ MQTT Broker',
+    allNotifications: 'Tất cả',
+    filtered: 'đã lọc',
+    clearFilters: 'Xóa bộ lọc',
+    urgentAlertsNeedAttention: 'cảnh báo khẩn cấp cần xử lý!',
+    unread: 'chưa đọc',
+    noResults: 'Không tìm thấy kết quả',
+    tryAdjustFilters: 'Thử điều chỉnh bộ lọc',
+    noBulletins: 'Chưa có bản tin nào',
+    noBulletinsDescription: 'Các bản tin định kỳ từ hệ thống sẽ hiển thị ở đây',
+    
+    // Home Screen
+    dashboard: 'Bảng điều khiển',
+    totalAlerts: 'Tổng cảnh báo',
+    pendingAlerts: 'Chờ xử lý',
+    recentAlerts: 'Cảnh báo gần đây',
+    noAlerts: 'Không có cảnh báo',
+    noAlertsDescription: 'Tất cả hệ thống đang hoạt động bình thường',
+    
+    // Alert
+    alertDetail: 'Chi tiết cảnh báo',
+    alertId: 'Mã cảnh báo',
+    timestamp: 'Thời gian',
+    station: 'Trạm',
+    stationId: 'Mã trạm',
+    stationName: 'Tên trạm',
+    line: 'Chuyền',
+    product: 'Sản phẩm',
+    productId: 'Mã sản phẩm',
+    productName: 'Tên sản phẩm',
+    error: 'Lỗi',
+    errorCode: 'Mã lỗi',
+    errorType: 'Loại lỗi',
+    description: 'Mô tả',
+    severity: 'Mức độ',
+    status: 'Trạng thái',
+    
+    // Status
+    pending: 'Chờ xử lý',
+    acknowledged: 'Đã xác nhận',
+    resolved: 'Đã xử lý',
+    
+    // Actions
+    acknowledge: 'Xác nhận',
+    dismiss: 'Bỏ qua',
+    resolve: 'Xử lý xong',
+    share: 'Chia sẻ',
+    clearAll: 'Xóa tất cả',
+    viewAll: 'Xem tất cả',
+    refresh: 'Làm mới',
+    
+    // Settings
+    mqttSettings: 'Cài đặt MQTT',
+    brokerAddress: 'Địa chỉ Broker',
+    port: 'Cổng',
+    useSSL: 'Sử dụng SSL',
+    username: 'Tên đăng nhập',
+    password: 'Mật khẩu',
+    topics: 'Topics',
+    testConnection: 'Kiểm tra kết nối',
+    
+    notificationSettings: 'Cài đặt thông báo',
+    enableNotifications: 'Bật thông báo',
+    enableSound: 'Bật âm thanh',
+    enableVibration: 'Bật rung',
+    quietHours: 'Giờ yên tĩnh',
+    quietHoursStart: 'Bắt đầu',
+    quietHoursEnd: 'Kết thúc',
+    
+    // Station Filter
+    stationFilter: 'Lọc theo công trạm',
+    stationFilterEnabled: 'Chỉ hiển thị thông báo từ các trạm đã chọn',
+    stationFilterDescription: 'Khi bật, chỉ nhận thông báo từ các mã công trạm trong danh sách',
+    addStation: 'Thêm mã trạm',
+    stationCode: 'Mã công trạm',
+    stationCodePlaceholder: 'VD: ST-A-001',
+    noStationFilter: 'Chưa có mã trạm nào',
+    noStationFilterHint: 'Thêm mã trạm để lọc thông báo',
+    removeStation: 'Xóa',
+    floatingBubble: 'Bubble nổi',
+    floatingBubbleEnabled: 'Hiển thị bubble khi chạy nền',
+    showAlertDialog: 'Dialog cảnh báo',
+    showAlertDialogDesc: 'Hiển thị dialog đè lên khi có cảnh báo nghiêm trọng',
+    overlayDisplayDuration: 'Thời gian hiển thị dialog',
+    overlayDisplayDurationDesc: 'Thời gian tự động ẩn overlay alert (giây)',
+    panelSections: 'Mục hiển thị trong Floating Panel',
+    panelSectionStatistics: 'Thống kê',
+    panelSectionTrend: 'Xu hướng',
+    panelSectionDefects: 'Phân tích lỗi',
+    panelSectionCaptures: 'Ảnh lỗi',
+    panelSectionMeasurements: 'Phép đo',
+    panelSectionEvents: 'Sự kiện gần đây',
+    
+    // Severity Filter
+    severityFilter: 'Lọc theo mức độ',
+    severityFilterDescription: 'Chọn các mức độ cảnh báo muốn nhận thông báo',
+    severityCritical: 'Nghiêm trọng',
+    severityHigh: 'Cao',
+    severityMedium: 'Trung bình',
+    severityLow: 'Thấp',
+    severityInfo: 'Thông tin',
+    selectAll: 'Chọn tất cả',
+    deselectAll: 'Bỏ chọn tất cả',
+    
+    appSettings: 'Cài đặt ứng dụng',
+    language: 'Ngôn ngữ',
+    theme: 'Giao diện',
+    autoReconnect: 'Tự động kết nối lại',
+    keepScreenOn: 'Giữ màn hình sáng',
+    mqttHealthCheckInterval: 'Chu kỳ kiểm tra kết nối',
+    mqttHealthCheckIntervalDesc: 'Thời gian giữa các lần kiểm tra kết nối MQTT (giây)',
+    mqttRetryMaxAttempts: 'Số lần thử lại tối đa',
+    mqttRetryMaxAttemptsDesc: 'Số lần thử kết nối lại khi mất kết nối',
+    mqttRetryInterval: 'Khoảng cách thử lại',
+    mqttRetryIntervalDesc: 'Thời gian chờ giữa các lần thử kết nối lại (giây)',
+    proactivePolling: 'Tự động cập nhật sản lượng',
+    proactivePollingInterval: 'Chu kỳ cập nhật (giây)',
+    proactivePollingDesc: 'Bật: Chủ động lấy dữ liệu theo chu kỳ. Tắt: Chờ bản tin MQTT Bulletin.',
+    workstationSetting: 'Cài đặt Workstation',
+    workstationSelect: 'Chọn công trạm',
+    workstationSelectDesc: 'Chỉ nhận dữ liệu điểm đo từ công trạm đã chọn',
+    workstationNone: 'Chưa chọn (nhận tất cả)',
+    workstationLoading: 'Đang tải danh sách...',
+    workstationLoadError: 'Lỗi tải danh sách công trạm',
+    workstationRefresh: 'Làm mới',
+    workstationClear: 'Bỏ chọn',
+    ngFlashDuration: 'Thời gian nhấp nháy điểm lỗi (giây)',
+    ngBubbleDismiss: 'Thời gian hiển thị Bubble NG (giây, 0=luôn hiện)',
+    ngExplosionDismiss: 'Thời gian hiển thị Explosion NG (giây)',
+    alertAnimationEnabled: 'Hiệu ứng cảnh báo MQTT Alert',
+    alertAnimationEnabledDesc: 'Hiển thị animation trước khi cập nhật điểm đo',
+    alertAnimationType: 'Loại hiệu ứng cảnh báo',
+    alertAnimationTypeBomb: 'Quả bom phát nổ',
+    alertAnimationTypeAlarm: 'Đèn cảnh báo Alarm',
+    alertAnimationTypeTriangle: 'Tam giác đỏ dấu chấm than vàng',
+    alertAnimationDuration: 'Thời gian hiệu ứng cảnh báo (giây)',
+    stationDetailSettings: 'Cài đặt Station Detail',
+    canvasImageMode: 'Chế độ hiển thị ảnh canvas',
+    canvasImageModeFit: 'Vừa (Fit)',
+    canvasImageModeFill: 'Lấp đầy (Fill)',
+    canvasImageModeCover: 'Phủ (Cover)',
+    
+    dataManagement: 'Quản lý dữ liệu',
+    clearAllAlerts: 'Xóa tất cả cảnh báo',
+    exportData: 'Xuất dữ liệu',
+    resetToDefaults: 'Khôi phục mặc định',
+    
+    // Network Diagnostics
+    networkDiagnostics: 'Chẩn đoán mạng',
+    networkDiagnosticsDesc: 'Kiểm tra tốc độ và ổn định mạng đến server',
+    runDiagnostics: 'Chạy chẩn đoán',
+    diagnosing: 'Đang chẩn đoán...',
+    mqttLatency: 'Độ trễ MQTT',
+    httpLatency: 'Độ trễ HTTP API',
+    networkStable: 'Ổn định',
+    networkUnstable: 'Không ổn định',
+    networkGood: 'Tốt',
+    networkFair: 'Trung bình',
+    networkPoor: 'Kém',
+    networkJitter: 'Jitter',
+    networkPacketLoss: 'Mất gói',
+    networkOverall: 'Đánh giá chung',
+    networkPingCount: 'Số lần ping',
+    networkAvgLatency: 'Trung bình',
+    networkMinLatency: 'Thấp nhất',
+    networkMaxLatency: 'Cao nhất',
+    networkSuccess: 'Thành công',
+    networkFailed: 'Thất bại',
+    networkTestMqtt: 'Kiểm tra MQTT Broker',
+    networkTestHttp: 'Kiểm tra HTTP API',
+    networkTestResult: 'Kết quả chẩn đoán',
+
+    // Network Monitor
+    networkMonitoring: 'Giám sát mạng',
+    networkMonitoringDesc: 'Theo dõi chất lượng mạng liên tục',
+    networkMonitorEnabled: 'Bật giám sát mạng',
+    netInfoMethod: 'Loại mạng & Tín hiệu',
+    netInfoMethodDesc: 'Phát hiện WiFi/4G, cường độ tín hiệu',
+    continuousMonitorMethod: 'Giám sát liên tục',
+    continuousMonitorMethodDesc: 'Theo dõi latency & tần suất mất kết nối',
+    throughputMethod: 'Kiểm tra băng thông',
+    throughputMethodDesc: 'Đo tốc độ tải dữ liệu từ server',
+    mqttRttMethod: 'MQTT RTT Echo',
+    mqttRttMethodDesc: 'Đo thời gian phản hồi qua MQTT',
+    dnsMethod: 'Phân giải DNS',
+    dnsMethodDesc: 'Đo thời gian phân giải tên miền',
+    serverHealthMethod: 'Kiểm tra Server',
+    serverHealthMethodDesc: 'Kiểm tra trạng thái server toàn diện',
+    monitorInterval: 'Chu kỳ giám sát (giây)',
+    throughputSize: 'Kích thước test (KB)',
+    latencyGoodThreshold: 'Ngưỡng tốt (ms)',
+    latencyFairThreshold: 'Ngưỡng trung bình (ms)',
+    pingCountSetting: 'Số lần ping',
+    networkType: 'Loại mạng',
+    signalStrength: 'Cường độ tín hiệu',
+    downloadSpeed: 'Tốc độ tải',
+    rttLatency: 'RTT Latency',
+    dnsResolveTime: 'Thời gian DNS',
+    serverStatus: 'Trạng thái server',
+    serverUptime: 'Uptime server',
+    serverMemory: 'Bộ nhớ server',
+    serverMqttStatus: 'MQTT Broker',
+    serverDbStatus: 'Database',
+    methodEnabled: 'Đã bật',
+    methodDisabled: 'Đã tắt',
+    runFullDiagnostics: 'Chạy chẩn đoán toàn diện',
+    networkQualityScore: 'Điểm chất lượng mạng',
+    
+    // Simulator
+    alertSimulator: 'Mô phỏng cảnh báo',
+    generateType: 'Loại tạo',
+    random: 'Ngẫu nhiên',
+    specific: 'Tùy chỉnh',
+    generateAlert: 'Tạo cảnh báo',
+    autoGenerate: 'Tự động tạo',
+    stopAutoGenerate: 'Dừng tự động',
+    autoGenerateInterval: 'Khoảng thời gian tự động',
+    generated: 'Đã tạo',
+    interval: 'Khoảng thời gian',
+    
+    // Connection
+    connected: 'Đã kết nối',
+    connecting: 'Đang kết nối...',
+    disconnected: 'Mất kết nối',
+    connectionError: 'Lỗi kết nối',
+    reconnecting: 'Đang kết nối lại...',
+    
+    // Time
+    justNow: 'Vừa xong',
+    minutesAgo: 'phút trước',
+    hoursAgo: 'giờ trước',
+    daysAgo: 'ngày trước',
+    
+    // Messages
+    connectionSuccess: 'Kết nối thành công!',
+    connectionFailed: 'Kết nối thất bại',
+    settingsSaved: 'Đã lưu cài đặt',
+    alertCleared: 'Đã xóa cảnh báo',
+    allAlertsCleared: 'Đã xóa tất cả cảnh báo',
+    confirmClearAll: 'Bạn có chắc muốn xóa tất cả cảnh báo?',
+    confirmReset: 'Bạn có chắc muốn khôi phục cài đặt mặc định?',
+    
+    // Errors
+    invalidBrokerAddress: 'Địa chỉ broker không hợp lệ',
+    invalidPort: 'Cổng không hợp lệ (1-65535)',
+    connectionTimeout: 'Hết thời gian kết nối',
+    authenticationFailed: 'Xác thực thất bại',
+    
+    // Bulletin
+    bulletinTitle: 'Bản tin định kỳ',
+    bulletinDetail: 'Chi tiết bản tin',
+    noBulletinsDesc: 'Các bản tin định kỳ từ hệ thống sẽ hiển thị ở đây',
+    bulletinMarkAllRead: 'Đánh dấu tất cả đã đọc',
+    bulletinUnread: 'chưa đọc',
+    bulletinTotal: 'tổng',
+    bulletinStation: 'Trạm',
+    bulletinPeriod: 'Chu kỳ',
+    bulletinStatistics: 'Thống kê',
+    bulletinFailPoints: 'Điểm lỗi',
+    bulletinMachines: 'Máy',
+    bulletinYield: 'Tỷ lệ đạt',
+    bulletinCycleTime: 'Thời gian chu kỳ',
+    bulletinViewImages: 'Xem ảnh lỗi',
+    bulletinLoadingImages: 'Đang tải ảnh...',
+    bulletinImagesLoaded: 'ảnh đã tải',
+    bulletinHasImages: 'Có ảnh kiểm tra',
+    bulletinTapToLoadImages: 'Nhấn để tải ảnh từ server',
+
+    // NG Rate Alert
+    ngRateAlert: 'Cảnh báo tỷ lệ NG',
+    ngRateInfo: 'Thông tin tỷ lệ NG',
+    ngRateCurrent: 'Tỷ lệ NG hiện tại',
+    ngRateThreshold: 'Ngưỡng cảnh báo',
+    ngRateExceeded: 'Vượt ngưỡng',
+    measurementPoint: 'Điểm đo',
+    measurementPointCode: 'Mã điểm đo',
+    measurementPointName: 'Tên điểm đo',
+    productModelInfo: 'Model sản phẩm',
+    productModelCode: 'Mã model',
+    productModelName: 'Tên model',
+    thresholdConfigInfo: 'Cấu hình ngưỡng',
+    thresholdConfigName: 'Tên cấu hình',
+    warningThreshold: 'Ngưỡng cảnh báo',
+    criticalThreshold: 'Ngưỡng nghiêm trọng',
+    minSampleSize: 'Số mẫu tối thiểu',
+    totalInspections: 'Tổng kiểm tra',
+    ngCount: 'Số lượng NG',
+    alertPeriod: 'Chu kỳ tính toán',
+    periodDate: 'Ngày',
+    periodFrom: 'Từ',
+    periodTo: 'Đến',
+
+    // On-Demand Image Loading
+    viewImages: 'Xem ảnh',
+    loadingImages: 'Đang tải ảnh...',
+    noImages: 'Không có ảnh',
+    imageLoadError: 'Lỗi tải ảnh',
+    retryLoadImages: 'Thử lại',
+    errorImage: 'Hình ảnh lỗi',
+    referenceImage: 'Ảnh mẫu',
+    noReferenceImage: 'Không có ảnh mẫu',
+    noErrorImage: 'Không có ảnh lỗi',
+    inspectionImages: 'Ảnh kiểm tra',
+    imagesAvailable: 'Có ảnh',
+    tapToViewImages: 'Nhấn để tải và xem ảnh kiểm tra',
+    imageCount: 'ảnh',
+    expectedValue: 'Giá trị kỳ vọng',
+    measuredValue: 'Giá trị đo',
+    apiBaseUrl: 'Địa chỉ API Server',
+    apiBaseUrlHint: 'URL server chứa ảnh (VD: http://192.168.1.100:3000)',
+    apiKey: 'API Key',
+    apiKeyHint: 'Key xác thực để truy cập API server (liên hệ quản trị viên)',
+    apiServerSettings: 'Cài đặt API Server',
+    apiUsername: 'Tên đăng nhập',
+    apiUsernameHint: 'Username tài khoản trên hệ thống AVI',
+    apiPassword: 'Mật khẩu',
+    apiPasswordHint: 'Password tài khoản trên hệ thống AVI',
+    apiLogin: 'Đăng nhập',
+    apiLogout: 'Đăng xuất',
+    apiLoginSuccess: 'Đăng nhập thành công',
+    apiLoginFailed: 'Đăng nhập thất bại',
+    apiLoggedInAs: 'Đã đăng nhập: {user}',
+    apiNotLoggedIn: 'Chưa đăng nhập',
+    apiTestConnection: 'Kiểm tra kết nối',
+    apiDebugPanel: 'Debug API',
+    apiDebugResults: 'Kết quả kiểm tra',
+    apiDebugRunning: 'Đang kiểm tra...',
+    imageNotConfigured: 'Chưa cấu hình API server.\nVào Cài đặt > API Server để cập nhật.',
+
+    // MQTT Subscription Selector
+    mqttSubscriptions: 'Cài đặt Subscription',
+    mqttSubscriptionsDescription: 'Chọn khu vực từ cây phân cấp để tạo MQTT subscription tự động',
+    mqttSubscriptionMode: 'Chế độ chọn Topic',
+    mqttSubscriptionModeManual: 'Thủ công',
+    mqttSubscriptionModeHierarchy: 'Từ hệ thống',
+    mqttApplySubscriptions: 'Áp dụng Subscriptions',
+    mqttSubscriptionsApplied: 'Đã áp dụng subscriptions',
+    mqttSubscriptionsAppliedMsg: 'Đã cập nhật {count} MQTT topic(s) từ cây phân cấp.',
+    mqttNoSelection: 'Chưa chọn',
+    mqttNoSelectionHint: 'Vui lòng chọn ít nhất 1 khu vực từ cây phân cấp',
+
+    // Buttons
+    save: 'Lưu',
+    cancel: 'Hủy',
+    ok: 'OK',
+    yes: 'Có',
+    no: 'Không',
+    close: 'Đóng',
+
+    // Onboarding (MB4 — cấu hình server lần đầu)
+    onboardingTitle: 'Kết nối máy chủ',
+    onboardingSubtitle: 'Nhập địa chỉ máy chủ AVI/AOI của nhà máy để bắt đầu. Ứng dụng chưa được cấu hình sẵn cho bất kỳ nhà máy nào.',
+    onboardingServerUrl: 'Địa chỉ máy chủ (Server URL)',
+    onboardingServerUrlPlaceholder: 'VD: http://10.0.0.5:3000',
+    onboardingServerUrlHint: 'Địa chỉ HTTP của máy chủ AVI/AOI trong mạng LAN nhà máy',
+    onboardingApiKey: 'API Key (tùy chọn)',
+    onboardingApiKeyHint: 'Master API key do quản trị viên hệ thống cấp',
+    onboardingMqttHost: 'MQTT Broker',
+    onboardingMqttHostHint: 'Tự động lấy từ địa chỉ máy chủ — chỉ sửa nếu broker chạy máy khác',
+    onboardingMqttPort: 'Cổng MQTT',
+    onboardingTestConnection: 'Kiểm tra kết nối',
+    onboardingTesting: 'Đang kiểm tra...',
+    onboardingTestOk: 'Kết nối thành công',
+    onboardingTestAuthFail: 'Máy chủ phản hồi nhưng API key không hợp lệ',
+    onboardingTestFail: 'Không kết nối được máy chủ',
+    onboardingContinue: 'Lưu & bắt đầu',
+    onboardingUrlRequired: 'Vui lòng nhập địa chỉ máy chủ',
+    onboardingUrlInvalid: 'Địa chỉ máy chủ không hợp lệ',
+    onboardingManualHint: 'Nhập thủ công (chưa hỗ trợ quét QR)',
+
+    // Ack comment (MB6 — lý do khi xác nhận)
+    ackCommentTitle: 'Xác nhận cảnh báo',
+    ackCommentPlaceholder: 'Ghi chú thêm (tùy chọn)...',
+    ackCommentSkip: 'Xác nhận không ghi chú',
+    ackConfirm: 'Xác nhận',
+    ackReasonFalseAlarm: 'Báo động giả',
+    ackReasonKnownIssue: 'Lỗi đã biết',
+    ackReasonInvestigating: 'Đang kiểm tra',
+    ackReasonFixedOnSite: 'Đã xử lý tại chỗ',
+
+    // Escalation (MB6)
+    escalated: 'Leo thang',
+    escalatedFilter: 'Leo thang',
+    escalatedAtLabel: 'Leo thang lúc',
+
+    // Role gating (MB5)
+    readOnlyRole: 'Tài khoản chỉ xem — không thể thao tác cảnh báo',
+
+    // Background & battery (W8-C — doc 27 Đợt 6 tồn đọng: nút battery-optimization)
+    backgroundAndBattery: 'Chạy nền & pin',
+    keepAliveTitle: 'Duy trì chạy nền',
+    keepAliveDesc: 'Giữ kết nối MQTT bằng foreground service khi app chạy nền / tắt màn hình',
+    batteryOptTitle: 'Miễn trừ tối ưu pin',
+    batteryOptStatusExempt: 'Đã miễn trừ',
+    batteryOptStatusActive: 'Chưa miễn trừ',
+    batteryOptStatusChecking: 'Đang kiểm tra…',
+    batteryOptDescExempt: 'Ứng dụng đã được miễn trừ — cảnh báo nền ổn định qua Doze',
+    batteryOptDescActive: 'Android có thể ngắt kết nối khi ngủ sâu (Doze) — chạm để mở cài đặt miễn trừ',
+    batteryOptOpenFailed: 'Không mở được màn hình cài đặt pin của hệ thống',
+  },
+  en: {
+    // App
+    appName: 'Factory Alert System',
+    appSubtitle: 'Error notification system',
+    
+    // Tabs
+    home: 'Home',
+    alerts: 'Alerts',
+    bulletins: 'Bulletins',
+    settings: 'Settings',
+    simulator: 'Simulator',
+    notificationCenter: 'Notifications',
+    stations: 'AOI Stations',
+    useCustomIp: 'Use custom IP',
+    useCustomIpHint: 'Uncheck to auto-use IP from MQTT Broker',
+    autoFromMqtt: 'Auto from MQTT Broker',
+    allNotifications: 'All',
+    filtered: 'filtered',
+    clearFilters: 'Clear filters',
+    urgentAlertsNeedAttention: 'urgent alerts need attention!',
+    unread: 'unread',
+    noResults: 'No results found',
+    tryAdjustFilters: 'Try adjusting your filters',
+    noBulletins: 'No bulletins yet',
+    noBulletinsDescription: 'Periodic bulletins will appear here',
+    
+    // Home Screen
+    dashboard: 'Dashboard',
+    totalAlerts: 'Total Alerts',
+    pendingAlerts: 'Pending',
+    recentAlerts: 'Recent Alerts',
+    noAlerts: 'No alerts',
+    noAlertsDescription: 'All systems are operating normally',
+    
+    // Alert
+    alertDetail: 'Alert Detail',
+    alertId: 'Alert ID',
+    timestamp: 'Timestamp',
+    station: 'Station',
+    stationId: 'Station ID',
+    stationName: 'Station Name',
+    line: 'Line',
+    product: 'Product',
+    productId: 'Product ID',
+    productName: 'Product Name',
+    error: 'Error',
+    errorCode: 'Error Code',
+    errorType: 'Error Type',
+    description: 'Description',
+    severity: 'Severity',
+    status: 'Status',
+    
+    // Status
+    pending: 'Pending',
+    acknowledged: 'Acknowledged',
+    resolved: 'Resolved',
+    
+    // Actions
+    acknowledge: 'Acknowledge',
+    dismiss: 'Dismiss',
+    resolve: 'Resolve',
+    share: 'Share',
+    clearAll: 'Clear All',
+    viewAll: 'View All',
+    refresh: 'Refresh',
+    
+    // Settings
+    mqttSettings: 'MQTT Settings',
+    brokerAddress: 'Broker Address',
+    port: 'Port',
+    useSSL: 'Use SSL',
+    username: 'Username',
+    password: 'Password',
+    topics: 'Topics',
+    testConnection: 'Test Connection',
+    
+    notificationSettings: 'Notification Settings',
+    enableNotifications: 'Enable Notifications',
+    enableSound: 'Enable Sound',
+    enableVibration: 'Enable Vibration',
+    quietHours: 'Quiet Hours',
+    quietHoursStart: 'Start',
+    quietHoursEnd: 'End',
+    
+    // Station Filter
+    stationFilter: 'Station Filter',
+    stationFilterEnabled: 'Only show notifications from selected stations',
+    stationFilterDescription: 'When enabled, only receive alerts from stations in the list',
+    addStation: 'Add Station',
+    stationCode: 'Station Code',
+    stationCodePlaceholder: 'e.g., ST-A-001',
+    noStationFilter: 'No station codes',
+    noStationFilterHint: 'Add station codes to filter alerts',
+    removeStation: 'Remove',
+    floatingBubble: 'Floating Bubble',
+    floatingBubbleEnabled: 'Show bubble when in background',
+    showAlertDialog: 'Alert Dialog',
+    showAlertDialogDesc: 'Show overlay dialog for critical/high severity alerts',
+    overlayDisplayDuration: 'Overlay display duration',
+    overlayDisplayDurationDesc: 'Auto-hide overlay alert duration (seconds)',
+    panelSections: 'Floating Panel Sections',
+    panelSectionStatistics: 'Statistics',
+    panelSectionTrend: 'Trend',
+    panelSectionDefects: 'Defect Breakdown',
+    panelSectionCaptures: 'Error Images',
+    panelSectionMeasurements: 'Measurements',
+    panelSectionEvents: 'Recent Events',
+    
+    // Severity Filter
+    severityFilter: 'Severity Filter',
+    severityFilterDescription: 'Select which severity levels to receive notifications',
+    severityCritical: 'Critical',
+    severityHigh: 'High',
+    severityMedium: 'Medium',
+    severityLow: 'Low',
+    severityInfo: 'Info',
+    selectAll: 'Select All',
+    deselectAll: 'Deselect All',
+    
+    appSettings: 'App Settings',
+    language: 'Language',
+    theme: 'Theme',
+    autoReconnect: 'Auto Reconnect',
+    keepScreenOn: 'Keep Screen On',
+    mqttHealthCheckInterval: 'Connection Check Interval',
+    mqttHealthCheckIntervalDesc: 'Time between MQTT connection checks (seconds)',
+    mqttRetryMaxAttempts: 'Max Retry Attempts',
+    mqttRetryMaxAttemptsDesc: 'Number of reconnection attempts when disconnected',
+    mqttRetryInterval: 'Retry Interval',
+    mqttRetryIntervalDesc: 'Wait time between reconnection attempts (seconds)',
+    proactivePolling: 'Auto-refresh production data',
+    proactivePollingInterval: 'Refresh interval (seconds)',
+    proactivePollingDesc: 'ON: Proactively fetch data at interval. OFF: Wait for MQTT Bulletin.',
+    workstationSetting: 'Workstation Setting',
+    workstationSelect: 'Select Workstation',
+    workstationSelectDesc: 'Only receive measurement data from the selected workstation',
+    workstationNone: 'Not selected (receive all)',
+    workstationLoading: 'Loading list...',
+    workstationLoadError: 'Error loading workstation list',
+    workstationRefresh: 'Refresh',
+    workstationClear: 'Clear',
+    ngFlashDuration: 'NG Point Flash Duration (seconds)',
+    ngBubbleDismiss: 'NG Bubble Display Time (sec, 0=always)',
+    ngExplosionDismiss: 'NG Explosion Display Time (seconds)',
+    alertAnimationEnabled: 'MQTT Alert Animation Effect',
+    alertAnimationEnabledDesc: 'Show animation before updating measurement points',
+    alertAnimationType: 'Alert Animation Type',
+    alertAnimationTypeBomb: 'Bomb Explosion',
+    alertAnimationTypeAlarm: 'Alarm Light',
+    alertAnimationTypeTriangle: 'Red Triangle with Yellow Exclamation',
+    alertAnimationDuration: 'Alert Animation Duration (seconds)',
+    stationDetailSettings: 'Station Detail Settings',
+    canvasImageMode: 'Canvas image display mode',
+    canvasImageModeFit: 'Fit',
+    canvasImageModeFill: 'Fill',
+    canvasImageModeCover: 'Cover',
+    
+    dataManagement: 'Data Management',
+    clearAllAlerts: 'Clear All Alerts',
+    exportData: 'Export Data',
+    resetToDefaults: 'Reset to Defaults',
+    
+    // Network Diagnostics
+    networkDiagnostics: 'Network Diagnostics',
+    networkDiagnosticsDesc: 'Check network speed and stability to server',
+    runDiagnostics: 'Run Diagnostics',
+    diagnosing: 'Diagnosing...',
+    mqttLatency: 'MQTT Latency',
+    httpLatency: 'HTTP API Latency',
+    networkStable: 'Stable',
+    networkUnstable: 'Unstable',
+    networkGood: 'Good',
+    networkFair: 'Fair',
+    networkPoor: 'Poor',
+    networkJitter: 'Jitter',
+    networkPacketLoss: 'Packet Loss',
+    networkOverall: 'Overall',
+    networkPingCount: 'Ping Count',
+    networkAvgLatency: 'Average',
+    networkMinLatency: 'Minimum',
+    networkMaxLatency: 'Maximum',
+    networkSuccess: 'Success',
+    networkFailed: 'Failed',
+    networkTestMqtt: 'Test MQTT Broker',
+    networkTestHttp: 'Test HTTP API',
+    networkTestResult: 'Diagnosis Result',
+
+    // Network Monitor
+    networkMonitoring: 'Network Monitoring',
+    networkMonitoringDesc: 'Continuous network quality monitoring',
+    networkMonitorEnabled: 'Enable network monitoring',
+    netInfoMethod: 'Network Type & Signal',
+    netInfoMethodDesc: 'Detect WiFi/4G, signal strength',
+    continuousMonitorMethod: 'Continuous Monitor',
+    continuousMonitorMethodDesc: 'Track latency & reconnection frequency',
+    throughputMethod: 'Bandwidth Test',
+    throughputMethodDesc: 'Measure download speed from server',
+    mqttRttMethod: 'MQTT RTT Echo',
+    mqttRttMethodDesc: 'Measure MQTT round-trip time',
+    dnsMethod: 'DNS Resolution',
+    dnsMethodDesc: 'Measure DNS resolve time',
+    serverHealthMethod: 'Server Health',
+    serverHealthMethodDesc: 'Comprehensive server status check',
+    monitorInterval: 'Monitor interval (sec)',
+    throughputSize: 'Test size (KB)',
+    latencyGoodThreshold: 'Good threshold (ms)',
+    latencyFairThreshold: 'Fair threshold (ms)',
+    pingCountSetting: 'Ping count',
+    networkType: 'Network Type',
+    signalStrength: 'Signal Strength',
+    downloadSpeed: 'Download Speed',
+    rttLatency: 'RTT Latency',
+    dnsResolveTime: 'DNS Time',
+    serverStatus: 'Server Status',
+    serverUptime: 'Server Uptime',
+    serverMemory: 'Server Memory',
+    serverMqttStatus: 'MQTT Broker',
+    serverDbStatus: 'Database',
+    methodEnabled: 'Enabled',
+    methodDisabled: 'Disabled',
+    runFullDiagnostics: 'Run full diagnostics',
+    networkQualityScore: 'Network Quality Score',
+    
+    // Simulator
+    alertSimulator: 'Alert Simulator',
+    generateType: 'Generate Type',
+    random: 'Random',
+    specific: 'Specific',
+    generateAlert: 'Generate Alert',
+    autoGenerate: 'Auto Generate',
+    stopAutoGenerate: 'Stop Auto',
+    autoGenerateInterval: 'Auto Generate Interval',
+    generated: 'Generated',
+    interval: 'Interval',
+    
+    // Connection
+    connected: 'Connected',
+    connecting: 'Connecting...',
+    disconnected: 'Disconnected',
+    connectionError: 'Connection Error',
+    reconnecting: 'Reconnecting...',
+    
+    // Time
+    justNow: 'Just now',
+    minutesAgo: 'minutes ago',
+    hoursAgo: 'hours ago',
+    daysAgo: 'days ago',
+    
+    // Messages
+    connectionSuccess: 'Connected successfully!',
+    connectionFailed: 'Connection failed',
+    settingsSaved: 'Settings saved',
+    alertCleared: 'Alert cleared',
+    allAlertsCleared: 'All alerts cleared',
+    confirmClearAll: 'Are you sure you want to clear all alerts?',
+    confirmReset: 'Are you sure you want to reset to defaults?',
+    
+    // Errors
+    invalidBrokerAddress: 'Invalid broker address',
+    invalidPort: 'Invalid port (1-65535)',
+    connectionTimeout: 'Connection timeout',
+    authenticationFailed: 'Authentication failed',
+    
+    // Bulletin
+    bulletinTitle: 'Periodic Bulletins',
+    bulletinDetail: 'Bulletin Detail',
+    noBulletinsDesc: 'Periodic bulletins from the system will appear here',
+    bulletinMarkAllRead: 'Mark all as read',
+    bulletinUnread: 'unread',
+    bulletinTotal: 'total',
+    bulletinStation: 'Station',
+    bulletinPeriod: 'Period',
+    bulletinStatistics: 'Statistics',
+    bulletinFailPoints: 'Fail Points',
+    bulletinMachines: 'Machines',
+    bulletinYield: 'Yield Rate',
+    bulletinCycleTime: 'Cycle Time',
+    bulletinViewImages: 'View Error Images',
+    bulletinLoadingImages: 'Loading images...',
+    bulletinImagesLoaded: 'images loaded',
+    bulletinHasImages: 'Inspection images available',
+    bulletinTapToLoadImages: 'Tap to load images from server',
+
+    // NG Rate Alert
+    ngRateAlert: 'NG Rate Alert',
+    ngRateInfo: 'NG Rate Information',
+    ngRateCurrent: 'Current NG Rate',
+    ngRateThreshold: 'Alert Threshold',
+    ngRateExceeded: 'Exceeded Threshold',
+    measurementPoint: 'Measurement Point',
+    measurementPointCode: 'Point Code',
+    measurementPointName: 'Point Name',
+    productModelInfo: 'Product Model',
+    productModelCode: 'Model Code',
+    productModelName: 'Model Name',
+    thresholdConfigInfo: 'Threshold Config',
+    thresholdConfigName: 'Config Name',
+    warningThreshold: 'Warning Threshold',
+    criticalThreshold: 'Critical Threshold',
+    minSampleSize: 'Min Sample Size',
+    totalInspections: 'Total Inspections',
+    ngCount: 'NG Count',
+    alertPeriod: 'Calculation Period',
+    periodDate: 'Date',
+    periodFrom: 'From',
+    periodTo: 'To',
+
+    // On-Demand Image Loading
+    viewImages: 'View Images',
+    loadingImages: 'Loading images...',
+    noImages: 'No images',
+    imageLoadError: 'Image load error',
+    retryLoadImages: 'Retry',
+    errorImage: 'Error Image',
+    referenceImage: 'Reference',
+    noReferenceImage: 'No reference',
+    noErrorImage: 'No error image',
+    inspectionImages: 'Inspection Images',
+    imagesAvailable: 'Images available',
+    tapToViewImages: 'Tap to load and view inspection images',
+    imageCount: 'images',
+    expectedValue: 'Expected Value',
+    measuredValue: 'Measured Value',
+    apiBaseUrl: 'API Server Address',
+    apiBaseUrlHint: 'Image server URL (e.g., http://192.168.1.100:3000)',
+    apiKey: 'API Key',
+    apiKeyHint: 'Authentication key for API server access (contact admin)',
+    apiServerSettings: 'API Server Settings',
+    apiUsername: 'Username',
+    apiUsernameHint: 'AVI system account username',
+    apiPassword: 'Password',
+    apiPasswordHint: 'AVI system account password',
+    apiLogin: 'Login',
+    apiLogout: 'Logout',
+    apiLoginSuccess: 'Login successful',
+    apiLoginFailed: 'Login failed',
+    apiLoggedInAs: 'Logged in: {user}',
+    apiNotLoggedIn: 'Not logged in',
+    apiTestConnection: 'Test Connection',
+    apiDebugPanel: 'API Debug',
+    apiDebugResults: 'Test Results',
+    apiDebugRunning: 'Testing...',
+    imageNotConfigured: 'API server not configured.\nGo to Settings > API Server to update.',
+
+    // MQTT Subscription Selector
+    mqttSubscriptions: 'Subscription Settings',
+    mqttSubscriptionsDescription: 'Select areas from hierarchy tree to auto-generate MQTT subscriptions',
+    mqttSubscriptionMode: 'Topic Selection Mode',
+    mqttSubscriptionModeManual: 'Manual',
+    mqttSubscriptionModeHierarchy: 'From System',
+    mqttApplySubscriptions: 'Apply Subscriptions',
+    mqttSubscriptionsApplied: 'Subscriptions Applied',
+    mqttSubscriptionsAppliedMsg: 'Updated {count} MQTT topic(s) from hierarchy tree.',
+    mqttNoSelection: 'No Selection',
+    mqttNoSelectionHint: 'Please select at least 1 area from the hierarchy tree',
+
+    // Buttons
+    save: 'Save',
+    cancel: 'Cancel',
+    ok: 'OK',
+    yes: 'Yes',
+    no: 'No',
+    close: 'Close',
+
+    // Onboarding (MB4 — first-run server configuration)
+    onboardingTitle: 'Connect to Server',
+    onboardingSubtitle: 'Enter your factory\'s AVI/AOI server address to get started. The app ships with no preset factory configuration.',
+    onboardingServerUrl: 'Server URL',
+    onboardingServerUrlPlaceholder: 'e.g. http://10.0.0.5:3000',
+    onboardingServerUrlHint: 'HTTP address of the AVI/AOI server on the factory LAN',
+    onboardingApiKey: 'API Key (optional)',
+    onboardingApiKeyHint: 'Master API key issued by your system administrator',
+    onboardingMqttHost: 'MQTT Broker',
+    onboardingMqttHostHint: 'Auto-derived from the server URL — change only if the broker runs elsewhere',
+    onboardingMqttPort: 'MQTT Port',
+    onboardingTestConnection: 'Test Connection',
+    onboardingTesting: 'Testing...',
+    onboardingTestOk: 'Connection successful',
+    onboardingTestAuthFail: 'Server reachable but the API key was rejected',
+    onboardingTestFail: 'Could not reach the server',
+    onboardingContinue: 'Save & Start',
+    onboardingUrlRequired: 'Please enter the server URL',
+    onboardingUrlInvalid: 'Invalid server URL',
+    onboardingManualHint: 'Manual entry (QR scan not yet supported)',
+
+    // Ack comment (MB6 — reason on acknowledge)
+    ackCommentTitle: 'Acknowledge Alert',
+    ackCommentPlaceholder: 'Additional note (optional)...',
+    ackCommentSkip: 'Acknowledge without note',
+    ackConfirm: 'Acknowledge',
+    ackReasonFalseAlarm: 'False alarm',
+    ackReasonKnownIssue: 'Known issue',
+    ackReasonInvestigating: 'Investigating',
+    ackReasonFixedOnSite: 'Fixed on site',
+
+    // Escalation (MB6)
+    escalated: 'Escalated',
+    escalatedFilter: 'Escalated',
+    escalatedAtLabel: 'Escalated at',
+
+    // Role gating (MB5)
+    readOnlyRole: 'Read-only account — alert actions are disabled',
+
+    // Background & battery (W8-C — doc 27 Đợt 6 leftover: battery-optimization button)
+    backgroundAndBattery: 'Background & Battery',
+    keepAliveTitle: 'Keep alive in background',
+    keepAliveDesc: 'Keep the MQTT connection alive with a foreground service when backgrounded / screen off',
+    batteryOptTitle: 'Battery optimization exemption',
+    batteryOptStatusExempt: 'Exempted',
+    batteryOptStatusActive: 'Not exempted',
+    batteryOptStatusChecking: 'Checking…',
+    batteryOptDescExempt: 'App is exempted — background alerts survive Doze',
+    batteryOptDescActive: 'Android may kill the connection in deep sleep (Doze) — tap to open the exemption settings',
+    batteryOptOpenFailed: 'Could not open the system battery settings screen',
+  },
+  zh: {
+    // App
+    appName: 'Factory Alert System',
+    appSubtitle: '错误通知系统',
+    
+    // Tabs
+    home: '首页',
+    alerts: '警报',
+    bulletins: '简报',
+    settings: '设置',
+    simulator: '模拟',
+    notificationCenter: '通知',
+    stations: 'AOI 工站',
+    useCustomIp: '使用自定义IP',
+    useCustomIpHint: '取消勾选以自动使用MQTT Broker的IP',
+    autoFromMqtt: '自动从MQTT Broker获取',
+    allNotifications: '全部',
+    filtered: '已筛选',
+    clearFilters: '清除筛选',
+    urgentAlertsNeedAttention: '条紧急警报需要处理！',
+    unread: '未读',
+    noResults: '未找到结果',
+    tryAdjustFilters: '请尝试调整筛选条件',
+    noBulletins: '暂无简报',
+    noBulletinsDescription: '系统定期简报将显示在此处',
+    
+    // Home Screen
+    dashboard: '仪表盘',
+    totalAlerts: '总警报',
+    pendingAlerts: '待处理',
+    recentAlerts: '最近警报',
+    noAlerts: '无警报',
+    noAlertsDescription: '所有系统运行正常',
+    
+    // Alert
+    alertDetail: '警报详情',
+    alertId: '警报编号',
+    timestamp: '时间',
+    station: '工站',
+    stationId: '工站编号',
+    stationName: '工站名称',
+    line: '产线',
+    product: '产品',
+    productId: '产品编号',
+    productName: '产品名称',
+    error: '错误',
+    errorCode: '错误代码',
+    errorType: '错误类型',
+    description: '描述',
+    severity: '严重程度',
+    status: '状态',
+    
+    // Status
+    pending: '待处理',
+    acknowledged: '已确认',
+    resolved: '已解决',
+    
+    // Actions
+    acknowledge: '确认',
+    dismiss: '忽略',
+    resolve: '已处理',
+    share: '分享',
+    clearAll: '清除全部',
+    viewAll: '查看全部',
+    refresh: '刷新',
+    
+    // Settings
+    mqttSettings: 'MQTT 设置',
+    brokerAddress: 'Broker 地址',
+    port: '端口',
+    useSSL: '使用 SSL',
+    username: '用户名',
+    password: '密码',
+    topics: 'Topics',
+    testConnection: '测试连接',
+    
+    notificationSettings: '通知设置',
+    enableNotifications: '启用通知',
+    enableSound: '启用声音',
+    enableVibration: '启用振动',
+    quietHours: '免打扰时段',
+    quietHoursStart: '开始',
+    quietHoursEnd: '结束',
+    
+    // Station Filter
+    stationFilter: '工站筛选',
+    stationFilterEnabled: '仅显示已选工站的通知',
+    stationFilterDescription: '启用后，仅接收列表中工站的警报',
+    addStation: '添加工站',
+    stationCode: '工站代码',
+    stationCodePlaceholder: '例：ST-A-001',
+    noStationFilter: '暂无工站代码',
+    noStationFilterHint: '添加工站代码以筛选警报',
+    removeStation: '删除',
+    floatingBubble: '悬浮气泡',
+    floatingBubbleEnabled: '后台运行时显示气泡',
+    showAlertDialog: '警报对话框',
+    showAlertDialogDesc: '严重/高级警报时显示叠加对话框',
+    overlayDisplayDuration: '覆盖显示时间',
+    overlayDisplayDurationDesc: '自动隐藏覆盖警报的时间（秒）',
+    panelSections: '悬浮面板显示项',
+    panelSectionStatistics: '统计',
+    panelSectionTrend: '趋势',
+    panelSectionDefects: '缺陷分析',
+    panelSectionCaptures: '错误图片',
+    panelSectionMeasurements: '测量',
+    panelSectionEvents: '最近事件',
+    
+    // Severity Filter
+    severityFilter: '严重程度筛选',
+    severityFilterDescription: '选择要接收通知的严重程度级别',
+    severityCritical: '严重',
+    severityHigh: '高',
+    severityMedium: '中等',
+    severityLow: '低',
+    severityInfo: '信息',
+    selectAll: '全选',
+    deselectAll: '取消全选',
+    
+    appSettings: '应用设置',
+    language: '语言',
+    theme: '主题',
+    autoReconnect: '自动重连',
+    keepScreenOn: '保持屏幕常亮',
+    mqttHealthCheckInterval: '连接检查周期',
+    mqttHealthCheckIntervalDesc: 'MQTT连接检查的时间间隔（秒）',
+    mqttRetryMaxAttempts: '最大重试次数',
+    mqttRetryMaxAttemptsDesc: '断连时的重新连接尝试次数',
+    mqttRetryInterval: '重试间隔',
+    mqttRetryIntervalDesc: '重新连接尝试之间的等待时间（秒）',
+    proactivePolling: '自动更新产量数据',
+    proactivePollingInterval: '更新周期（秒）',
+    proactivePollingDesc: '开：按周期主动获取数据。关：等待MQTT Bulletin推送。',
+    workstationSetting: '工站设置',
+    workstationSelect: '选择工站',
+    workstationSelectDesc: '仅接收所选工站的测量数据',
+    workstationNone: '未选择（接收全部）',
+    workstationLoading: '正在加载列表...',
+    workstationLoadError: '加载工站列表失败',
+    workstationRefresh: '刷新',
+    workstationClear: '清除',
+    ngFlashDuration: 'NG点闪烁时间（秒）',
+    ngBubbleDismiss: 'NG气泡显示时间（秒，0=常显）',
+    ngExplosionDismiss: 'NG爆炸效果显示时间（秒）',
+    alertAnimationEnabled: 'MQTT警报动画效果',
+    alertAnimationEnabledDesc: '在更新测量点前显示动画',
+    alertAnimationType: '警报动画类型',
+    alertAnimationTypeBomb: '炸弹爆炸',
+    alertAnimationTypeAlarm: '警报灯',
+    alertAnimationTypeTriangle: '红色三角黄色感叹号',
+    alertAnimationDuration: '警报动画时长（秒）',
+    stationDetailSettings: '工站详情设置',
+    canvasImageMode: '画布图片显示模式',
+    canvasImageModeFit: '适应 (Fit)',
+    canvasImageModeFill: '填充 (Fill)',
+    canvasImageModeCover: '覆盖 (Cover)',
+    
+    dataManagement: '数据管理',
+    clearAllAlerts: '清除所有警报',
+    exportData: '导出数据',
+    resetToDefaults: '恢复默认设置',
+    
+    // Network Diagnostics
+    networkDiagnostics: '网络诊断',
+    networkDiagnosticsDesc: '检查到服务器的网络速度和稳定性',
+    runDiagnostics: '运行诊断',
+    diagnosing: '正在诊断...',
+    mqttLatency: 'MQTT延迟',
+    httpLatency: 'HTTP API延迟',
+    networkStable: '稳定',
+    networkUnstable: '不稳定',
+    networkGood: '良好',
+    networkFair: '一般',
+    networkPoor: '差',
+    networkJitter: '抖动',
+    networkPacketLoss: '丢包',
+    networkOverall: '综合评估',
+    networkPingCount: 'Ping次数',
+    networkAvgLatency: '平均',
+    networkMinLatency: '最低',
+    networkMaxLatency: '最高',
+    networkSuccess: '成功',
+    networkFailed: '失败',
+    networkTestMqtt: '测试MQTT Broker',
+    networkTestHttp: '测试HTTP API',
+    networkTestResult: '诊断结果',
+
+    // Network Monitor
+    networkMonitoring: '网络监控',
+    networkMonitoringDesc: '持续监控网络质量',
+    networkMonitorEnabled: '启用网络监控',
+    netInfoMethod: '网络类型和信号',
+    netInfoMethodDesc: '检测WiFi/4G，信号强度',
+    continuousMonitorMethod: '持续监控',
+    continuousMonitorMethodDesc: '跟踪延迟和断线频率',
+    throughputMethod: '带宽测试',
+    throughputMethodDesc: '从服务器测量下载速度',
+    mqttRttMethod: 'MQTT RTT回显',
+    mqttRttMethodDesc: '测量MQTT往返时间',
+    dnsMethod: 'DNS解析',
+    dnsMethodDesc: '测量DNS解析时间',
+    serverHealthMethod: '服务器健康',
+    serverHealthMethodDesc: '全面的服务器状态检查',
+    monitorInterval: '监控周期（秒）',
+    throughputSize: '测试大小（KB）',
+    latencyGoodThreshold: '良好阈值（毫秒）',
+    latencyFairThreshold: '一般阈值（毫秒）',
+    pingCountSetting: 'Ping次数',
+    networkType: '网络类型',
+    signalStrength: '信号强度',
+    downloadSpeed: '下载速度',
+    rttLatency: 'RTT延迟',
+    dnsResolveTime: 'DNS时间',
+    serverStatus: '服务器状态',
+    serverUptime: '服务器运行时间',
+    serverMemory: '服务器内存',
+    serverMqttStatus: 'MQTT代理',
+    serverDbStatus: '数据库',
+    methodEnabled: '已启用',
+    methodDisabled: '已禁用',
+    runFullDiagnostics: '运行全面诊断',
+    networkQualityScore: '网络质量评分',
+    
+    // Simulator
+    alertSimulator: '警报模拟器',
+    generateType: '生成类型',
+    random: '随机',
+    specific: '自定义',
+    generateAlert: '生成警报',
+    autoGenerate: '自动生成',
+    stopAutoGenerate: '停止自动',
+    autoGenerateInterval: '自动生成间隔',
+    generated: '已生成',
+    interval: '间隔',
+    
+    // Connection
+    connected: '已连接',
+    connecting: '连接中...',
+    disconnected: '已断开',
+    connectionError: '连接错误',
+    reconnecting: '重新连接中...',
+    
+    // Time
+    justNow: '刚刚',
+    minutesAgo: '分钟前',
+    hoursAgo: '小时前',
+    daysAgo: '天前',
+    
+    // Messages
+    connectionSuccess: '连接成功！',
+    connectionFailed: '连接失败',
+    settingsSaved: '设置已保存',
+    alertCleared: '警报已清除',
+    allAlertsCleared: '所有警报已清除',
+    confirmClearAll: '确定要清除所有警报吗？',
+    confirmReset: '确定要恢复默认设置吗？',
+    
+    // Errors
+    invalidBrokerAddress: 'Broker地址无效',
+    invalidPort: '端口无效（1-65535）',
+    connectionTimeout: '连接超时',
+    authenticationFailed: '认证失败',
+    
+    // Bulletin
+    bulletinTitle: '定期简报',
+    bulletinDetail: '简报详情',
+    noBulletinsDesc: '系统定期简报将显示在此处',
+    bulletinMarkAllRead: '全部标为已读',
+    bulletinUnread: '未读',
+    bulletinTotal: '总计',
+    bulletinStation: '工站',
+    bulletinPeriod: '周期',
+    bulletinStatistics: '统计',
+    bulletinFailPoints: '缺陷点',
+    bulletinMachines: '检测机',
+    bulletinYield: '良品率',
+    bulletinCycleTime: '周期时间',
+    bulletinViewImages: '查看错误图片',
+    bulletinLoadingImages: '正在加载图片...',
+    bulletinImagesLoaded: '张图片已加载',
+    bulletinHasImages: '有检测图片',
+    bulletinTapToLoadImages: '点击从服务器加载图片',
+
+    // NG Rate Alert
+    ngRateAlert: 'NG率警报',
+    ngRateInfo: 'NG率信息',
+    ngRateCurrent: '当前NG率',
+    ngRateThreshold: '警报阈值',
+    ngRateExceeded: '超过阈值',
+    measurementPoint: '测量点',
+    measurementPointCode: '测量点代码',
+    measurementPointName: '测量点名称',
+    productModelInfo: '产品型号',
+    productModelCode: '型号代码',
+    productModelName: '型号名称',
+    thresholdConfigInfo: '阈值配置',
+    thresholdConfigName: '配置名称',
+    warningThreshold: '警告阈值',
+    criticalThreshold: '严重阈值',
+    minSampleSize: '最小样本量',
+    totalInspections: '总检测数',
+    ngCount: 'NG数量',
+    alertPeriod: '计算周期',
+    periodDate: '日期',
+    periodFrom: '从',
+    periodTo: '至',
+
+    // On-Demand Image Loading
+    viewImages: '查看图片',
+    loadingImages: '正在加载图片...',
+    noImages: '无图片',
+    imageLoadError: '图片加载错误',
+    retryLoadImages: '重试',
+    errorImage: '错误图片',
+    referenceImage: '参考图片',
+    noReferenceImage: '无参考图片',
+    noErrorImage: '无错误图片',
+    inspectionImages: '检测图片',
+    imagesAvailable: '有图片',
+    tapToViewImages: '点击加载并查看检测图片',
+    imageCount: '张图片',
+    expectedValue: '期望值',
+    measuredValue: '实测值',
+    apiBaseUrl: 'API服务器地址',
+    apiBaseUrlHint: '图片服务器URL（例：http://192.168.1.100:3000）',
+    apiKey: 'API密钥',
+    apiKeyHint: 'API服务器认证密钥（请联系管理员）',
+    apiServerSettings: 'API服务器设置',
+    apiUsername: '用户名',
+    apiUsernameHint: 'AVI系统账户用户名',
+    apiPassword: '密码',
+    apiPasswordHint: 'AVI系统账户密码',
+    apiLogin: '登录',
+    apiLogout: '登出',
+    apiLoginSuccess: '登录成功',
+    apiLoginFailed: '登录失败',
+    apiLoggedInAs: '已登录：{user}',
+    apiNotLoggedIn: '未登录',
+    apiTestConnection: '测试连接',
+    apiDebugPanel: 'API调试',
+    apiDebugResults: '测试结果',
+    apiDebugRunning: '正在测试...',
+    imageNotConfigured: 'API服务器未配置。\n请前往 设置 > API服务器 进行配置。',
+
+    // MQTT Subscription Selector
+    mqttSubscriptions: '订阅设置',
+    mqttSubscriptionsDescription: '从层级树中选择区域以自动生成MQTT订阅',
+    mqttSubscriptionMode: 'Topic选择模式',
+    mqttSubscriptionModeManual: '手动',
+    mqttSubscriptionModeHierarchy: '从系统获取',
+    mqttApplySubscriptions: '应用订阅',
+    mqttSubscriptionsApplied: '订阅已应用',
+    mqttSubscriptionsAppliedMsg: '已从层级树更新 {count} 个MQTT topic。',
+    mqttNoSelection: '未选择',
+    mqttNoSelectionHint: '请从层级树中至少选择1个区域',
+
+    // Buttons
+    save: '保存',
+    cancel: '取消',
+    ok: '确定',
+    yes: '是',
+    no: '否',
+    close: '关闭',
+
+    // Onboarding (MB4 — 首次运行服务器配置)
+    onboardingTitle: '连接服务器',
+    onboardingSubtitle: '请输入贵工厂的 AVI/AOI 服务器地址以开始使用。应用不预设任何工厂配置。',
+    onboardingServerUrl: '服务器地址 (Server URL)',
+    onboardingServerUrlPlaceholder: '例如: http://10.0.0.5:3000',
+    onboardingServerUrlHint: '工厂局域网中 AVI/AOI 服务器的 HTTP 地址',
+    onboardingApiKey: 'API 密钥（可选）',
+    onboardingApiKeyHint: '由系统管理员发放的 Master API Key',
+    onboardingMqttHost: 'MQTT Broker',
+    onboardingMqttHostHint: '自动从服务器地址推导 — 仅当 broker 部署在其他主机时修改',
+    onboardingMqttPort: 'MQTT 端口',
+    onboardingTestConnection: '测试连接',
+    onboardingTesting: '测试中...',
+    onboardingTestOk: '连接成功',
+    onboardingTestAuthFail: '服务器可达，但 API 密钥无效',
+    onboardingTestFail: '无法连接服务器',
+    onboardingContinue: '保存并开始',
+    onboardingUrlRequired: '请输入服务器地址',
+    onboardingUrlInvalid: '服务器地址无效',
+    onboardingManualHint: '手动输入（暂不支持扫码）',
+
+    // Ack comment (MB6 — 确认时填写原因)
+    ackCommentTitle: '确认警报',
+    ackCommentPlaceholder: '附加备注（可选）...',
+    ackCommentSkip: '不填备注直接确认',
+    ackConfirm: '确认',
+    ackReasonFalseAlarm: '误报',
+    ackReasonKnownIssue: '已知问题',
+    ackReasonInvestigating: '正在排查',
+    ackReasonFixedOnSite: '现场已处理',
+
+    // Escalation (MB6)
+    escalated: '已升级',
+    escalatedFilter: '已升级',
+    escalatedAtLabel: '升级时间',
+
+    // Role gating (MB5)
+    readOnlyRole: '只读账户 — 无法操作警报',
+
+    // Background & battery (W8-C — doc 27 Đợt 6 遗留：电池优化按钮)
+    backgroundAndBattery: '后台运行与电池',
+    keepAliveTitle: '后台保活',
+    keepAliveDesc: '应用在后台/熄屏时用前台服务保持 MQTT 连接',
+    batteryOptTitle: '电池优化豁免',
+    batteryOptStatusExempt: '已豁免',
+    batteryOptStatusActive: '未豁免',
+    batteryOptStatusChecking: '检查中…',
+    batteryOptDescExempt: '应用已获豁免 — 后台警报可在 Doze 下存活',
+    batteryOptDescActive: 'Android 深度休眠（Doze）可能断开连接 — 点按打开豁免设置',
+    batteryOptOpenFailed: '无法打开系统电池设置页面',
+  },
+};
+
+// ============================================
+// THEME
+// ============================================
+
+// Wave 3B — fontWeight tokens. Typed as RN's fontWeight literal union via `as const`
+// so `fontWeight: theme.fontWeight.bold` is assignable to TextStyle without casts.
+const FONT_WEIGHT = {
+  regular: '400',
+  medium: '500',
+  semibold: '600',
+  bold: '700',
+  heavy: '800',
+} as const;
+
+export const LIGHT_THEME = {
+  colors: {
+    primary: '#2563EB',
+    primaryDark: '#1D4ED8',
+    secondary: '#64748B',
+    background: '#F8FAFC',
+    white: '#FFFFFF',
+    surface: '#FFFFFF',
+    surfaceVariant: '#F1F5F9',
+    text: '#1E293B',
+    textSecondary: '#64748B',
+    textMuted: '#94A3B8',
+    border: '#E2E8F0',
+    error: '#DC2626',
+    success: '#22C55E',
+    warning: '#EAB308',
+    info: '#3B82F6',
+    critical: '#DC2626',
+    high: '#EA580C',
+    medium: '#FBBF24',
+    // 3B: #FBBF24 fails contrast as a *text* colour on light tints — this darker
+    // amber (amber-700) is the readable label colour. Call sites use `mediumText`
+    // instead of the ad-hoc '#B45309' patch.
+    mediumText: '#B45309',
+    low: '#2563EB',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+    xxl: 48,
+  },
+  // 3B: consolidated radius scale (was scattered 6/8/10/12/14/16/20). `full` kept
+  // as an alias of `pill` for existing call sites.
+  borderRadius: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    pill: 9999,
+    full: 9999,
+  },
+  // 3B: bolder, glare/glove-legible scale (min body ≥14). Token NAMES unchanged so
+  // existing refs pick up the new values automatically.
+  fontSize: {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 18,
+    xl: 22,
+    xxl: 28,
+    xxxl: 34,
+  },
+  fontWeight: FONT_WEIGHT,
+  // 3B: cheap elevation tokens for the low-end target. Prefer a hairline border +
+  // very low elevation over blurred shadows (which are expensive per-row on old GPUs).
+  elevation: {
+    none: 0,
+    sm: 1,
+    md: 3,
+  },
+};
+
+export const DARK_THEME = {
+  ...LIGHT_THEME,
+  colors: {
+    ...LIGHT_THEME.colors,
+    primary: '#3B82F6',
+    primaryDark: '#2563EB',
+    background: '#0F172A',
+    surface: '#1E293B',
+    surfaceVariant: '#334155',
+    text: '#F8FAFC',
+    textSecondary: '#94A3B8',
+    textMuted: '#64748B',
+    border: '#334155',
+    // On dark surfaces the dark amber-700 loses contrast; use a brighter amber-300.
+    mediumText: '#FCD34D',
+  },
+};

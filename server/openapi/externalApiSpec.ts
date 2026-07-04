@@ -161,6 +161,50 @@ export function buildExternalOpenApiSpec(serverUrl = "/") {
           responses: { "200": { description: "OK", content: { "application/json": { schema: okEnvelope } } }, "401": unauthorized },
         },
       },
+      "/api/external/alerts/{alertId}/acknowledge-v2": {
+        post: {
+          tags: ["Alerts"],
+          summary: "Xác nhận cảnh báo (v2: kèm ghi chú + danh tính thật)",
+          security: [{ masterKey: [] }, { bearerAuth: [] }],
+          parameters: [{ name: "alertId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    acknowledgedBy: { type: "string", description: "Tên hiển thị người xác nhận (bỏ qua nếu dùng Bearer token)" },
+                    comment: { type: "string", description: "Lý do/ghi chú khi xác nhận" },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "OK", content: { "application/json": { schema: okEnvelope } } }, "401": unauthorized },
+        },
+      },
+      "/api/external/alerts/{alertId}/resolve-v2": {
+        post: {
+          tags: ["Alerts"],
+          summary: "Đóng cảnh báo (v2: kèm ghi chú + danh tính thật)",
+          security: [{ masterKey: [] }, { bearerAuth: [] }],
+          parameters: [{ name: "alertId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    resolvedBy: { type: "string", description: "Tên hiển thị người xử lý (bỏ qua nếu dùng Bearer token)" },
+                    resolutionNote: { type: "string", description: "Ghi chú xử lý" },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "OK", content: { "application/json": { schema: okEnvelope } } }, "401": unauthorized },
+        },
+      },
       "/api/external/bulletins": listGet("Danh sách bản tin", "Bulletins"),
       "/api/external/dashboard/summary": listGet("Tổng quan dashboard", "Dashboard"),
       "/api/external/reports/generate": {
@@ -170,6 +214,19 @@ export function buildExternalOpenApiSpec(serverUrl = "/") {
           security: [{ masterKey: [] }, { bearerAuth: [] }],
           requestBody: { content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
           responses: { "200": { description: "OK", content: { "application/json": { schema: okEnvelope } } }, "401": unauthorized },
+        },
+      },
+      "/api/external/reports/{reportId}/download": {
+        get: {
+          tags: ["Reports"],
+          summary: "Tải báo cáo đã sinh",
+          security: [{ masterKey: [] }, { bearerAuth: [] }],
+          parameters: [{ name: "reportId", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": { description: "Report file (CSV hoặc JSON attachment)" },
+            "401": unauthorized,
+            "404": { description: "Report không tồn tại hoặc đã hết hạn" },
+          },
         },
       },
       "/api/external/user/preferences": {

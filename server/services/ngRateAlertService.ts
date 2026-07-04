@@ -20,6 +20,12 @@ import * as schema from "../../drizzle/schema";
 interface NgRateAlertPayload {
   alertType: "NG_RATE_THRESHOLD";
   alertId: string;
+  /**
+   * Server-side resolvable id (`ngrate-{historyRowId}`). The mobile app prefers this
+   * over `alertId` when resolving, so an NG-rate alert can be resolved server-side
+   * (updates mqtt_ng_rate_alert_history). Undefined if the history pre-insert failed.
+   */
+  serverAlertId?: string;
   timestamp: string;
   severity: "warning" | "critical";
   station: {
@@ -377,9 +383,39 @@ async function sendNgRateAlert(
 
     // Build payload
     const alertId = `NGRATE-${dateStr.replace(/-/g, "")}-${threshold.id}-${Date.now()}`;
+
+    // Pre-persist the alert-history row FIRST (before publishing) so its row id can be
+    // embedded in the payload as serverAlertId=`ngrate-{id}`. That lets the mobile app
+    // resolve this NG-rate alert server-side (resolve-v2 updates this same row). The
+    // delivery flags + full payload are filled in by the UPDATE after publishing below.
+    let alertHistoryId: number | null = null;
+    try {
+      const [inserted] = await db.insert(schema.mqttNgRateAlertHistory).values({
+        thresholdId: threshold.id,
+        stationId: data.stationId,
+        machineId: data.machineId,
+        measurementPointId: threshold.measurementPointId,
+        pointName: data.pointDef?.name || null,
+        pointCode: data.pointDef?.code || null,
+        productModelName: productModelInfo?.name || null,
+        currentNgRate: String(data.ngRate),
+        thresholdValue: String(data.triggeredThreshold),
+        totalInspections: data.total,
+        ngCount: data.ngCount,
+        severity: data.severity,
+        message,
+        mqttTopic: topic,
+        triggeredAt: new Date(),
+      }).returning({ id: schema.mqttNgRateAlertHistory.id });
+      alertHistoryId = inserted?.id ?? null;
+    } catch (err) {
+      console.error("[NgRateAlert] Failed to pre-save alert history:", err);
+    }
+
     const payload: NgRateAlertPayload = {
       alertType: "NG_RATE_THRESHOLD",
       alertId,
+      serverAlertId: alertHistoryId != null ? `ngrate-${alertHistoryId}` : undefined,
       timestamp: new Date().toISOString(),
       severity: data.severity,
       station: {
@@ -529,33 +565,21 @@ async function sendNgRateAlert(
       console.error("[NgRateAlert] Failed to log message:", err);
     }
 
-    // ── Save alert history ──
-    let alertHistoryId: number | null = null;
-    try {
-      const [inserted] = await db.insert(schema.mqttNgRateAlertHistory).values({
-        thresholdId: threshold.id,
-        stationId: data.stationId,
-        machineId: data.machineId,
-        measurementPointId: threshold.measurementPointId,
-        pointName: data.pointDef?.name || null,
-        pointCode: data.pointDef?.code || null,
-        productModelName: productModelInfo?.name || null,
-        currentNgRate: String(data.ngRate),
-        thresholdValue: String(data.triggeredThreshold),
-        totalInspections: data.total,
-        ngCount: data.ngCount,
-        severity: data.severity,
-        message,
-        mqttTopic: topic,
-        sentMqttLocal: sentLocal,
-        sentMqttExternal: sentExternal,
-        sentFcm: sentFcm,
-        payload: payload as any,
-        triggeredAt: new Date(),
-      }).returning({ id: schema.mqttNgRateAlertHistory.id });
-      alertHistoryId = inserted?.id ?? null;
-    } catch (err) {
-      console.error("[NgRateAlert] Failed to save alert history:", err);
+    // ── Update alert history with delivery result + full payload ──
+    // (row was pre-inserted above to obtain serverAlertId; here we fill in the rest)
+    if (alertHistoryId != null) {
+      try {
+        await db.update(schema.mqttNgRateAlertHistory)
+          .set({
+            sentMqttLocal: sentLocal,
+            sentMqttExternal: sentExternal,
+            sentFcm: sentFcm,
+            payload: payload as any,
+          })
+          .where(eq(schema.mqttNgRateAlertHistory.id, alertHistoryId));
+      } catch (err) {
+        console.error("[NgRateAlert] Failed to update alert history:", err);
+      }
     }
 
     // ── Fire-and-forget AI enrichment (non-blocking) ──

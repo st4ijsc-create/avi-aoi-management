@@ -1,0 +1,21 @@
+package com.foutec.FactoryAlertSystem
+
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ViewManager
+
+/**
+ * FloatingBubblePackage
+ * Đăng ký FloatingBubbleModule với React Native
+ */
+class FloatingBubblePackage : ReactPackage {
+    
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        return listOf(FloatingBubbleModule(reactContext))
+    }
+
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
+        return emptyList()
+    }
+}

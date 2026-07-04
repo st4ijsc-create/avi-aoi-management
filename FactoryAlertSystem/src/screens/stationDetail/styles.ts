@@ -1,0 +1,716 @@
+/**
+ * StationDetail — shared StyleSheet factories + light/dark style cache (getS).
+ * MB11 decomposition: moved verbatim from StationDetailScreen.tsx.
+ * All section styles are built once per palette via _buildAllStyles and cached.
+ */
+import { StyleSheet, Platform } from 'react-native';
+import {
+  DK, LK, IS_TABLET, SCREEN_WIDTH, SCREEN_HEIGHT, PANEL_WIDTH,
+  MARKER_SIZE, MARKER_DOT_SIZE, MARKER_DOT_RADIUS, MARKER_LABEL_FONT,
+  PCB_MARKER_SCALE, PCB_HEIGHT,
+} from './palette';
+import type { CP } from './palette';
+
+const _mkKpiS = (C: CP) => StyleSheet.create({
+  card: {
+    flexBasis: IS_TABLET ? ('48%' as any) : ('47%' as any),
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 90,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    overflow: 'hidden',
+  },
+  gradient: { paddingHorizontal: 6, paddingVertical: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconWrap: { width: 16, height: 16, borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
+  delta: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 3, paddingVertical: 1, borderRadius: 3 },
+  value: { fontSize: 11, fontWeight: '800', letterSpacing: -0.3, flex: 1, textAlign: 'right' },
+  label: { fontSize: 8, color: C.textSecondary, flex: 1 },
+});
+
+const _mkSicS = (C: CP) => StyleSheet.create({
+  card: {
+    flex: 1,
+    minWidth: IS_TABLET ? (0 as any) : ('47%' as any),
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    overflow: 'hidden',
+  },
+  gradient: { paddingHorizontal: 8, paddingVertical: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconWrap: { width: 18, height: 18, borderRadius: 5, justifyContent: 'center', alignItems: 'center' },
+  texts: { flex: 1 },
+  value: { fontSize: 12, fontWeight: '800', letterSpacing: -0.3 },
+  label: { fontSize: 9, color: C.textSecondary },
+});
+
+const _mkFilterS = (C: CP) => StyleSheet.create({
+  row: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceRaised,
+  },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  text: { fontSize: 12, fontWeight: '600', color: C.textSecondary },
+  count: { fontSize: 11, color: C.textMuted },
+});
+
+const _mkPtS = (C: CP) => StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    marginBottom: 6,
+    backgroundColor: C.surface,
+    borderColor: C.border,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  info: { flex: 1 },
+  id: { fontSize: 10, fontWeight: '600', color: C.textMuted, letterSpacing: 0.5 },
+  name: { fontSize: 13, fontWeight: '600', color: C.text },
+  right: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  typeBadge: { backgroundColor: `${C.accent}18`, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
+  typeText: { fontSize: 9, fontWeight: '800', color: C.accent, letterSpacing: 0.5 },
+  rate: { fontSize: 13, fontWeight: '800', minWidth: 44, textAlign: 'right' },
+});
+
+const _mkDbS = (C: CP) => StyleSheet.create({
+  row: { marginBottom: 10 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  name: { fontSize: 12, color: C.text, flex: 1 },
+  pct: { fontSize: 11, fontWeight: '700', color: C.textSecondary },
+  barBg: { height: 6, borderRadius: 3, backgroundColor: C.surfaceRaised, overflow: 'hidden' },
+  barFill: { height: 6, borderRadius: 3 },
+});
+
+const _mkMeS = (C: CP) => StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border, gap: 6 },
+  param: { flex: 2, fontSize: 12, fontWeight: '500', color: C.text },
+  val: { flex: 1.5, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  spec: { flex: 1.5, fontSize: 11, textAlign: 'center', color: C.textMuted },
+});
+
+const _mkEvS = (C: CP) => StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 2 },
+  time: { fontSize: 11, fontWeight: '700', color: C.textMuted, width: 40, paddingTop: 4 },
+  line: { alignItems: 'center', width: 16 },
+  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 3 },
+  stem: { width: 2, height: 18, borderRadius: 1 },
+  desc: { fontSize: 12, color: C.text, flex: 1, paddingTop: 3 },
+});
+
+const _mkPcbS = (C: CP) => StyleSheet.create({
+  canvas: {
+    height: PCB_HEIGHT,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  canvasInner: {
+    flex: 1,
+    position: 'relative',
+  },
+  image: { width: '100%', height: '100%' },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: C.overlay,
+  },
+  errWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errText: { color: C.textMuted, fontSize: 12, marginTop: 6 },
+  placeholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  placeholderText: { color: C.textMuted, fontSize: 13, marginTop: 8 },
+  scanBar: { position: 'absolute', left: 0, right: 0, top: 0 },
+  marker: { position: 'absolute', width: MARKER_SIZE, height: MARKER_SIZE, justifyContent: 'center', alignItems: 'center' },
+  markerDot: {
+    minWidth: MARKER_DOT_SIZE,
+    height: MARKER_DOT_SIZE,
+    borderRadius: MARKER_DOT_RADIUS,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  markerLabel: { color: '#FFF', fontSize: MARKER_LABEL_FONT, fontWeight: '800' },
+  pulse: {
+    position: 'absolute',
+    width: MARKER_DOT_SIZE,
+    height: MARKER_DOT_SIZE,
+    borderRadius: MARKER_DOT_RADIUS,
+  },
+  alertTriangle: {
+    position: 'absolute',
+    top: Math.round(-14 * PCB_MARKER_SCALE),
+    right: Math.round(-12 * PCB_MARKER_SCALE),
+    width: Math.round(30 * PCB_MARKER_SCALE),
+    height: Math.round(30 * PCB_MARKER_SCALE),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alertTriangleIcon: {
+    fontSize: Math.round(28 * PCB_MARKER_SCALE),
+    color: '#EF4444',
+    lineHeight: Math.round(30 * PCB_MARKER_SCALE),
+  },
+  alertExclamation: {
+    position: 'absolute',
+    top: Math.round(4 * PCB_MARKER_SCALE),
+    fontSize: Math.round(13 * PCB_MARKER_SCALE),
+    fontWeight: '900',
+    color: '#FBBF24',
+    textAlign: 'center',
+  },
+  legend: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    right: 8,
+    backgroundColor: C.legendBg,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  legendTitle: { color: C.textSecondary, fontSize: 10, fontWeight: '700', marginBottom: 4 },
+  legendRow: { flexDirection: 'row', gap: 12 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: C.textMuted, fontSize: 10 },
+});
+
+// ============================================
+// CAPTURE CARD STYLES
+// ============================================
+const _mkCapS = (C: CP) => StyleSheet.create({
+  card: { width: '48%', marginBottom: 8, borderRadius: 10, overflow: 'hidden', backgroundColor: C.surfaceRaised },
+  imgWrap: { width: '100%', aspectRatio: 4 / 3, position: 'relative' },
+  imgPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  imgLabel: { fontSize: 10, color: C.textMuted, marginTop: 2 },
+  ngRegion: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  ngBorder: { width: '60%', height: '60%', borderWidth: 2, borderColor: C.fail, borderRadius: 4 },
+  badge: { position: 'absolute', top: 4, right: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+});
+
+const _mkFpS = (C: CP) => StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 50,
+  },
+  panel: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: PANEL_WIDTH,
+    backgroundColor: C.surface,
+    borderLeftWidth: 1,
+    borderLeftColor: C.border,
+    zIndex: 51,
+    elevation: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+  },
+  header: { paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 54 : 14, paddingBottom: 14 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  typeBadgeLarge: { backgroundColor: `${C.accent}18`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: `${C.accent}30` },
+  typeBadgeText: { fontSize: 10, fontWeight: '800', color: C.accent, letterSpacing: 0.5 },
+  closeBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: C.surfaceRaised, justifyContent: 'center', alignItems: 'center' },
+  headerInfo: { marginBottom: 8 },
+  pointId: { fontSize: 10, color: C.textMuted, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  pointName: { fontSize: 17, fontWeight: '800', color: C.text, marginTop: 2, lineHeight: 22 },
+  headerDefectRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  defRatePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  defRateVal: { fontSize: 13, fontWeight: '900' },
+  headerStatusLabel: { fontSize: 11, color: C.textSecondary, fontWeight: '600' },
+  body: { flex: 1, paddingHorizontal: 12 },
+  section: {
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  secHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  secTitle: { fontSize: 13, fontWeight: '700', color: C.text, flex: 1 },
+  secSub: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  statBox: {
+    width: '47%' as any,
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.border,
+  },
+  statVal: { fontSize: 17, fontWeight: '800', color: C.text },
+  statLabel: { fontSize: 9, color: C.textMuted, marginTop: 3, textAlign: 'center' },
+  trendWrap: { paddingVertical: 4 },
+  capturesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  // Measurements table
+  measHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    marginBottom: 2,
+  },
+  measCol: { fontSize: 9, fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  measRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
+  measParam: { fontSize: 11, fontWeight: '600', color: C.text },
+  measVal: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  measSpec: { fontSize: 10, textAlign: 'center', color: C.textMuted },
+  measBadge: { alignItems: 'center', justifyContent: 'center', paddingVertical: 2, borderRadius: 4 },
+  measBadgeText: { fontSize: 8, fontWeight: '900' },
+  // Action buttons
+  actionRow: { flexDirection: 'row', gap: 8, marginBottom: 8, marginTop: 4 },
+  actionBtn: { flex: 1, borderRadius: 10, overflow: 'hidden' },
+  actionGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
+  actionText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  actionBtnOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+    backgroundColor: `${C.accent}08`,
+  },
+  actionTextOutline: { fontSize: 13, fontWeight: '700', color: C.accent },
+});
+
+const _mkPkS = (C: CP) => StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  container: { backgroundColor: C.surface, borderRadius: 16, padding: 20, width: '100%', maxHeight: '70%', borderWidth: 1, borderColor: C.border },
+  title: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 16, textAlign: 'center' },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.surfaceRaised, borderRadius: 8, borderWidth: 1, borderColor: C.border, paddingHorizontal: 10, paddingVertical: Platform.OS === 'ios' ? 8 : 2, marginBottom: 12 },
+  searchInput: { flex: 1, fontSize: 13, color: C.text, padding: 0 },
+  list: { maxHeight: 300 },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 8,
+  },
+  itemActive: { backgroundColor: `${C.accent}15`, borderColor: C.accent },
+  itemText: { fontSize: 15, fontWeight: '500', color: C.text },
+  closeBtn: { backgroundColor: C.surfaceRaised, paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 8 },
+  closeBtnText: { fontSize: 14, fontWeight: '600', color: C.textSecondary },
+});
+
+const _mkProdS = (C: CP) => StyleSheet.create({
+  wrap: {
+    flex: 1,
+    minWidth: IS_TABLET ? (0 as any) : ('47%' as any),
+  },
+  row: { flex: 1 },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: C.surfaceRaised,
+    borderWidth: 1,
+    borderColor: C.border,
+    flex: 1,
+  },
+  dropdownText: { fontSize: 11, fontWeight: '600', color: C.text, flex: 1 },
+  infoTag: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: C.accent,
+    backgroundColor: `${C.accent}15`,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  empty: { fontSize: 12, color: C.textMuted, paddingVertical: 16, textAlign: 'center' },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modal: {
+    width: Math.min(SCREEN_WIDTH * 0.85, 400),
+    maxHeight: SCREEN_HEIGHT * 0.5,
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  modalTitle: { fontSize: 15, fontWeight: '700', color: C.text },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.surfaceRaised, borderRadius: 8, borderWidth: 1, borderColor: C.border, paddingHorizontal: 10, paddingVertical: Platform.OS === 'ios' ? 8 : 2, marginHorizontal: 12, marginBottom: 8 },
+  searchInput: { flex: 1, fontSize: 13, color: C.text, padding: 0 },
+  modalScroll: { paddingHorizontal: 12, paddingVertical: 8 },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  optionActive: { backgroundColor: C.accent },
+  optionCode: { fontSize: 13, fontWeight: '600', color: C.text },
+  optionName: { fontSize: 11, color: C.textMuted, marginTop: 1 },
+});
+
+const _mkGalS = (C: CP) => StyleSheet.create({
+  wrap: { marginBottom: 10, backgroundColor: C.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: C.border },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  title: { fontSize: 13, fontWeight: '700', color: C.text, flex: 1 },
+  count: { fontSize: 11, color: C.textMuted },
+  tabs: { flexDirection: 'row', gap: 4, marginBottom: 8 },
+  tab: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: C.surfaceRaised,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  tabActive: { backgroundColor: C.accent, borderColor: C.accent },
+  tabText: { fontSize: 10, fontWeight: '700', color: C.textMuted },
+  empty: { fontSize: 11, color: C.textMuted, paddingVertical: 12, textAlign: 'center' },
+  scroll: { gap: 8, paddingBottom: 2 },
+  card: {
+    width: 110,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: C.surfaceRaised,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  thumb: { width: 110, height: 80 },
+  cardOverlay: { position: 'absolute', top: 4, left: 4 },
+  typeBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  typeText: { fontSize: 8, fontWeight: '800' },
+  cardLabel: { fontSize: 9, color: C.textSecondary, paddingHorizontal: 6, paddingVertical: 4 },
+});
+
+const _mkIvS = (C: CP) => StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 54 : 16,
+    paddingBottom: 10,
+  },
+  title: { fontSize: 15, fontWeight: '700', color: C.text },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start', marginTop: 4 },
+  badgeText: { fontSize: 10, fontWeight: '800' },
+  closeBtn: { padding: 8, backgroundColor: C.surfaceRaised, borderRadius: 10 },
+  image: { flex: 1, width: '100%' },
+  zoomHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 4,
+  },
+  zoomHintText: { fontSize: 11, color: C.textMuted },
+});
+
+const _mkExpS = (C: CP) => StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+  },
+  flash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: C.fail,
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  particle: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 3,
+    borderColor: C.fail,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  infoBox: {
+    alignItems: 'center',
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    borderWidth: 1,
+    borderColor: C.fail,
+    minWidth: 240,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: C.fail,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  rateText: {
+    fontSize: 16,
+    color: C.text,
+    fontWeight: '600',
+  },
+  rateValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: C.fail,
+  },
+  threshText: {
+    fontSize: 13,
+    color: C.warn,
+    marginTop: 4,
+  },
+  statsText: {
+    fontSize: 12,
+    color: C.textMuted,
+    marginTop: 4,
+  },
+  dismiss: {
+    fontSize: 11,
+    color: C.textMuted,
+    marginTop: 12,
+    fontStyle: 'italic',
+  },
+});
+
+// ============================================
+// STYLES
+// ============================================
+const _mkS = (C: CP) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
+  },
+  backBtn: { padding: 2 },
+  headerCenter: { flex: 1 },
+  headerTitle: { fontSize: 13, fontWeight: '800', color: C.text },
+  headerSub: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  subText: { fontSize: 9, color: C.textMuted },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#22C55E18',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.pass },
+  liveText: { color: C.pass, fontSize: 10, fontWeight: '800' },
+  fullScreenBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: C.surfaceRaised,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  switchBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: C.surfaceRaised,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  fullScreenExitBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 10,
+    right: 10,
+    zIndex: 999,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Content
+  scroll: { flex: 1 },
+  scrollInner: { padding: 10 },
+  // KPI
+  kpiSection: { marginBottom: 8, borderRadius: 8, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border, padding: 6 },
+  kpiHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4 },
+  kpiHeaderTitle: { fontSize: 11, fontWeight: '700', color: C.text },
+  kpiStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 0 },
+  // Column resize
+  colResizeBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, paddingVertical: 3, paddingHorizontal: 2 },
+  colResizeBtn: { width: 24, height: 24, borderRadius: 6, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center' },
+  colResizeLabel: { fontSize: 10, fontWeight: '700', color: C.textMuted, minWidth: 30, textAlign: 'center' },
+  // Draggable separator
+  dragSeparator: { width: 16, alignItems: 'center', justifyContent: 'center' },
+  dragLine: { width: 2, flex: 1, backgroundColor: C.border, borderRadius: 1 },
+  dragDots: { alignItems: 'center', gap: 3, paddingVertical: 6 },
+  dragDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.textMuted },
+  // Row 2: Two-column layout
+  row2Container: { flexDirection: 'row', gap: 8, marginBottom: 10, flex: 1 },
+  col1: { flex: 1 },
+  col1Collapsed: { width: 28, justifyContent: 'flex-start', alignItems: 'center', paddingTop: 4 },
+  col1ExpandBtn: { width: 26, height: 26, borderRadius: 6, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center' },
+  col2: { flex: 1 },
+  // Canvas
+  canvasSection: { marginBottom: 14 },
+  canvasHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  secTitle: { fontSize: 14, fontWeight: '700', color: C.text },
+  toggleRow: { flexDirection: 'row', gap: 6 },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: C.surfaceRaised,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  toggleActive: { backgroundColor: C.accent, borderColor: C.accent },
+  toggleText: { fontSize: 10, fontWeight: '700', color: C.textMuted },
+  // Product + Info row
+  productInfoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    alignItems: 'stretch',
+    marginBottom: 6,
+  },
+  // Points
+  pointsSection: { flex: 1, marginBottom: 10 },
+  pointsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  pointsCount: { fontSize: 10, fontWeight: '700', color: C.textMuted, backgroundColor: C.surfaceRaised, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  pointsScroll: { flex: 1 },
+  // Points Stats Bar
+  ptStatsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    gap: 4,
+  },
+  ptStatItem: { flex: 1, alignItems: 'center', gap: 2 },
+  ptStatLabel: { fontSize: 9, fontWeight: '600', color: C.textMuted },
+  ptStatValue: { fontSize: 13, fontWeight: '800' },
+  ptStatDivider: { width: 1, height: 28, backgroundColor: C.border },
+  noPts: { alignItems: 'center', paddingVertical: 28 },
+  noPtsText: { fontSize: 14, fontWeight: '600', color: C.textSecondary, marginTop: 8 },
+  noPtsHint: { fontSize: 12, color: C.textMuted, marginTop: 4, textAlign: 'center' },
+  // Inspection Points Table
+  tableHeader: { flexDirection: 'row', backgroundColor: C.surfaceRaised, borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, marginBottom: 2, borderWidth: 1, borderColor: C.border },
+  tableHCell: { fontSize: 10, fontWeight: '800', color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  tableRow: { flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8, borderRadius: 4, marginBottom: 1 },
+  tableRowAlt: { backgroundColor: `${C.surfaceRaised}40` },
+  tableRowSel: { backgroundColor: `${C.accent}15`, borderWidth: 1, borderColor: C.accent },
+  tableCell: { fontSize: 12, fontWeight: '600', color: C.text },
+  tColPoint: { flex: 2 },
+  tColNum: { flex: 1, textAlign: 'right' as const },
+  // Empty / Loading
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginTop: 16 },
+  emptyHint: { fontSize: 13, color: C.textSecondary, marginTop: 8, textAlign: 'center' },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+});
+
+/* ---------- style cache (dark / light) ---------- */
+function _buildAllStyles(C: CP) {
+  return {
+    kpiS: _mkKpiS(C), sicS: _mkSicS(C), filterS: _mkFilterS(C),
+    ptS: _mkPtS(C), dbS: _mkDbS(C), meS: _mkMeS(C), evS: _mkEvS(C),
+    pcbS: _mkPcbS(C), capS: _mkCapS(C), fpS: _mkFpS(C),
+    pkS: _mkPkS(C), prodS: _mkProdS(C), galS: _mkGalS(C),
+    ivS: _mkIvS(C), expS: _mkExpS(C), s: _mkS(C),
+  };
+}
+const _sCache = new Map<boolean, ReturnType<typeof _buildAllStyles>>();
+function getS(isDark: boolean) {
+  if (!_sCache.has(isDark)) _sCache.set(isDark, _buildAllStyles(isDark ? DK : LK));
+  return _sCache.get(isDark)!;
+}
+
+export { getS };
