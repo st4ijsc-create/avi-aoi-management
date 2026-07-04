@@ -206,6 +206,30 @@ export function moveStep(steps: StudioStep[], id: string, dir: -1 | 1): boolean 
   return false;
 }
 
+/**
+ * U14 — Sắp lại thứ tự: đưa `sourceId` xuống NGAY SAU `targetId` NẾU hai bước cùng
+ * một danh sách anh-em. Dùng cho thao tác nối-cạnh trên sơ đồ (kéo cạnh next từ node
+ * này tới node kia). KHÔNG di chuyển xuyên cấp — nếu khác danh sách thì bỏ qua an toàn.
+ * Trả true nếu đã đổi (mutate-in-place, giống moveStep).
+ */
+export function reorderToSibling(steps: StudioStep[], sourceId: string, targetId: string): boolean {
+  const si = steps.findIndex((s) => s.id === sourceId);
+  const ti = steps.findIndex((s) => s.id === targetId);
+  if (si >= 0 && ti >= 0 && si !== ti) {
+    const [moved] = steps.splice(si, 1);
+    const insertAt = steps.findIndex((s) => s.id === targetId) + 1;
+    steps.splice(insertAt, 0, moved);
+    return true;
+  }
+  // Chỉ MỘT danh sách chứa cả hai anh-em; đệ quy tìm đúng danh sách đó.
+  for (const s of steps) {
+    if (s.steps && reorderToSibling(s.steps, sourceId, targetId)) return true;
+    if (s.then && reorderToSibling(s.then, sourceId, targetId)) return true;
+    if (s.else && reorderToSibling(s.else, sourceId, targetId)) return true;
+  }
+  return false;
+}
+
 /** Append a child step into a container's slot (steps/then/else). */
 export function addChild(steps: StudioStep[], parentId: string, slot: "steps" | "then" | "else", child: StudioStep): void {
   const parent = findStep(steps, parentId);

@@ -37,6 +37,8 @@ import {
   MetricCard, PageHeader, PageContainer,
   chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick,
 } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -174,9 +176,16 @@ function fmtDateTime(d?: string | Date | null): string {
 
 export default function SafetyWorkforce() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
+  // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền điều khiển máy.
+  const permReason = !canControl
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
 
   const [tab, setTab] = useState("cockpit");
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("");
@@ -351,6 +360,7 @@ export default function SafetyWorkforce() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<ShieldAlert className="h-6 w-6" />}
           title={t("safety.title", "Safety & Workforce")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -361,6 +371,12 @@ export default function SafetyWorkforce() {
             </Button>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("safety.whenToUse", "When to use — monitor safety-relevant events and coordinate mixed human↔robot workforce assignments. Advisory only — not a safety-rated controller.")}</span>
+        </div>
 
         {/* ── PERSISTENT advisory banner (always visible — critical honesty) ──── */}
         <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
@@ -457,11 +473,9 @@ export default function SafetyWorkforce() {
                     <Badge variant="secondary" className="ml-1 text-xs">{liveEvents.length}</Badge>
                   )}
                 </CardTitle>
-                {canControl && (
-                  <Button size="sm" variant="outline" className="h-8" onClick={() => setProximityOpen(true)}>
-                    <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (advisory test)")}
-                  </Button>
-                )}
+                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setProximityOpen(true)}>
+                  <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (advisory test)")}
+                </Button>
               </CardHeader>
               <CardContent>
                 {liveEvents.length === 0 ? (
@@ -645,11 +659,9 @@ export default function SafetyWorkforce() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {canControl && (
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setAssignOpen(true)}>
-                      <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
-                    </Button>
-                  )}
+                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setAssignOpen(true)}>
+                    <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -718,11 +730,9 @@ export default function SafetyWorkforce() {
                   <Handshake className="h-4 w-4" />
                   {t("workforce.collabTitle", "Human↔robot handover sessions")}
                 </CardTitle>
-                {canControl && (
-                  <Button size="sm" variant="outline" className="h-8" onClick={() => setStartCollabOpen(true)}>
-                    <HandMetal className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}
-                  </Button>
-                )}
+                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setStartCollabOpen(true)}>
+                  <HandMetal className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}
+                </Button>
               </CardHeader>
               <CardContent>
                 {collabsQ.isLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}

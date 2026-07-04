@@ -17,8 +17,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
+import { useEngineering } from "@/contexts/EngineeringContext";
+import { parseDeepLink } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageContainer, PageHeader } from "@/components/patterns";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -194,6 +199,9 @@ interface WorkflowRow {
 
 export default function CellTwinPlayer() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const utils = trpc.useUtils();
 
   const workflowsQ = trpc.orchestration.listWorkflows.useQuery({ limit: 100 });
@@ -248,10 +256,25 @@ export default function CellTwinPlayer() {
     [workflowsQ.data],
   );
 
-  // Default the selection to the first workflow once loaded.
+  // U1 (doc 26) — deep-link ?ref= là nguồn chính; store lastSelected.workflowRef là fallback;
+  // cuối cùng mới về workflow đầu tiên. Áp dụng MỘT LẦN sau khi list workflow đã tải.
+  const search = useSearch();
+  const deepLink = useMemo(() => parseDeepLink(search), [search]);
+  const { lastSelected, setLastWorkflowRef } = useEngineering();
+  const deepLinkApplied = useRef(false);
   useEffect(() => {
-    if (!selectedRef && workflows.length > 0) setSelectedRef(workflows[0].ref);
-  }, [workflows, selectedRef]);
+    if (deepLinkApplied.current) return;
+    if (workflows.length === 0) return; // đợi list
+    deepLinkApplied.current = true;
+    const wanted = deepLink.ref ?? lastSelected.workflowRef;
+    if (wanted && workflows.some((w) => w.ref === wanted)) setSelectedRef(wanted);
+    else if (!selectedRef) setSelectedRef(workflows[0].ref);
+  }, [workflows, deepLink.ref, lastSelected.workflowRef, selectedRef]);
+
+  // U1 — nhớ workflow đang xem để lần sau mở lại đúng chỗ (fallback cho điều hướng trơn).
+  useEffect(() => {
+    if (selectedRef) setLastWorkflowRef(selectedRef);
+  }, [selectedRef, setLastWorkflowRef]);
 
   // Refs the rAF loop reads/writes without re-rendering.
   const simRef = useRef(sim); simRef.current = sim;
@@ -437,7 +460,9 @@ export default function CellTwinPlayer() {
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Workflow className="h-6 w-6" />}
+          badge={<ViewOnlyBadge module="machine_control" />}
           title={t("celltwin.title", "Cell Twin — Phát lại dự đoán quy trình")}
           description={t("celltwin.subtitle", "Chọn một quy trình và xem bản sao số phát lại dòng thời gian DỰ ĐOÁN; bật Trực tiếp để phủ trạng thái thiết bị thật (không phát lệnh)")}
           actions={
@@ -455,6 +480,12 @@ export default function CellTwinPlayer() {
             </>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("celltwin.whenToUse", "Khi nào dùng — chọn một quy trình và phát lại dòng thời gian DỰ ĐOÁN trên bản sao số; bật Trực tiếp để phủ trạng thái thiết bị thật. Không phát lệnh nào xuống thiết bị.")}</span>
+        </div>
 
         {/* workflow picker */}
         <div className="flex items-center gap-2 flex-wrap">

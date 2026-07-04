@@ -14,11 +14,12 @@
  */
 
 import { createHash } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   machineRecipes,
   recipeDeployments,
+  users,
   type MachineRecipe,
   type RecipeDeployment,
 } from "../../drizzle/schema";
@@ -119,14 +120,22 @@ export async function getActiveRecipe(opts: { code?: string; machineId?: number 
   return undefined;
 }
 
-/** All versions for a recipe `code`, newest version first. */
-export async function listRecipeVersions(code: string): Promise<MachineRecipe[]> {
+/**
+ * All versions for a recipe `code`, newest version first.
+ * U6 (doc 26) — kèm tên người tạo (createdByName) qua left-join users để chỗ
+ * duyệt/bảng phiên bản hiển thị "ai tạo" mà không cần tra cứu thêm.
+ */
+export async function listRecipeVersions(
+  code: string,
+): Promise<Array<MachineRecipe & { createdByName: string | null }>> {
   const d = await db();
-  return d
-    .select()
+  const rows = await d
+    .select({ ...getTableColumns(machineRecipes), createdByName: users.name })
     .from(machineRecipes)
+    .leftJoin(users, eq(machineRecipes.createdBy, users.id))
     .where(eq(machineRecipes.code, code))
     .orderBy(desc(machineRecipes.version));
+  return rows;
 }
 
 export interface ApproveRecipeInput {

@@ -15,9 +15,11 @@
  * A full drag-drop graphical ladder/FBD canvas is a later stretch; this page is the model +
  * interchange + transpile surface. Reads are open (machine_monitoring / canView).
  */
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, Link } from "wouter";
+import { useLocation, Link, useSearch } from "wouter";
+import { useEngineering } from "@/contexts/EngineeringContext";
+import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -25,6 +27,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, SectionCard, MetricCard, StatusBadge } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -125,7 +128,9 @@ function pretty(obj: unknown): string {
 
 export default function PouStudio() {
   const { t } = useTranslation();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -239,6 +244,21 @@ export default function PouStudio() {
     () => (projectsQ.data ?? []).filter((p) => p.kind === "iec61131-pou"),
     [projectsQ.data],
   );
+
+  // U1 (doc 26) — deep-link ?projectId= chọn sẵn project lưu; store lastSelected là fallback.
+  // Chỉ nhận project loại iec61131-pou (đúng danh sách Select) để không hiển thị rỗng.
+  const search = useSearch();
+  const deepLink = useMemo(() => parseDeepLink(search), [search]);
+  const { lastSelected, setLastProjectId } = useEngineering();
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current) return;
+    const wanted = deepLink.projectId ?? lastSelected.projectId;
+    if (wanted == null) { deepLinkApplied.current = true; return; }
+    if (!projectsQ.data) return; // đợi list
+    deepLinkApplied.current = true;
+    if (pouProjects.some((p) => p.id === wanted)) { setSavePid(String(wanted)); setSavedProjectId(wanted); }
+  }, [deepLink.projectId, lastSelected.projectId, projectsQ.data, pouProjects]);
   const createProjectM = trpc.programming.createProject.useMutation();
   const createArtifactM = trpc.programming.createArtifact.useMutation();
   const saving = createProjectM.isPending || createArtifactM.isPending;
@@ -288,6 +308,7 @@ export default function PouStudio() {
     <DashboardLayout>
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<FileCode2 className="h-6 w-6" />}
           title={t("pou.title", "IEC 61131 POU Studio")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -320,9 +341,10 @@ export default function PouStudio() {
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             {t("pou.whenToUse", "When to use — IEC 61131 LAD/FBD/SFC POUs. For low-level motion/IO use the IR Editor; build & deploy in the Engineering Workspace.")}
           </span>
+          {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
           <span className="inline-flex items-center gap-3">
-            <Link href="/engineering" className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
-            <Link href="/ir-editor" className="font-medium text-primary hover:underline">{t("nav.irEditor")}</Link>
+            <Link href={withParams("/engineering", { projectId: savePid || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+            <Link href={withParams("/ir-editor", { projectId: savePid || null })} className="font-medium text-primary hover:underline">{t("nav.irEditor")}</Link>
           </span>
         </div>
 
@@ -543,7 +565,7 @@ export default function PouStudio() {
                       {t("pou.noPouProjects", "No iec61131-pou projects yet — switch to “New project” to create one.")}
                     </p>
                   ) : (
-                    <Select value={savePid} onValueChange={setSavePid}>
+                    <Select value={savePid} onValueChange={(v) => { setSavePid(v); setLastProjectId(Number(v) || null); }}>
                       <SelectTrigger className="h-9"><SelectValue placeholder={t("pou.pickProjectPlaceholder", "Pick a project…")} /></SelectTrigger>
                       <SelectContent>
                         {pouProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}

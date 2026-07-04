@@ -21,7 +21,7 @@
  *
  * i18n: uses the t("key", "English default") fallback pattern (no locale-file edits).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -30,7 +30,9 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PollFreshness } from "@/components/PollFreshness";
 import { MetricCard, PageContainer, PageHeader } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +49,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck, RefreshCw, ListChecks, Layers, AlertTriangle, ShieldAlert, Info,
@@ -74,47 +80,73 @@ type FleetOccupancyGrid = RouterOutputs["twin"]["occupancyGrid"];
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
+/**
+ * U11 (doc 26 §3.1) — bảng màu trạng thái Fleet gom về MỘT nơi. Mỗi khóa là một "sắc
+ * thái" ngữ nghĩa; literal Tailwind chỉ khai báo một lần tại đây thay vì rải khắp từng
+ * hàm badge. KHÔNG đổi nghĩa màu — chỉ dồn về nguồn chung để đồng nhất & dễ bảo trì.
+ */
+const FLEET_TONE = {
+  blue: "bg-blue-500 text-white",
+  cyan: "bg-cyan-500 text-white",
+  cyan600: "bg-cyan-600 text-white",
+  emerald: "bg-emerald-500 text-white",
+  amber: "bg-amber-500 text-white",
+  slate: "bg-slate-500 text-white",
+  indigo: "bg-indigo-500 text-white",
+  violet: "bg-violet-500 text-white",
+} as const;
+
+/** Badge màu theo sắc thái chung ở trên. */
+function toneBadge(tone: keyof typeof FLEET_TONE, label: string) {
+  return <Badge className={FLEET_TONE[tone]}>{label}</Badge>;
+}
+
+/** Badge "trung tính" (đã kết thúc / không rõ) — outline + chữ mờ. */
+function mutedBadge(label: string) {
+  return <Badge variant="outline" className="text-muted-foreground">{label}</Badge>;
+}
+
 function taskStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "running":
-      return <Badge className="bg-blue-500 text-white">{t("fleet.task.running", "Running")}</Badge>;
+      return toneBadge("blue", t("fleet.task.running", "Running"));
     case "assigned":
-      return <Badge className="bg-cyan-500 text-white">{t("fleet.task.assigned", "Assigned")}</Badge>;
+      return toneBadge("cyan", t("fleet.task.assigned", "Assigned"));
     case "completed":
-      return <Badge className="bg-emerald-500 text-white">{t("fleet.task.completed", "Completed")}</Badge>;
+      return toneBadge("emerald", t("fleet.task.completed", "Completed"));
     case "failed":
       return <Badge variant="destructive">{t("fleet.task.failed", "Failed")}</Badge>;
     case "cancelled":
-      return <Badge variant="outline" className="text-muted-foreground">{t("fleet.task.cancelled", "Cancelled")}</Badge>;
+      return mutedBadge(t("fleet.task.cancelled", "Cancelled"));
     case "pending":
     default:
-      return <Badge className="bg-amber-500 text-white">{t("fleet.task.pending", "Pending")}</Badge>;
+      return toneBadge("amber", t("fleet.task.pending", "Pending"));
   }
 }
 
 function resStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "active":
-      return <Badge className="bg-emerald-500 text-white">{t("fleet.res.active", "Active")}</Badge>;
+      return toneBadge("emerald", t("fleet.res.active", "Active"));
     case "queued":
-      return <Badge className="bg-amber-500 text-white">{t("fleet.res.queued", "Queued")}</Badge>;
+      return toneBadge("amber", t("fleet.res.queued", "Queued"));
     case "rejected":
       return <Badge variant="destructive">{t("fleet.res.rejected", "Rejected")}</Badge>;
     case "released":
     default:
-      return <Badge variant="outline" className="text-muted-foreground">{t("fleet.res.released", "Released")}</Badge>;
+      return mutedBadge(t("fleet.res.released", "Released"));
   }
 }
 
 function zoneTypeBadge(zoneType: string, t: (k: string, f: string) => string) {
-  const map: Record<string, { cls: string; label: string }> = {
-    production: { cls: "bg-slate-500 text-white", label: t("fleet.zoneType.production", "Production") },
-    transit: { cls: "bg-indigo-500 text-white", label: t("fleet.zoneType.transit", "Transit") },
-    charging: { cls: "bg-emerald-500 text-white", label: t("fleet.zoneType.charging", "Charging") },
-    human_shared: { cls: "bg-amber-500 text-white", label: t("fleet.zoneType.human_shared", "Human-shared") },
+  const map: Record<string, { tone: keyof typeof FLEET_TONE; label: string }> = {
+    production: { tone: "slate", label: t("fleet.zoneType.production", "Production") },
+    transit: { tone: "indigo", label: t("fleet.zoneType.transit", "Transit") },
+    charging: { tone: "emerald", label: t("fleet.zoneType.charging", "Charging") },
+    human_shared: { tone: "amber", label: t("fleet.zoneType.human_shared", "Human-shared") },
   };
-  const e = map[zoneType] ?? { cls: "", label: zoneType };
-  return e.cls ? <Badge className={e.cls}>{e.label}</Badge> : <Badge variant="outline">{e.label}</Badge>;
+  const e = map[zoneType];
+  return e ? toneBadge(e.tone, e.label) : <Badge variant="outline">{zoneType}</Badge>;
 }
 
 function fmtDuration(ms?: number | null): string {
@@ -137,53 +169,53 @@ function fmtDateTime(d?: string | Date | null): string {
 function resourceStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "in_use":
-      return <Badge className="bg-blue-500 text-white">{t("fleet.resource.in_use", "In use")}</Badge>;
+      return toneBadge("blue", t("fleet.resource.in_use", "In use"));
     case "reserved":
-      return <Badge className="bg-amber-500 text-white">{t("fleet.resource.reserved", "Reserved")}</Badge>;
+      return toneBadge("amber", t("fleet.resource.reserved", "Reserved"));
     case "maintenance":
       return <Badge variant="destructive">{t("fleet.resource.maintenance", "Maintenance")}</Badge>;
     case "available":
     default:
-      return <Badge className="bg-emerald-500 text-white">{t("fleet.resource.available", "Available")}</Badge>;
+      return toneBadge("emerald", t("fleet.resource.available", "Available"));
   }
 }
 
 function resourceTypeBadge(type: string, t: (k: string, f: string) => string) {
-  const map: Record<string, { cls: string; label: string }> = {
-    jig: { cls: "bg-slate-500 text-white", label: t("fleet.resType.jig", "Jig") },
-    gripper: { cls: "bg-indigo-500 text-white", label: t("fleet.resType.gripper", "Gripper") },
-    fixture: { cls: "bg-cyan-600 text-white", label: t("fleet.resType.fixture", "Fixture") },
-    tool_changer: { cls: "bg-violet-500 text-white", label: t("fleet.resType.tool_changer", "Tool changer") },
-    other: { cls: "", label: t("fleet.resType.other", "Other") },
+  const map: Record<string, { tone: keyof typeof FLEET_TONE; label: string }> = {
+    jig: { tone: "slate", label: t("fleet.resType.jig", "Jig") },
+    gripper: { tone: "indigo", label: t("fleet.resType.gripper", "Gripper") },
+    fixture: { tone: "cyan600", label: t("fleet.resType.fixture", "Fixture") },
+    tool_changer: { tone: "violet", label: t("fleet.resType.tool_changer", "Tool changer") },
   };
-  const e = map[type] ?? { cls: "", label: type };
-  return e.cls ? <Badge className={e.cls}>{e.label}</Badge> : <Badge variant="outline">{e.label}</Badge>;
+  const e = map[type];
+  // "other" và loại lạ → outline (giữ nguyên: trước đây cls rỗng cũng ra outline).
+  return e ? toneBadge(e.tone, e.label) : <Badge variant="outline">{type === "other" ? t("fleet.resType.other", "Other") : type}</Badge>;
 }
 
 function planStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "active":
-      return <Badge className="bg-blue-500 text-white">{t("fleet.plan.active", "Active")}</Badge>;
+      return toneBadge("blue", t("fleet.plan.active", "Active"));
     case "planned":
-      return <Badge className="bg-amber-500 text-white">{t("fleet.plan.planned", "Planned")}</Badge>;
+      return toneBadge("amber", t("fleet.plan.planned", "Planned"));
     case "done":
-      return <Badge className="bg-emerald-500 text-white">{t("fleet.plan.done", "Done")}</Badge>;
+      return toneBadge("emerald", t("fleet.plan.done", "Done"));
     case "cancelled":
     default:
-      return <Badge variant="outline" className="text-muted-foreground">{t("fleet.plan.cancelled", "Cancelled")}</Badge>;
+      return mutedBadge(t("fleet.plan.cancelled", "Cancelled"));
   }
 }
 
 function chargerStatusBadge(status: string, t: (k: string, f: string) => string) {
   switch (status) {
     case "in_use":
-      return <Badge className="bg-blue-500 text-white">{t("fleet.charger.in_use", "In use")}</Badge>;
+      return toneBadge("blue", t("fleet.charger.in_use", "In use"));
     case "offline":
     case "maintenance":
       return <Badge variant="destructive">{t("fleet.charger.offline", "Offline")}</Badge>;
     case "available":
     default:
-      return <Badge className="bg-emerald-500 text-white">{t("fleet.charger.available", "Available")}</Badge>;
+      return toneBadge("emerald", t("fleet.charger.available", "Available"));
   }
 }
 
@@ -191,10 +223,16 @@ const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as
 
 export default function FleetOrchestration() {
   const { t } = useTranslation();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
+  // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền điều khiển máy.
+  const permReason = !canControl
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [assignTask, setAssignTask] = useState<FleetTask | null>(null);
@@ -448,6 +486,30 @@ export default function FleetOrchestration() {
     return m;
   }, [reservations]);
 
+  // ── U12 (doc 26 §2.3) — nhắc khi có DEADLOCK MỚI trong lúc user đang ở trang ─
+  // So sánh chữ ký chu trình với lần poll trước; chỉ toast cái MỚI (chống spam).
+  // Chuẩn hoá mỗi cycle bằng cách sort id → xoay vòng A→B→C và B→C→A coi là một.
+  const seenDeadlocksRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!deadlocks) return;
+    const sigs = new Set((deadlocks.cycles ?? []).map((c) => [...c].sort((a, b) => a - b).join(">")));
+    // Lần đầu (prime) chỉ ghi nhận baseline, KHÔNG toast.
+    if (seenDeadlocksRef.current === null) {
+      seenDeadlocksRef.current = sigs;
+      return;
+    }
+    const prev = seenDeadlocksRef.current;
+    const fresh = [...sigs].filter((s) => !prev.has(s));
+    seenDeadlocksRef.current = sigs;
+    if (fresh.length > 0) {
+      toast.error(
+        t("fleet.newDeadlockToast", "New deadlock detected") +
+          (fresh.length > 1 ? ` (${fresh.length})` : ""),
+        { description: t("fleet.newDeadlockDesc", "A robot dependency cycle just formed — review the Tasks & Zones tab.") },
+      );
+    }
+  }, [deadlocks, t]);
+
   if (!canView) {
     return (
       <DashboardLayout>
@@ -470,6 +532,7 @@ export default function FleetOrchestration() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Truck className="h-6 w-6" />}
           title={t("fleet.title", "Fleet & Task Orchestration")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -485,6 +548,12 @@ export default function FleetOrchestration() {
             </Button>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("fleet.whenToUse", "When to use — assign tasks across a robot/AGV fleet and manage zone traffic & reservations. Orchestration state only; real motion routes through the HITL dispatcher.")}</span>
+        </div>
 
         {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
         {!flagEnabled && (
@@ -539,15 +608,14 @@ export default function FleetOrchestration() {
                 ))}
               </div>
               {/* W4-18 (5) — advisory resolve: huỷ waiter ưu tiên thấp nhất để phá deadlock. */}
-              {canControl && (
-                <Button
-                  size="sm" variant="destructive" className="mt-2 h-7"
-                  disabled={resolveDeadlockM.isPending}
-                  onClick={() => resolveDeadlockM.mutate()}
-                >
-                  <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
-                </Button>
-              )}
+              <Button
+                size="sm" variant="destructive" className="mt-2 h-7"
+                disabled={!canControl || resolveDeadlockM.isPending}
+                title={permReason}
+                onClick={() => resolveDeadlockM.mutate()}
+              >
+                <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
+              </Button>
             </div>
           </div>
         )}
@@ -600,17 +668,19 @@ export default function FleetOrchestration() {
               {t("fleet.tasksTitle", "Task queue")}
             </CardTitle>
             <div className="flex items-center gap-2">
+              {/* U12 §2.3 — độ tươi của dữ liệu poll (dataUpdatedAt của react-query). */}
+              <PollFreshness updatedAt={tasksQ.dataUpdatedAt} isFetching={tasksQ.isFetching} />
               <Label className="text-xs text-muted-foreground">{t("fleet.filterStatus", "Status")}</Label>
-              <select
-                className="flex h-8 w-36 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="">{t("fleet.all", "All")}</option>
-                {TASK_STATUSES.map((s) => (
-                  <option key={s} value={s}>{t(`fleet.task.${s}`, s)}</option>
-                ))}
-              </select>
+              {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
+              <Select value={statusFilter || "__all__"} onValueChange={(v) => setStatusFilter(v === "__all__" ? "" : v)}>
+                <SelectTrigger size="sm" className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">{t("fleet.all", "All")}</SelectItem>
+                  {TASK_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{t(`fleet.task.${s}`, s)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -771,14 +841,14 @@ export default function FleetOrchestration() {
                           ))}
                         </div>
                       )}
-                      {canControl && (
-                        <Button
-                          size="sm" variant="outline" className="mt-1 h-7 w-full"
-                          onClick={() => setReserveZoneTarget(z)}
-                        >
-                          <MapPin className="mr-1 h-3.5 w-3.5" />{t("fleet.reserve", "Reserve")}
-                        </Button>
-                      )}
+                      <Button
+                        size="sm" variant="outline" className="mt-1 h-7 w-full"
+                        disabled={!canControl}
+                        title={permReason}
+                        onClick={() => setReserveZoneTarget(z)}
+                      >
+                        <MapPin className="mr-1 h-3.5 w-3.5" />{t("fleet.reserve", "Reserve")}
+                      </Button>
                     </CardContent>
                   </Card>
                 );
@@ -794,6 +864,7 @@ export default function FleetOrchestration() {
               operations={operations}
               loading={operationsQ.isLoading}
               canControl={canControl}
+              controlReason={permReason}
               resolveCode={resolveCode}
               setResolveCode={setResolveCode}
               resolved={resolved}
@@ -810,6 +881,7 @@ export default function FleetOrchestration() {
               resources={resources}
               loading={resourcesQ.isLoading}
               canControl={canControl}
+              controlReason={permReason}
               reservationsByResource={resReservationsByResource}
               releasePending={releaseResourceM.isPending}
               onCreate={() => setCreateResourceOpen(true)}
@@ -826,6 +898,7 @@ export default function FleetOrchestration() {
               plans={chargingPlans}
               plansLoading={chargingPlansQ.isLoading}
               canControl={canControl}
+              controlReason={permReason}
               sweepPending={sweepM.isPending}
               onCreateCharger={() => setCreateChargerOpen(true)}
               onSweep={() => sweepM.mutate()}
@@ -1023,11 +1096,7 @@ function ReserveDialog({
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={queueIfFull}
-              onChange={(e) => setQueueIfFull(e.target.checked)}
-            />
+            <Checkbox checked={queueIfFull} onCheckedChange={(v) => setQueueIfFull(Boolean(v))} />
             {t("fleet.queueIfFull", "Queue if zone is at capacity (otherwise reject)")}
           </label>
         </div>
@@ -1146,15 +1215,14 @@ function FleetMap({
         </CardTitle>
         <div className="flex items-center gap-2">
           <Label className="text-xs text-muted-foreground">{t("fleet.map.factory", "Factory")}</Label>
-          <select
-            className="flex h-8 w-28 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-            value={String(factoryId)}
-            onChange={(e) => onFactoryChange(Number(e.target.value))}
-          >
-            {(factoryIds.length ? factoryIds : [factoryId]).map((f) => (
-              <option key={f} value={f}>#{f}</option>
-            ))}
-          </select>
+          <Select value={String(factoryId)} onValueChange={(v) => onFactoryChange(Number(v))}>
+            <SelectTrigger size="sm" className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(factoryIds.length ? factoryIds : [factoryId]).map((f) => (
+                <SelectItem key={f} value={String(f)}>#{f}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -1228,12 +1296,13 @@ function FleetMap({
 // G2-a — OPERATIONS tab
 // ══════════════════════════════════════════════════════════════════════════════
 function OperationsTab({
-  operations, loading, canControl, resolveCode, setResolveCode, resolved, resolveLoading,
+  operations, loading, canControl, controlReason, resolveCode, setResolveCode, resolved, resolveLoading,
   resolveError, onCreate, onMap,
 }: {
   operations: FleetOperation[];
   loading: boolean;
   canControl: boolean;
+  controlReason?: string;
   resolveCode: string;
   setResolveCode: (v: string) => void;
   resolved: FleetResolved | undefined;
@@ -1322,8 +1391,8 @@ function OperationsTab({
             <Workflow className="h-4 w-4" />
             {t("fleet.op.registryTitle", "Operation registry")}
           </CardTitle>
-          {canControl && (
-            <Button size="sm" variant="outline" className="h-8" onClick={onCreate}>
+          {(
+            <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreate}>
               <Plus className="mr-1 h-4 w-4" />{t("fleet.op.create", "New operation")}
             </Button>
           )}
@@ -1384,11 +1453,12 @@ function OperationsTab({
 // G2-c — RESOURCES tab
 // ══════════════════════════════════════════════════════════════════════════════
 function ResourcesTab({
-  resources, loading, canControl, reservationsByResource, releasePending, onCreate, onReserve, onRelease,
+  resources, loading, canControl, controlReason, reservationsByResource, releasePending, onCreate, onReserve, onRelease,
 }: {
   resources: FleetResource[];
   loading: boolean;
   canControl: boolean;
+  controlReason?: string;
   reservationsByResource: Map<number, FleetResReservation[]>;
   releasePending: boolean;
   onCreate: () => void;
@@ -1403,11 +1473,9 @@ function ResourcesTab({
           <Wrench className="h-4 w-4" />
           {t("fleet.res.title", "Shared resources")}
         </CardTitle>
-        {canControl && (
-          <Button size="sm" variant="outline" className="h-8" onClick={onCreate}>
-            <Plus className="mr-1 h-4 w-4" />{t("fleet.res.create", "New resource")}
-          </Button>
-        )}
+        <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreate}>
+          <Plus className="mr-1 h-4 w-4" />{t("fleet.res.create", "New resource")}
+        </Button>
       </CardHeader>
       <CardContent>
         {!loading && resources.length === 0 && (
@@ -1465,11 +1533,9 @@ function ResourcesTab({
                       ))}
                     </div>
                   )}
-                  {canControl && (
-                    <Button size="sm" variant="outline" className="mt-1 h-7 w-full" onClick={() => onReserve(r)}>
-                      <Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.res.reserve", "Reserve")}
-                    </Button>
-                  )}
+                  <Button size="sm" variant="outline" className="mt-1 h-7 w-full" disabled={!canControl} title={controlReason} onClick={() => onReserve(r)}>
+                    <Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.res.reserve", "Reserve")}
+                  </Button>
                 </CardContent>
               </Card>
             );
@@ -1484,13 +1550,14 @@ function ResourcesTab({
 // G2-d — CHARGING tab
 // ══════════════════════════════════════════════════════════════════════════════
 function ChargingTab({
-  chargers, chargersLoading, plans, plansLoading, canControl, sweepPending, onCreateCharger, onSweep,
+  chargers, chargersLoading, plans, plansLoading, canControl, controlReason, sweepPending, onCreateCharger, onSweep,
 }: {
   chargers: FleetCharger[];
   chargersLoading: boolean;
   plans: FleetChargingPlan[];
   plansLoading: boolean;
   canControl: boolean;
+  controlReason?: string;
   sweepPending: boolean;
   onCreateCharger: () => void;
   onSweep: () => void;
@@ -1505,11 +1572,9 @@ function ChargingTab({
             <Zap className="h-4 w-4" />
             {t("fleet.charger.title", "Charger stations")}
           </CardTitle>
-          {canControl && (
-            <Button size="sm" variant="outline" className="h-8" onClick={onCreateCharger}>
-              <Plus className="mr-1 h-4 w-4" />{t("fleet.charger.create", "New charger")}
-            </Button>
-          )}
+          <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreateCharger}>
+            <Plus className="mr-1 h-4 w-4" />{t("fleet.charger.create", "New charger")}
+          </Button>
         </CardHeader>
         <CardContent>
           {!chargersLoading && chargers.length === 0 && (
@@ -1544,11 +1609,9 @@ function ChargingTab({
             <BatteryCharging className="h-4 w-4" />
             {t("fleet.plan.title", "Battery charging plans")}
           </CardTitle>
-          {canControl && (
-            <Button size="sm" variant="outline" className="h-8" disabled={sweepPending} onClick={onSweep}>
-              <RefreshCw className={`mr-1 h-4 w-4 ${sweepPending ? "animate-spin" : ""}`} />{t("fleet.plan.sweep", "Sweep now")}
-            </Button>
-          )}
+          <Button size="sm" variant="outline" className="h-8" disabled={!canControl || sweepPending} title={controlReason} onClick={onSweep}>
+            <RefreshCw className={`mr-1 h-4 w-4 ${sweepPending ? "animate-spin" : ""}`} />{t("fleet.plan.sweep", "Sweep now")}
+          </Button>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -1748,15 +1811,14 @@ function CreateResourceDialog({
             </div>
             <div className="grid gap-1">
               <Label>{t("fleet.res.type", "Type")}</Label>
-              <select
-                className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={type}
-                onChange={(e) => setType(e.target.value as (typeof RESOURCE_TYPES)[number])}
-              >
-                {RESOURCE_TYPES.map((tp) => (
-                  <option key={tp} value={tp}>{t(`fleet.resType.${tp}`, tp)}</option>
-                ))}
-              </select>
+              <Select value={type} onValueChange={(v) => setType(v as (typeof RESOURCE_TYPES)[number])}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_TYPES.map((tp) => (
+                    <SelectItem key={tp} value={tp}>{t(`fleet.resType.${tp}`, tp)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="grid gap-1">
@@ -1814,7 +1876,7 @@ function ReserveResourceDialog({
             <Input type="number" min={1} value={deviceId} placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")} onChange={(e) => setDeviceId(e.target.value)} />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={queueIfFull} onChange={(e) => setQueueIfFull(e.target.checked)} />
+            <Checkbox checked={queueIfFull} onCheckedChange={(v) => setQueueIfFull(Boolean(v))} />
             {t("fleet.res.queueIfFull", "Queue if the resource is in use (otherwise reject)")}
           </label>
         </div>

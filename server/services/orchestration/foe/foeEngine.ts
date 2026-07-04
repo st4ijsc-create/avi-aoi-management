@@ -985,13 +985,20 @@ export async function resumeRun(
     const gateStepId = run.currentStepId ?? undefined;
 
     if (!decision.approved) {
+      // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
+      const reason = decision.note?.trim();
       await setRunStatus(runId, "aborted", {
         finishedAt: new Date(),
-        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.`,
+        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
       });
       if (gateStepId) {
         const [wf2] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
-        await upsertStep(runId, gateStepId, "hitl_gate", { status: "failed", error: "Rejected", finishedAt: new Date() }).catch(() => undefined);
+        await upsertStep(runId, gateStepId, "hitl_gate", {
+          status: "failed",
+          error: reason ? `Rejected: ${reason}` : "Rejected",
+          result: { approved: false, note: reason ?? null, rejectedBy: user.id },
+          finishedAt: new Date(),
+        }).catch(() => undefined);
         void wf2;
       }
       return { ok: false, enabled: true, runId, status: "aborted" };

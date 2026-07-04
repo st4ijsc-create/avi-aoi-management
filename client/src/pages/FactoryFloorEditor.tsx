@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageContainer, PageHeader } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -57,7 +58,9 @@ function centroid(pts: Pt[]): Pt { if (!pts.length) return { x: 0.5, y: 0.5 }; c
 
 export default function FactoryFloorEditor() {
   const { t } = useTranslation();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const crumbs = buildBreadcrumbs(location, t);
   const machinesQ = trpc.machineStatus.listWithStatus.useQuery();
   const factoriesQ = trpc.factory.list.useQuery();
   const utils = trpc.useUtils();
@@ -311,6 +314,7 @@ export default function FactoryFloorEditor() {
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Move className="h-6 w-6" />}
           title={t("ffe.title", "Sửa mặt bằng nhà máy")}
           badge={<ViewOnlyBadge module="machine_control" />}
@@ -345,7 +349,7 @@ export default function FactoryFloorEditor() {
               <div className="flex flex-col gap-1">
                 <Label className="text-xs">{t("ffe.floorPlan", "Ảnh nền (CAD/ảnh)")}</Label>
                 <div className="flex gap-2">
-                  <Button asChild size="sm" variant="outline" className="h-8" disabled={!activeFactoryId || uploadFP.isPending}>
+                  <Button asChild size="sm" variant="outline" className="h-8" disabled={!activeFactoryId || uploadFP.isPending} title={!activeFactoryId ? t("common.gate.selectFactory", "Chọn nhà máy trước") : undefined}>
                     <label className="cursor-pointer">
                       <Upload className="h-4 w-4 mr-1" /> {uploadFP.isPending ? t("ffe.bgUploading", "Đang tải…") : t("ffe.bgUpload", "Tải ảnh nền")}
                       <input type="file" accept="image/*" className="hidden" onChange={(e) => {
@@ -372,7 +376,7 @@ export default function FactoryFloorEditor() {
                 <Label className="text-xs">{t("ffe.floorDepthM", "Sâu sàn (m)")}</Label>
                 <Input type="number" step={0.1} min={0.1} value={dimD} onChange={(e) => setDimD(e.target.value)} className="h-8 w-28" placeholder="0" />
               </div>
-              <Button size="sm" variant="outline" className="h-8" disabled={!activeFactoryId || dimsM.isPending} onClick={() => {
+              <Button size="sm" variant="outline" className="h-8" disabled={!activeFactoryId || dimsM.isPending} title={!activeFactoryId ? t("common.gate.selectFactory", "Chọn nhà máy trước") : undefined} onClick={() => {
                 if (!activeFactoryId) return;
                 const w = parseFloat(dimW), d = parseFloat(dimD);
                 dimsM.mutate({ id: activeFactoryId, floorWidthM: Number.isFinite(w) && w > 0 ? w : undefined, floorDepthM: Number.isFinite(d) && d > 0 ? d : undefined });

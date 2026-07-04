@@ -31,6 +31,8 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import { useLocation } from "wouter";
 import {
   MetricCard,
   PageContainer,
@@ -54,6 +56,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plug, RefreshCw, Info, Lock, AlertTriangle, Plus, Cpu, FlaskConical,
@@ -86,6 +92,9 @@ function strOrDash(s: string | null): string {
 
 export default function EquipmentIntegration() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -216,6 +225,7 @@ export default function EquipmentIntegration() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Plug className="h-6 w-6" />}
           title={t("eqIntegration.title", "Equipment Integration")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -226,6 +236,12 @@ export default function EquipmentIntegration() {
             </Button>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("eqIntegration.whenToUse", "When to use — browse vendor integration frameworks (FOCAS/Euromap) and recipe version genealogy. Read-only metadata, no live device.")}</span>
+        </div>
 
         {/* ── Flag-off preview banner (honest, calm) ─────────────────────────── */}
         {!flagEnabled && (
@@ -441,28 +457,30 @@ export default function EquipmentIntegration() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="grid gap-1">
                   <Label className="text-xs text-muted-foreground">{t("eqIntegration.historyMode", "Filter by")}</Label>
-                  <select
-                    className="flex h-9 w-40 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={historyMode}
-                    onChange={(e) => setHistoryMode(e.target.value as "machine" | "code")}
-                  >
-                    <option value="machine">{t("eqIntegration.byMachine", "Machine")}</option>
-                    <option value="code">{t("eqIntegration.byCode", "Recipe code")}</option>
-                  </select>
+                  <Select value={historyMode} onValueChange={(v) => setHistoryMode(v as "machine" | "code")}>
+                    <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="machine">{t("eqIntegration.byMachine", "Machine")}</SelectItem>
+                      <SelectItem value="code">{t("eqIntegration.byCode", "Recipe code")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 {historyMode === "machine" ? (
                   <div className="grid gap-1">
                     <Label className="text-xs text-muted-foreground">{t("eqIntegration.machine", "Machine")}</Label>
-                    <select
-                      className="flex h-9 w-64 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                      value={historyMachineId ?? ""}
-                      onChange={(e) => setHistoryMachineId(e.target.value ? Number(e.target.value) : null)}
+                    {/* U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy". */}
+                    <Select
+                      value={historyMachineId != null ? String(historyMachineId) : "__none__"}
+                      onValueChange={(v) => setHistoryMachineId(v === "__none__" ? null : Number(v))}
                     >
-                      <option value="">{t("eqIntegration.selectMachine", "Select a machine…")}</option>
-                      {machines.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name ?? m.code} ({m.code})</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
+                        {machines.map((m) => (
+                          <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 ) : (
                   <>
@@ -759,11 +777,14 @@ function CreateVersionDialog({
           </div>
           <div className="grid gap-1">
             <Label>{t("eqIntegration.machineOptional", "Machine (optional)")}</Label>
-            <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-              value={machineId ?? ""} onChange={(e) => setMachineId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">{t("eqIntegration.noMachine", "(none)")}</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.name ?? m.code} ({m.code})</option>)}
-            </select>
+            {/* U11 — Select DS; "__none__" là sentinel cho "(none)". */}
+            <Select value={machineId != null ? String(machineId) : "__none__"} onValueChange={(v) => setMachineId(v === "__none__" ? null : Number(v))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t("eqIntegration.noMachine", "(none)")}</SelectItem>
+                {machines.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1">
             <Label>{t("eqIntegration.payload", "Payload (JSON)")}</Label>
@@ -821,14 +842,17 @@ function RecordLoadDialog({
           </p>
           <div className="grid gap-1">
             <Label>{t("eqIntegration.machine", "Machine")}</Label>
-            <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-              value={machineId ?? ""} onChange={(e) => setMachineId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">{t("eqIntegration.selectMachine", "Select a machine…")}</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.name ?? m.code} ({m.code})</option>)}
-            </select>
+            {/* U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy". */}
+            <Select value={machineId != null ? String(machineId) : "__none__"} onValueChange={(v) => setMachineId(v === "__none__" ? null : Number(v))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
+                {machines.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={deploy} onChange={(e) => setDeploy(e.target.checked)} />
+            <Checkbox checked={deploy} onCheckedChange={(v) => setDeploy(Boolean(v))} />
             {t("eqIntegration.alsoDeploy", "Also write a recipe_deployments ledger row")}
           </label>
           <div className="grid gap-1">

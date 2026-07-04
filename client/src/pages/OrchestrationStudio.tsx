@@ -13,9 +13,12 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { useEngineering } from "@/contexts/EngineeringContext";
+import { withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -57,6 +61,7 @@ import {
   Gauge,
   RefreshCw,
   Sparkles,
+  Info,
   Wand2,
   Copy,
   History,
@@ -87,6 +92,7 @@ import {
   updateStep,
   deleteStep,
   moveStep,
+  reorderToSibling,
   addChild,
   STEP_META,
   emptyDef,
@@ -468,7 +474,7 @@ function Inspector({
             <Label className="text-xs">{t("studio.failFast", "Fail fast")}</Label>
             <p className="text-[10px] text-muted-foreground">{t("studio.failFastHint", "Fail the parallel on the FIRST failing branch (else only if all fail).")}</p>
           </div>
-          <input type="checkbox" checked={Boolean(step.failFast)} onChange={(e) => onPatch({ failFast: e.target.checked || undefined })} />
+          <Checkbox checked={Boolean(step.failFast)} onCheckedChange={(v) => onPatch({ failFast: v ? true : undefined })} />
         </div>
       )}
 
@@ -504,10 +510,9 @@ function AdvancedStepSection({
       <div className="space-y-2 rounded-md border bg-muted/20 p-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs">{t("studio.precondition", "Precondition (interlock)")}</Label>
-          <input
-            type="checkbox"
+          <Checkbox
             checked={hasPrecondition}
-            onChange={(e) => onPatch({ precondition: e.target.checked ? { source: "telemetry", key: "", op: "gt", value: 0 } : undefined })}
+            onCheckedChange={(v) => onPatch({ precondition: v ? { source: "telemetry", key: "", op: "gt", value: 0 } : undefined })}
           />
         </div>
         {hasPrecondition && (
@@ -548,11 +553,10 @@ function AdvancedStepSection({
       <div className="space-y-2 rounded-md border bg-muted/20 p-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs">{t("studio.compensation", "Compensation (saga undo)")}</Label>
-          <input
-            type="checkbox"
+          <Checkbox
             checked={hasCompensation}
-            onChange={(e) => onPatch({
-              compensation: e.target.checked
+            onCheckedChange={(v) => onPatch({
+              compensation: v
                 ? { id: `${step.id}-comp`, type: "command", args: {} }
                 : undefined,
             })}
@@ -661,7 +665,7 @@ function ArgField({ param, value, onChange, t }: { param: ParamDesc; value: unkn
     return (
       <div className="flex items-center justify-between">
         <Label className="text-[11px]">{label}</Label>
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+        <Checkbox checked={Boolean(value)} onCheckedChange={(v) => onChange(Boolean(v))} />
       </div>
     );
   }
@@ -1038,8 +1042,13 @@ function isRunTerminal(status: string): boolean {
 
 export default function OrchestrationStudio() {
   const { t, i18n } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
+  // U1 (doc 26) — nhớ workflow ref đang mở làm fallback deep-link khi sang Cell Twin/RF.
+  const { setLastWorkflowRef } = useEngineering();
 
   const [def, setDef] = useState<StudioDef>(() => emptyDef());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1058,6 +1067,14 @@ export default function OrchestrationStudio() {
   const aiStatusQ = trpc.aiOrchestration.status.useQuery();
   const aiEnabled = aiStatusQ.data?.enabled ?? false;
 
+  // U4 (doc 26 §2.4) — lý do khoá nút ghi: thiếu quyền hoặc cờ FOE tắt.
+  const permReason = !canControl
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
+  const controlReason = permReason ?? (!foeEnabled
+    ? t("common.gate.flagOff", "Feature is OFF — enable flag {{flag}}", { flag: "FOE" })
+    : undefined);
+
   const equipmentQ = trpc.equipment.listEquipment.useQuery({ limit: 500 });
   const machines = (equipmentQ.data ?? []) as unknown as EquipmentRow[];
 
@@ -1072,6 +1089,41 @@ export default function OrchestrationStudio() {
       },
     },
   );
+
+  // U13 (doc 26 §2.2/§2.3) — tìm/lọc client cho workflows + runs.
+  const [wfSearch, setWfSearch] = useState("");
+  const filteredWorkflows = useMemo(() => {
+    const q = wfSearch.trim().toLowerCase();
+    const rows = (workflowsQ.data ?? []) as Array<Record<string, unknown>>;
+    if (!q) return rows;
+    return rows.filter((w) => {
+      const name = String(w.name ?? "").toLowerCase();
+      const ref = String(w.ref ?? "").toLowerCase();
+      return name.includes(q) || ref.includes(q);
+    });
+  }, [workflowsQ.data, wfSearch]);
+
+  const [runStatusFilter, setRunStatusFilter] = useState<string>("all");
+  const allRuns = (runsQ.data ?? []) as Array<Record<string, unknown>>;
+  // Trạng thái "chờ duyệt" = held / awaiting_confirm (HITL gate đang mở).
+  const isAwaitingRun = (r: Record<string, unknown>) => {
+    const s = String(r.status ?? "");
+    return s === "awaiting_confirm" || s === "held";
+  };
+  const runStatuses = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of allRuns) if (r.status) set.add(String(r.status));
+    return Array.from(set).sort();
+  }, [allRuns]);
+  const filteredRuns = useMemo(
+    () => (runStatusFilter === "all" ? allRuns : allRuns.filter((r) => String(r.status ?? "") === runStatusFilter)),
+    [allRuns, runStatusFilter],
+  );
+  // §2.3 — tách nhóm "Đang chờ duyệt" LÊN ĐẦU; phần còn lại giữ thứ tự gốc.
+  const awaitingRuns = useMemo(() => filteredRuns.filter(isAwaitingRun), [filteredRuns]);
+  const otherRuns = useMemo(() => filteredRuns.filter((r) => !isAwaitingRun(r)), [filteredRuns]);
+  // Badge đếm luôn dựa trên TỔNG số run chờ duyệt (không phụ thuộc bộ lọc đang chọn).
+  const awaitingCount = useMemo(() => allRuns.filter(isAwaitingRun).length, [allRuns]);
 
   const utils = trpc.useUtils();
   const [simulating, setSimulating] = useState(false);
@@ -1165,13 +1217,18 @@ export default function OrchestrationStudio() {
     if (selectedId === id) setSelectedId(null);
   };
   const handleMove = (id: string, dir: -1 | 1) => mutate((d) => moveStep(d.steps, id, dir));
+  // U14 — nối cạnh trên sơ đồ: sắp lại thứ tự anh-em (chỉ trong cùng danh sách).
+  const handleReorderToSibling = (sourceId: string, targetId: string) =>
+    mutate((d) => { reorderToSibling(d.steps, sourceId, targetId); });
 
   const loadWorkflow = (row: { definitionJson?: unknown }) => {
     const json = row.definitionJson as StudioDef | undefined;
     if (json && Array.isArray(json.steps)) {
-      setDef(cloneDef(json));
+      const cloned = cloneDef(json);
+      setDef(cloned);
       setSelectedId(null);
       setSim(null);
+      setLastWorkflowRef(cloned.ref || null); // U1 — nhớ ref để mang sang Cell Twin
       toast.success(t("studio.loaded", "Workflow loaded into the editor"));
     }
   };
@@ -1267,6 +1324,7 @@ export default function OrchestrationStudio() {
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         {/* Header */}
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Workflow className="h-6 w-6" />}
           title={t("studio.title", "Orchestration Studio")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -1276,15 +1334,21 @@ export default function OrchestrationStudio() {
               <Button variant="outline" onClick={() => void runSimulate()} disabled={simulating || def.steps.length === 0}>
                 <FlaskConical className="mr-1.5 h-4 w-4" /> {t("studio.simulate", "Simulate")}
               </Button>
-              <Button variant="outline" onClick={runDeploy} disabled={!canControl || !foeEnabled || deployM.isPending}>
+              <Button variant="outline" onClick={runDeploy} disabled={!canControl || !foeEnabled || deployM.isPending} title={controlReason}>
                 <Save className="mr-1.5 h-4 w-4" /> {t("studio.deploy", "Save (deploy)")}
               </Button>
-              <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref}>
+              <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref} title={controlReason}>
                 <Play className="mr-1.5 h-4 w-4" /> {t("studio.run", "Run")}
               </Button>
             </>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("studio.whenToUse", "When to use — design multi-machine workflows visually and dry-run them on the twin before deploying. For a single-device program use the Engineering Workspace.")}</span>
+        </div>
 
         {/* FOE disabled banner */}
         {!statusQ.isLoading && !foeEnabled && (
@@ -1453,12 +1517,20 @@ export default function OrchestrationStudio() {
                   ))}
                   <AddStepMenu onAdd={handleAddTopLevel} t={t} />
                 </>
-              ) : def.steps.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
               ) : (
                 <>
-                  <WorkflowGraphCanvas def={def} selectedId={selectedId} onSelect={setSelectedId} onDelete={handleDelete} t={t} />
-                  <p className="text-[11px] text-muted-foreground">{t("studio.graphHint", "Read-only view — click a node to configure it in the inspector. Add/reorder steps on the Tree view.")}</p>
+                  {/* U14 — canvas luôn hiển thị (kể cả khi trống): palette cho phép thêm bước đầu tiên ngay trên sơ đồ. */}
+                  <WorkflowGraphCanvas
+                    def={def}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onDelete={handleDelete}
+                    onAddTopLevel={handleAddTopLevel}
+                    onAddChild={handleAddChild}
+                    onReorderToSibling={handleReorderToSibling}
+                    t={t}
+                  />
+                  <p className="text-[11px] text-muted-foreground">{t("studio.graphHintEdit", "Click a chip to add a step (or drag it onto a container to nest); drag a link between two siblings to reorder; use the trash icon or Delete to remove. Click a node to configure it in the inspector.")}</p>
                 </>
               )}
             </CardContent>
@@ -1487,9 +1559,12 @@ export default function OrchestrationStudio() {
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Digital twin — simulation result")}
                 </CardTitle>
-                {/* W6-26 — cross-link golden-thread: sim → xem phát lại trên twin viewer. */}
+                {/* W6-26 + U1 — cross-link golden-thread: sim → xem phát lại trên twin viewer,
+                    MANG ?ref= workflow đang mở để Cell Twin tự chọn đúng workflow (không mở trống). */}
                 <span className="flex items-center gap-3 text-xs">
-                  <Link href="/cell-twin" className="font-medium text-primary hover:underline">{t("nav.cellTwin")}</Link>
+                  <Link href={withParams("/cell-twin", { ref: def.ref || null })} className="font-medium text-primary hover:underline">
+                    {def.ref ? t("studio.viewOnCellTwin", "Xem trên Cell Twin") : t("nav.cellTwin")}
+                  </Link>
                   <Link href="/rf-test-cell" className="font-medium text-primary hover:underline">{t("nav.rfTestCell")}</Link>
                 </span>
               </div>
@@ -1511,10 +1586,22 @@ export default function OrchestrationStudio() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-1.5">
+              {/* U13 — ô tìm theo tên/mã (lọc phía client). */}
+              {(workflowsQ.data ?? []).length > 0 && (
+                <Input
+                  value={wfSearch}
+                  onChange={(e) => setWfSearch(e.target.value)}
+                  placeholder={t("studio.searchWorkflows", "Tìm theo tên hoặc mã…")}
+                  className="h-8 text-sm"
+                />
+              )}
               {(workflowsQ.data ?? []).length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflows", "No workflows yet.")}</p>
               )}
-              {(workflowsQ.data ?? []).map((w: Record<string, unknown>) => (
+              {(workflowsQ.data ?? []).length > 0 && filteredWorkflows.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflowMatch", "Không có quy trình khớp bộ lọc")}</p>
+              )}
+              {filteredWorkflows.map((w: Record<string, unknown>) => (
                 <div key={String(w.id)} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
                   <div className="min-w-0">
                     <div className="truncate font-medium">{String(w.name ?? w.ref)}</div>
@@ -1538,7 +1625,7 @@ export default function OrchestrationStudio() {
                       variant="ghost"
                       className="h-7 w-7"
                       disabled={!canControl}
-                      title={t("studio.duplicate", "Duplicate")}
+                      title={permReason ?? t("studio.duplicate", "Duplicate")}
                       onClick={() => { setDupWf({ id: Number(w.id), ref: String(w.ref), name: String(w.name ?? w.ref) }); setDupNewRef(`${String(w.ref)}-copy`); }}
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -1548,7 +1635,7 @@ export default function OrchestrationStudio() {
                       variant="ghost"
                       className="h-7 w-7 text-destructive"
                       disabled={!canControl}
-                      title={t("common.delete", "Delete")}
+                      title={permReason ?? t("common.delete", "Delete")}
                       onClick={() => setDeleteWf({ id: Number(w.id), ref: String(w.ref) })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1562,25 +1649,76 @@ export default function OrchestrationStudio() {
           {/* Recent runs */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">{t("studio.runs", "Recent runs")}</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                {t("studio.runs", "Recent runs")}
+                {/* U13 §2.3 — badge đếm run đang chờ duyệt (tổng, không theo bộ lọc). */}
+                {awaitingCount > 0 && (
+                  <Badge className="bg-amber-500 text-white">{awaitingCount}</Badge>
+                )}
+              </CardTitle>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void runsQ.refetch()}>
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             </CardHeader>
             <CardContent className="space-y-1.5">
-              {(runsQ.data ?? []).length === 0 && (
+              {/* U13 — lọc theo trạng thái (lọc phía client). */}
+              {allRuns.length > 0 && (
+                <Select value={runStatusFilter} onValueChange={setRunStatusFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("studio.allStatuses", "Tất cả trạng thái")}</SelectItem>
+                    {runStatuses.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {allRuns.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
               )}
-              {(runsQ.data ?? []).map((r: Record<string, unknown>) => (
-                <RunRow
-                  key={String(r.id)}
-                  run={r}
-                  canControl={canControl}
-                  onResume={(approved) => resumeM.mutate({ runId: Number(r.id), approved })}
-                  onAbort={() => abortM.mutate({ runId: Number(r.id) })}
-                  t={t}
-                />
-              ))}
+              {allRuns.length > 0 && filteredRuns.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRunMatch", "Không có lần chạy khớp bộ lọc")}</p>
+              )}
+              {/* §2.3 — nhóm "Đang chờ duyệt" ghim lên đầu. */}
+              {awaitingRuns.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    <Hourglass className="h-3.5 w-3.5" />
+                    {t("studio.awaitingApproval", "Đang chờ duyệt")}
+                    <Badge variant="outline" className="text-[10px]">{awaitingRuns.length}</Badge>
+                  </div>
+                  {awaitingRuns.map((r: Record<string, unknown>) => (
+                    <RunRow
+                      key={String(r.id)}
+                      run={r}
+                      canControl={canControl}
+                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+              {/* Các run còn lại. */}
+              {otherRuns.length > 0 && (
+                <div className="space-y-1.5">
+                  {awaitingRuns.length > 0 && (
+                    <div className="pt-1 text-xs font-semibold text-muted-foreground">
+                      {t("studio.otherRuns", "Lần chạy khác")}
+                    </div>
+                  )}
+                  {otherRuns.map((r: Record<string, unknown>) => (
+                    <RunRow
+                      key={String(r.id)}
+                      run={r}
+                      canControl={canControl}
+                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1661,6 +1799,7 @@ export default function OrchestrationStudio() {
                     <Button
                       size="sm" variant="outline" className="h-7"
                       disabled={!canControl || rollbackWfM.isPending}
+                      title={permReason}
                       onClick={() => setRollbackVer({ workflowId: versionsWf!.id, version: v.version })}
                     >
                       <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
@@ -1741,6 +1880,14 @@ const RUN_STATUS_COLOR: Record<string, string> = {
   aborted: "bg-red-500",
 };
 
+// U6 (doc 26) — kiểu bước run kèm `result` (chứa prompt/approverRoles của hitl_gate).
+type RunStepView = {
+  stepId: string;
+  stepType: string;
+  status: string;
+  result?: Record<string, unknown> | null;
+};
+
 function RunRow({
   run,
   canControl,
@@ -1750,18 +1897,23 @@ function RunRow({
 }: {
   run: Record<string, unknown>;
   canControl: boolean;
-  onResume: (approved: boolean) => void;
+  onResume: (approved: boolean, note?: string) => void;
   onAbort: () => void;
   t: TFunction;
 }) {
   const [open, setOpen] = useState(false);
+  // U6 — chế độ nhập lý do khi từ chối (reject) + nội dung lý do.
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
   const status = String(run.status ?? "");
   const runId = Number(run.id);
-  // Realtime: khi panel mở và run chưa kết thúc → poll bước; dừng khi terminal/đóng.
+  const awaiting = status === "awaiting_confirm" || status === "held";
+  // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
+  // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
     { runId },
     {
-      enabled: open,
+      enabled: open || (awaiting && canControl),
       refetchInterval: (q) => {
         const st = String((q.state.data as { run?: { status?: string } } | undefined)?.run?.status ?? status);
         return open && !isRunTerminal(st) ? 1500 : false;
@@ -1769,7 +1921,15 @@ function RunRow({
     },
   );
   const currentStepId = detailQ.data?.run?.currentStepId ?? null;
-  const awaiting = status === "awaiting_confirm" || status === "held";
+  const steps = (detailQ.data?.steps ?? []) as RunStepView[];
+  // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
+  const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
+  const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
+  const gateRoles = Array.isArray(currentStep?.result?.approverRoles)
+    ? (currentStep!.result!.approverRoles as unknown[]).map(String).filter(Boolean)
+    : [];
+
+  const closeReject = () => { setRejecting(false); setRejectNote(""); };
 
   return (
     <div className="rounded border text-sm">
@@ -1783,7 +1943,7 @@ function RunRow({
             <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true)}>
               {t("studio.approve", "Approve")}
             </Button>
-            <Button size="sm" variant="outline" className="h-7" onClick={() => onResume(false)}>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
               {t("studio.reject", "Reject")}
             </Button>
             <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
@@ -1792,11 +1952,66 @@ function RunRow({
           </div>
         )}
       </div>
+
+      {/* U6 (doc 26 §2.3) — NGỮ CẢNH duyệt: người duyệt thấy đang duyệt BƯỚC GÌ. */}
+      {awaiting && canControl && (
+        <div className="space-y-2 border-t bg-violet-500/5 px-2 py-2">
+          {detailQ.isLoading ? (
+            <p className="text-xs text-muted-foreground">{t("common.loading", "Loading…")}</p>
+          ) : detailQ.isError ? (
+            <p className="text-xs text-destructive">{t("common.loadError", "Failed to load")}</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                <span className="text-muted-foreground">{t("studio.awaitingStep", "Bước đang chờ")}:</span>
+                <span className="font-mono text-[11px] font-medium">{currentStepId ?? "—"}</span>
+                {gateRoles.length > 0 && (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    · {t("studio.approverRolesLabel", "Vai trò duyệt")}:
+                    {gateRoles.map((r) => (
+                      <Badge key={r} variant="outline" className="text-[10px]">{r}</Badge>
+                    ))}
+                  </span>
+                )}
+              </div>
+              <div className="rounded border bg-background/60 px-2 py-1.5 text-xs">
+                {gatePrompt
+                  ? <span className="whitespace-pre-wrap">{gatePrompt}</span>
+                  : <span className="italic text-muted-foreground">{t("studio.noGatePrompt", "Tác giả không soạn nội dung nhắc cho bước này.")}</span>}
+              </div>
+            </>
+          )}
+          {/* U6 — lý do từ chối (tùy chọn) truyền vào resume. */}
+          {rejecting && (
+            <div className="space-y-1.5 rounded border border-red-500/40 bg-red-500/5 p-2">
+              <Label className="text-[11px]">{t("studio.rejectReason", "Lý do từ chối (tùy chọn)")}</Label>
+              <Input
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                placeholder={t("studio.rejectReasonPlaceholder", "Vì sao không duyệt bước này?")}
+                className="h-7 text-xs"
+              />
+              <div className="flex justify-end gap-1">
+                <Button size="sm" variant="ghost" className="h-7" onClick={closeReject}>
+                  {t("common.cancel", "Cancel")}
+                </Button>
+                <Button
+                  size="sm" variant="destructive" className="h-7"
+                  onClick={() => { onResume(false, rejectNote.trim() || undefined); closeReject(); }}
+                >
+                  {t("studio.confirmReject", "Xác nhận từ chối")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {open && (
         <div className="border-t bg-muted/20 px-2 py-1.5">
           {detailQ.isLoading && <p className="text-xs text-muted-foreground">{t("common.loading", "Loading…")}</p>}
           {detailQ.isError && <p className="text-xs text-destructive">{t("common.loadError", "Failed to load")}</p>}
-          {(detailQ.data?.steps ?? []).map((s: { stepId: string; stepType: string; status: string }) => {
+          {steps.map((s) => {
             const isCurrent = currentStepId != null && s.stepId === currentStepId;
             return (
               <div key={s.stepId} className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
@@ -1808,7 +2023,7 @@ function RunRow({
               </div>
             );
           })}
-          {detailQ.data && (detailQ.data.steps ?? []).length === 0 && (
+          {detailQ.data && steps.length === 0 && (
             <p className="text-xs text-muted-foreground">{t("studio.noSteps", "No steps recorded yet.")}</p>
           )}
         </div>

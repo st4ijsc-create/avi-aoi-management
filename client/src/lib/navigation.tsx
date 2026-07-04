@@ -694,19 +694,24 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "machine_monitoring",
     // doc 22 P4 — engineering-heavy module: hidden in Simple mode.
     tier: "advanced",
-    // W6-26 (doc 25 T8) — 13 mục phẳng → 4 SECTION con theo tác vụ:
-    // authoring (soạn chương trình) · orchestration (điều phối) ·
-    // safetyStandards (an toàn & chuẩn hoá) · twin (twin & mô phỏng).
+    // W6-26 (doc 25 T8) — mục phẳng → SECTION con theo tác vụ.
+    // U15 (doc 26 §3.1) — tách "safetyStandards" (quá tải, trộn ngữ nghĩa) thành
+    // "safety" (An toàn: interlock + workforce) và "standardsIntegration"
+    // (Chuẩn hoá & Tích hợp: equipment-standards + equipment-integration). Hub
+    // /engineering-home KHÔNG thuộc section nào (đọc như landing, nổi đầu nhóm).
     sections: [
       { key: "authoring", label: "nav.section.authoring" },
       { key: "orchestration", label: "nav.section.orchestration" },
-      { key: "safetyStandards", label: "nav.section.safetyStandards" },
+      { key: "safety", label: "nav.section.safety" },
+      { key: "standardsIntegration", label: "nav.section.standardsIntegration" },
       { key: "twin", label: "nav.section.twin" },
     ],
     items: [
       // — Engineering Hub — hub-and-spoke front door (items[0] → breadcrumb /
       // role-home / BottomNav trỏ vào hub thay vì mở thẳng IDE). Giữ tối thiểu
       // machine_monitoring như group để ai thấy nhóm đều mở được hub.
+      // U15 (doc 26 §3.1) — KHÔNG gán section: hub là landing của cả nhóm, không
+      // thuộc "authoring"; groupItemsBySection nổi mục sectionless đầu nhóm lên đầu.
       {
         href: "/engineering-home",
         label: "nav.engineeringHome",
@@ -714,7 +719,6 @@ export const navGroups: NavGroup[] = [
         description: "nav.engineeringHomeDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "authoring",
       },
       // — Authoring & Programming —
       {
@@ -744,7 +748,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.interlockRulesDesc",
         requiredPermission: "interlock",
         permissionCategory: "interlock",
-        section: "safetyStandards",
+        section: "safety",
         hint: "nav.hint.interlockRules",
         engineerOriented: true,
       },
@@ -813,7 +817,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.safetyWorkforceDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "safetyStandards",
+        section: "safety",
         hint: "nav.hint.safetyWorkforce",
         engineerOriented: true,
         beta: true,
@@ -827,7 +831,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.equipmentStandardsDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "safetyStandards",
+        section: "standardsIntegration",
         hint: "nav.hint.equipmentStandards",
         engineerOriented: true,
         beta: true,
@@ -841,7 +845,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.equipmentIntegrationDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
-        section: "safetyStandards",
+        section: "standardsIntegration",
         hint: "nav.hint.equipmentIntegration",
         engineerOriented: true,
         beta: true,
@@ -1640,8 +1644,14 @@ export function isBetaRoute(href: string): boolean {
 /**
  * Group an (already role/permission/license-filtered) group's items by their `section`.
  * Returns ordered buckets following group.sections; items without a section (or groups
- * without a sections array) fall into a single { key: null } bucket rendered flat.
+ * without a sections array) fall into a { key: null } bucket rendered flat.
  * Empty buckets (all items filtered out) are dropped.
+ *
+ * U15 (doc 26 §3.1) — sectionless items that appear BEFORE the first sectioned item
+ * (e.g. the Engineering Hub landing) surface in a LEADING flat bucket so they read as
+ * a group front-door at the top; sectionless items after that stay in the trailing
+ * catch-all. When no item is sectioned, everything falls to the single trailing bucket
+ * (unchanged behaviour).
  */
 export function groupItemsBySection(
   group: NavGroup,
@@ -1652,6 +1662,17 @@ export function groupItemsBySection(
   }
 
   const buckets: { key: string | null; label: string | null; items: NavItem[] }[] = [];
+  const sectionKeys = new Set(group.sections.map(s => s.key));
+  const hasSection = (item: NavItem): boolean =>
+    item.section !== undefined && sectionKeys.has(item.section);
+
+  // Leading landing bucket — sectionless items before the first sectioned item.
+  const firstSectioned = group.items.findIndex(hasSection);
+  const leading =
+    firstSectioned === -1 ? [] : group.items.slice(0, firstSectioned).filter(i => !hasSection(i));
+  if (leading.length > 0) {
+    buckets.push({ key: null, label: null, items: leading });
+  }
 
   // Ordered, labelled section buckets — skip any that ended up empty after filtering.
   for (const { key, label } of group.sections) {
@@ -1661,12 +1682,10 @@ export function groupItemsBySection(
     }
   }
 
-  // Trailing catch-all for items with no section (or a section not declared in
-  // group.sections) so nothing is ever dropped; rendered flat (no sub-header).
-  const sectionKeys = new Set(group.sections.map(s => s.key));
-  const orphanItems = group.items.filter(
-    item => item.section === undefined || !sectionKeys.has(item.section),
-  );
+  // Trailing catch-all for the remaining sectionless items (or sections not declared
+  // in group.sections) so nothing is ever dropped; rendered flat (no sub-header).
+  const leadingSet = new Set(leading);
+  const orphanItems = group.items.filter(item => !hasSection(item) && !leadingSet.has(item));
   if (orphanItems.length > 0) {
     buckets.push({ key: null, label: null, items: orphanItems });
   }

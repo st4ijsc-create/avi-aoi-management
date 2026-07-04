@@ -8,6 +8,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SiteProvider } from "./contexts/SiteContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
+import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
@@ -413,6 +414,9 @@ function App() {
             active site to localStorage. Non-admins degrade to a static "All sites". */}
         <SiteProvider>
           <TooltipProvider>
+            {/* U1 (doc 26): EngineeringProvider — store lastSelected {project/thiết bị/
+                workflow} làm fallback cho deep-link golden-thread giữa các trang Kỹ thuật. */}
+            <EngineeringProvider>
             <AiCopilotProvider>
               <ConnectionBanner />
               <Toaster />
@@ -422,6 +426,7 @@ function App() {
                   lazy AI pages. The bubble hides itself when not logged in. */}
               <AILocalChatBubble />
             </AiCopilotProvider>
+            </EngineeringProvider>
           </TooltipProvider>
         </SiteProvider>
       </ThemeProvider>

@@ -19,6 +19,7 @@ import * as React from "react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
+import { BetaBadge } from "@/components/BetaBadge";
 
 export interface ToolTileProps {
   icon: LucideIcon;
@@ -29,10 +30,22 @@ export interface ToolTileProps {
   href: string;
   /** Optional count badge (e.g. pending items). */
   badge?: number;
+  /**
+   * U7 (doc 26 §2.1) — flag a preview/framework surface so a new technician is
+   * warned BEFORE clicking (renders the shared "Thử nghiệm" chip).
+   */
+  beta?: boolean;
+  /**
+   * U7 — short access note under the blurb (e.g. "Chỉ xem" / "Cần quyền điều khiển")
+   * so the tile advertises its permission level up front. Pair with `noteIcon`.
+   */
+  note?: string;
+  /** Optional icon for the access note (Lock / Eye …). */
+  noteIcon?: LucideIcon;
   className?: string;
 }
 
-export function ToolTile({ icon: Icon, label, blurb, href, badge, className }: ToolTileProps) {
+export function ToolTile({ icon: Icon, label, blurb, href, badge, beta, note, noteIcon: NoteIcon, className }: ToolTileProps) {
   return (
     <Link
       href={href}
@@ -55,6 +68,18 @@ export function ToolTile({ icon: Icon, label, blurb, href, badge, className }: T
         {label}
       </span>
       {blurb && <span className="text-xs leading-snug text-muted-foreground">{blurb}</span>}
+      {/* U7 — chip hàng dưới: báo trước Beta / mức quyền (đẩy xuống đáy tile cho thẳng hàng). */}
+      {(beta || note) && (
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-1">
+          {beta && <BetaBadge />}
+          {note && (
+            <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0 text-[10px] font-medium leading-4 text-muted-foreground">
+              {NoteIcon && <NoteIcon className="h-3 w-3" aria-hidden="true" />}
+              {note}
+            </span>
+          )}
+        </div>
+      )}
     </Link>
   );
 }

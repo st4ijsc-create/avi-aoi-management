@@ -16,9 +16,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -278,6 +280,9 @@ const MAX_HISTORY = 500; // giới hạn bản ghi giữ trong phiên
 
 export default function RfTestCellSim() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const utils = trpc.useUtils();
 
   const [sims, setSims] = useState<{ pass: Sim; fail: Sim } | null>(null);
@@ -427,7 +432,9 @@ export default function RfTestCellSim() {
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Radio className="h-6 w-6" />}
+          badge={<ViewOnlyBadge module="machine_control" />}
           title={t("rfcell.title", "RF Shielded Test Cell — Realtime Simulation")}
           description={t("rfcell.subtitle", "FX5U XYZ feeder • pick&place robot • RF test chamber — a digital twin running in real time")}
           actions={
@@ -474,6 +481,12 @@ export default function RfTestCellSim() {
             </>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("rfcell.whenToUse", "When to use — watch a real-time digital twin of the RF shielded test cell (feeder + robot + RF chamber) to understand its cycle. Simulation only — no device commands.")}</span>
+        </div>
 
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
           <Info className="h-4 w-4 mt-0.5 shrink-0" />

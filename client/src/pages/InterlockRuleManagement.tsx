@@ -17,13 +17,16 @@
  *   delete = canDelete ; approve = admin-only.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PollFreshness } from "@/components/PollFreshness";
 import { PageContainer, PageHeader } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import { useLocation } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical } from "lucide-react";
+import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical, Info } from "lucide-react";
 import { toast } from "sonner";
 
 const SCOPES = ["line", "station", "machine"] as const;
@@ -104,11 +107,19 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
 
 export default function InterlockRuleManagement() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission, isAdmin } = usePermissions();
   const canView = hasPermission("interlock", "canView");
   const canCreate = hasPermission("interlock", "canCreate");
   const canEdit = hasPermission("interlock", "canEdit");
   const canDelete = hasPermission("interlock", "canDelete");
+  // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền tương ứng.
+  const createReason = !canCreate ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const editReason = !canEdit ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const deleteReason = !canDelete ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "interlock" }) : undefined;
+  const approveReason = !isAdmin ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "admin" }) : undefined;
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
@@ -236,6 +247,48 @@ export default function InterlockRuleManagement() {
     return m;
   }, [rules]);
 
+  // U13 (doc 26 §2.2) — lọc sự kiện open/resolved + đếm chưa xử lý cho badge tab.
+  const [eventFilter, setEventFilter] = useState<"all" | "open" | "resolved">("all");
+  const unresolvedCount = useMemo(
+    () => events.filter((e) => e.status !== "resolved").length,
+    [events],
+  );
+  const filteredEvents = useMemo(() => {
+    if (eventFilter === "open") return events.filter((e) => e.status !== "resolved");
+    if (eventFilter === "resolved") return events.filter((e) => e.status === "resolved");
+    return events;
+  }, [events, eventFilter]);
+  // "Dòng mới" = sự kiện vừa fire trong 2 phút gần đây & chưa xử lý → tô nổi để KTV chú ý.
+  const isRecentEvent = (firedAt: unknown, status: string) => {
+    if (status === "resolved" || !firedAt) return false;
+    const t0 = new Date(firedAt as string).getTime();
+    return Number.isFinite(t0) && Date.now() - t0 < 2 * 60 * 1000;
+  };
+
+  // ── U12 (doc 26 §2.3) — nhắc khi có SỰ KIỆN INTERLOCK MỚI chưa xử lý ─────────
+  // So sánh tập id sự kiện với lần poll trước; chỉ toast id MỚI & chưa resolved
+  // (chống spam, không báo lại sự kiện đã thấy hay đã xử lý).
+  const seenEventIdsRef = useRef<Set<number> | null>(null);
+  useEffect(() => {
+    if (eventsQuery.isLoading || eventsQuery.isError) return;
+    const ids = new Set(events.map((e) => e.id));
+    // Lần đầu (prime) chỉ ghi nhận baseline, KHÔNG toast.
+    if (seenEventIdsRef.current === null) {
+      seenEventIdsRef.current = ids;
+      return;
+    }
+    const prev = seenEventIdsRef.current;
+    const fresh = events.filter((e) => !prev.has(e.id) && e.status !== "resolved");
+    seenEventIdsRef.current = ids;
+    if (fresh.length > 0) {
+      toast.warning(
+        t("interlockRules.newEventToast", "Interlock triggered") +
+          (fresh.length > 1 ? ` (${fresh.length})` : ""),
+        { description: t("interlockRules.newEventDesc", "A new interlock event fired — open the Events tab to review.") },
+      );
+    }
+  }, [events, eventsQuery.isLoading, eventsQuery.isError, t]);
+
   if (!canView) {
     return (
       <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
@@ -248,6 +301,7 @@ export default function InterlockRuleManagement() {
     <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
     <PageContainer className="space-y-6">
       <PageHeader
+        breadcrumbs={crumbs}
         icon={<ShieldAlert className="h-6 w-6" />}
         title={
           <span className="flex items-center gap-2">
@@ -256,16 +310,26 @@ export default function InterlockRuleManagement() {
         }
         description={t("interlockRules.subtitle")}
         actions={
-          canCreate ? (
-            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
-          ) : undefined
+          <Button onClick={openCreate} disabled={!canCreate} title={createReason}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>
         }
       />
+
+      {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+      <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        <span>{t("interlockRules.whenToUse", "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.")}</span>
+      </div>
 
       <Tabs defaultValue="rules">
         <TabsList>
           <TabsTrigger value="rules">{t("interlockRules.tabRules")}</TabsTrigger>
-          <TabsTrigger value="events">{t("interlockRules.tabEvents")}</TabsTrigger>
+          <TabsTrigger value="events" className="gap-1.5">
+            {t("interlockRules.tabEvents")}
+            {/* U13 §2.2 — badge đếm sự kiện chưa xử lý. */}
+            {unresolvedCount > 0 && (
+              <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px]">{unresolvedCount}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Rules tab ── */}
@@ -313,15 +377,18 @@ export default function InterlockRuleManagement() {
                             <Button size="sm" variant="outline" onClick={() => { setTestRuleId(r.id); setObservedValue(""); setSeriesText(""); setTestEnabled(false); }}>
                               <FlaskConical className="h-4 w-4" />
                             </Button>
-                            {isAdmin && !approved && (
-                              <Button size="sm" variant="outline" disabled={approveRule.isPending}
+                            {/* Hiện-nhưng-khoá: duyệt chỉ dành cho admin (SoD giữ nguyên). */}
+                            {!approved && (
+                              <Button size="sm" variant="outline" disabled={!isAdmin || approveRule.isPending}
+                                title={approveReason}
                                 onClick={() => approveRule.mutate({ id: r.id })}>
                                 <CheckCircle2 className="h-4 w-4 mr-1" /> {t("interlockRules.approve")}
                               </Button>
                             )}
-                            {canEdit && !r.enabled && (
+                            {!r.enabled && (
                               approved ? (
-                                <Button size="sm" variant="outline" disabled={enableRule.isPending}
+                                <Button size="sm" variant="outline" disabled={!canEdit || enableRule.isPending}
+                                  title={editReason}
                                   onClick={() => enableRule.mutate({ id: r.id })}>
                                   <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                 </Button>
@@ -329,7 +396,7 @@ export default function InterlockRuleManagement() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <span tabIndex={0}>
-                                      <Button size="sm" variant="outline" disabled>
+                                      <Button size="sm" variant="outline" disabled title={editReason}>
                                         <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                       </Button>
                                     </span>
@@ -338,23 +405,21 @@ export default function InterlockRuleManagement() {
                                 </Tooltip>
                               )
                             )}
-                            {canEdit && r.enabled && (
-                              <Button size="sm" variant="outline" disabled={disableRule.isPending}
+                            {r.enabled && (
+                              <Button size="sm" variant="outline" disabled={!canEdit || disableRule.isPending}
+                                title={editReason}
                                 onClick={() => disableRule.mutate({ id: r.id })}>
                                 <Pause className="h-4 w-4 mr-1" /> {t("interlockRules.disable")}
                               </Button>
                             )}
-                            {canEdit && (
-                              <Button size="sm" variant="outline" onClick={() => openEdit(r)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {canDelete && (
-                              <Button size="sm" variant="destructive" disabled={deleteRule.isPending}
-                                onClick={() => setDeleteTarget({ id: r.id, name: r.name })}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
+                              title={deleteReason}
+                              onClick={() => setDeleteTarget({ id: r.id, name: r.name })}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
@@ -369,7 +434,22 @@ export default function InterlockRuleManagement() {
         {/* ── Events tab ── */}
         <TabsContent value="events">
           <Card>
-            <CardHeader><CardTitle>{t("interlockRules.events")} ({events.length})</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle>{t("interlockRules.events")} ({filteredEvents.length})</CardTitle>
+              <div className="flex items-center gap-2">
+              {/* U12 §2.3 — độ tươi của dữ liệu poll (dataUpdatedAt của react-query). */}
+              <PollFreshness updatedAt={eventsQuery.dataUpdatedAt} isFetching={eventsQuery.isFetching} />
+              {/* U13 §2.2 — lọc open/resolved (lọc phía client). */}
+              <Select value={eventFilter} onValueChange={(v) => setEventFilter(v as "all" | "open" | "resolved")}>
+                <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("interlockRules.filterAll", "Tất cả")}</SelectItem>
+                  <SelectItem value="open">{t("interlockRules.filterOpen", "Chưa xử lý")}</SelectItem>
+                  <SelectItem value="resolved">{t("interlockRules.filterResolved", "Đã xử lý")}</SelectItem>
+                </SelectContent>
+              </Select>
+              </div>
+            </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
@@ -390,11 +470,11 @@ export default function InterlockRuleManagement() {
                   {!eventsQuery.isError && eventsQuery.isLoading && (
                     <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
                   )}
-                  {!eventsQuery.isError && !eventsQuery.isLoading && events.length === 0 && (
+                  {!eventsQuery.isError && !eventsQuery.isLoading && filteredEvents.length === 0 && (
                     <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
                   )}
-                  {events.map((ev) => (
-                    <TableRow key={ev.id}>
+                  {filteredEvents.map((ev) => (
+                    <TableRow key={ev.id} className={isRecentEvent(ev.firedAt, ev.status) ? "bg-warning/10" : undefined}>
                       <TableCell className="font-medium">{ruleNameById.get(ev.ruleId) ?? `#${ev.ruleId}`}</TableCell>
                       <TableCell className="text-xs">{ev.firedAt ? new Date(ev.firedAt).toLocaleString() : "—"}</TableCell>
                       <TableCell>{ev.observedValue ?? "—"}</TableCell>
@@ -402,8 +482,9 @@ export default function InterlockRuleManagement() {
                       <TableCell>{ev.action ? <Badge variant={actionVariant(ev.action)}>{ev.action}</Badge> : "—"}</TableCell>
                       <TableCell><Badge variant="outline">{ev.status}</Badge></TableCell>
                       <TableCell className="text-right">
-                        {canEdit && ev.status !== "resolved" && (
-                          <Button size="sm" variant="outline" disabled={resolveEvent.isPending}
+                        {ev.status !== "resolved" && (
+                          <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
+                            title={editReason}
                             onClick={() => resolveEvent.mutate({ id: ev.id })}>
                             {t("interlockRules.resolve")}
                           </Button>

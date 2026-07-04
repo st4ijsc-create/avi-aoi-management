@@ -19,6 +19,8 @@ vi.mock("drizzle-orm", () => ({
   eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
   and: (...ps: any[]) => ({ __and: ps }),
   desc: (col: any) => ({ __desc: col.__name }),
+  // listRecipeVersions left-joins users cho createdByName — trả chính bảng làm "cột".
+  getTableColumns: (t: any) => t,
 }));
 
 function matches(row: Row, pred: any): boolean {
@@ -39,6 +41,8 @@ function makeFakeDb() {
     const q: any = {
       where: (p: any) => { pred = p; return q; },
       orderBy: (o: any) => { order = o; return q; },
+      // listRecipeVersions left-joins users for createdByName — no-op trong fake.
+      leftJoin: (_t: any, _on: any) => q,
       limit: async (_n: number) => run().slice(0, _n),
       // SELECT … FOR UPDATE (row lock) — no-op in the fake, still chainable + thenable.
       for: (_s?: any, _c?: any) => q,
@@ -104,12 +108,13 @@ vi.mock("../../drizzle/schema", () => ({
   machineRecipes: {
     __table: "machine_recipes",
     id: { __name: "id" }, code: { __name: "code" }, status: { __name: "status" },
-    machineId: { __name: "machineId" }, version: { __name: "version" },
+    machineId: { __name: "machineId" }, version: { __name: "version" }, createdBy: { __name: "createdBy" },
   },
   recipeDeployments: {
     __table: "recipe_deployments",
     id: { __name: "id" }, machineId: { __name: "machineId" }, deployedAt: { __name: "deployedAt" },
   },
+  users: { __table: "users", id: { __name: "id" }, name: { __name: "name" } },
 }));
 
 import { createRecipe, approveRecipe, deployRecipe, rollbackRecipe, computeChecksum, listRecipeVersions, getActiveRecipe, setGoldenRecipe } from "./machineRecipe";

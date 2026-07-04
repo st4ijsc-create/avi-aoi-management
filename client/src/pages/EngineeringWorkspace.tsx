@@ -14,16 +14,20 @@
  * D1 ships a dependency-free <CodeEditor>; a richer editor (Monaco) can drop in later
  * behind that component boundary. Real language adapters (Zmotion, ...) land in D2+.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { computeIsDirty } from "@/lib/engineeringBuffer";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { useEngineering } from "@/contexts/EngineeringContext";
+import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
@@ -52,9 +56,11 @@ import {
   Code2, Plus, FolderGit2, FileCode, Play, Hammer, FlaskConical, Rocket,
   AlertTriangle, CheckCircle2, XCircle, RefreshCw, Variable, ShieldCheck,
   Radio, Trash2, Pencil, Wifi, WifiOff, RotateCcw, GitCompare, Info,
+  Check, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -79,7 +85,78 @@ const KIND_LANGUAGE: Record<Kind, string> = {
   "iec61131-ld": "ld",
 };
 
+/**
+ * U9 (doc 26) — tập token ngôn ngữ HỢP LỆ mỗi kind (mirror capabilities.languages
+ * của adapter server). Đổi ô gõ tay → Select để khỏi gõ sai token adapter hiểu nhầm.
+ * Phần tử đầu là mặc định gợi ý cho kind (khớp KIND_LANGUAGE).
+ */
+const KIND_LANGUAGES: Record<Kind, readonly string[]> = {
+  stub: ["text", "basic", "st", "gcode"],
+  "zmotion-basic": ["basic"],
+  gcode: ["gcode"],
+  "mitsubishi-engineering": ["st", "device"],
+  "robot-tm": ["tmscript"],
+  "iec61131-st": ["st"],
+  "iec61131-ld": ["ld"],
+};
+
 type Diagnostic = { severity: string; message: string; line?: number; symbol?: string };
+
+/**
+ * U14 (doc 26 §3.2) — STEPPER luồng vàng: Soạn → Kiểm tra → Build → Mô phỏng →
+ * Deploy → Giám sát. Chỉ HIỂN THỊ tiến độ (đọc từ state hiện có, không tự chạy gì) +
+ * bấm để CUỘN tới card tương ứng. Dính (sticky) trên đầu cột editor.
+ */
+type GoldenStep = {
+  key: string;
+  label: string;
+  Icon: typeof CheckCircle2;
+  done: boolean;
+  anchor: string;
+};
+
+function GoldenThreadStepper({ steps, t }: { steps: GoldenStep[]; t: TFunction }) {
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return (
+    <nav
+      aria-label={t("engineering.gtNav", "Golden thread progress")}
+      className="sticky top-0 z-10 overflow-x-auto rounded-md border bg-background/95 px-2 py-2 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80"
+    >
+      <ol className="flex min-w-max items-center gap-0.5">
+        {steps.map((s, i) => {
+          const StepIcon = s.Icon;
+          return (
+            <li key={s.key} className="flex items-center">
+              <button
+                type="button"
+                onClick={() => scrollTo(s.anchor)}
+                aria-current={s.done ? "step" : undefined}
+                className="group flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors hover:bg-muted"
+              >
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                    s.done
+                      ? "border-success/40 bg-success/15 text-success"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {s.done ? <Check className="h-3 w-3" /> : i + 1}
+                </span>
+                <StepIcon className={`h-3.5 w-3.5 ${s.done ? "text-success" : "text-muted-foreground"}`} />
+                <span className={s.done ? "font-medium text-foreground" : "text-muted-foreground"}>{s.label}</span>
+              </button>
+              {i < steps.length - 1 && (
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" aria-hidden="true" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
 
 function rid(prefix: string): string {
   // Non-crypto unique-ish id for idempotency/action keys (UI-side).
@@ -88,6 +165,9 @@ function rid(prefix: string): string {
 
 export default function EngineeringWorkspace() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const canView = hasPermission("machine_monitoring", "canView");
@@ -101,12 +181,56 @@ export default function EngineeringWorkspace() {
   const streamingEnabled = statusQ.data?.streamingEnabled ?? false;
   const adapters = statusQ.data?.adapters ?? [];
 
+  // U4 (doc 26 §2.4) — lý do khoá nút ghi để KTV biết cần xin quyền hay bật cờ.
+  const createReason = !canCreate
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
+  const editReason = !canEdit
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
+
   const projectsQ = trpc.programming.listProjects.useQuery(undefined, { enabled: canView });
+  // U2 (doc 26) — danh sách máy để gắn "thiết bị nguồn" cho project (mở khoá Online Monitor).
+  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: canView });
+  const machineLabel = (id: number | null | undefined) => {
+    const m = machinesQ.data?.find((x) => x.id === id);
+    return m ? `${m.name} · #${m.id}` : id != null ? `#${id}` : "";
+  };
   const [projectId, setProjectId] = useState<number | null>(null);
   const project = useMemo(
     () => projectsQ.data?.find((p) => p.id === projectId) ?? null,
     [projectsQ.data, projectId],
   );
+
+  // U13 (doc 26 §2.2) — tìm/lọc client cho Project Explorer (tên/mã + loại thiết bị).
+  const [projSearch, setProjSearch] = useState("");
+  const [projKindFilter, setProjKindFilter] = useState<string>("all");
+  const filteredProjects = useMemo(() => {
+    const q = projSearch.trim().toLowerCase();
+    return (projectsQ.data ?? []).filter((p) => {
+      if (projKindFilter !== "all" && p.kind !== projKindFilter) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        (p.code ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [projectsQ.data, projSearch, projKindFilter]);
+
+  // U1 (doc 26) — deep-link ?projectId= là nguồn chính; store lastSelected là fallback.
+  // Áp dụng MỘT LẦN, chỉ khi list đã tải & project tồn tại (tránh chọn id "mồ côi").
+  const search = useSearch();
+  const deepLink = useMemo(() => parseDeepLink(search), [search]);
+  const { lastSelected, setLastProjectId } = useEngineering();
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current) return;
+    const wanted = deepLink.projectId ?? lastSelected.projectId;
+    if (wanted == null) { deepLinkApplied.current = true; return; }
+    if (!projectsQ.data) return; // đợi list
+    deepLinkApplied.current = true;
+    if (projectsQ.data.some((p) => p.id === wanted)) setProjectId(wanted);
+  }, [deepLink.projectId, lastSelected.projectId, projectsQ.data]);
 
   const artifactsQ = trpc.programming.listArtifacts.useQuery(
     { projectId: projectId! },
@@ -132,16 +256,31 @@ export default function EngineeringWorkspace() {
     if (artifact) {
       setCode(artifact.content ?? "");
       setLanguage(artifact.language);
+    } else if (project) {
+      // U9 — chưa chọn phiên bản: mặc định ngôn ngữ đúng theo loại dự án.
+      setLanguage(KIND_LANGUAGE[project.kind as Kind] ?? "text");
     }
-  }, [artifact?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [artifact?.id, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // U9 — tập token cho Select; kèm giá trị hiện tại nếu là token cũ ngoài tập (data legacy).
+  const langOptions = useMemo(() => {
+    const set = KIND_LANGUAGES[project?.kind as Kind] ?? ["text"];
+    return language && !set.includes(language) ? [...set, language] : set;
+  }, [project?.kind, language]);
 
   // Buffer khác bản đã lưu → chưa lưu. Validate/Build luôn chạy trên artifactId (bản đã lưu),
   // nên khi dirty phải chặn/ cảnh báo để không kiểm tra nhầm phiên bản cũ (doc 25 T3).
   const isDirty = computeIsDirty(code, artifact?.content);
 
-  // Chọn phiên bản/dự án khác lúc dirty sẽ ghi đè buffer → hỏi xác nhận trước.
-  const confirmDiscardIfDirty = () =>
-    !isDirty || window.confirm(t("engineering.dirtyConfirm", "Có chỉnh sửa chưa lưu — chuyển sẽ mất thay đổi. Tiếp tục?"));
+  // Chọn phiên bản/dự án khác lúc dirty sẽ ghi đè buffer → xác nhận qua AlertDialog (DS).
+  // Hành động điều hướng bị HOÃN vào pendingNav; chỉ chạy khi người dùng xác nhận bỏ thay đổi.
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+  const guardDirty = (action: () => void) => {
+    if (isDirty) setPendingNav(() => action);
+    else action();
+  };
+  // Xác nhận xóa một biến khỏi bảng tag (thay window.confirm bằng AlertDialog).
+  const [deleteSymTarget, setDeleteSymTarget] = useState<{ id: number } | null>(null);
 
   // Chặn Validate/Build khi còn chỉnh sửa chưa lưu (kết quả sẽ thuộc phiên bản cũ).
   const requireSaved = (): boolean => {
@@ -176,6 +315,15 @@ export default function EngineeringWorkspace() {
       toast.success(t("engineering.projectCreated", "Đã tạo project"));
       utils.programming.listProjects.invalidate();
       setProjectId(row.id);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  // U2 (doc 26) — gắn / đổi thiết bị nguồn cho project đang mở (set project.deviceId).
+  const updateProject = trpc.programming.updateProject.useMutation({
+    onSuccess: () => {
+      toast.success(t("engineering.deviceAttached", "Đã cập nhật thiết bị nguồn"));
+      utils.programming.listProjects.invalidate();
+      setAttachOpen(false);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -301,11 +449,24 @@ export default function EngineeringWorkspace() {
     setSymOpen(true);
   };
 
+  // U7 (doc 26 §2.1) — cờ đang tạo dự án DEMO một chạm (onboarding KTV mới).
+  const [demoCreating, setDemoCreating] = useState(false);
+
   // ── Create-project dialog state ──
   const [npOpen, setNpOpen] = useState(false);
   const [npCode, setNpCode] = useState("");
   const [npName, setNpName] = useState("");
   const [npKind, setNpKind] = useState<Kind>("stub");
+  // U2 — thiết bị nguồn (tùy chọn) khi tạo project; "" = chưa gắn.
+  const [npDeviceId, setNpDeviceId] = useState<string>("");
+
+  // ── U2: Attach-device dialog (gắn/đổi thiết bị nguồn cho project đang mở) ──
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachDeviceId, setAttachDeviceId] = useState<string>("");
+  const openAttachDialog = () => {
+    setAttachDeviceId(project?.deviceId != null ? String(project.deviceId) : "");
+    setAttachOpen(true);
+  };
 
   // ── Deploy form state ──
   const [deployStage, setDeployStage] = useState<"staging" | "production">("staging");
@@ -327,6 +488,60 @@ export default function EngineeringWorkspace() {
   const visualKind =
     project?.kind === "iec61131-ld" ? "ladder" : project?.kind === "robot-tm" ? "teach" : null;
 
+  // U10 (doc 26) — phím tắt tác vụ trong editor. Ctrl/Cmd+S = Lưu phiên bản (chặn hộp
+  // "lưu trang" của trình duyệt); Ctrl/Cmd+Enter = Build phiên bản đã lưu. Hook scope
+  // 'global' tự BỎ QUA khi con trỏ ở input/textarea/contenteditable (trừ Ctrl+S vốn cần
+  // chặn toàn cục) → không nuốt phím của trình soạn code.
+  const saveVersionShortcut = () => {
+    if (!project || !canCreate || !code.trim() || createArtifact.isPending) return;
+    createArtifact.mutate({
+      projectId: project.id,
+      branch: project.defaultBranch ?? "main",
+      language: language || KIND_LANGUAGE[project.kind as Kind] || "text",
+      content: code,
+    });
+  };
+  const buildVersionShortcut = () => {
+    if (!canCreate || !artifactId || buildM.isPending) return;
+    if (requireSaved()) buildM.mutate({ artifactId });
+  };
+  useKeyboardShortcuts(
+    [
+      { key: "s", ctrlKey: true, action: saveVersionShortcut },
+      { key: "Enter", ctrlKey: true, action: buildVersionShortcut },
+    ],
+    { enabled: canView, scope: "global" },
+  );
+
+  // U7 (doc 26 §2.1) — MỘT CHẠM: tạo dự án DEMO + phiên bản mẫu (code hợp lệ) rồi tự
+  // chọn để KTV mới bấm Kiểm tra/Mô phỏng ngay. Không seed DB tĩnh — tạo theo yêu cầu
+  // người dùng qua đúng mutation sẵn có. Kind "stub" là mặc định AN TOÀN (không I/O
+  // thiết bị); createProject/createArtifact.onSuccess tự set projectId + artifactId.
+  const createDemo = async () => {
+    if (!canCreate || demoCreating) return;
+    setDemoCreating(true);
+    try {
+      const proj = await createProject.mutateAsync({
+        code: `DEMO-${Date.now()}`,
+        name: t("engineering.demoName", "Dự án DEMO — khởi động nhanh"),
+        kind: "stub",
+      });
+      await createArtifact.mutateAsync({
+        projectId: proj.id,
+        branch: proj.defaultBranch ?? "main",
+        language: KIND_LANGUAGE.stub,
+        content: t(
+          "engineering.demoProgram",
+          "// Dự án DEMO — chương trình mẫu (an toàn, không phát lệnh xuống thiết bị)\n// 1) Bấm \"Kiểm tra\" để phân tích tĩnh\n// 2) Bấm \"Build\" để biên dịch phiên bản này\n// 3) Bấm \"Mô phỏng (twin)\" để chạy thử trên bản sao số\nSTART\n  WAIT 100        // chờ 100ms\n  SET output = 1  // bật đầu ra minh hoạ\n  WAIT 100\n  SET output = 0\nEND\n",
+        ),
+      });
+    } catch {
+      // Lỗi đã được onError của mutation toast — nuốt để không vỡ UI.
+    } finally {
+      setDemoCreating(false);
+    }
+  };
+
   if (!canView) {
     return (
       <DashboardLayout>
@@ -341,6 +556,7 @@ export default function EngineeringWorkspace() {
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Code2 className="h-6 w-6" />}
           title={t("engineering.title", "Xưởng lập trình thiết bị")}
           badge={!canEdit ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -363,10 +579,15 @@ export default function EngineeringWorkspace() {
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             {t("engineering.whenToUse", "When to use — the full IDE pipeline: build, simulate, sign-off & deploy device programs. Low-level motion/IO? Use the IR Editor. IEC 61131 LAD/FBD/SFC? Use POU Studio.")}
           </span>
+          {/* U1 — cross-link MANG ?projectId: mở đúng project đang chọn ở IR/POU (không mở trống). */}
           <span className="inline-flex items-center gap-3">
             <Link href="/engineering-home" className="font-medium text-primary hover:underline">{t("nav.engineeringHome")}</Link>
-            <Link href="/ir-editor" className="font-medium text-primary hover:underline">{t("nav.irEditor")}</Link>
-            <Link href="/pou-studio" className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
+            <Link href={withParams("/ir-editor", { projectId })} className="font-medium text-primary hover:underline">
+              {projectId ? t("engineering.openInIr", "Mở project này trong IR") : t("nav.irEditor")}
+            </Link>
+            <Link href={withParams("/pou-studio", { projectId })} className="font-medium text-primary hover:underline">
+              {projectId ? t("engineering.openInPou", "Mở project này trong POU") : t("nav.pouStudio")}
+            </Link>
           </span>
         </div>
 
@@ -388,7 +609,7 @@ export default function EngineeringWorkspace() {
               </CardTitle>
               <Dialog open={npOpen} onOpenChange={setNpOpen}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="ghost" disabled={!canCreate}><Plus className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="ghost" disabled={!canCreate} title={createReason}><Plus className="h-4 w-4" /></Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
@@ -417,14 +638,41 @@ export default function EngineeringWorkspace() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {/* U2 — thiết bị nguồn (tùy chọn): gắn ngay để mở khoá Online Monitor sau này. */}
+                    <div>
+                      <Label>{t("engineering.sourceDevice", "Thiết bị nguồn")}</Label>
+                      <Select value={npDeviceId} onValueChange={setNpDeviceId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("engineering.sourceDevicePh", "Chọn thiết bị (tùy chọn)…")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(machinesQ.data ?? []).map((m) => (
+                            <SelectItem key={m.id} value={String(m.id)}>{m.name} · #{m.id}</SelectItem>
+                          ))}
+                          {(machinesQ.data ?? []).length === 0 && (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                              {t("engineering.noMachines", "Chưa có máy nào — có thể gắn sau ở Online Monitor")}
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t("engineering.sourceDeviceHint", "Gắn thiết bị để mở khoá theo dõi trực tiếp (Online Monitor). Có thể để trống rồi gắn sau.")}
+                      </p>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button
                       disabled={!npCode || !npName || createProject.isPending}
                       onClick={() => {
-                        createProject.mutate({ code: npCode, name: npName, kind: npKind });
+                        createProject.mutate({
+                          code: npCode,
+                          name: npName,
+                          kind: npKind,
+                          deviceId: npDeviceId ? Number(npDeviceId) : undefined,
+                        });
                         setNpOpen(false);
-                        setNpCode(""); setNpName("");
+                        setNpCode(""); setNpName(""); setNpDeviceId("");
                       }}
                     >
                       {t("common.create", "Tạo")}
@@ -434,15 +682,41 @@ export default function EngineeringWorkspace() {
               </Dialog>
             </CardHeader>
             <CardContent className="space-y-1">
+              {/* U13 — ô tìm + lọc theo loại (lọc phía client, không đổi backend). */}
+              {(projectsQ.data ?? []).length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  <Input
+                    value={projSearch}
+                    onChange={(e) => setProjSearch(e.target.value)}
+                    placeholder={t("engineering.searchProjects", "Tìm theo tên hoặc mã…")}
+                    className="h-8 text-sm"
+                  />
+                  <Select value={projKindFilter} onValueChange={setProjKindFilter}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("engineering.allKinds", "Tất cả loại")}</SelectItem>
+                      {KINDS.map((k) => (
+                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {(projectsQ.data ?? []).length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("engineering.noProjects", "Chưa có dự án")}</p>
               )}
-              {(projectsQ.data ?? []).map((p) => (
+              {(projectsQ.data ?? []).length > 0 && filteredProjects.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("engineering.noProjectMatch", "Không có dự án khớp bộ lọc")}</p>
+              )}
+              {filteredProjects.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => {
-                    if (p.id === projectId || !confirmDiscardIfDirty()) return;
-                    setProjectId(p.id); setArtifactId(null); setBuildId(null); setSimResult(null); setDiagnostics(null);
+                    if (p.id === projectId) return;
+                    guardDirty(() => {
+                      setProjectId(p.id); setArtifactId(null); setBuildId(null); setSimResult(null); setDiagnostics(null);
+                      setLastProjectId(p.id); // U1 — nhớ project để mang theo khi chuyển trang
+                    });
                   }}
                   className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted ${projectId === p.id ? "bg-muted font-medium" : ""}`}
                 >
@@ -456,11 +730,69 @@ export default function EngineeringWorkspace() {
           {/* ── Editor + actions ── */}
           <div className="space-y-4">
             {!project ? (
-              <Card><CardContent className="py-12 text-center text-muted-foreground">{t("engineering.selectProject", "Chọn một dự án để bắt đầu")}</CardContent></Card>
+              projectsQ.isLoading ? (
+                <Card><CardContent className="py-12 text-center text-muted-foreground">{t("common.loading", "Đang tải…")}</CardContent></Card>
+              ) : projectsQ.isError ? (
+                <Card><CardContent className="py-12 text-center text-destructive">{t("common.error", "Có lỗi khi tải")}</CardContent></Card>
+              ) : (projectsQ.data ?? []).length === 0 ? (
+                // U7 — CHƯA có dự án nào: onboarding GIÀU + nút "Tạo dự án DEMO" một chạm.
+                <Card>
+                  <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Rocket className="h-6 w-6" aria-hidden="true" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-semibold">{t("engineering.emptyTitle", "Bắt đầu tại đây")}</h3>
+                      <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                        {t("engineering.emptyDesc", "Chưa có dự án nào. Tạo một dự án DEMO có sẵn chương trình mẫu để làm quen — rồi bấm Kiểm tra và Mô phỏng ngay. An toàn tuyệt đối: không phát lệnh xuống thiết bị.")}
+                      </p>
+                    </div>
+                    {/* 3 bước để bắt đầu */}
+                    <ol className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                      {[
+                        t("engineering.step1", "Tạo dự án demo"),
+                        t("engineering.step2", "Bấm Kiểm tra"),
+                        t("engineering.step3", "Bấm Mô phỏng"),
+                      ].map((label, i) => (
+                        <li key={i} className="inline-flex items-center gap-1.5">
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">{i + 1}</span>
+                          {label}
+                        </li>
+                      ))}
+                    </ol>
+                    <Button onClick={createDemo} disabled={!canCreate || demoCreating} title={createReason}>
+                      {demoCreating ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Rocket className="mr-1 h-4 w-4" />}
+                      {t("engineering.createDemo", "Tạo dự án DEMO")}
+                    </Button>
+                    {!canCreate && <p className="text-xs text-muted-foreground">{createReason}</p>}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card><CardContent className="py-12 text-center text-muted-foreground">{t("engineering.selectProject", "Chọn một dự án để bắt đầu")}</CardContent></Card>
+              )
             ) : (
               <>
+                {/* U14 (doc 26 §3.2) — STEPPER luồng vàng: đánh dấu bước đã hoàn tất + cuộn tới card. */}
+                <GoldenThreadStepper
+                  t={t}
+                  steps={[
+                    // Soạn: đã có ≥1 phiên bản đã lưu (code soạn xong & lưu).
+                    { key: "compose", label: t("engineering.gtCompose", "Soạn"), Icon: FileCode, anchor: "gt-editor", done: (artifactsQ.data ?? []).length > 0 },
+                    // Kiểm tra: đã chạy validate, không còn lỗi error.
+                    { key: "validate", label: t("engineering.gtValidate", "Kiểm tra"), Icon: CheckCircle2, anchor: "gt-editor", done: diagnostics != null && diagnostics.every((d) => d.severity !== "error") },
+                    // Build: đã có ≥1 build.
+                    { key: "build", label: t("engineering.gtBuild", "Build"), Icon: Hammer, anchor: "gt-editor", done: (buildsQ.data ?? []).length > 0 },
+                    // Mô phỏng: đã chạy sim và ĐẠT.
+                    { key: "sim", label: t("engineering.gtSim", "Mô phỏng"), Icon: FlaskConical, anchor: "gt-builds", done: Boolean(simResult && simResult.ok) },
+                    // Deploy: đã có ≥1 lượt deploy (kể cả simulated).
+                    { key: "deploy", label: t("engineering.gtDeploy", "Deploy"), Icon: Rocket, anchor: "gt-deploy", done: (deploymentsQ.data ?? []).length > 0 },
+                    // Giám sát: đang theo dõi trực tiếp.
+                    { key: "monitor", label: t("engineering.gtMonitor", "Giám sát"), Icon: Radio, anchor: "gt-monitor", done: watching },
+                  ]}
+                />
+
                 {/* Artifacts (versions) */}
-                <Card>
+                <Card id="gt-editor" className="scroll-mt-16">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <FileCode className="h-4 w-4" /> {project.name} · {t("engineering.versions", "Phiên bản")}
@@ -476,7 +808,7 @@ export default function EngineeringWorkspace() {
                       {(artifactsQ.data ?? []).map((a) => (
                         <button
                           key={a.id}
-                          onClick={() => { if (a.id !== artifactId && confirmDiscardIfDirty()) setArtifactId(a.id); }}
+                          onClick={() => { if (a.id !== artifactId) guardDirty(() => setArtifactId(a.id)); }}
                           className={`rounded border px-2 py-1 text-xs hover:bg-muted ${artifactId === a.id ? "border-primary bg-muted" : ""}`}
                         >
                           v{a.version} · {a.branch}
@@ -524,7 +856,17 @@ export default function EngineeringWorkspace() {
                     {/* Editor */}
                     <div className="mb-2 flex items-center gap-2">
                       <Label className="text-xs">{t("engineering.language", "Ngôn ngữ")}</Label>
-                      <Input className="h-7 w-32" value={language} onChange={(e) => setLanguage(e.target.value)} />
+                      {/* U9 — Select token hợp lệ theo kind, thay ô gõ tay (tránh gõ sai). */}
+                      <Select value={language} onValueChange={setLanguage} disabled={!canCreate}>
+                        <SelectTrigger className="h-7 w-32 text-xs" aria-label={t("engineering.language", "Ngôn ngữ")}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {langOptions.map((lang) => (
+                            <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {visualKind && (
                         <div className="flex overflow-hidden rounded-md border">
                           <button
@@ -557,14 +899,8 @@ export default function EngineeringWorkspace() {
                       <Button
                         size="sm"
                         disabled={!canCreate || !code.trim() || createArtifact.isPending}
-                        onClick={() =>
-                          createArtifact.mutate({
-                            projectId: project.id,
-                            branch: project.defaultBranch ?? "main",
-                            language: language || KIND_LANGUAGE[project.kind as Kind] || "text",
-                            content: code,
-                          })
-                        }
+                        onClick={saveVersionShortcut}
+                        title={createReason ?? t("engineering.saveShortcut", "Lưu phiên bản (Ctrl/Cmd+S)")}
                       >
                         <Plus className="mr-1 h-4 w-4" /> {t("engineering.saveVersion", "Lưu phiên bản")}
                       </Button>
@@ -578,7 +914,8 @@ export default function EngineeringWorkspace() {
                       <Button
                         size="sm" variant="outline"
                         disabled={!canCreate || !artifactId || buildM.isPending}
-                        onClick={() => { if (artifactId && requireSaved()) buildM.mutate({ artifactId }); }}
+                        onClick={buildVersionShortcut}
+                        title={createReason ?? t("engineering.buildShortcut", "Build (Ctrl/Cmd+Enter)")}
                       >
                         <Hammer className="mr-1 h-4 w-4" /> {t("engineering.build", "Build")}
                       </Button>
@@ -603,7 +940,7 @@ export default function EngineeringWorkspace() {
                 </Card>
 
                 {/* Builds + Simulate */}
-                <Card>
+                <Card id="gt-builds" className="scroll-mt-16">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="h-4 w-4" /> {t("engineering.builds", "Builds & Mô phỏng")}</CardTitle>
                   </CardHeader>
@@ -627,21 +964,38 @@ export default function EngineeringWorkspace() {
                     >
                       <Play className="mr-1 h-4 w-4" /> {t("engineering.simulate", "Mô phỏng (twin)")}
                     </Button>
-                    {simResult && (
-                      <div className="rounded-md border bg-muted/30 p-2 text-xs">
-                        <div className="mb-1 font-medium">{t("engineering.timeline", "Timeline")} ({simResult.timeline.length} {t("engineering.steps", "bước")}, {simResult.ok ? "OK" : "WARN"})</div>
-                        {simResult.warnings.map((w, i) => (
-                          <div key={i} className="flex items-center gap-1 text-warning">
-                            <AlertTriangle className="h-3 w-3 shrink-0" /> {w}
+                    {simResult && (() => {
+                      // U8 — Verdict rõ ràng ở đầu kết quả: đọc trạng thái từ simResult hiện có.
+                      //  · !ok            → KHÔNG ĐẠT (đỏ)
+                      //  · ok + warnings  → CÓ CẢNH BÁO (vàng)
+                      //  · ok + sạch      → ĐẠT (OK) (xanh)
+                      const verdict = !simResult.ok ? "fail" : simResult.warnings.length > 0 ? "warn" : "pass";
+                      const vCfg = {
+                        pass: { cls: "border-success/40 bg-success/10 text-success", Icon: CheckCircle2, label: t("engineering.simPass", "ĐẠT (OK)") },
+                        warn: { cls: "border-warning/40 bg-warning/10 text-warning", Icon: AlertTriangle, label: t("engineering.simWarn", "CÓ CẢNH BÁO") },
+                        fail: { cls: "border-destructive/40 bg-destructive/10 text-destructive", Icon: XCircle, label: t("engineering.simFail", "KHÔNG ĐẠT") },
+                      }[verdict];
+                      const VIcon = vCfg.Icon;
+                      return (
+                        <div className="rounded-md border bg-muted/30 p-2 text-xs">
+                          {/* Badge verdict LỚN, màu rõ — đồng bộ ngữ nghĩa màu với Orchestration */}
+                          <div className={`mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${vCfg.cls}`}>
+                            <VIcon className="h-4 w-4 shrink-0" /> {vCfg.label}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <div className="mb-1 font-medium">{t("engineering.timeline", "Timeline")} ({simResult.timeline.length} {t("engineering.steps", "bước")})</div>
+                          {simResult.warnings.map((w, i) => (
+                            <div key={i} className="flex items-center gap-1 text-warning">
+                              <AlertTriangle className="h-3 w-3 shrink-0" /> {w}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 
                 {/* Deploy (gated) */}
-                <Card>
+                <Card id="gt-deploy" className="scroll-mt-16">
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base"><Rocket className="h-4 w-4" /> {t("engineering.deploy", "Deploy (có kiểm soát)")}</CardTitle>
                   </CardHeader>
@@ -690,6 +1044,7 @@ export default function EngineeringWorkspace() {
                       <Button
                         size="sm"
                         disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
+                        title={createReason}
                         onClick={() =>
                           buildId && deployM.mutate({
                             buildId,
@@ -766,7 +1121,7 @@ export default function EngineeringWorkspace() {
                 </Card>
 
                 {/* Symbols + Online Monitor (watch table) */}
-                <Card>
+                <Card id="gt-monitor" className="scroll-mt-16">
                   <CardHeader className="pb-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -801,10 +1156,24 @@ export default function EngineeringWorkspace() {
                             </Badge>
                           );
                         })()}
+                        {/* U2 — gắn/đổi thiết bị nguồn ngay cạnh badge Nguồn (sửa project.deviceId). */}
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={!canEdit}
+                          title={editReason}
+                          onClick={openAttachDialog}
+                        >
+                          <Wifi className="mr-1 h-4 w-4" />
+                          {project.deviceId == null
+                            ? t("engineering.attachDevice", "Gắn thiết bị")
+                            : t("engineering.changeDevice", "Đổi thiết bị")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canEdit}
+                          title={editReason}
                           onClick={() => openSymDialog()}
                         >
                           <Plus className="mr-1 h-4 w-4" /> {t("engineering.addSymbol", "Thêm biến")}
@@ -883,6 +1252,7 @@ export default function EngineeringWorkspace() {
                                   <Button
                                     size="icon" variant="ghost" className="h-7 w-7"
                                     disabled={!canEdit}
+                                    title={editReason}
                                     aria-label={t("common.edit", "Sửa")}
                                     onClick={() => openSymDialog(s)}
                                   >
@@ -891,11 +1261,9 @@ export default function EngineeringWorkspace() {
                                   <Button
                                     size="icon" variant="ghost" className="h-7 w-7 text-destructive"
                                     disabled={!canDelete || deleteSymbol.isPending}
+                                    title={!canDelete ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" }) : undefined}
                                     aria-label={t("common.delete", "Xóa")}
-                                    onClick={() => {
-                                      if (window.confirm(t("engineering.deleteSymbolConfirm", "Xóa biến này?")))
-                                        deleteSymbol.mutate({ id: s.id });
-                                    }}
+                                    onClick={() => setDeleteSymTarget({ id: s.id })}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
@@ -954,6 +1322,7 @@ export default function EngineeringWorkspace() {
                     <DialogFooter>
                       <Button
                         disabled={!canEdit || !symName.trim() || upsertSymbol.isPending}
+                        title={editReason}
                         onClick={() =>
                           upsertSymbol.mutate({
                             projectId: project.id,
@@ -970,11 +1339,112 @@ export default function EngineeringWorkspace() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+
+                {/* U2 — Attach/đổi thiết bị nguồn cho project (mở khoá Online Monitor) */}
+                <Dialog open={attachOpen} onOpenChange={setAttachOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{t("engineering.attachDeviceTitle", "Gắn thiết bị nguồn")}</DialogTitle>
+                      <DialogDescription>
+                        {t("engineering.attachDeviceDesc", "Chọn máy làm nguồn đọc cho \"{{name}}\". Sau khi gắn, badge Nguồn chuyển sang thiết bị và có thể Theo dõi trực tiếp.", { name: project.name })}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div>
+                        <Label>{t("engineering.sourceDevice", "Thiết bị nguồn")}</Label>
+                        <Select value={attachDeviceId} onValueChange={setAttachDeviceId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t("engineering.sourceDevicePh", "Chọn thiết bị (tùy chọn)…")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(machinesQ.data ?? []).map((m) => (
+                              <SelectItem key={m.id} value={String(m.id)}>{m.name} · #{m.id}</SelectItem>
+                            ))}
+                            {(machinesQ.data ?? []).length === 0 && (
+                              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                {t("engineering.noMachines", "Chưa có máy nào — có thể gắn sau ở Online Monitor")}
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {project.deviceId != null && (
+                        // Cho phép gỡ gắn (đặt lại về chưa gắn thiết bị).
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          disabled={!canEdit || updateProject.isPending}
+                          title={editReason}
+                          onClick={() => updateProject.mutate({ id: project.id, deviceId: null })}
+                        >
+                          <WifiOff className="mr-1 h-4 w-4" /> {t("engineering.detachDevice", "Gỡ gắn thiết bị")}
+                        </Button>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        disabled={!canEdit || !attachDeviceId || updateProject.isPending}
+                        title={editReason}
+                        onClick={() => updateProject.mutate({ id: project.id, deviceId: Number(attachDeviceId) })}
+                      >
+                        {t("common.save", "Lưu")}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </>
             )}
           </div>
         </div>
       </PageContainer>
+
+      {/* U11 (doc 26 §3.1) — bỏ thay đổi chưa lưu khi chuyển dự án/phiên bản (thay window.confirm) */}
+      <AlertDialog open={pendingNav != null} onOpenChange={(o) => { if (!o) setPendingNav(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("engineering.dirtyTitle", "Bỏ thay đổi chưa lưu?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("engineering.dirtyConfirm", "Có chỉnh sửa chưa lưu — chuyển sẽ mất thay đổi. Tiếp tục?")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const run = pendingNav;
+                setPendingNav(null);
+                run?.();
+              }}
+            >
+              {t("engineering.dirtyDiscard", "Bỏ thay đổi & tiếp tục")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* U11 (doc 26 §3.1) — xác nhận xóa một biến khỏi bảng tag (thay window.confirm) */}
+      <AlertDialog open={deleteSymTarget != null} onOpenChange={(o) => { if (!o) setDeleteSymTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("engineering.deleteSymbolTitle", "Xóa biến khỏi bảng tag?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("engineering.deleteSymbolDesc", "Biến này sẽ bị gỡ khỏi bảng tag và không còn được theo dõi. Không thể hoàn tác.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteSymTarget) deleteSymbol.mutate({ id: deleteSymTarget.id });
+                setDeleteSymTarget(null);
+              }}
+            >
+              {t("common.delete", "Xóa")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* W3-11 — xác nhận khôi phục (rollback) một deployment về phiên bản trước */}
       <AlertDialog open={rollbackTarget != null} onOpenChange={(o) => { if (!o) setRollbackTarget(null); }}>

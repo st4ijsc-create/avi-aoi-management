@@ -25,12 +25,15 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { useEngineering } from "@/contexts/EngineeringContext";
+import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, MetricCard, SectionCard, StatusBadge } from "@/components/patterns";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +69,7 @@ import {
   type FunctionBlockDef, type FbParam, type CallArg, type CallBlock,
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useFlowHistory } from "@/components/programming/flowHistory";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 import { IrMergePanel } from "@/components/programming/IrMergePanel";
@@ -873,6 +877,9 @@ type EditScope = { kind: "main" } | { kind: "fb"; fbId: string };
 
 export default function IrEditor() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -911,6 +918,41 @@ export default function IrEditor() {
     () => (projectsQ.data ?? []).filter((p) => p.kind === "ir-flow"),
     [projectsQ.data],
   );
+
+  // U13 (doc 26 §2.2) — tìm/lọc client cho danh sách "Saved IR flows".
+  const [flowSearch, setFlowSearch] = useState("");
+  const [flowStatusFilter, setFlowStatusFilter] = useState<string>("all");
+  // Danh sách trạng thái có mặt trong dữ liệu → dựng options động (không hard-code).
+  const flowStatuses = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of flowsQ.data ?? []) if (r.status) set.add(String(r.status));
+    return Array.from(set).sort();
+  }, [flowsQ.data]);
+  const filteredFlows = useMemo(() => {
+    const q = flowSearch.trim().toLowerCase();
+    return (flowsQ.data ?? []).filter((r) => {
+      if (flowStatusFilter !== "all" && String(r.status) !== flowStatusFilter) return false;
+      if (!q) return true;
+      const flowId = (r.summary?.flowId ?? `artifact #${r.id}`).toLowerCase();
+      const dev = (r.summary?.targetDeviceType ?? "").toLowerCase();
+      return flowId.includes(q) || dev.includes(q) || (r.branch ?? "").toLowerCase().includes(q);
+    });
+  }, [flowsQ.data, flowSearch, flowStatusFilter]);
+
+  // U1 (doc 26) — deep-link ?projectId= chọn sẵn project lưu; store lastSelected là fallback.
+  // Chỉ nhận khi project là loại ir-flow (đúng danh sách của Select) để không hiển thị rỗng.
+  const search = useSearch();
+  const deepLink = useMemo(() => parseDeepLink(search), [search]);
+  const { lastSelected, setLastProjectId } = useEngineering();
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current) return;
+    const wanted = deepLink.projectId ?? lastSelected.projectId;
+    if (wanted == null) { deepLinkApplied.current = true; return; }
+    if (!projectsQ.data) return; // đợi list
+    deepLinkApplied.current = true;
+    if (irProjects.some((p) => p.id === wanted)) setSaveProjectId(String(wanted));
+  }, [deepLink.projectId, lastSelected.projectId, projectsQ.data, irProjects]);
 
   // ── Live lint (debounced) — pure read; runs whenever the flow changes ──────
   const [lintFlowInput, setLintFlowInput] = useState<Flow>(flow);
@@ -1103,6 +1145,32 @@ export default function IrEditor() {
     saveM.mutate({ projectId: pid, branch: "main", flow });
   };
 
+  // U10 (doc 26) — phím tắt tác vụ. Ctrl/Cmd+S = Lưu flow (chặn hộp "lưu trang" của
+  // trình duyệt); Ctrl/Cmd+Enter = Request build cho flow đã lưu MỚI NHẤT. Hook scope
+  // 'global' tự BỎ QUA khi con trỏ ở input/textarea (trừ Ctrl+S vốn cần chặn toàn cục),
+  // nên KHÔNG nuốt phím của trình soạn code và KHÔNG đụng Ctrl/Cmd+Z·Y (undo/redo) hiện có.
+  const saveFlowShortcut = () => {
+    if (!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0) return;
+    doSave();
+  };
+  const requestBuildLatestShortcut = () => {
+    if (!canControl || !flagEnabled || buildM.isPending) return;
+    // Danh sách sắp theo id giảm dần → phần tử đầu là flow lưu gần nhất.
+    const latest = flowsQ.data?.[0];
+    if (!latest) {
+      toast.info(t("ir.buildNoFlowYet", "Chưa có flow đã lưu để build — hãy Lưu flow trước (Ctrl/Cmd+S)."));
+      return;
+    }
+    buildM.mutate({ artifactId: latest.id });
+  };
+  useKeyboardShortcuts(
+    [
+      { key: "s", ctrlKey: true, action: saveFlowShortcut },
+      { key: "Enter", ctrlKey: true, action: requestBuildLatestShortcut },
+    ],
+    { enabled: canView, scope: "global" },
+  );
+
   if (!canView) {
     return (
       <DashboardLayout>
@@ -1120,6 +1188,7 @@ export default function IrEditor() {
     <DashboardLayout>
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<Code2 className="h-6 w-6" />}
           title={t("ir.title", "Visual IR Editor")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -1137,9 +1206,10 @@ export default function IrEditor() {
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             {t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}
           </span>
+          {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
           <span className="inline-flex items-center gap-3">
-            <Link href="/engineering" className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
-            <Link href="/pou-studio" className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
+            <Link href={withParams("/engineering", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+            <Link href={withParams("/pou-studio", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
           </span>
         </div>
 
@@ -1227,7 +1297,7 @@ export default function IrEditor() {
 
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {/* Save target project */}
-                <Select value={saveProjectId} onValueChange={setSaveProjectId}>
+                <Select value={saveProjectId} onValueChange={(v) => { setSaveProjectId(v); setLastProjectId(Number(v) || null); }}>
                   <SelectTrigger className="h-9 w-52"><SelectValue placeholder={t("ir.pickProjectPlaceholder", "Save into project…")} /></SelectTrigger>
                   <SelectContent>
                     {irProjects.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("ir.noProjects", "No ir-flow projects")}</div>}
@@ -1242,7 +1312,7 @@ export default function IrEditor() {
                 </Button>
                 <Button variant="outline" onClick={doSave}
                   disabled={!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0}
-                  title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : undefined}>
+                  title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
                   {saveM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
                   {t("ir.save", "Save flow")}
                 </Button>
@@ -1451,7 +1521,28 @@ export default function IrEditor() {
             <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.noFlows", "No saved IR flows yet.")}</p>
           ) : (
             <div className="space-y-1.5">
-              {(flowsQ.data ?? []).map((r) => (
+              {/* U13 — ô tìm + lọc theo trạng thái (lọc phía client). */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input
+                  value={flowSearch}
+                  onChange={(e) => setFlowSearch(e.target.value)}
+                  placeholder={t("ir.searchFlows", "Tìm theo mã luồng / thiết bị…")}
+                  className="h-8 min-w-[10rem] flex-1 text-sm"
+                />
+                <Select value={flowStatusFilter} onValueChange={setFlowStatusFilter}>
+                  <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("ir.allStatuses", "Tất cả trạng thái")}</SelectItem>
+                    {flowStatuses.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {filteredFlows.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.noFlowMatch", "Không có luồng khớp bộ lọc")}</p>
+              )}
+              {filteredFlows.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-sm">
                   <div className="min-w-0">
                     <div className="truncate font-medium">

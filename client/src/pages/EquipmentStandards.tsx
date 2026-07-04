@@ -31,6 +31,8 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { buildBreadcrumbs } from "@/lib/breadcrumbs";
+import { useLocation } from "wouter";
 import {
   MetricCard,
   PageContainer,
@@ -54,6 +56,10 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Cell,
@@ -103,9 +109,16 @@ function pct(n: number): string {
 
 export default function EquipmentStandards() {
   const { t } = useTranslation();
+  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
+  const [location] = useLocation();
+  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
+  // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền điều khiển máy.
+  const permReason = !canControl
+    ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+    : undefined;
 
   const [tab, setTab] = useState("hierarchy");
   const [selectedTypeKey, setSelectedTypeKey] = useState<string | null>(null);
@@ -269,6 +282,7 @@ export default function EquipmentStandards() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
+          breadcrumbs={crumbs}
           icon={<ShieldCheck className="h-6 w-6" />}
           title={t("eqStandards.title", "Equipment Standards & Governance")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
@@ -279,6 +293,12 @@ export default function EquipmentStandards() {
             </Button>
           }
         />
+
+        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{t("eqStandards.whenToUse", "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.")}</span>
+        </div>
 
         {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
         {!flagEnabled && (
@@ -369,11 +389,11 @@ export default function EquipmentStandards() {
               icon={<Network className="h-4 w-4" />}
               title={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
               className="lg:w-1/2"
-              action={canControl ? (
-                <Button size="sm" variant="outline" className="h-8" onClick={() => setRegisterOpen(true)}>
+              action={
+                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setRegisterOpen(true)}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.registerType", "Register type")}
                 </Button>
-              ) : undefined}
+              }
             >
               {treeQ.isLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
               {!treeQ.isLoading && tree.length === 0 && (
@@ -450,19 +470,17 @@ export default function EquipmentStandards() {
               contentClassName="p-0"
               action={
                 <div className="flex items-center gap-2">
-                  <select
-                    className="flex h-8 w-40 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={vendorFilter}
-                    onChange={(e) => setVendorFilter(e.target.value)}
-                  >
-                    <option value="">{t("eqStandards.allVendors", "All vendors")}</option>
-                    {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                  {canControl && (
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setUpsertAlarmOpen(true)}>
-                      <Plus className="mr-1 h-4 w-4" />{t("eqStandards.mapAlarm", "Map alarm")}
-                    </Button>
-                  )}
+                  {/* U11 — Select DS thay <select> gõ tay; "__all__" là sentinel cho "tất cả". */}
+                  <Select value={vendorFilter || "__all__"} onValueChange={(v) => setVendorFilter(v === "__all__" ? "" : v)}>
+                    <SelectTrigger size="sm" className="w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">{t("eqStandards.allVendors", "All vendors")}</SelectItem>
+                      {vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setUpsertAlarmOpen(true)}>
+                    <Plus className="mr-1 h-4 w-4" />{t("eqStandards.mapAlarm", "Map alarm")}
+                  </Button>
                 </div>
               }
             >
@@ -508,15 +526,14 @@ export default function EquipmentStandards() {
               icon={<Activity className="h-4 w-4" />}
               title={t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
               action={
-                <select
-                  className="flex h-8 w-32 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                  value={kpiWindow}
-                  onChange={(e) => setKpiWindow(Number(e.target.value))}
-                >
-                  {[1, 7, 30].map((d) => (
-                    <option key={d} value={d}>{t("eqStandards.lastNDays", "Last {{n}} days").replace("{{n}}", String(d))}</option>
-                  ))}
-                </select>
+                <Select value={String(kpiWindow)} onValueChange={(v) => setKpiWindow(Number(v))}>
+                  <SelectTrigger size="sm" className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[1, 7, 30].map((d) => (
+                      <SelectItem key={d} value={String(d)}>{t("eqStandards.lastNDays", "Last {{n}} days").replace("{{n}}", String(d))}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               }
             >
               {kpisQ.isLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
@@ -566,11 +583,11 @@ export default function EquipmentStandards() {
               icon={<ClipboardCheck className="h-4 w-4" />}
               title={t("eqStandards.masterTitle", "Master alarm database (rationalization)")}
               contentClassName="p-0"
-              action={canControl ? (
-                <Button size="sm" variant="outline" className="h-8" onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
+              action={
+                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.addMaster", "Add master alarm")}
                 </Button>
-              ) : undefined}
+              }
             >
               <Table>
                 <TableHeader>
@@ -653,16 +670,16 @@ export default function EquipmentStandards() {
               contentClassName="p-0"
               action={
                 <div className="flex items-center gap-2">
-                  <select
-                    className="flex h-8 w-36 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                    value={crStatusFilter}
-                    onChange={(e) => setCrStatusFilter(e.target.value)}
-                  >
-                    <option value="">{t("eqStandards.allStatuses", "All statuses")}</option>
-                    {["pending", "in_review", "approved", "rejected", "published"].map((s) => (
-                      <option key={s} value={s}>{t(`eqStandards.crStatus.${s}`, s)}</option>
-                    ))}
-                  </select>
+                  {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
+                  <Select value={crStatusFilter || "__all__"} onValueChange={(v) => setCrStatusFilter(v === "__all__" ? "" : v)}>
+                    <SelectTrigger size="sm" className="w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">{t("eqStandards.allStatuses", "All statuses")}</SelectItem>
+                      {["pending", "in_review", "approved", "rejected", "published"].map((s) => (
+                        <SelectItem key={s} value={s}>{t(`eqStandards.crStatus.${s}`, s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {canControl && (
                     <Button size="sm" variant="outline" className="h-8" onClick={() => setSubmitCrOpen(true)}>
                       <Plus className="mr-1 h-4 w-4" />{t("eqStandards.submitCr", "Submit CR")}
@@ -1080,11 +1097,14 @@ function RegisterTypeDialog({
           </div>
           <div className="grid gap-1">
             <Label>{t("eqStandards.parent", "Parent type")}</Label>
-            <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-              value={parentTypeKey} onChange={(e) => setParentTypeKey(e.target.value)}>
-              <option value="">{t("eqStandards.noParent", "(none — root)")}</option>
-              {flatKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-            </select>
+            {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
+            <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
+                {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1">
             <Label>{t("eqStandards.label", "Label")}</Label>
@@ -1154,10 +1174,12 @@ function UpsertAlarmDialog({
             </div>
             <div className="grid gap-1">
               <Label>{t("eqStandards.col.severity", "Severity")}</Label>
-              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={severity} onChange={(e) => setSeverity(e.target.value as Severity)}>
-                {SEVERITIES.map((s) => <option key={s} value={s}>{t(`eqStandards.severity.${s}`, s)}</option>)}
-              </select>
+              <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{t(`eqStandards.severity.${s}`, s)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="grid gap-1">
@@ -1269,10 +1291,12 @@ function MasterAlarmDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">
               <Label>{t("eqStandards.consequence", "Consequence")}</Label>
-              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={consequence} onChange={(e) => setConsequence(e.target.value as Consequence)}>
-                {CONSEQUENCES.map((c) => <option key={c} value={c}>{t(`eqStandards.consequenceVal.${c}`, c)}</option>)}
-              </select>
+              <Select value={consequence} onValueChange={(v) => setConsequence(v as Consequence)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CONSEQUENCES.map((c) => <SelectItem key={c} value={c}>{t(`eqStandards.consequenceVal.${c}`, c)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>{t("eqStandards.ttr", "Time-to-respond (min)")}</Label>
@@ -1313,7 +1337,7 @@ function MasterAlarmDialog({
             <Input value={rationalization} placeholder={t("eqStandards.rationalizationHint", "Why this alarm exists / operator action")} onChange={(e) => setRationalization(e.target.value)} />
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={isSuppressed} onChange={(e) => setIsSuppressed(e.target.checked)} />
+            <Checkbox checked={isSuppressed} onCheckedChange={(v) => setIsSuppressed(Boolean(v))} />
             {t("eqStandards.suppressDesign", "Design suppression (out-of-service — never raises)")}
           </label>
         </div>
@@ -1431,27 +1455,34 @@ function SubmitCrDialog({
           <div className="grid grid-cols-3 gap-3">
             <div className="grid gap-1">
               <Label>{t("eqStandards.kind", "Kind")}</Label>
-              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-                {(["new_type", "modify", "deprecate"] as const).map((k) => (
-                  <option key={k} value={k}>{t(`eqStandards.crKind.${k}`, k)}</option>
-                ))}
-              </select>
+              <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(["new_type", "modify", "deprecate"] as const).map((k) => (
+                    <SelectItem key={k} value={k}>{t(`eqStandards.crKind.${k}`, k)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>{t("eqStandards.semverBump", "SemVer bump")}</Label>
-              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={semverBump} onChange={(e) => setSemverBump(e.target.value as typeof semverBump)}>
-                {(["major", "minor", "patch"] as const).map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <Select value={semverBump} onValueChange={(v) => setSemverBump(v as typeof semverBump)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(["major", "minor", "patch"] as const).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1">
               <Label>{t("eqStandards.parent", "Parent type")}</Label>
-              <select className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
-                value={parentTypeKey} onChange={(e) => setParentTypeKey(e.target.value)}>
-                <option value="">{t("eqStandards.noParent", "(none — root)")}</option>
-                {flatKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
+              <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
+                  {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -1472,16 +1503,18 @@ function SubmitCrDialog({
                   <div key={i} className="flex items-center gap-1">
                     <Input className="h-8 flex-1" placeholder={t("eqStandards.attrName", "name")} value={a.name}
                       onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                    <select className="flex h-8 w-24 rounded-md border border-input bg-transparent px-1 text-xs"
-                      value={a.dataType}
-                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, dataType: e.target.value as AttrDataType } : x))}>
-                      {ATTR_DATA_TYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
-                    </select>
+                    <Select value={a.dataType}
+                      onValueChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, dataType: v as AttrDataType } : x))}>
+                      <SelectTrigger size="sm" className="w-24 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ATTR_DATA_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                     <Input className="h-8 w-20" placeholder={t("eqStandards.unit", "unit")} value={a.unit}
                       onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} />
                     <label className="flex items-center gap-1 text-xs text-muted-foreground" title={t("eqStandards.required", "Required")}>
-                      <input type="checkbox" checked={a.required}
-                        onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
+                      <Checkbox checked={a.required}
+                        onCheckedChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, required: Boolean(v) } : x))} />
                       {t("eqStandards.reqShort", "req")}
                     </label>
                     <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
