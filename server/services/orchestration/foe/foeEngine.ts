@@ -63,6 +63,18 @@ export function foeEnabled(): boolean {
   return process.env.FOE_ENABLED === "true" || process.env.FOE_ENABLED === "1";
 }
 
+/**
+ * doc 33 I5 (F8 §5.1.6) — durable execution. When on, an interrupted run (marked 'held' by
+ * rehydrateInterruptedRuns after a crash) is AUTO-continued rather than waiting for a human to
+ * resume it manually. Default OFF → current behavior (manual resume). Requires FOE_ENABLED.
+ */
+export function foeDurableEnabled(): boolean {
+  return process.env.FOE_DURABLE === "true" || process.env.FOE_DURABLE === "1";
+}
+
+/** System actor recorded on an auto-resume (never a real human). */
+const SYSTEM_FOE_USER: FoeUser = { id: 0, role: "system", name: "FOE auto-resume" };
+
 // ── Public result shapes ─────────────────────────────────────────────────────────
 
 export interface FoeUser {
@@ -1070,6 +1082,35 @@ export interface RehydrateResult {
   /** Số run được đưa về terminal 'failed' (đang compensating → không tự tiếp tục được). */
   failed: number;
   runIds: number[];
+  /** doc 33 I5 — số run được AUTO-resume (chỉ khi FOE_DURABLE). undefined nếu không bật. */
+  autoResumed?: number;
+}
+
+/**
+ * doc 33 I5 (F8 §5.1.6) — AUTO-continue interrupted runs. For each run that rehydrate marked
+ * 'held' with context.interrupted, re-drive it via the proven idempotent resumeRun (re-walk from
+ * the resume point; already-completed steps are idempotent, re-dispatch is dry-run-safe). Only
+ * touches interrupted runs — a human gate ('awaiting_confirm', or 'held' WITHOUT interrupted) is
+ * left for a person. No-op unless FOE_DURABLE && FOE_ENABLED. Best-effort; never throws on boot.
+ */
+export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ enabled: boolean; resumed: number; runIds: number[] }> {
+  if (!foeDurableEnabled() || !foeEnabled()) return { enabled: false, resumed: 0, runIds: [] };
+  const resumed: number[] = [];
+  try {
+    const d = await getDb();
+    if (!d) return { enabled: true, resumed: 0, runIds: [] };
+    for (const runId of runIds) {
+      const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+      if (!run || run.status !== "held") continue; // skip failed/terminal
+      const ctx = (run.contextJson as Record<string, unknown>) ?? {};
+      if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
+      const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER);
+      if (res.ok) resumed.push(runId);
+    }
+  } catch (err) {
+    console.error("[FOE] autoResumeInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
+  }
+  return { enabled: true, resumed: resumed.length, runIds: resumed };
 }
 
 /**
@@ -1135,6 +1176,13 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
   } catch (err) {
     // nuốt — một lỗi rehydrate KHÔNG được chặn khởi động server.
     console.error("[FOE] rehydrateInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
+  }
+  // doc 33 I5 (F8) — durable execution: when FOE_DURABLE, auto-continue the interrupted runs
+  // instead of leaving them 'held' for manual resume. Default off → unchanged behavior.
+  if (foeDurableEnabled() && result.runIds.length > 0) {
+    const ar = await autoResumeInterruptedRuns(result.runIds);
+    result.autoResumed = ar.resumed;
+    if (ar.resumed > 0) console.log(`[FOE] durable: auto-resumed ${ar.resumed} interrupted run(s)`);
   }
   return result;
 }
