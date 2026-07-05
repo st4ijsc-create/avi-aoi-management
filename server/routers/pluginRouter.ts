@@ -10,6 +10,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { PLUGIN_API_VERSION, satisfiesApiVersion } from "@shared/plugin/manifest";
 // Importing the subsystem seeds the first-party manifests (register-and-go).
 import { listPlugins, getPlugin, listPluginsByKind } from "../services/plugins";
+import { DEFAULT_RESTART_POLICY } from "../services/plugins/sidecar/pluginSupervisor"; // doc 33 F3
 
 export const pluginRouter = router({
   /** Current Plugin API version the core implements. */
@@ -43,4 +44,26 @@ export const pluginRouter = router({
     if (!m) return { found: false as const, manifest: null, configSchema: null };
     return { found: true as const, manifest: m, configSchema: m.configSchema ?? null };
   }),
+
+  /** doc 33 F3 (SYNAPSE §6.4.3): out-of-process sidecar framework capabilities (read-only). */
+  sidecarCapabilities: protectedProcedure.query(() => ({
+    isolation: "out-of-process",
+    ipc: "json-lines-over-stdio (pluggable → gRPC/unix-socket)",
+    lifecycle: [
+      "installed",
+      "discovered",
+      "configured",
+      "validating",
+      "validated",
+      "running",
+      "draining",
+      "stopped",
+      "upgrading",
+      "failed",
+      "uninstalled",
+    ],
+    validateGate: "run reachable ONLY from validated",
+    restartPolicy: DEFAULT_RESTART_POLICY,
+    signatureRequiredInProduction: true,
+  })),
 });

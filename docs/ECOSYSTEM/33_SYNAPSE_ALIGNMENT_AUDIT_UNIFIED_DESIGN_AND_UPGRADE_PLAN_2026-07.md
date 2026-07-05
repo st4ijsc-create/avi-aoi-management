@@ -408,7 +408,41 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** tsc 0 · test xanh.
 **Còn lại của H3 (đợt sau):** wire event-sourcing vào `foeEngine` (persist per-transition + replay-on-boot thay `held`); compiler sinh DAG thật; dispatcher dùng `orderQueue` + four-eyes gate; migration `decision_traces`/`run_events` (đánh số tránh trùng doc-32).
 
-**🏁 ĐỢT NỀN TẢNG HOÀN TẤT F1/F2/F4/F5/F6/F7/F8 (7/8 phase; F3 sidecar là phase cuối).** Kế tiếp: F3 (P4) Plugin out-of-process gRPC sidecar.
+### ✅ F3 (P4) — Out-of-process plugin sidecar — 2026-07-05
+**Phạm vi giao:** substrate giám sát plugin out-of-process, **không thêm dep gRPC nặng** (IPC = JSON-lines-over-stdio, pluggable → gRPC/unix-socket sau; logic giám sát protocol-agnostic). Spawner + scheduler **injected** → test tất định. **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/plugins/sidecar/pluginLifecycle.ts` — máy trạng thái `install→discover→configure→validate→run→drain→upgrade→uninstall`; **cổng cứng: `run` chỉ tới được từ `validated`**.
+- `server/services/plugins/sidecar/pluginQuota.ts` — token-bucket rate-limit + resource budget (CPU/mem) + `withTimeout` (mọi call Hub→plugin có hạn) → "plugin hỏng không kéo sập platform".
+- `server/services/plugins/sidecar/pluginSupervisor.ts` — **watchdog**: crash → restart exponential-backoff (capped); quá ngưỡng trong cửa sổ → **circuit-break + incident** (không loop). `computeBackoffMs`/`decideRestart` pure; `PluginSupervisor` với spawner/scheduler injected.
+- `server/services/plugins/sidecar/pluginSignature.ts` — **ký Ed25519** cho artifact plugin (tái dùng F4); **unsigned bị từ chối ở production** (fail-closed, không spawn code chưa ký/giả mạo).
+- `server/routers/pluginRouter.ts` — thêm `sidecarCapabilities` (read-only).
+- `.env.example` — flag `PLUGIN_SIDECAR`.
+- Test: `server/services/plugins/sidecar/sidecar.test.ts` — validate-gate, quota/timeout, watchdog backoff+circuit-break (fake spawn), signature.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của P4 (đợt sau):** wire gRPC/unix-socket thật + go-plugin handshake; sidecar bọc DLL hãng (FOCAS/robot SDK) expose Connector contract; cgroup/container quota thật; đăng ký supervisor vào bootstrap khi bật flag; conformance chaos (mất mạng/dữ liệu bẩn).
+
+---
+
+## 8. 🏁 KẾT LUẬN ĐỢT NỀN TẢNG (2026-07-05)
+
+**8/8 phase Đợt Nền tảng HOÀN TẤT** trên branch `synapse-foundation` (worktree `../avi-aoi-synapse`), mỗi phase tsc 0 + test xanh, **non-breaking / advisory / flag-OFF / không migration**, stage theo path tường minh:
+
+| Phase | Commit | Trụ SYNAPSE |
+|---|---|---|
+| F1 Edition & Collapsible Deploy | `02f82e4` | ADR-007 |
+| F2 Plugin Manifest + apiVersion gate | `096fd0a` | ADR-008 |
+| F5 Security (policy-as-code + WORM audit) | `7db91d7` | §5.11 |
+| F6 Observability (SLO/decision-trace/correlation) | `125f11c` | §5.12 |
+| F4 Licensing (never-stop-production + Ed25519/TPM) | `8156f0c` | §4.3 |
+| F7 Schema registry + OpenAPI/AsyncAPI + reconciliation | `abd341c` | §5.6/§8/§5.9 |
+| F8 Durable orchestration (DAG + event-sourcing + SLA) | `94b91e6` | §5.1/§5.3 |
+| F3 Out-of-process plugin sidecar | *(this commit)* | §6.4.3 |
+
+**7 router read-only mới:** `edition · plugin(+sidecarCapabilities) · security · observability · contracts · orchestrationGov`. Tất cả treo trên contracts, không mở control path mới, tôn trọng flag-OFF/HITL/audit.
+
+**Đợt SAU (thương mại/nâng cao — theo quyết định §5B):** P5 Tauri desktop · P6 dev-portal/marketplace · H4 traffic space-time + infra-coordinator · H6 twin drift + RL · C1 flag-flip staged · C2 hardware proof. Mỗi "Còn lại của …" trong §7 là backlog tích hợp sâu (wire primitive vào engine thật + migration đánh số tránh trùng doc-32).
+
+**Merge:** worktree `synapse-foundation` sẵn sàng review/PR khi phiên doc-32 ở main tree hoàn tất.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
