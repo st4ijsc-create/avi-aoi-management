@@ -33,6 +33,8 @@ import {
   MicOff,
   Trash2,
   ChevronRight,
+  ImagePlus,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,17 @@ import {
   ConfirmActionCard,
   type PendingAction,
 } from "./ConfirmActionCard";
+// P3/D8 (doc 34) — vision-in-chat: shared image-attach helpers + the VL-step note
+// type, reused from the /ai-chat hook so both chat surfaces share one impl.
+import {
+  readChatImageFile,
+  validateChatImageFile,
+  extractImageFromClipboard,
+  MAX_CHAT_IMAGE_BYTES,
+  ACCEPTED_CHAT_IMAGE_TYPES,
+  type ChatImageAttachment,
+  type KbVisionNote,
+} from "@/hooks/useKbChatStream";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -150,6 +163,10 @@ interface ChatMessage {
   toolName?: string | null;
   streaming?: boolean;
   feedbackGiven?: "up" | "down";
+  // P3/D8 (doc 34) — user turn: an image was attached (persisted flag only, not
+  // the bytes — keeps localStorage small). Assistant turn: the VL reading / note.
+  hasImage?: boolean;
+  vision?: KbVisionNote | null;
   // GĐ2 — write-action confirm card (propose → confirm/cancel).
   pendingAction?: PendingAction | null;
   actionState?: "pending" | "executed" | "cancelled" | "denied" | "expired";
@@ -256,6 +273,9 @@ export function AILocalChatBubble() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isListening, setIsListening] = useState(false);
+  // P3/D8 (doc 34) — image attached to the next message (photo of a ladder/HMI/
+  // wiring/datasheet/error screen). Held transiently; cleared on send.
+  const [attachedImage, setAttachedImage] = useState<ChatImageAttachment | null>(null);
 
   // C5 — real role from auth context, mapped to an AI UserRole.
   const { user } = useAuth();
@@ -270,6 +290,7 @@ export function AILocalChatBubble() {
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const { data: health, isLoading: healthLoading } = trpc.aiLocalKb.health.useQuery();
   const reloadMutation = trpc.aiLocalKb.reload.useMutation();
@@ -406,10 +427,49 @@ export function AILocalChatBubble() {
     setIsListening(true);
   }, [isListening]);
 
+  // ─── P3/D8 (doc 34) — image attach / remove / paste ─────────────────────────
+  const notifyImageError = useCallback(
+    (reason: "type" | "size" | "read") => {
+      if (reason === "type") {
+        toast.error(t("aiChat.imageTypeInvalid", "Ảnh không hợp lệ. Dùng PNG, JPG hoặc WebP."));
+      } else if (reason === "size") {
+        toast.error(
+          t("aiChat.imageTooLarge", "Ảnh quá lớn (tối đa {{max}} MB).", {
+            max: Math.round(MAX_CHAT_IMAGE_BYTES / (1024 * 1024)),
+          }),
+        );
+      } else {
+        toast.error(t("aiChat.imageReadError", "Không đọc được ảnh. Vui lòng thử lại."));
+      }
+    },
+    [t],
+  );
+
+  const pickImage = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      const err = validateChatImageFile(file);
+      if (err) {
+        notifyImageError(err);
+        return;
+      }
+      try {
+        setAttachedImage(await readChatImageFile(file));
+      } catch {
+        notifyImageError("read");
+      }
+    },
+    [notifyImageError],
+  );
+
   // ─── Ask (streaming) ─────────────────────────────────────────────────────────
   const handleAsk = useCallback(
     async (q?: string) => {
-      const query = (q ?? question).trim();
+      // P3/D8 (doc 34) — capture the attached image for THIS send, then clear it.
+      const image = attachedImage;
+      const query =
+        (q ?? question).trim() ||
+        (image ? t("aiChat.imageDefaultPrompt", "Ảnh này cho thấy gì? Hãy giải thích.") : "");
       if (!query || isStreaming) return;
       if (!isReady) {
         toast.error("Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.");
@@ -423,10 +483,11 @@ export function AILocalChatBubble() {
 
       setMessages((prev) => [
         ...prev,
-        { id: userMsgId, type: "user", content: query, timestamp: new Date().toISOString() },
+        { id: userMsgId, type: "user", content: query, timestamp: new Date().toISOString(), hasImage: !!image },
         { id: assistantMsgId, type: "assistant", content: "", timestamp: new Date().toISOString(), streaming: true },
       ]);
       setQuestion("");
+      setAttachedImage(null);
       startTypingAnimation();
       setIsStreaming(true);
 
@@ -450,13 +511,22 @@ export function AILocalChatBubble() {
       let toolResultPayload: ToolResultPayload | null = null;
       let toolNameValue: string | null = null;
       let pendingActionPayload: PendingAction | null = null;
+      let visionPayload: KbVisionNote | null = null;
       let accumulatedContent = "";
 
       try {
         const res = await fetch("/api/ai/local-kb/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: query, topK: 5, history, userRole, context: copilotContext }),
+          body: JSON.stringify({
+            question: query,
+            topK: 5,
+            history,
+            userRole,
+            context: copilotContext,
+            // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
+            ...(image ? { image: image.dataUrl } : {}),
+          }),
           signal: abort.signal,
         });
 
@@ -496,9 +566,23 @@ export function AILocalChatBubble() {
                 followUpSuggestions?: string[];
                 provider?: string;
                 cached?: boolean;
+                ok?: boolean;
+                visionText?: string | null;
+                reason?: string | null;
               };
 
-              if (payload.type === "meta") {
+              if (payload.type === "vision") {
+                // P3/D8 (doc 34) — the VL reading step (or its degrade note).
+                visionPayload = {
+                  ok: !!payload.ok,
+                  visionText: payload.visionText ?? null,
+                  reason: payload.reason ?? null,
+                };
+                const vp = visionPayload;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === assistantMsgId ? { ...m, vision: vp } : m)),
+                );
+              } else if (payload.type === "meta") {
                 metaResult = {
                   confidence: payload.confidence ?? 0,
                   intent: payload.intent ?? "general",
@@ -563,11 +647,19 @@ export function AILocalChatBubble() {
             const result = await fetch("/api/ai/local-kb/ask", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ question: query, topK: 5, history, userRole, context: copilotContext }),
+              body: JSON.stringify({
+                question: query,
+                topK: 5,
+                history,
+                userRole,
+                context: copilotContext,
+                ...(image ? { image: image.dataUrl } : {}),
+              }),
             });
             const json = await result.json() as { success: boolean; data?: any; error?: string };
             if (json.success && json.data) {
               accumulatedContent = json.data.answer ?? "";
+              if (json.data.vision) visionPayload = json.data.vision as KbVisionNote;
               metaResult = {
                 confidence: json.data.confidence ?? 0,
                 intent: json.data.intent ?? "general",
@@ -617,12 +709,13 @@ export function AILocalChatBubble() {
                 toolName: toolNameValue,
                 pendingAction: pendingActionPayload,
                 actionState: pendingActionPayload ? "pending" : m.actionState,
+                vision: visionPayload ?? m.vision ?? null,
               }
             : m,
         ),
       );
     },
-    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, startTypingAnimation, stopTypingAnimation],
+    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, attachedImage, t, startTypingAnimation, stopTypingAnimation],
   );
 
   // ─── Feedback ────────────────────────────────────────────────────────────────
@@ -1072,9 +1165,48 @@ export function AILocalChatBubble() {
                     </div>
                     <div className={cn("max-w-[80%] rounded-2xl px-3 py-2 space-y-1.5", msg.type === "user" ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-muted rounded-tl-sm")}>
                       {msg.type === "user" ? (
-                        <p className="text-xs">{msg.content}</p>
+                        <div className="space-y-1">
+                          {msg.hasImage && (
+                            <span className="inline-flex items-center gap-1 text-[10px] opacity-80">
+                              <ImagePlus className="size-3" />
+                              {t("aiChat.imageAttached", "Đã đính kèm ảnh")}
+                            </span>
+                          )}
+                          <p className="text-xs">{msg.content}</p>
+                        </div>
                       ) : (
                         <>
+                          {/* P3/D8 (doc 34) — vision step: the VL reading or an honest degrade note. */}
+                          {msg.vision && (
+                            <div
+                              className={cn(
+                                "rounded-lg border px-2 py-1.5 text-[11px] leading-snug",
+                                msg.vision.ok
+                                  ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900/50"
+                                  : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50",
+                              )}
+                            >
+                              {msg.vision.ok ? (
+                                <>
+                                  <p className="font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1 mb-0.5">
+                                    <Eye className="size-3 shrink-0" />
+                                    {t("aiChat.visionReading", "Ảnh đã đọc (VL)")}
+                                  </p>
+                                  <p className="whitespace-pre-wrap text-foreground/80 max-h-40 overflow-y-auto">
+                                    {msg.vision.visionText}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                  <Eye className="size-3 shrink-0" />
+                                  {t(
+                                    "aiChat.visionUnavailable",
+                                    "Không đọc được ảnh (thị giác không khả dụng) — trả lời chỉ dựa trên văn bản.",
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          )}
                           {msg.streaming && !msg.content ? (
                             // Typing indicator with stage text
                             <div className="flex items-center gap-2">
@@ -1312,6 +1444,39 @@ export function AILocalChatBubble() {
                 Dữ liệu chưa tải. Nhấn nút làm mới ở trên.
               </div>
             )}
+            {/* P3/D8 (doc 34) — attached-image preview chip (remove with ×). */}
+            {attachedImage && (
+              <div className="mb-2 flex items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1.5">
+                <img
+                  src={attachedImage.dataUrl}
+                  alt={t("aiChat.imageAttached", "Đã đính kèm ảnh")}
+                  className="h-10 w-10 rounded object-cover border shrink-0"
+                />
+                <span className="flex-1 min-w-0 truncate text-xs text-muted-foreground">
+                  {attachedImage.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAttachedImage(null)}
+                  className="rounded-full p-0.5 hover:bg-background shrink-0"
+                  aria-label={t("aiChat.removeImage", "Bỏ ảnh")}
+                  title={t("aiChat.removeImage", "Bỏ ảnh")}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
+            {/* Hidden file input driving the attach-image button. */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept={ACCEPTED_CHAT_IMAGE_TYPES.join(",")}
+              className="hidden"
+              onChange={(e) => {
+                void pickImage(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
             <div className="flex gap-2 items-end border rounded-xl px-3 py-2 focus-within:border-primary/50 transition-colors bg-background">
               <Textarea
                 placeholder={
@@ -1329,10 +1494,30 @@ export function AILocalChatBubble() {
                     handleAsk();
                   }
                 }}
+                onPaste={(e) => {
+                  // P3/D8 (doc 34) — paste an image straight from the clipboard.
+                  const f = extractImageFromClipboard(e.clipboardData?.items);
+                  if (f) {
+                    e.preventDefault();
+                    void pickImage(f);
+                  }
+                }}
                 disabled={!isReady || isStreaming}
                 className="flex-1 min-h-9 max-h-24 resize-none border-0 focus-visible:ring-0 p-0 text-sm"
                 rows={1}
               />
+              {/* P3/D8 (doc 34) — attach an image (ladder/HMI/wiring/datasheet/error screen). */}
+              <Button
+                size="icon"
+                variant={attachedImage ? "secondary" : "ghost"}
+                className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={!isReady || isStreaming}
+                title={t("aiChat.attachImage", "Đính kèm ảnh (sơ đồ, HMI, màn hình lỗi…)")}
+                aria-label={t("aiChat.attachImage", "Đính kèm ảnh")}
+              >
+                <ImagePlus className="size-4" />
+              </Button>
               {/* G2.3c — start an agentic plan from the typed goal (agentic roles only) */}
               {agenticEnabled && !agentSession && (
                 <Button
@@ -1363,7 +1548,7 @@ export function AILocalChatBubble() {
               </Button>
               <Button
                 onClick={() => handleAsk()}
-                disabled={!isReady || isStreaming || !question.trim()}
+                disabled={!isReady || isStreaming || (!question.trim() && !attachedImage)}
                 size="icon"
                 className="shrink-0 h-8 w-8 rounded-lg"
               >

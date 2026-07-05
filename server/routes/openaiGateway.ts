@@ -74,27 +74,37 @@ function resolveModelId(requested?: string): string | undefined {
   const fimModel = envStr("GGUF_FIM_MODEL");
   const key = (requested || "").trim().toLowerCase();
 
+  let raw: string | undefined;
   switch (key) {
     case "":
     case "chat":
-      return defaultModel || undefined;
+      raw = defaultModel || undefined;
+      break;
     case "code":
     case "coder":
-      return codeModel || defaultModel || undefined;
+      raw = codeModel || defaultModel || undefined;
+      break;
     case "fast":
-      return fastModel || undefined;
+      raw = fastModel || undefined;
+      break;
     case "fim":
     case "infill":
-      return fimModel || fastModel || undefined;
+      raw = fimModel || fastModel || undefined;
+      break;
     case "embed":
     case "embedding":
     case "embeddings":
-      return envStr("GGUF_EMBED_MODEL") || undefined;
+      raw = envStr("GGUF_EMBED_MODEL") || undefined;
+      break;
     default:
       // Unknown, non-empty id: honour it verbatim (client may target a real
       // on-disk basename). The engine will surface a clear error if it is absent.
-      return requested && requested.trim() ? requested.trim() : undefined;
+      raw = requested && requested.trim() ? requested.trim() : undefined;
   }
+  // The engine resolves a basename and appends ".gguf"; the GGUF_* env values already
+  // include the extension, so strip a trailing ".gguf" to avoid a "...gguf.gguf" miss
+  // (the model router strips it the same way — keep the two consistent).
+  return raw ? raw.replace(/\.gguf$/i, "") : undefined;
 }
 
 /** Backing basename for a logical model (for the models-list `root`/transparency). */
@@ -488,14 +498,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         return;
       }
 
-      // Embeddings always use the dedicated embed model (engine prefers
-      // GGUF_EMBED_MODEL when modelId is undefined) — never the text model.
+      // Embeddings always use the dedicated embed model. Pass the RESOLVED (extension-
+      // stripped) basename explicitly — the engine appends ".gguf", and GGUF_EMBED_MODEL
+      // already carries it, so relying on the undefined-default would double it ("...gguf.gguf").
+      const embedId = resolveModelId("embed");
       let vectors: number[][];
       if (inputs.length === 1) {
-        const r = await generateEmbedding(inputs[0]);
+        const r = await generateEmbedding(inputs[0], embedId);
         vectors = [r.embedding];
       } else {
-        const r = await generateEmbeddings(inputs);
+        const r = await generateEmbeddings(inputs, embedId);
         vectors = r.embeddings;
       }
 

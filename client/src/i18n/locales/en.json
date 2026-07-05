@@ -4910,6 +4910,8 @@
     "irEditorDesc": "Author motion/IO device programs as first-class IR blocks, lint & transpile (URScript/ROS2); deploy stays a separate gated step",
     "pouStudio": "IEC 61131 POU Studio",
     "pouStudioDesc": "Structured LAD/FBD/SFC POUs with PLCopen XML import/export, semantic lint, and transpile-to-ST preview (open runtime only)",
+    "programmingCopilot": "Programming Copilot",
+    "programmingCopilotDesc": "AI generates, completes, translates, reviews & explains device code — grounded in vendor manuals, validated by the safety substrate; display-only (no device path)",
     "factoryLiveMap": "Factory 3D Live Map",
     "factoryLiveMapDesc": "3D factory floor, machines coloured by live status (digital shadow), click to drill down to a cell",
     "fieldDevices": "Field & Device Abstraction",
@@ -5258,6 +5260,7 @@
       "orchestrationStudio": "Design step-by-step automated production flows across machines (preview)",
       "irEditor": "Visual editor to author and convert device programs — for engineers (preview)",
       "pouStudio": "Structured IEC 61131 ladder/FBD/SFC editing with PLCopen XML exchange — for engineers (preview)",
+      "programmingCopilot": "Ask AI to write or explain device code — for engineers; you review and simulate before use (preview)",
       "fleetOrchestration": "Assign jobs to mobile robots/AGVs and manage their traffic and charging (preview)",
       "safetyWorkforce": "Advisory safety overview and shift/workforce board (preview)",
       "equipmentStandards": "Company-wide equipment types and standard alarm naming (preview)",
@@ -9390,6 +9393,10 @@
         "title": "Technician Copilot",
         "desc": "AI diagnoses defect root cause and proposes a fix — technicians approve in one tap"
       },
+      "programmingCopilot": {
+        "title": "Programming Copilot",
+        "desc": "AI generates, completes, translates, reviews & explains device code — grounded in vendor manuals and validated by the safety substrate"
+      },
       "performance": {
         "title": "Model Performance",
         "desc": "Track AI model accuracy, inference stats, and version history across deployments"
@@ -9511,7 +9518,16 @@
     "recommendationsTitle": "Recommendations",
     "sourcesCount": "{{count}} sources",
     "stepsTitle": "Steps to follow",
-    "streaming": "Streaming..."
+    "streaming": "Streaming...",
+    "attachImage": "Attach image (diagram, HMI, error screen…)",
+    "removeImage": "Remove image",
+    "imageAttached": "Image attached",
+    "imageDefaultPrompt": "What does this image show? Please explain.",
+    "imageTooLarge": "Image too large (max {{max}} MB).",
+    "imageTypeInvalid": "Unsupported image. Use PNG, JPG or WebP.",
+    "imageReadError": "Couldn't read the image. Please try again.",
+    "visionReading": "Image read (VL)",
+    "visionUnavailable": "Couldn't read the image (vision unavailable) — answering from text only."
   },
   "aiGuided": {
     "sectionTitle": "Guided engineering tasks",
@@ -9580,6 +9596,56 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} days",
     "latestInsight": "Latest recommendation"
+  },
+  "progCopilot": {
+    "title": "Programming Copilot",
+    "subtitle": "AI drafts, completes, translates, reviews and explains device code — grounded in vendor manuals and validated by the safety substrate. You review, simulate and sign off.",
+    "whenToUse": "Draft or understand device code fast. To build, simulate and deploy, take the code into the Engineering Workspace.",
+    "cardTitle": "Generate device code",
+    "cardSubtitle": "Pick a program kind, mode and (optionally) a vendor, describe what you need, then generate.",
+    "embedTitle": "AI Programming Copilot",
+    "beta": "Beta",
+    "kind": "Program kind",
+    "mode": "Mode",
+    "vendor": "Vendor",
+    "vendorAny": "Auto (all vendors)",
+    "targetKind": "Translate to",
+    "request": "Request",
+    "focus": "Focus (optional)",
+    "requestPh": "Describe what to generate — e.g. a moving-average filter over D100 sampled every 100 ms",
+    "contextCode": "Existing code (context)",
+    "contextPh": "Paste the program to complete / translate / review / explain…",
+    "syncEditor": "Sync from editor",
+    "generate": "Generate",
+    "generating": "Generating…",
+    "modes": {
+      "generate": "Generate",
+      "complete": "Complete",
+      "translate": "Translate",
+      "review": "Review",
+      "explain": "Explain"
+    },
+    "defaults": {
+      "complete": "Complete this program.",
+      "translate": "Translate this program, preserving its behaviour.",
+      "review": "Review this program for correctness and issues.",
+      "explain": "Explain what this program does."
+    },
+    "refusedTitle": "Refused for safety",
+    "resultCode": "Generated code",
+    "validationOk": "Validated",
+    "validationFail": "Validation failed",
+    "citations": "Sources",
+    "explanation": "Explanation",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "apply": "Apply to editor",
+    "inserted": "Inserted generated code into the editor",
+    "idleHint": "Pick options and Generate to see AI-suggested code here.",
+    "needRequest": "Describe what you want to generate.",
+    "needContext": "Paste the program to review / explain first.",
+    "safetyReminder": "AI-generated — review, validate and simulate before running on real equipment. The copilot never authors safety logic (E-stop / interlock / SIL).",
+    "failed": "Code generation failed"
   },
   "technicianCopilot": {
     "title": "Technician Copilot",

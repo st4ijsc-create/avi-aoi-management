@@ -4464,6 +4464,8 @@
     "irEditorDesc": "将运动/IO 设备程序编写为一等 IR 块，进行安全检查与转译（URScript/ROS2）；部署仍为独立的受控步骤",
     "pouStudio": "IEC 61131 POU 工作室",
     "pouStudioDesc": "结构化 LAD/FBD/SFC POU，支持 PLCopen XML 导入/导出、语义检查以及转译为 ST 预览（仅限开放运行时）",
+    "programmingCopilot": "编程副驾",
+    "programmingCopilotDesc": "AI 生成、补全、翻译、审查并解释设备代码 — 以厂商手册为依据、经安全底座校验；仅显示（无设备通路）",
     "factoryLiveMap": "工厂3D实时地图",
     "factoryLiveMapDesc": "3D工厂车间，设备按实时状态着色（数字镜像），点击下钻到单元",
     "fieldDevices": "现场与设备抽象",
@@ -4804,6 +4806,7 @@
       "orchestrationStudio": "跨机器设计逐步自动化生产流程（预览）",
       "irEditor": "可视化编辑器，用于编写和转换设备程序 — 面向工程师（预览）",
       "pouStudio": "结构化 IEC 61131 梯形图/FBD/SFC 编辑与 PLCopen XML 交换 — 面向工程师（预览）",
+      "programmingCopilot": "让 AI 编写或解释设备代码 — 面向工程师；使用前请审阅并仿真（预览）",
       "fleetOrchestration": "为移动机器人/AGV 分配任务并管理其通行与充电（预览）",
       "safetyWorkforce": "咨询式安全概览及班次/人力看板（预览）",
       "equipmentStandards": "公司统一的设备类型及标准报警命名（预览）",
@@ -8799,6 +8802,10 @@
         "title": "技术副驾",
         "desc": "AI 诊断缺陷根因并提出修复方案 — 技术人员一键批准"
       },
+      "programmingCopilot": {
+        "title": "编程副驾",
+        "desc": "AI 生成、补全、翻译、审查并解释设备代码 — 以厂商手册为依据并经安全底座校验"
+      },
       "performance": {
         "title": "模型性能",
         "desc": "跟踪AI模型准确率、推理统计和版本历史"
@@ -8910,7 +8917,16 @@
     },
     "machineContextChip": "正在询问：设备 {{code}}",
     "clearMachineContext": "清除设备上下文",
-    "machineScopePrefix": "[上下文：设备 {{code}}]"
+    "machineScopePrefix": "[上下文：设备 {{code}}]",
+    "attachImage": "附加图片（图纸、HMI、报错画面…）",
+    "removeImage": "移除图片",
+    "imageAttached": "已附加图片",
+    "imageDefaultPrompt": "这张图片显示了什么？请解释。",
+    "imageTooLarge": "图片过大（最大 {{max}} MB）。",
+    "imageTypeInvalid": "不支持的图片。请使用 PNG、JPG 或 WebP。",
+    "imageReadError": "无法读取图片，请重试。",
+    "visionReading": "已读取图片 (VL)",
+    "visionUnavailable": "无法读取图片（视觉不可用）— 仅根据文本作答。"
   },
   "aiGuided": {
     "sectionTitle": "引导式工程任务",
@@ -8979,6 +8995,56 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} 天",
     "latestInsight": "最新建议"
+  },
+  "progCopilot": {
+    "title": "编程副驾",
+    "subtitle": "AI 生成、补全、翻译、审查并解释设备代码 — 以厂商手册为依据，并经安全底座校验。由你审阅、仿真并签核。",
+    "whenToUse": "快速起草或理解设备代码。若要构建、仿真和部署，请将代码带入工程工作区。",
+    "cardTitle": "生成设备代码",
+    "cardSubtitle": "选择程序类型、模式和（可选）厂商，描述需求后生成。",
+    "embedTitle": "AI 编程副驾",
+    "beta": "测试版",
+    "kind": "程序类型",
+    "mode": "模式",
+    "vendor": "厂商",
+    "vendorAny": "自动（所有厂商）",
+    "targetKind": "翻译为",
+    "request": "需求",
+    "focus": "关注点（可选）",
+    "requestPh": "描述要生成的内容 — 例如：对 D100 每 100 毫秒采样的移动平均滤波器",
+    "contextCode": "现有代码（上下文）",
+    "contextPh": "粘贴要补全/翻译/审查/解释的程序…",
+    "syncEditor": "从编辑器同步",
+    "generate": "生成",
+    "generating": "生成中…",
+    "modes": {
+      "generate": "生成",
+      "complete": "补全",
+      "translate": "翻译",
+      "review": "审查",
+      "explain": "解释"
+    },
+    "defaults": {
+      "complete": "补全此程序。",
+      "translate": "翻译此程序并保持其行为。",
+      "review": "审查此程序的正确性与问题。",
+      "explain": "解释此程序的作用。"
+    },
+    "refusedTitle": "出于安全拒绝",
+    "resultCode": "生成的代码",
+    "validationOk": "校验通过",
+    "validationFail": "校验未通过",
+    "citations": "来源",
+    "explanation": "解释",
+    "copy": "复制",
+    "copied": "已复制",
+    "apply": "应用到编辑器",
+    "inserted": "已将生成的代码插入编辑器",
+    "idleHint": "选择选项并点击生成，即可在此查看 AI 建议的代码。",
+    "needRequest": "请描述你想生成的内容。",
+    "needContext": "请先粘贴要审查/解释的程序。",
+    "safetyReminder": "AI 生成的代码 — 在真实设备上运行前请审阅、校验并仿真。副驾从不编写安全逻辑（急停/联锁/SIL）。",
+    "failed": "生成失败"
   },
   "technicianCopilot": {
     "title": "技术副驾",

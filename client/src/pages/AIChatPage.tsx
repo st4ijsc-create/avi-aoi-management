@@ -17,9 +17,16 @@ import {
 } from "@/components/ConfirmActionCard";
 import {
   useKbChatStream,
+  readChatImageFile,
+  validateChatImageFile,
+  extractImageFromClipboard,
+  MAX_CHAT_IMAGE_BYTES,
+  ACCEPTED_CHAT_IMAGE_TYPES,
   type KbCitation,
   type KbStructured,
   type KbPendingAction,
+  type KbVisionNote,
+  type ChatImageAttachment,
 } from "@/hooks/useKbChatStream";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +51,8 @@ import {
   X,
   BookOpen,
   ChevronRight,
+  ImagePlus,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -77,6 +86,8 @@ interface KbAnswerExtras {
   provider?: string;
   cached?: boolean;
   pendingAction: KbPendingAction | null;
+  // P3/D8 (doc 34) — vision step for the latest answer (VL reading or degrade note).
+  vision: KbVisionNote | null;
 }
 
 export default function AIChatPage() {
@@ -100,6 +111,11 @@ export default function AIChatPage() {
     { toolResult: ToolResultPayload; toolName: string | null } | null
   >(null);
   const [showSources, setShowSources] = useState(false);
+  // P3/D8 (doc 34) — vision-in-chat: image attached to the next send + the live VL
+  // step surfaced while streaming (mirrors the bubble).
+  const [attachedImage, setAttachedImage] = useState<ChatImageAttachment | null>(null);
+  const [streamVision, setStreamVision] = useState<KbVisionNote | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // P3/W3.1 (doc 11) — inline HITL confirm state for the latest turn's pending
   // write (mirrors the bubble's per-message actionState/actionMessage). The
@@ -230,7 +246,14 @@ export default function AIChatPage() {
   }, [search]);
 
   const handleSend = async (override?: string, machineOverride?: string) => {
-    const source = typeof override === "string" ? override : inputMessage;
+    // P3/D8 (doc 34) — capture the attached image for THIS send. An image with no
+    // text is allowed (falls back to a default "what does this show?" prompt).
+    const image = attachedImage;
+    const source =
+      typeof override === "string"
+        ? override
+        : inputMessage.trim() ||
+          (image ? t("aiChat.imageDefaultPrompt", "Ảnh này cho thấy gì? Hãy giải thích.") : "");
     if (!source.trim()) return;
     // Seed machine context: prefer an explicit override (deep-link), else the
     // active chip. We prepend a short scope line so the local model answers about
@@ -241,6 +264,7 @@ export default function AIChatPage() {
       ? `${t("aiChat.machineScopePrefix", "[Bối cảnh: Máy {{code}}]", { code: scopeCode })} ${source}`
       : source;
     setInputMessage("");
+    setAttachedImage(null);
     setOptimisticUserMsg(displayMsg);
 
     let convId = selectedConvId;
@@ -271,6 +295,7 @@ export default function AIChatPage() {
       // new answer never shows the previous turn's cards.
       setLastExtras(null);
       setStreamToolResult(null);
+      setStreamVision(null);
       setShowSources(false);
       // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
       setActionState("pending");
@@ -288,11 +313,15 @@ export default function AIChatPage() {
             selectedMachineCode:
               scopeCode ?? selection.selectedMachineCode ?? undefined,
           },
+          // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
+          image: image?.dataUrl,
         },
         {
           // Live tool card while streaming (mirrors the bubble).
           onToolResult: (toolResult, toolName) =>
             setStreamToolResult({ toolResult, toolName }),
+          // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
+          onVision: (v) => setStreamVision(v),
           // FE-only directive: navigate / prefill_form. No DB mutation; never
           // auto-executes a write. Same behaviour as the bubble.
           onClientAction: (ca) => {
@@ -317,8 +346,10 @@ export default function AIChatPage() {
           provider: kbResult.provider,
           cached: kbResult.cached,
           pendingAction: kbResult.pendingAction,
+          vision: kbResult.vision,
         });
         setStreamToolResult(null);
+        setStreamVision(null);
         // saveStreamedMessage requires a non-empty assistant message.
         const assistantText =
           kbResult.fullText.trim() ||
@@ -424,6 +455,41 @@ export default function AIChatPage() {
     }
   }, [lastExtras, actionState, cancelActionMutation, t]);
 
+  // ── P3/D8 (doc 34) — image attach / remove / paste ──────────────────────────
+  const notifyImageError = useCallback(
+    (reason: "type" | "size" | "read") => {
+      if (reason === "type") {
+        toast.error(t("aiChat.imageTypeInvalid", "Ảnh không hợp lệ. Dùng PNG, JPG hoặc WebP."));
+      } else if (reason === "size") {
+        toast.error(
+          t("aiChat.imageTooLarge", "Ảnh quá lớn (tối đa {{max}} MB).", {
+            max: Math.round(MAX_CHAT_IMAGE_BYTES / (1024 * 1024)),
+          }),
+        );
+      } else {
+        toast.error(t("aiChat.imageReadError", "Không đọc được ảnh. Vui lòng thử lại."));
+      }
+    },
+    [t],
+  );
+
+  const pickImage = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      const err = validateChatImageFile(file);
+      if (err) {
+        notifyImageError(err);
+        return;
+      }
+      try {
+        setAttachedImage(await readChatImageFile(file));
+      } catch {
+        notifyImageError("read");
+      }
+    },
+    [notifyImageError],
+  );
+
   const isBusy = effIsStreaming || chatMutation.isPending;
   const messages = conversation?.messages ?? [];
   // P3/W3.1 (doc 11) — index of the last assistant message (extras render here).
@@ -433,6 +499,38 @@ export default function AIChatPage() {
     }
     return -1;
   })();
+
+  // P3/D8 (doc 34) — render the vision step (VL reading or an honest degrade note).
+  const renderVisionNote = (v: KbVisionNote) => (
+    <div
+      className={cn(
+        "rounded-md border px-2.5 py-1.5 text-xs leading-snug",
+        v.ok
+          ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900/50"
+          : "bg-warning/10 border-warning/30",
+      )}
+    >
+      {v.ok ? (
+        <>
+          <p className="font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1 mb-0.5">
+            <Eye className="h-3 w-3 shrink-0" />
+            {t("aiChat.visionReading", "Ảnh đã đọc (VL)")}
+          </p>
+          <p className="whitespace-pre-wrap text-foreground/80 max-h-48 overflow-y-auto">
+            {v.visionText}
+          </p>
+        </>
+      ) : (
+        <p className="text-warning flex items-center gap-1">
+          <Eye className="h-3 w-3 shrink-0" />
+          {t(
+            "aiChat.visionUnavailable",
+            "Không đọc được ảnh (thị giác không khả dụng) — trả lời chỉ dựa trên văn bản.",
+          )}
+        </p>
+      )}
+    </div>
+  );
 
   // P3/W3.1 (doc 11) — render the RAG extras block (citations / structured steps /
   // recommendations / follow-up chips / pending-write notice) under an answer.
@@ -445,6 +543,8 @@ export default function AIChatPage() {
         (s.recommendations && s.recommendations.length > 0));
     return (
       <div className="mt-2 space-y-2">
+        {/* P3/D8 (doc 34) — vision step for this answer (VL reading / degrade note). */}
+        {extras.vision && renderVisionNote(extras.vision)}
         {/* Tool result card (reused from the bubble) */}
         {extras.toolResult && <AIToolResultCard toolResult={extras.toolResult} />}
 
@@ -744,13 +844,15 @@ export default function AIChatPage() {
                       </div>
                     </div>
                   )}
-                  {/* Streaming AI response — also shows a live tool card (KB path). */}
-                  {effIsStreaming && (effStreamingText || streamToolResult) && (
+                  {/* Streaming AI response — also shows a live vision + tool card (KB path). */}
+                  {effIsStreaming && (effStreamingText || streamToolResult || streamVision) && (
                     <div className="flex gap-3 justify-start">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                         <Zap className="h-4 w-4 text-primary animate-pulse" />
                       </div>
                       <div className="max-w-[80%] rounded-lg px-4 py-2.5 text-sm bg-muted">
+                        {/* P3/D8 (doc 34) — live VL step while streaming. */}
+                        {streamVision && <div className="mb-2">{renderVisionNote(streamVision)}</div>}
                         {/* P3/W3.1 (doc 11) — live tool result while streaming. */}
                         {streamToolResult && (
                           <div className="mb-2">
@@ -768,7 +870,8 @@ export default function AIChatPage() {
                     </div>
                   )}
                   {/* Loading spinner (fallback non-streaming) */}
-                  {(chatMutation.isPending || (effIsStreaming && !effStreamingText && !streamToolResult)) && (
+                  {(chatMutation.isPending ||
+                    (effIsStreaming && !effStreamingText && !streamToolResult && !streamVision)) && (
                     <div className="flex gap-3">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <Bot className="h-4 w-4 text-primary" />
@@ -784,31 +887,85 @@ export default function AIChatPage() {
 
               {/* Input */}
               <div className="border-t p-4">
-                <div className="max-w-3xl mx-auto flex gap-2">
-                  <Input
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder={t("aiChat.placeholder", "Nhập câu hỏi của bạn...")}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    disabled={isBusy}
-                  />
-                  {effIsStreaming ? (
-                    <Button variant="destructive" onClick={effStopStream}>
-                      <StopCircle className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => handleSend()}
-                      disabled={!inputMessage.trim() || isBusy}
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
+                <div className="max-w-3xl mx-auto space-y-2">
+                  {/* P3/D8 (doc 34) — attached-image preview chip (remove with ×). */}
+                  {attachedImage && (
+                    <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1.5">
+                      <img
+                        src={attachedImage.dataUrl}
+                        alt={t("aiChat.imageAttached", "Đã đính kèm ảnh")}
+                        className="h-10 w-10 rounded object-cover border shrink-0"
+                      />
+                      <span className="flex-1 min-w-0 truncate text-xs text-muted-foreground">
+                        {attachedImage.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedImage(null)}
+                        className="rounded-full p-0.5 hover:bg-background shrink-0"
+                        aria-label={t("aiChat.removeImage", "Bỏ ảnh")}
+                        title={t("aiChat.removeImage", "Bỏ ảnh")}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   )}
+                  <div className="flex gap-2">
+                    {/* Hidden file input driving the attach-image button. */}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept={ACCEPTED_CHAT_IMAGE_TYPES.join(",")}
+                      className="hidden"
+                      onChange={(e) => {
+                        void pickImage(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    {/* P3/D8 (doc 34) — attach an image (ladder/HMI/wiring/datasheet/error screen). */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isBusy}
+                      title={t("aiChat.attachImage", "Đính kèm ảnh (sơ đồ, HMI, màn hình lỗi…)")}
+                      aria-label={t("aiChat.attachImage", "Đính kèm ảnh")}
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      placeholder={t("aiChat.placeholder", "Nhập câu hỏi của bạn...")}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      onPaste={(e) => {
+                        // P3/D8 (doc 34) — paste an image straight from the clipboard.
+                        const f = extractImageFromClipboard(e.clipboardData?.items);
+                        if (f) {
+                          e.preventDefault();
+                          void pickImage(f);
+                        }
+                      }}
+                      disabled={isBusy}
+                    />
+                    {effIsStreaming ? (
+                      <Button variant="destructive" onClick={effStopStream}>
+                        <StopCircle className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => handleSend()}
+                        disabled={(!inputMessage.trim() && !attachedImage) || isBusy}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

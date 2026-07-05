@@ -24,6 +24,74 @@
 import { useState, useRef, useCallback } from "react";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
 
+// ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
+// Kept here (AIChatPage already imports this hook) so BOTH chat surfaces share one
+// set of limits + file→dataURL logic without introducing a new module.
+export const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024; // 6 MB — matches the server cap
+export const ACCEPTED_CHAT_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+
+export interface ChatImageAttachment {
+  /** data:image/<mime>;base64,<...> — sent to the backend as `image`. */
+  dataUrl: string;
+  name: string;
+  type: string;
+  sizeBytes: number;
+}
+
+/** null = OK; otherwise a reason code the caller maps to a localized toast. */
+export type ChatImageError = "type" | "size" | "read";
+
+export function validateChatImageFile(file: File): ChatImageError | null {
+  if (
+    !ACCEPTED_CHAT_IMAGE_TYPES.includes(
+      file.type as (typeof ACCEPTED_CHAT_IMAGE_TYPES)[number],
+    )
+  ) {
+    return "type";
+  }
+  if (file.size > MAX_CHAT_IMAGE_BYTES) return "size";
+  return null;
+}
+
+export function readChatImageFile(file: File): Promise<ChatImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve({
+        dataUrl: String(reader.result ?? ""),
+        name: file.name || "image",
+        type: file.type || "image/png",
+        sizeBytes: file.size,
+      });
+    reader.onerror = () => reject(new Error("read"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Pull the first image File out of a paste event's clipboard items (or null). */
+export function extractImageFromClipboard(
+  items: DataTransferItemList | undefined | null,
+): File | null {
+  if (!items) return null;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "file" && it.type.startsWith("image/")) {
+      const f = it.getAsFile();
+      if (f) return f;
+    }
+  }
+  return null;
+}
+
+// P3/D8 (doc 34) — the "vision step" note surfaced by the backend when an image
+// was attached: ok=true carries the Qwen3-VL reading; ok=false carries a reason so
+// the UI can show an honest text-only-degrade message.
+export interface KbVisionNote {
+  ok: boolean;
+  visionText?: string | null;
+  reason?: string | null;
+}
+
 // ─── Public types (mirror the bubble's local-kb shapes) ───────────────────────
 
 export interface KbCitation {
@@ -88,6 +156,8 @@ export interface KbStreamResult {
   provider?: string;
   cached?: boolean;
   pendingAction: KbPendingAction | null;
+  // P3/D8 (doc 34) — set when an image was attached (VL reading or degrade note).
+  vision: KbVisionNote | null;
 }
 
 export interface KbStreamContext {
@@ -102,6 +172,9 @@ export interface KbStreamRequest {
   userRole: "worker" | "engineer" | "manager" | "it_admin";
   context: KbStreamContext;
   topK?: number;
+  // P3/D8 (doc 34) — optional attached image as a base64 data URL. The backend
+  // reads it with Qwen3-VL and folds the reading into the RAG answer.
+  image?: string;
 }
 
 export interface KbStreamCallbacks {
@@ -113,6 +186,8 @@ export interface KbStreamCallbacks {
   onPendingAction?: (action: KbPendingAction) => void;
   /** Fired on navigate / prefill_form directives (caller wires wouter + copilot ctx). */
   onClientAction?: (action: KbClientAction) => void;
+  /** P3/D8 (doc 34) — fired once with the vision step (VL reading or degrade note). */
+  onVision?: (vision: KbVisionNote) => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -161,6 +236,7 @@ export function useKbChatStream() {
       let provider: string | undefined;
       let cached: boolean | undefined;
       let pendingAction: KbPendingAction | null = null;
+      let vision: KbVisionNote | null = null;
       let accumulated = "";
 
       try {
@@ -174,6 +250,8 @@ export function useKbChatStream() {
             history: req.history,
             userRole: req.userRole,
             context,
+            // P3/D8 (doc 34) — optional attached image (base64 data URL).
+            ...(req.image ? { image: req.image } : {}),
           }),
           signal: controller.signal,
         });
@@ -216,9 +294,20 @@ export function useKbChatStream() {
                 followUpSuggestions?: string[];
                 provider?: string;
                 cached?: boolean;
+                ok?: boolean;
+                visionText?: string | null;
+                reason?: string | null;
               };
 
-              if (payload.type === "meta") {
+              if (payload.type === "vision") {
+                // P3/D8 (doc 34) — the VL reading step (or its degrade note).
+                vision = {
+                  ok: !!payload.ok,
+                  visionText: payload.visionText ?? null,
+                  reason: payload.reason ?? null,
+                };
+                callbacks?.onVision?.(vision);
+              } else if (payload.type === "meta") {
                 confidence = payload.confidence ?? 0;
                 intent = payload.intent ?? "general";
                 language = payload.language ?? "vi";
@@ -275,6 +364,7 @@ export function useKbChatStream() {
           provider,
           cached,
           pendingAction,
+          vision,
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {

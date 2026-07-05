@@ -116,6 +116,7 @@ const EngineeringHub = React.lazy(() => import("./pages/EngineeringHub")); // W6
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
 const IrEditor = React.lazy(() => import("./pages/IrEditor")); // D1 (doc 16 §11.1 Khối 6): Visual IR Editor — author motion/IO blocks, lint + transpile preview (mutations gated by DPC_IR_V2_ENABLED)
 const PouStudio = React.lazy(() => import("./pages/PouStudio")); // P4 (doc 24 Wave-3): IEC 61131 POU Studio — structured LAD/FBD/SFC + PLCopen XML round-trip + transpile-to-ST (pure preview, open runtime only)
+const ProgrammingCopilot = React.lazy(() => import("./pages/ProgrammingCopilot")); // Doc 34 P3: in-app Programming Copilot — LLM codegen (generate/complete/translate/review/explain), validated by the safety substrate; advisory + display-only
 const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Doc 10 U1: supervisor/manager briefing landing
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
@@ -302,6 +303,7 @@ function Router() {
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ir-editor"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/pou-studio"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/programming-copilot"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>

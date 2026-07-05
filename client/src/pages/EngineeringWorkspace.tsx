@@ -31,6 +31,8 @@ import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
+// Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
+import { ProgrammingCopilotPanel, COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -56,7 +58,7 @@ import {
   Code2, Plus, FolderGit2, FileCode, Play, Hammer, FlaskConical, Rocket,
   AlertTriangle, CheckCircle2, XCircle, RefreshCw, Variable, ShieldCheck,
   Radio, Trash2, Pencil, Wifi, WifiOff, RotateCcw, GitCompare, Info,
-  Check, ChevronRight,
+  Check, ChevronRight, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
@@ -487,6 +489,15 @@ export default function EngineeringWorkspace() {
   const [editorMode, setEditorMode] = useState<"code" | "visual">("code");
   const visualKind =
     project?.kind === "iec61131-ld" ? "ladder" : project?.kind === "robot-tm" ? "teach" : null;
+
+  // Doc 34 · P3 — embedded AI Programming Copilot (collapsible, unobtrusive). Seeded with the
+  // current editor buffer as context; Apply inserts the generated code into this editor. Only
+  // the 8 copilot-supported kinds map to a source kind (else the panel picks its own default).
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const copilotInitialKind = useMemo<CopilotKind | undefined>(() => {
+    const k = project?.kind;
+    return k && (COPILOT_KINDS as readonly string[]).includes(k) ? (k as CopilotKind) : undefined;
+  }, [project?.kind]);
 
   // U10 (doc 26) — phím tắt tác vụ trong editor. Ctrl/Cmd+S = Lưu phiên bản (chặn hộp
   // "lưu trang" của trình duyệt); Ctrl/Cmd+Enter = Build phiên bản đã lưu. Hook scope
@@ -937,6 +948,40 @@ export default function EngineeringWorkspace() {
                       </div>
                     )}
                   </CardContent>
+                </Card>
+
+                {/* Doc 34 · P3 — AI Programming Copilot (embedded, collapsible, unobtrusive).
+                    Seeded with the editor buffer as context; Apply inserts generated code back
+                    into the editor. Advisory + display-only (no device path). */}
+                <Card id="gt-copilot" className="scroll-mt-16">
+                  <CardHeader className="pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setCopilotOpen((v) => !v)}
+                      aria-expanded={copilotOpen}
+                      className="flex w-full items-center justify-between text-left"
+                    >
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        {t("progCopilot.embedTitle", "AI Programming Copilot")}
+                        <Badge variant="outline" className="text-[10px]">{t("progCopilot.beta", "Beta")}</Badge>
+                      </CardTitle>
+                      <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${copilotOpen ? "rotate-90" : ""}`} />
+                    </button>
+                  </CardHeader>
+                  {copilotOpen && (
+                    <CardContent>
+                      <ProgrammingCopilotPanel
+                        variant="embedded"
+                        initialKind={copilotInitialKind}
+                        contextCode={code}
+                        onApply={(gen) => {
+                          setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
+                          toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
+                        }}
+                      />
+                    </CardContent>
+                  )}
                 </Card>
 
                 {/* Builds + Simulate */}

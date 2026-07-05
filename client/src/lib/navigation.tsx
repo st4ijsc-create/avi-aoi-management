@@ -869,6 +869,22 @@ export const navGroups: NavGroup[] = [
         beta: true,
       },
       {
+        // Doc 34 · P3 — Programming Copilot: LLM code generation (generate / complete /
+        // translate / review / explain), grounded in vendor-manual RAG and VALIDATED by the
+        // same programming substrate. Read-open (machine_monitoring); advisory + display-only
+        // (no device path) — the engineer reviews, then builds/deploys via the gated pipeline.
+        href: "/programming-copilot",
+        label: "nav.programmingCopilot",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.programmingCopilotDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "authoring",
+        hint: "nav.hint.programmingCopilot",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
         // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
         // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
         href: "/fleet-orchestration",

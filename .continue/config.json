@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Doc 34 P3 — VS Code + Continue config for the ST4I local automation-programming copilot.",
+    "Points Continue at the app's OpenAI-compatible gateway (server/routes/openaiGateway.ts).",
+    "SETUP: (1) in the app .env set OPENAI_GATEWAY_ENABLED=true and OPENAI_GATEWAY_API_KEY=<secret>,",
+    "restart the app. (2) Copy this file to ~/.continue/config.json (or keep it as the workspace",
+    "config), replace REPLACE_WITH_OPENAI_GATEWAY_API_KEY with that secret, and set apiBase to the",
+    "app URL (default http://localhost:3000/v1). See docs/ECOSYSTEM/CONTINUE_VSCODE_SETUP.md.",
+    "NOTE: autocomplete uses the 'fim' model; until a real FIM GGUF is set (GGUF_FIM_MODEL) it",
+    "falls back to the 4B model (functional but not true fill-in-middle)."
+  ],
+  "models": [
+    {
+      "title": "ST4I Code (Qwen3-30B-A3B)",
+      "provider": "openai",
+      "model": "code",
+      "apiBase": "http://localhost:3000/v1",
+      "apiKey": "REPLACE_WITH_OPENAI_GATEWAY_API_KEY"
+    },
+    {
+      "title": "ST4I Fast (Qwen3-4B)",
+      "provider": "openai",
+      "model": "fast",
+      "apiBase": "http://localhost:3000/v1",
+      "apiKey": "REPLACE_WITH_OPENAI_GATEWAY_API_KEY"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "ST4I Autocomplete (FIM)",
+    "provider": "openai",
+    "model": "fim",
+    "apiBase": "http://localhost:3000/v1",
+    "apiKey": "REPLACE_WITH_OPENAI_GATEWAY_API_KEY"
+  },
+  "embeddingsProvider": {
+    "provider": "openai",
+    "model": "embed",
+    "apiBase": "http://localhost:3000/v1",
+    "apiKey": "REPLACE_WITH_OPENAI_GATEWAY_API_KEY"
+  },
+  "systemMessage": "You are the ST4I automation-programming assistant for PLC (IEC 61131-3), robot (KAREL/RAPID/MELFA/URScript) and Zmotion code. Only answer from provided documentation; cite the manual + page. Always add a safety-test warning: generated code MUST be reviewed and simulated before running on real equipment. NEVER author safety functions (E-stop, interlock, light-curtain, SIL/PL) — those are for a certified engineer on a certified safety controller."
+}

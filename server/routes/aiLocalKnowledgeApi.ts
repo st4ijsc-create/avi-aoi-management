@@ -15,6 +15,11 @@ import {
   type KbLanguage,
 } from "../services/aiLocalKnowledgeService";
 import type { ToolExecContext, ToolLang } from "../services/aiLocalTools";
+// P3/D8 (doc 34) — vision-in-chat. describeImage routes to the Qwen3-VL llama-server
+// sidecar (load-on-demand); isVisionSidecarAvailable lets us degrade honestly to a
+// text-only answer when no local VL sidecar is configured (never crash the stream).
+import { describeImage } from "../services/aiGgufEngine";
+import { isVisionSidecarAvailable } from "../services/llamaVisionSidecar";
 
 // Stage 13.D — feedback log path. JSONL append-only for easy diffing &
 // future re-ingestion into KB curation.
@@ -94,6 +99,159 @@ function buildExecCtx(
     lang,
     req: { ip: req?.ip, headers: req?.headers, socket: req?.socket },
   };
+}
+
+// ─── P3/D8 (doc 34) — vision-in-chat ─────────────────────────────────────────
+// An engineer can attach a photo (ladder/LD diagram, HMI screen, wiring diagram,
+// datasheet page, or an error/alarm screen). We read it with Qwen3-VL, emit a
+// visible "vision" step, then fold the VL reading INTO the question so the normal
+// RAG + answer pipeline combines it with the vendor manuals (e.g. VL reads
+// "AL.32" → RAG looks up AL.32 in the manual → grounded answer). The reading is
+// advisory only — the existing "verify before acting" posture is unchanged.
+
+const MAX_CHAT_IMAGE_BYTES = (() => {
+  const mb = Number(process.env.CHAT_VISION_MAX_IMAGE_MB ?? 6);
+  return (Number.isFinite(mb) && mb > 0 ? mb : 6) * 1024 * 1024;
+})();
+const ACCEPTED_CHAT_IMAGE_MIME: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+interface ParsedChatImage {
+  buffer: Buffer;
+  mime: string;
+}
+
+/** Language for the VL prompt/answer — mirrors buildExecCtx's heuristic. */
+function detectChatLang(question: string, context?: KbQueryContext): KbLanguage {
+  if (/[一-鿿]/.test(question)) return "zh";
+  if (/[À-ỹ]/.test(question)) return "vi";
+  return context?.uiLanguage ?? "vi";
+}
+
+/**
+ * Parse an optional inline image (base64 data URL, or bare base64 + a mimeType
+ * hint) from the request body. Returns the decoded buffer on success, an { error }
+ * code on a validation failure, or null when no image was supplied. NEVER throws.
+ */
+function parseInlineImage(
+  raw: unknown,
+  mimeHint: unknown,
+): ParsedChatImage | { error: "type" | "size" | "decode" } | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  let b64 = raw.trim();
+  let mime = typeof mimeHint === "string" ? mimeHint.toLowerCase().trim() : "";
+  const m = b64.match(/^data:([a-z0-9.+/-]+);base64,(.*)$/is);
+  if (m) {
+    mime = m[1].toLowerCase();
+    b64 = m[2];
+  }
+  b64 = b64.replace(/\s/g, "");
+  if (!b64) return null;
+  if (!mime) mime = "image/png";
+  if (!ACCEPTED_CHAT_IMAGE_MIME.has(mime)) return { error: "type" };
+  // Cheap upper-bound on the base64 string before allocating the buffer.
+  if (b64.length > Math.ceil((MAX_CHAT_IMAGE_BYTES * 4) / 3) + 16) {
+    return { error: "size" };
+  }
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(b64, "base64");
+  } catch {
+    return { error: "decode" };
+  }
+  if (buffer.length === 0) return null;
+  if (buffer.length > MAX_CHAT_IMAGE_BYTES) return { error: "size" };
+  return { buffer, mime };
+}
+
+function buildVisionPrompt(question: string, lang: KbLanguage): string {
+  const q = question.trim();
+  if (lang === "zh") {
+    return [
+      "你是自动化工程师。请仔细阅读这张技术图片（可能是梯形图/LD、HMI 画面、接线图、数据手册页面，或报错/报警画面）。",
+      "准确提取图中真实可见的内容：报警/错误代码（如 AL.32、ERR、E-052）、信号标签/名称、参数数值、梯形逻辑、接线关系。",
+      "只描述图中确实存在的内容，不要臆测。",
+      q ? `用户的问题：“${q}”。请聚焦相关部分。` : "",
+    ].filter(Boolean).join("\n");
+  }
+  if (lang === "vi") {
+    return [
+      "Bạn là kỹ sư tự động hóa. Hãy đọc kỹ hình ảnh kỹ thuật này (có thể là sơ đồ ladder/LD, màn hình HMI, sơ đồ đấu dây, trang datasheet, hoặc màn hình báo lỗi/alarm).",
+      "Trích xuất CHÍNH XÁC những gì thực sự nhìn thấy: mã lỗi/alarm (vd AL.32, ERR, E-052), nhãn/tên tín hiệu, giá trị thông số, logic ladder, cách đấu dây.",
+      "Chỉ mô tả những gì thực sự có trong ảnh, KHÔNG suy diễn.",
+      q ? `Người dùng hỏi: “${q}”. Hãy tập trung vào phần liên quan.` : "",
+    ].filter(Boolean).join("\n");
+  }
+  return [
+    "You are an automation engineer. Carefully read this technical image (it may be a ladder/LD diagram, an HMI screen, a wiring diagram, a datasheet page, or an error/alarm screen).",
+    "Extract EXACTLY what is actually visible: alarm/error codes (e.g. AL.32, ERR, E-052), signal labels/names, parameter values, ladder logic, wiring.",
+    "Only describe what is truly present in the image; do NOT speculate.",
+    q ? `The user asks: “${q}”. Focus on the relevant part.` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function augmentQuestionWithVision(
+  question: string,
+  visionText: string,
+  lang: KbLanguage,
+): string {
+  const header =
+    lang === "zh"
+      ? "[附加图片内容 — 由视觉模型 Qwen3-VL 读取]"
+      : lang === "vi"
+        ? "[Nội dung ảnh đính kèm — do thị giác máy Qwen3-VL đọc]"
+        : "[Attached image content — read by the Qwen3-VL vision model]";
+  return `${question}\n\n${header}:\n${visionText}`.trim();
+}
+
+export interface ChatVisionNote {
+  ok: boolean;
+  visionText?: string;
+  reason?: "type" | "size" | "decode" | "unavailable" | "empty" | "error";
+}
+
+/**
+ * If an image is attached, read it with Qwen3-VL and fold the reading into the
+ * question. Returns the (possibly augmented) question plus a UI note describing
+ * the vision step. Fail-safe: any problem degrades to the original question with
+ * a note — it NEVER throws, so the chat always continues text-only.
+ */
+async function applyChatVision(
+  question: string,
+  imageRaw: unknown,
+  mimeHint: unknown,
+  lang: KbLanguage,
+): Promise<{ effectiveQuestion: string; vision: ChatVisionNote | null }> {
+  const parsed = parseInlineImage(imageRaw, mimeHint);
+  if (parsed === null) return { effectiveQuestion: question, vision: null };
+  if ("error" in parsed) {
+    return { effectiveQuestion: question, vision: { ok: false, reason: parsed.error } };
+  }
+  if (!isVisionSidecarAvailable()) {
+    return { effectiveQuestion: question, vision: { ok: false, reason: "unavailable" } };
+  }
+  try {
+    const maxTokensRaw = Number(process.env.CHAT_VISION_MAX_TOKENS ?? 512);
+    const result = await describeImage({
+      image: parsed.buffer,
+      prompt: buildVisionPrompt(question, lang),
+      language: lang === "vi" ? "vi" : "en",
+      maxTokens: Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 512,
+      temperature: 0.1,
+    });
+    const visionText = (result.text ?? "").trim();
+    if (!visionText) return { effectiveQuestion: question, vision: { ok: false, reason: "empty" } };
+    return {
+      effectiveQuestion: augmentQuestionWithVision(question, visionText, lang),
+      vision: { ok: true, visionText },
+    };
+  } catch (err: any) {
+    console.warn("[aiLocalKnowledge] chat vision failed (non-fatal):", err?.message ?? err);
+    return { effectiveQuestion: question, vision: { ok: false, reason: "error" } };
+  }
 }
 
 function chunkAnswerForStream(answer: string): string[] {
@@ -188,8 +346,18 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       const userRole = parseUserRole(req.body?.userRole);
       const context = parseContext(req.body?.context);
       const execCtx = buildExecCtx(user as any, req, question, context);
-      const data = await answerQuestion(question, topK, history, userRole, context, execCtx);
-      res.json({ success: true, data });
+      // P3/D8 (doc 34) — optional attached image: read via Qwen3-VL, fold into the
+      // question so the answer combines the VL reading with manual RAG. Degrades to
+      // a text-only answer (with a note) if VL is unavailable.
+      const lang = detectChatLang(question, context);
+      const { effectiveQuestion, vision } = await applyChatVision(
+        question,
+        req.body?.image,
+        req.body?.imageMimeType,
+        lang,
+      );
+      const data = await answerQuestion(effectiveQuestion, topK, history, userRole, context, execCtx);
+      res.json({ success: true, data: { ...data, vision } });
     } catch (error: any) {
       res.status(500).json({
         success: false,
@@ -239,6 +407,26 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     });
 
     try {
+      // P3/D8 (doc 34) \u2014 if an image is attached, read it with Qwen3-VL FIRST and
+      // fold the reading into the question. Emit a visible `vision` step so the
+      // user sees what the model read. Fail-safe: degrades to a text-only answer
+      // (with a note) on any problem \u2014 it never aborts the stream.
+      const lang = detectChatLang(question, context);
+      const { effectiveQuestion, vision } = await applyChatVision(
+        question,
+        req.body?.image,
+        req.body?.imageMimeType,
+        lang,
+      );
+      if (vision && !closed) {
+        send({
+          type: "vision",
+          ok: vision.ok,
+          visionText: vision.visionText ?? null,
+          reason: vision.reason ?? null,
+        });
+      }
+
       // Real token streaming: stream the LLM output as it's generated so
       // the user sees the first words within ~1-2s instead of waiting for
       // the entire answer. `streamAnswer` runs the full pipeline (tool +
@@ -251,7 +439,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       let cached = false;
       let structured: Record<string, unknown> | undefined;
 
-      for await (const evt of streamAnswer(question, topK, history, userRole, context, execCtx)) {
+      for await (const evt of streamAnswer(effectiveQuestion, topK, history, userRole, context, execCtx)) {
         if (closed) return;
         switch (evt.type) {
           case "meta":

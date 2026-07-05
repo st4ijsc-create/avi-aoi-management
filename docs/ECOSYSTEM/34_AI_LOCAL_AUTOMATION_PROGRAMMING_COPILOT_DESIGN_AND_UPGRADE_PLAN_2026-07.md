@@ -5,7 +5,7 @@
 |---|---|
 | **Mã tài liệu** | ECOSYSTEM-34 |
 | **Ngày** | 2026-07-05 |
-| **Trạng thái** | 🟢 **P0 + P1 + P2 XONG & VALIDATED** 2026-07-05 (tsc 0, tests pass, codegen E2E 5/5, flags ON). P3/P4 chờ duyệt. Xem §Nhật ký thực thi. |
+| **Trạng thái** | 🟢 **P0–P3 XONG & VALIDATED** 2026-07-05 (tsc 0, codegen E2E 5/5, gateway live 5/5, IDE+copilot+ảnh-chat). Còn P3-role `engineer` (hoãn, cần duyệt) + P4. Xem §Nhật ký thực thi. |
 | **Nguồn đối chiếu** | `D:\SOURCES\AI Local\AI_Local_Lap_trinh_Tu_dong_hoa.docx` (bản `AI-LOCAL-SDD-001 v1.0`, 04/07/2026) |
 | **Phương pháp** | 6 agent khảo sát song song mã nguồn hiện tại (engine, RAG, code-authoring, agent/tools, UX/IDE, MLOps) + đối chiếu từng lớp với báo cáo |
 | **Kế thừa** | doc 03 (AI brain design), doc 04 (AI nextgen), doc 06 (Technician Copilot), doc 09 (Device Programming), doc 16 (Automation Orchestration), doc 24 (Advanced Capabilities), doc 25 (Machine Control Tier) |
@@ -388,8 +388,16 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 - **Flags ON** (.env): AI_PROGRAMMING_COPILOT_ENABLED=true, PROG_KB_ENABLED=true, AI_CODE_ROUTER_ENABLED=true, PROG_CODEGEN_VALIDATE_REQUIRED=true. Gateway vẫn OFF (chờ live smoke).
 - **Ghi chú chất lượng:** một số ST/IR validation.ok=false (30B-Instruct chung, chưa phải coder-model chuyên) — substrate bắt được, an toàn. Tải Qwen3-Coder-30B (D2, P4) sẽ tăng tỉ lệ hợp-lệ-first-pass.
 
-### CHƯA làm (đúng kế hoạch — chờ wave sau)
-- **P3** (Monaco in-app + VS Code/Continue + ảnh-vào-chat + role `engineer`) · **P4** (eval code/QLoRA→GGUF/ops + tải Qwen3-Coder). Gateway live-smoke (bật OPENAI_GATEWAY_ENABLED+key + curl).
+### P3 — Trải nghiệm IDE (BUILT & GREEN, committed sau P2)
+- **Gateway LIVE 5/5** (`scripts/ai-bench/smoke-gateway.ts`): /v1/models, /v1/chat/completions ("PONG"), /v1/completions (FIM), /v1/embeddings (dim=1024), 401-no-bearer. **Bắt 2 bug thật** mà unit-test (mock engine) không thấy: double `.gguf` trong `resolveModelId` + đường embeddings default → fix trong `openaiGateway.ts`. → Continue/VS Code nối thật được.
+- **VS Code + Continue (D5)**: `.continue/config.json` (trỏ gateway :3000, model code/fast/fim/embed + system-prompt an toàn) + `docs/ECOSYSTEM/CONTINUE_VSCODE_SETUP.md`. Autocomplete=fim (nay fallback 4B; tải FIM model để chuẩn hơn).
+- **In-app Programming Copilot**: `ProgrammingCopilotPanel.tsx` + page `/programming-copilot` + nhúng `EngineeringWorkspace` (Apply→chèn code, contextCode từ editor). Gọi `programming.copilotGenerate` → code + badge validation + citations (vendor/doc/trang) + refusal an toàn. AIHub card + nav + i18n vi/en/zh. Dependency-free (không Monaco — inline-autocomplete để Continue lo).
+- **Ảnh vào chat (D8)**: attach/paste ảnh (ladder/HMI/datasheet/màn lỗi) → backend `aiLocalKnowledgeApi` gọi `describeImage` (Qwen3-VL) → augment câu hỏi → RAG/answer; SSE "🖼️ Ảnh đã đọc (VL)"; degrade text-only nếu VL offline. Cap 6MB png/jpg/webp.
+- tsc union 0; locale vi/en/zh valid.
+
+### CHƯA làm
+- **P3 role `engineer` (D6) — HOÃN, cần bạn duyệt:** `roleEnum` là pgEnum (~100 ref landing/permissions/RLS); `ALTER TYPE ADD VALUE` **khó revert** (postgres không drop enum value). Copilot đã chạy bằng RBAC `machine_monitoring` + persona `engineer`. Nên làm pass riêng, test auth kỹ, sau khi bạn OK.
+- **P4**: eval code (syntax/compile-pass, precision@k) + QLoRA→GGUF + **tải Qwen3-Coder-30B** (tăng first-pass validity) + FIM model + engine load-order hardening (defrag/ưu tiên nạp model lớn — latent, ảnh cả ops-AI). Gateway đã live-smoke; bật `OPENAI_GATEWAY_ENABLED`+key khi go-live.
 
 ---
 

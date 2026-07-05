@@ -4910,6 +4910,8 @@
     "irEditorDesc": "Soạn chương trình chuyển động/IO thành các khối IR, kiểm tra an toàn & chuyển mã (URScript/ROS2); việc deploy vẫn là bước riêng có kiểm soát",
     "pouStudio": "Studio POU IEC 61131",
     "pouStudioDesc": "POU LAD/FBD/SFC có cấu trúc, xuất/nhập PLCopen XML, kiểm tra ngữ nghĩa và xem trước chuyển mã sang ST (chỉ chạy trên runtime mở)",
+    "programmingCopilot": "Trợ lý Lập trình",
+    "programmingCopilotDesc": "AI sinh, hoàn thiện, dịch, rà soát & giải thích mã thiết bị — bám tài liệu hãng, kiểm tra qua lớp an toàn; chỉ hiển thị (không có đường xuống thiết bị)",
     "factoryLiveMap": "Bản đồ nhà máy 3D",
     "factoryLiveMapDesc": "Sàn nhà máy 3D, máy tô màu theo trạng thái live (digital shadow), bấm drill-down xuống cụm",
     "fieldDevices": "Trừu tượng hoá thiết bị hiện trường",
@@ -5258,6 +5260,7 @@
       "orchestrationStudio": "Thiết kế luồng sản xuất tự động từng bước qua nhiều máy (xem trước)",
       "irEditor": "Trình soạn thảo trực quan để viết và chuyển đổi chương trình thiết bị — cho kỹ sư (xem trước)",
       "pouStudio": "Soạn thảo LAD/FBD/SFC IEC 61131 có cấu trúc, trao đổi PLCopen XML — cho kỹ sư (xem trước)",
+      "programmingCopilot": "Nhờ AI viết hoặc giải thích mã thiết bị — cho kỹ sư; bạn rà soát và mô phỏng trước khi dùng (xem trước)",
       "fleetOrchestration": "Giao việc cho robot/AGV di động và quản lý luồng di chuyển, sạc pin (xem trước)",
       "safetyWorkforce": "Tổng quan an toàn tư vấn và bảng phân ca/nhân lực (xem trước)",
       "equipmentStandards": "Chuẩn loại thiết bị toàn công ty và cách đặt tên cảnh báo chuẩn (xem trước)",
@@ -9390,6 +9393,10 @@
         "title": "Trợ lý Kỹ thuật",
         "desc": "AI chẩn đoán nguyên nhân lỗi và đề xuất cách sửa — kỹ thuật duyệt một chạm"
       },
+      "programmingCopilot": {
+        "title": "Trợ lý Lập trình",
+        "desc": "AI sinh, hoàn thiện, dịch, rà soát & giải thích mã thiết bị — bám tài liệu hãng và kiểm tra qua lớp an toàn"
+      },
       "performance": {
         "title": "Hiệu Năng Mô Hình",
         "desc": "Theo dõi độ chính xác, thống kê suy luận và lịch sử phiên bản"
@@ -9511,7 +9518,16 @@
     "recommendationsTitle": "Khuyến nghị",
     "sourcesCount": "{{count}} nguồn",
     "stepsTitle": "Các bước thực hiện",
-    "streaming": "Đang stream..."
+    "streaming": "Đang stream...",
+    "attachImage": "Đính kèm ảnh (sơ đồ, HMI, màn hình lỗi…)",
+    "removeImage": "Bỏ ảnh",
+    "imageAttached": "Đã đính kèm ảnh",
+    "imageDefaultPrompt": "Ảnh này cho thấy gì? Hãy giải thích.",
+    "imageTooLarge": "Ảnh quá lớn (tối đa {{max}} MB).",
+    "imageTypeInvalid": "Ảnh không hợp lệ. Dùng PNG, JPG hoặc WebP.",
+    "imageReadError": "Không đọc được ảnh. Vui lòng thử lại.",
+    "visionReading": "Ảnh đã đọc (VL)",
+    "visionUnavailable": "Không đọc được ảnh (thị giác không khả dụng) — trả lời chỉ dựa trên văn bản."
   },
   "aiGuided": {
     "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",
@@ -9580,6 +9596,56 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} ngày",
     "latestInsight": "Khuyến nghị mới nhất"
+  },
+  "progCopilot": {
+    "title": "Trợ lý Lập trình",
+    "subtitle": "AI soạn, hoàn thiện, dịch, rà soát và giải thích mã thiết bị — bám tài liệu hãng và được kiểm tra qua lớp an toàn. Bạn duyệt, mô phỏng và ký xác nhận.",
+    "whenToUse": "Soạn hoặc hiểu nhanh mã thiết bị. Để build, mô phỏng và deploy, hãy đưa mã vào Xưởng lập trình thiết bị.",
+    "cardTitle": "Sinh mã thiết bị",
+    "cardSubtitle": "Chọn loại chương trình, chế độ và (tùy chọn) hãng, mô tả yêu cầu rồi sinh mã.",
+    "embedTitle": "Trợ lý Lập trình AI",
+    "beta": "Beta",
+    "kind": "Loại chương trình",
+    "mode": "Chế độ",
+    "vendor": "Hãng",
+    "vendorAny": "Tự động (mọi hãng)",
+    "targetKind": "Dịch sang",
+    "request": "Yêu cầu",
+    "focus": "Trọng tâm (tùy chọn)",
+    "requestPh": "Mô tả cần sinh gì — ví dụ: bộ lọc trung bình trượt trên D100 lấy mẫu mỗi 100 ms",
+    "contextCode": "Mã hiện có (ngữ cảnh)",
+    "contextPh": "Dán chương trình cần hoàn thiện / dịch / rà soát / giải thích…",
+    "syncEditor": "Đồng bộ từ editor",
+    "generate": "Sinh mã",
+    "generating": "Đang sinh…",
+    "modes": {
+      "generate": "Sinh mã",
+      "complete": "Hoàn thiện",
+      "translate": "Dịch",
+      "review": "Rà soát",
+      "explain": "Giải thích"
+    },
+    "defaults": {
+      "complete": "Hoàn thiện chương trình này.",
+      "translate": "Dịch chương trình này, giữ nguyên hành vi.",
+      "review": "Rà soát chương trình này về tính đúng đắn và vấn đề.",
+      "explain": "Giải thích chương trình này làm gì."
+    },
+    "refusedTitle": "Từ chối vì an toàn",
+    "resultCode": "Mã đã sinh",
+    "validationOk": "Đã kiểm tra hợp lệ",
+    "validationFail": "Kiểm tra không đạt",
+    "citations": "Nguồn",
+    "explanation": "Giải thích",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "apply": "Chèn vào editor",
+    "inserted": "Đã chèn mã sinh ra vào editor",
+    "idleHint": "Chọn tùy chọn và bấm Sinh mã để xem mã AI gợi ý ở đây.",
+    "needRequest": "Hãy mô tả bạn muốn sinh gì.",
+    "needContext": "Hãy dán chương trình cần rà soát / giải thích trước.",
+    "safetyReminder": "Mã do AI sinh — hãy rà soát, kiểm tra và mô phỏng trước khi chạy trên thiết bị thật. Trợ lý không bao giờ soạn logic an toàn (E-stop / interlock / SIL).",
+    "failed": "Sinh mã thất bại"
   },
   "technicianCopilot": {
     "title": "Trợ lý Kỹ thuật",
