@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNAPSE Machine Edition — single-node "collapsed" profile (doc 33 §3.1 / F1, ADR-007).
+#
+# ONE codebase, gập xuống 1 IPC bán kèm 1 máy (OEM). So với docker-compose.yml (Site):
+#   • KHÔNG EMQX cluster       → broker MQTT NHÚNG (Aedes in-process). Không set UNS_BROKER_URL.
+#   • KHÔNG timescaledb riêng   → time-series degrade về DB chính (image ts-ha đã có timescaledb).
+#   • Chỉ 3 service: postgres (ts-ha) + redis + app. Redis giữ cho BullMQ/outbox.
+#   • EDITION=machine + INFRA_PROFILE=embedded → /edition API + startup log báo đúng hình thái.
+#
+# Chạy:  docker compose -f deploy/compose/docker-compose.machine.yml --env-file .env up -d
+#
+# ⚠️ An toàn: đây là hồ sơ triển khai; entitlement thật vẫn do LICENSE quyết định (edition
+#    machine chỉ BOUND module/quota — xem shared/editions.ts). Không mở control path mới.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg17 # timescaledb + pgvector (cùng image Site)
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aoi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aoi}
+      POSTGRES_DB: ${POSTGRES_DB:-aoi_management}
+    volumes:
+      - pgdata_ts:/home/postgres/pgdata/data
+      - ../postgres-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aoi} -d ${POSTGRES_DB:-aoi_management}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Migration một lần trên DB chính (bao gồm hypertable timescale của doc 27 — image ts-ha).
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-aoi}:${POSTGRES_PASSWORD:-aoi}@postgres:5432/${POSTGRES_DB:-aoi_management}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        node scripts/migrate-standalone.mjs || echo "[migrate] một số file legacy/idempotent báo lỗi (dự kiến) — xác minh schema cốt lõi...";
+        ok=$$(psql "$$DATABASE_URL" -tAc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.production_sessions') IS NOT NULL THEN 1 ELSE 0 END");
+        if [ "$$ok" = "1" ]; then echo "[migrate] schema cốt lõi OK"; else echo "[migrate] LỖI: thiếu bảng cốt lõi"; exit 1; fi
+
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+      # ── SYNAPSE edition profile (F1) ──
+      EDITION: machine
+      INFRA_PROFILE: embedded
+
+      # ── Mạng nội bộ docker ──
+      DATABASE_URL: postgres://${POSTGRES_USER:-aoi}:${POSTGRES_PASSWORD:-aoi}@postgres:5432/${POSTGRES_DB:-aoi_management}
+      REDIS_URL: redis://redis:6379
+      # Embedded broker: KHÔNG set UNS_BROKER_URL → Aedes in-process. Time-series degrade
+      # về DB chính: KHÔNG set TSDB_URL (dual-DB tự fallback về main — honest degrade).
+
+      LOCAL_STORAGE_DIR: /app/uploads
+      LICENSE_FILE_PATH: /app/license.lic
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SIGNOFF_SECRET: ${SIGNOFF_SECRET:?set SIGNOFF_SECRET in .env}
+      MASTER_API_KEY: ${MASTER_API_KEY:?set MASTER_API_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    volumes:
+      - appuploads:/app/uploads
+      - appbackups:/app/backups
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pgdata_ts:
+  redisdata:
+  appuploads:
+  appbackups:

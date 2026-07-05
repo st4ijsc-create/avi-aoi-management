@@ -3,7 +3,7 @@
 > **Đầu vào:** báo cáo tham khảo **SYNAPSE** (`D:\SOURCES\SYNAPSE\`) gồm (1) Bản thiết kế chi tiết hệ thống *SYN-RAOE-SDD-001 v1.0* (16 chương, 12 thành phần cốt lõi) và (2) Kế hoạch phát triển phần mềm *SYN-RAOE-DEVPLAN-001* (3 edition, 3 ADR, release train R0–R4).
 > **Đối chiếu với:** hệ **AVI/AOI Management** thực tế (React 19 + tRPC v11 + Drizzle/PostgreSQL 17 + TimescaleDB · MQTT Aedes/EMQX · local-LLM Qwen3 trên RTX 5090 · Docker) — branch `automation-orchestration-r0`.
 > **Phương pháp:** 6 agent audit đọc-chỉ song song (kiểm chứng code thật, trích dẫn file) + kế thừa doc 16/18/21/22/24/27.
-> **Ngày:** 2026-07-05 · **Tác giả:** Principal Systems Architect · **Trạng thái:** 🟡 *Draft — chờ DUYỆT trước khi gọi agent thực thi (§5).*
+> **Ngày:** 2026-07-05 · **Tác giả:** Principal Systems Architect · **Trạng thái:** 🟢 *ĐÃ DUYỆT (§5B) — đang thực thi Đợt Nền tảng trong git worktree riêng `../avi-aoi-synapse` (branch `synapse-foundation`), tách khỏi phiên doc-32. Nhật ký: §7.*
 
 ---
 
@@ -316,4 +316,26 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Bước kế tiếp:** bạn duyệt **§5** → tôi chốt phạm vi/thứ tự → gọi agent thực thi.
 
 ---
-*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · mọi con số maturity là framework-level, trích dẫn file trong §2 · chờ phê duyệt §5.*
+
+## 7. NHẬT KÝ THỰC THI (append-only)
+
+**Git-hygiene + isolation (2026-07-05):** commit checkpoint `e17d205` toàn bộ working tree tồn đọng (doc 25/26/27/31, đã lọc secrets/APK/test-results; gate `tsc --noEmit` exit 0) trên `automation-orchestration-r0`. Phát hiện **một phiên song song đang thực thi doc-32 (reporting/export) trong CÙNG working tree**; theo quyết định của chủ sở hữu, **tách git worktree riêng** cho SYNAPSE: main tree trả về `automation-orchestration-r0` (doc-32 nguyên vẹn), công việc SYNAPSE chuyển sang worktree **`../avi-aoi-synapse`** (branch `synapse-foundation`, node_modules junction + .env sao chép). Migration mới bắt đầu `0202` (lưu ý: doc-32 đã dùng 0202 ở tree kia — SYNAPSE sẽ đánh số tránh trùng khi cần migration).
+
+### ✅ F1 (P1) — Edition & Collapsible Deploy — 2026-07-05
+**Phạm vi giao:** hạ tầng "gập được" cấp descriptor + hồ sơ triển khai, **non-breaking / advisory** (EDITION mặc định = `site` = hành vi cũ y nguyên). KHÔNG migration.
+**Đã làm:**
+- `shared/editions.ts` — descriptor 3 edition (machine/line/site) + semantics: edition **BOUND** license (module ceiling + quota clamp + infra default), không bao giờ cấp vượt license; core luôn cho phép. Helpers `getEdition/resolveEditionModules/clampQuota/isModuleAllowedInEdition`. Treo lên `module-registry` (một artifact, nhiều khóa).
+- `server/_core/deploymentProfile.ts` — resolver edition + infra profile từ env, suy ra broker (embedded-aedes/external-emqx) + time-series (main-db/dedicated-timescale) thật; `describeDeployment()` cho startup log.
+- `server/routers/editionRouter.ts` (READ-ONLY `current`/`list`) + đăng ký vào `appRouter` (`edition:`).
+- Startup log `[edition] …` trong `server/_core/index.ts` (dynamic import, non-breaking).
+- `deploy/compose/docker-compose.machine.yml` — Machine single-node "collapsed" (postgres ts-ha + redis + app; **không EMQX, không TSDB riêng**; broker nhúng; TS degrade→main).
+- `deploy/EDITIONS.md` (ma trận + cách chạy + upgrade path) · `deploy/helm/README.md` + `deploy/k3s/README.md` (scaffold Site/edge).
+- `.env.example` — block `EDITION` / `INFRA_PROFILE` / `EDITION_PROFILE` (mặc định site/advisory).
+- Tests: `server/_core/editions.test.ts` (12) + `server/_core/deploymentProfile.test.ts` (8) — **20/20 xanh** (đặt dưới `server/` vì vitest include chỉ `server/**` + `client/src/**`).
+**Gate:** `tsc --noEmit` exit 0 · 20/20 test xanh. Flag `EDITION_PROFILE=false` (advisory).
+**Còn lại của P1 (đợt sau):** enforce module-ceiling/quota trong license-middleware (advisory → cưỡng chế) · hợp nhất ~110 env-flag operational vào registry · Helm/K3s HA manifests thật · Join wizard + UNS bridge (mDNS) · CI 2-profile smoke · client edition badge (dùng `trpc.edition.current`).
+
+**Kế tiếp:** F2 (P3) Plugin Manifest & SDK v1.
+
+---
+*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*

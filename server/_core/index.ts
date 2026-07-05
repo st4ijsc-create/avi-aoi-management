@@ -5078,7 +5078,14 @@ async function startServer() {
 
   server.listen(port, () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
-    
+
+    // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
+    import("./deploymentProfile")
+      .then(({ describeDeployment, resolveDeploymentProfile }) => {
+        logger.info({ deployment: resolveDeploymentProfile() }, describeDeployment());
+      })
+      .catch(() => {});
+
     // Initialize cache warming service
     cacheWarmingService.initialize().catch(err => {
       logger.error({ err }, '[CacheWarming] Failed to initialize');

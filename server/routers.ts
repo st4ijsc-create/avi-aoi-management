@@ -70,6 +70,7 @@ import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
 import { reportAggregatorsRouter } from "./routers/reportAggregatorsRouter"; // Wave R1 (doc 32): defect-category Pareto / yield-by-product / yield-trend-by-week
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
+import { editionRouter } from "./routers/editionRouter"; // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment-profile info
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -501,6 +502,7 @@ export const appRouter = router({
 
   // License Management
   license: licenseRouter,
+  edition: editionRouter, // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment profile
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,
