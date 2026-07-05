@@ -1,4 +1,6 @@
-# 34 — SYNAPSE Flag-Flip & Activation Runbook (C1)
+# 35 — SYNAPSE Flag-Flip & Activation Runbook (C1)
+
+> *(Numbered 35: doc 34 is the concurrent "AI Local Programming Copilot" plan in the main tree.)*
 
 > doc 33 §5B decision-flow / C1. How to safely turn ON the SYNAPSE capabilities built in doc 33
 > (foundation F1–F8, integration I1–I6, remaining H4/H6/P6/W4). Every flag ships **OFF**; this is
