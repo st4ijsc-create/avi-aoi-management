@@ -31,15 +31,17 @@ import {
   Save,
   List,
   X,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Layers
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
 import { AISuggestionsPanel } from "@/components/AISuggestionsPanel";
+import { DispositionPanel } from "@/components/DispositionPanel";
 import { useIsReadOnly, ViewOnlyBadge } from "@/components/PermissionGate";
-import { Tag } from "lucide-react";
+import { Tag, Star } from "lucide-react";
 
 interface MeasurementPoint {
   id: number;
@@ -137,6 +139,32 @@ export default function InspectionDetail() {
     { enabled: !!data?.inspection?.productModel }
   );
 
+  // W8-B (doc 29 §2.3) — "Board i/n" chip: when the machine reported a panel
+  // boardIndex (0192), resolve the product's ACTIVE panel def for the n-up
+  // total. Absent def → chip shows just "Board i" (honest, no fabricated n).
+  const boardIndex: number | null = (data?.inspection as { boardIndex?: number | null } | undefined)?.boardIndex ?? null;
+  const panelSerial: string | null = (data?.inspection as { panelSerial?: string | null } | undefined)?.panelSerial ?? null;
+  const { data: activePanelDef } = trpc.productPanel.getActive.useQuery(
+    { productModelId: data?.inspection?.productModelId ?? 0 },
+    { enabled: boardIndex != null && !!data?.inspection?.productModelId, retry: false, staleTime: 60_000 }
+  );
+
+  // W5-B (doc 27 F8) — ACTIVE golden reference for this product (per-ROI first,
+  // product-level fallback). Display-only surfacing: thumbnail + version badge
+  // in the compare dialog. Automatic golden-diff wiring is Đợt 7.4 (gap V8).
+  const goldenQuery = trpc.goldenSample.getActiveForKey.useQuery(
+    {
+      productCode: data?.inspection?.productModel || "",
+      roiKey: selectedMeasurement?.pointCode ?? undefined,
+    },
+    {
+      enabled: compareMode && !!data?.inspection?.productModel,
+      retry: false,
+      staleTime: 60_000,
+    }
+  );
+  const golden = goldenQuery.data?.found ? goldenQuery.data : undefined;
+
   const confirmNTFMutation = trpc.inspection.confirmNTF.useMutation({
     onSuccess: () => {
       toast.success(t('inspection.ntfConfirmedSuccess'));
@@ -179,9 +207,24 @@ export default function InspectionDetail() {
     classifyDefectMutation.mutate({ id: measurementId, defectCatalogId });
   };
 
+  // W7-C (doc 27 V24) — the server no longer hard-errors when the VLM is
+  // unavailable: it returns { degraded:true, message } (nothing written), so we
+  // surface the provider's honest reason and keep the button actionable.
   const analyzeWithAIMutation = trpc.measurementResult.analyzeWithAI.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data && (data as { degraded?: boolean }).degraded) {
+        toast.warning((data as { message?: string }).message || t('inspection.aiUnavailable', 'Phân tích AI hiện không khả dụng'));
+        return;
+      }
       toast.success(t('inspection.aiAnalysisComplete'));
+      // Reflect the fresh result inside the open compare dialog immediately
+      // (selectedMeasurement is a snapshot — refetch alone would not update it).
+      const { degraded: _d, ...analysis } = (data ?? {}) as Record<string, unknown>;
+      setSelectedMeasurement(prev => prev ? {
+        ...prev,
+        aiAnalysisResult: JSON.stringify(analysis),
+        aiConfidence: typeof analysis.confidence === 'number' ? String((analysis.confidence as number) / 100) : prev.aiConfidence,
+      } : prev);
       refetch();
     },
     onError: (error) => {
@@ -189,6 +232,38 @@ export default function InspectionDetail() {
     },
     onSettled: () => {
       setAnalyzingId(null);
+    },
+  });
+
+  // W7-C (doc 27 V7 — surfaced) — diff the measurement's stored image against the
+  // resolved APPROVED golden: normalize → sub-pixel align (per-golden flag) → heatmap.
+  const [goldenDiffOpen, setGoldenDiffOpen] = useState(false);
+  const goldenDiffMutation = trpc.goldenSample.diffForMeasurement.useMutation({
+    onSuccess: (r) => {
+      if (!r.found) {
+        toast.warning(t('inspection.goldenDiffNoGolden', 'Không có golden đã duyệt cho sản phẩm/ROI này'));
+        return;
+      }
+      setGoldenDiffOpen(true);
+    },
+    onError: (error) => {
+      toast.error(t('common.error') + ': ' + error.message);
+    },
+  });
+  const goldenDiff = goldenDiffMutation.data?.found ? goldenDiffMutation.data : undefined;
+
+  // W7-C (V24) — confirm-overwrite before re-running an existing analysis.
+  const [reanalyzeConfirmOpen, setReanalyzeConfirmOpen] = useState(false);
+
+  // W7-C (V8) — capture this OK point's image as a new golden DRAFT (server
+  // enforces quality RBAC + known-good guard; approval by a second person).
+  const captureGoldenMutation = trpc.goldenSample.captureFromInspection.useMutation({
+    onSuccess: (r) => {
+      toast.success(t('inspection.goldenCaptured', 'Đã lưu golden nháp v{{version}} — chờ người khác phê duyệt tại trang Golden samples', { version: r.version }));
+      goldenQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(t('common.error') + ': ' + error.message);
     },
   });
 
@@ -340,6 +415,18 @@ export default function InspectionDetail() {
         <PageHeader
           title={t('inspection.inspectionDetail')}
           description={`SN: ${inspection.serialNumber}`}
+          badge={
+            /* W8-B (doc 29 §2.3) — panel board chip (only when the machine reported one) */
+            boardIndex != null ? (
+              <Badge variant="outline" className="gap-1 text-xs" data-testid="board-chip">
+                <Layers className="h-3 w-3" />
+                {activePanelDef?.nUp
+                  ? t('inspection.boardChip', { index: boardIndex, total: activePanelDef.nUp })
+                  : t('inspection.boardChipNoTotal', { index: boardIndex })}
+                {panelSerial ? ` · ${panelSerial}` : ''}
+              </Badge>
+            ) : undefined
+          }
           actions={
             inspection.overallResult === "NG" && inspection.originalResult === "NG" ? (
               <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
@@ -463,6 +550,16 @@ export default function InspectionDetail() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Row 1b (W5-B, doc 27 F2): Disposition / repair loop — visible for NG/NTF
+            boards (or when disposition history exists). Create decision → walk the
+            repair lifecycle → re-inspect chip links the later same-serial inspection. */}
+        <DispositionPanel
+          inspectionId={inspectionId}
+          machineId={inspection.machineId}
+          overallResult={inspection.overallResult}
+          readOnly={readOnly}
+        />
 
         {/* Row 2: Product Image with Points (Left) + Measurement List (Right) */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -772,6 +869,62 @@ export default function InspectionDetail() {
                 </div>
               </div>
 
+              {/* W5-B (doc 27 F8) — Golden reference surfacing; W7-C (Đợt 7.4) —
+                  the approval badge is now REAL (status column, 0189) and the
+                  "So với golden" action runs the full normalize→align→diff chain
+                  against the measurement's stored image. */}
+              {golden?.reference && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border">
+                  <img
+                    src={golden.reference.thumbnailDataUrl}
+                    alt="Golden reference"
+                    className="h-16 w-16 object-contain rounded border border-border bg-secondary/40 cursor-zoom-in hover:opacity-90 transition-opacity"
+                    onClick={() => openLightbox(golden.reference.thumbnailDataUrl, t('inspection.goldenRef', 'Golden mẫu chuẩn'))}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground flex items-center gap-2 flex-wrap">
+                      <Star className="h-4 w-4 text-warning" />
+                      {t('inspection.goldenRef', 'Golden mẫu chuẩn')}
+                      <Badge variant="secondary" className="text-[10px]">v{golden.reference.version}</Badge>
+                      {golden.reference.status === 'approved' && (
+                        <Badge className="bg-success/20 text-success border-success/30 text-[10px]">
+                          {t('inspection.goldenApproved', 'ĐÃ DUYỆT')}
+                        </Badge>
+                      )}
+                      {golden.reference.active && (
+                        <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px]">
+                          {t('inspection.goldenActive', 'ACTIVE')}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {golden.matchedLevel === 'exact'
+                          ? t('inspection.goldenRoiLevel', 'Đúng ROI')
+                          : t('inspection.goldenProductLevel', 'Cấp sản phẩm')}
+                      </Badge>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {golden.reference.notes || t('inspection.goldenHint', 'So với golden: chuẩn hóa ánh sáng → căn chỉnh sub-pixel → diff heatmap.')}
+                    </p>
+                  </div>
+                  {selectedMeasurement.imageUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 shrink-0"
+                      disabled={goldenDiffMutation.isPending}
+                      onClick={() => goldenDiffMutation.mutate({ measurementResultId: selectedMeasurement.id })}
+                    >
+                      {goldenDiffMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <SplitSquareVertical className="h-4 w-4" />
+                      )}
+                      {t('inspection.goldenDiffRun', 'So với golden')}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* Measurement Details */}
               <div className="grid grid-cols-3 gap-4 p-4 bg-secondary/30 rounded-lg">
                 <div>
@@ -852,12 +1005,20 @@ export default function InspectionDetail() {
               {/* Actions */}
               <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg">
                 <div className="flex gap-2">
-                  {selectedMeasurement.imageUrl && !selectedMeasurement.aiAnalysisResult && (
+                  {/* W7-C (V24) — the analyze button no longer disappears after a
+                      result: re-analysis is allowed with confirm-overwrite. */}
+                  {selectedMeasurement.imageUrl && (
                     <Button
                       variant="outline"
                       size="sm"
                       className="gap-1"
-                      onClick={() => handleAnalyzeWithAI(selectedMeasurement.id)}
+                      onClick={() => {
+                        if (selectedMeasurement.aiAnalysisResult) {
+                          setReanalyzeConfirmOpen(true);
+                        } else {
+                          handleAnalyzeWithAI(selectedMeasurement.id);
+                        }
+                      }}
                       disabled={analyzingId === selectedMeasurement.id}
                     >
                       {analyzingId === selectedMeasurement.id ? (
@@ -865,7 +1026,27 @@ export default function InspectionDetail() {
                       ) : (
                         <Brain className="h-4 w-4" />
                       )}
-                      {t('inspection.aiAnalyze')}
+                      {selectedMeasurement.aiAnalysisResult
+                        ? t('inspection.aiReanalyze', 'Phân tích lại')
+                        : t('inspection.aiAnalyze')}
+                    </Button>
+                  )}
+                  {/* W7-C (V8) — capture-from-inspection: OK points only (server
+                      re-checks known-good + quality RBAC + SoD on approval). */}
+                  {!readOnly && selectedMeasurement.imageUrl && selectedMeasurement.result === 'OK' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 border-warning text-warning hover:bg-warning/10"
+                      disabled={captureGoldenMutation.isPending}
+                      onClick={() => captureGoldenMutation.mutate({ measurementResultId: selectedMeasurement.id })}
+                    >
+                      {captureGoldenMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Star className="h-4 w-4" />
+                      )}
+                      {t('inspection.captureGolden', 'Chụp làm golden')}
                     </Button>
                   )}
                 </div>
@@ -908,6 +1089,88 @@ export default function InspectionDetail() {
                   </Button>
                 </div>
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* W7-C (V24) — confirm-overwrite before re-analysis */}
+      <Dialog open={reanalyzeConfirmOpen} onOpenChange={setReanalyzeConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              {t('inspection.aiReanalyze', 'Phân tích lại')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('inspection.aiReanalyzeConfirm', 'Điểm đo này đã có kết quả phân tích AI. Phân tích lại sẽ GHI ĐÈ kết quả cũ. Tiếp tục?')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReanalyzeConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                setReanalyzeConfirmOpen(false);
+                if (selectedMeasurement) handleAnalyzeWithAI(selectedMeasurement.id);
+              }}
+              className="gap-2"
+            >
+              <Brain className="h-4 w-4" />
+              {t('inspection.aiReanalyze', 'Phân tích lại')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* W7-C (V7 surfaced) — golden-diff result: heatmap + diff score + alignment */}
+      <Dialog open={goldenDiffOpen && !!goldenDiff} onOpenChange={(open) => { if (!open) setGoldenDiffOpen(false); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-warning" />
+              {t('inspection.goldenDiffTitle', 'Diff với golden')}
+              {goldenDiff && (
+                <Badge variant="secondary" className="text-[10px]">
+                  v{goldenDiff.golden.version} · {goldenDiff.golden.matchedLevel === 'exact'
+                    ? t('inspection.goldenRoiLevel', 'Đúng ROI')
+                    : t('inspection.goldenProductLevel', 'Cấp sản phẩm')}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {t('inspection.goldenDiffDesc', 'Chuỗi thực: chuẩn hóa ánh sáng → căn chỉnh sub-pixel → diff pixel. Vùng đỏ = khác biệt so với golden.')}
+            </DialogDescription>
+          </DialogHeader>
+          {goldenDiff && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline">
+                  {t('inspection.goldenDiffScore', 'Điểm khác biệt')}: {goldenDiff.diffScore}%
+                </Badge>
+                <Badge variant={goldenDiff.aligned ? 'default' : 'secondary'}>
+                  {goldenDiff.aligned
+                    ? t('inspection.goldenAligned', 'Căn chỉnh OK ({{c}}%)', { c: Math.round((goldenDiff.alignment?.confidence ?? 0) * 100) })
+                    : t('inspection.goldenNotAligned', 'Không căn chỉnh')}
+                </Badge>
+                <Badge variant="secondary">
+                  {goldenDiff.normalized
+                    ? t('inspection.goldenNormalized', 'Đã chuẩn hóa ánh sáng')
+                    : t('inspection.goldenNotNormalized', 'Không chuẩn hóa')}
+                </Badge>
+              </div>
+              {!goldenDiff.aligned && goldenDiff.alignment?.reason && (
+                <p className="text-xs text-muted-foreground">
+                  {t('inspection.goldenAlignReason', 'Lý do')}: {goldenDiff.alignment.reason}
+                </p>
+              )}
+              <img
+                src={`data:image/png;base64,${goldenDiff.heatmapPngBase64}`}
+                alt="Golden diff heatmap"
+                className="max-w-full max-h-[55vh] object-contain rounded-lg border border-border mx-auto cursor-zoom-in"
+                onClick={() => openLightbox(`data:image/png;base64,${goldenDiff.heatmapPngBase64}`, t('inspection.goldenDiffTitle', 'Diff với golden'))}
+              />
             </div>
           )}
         </DialogContent>

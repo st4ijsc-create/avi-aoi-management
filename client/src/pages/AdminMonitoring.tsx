@@ -11,10 +11,11 @@ export default function AdminMonitoring() {
   const { t } = useTranslation();
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Query monitoring APIs
+  // Query monitoring APIs — real data since W4-A (drizzle client instrumented).
+  // Only slow queries (≥ SLOW_QUERY_MS) are stored individually; the old
+  // all-query "recent" feed no longer exists (bounded-memory monitor).
   const slowQueries = trpc.system.queryMonitoring.getSlowQueries.useQuery({ limit: 50 });
   const stats = trpc.system.queryMonitoring.getStats.useQuery();
-  const recentQueries = trpc.system.queryMonitoring.getRecentQueries.useQuery({ limit: 50 });
   const patterns = trpc.system.queryMonitoring.analyzePatterns.useQuery({ limit: 20 });
   const clearHistoryMutation = trpc.system.queryMonitoring.clearHistory.useMutation();
 
@@ -24,11 +25,10 @@ export default function AdminMonitoring() {
     const interval = setInterval(() => {
       slowQueries.refetch();
       stats.refetch();
-      recentQueries.refetch();
       patterns.refetch();
     }, 10000);
     return () => clearInterval(interval);
-  }, [autoRefresh, slowQueries, stats, recentQueries, patterns]);
+  }, [autoRefresh, slowQueries, stats, patterns]);
 
   const handleClearHistory = () => {
     if (confirm(t('admin.confirmClearHistory'))) {
@@ -36,7 +36,6 @@ export default function AdminMonitoring() {
         onSuccess: () => {
           slowQueries.refetch();
           stats.refetch();
-          recentQueries.refetch();
           patterns.refetch();
         },
       });
@@ -46,7 +45,6 @@ export default function AdminMonitoring() {
   const handleRefresh = () => {
     slowQueries.refetch();
     stats.refetch();
-    recentQueries.refetch();
     patterns.refetch();
   };
 
@@ -77,6 +75,14 @@ export default function AdminMonitoring() {
           </Button>
         </div>
       </div>
+
+      {/* Kill-switch banner — monitor disabled means honest "no data", not "no slow queries" */}
+      {stats.data && stats.data.enabled === false && (
+        <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {t('admin.queryMonitorOff', 'Query monitor đang TẮT (QUERY_MONITOR_ENABLED=false) — không có số liệu nào được ghi nhận.')}
+        </div>
+      )}
 
       {/* Statistics Cards */}
       {stats.data && (
@@ -121,9 +127,8 @@ export default function AdminMonitoring() {
       )}
 
       <Tabs defaultValue="slow-queries" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="slow-queries">{t('admin.slowQueries')}</TabsTrigger>
-          <TabsTrigger value="recent">{t('admin.recentQueries')}</TabsTrigger>
           <TabsTrigger value="patterns">{t('admin.queryPatterns')}</TabsTrigger>
           <TabsTrigger value="analysis">{t('admin.analysis')}</TabsTrigger>
         </TabsList>
@@ -162,47 +167,6 @@ export default function AdminMonitoring() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">{t('admin.noSlowQueries')}</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Recent Queries Tab */}
-        <TabsContent value="recent" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('admin.recentQueries')}</CardTitle>
-              <CardDescription>{t('admin.last50Queries')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {recentQueries.isLoading ? (
-                <div className="text-center py-8">{t('common.loading')}</div>
-              ) : recentQueries.data && recentQueries.data.length > 0 ? (
-                <div className="space-y-2">
-                  {recentQueries.data.map((query, idx) => (
-                    <div
-                      key={idx}
-                      className={`border rounded p-2 ${
-                        query.isSlowQuery ? 'bg-red-50 border-red-200' : 'bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <span className="font-mono text-xs text-gray-700 flex-1 break-words">
-                          {query.query}
-                        </span>
-                        <span
-                          className={`text-xs font-semibold ml-2 whitespace-nowrap ${
-                            query.isSlowQuery ? 'text-red-600' : 'text-green-600'
-                          }`}
-                        >
-                          {query.executionTime.toFixed(2)}ms
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">{t('admin.noRecentQueries')}</div>
               )}
             </CardContent>
           </Card>

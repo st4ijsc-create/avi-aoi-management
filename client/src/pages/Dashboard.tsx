@@ -99,7 +99,10 @@ type DashboardStats = {
   ok: number;
   ng: number;
   ntf: number;
+  /** Canonical FINAL yield % (NTF = pass) — decision #4 wire name. */
   yieldRate: number;
+  /** Canonical TRUE first-pass yield % (first inspection per serial). */
+  fpy: number;
 };
 
 type StatsWithComparison = {
@@ -108,6 +111,7 @@ type StatsWithComparison = {
   trends: {
     output: number;
     fpy: number;
+    finalYield: number;
     ok: number;
     ng: number;
     ntf: number;
@@ -1130,13 +1134,17 @@ export default function Dashboard() {
     Boolean(statsWithComparison) &&
     (stats?.total ?? 0) <= 0;
 
-  // Prepare sparkline data
+  // Prepare sparkline data. Doc 27 Đợt 5 / W5-E (Đợt-1.4 leftover): fpy comes
+  // from the SERVER canonical fields (getDailyStats now returns true per-day
+  // FPY + finalYield) instead of the old client-side "(ok+ntf)/total" — that
+  // formula is final yield, and mislabelling it FPY overstated the KPI.
   const sparklineData = useMemo(() => {
     if (!dailyStats || !Array.isArray(dailyStats)) return [];
     return [...(dailyStats as any[])].reverse().map((d: any) => ({
       date: d.date,
       output: d.totalProducts,
-      fpy: d.totalProducts > 0 ? ((d.okCount + d.ntfCount) / d.totalProducts) * 100 : 0,
+      fpy: Number(d.fpy) || 0,
+      finalYield: Number(d.finalYield) || 0,
     }));
   }, [dailyStats]);
 
@@ -1338,6 +1346,8 @@ export default function Dashboard() {
           links={[
             { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
             { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
+            // W5-C (doc 27 F7): open the dedicated TV board (add ?kiosk=1&cycle=30 on the TV itself).
+            { href: "/andon", labelKey: "nav.andonBoard", labelDefault: "Bảng Andon (TV)" },
           ]}
         />
 
@@ -1397,11 +1407,15 @@ export default function Dashboard() {
                   <div className="flex-1">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.fpy")}</p>
                     <div className="flex items-center gap-2 mt-1">
+                      {/* True FPY (server canonical) — was yieldRate (final yield) mislabelled as FPY */}
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                        {statsLoading ? "..." : `${stats?.fpy?.toFixed(1) || 0}%`}
                       </p>
                       <TrendIndicator value={trends?.fpy} suffix="pp" />
                     </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("dashboard.finalYield")}: {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                    </p>
                     <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">

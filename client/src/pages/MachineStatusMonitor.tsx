@@ -23,7 +23,13 @@ import {
 } from "lucide-react";
 import UptimeTimeline from "@/components/UptimeTimeline";
 import { format, formatDistanceToNow } from "date-fns";
-import { vi } from "date-fns/locale";
+import { vi, zhCN, enUS, type Locale } from "date-fns/locale";
+
+// F4 — date-fns locale follows the active UI language (same pattern as
+// MachineRegistration.tsx) instead of being hard-locked to `vi`.
+function dateFnsLocaleFor(lang: string): Locale {
+  return lang === "vi" ? vi : lang === "zh" ? zhCN : enUS;
+}
 
 type MachineWithStatus = {
   id: number;
@@ -52,19 +58,20 @@ function formatDuration(seconds: number): string {
 }
 
 function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isOnline = machine.latestStatus === 'online';
-  const lastSeen = machine.latestHeartbeat 
-    ? formatDistanceToNow(new Date(machine.latestHeartbeat), { addSuffix: true, locale: vi })
+  const lastSeen = machine.latestHeartbeat
+    ? formatDistanceToNow(new Date(machine.latestHeartbeat), { addSuffix: true, locale: dateFnsLocaleFor(i18n.language) })
     : t('machines.noData');
 
-  // Get status color based on uptime and online status
+  // F5 — status colour from semantic tokens (success/info/warning/destructive)
+  // so cards keep contrast in dark mode instead of hardcoded tailwind hues.
   const getStatusColor = () => {
-    if (!isOnline) return { border: 'border-red-500/50', bg: 'bg-red-500/5', pulse: 'bg-red-500' };
-    if (machine.uptimePercent >= 95) return { border: 'border-emerald-500/50', bg: 'bg-emerald-500/5', pulse: 'bg-emerald-500' };
-    if (machine.uptimePercent >= 80) return { border: 'border-green-500/50', bg: 'bg-green-500/5', pulse: 'bg-green-500' };
-    if (machine.uptimePercent >= 60) return { border: 'border-yellow-500/50', bg: 'bg-yellow-500/5', pulse: 'bg-yellow-500' };
-    return { border: 'border-orange-500/50', bg: 'bg-orange-500/5', pulse: 'bg-orange-500' };
+    if (!isOnline) return { border: 'border-destructive/50', bg: 'bg-destructive/5', pulse: 'bg-destructive' };
+    if (machine.uptimePercent >= 95) return { border: 'border-success/50', bg: 'bg-success/5', pulse: 'bg-success' };
+    if (machine.uptimePercent >= 80) return { border: 'border-info/50', bg: 'bg-info/5', pulse: 'bg-info' };
+    if (machine.uptimePercent >= 60) return { border: 'border-warning/50', bg: 'bg-warning/5', pulse: 'bg-warning' };
+    return { border: 'border-destructive/50', bg: 'bg-destructive/5', pulse: 'bg-destructive' };
   };
 
   const statusColor = getStatusColor();
@@ -80,29 +87,29 @@ function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick
             <div className="relative">
               {isOnline ? (
                 <>
-                  <Wifi className="h-5 w-5 text-emerald-500" />
+                  <Wifi className="h-5 w-5 text-success" />
                   <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full ${statusColor.pulse} animate-pulse`} />
                 </>
               ) : (
-                <WifiOff className="h-5 w-5 text-red-500" />
+                <WifiOff className="h-5 w-5 text-destructive" />
               )}
             </div>
             <CardTitle className="text-base">{machine.name}</CardTitle>
           </div>
           <div className="flex items-center gap-1">
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className={`text-xs ${
-                machine.uptimePercent >= 95 ? 'border-emerald-500 text-emerald-600' :
-                machine.uptimePercent >= 80 ? 'border-green-500 text-green-600' :
-                machine.uptimePercent >= 60 ? 'border-yellow-500 text-yellow-600' :
-                'border-orange-500 text-orange-600'
+                machine.uptimePercent >= 95 ? 'border-success text-success' :
+                machine.uptimePercent >= 80 ? 'border-info text-info' :
+                machine.uptimePercent >= 60 ? 'border-warning text-warning' :
+                'border-destructive text-destructive'
               }`}
             >
               {machine.uptimePercent}%
             </Badge>
             <Badge variant={isOnline ? "default" : "destructive"}>
-              {isOnline ? 'Online' : 'Offline'}
+              {isOnline ? t('machines.online') : t('machines.offline')}
             </Badge>
           </div>
         </div>
@@ -148,9 +155,10 @@ function MachineDetailDialog({
   open: boolean; 
   onOpenChange: (open: boolean) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [timeRange, setTimeRange] = useState("24");
-  
+  const dateFnsLocale = dateFnsLocaleFor(i18n.language);
+
   const { data: statusLogs } = trpc.machineStatus.getLogs.useQuery(
     { machineId: machine?.id || 0, limit: 50 },
     { enabled: !!machine }
@@ -176,9 +184,9 @@ function MachineDetailDialog({
         <DialogHeader>
           <div className="flex items-center gap-3">
             {isOnline ? (
-              <Wifi className="h-6 w-6 text-emerald-500" />
+              <Wifi className="h-6 w-6 text-success" />
             ) : (
-              <WifiOff className="h-6 w-6 text-red-500" />
+              <WifiOff className="h-6 w-6 text-destructive" />
             )}
             <div>
               <DialogTitle className="text-xl">{machine.name}</DialogTitle>
@@ -186,7 +194,7 @@ function MachineDetailDialog({
                 <span className="font-mono">{machine.code}</span>
                 <Badge variant="outline">{machine.machineType}</Badge>
                 <Badge variant={isOnline ? "default" : "destructive"}>
-                  {isOnline ? 'Online' : 'Offline'}
+                  {isOnline ? t('machines.online') : t('machines.offline')}
                 </Badge>
               </DialogDescription>
             </div>
@@ -212,14 +220,14 @@ function MachineDetailDialog({
           </div>
 
           {/* Uptime Stats */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-emerald-500" />
+                  <TrendingUp className="h-5 w-5 text-success" />
                   <div>
                     <p className="text-2xl font-bold">{uptimeStats?.uptimePercent || 0}%</p>
-                    <p className="text-xs text-muted-foreground">Uptime</p>
+                    <p className="text-xs text-muted-foreground">{t('machines.uptime')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -227,10 +235,10 @@ function MachineDetailDialog({
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <Wifi className="h-5 w-5 text-emerald-500" />
+                  <Wifi className="h-5 w-5 text-success" />
                   <div>
                     <p className="text-2xl font-bold">{formatDuration(uptimeStats?.totalOnlineTime || 0)}</p>
-                    <p className="text-xs text-muted-foreground">Online</p>
+                    <p className="text-xs text-muted-foreground">{t('machines.online')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -238,10 +246,10 @@ function MachineDetailDialog({
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
-                  <WifiOff className="h-5 w-5 text-red-500" />
+                  <WifiOff className="h-5 w-5 text-destructive" />
                   <div>
                     <p className="text-2xl font-bold">{formatDuration(uptimeStats?.totalOfflineTime || 0)}</p>
-                    <p className="text-xs text-muted-foreground">Offline</p>
+                    <p className="text-xs text-muted-foreground">{t('machines.offline')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -275,7 +283,7 @@ function MachineDetailDialog({
               </TabsTrigger>
               <TabsTrigger value="heartbeat">
                 <Activity className="h-4 w-4 mr-1" />
-                Heartbeat
+                {t('machines.heartbeat')}
               </TabsTrigger>
             </TabsList>
 
@@ -285,25 +293,27 @@ function MachineDetailDialog({
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {statusLogs && statusLogs.length > 0 ? (
                       statusLogs.map((log: any) => (
-                        <div 
-                          key={log.id} 
+                        <div
+                          key={log.id}
                           className={`flex items-center justify-between p-2 rounded ${
-                            log.status === 'online' ? 'bg-emerald-500/10' : 'bg-red-500/10'
+                            log.status === 'online' ? 'bg-success/10' : 'bg-destructive/10'
                           }`}
                         >
                           <div className="flex items-center gap-2">
                             {log.status === 'online' ? (
-                              <Wifi className="h-4 w-4 text-emerald-500" />
+                              <Wifi className="h-4 w-4 text-success" />
                             ) : (
-                              <WifiOff className="h-4 w-4 text-red-500" />
+                              <WifiOff className="h-4 w-4 text-destructive" />
                             )}
-                            <span className="font-medium capitalize">{log.status}</span>
+                            <span className="font-medium">
+                              {log.status === 'online' ? t('machines.online') : log.status === 'offline' ? t('machines.offline') : log.status}
+                            </span>
                             {log.ipAddress && (
                               <span className="text-xs text-muted-foreground">({log.ipAddress})</span>
                             )}
                           </div>
                           <span className="text-xs text-muted-foreground">
-                            {format(new Date(log.timestamp), 'dd/MM/yyyy HH:mm:ss', { locale: vi })}
+                            {format(new Date(log.timestamp), 'dd/MM/yyyy HH:mm:ss', { locale: dateFnsLocale })}
                           </span>
                         </div>
                       ))
@@ -344,7 +354,7 @@ function MachineDetailDialog({
                             )}
                           </div>
                           <span className="text-xs text-muted-foreground">
-                            {format(new Date(hb.timestamp), 'HH:mm:ss', { locale: vi })}
+                            {format(new Date(hb.timestamp), 'HH:mm:ss', { locale: dateFnsLocale })}
                           </span>
                         </div>
                       ))
@@ -420,7 +430,7 @@ export default function MachineStatusMonitor() {
   };
 
   return (
-    <DashboardLayout title="Machine Status Monitor" navItems={navItems} currentPath="/machine-status">
+    <DashboardLayout title={t('machines.statusMonitor')} navItems={navItems} currentPath="/machine-status">
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
@@ -452,8 +462,8 @@ export default function MachineStatusMonitor() {
           }
         />
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-4 gap-4">
+        {/* Summary Cards — F5 semantic tokens, F6 responsive breakpoints */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
@@ -465,24 +475,24 @@ export default function MachineStatusMonitor() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-emerald-500/50">
+          <Card className="border-success/50">
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <Wifi className="h-8 w-8 text-emerald-500" />
+                <Wifi className="h-8 w-8 text-success" />
                 <div>
-                  <p className="text-3xl font-bold text-emerald-500">{onlineMachines}</p>
-                  <p className="text-sm text-muted-foreground">Online</p>
+                  <p className="text-3xl font-bold text-success">{onlineMachines}</p>
+                  <p className="text-sm text-muted-foreground">{t('machines.online')}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card className="border-red-500/50">
+          <Card className="border-destructive/50">
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <WifiOff className="h-8 w-8 text-red-500" />
+                <WifiOff className="h-8 w-8 text-destructive" />
                 <div>
-                  <p className="text-3xl font-bold text-red-500">{offlineMachines}</p>
-                  <p className="text-sm text-muted-foreground">Offline</p>
+                  <p className="text-3xl font-bold text-destructive">{offlineMachines}</p>
+                  <p className="text-sm text-muted-foreground">{t('machines.offline')}</p>
                 </div>
               </div>
             </CardContent>
@@ -490,12 +500,12 @@ export default function MachineStatusMonitor() {
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <TrendingUp className="h-8 w-8 text-blue-500" />
+                <TrendingUp className="h-8 w-8 text-info" />
                 <div>
                   <p className="text-3xl font-bold">
                     {totalMachines > 0 ? Math.round((onlineMachines / totalMachines) * 100) : 0}%
                   </p>
-                  <p className="text-sm text-muted-foreground">Availability</p>
+                  <p className="text-sm text-muted-foreground">{t('machines.availability')}</p>
                 </div>
               </div>
             </CardContent>
@@ -533,8 +543,8 @@ export default function MachineStatusMonitor() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('common.all')}</SelectItem>
-                  <SelectItem value="online">Online</SelectItem>
-                  <SelectItem value="offline">Offline</SelectItem>
+                  <SelectItem value="online">{t('machines.online')}</SelectItem>
+                  <SelectItem value="offline">{t('machines.offline')}</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -606,7 +616,7 @@ export default function MachineStatusMonitor() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Uptime Timeline</CardTitle>
+                    <CardTitle>{t('machines.uptimeTimeline')}</CardTitle>
                     <CardDescription>{t('machines.uptimeTimelineDescription')}</CardDescription>
                   </div>
                   <Select value={timelineHours.toString()} onValueChange={(v) => setTimelineHours(Number(v))}>
@@ -763,17 +773,17 @@ export default function MachineStatusMonitor() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div className="text-center p-3 rounded-lg bg-emerald-500/10">
-                        <p className="text-2xl font-bold text-emerald-500">{exportReport.statistics.uptimePercent}%</p>
-                        <p className="text-xs text-muted-foreground">Uptime</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                      <div className="text-center p-3 rounded-lg bg-success/10">
+                        <p className="text-2xl font-bold text-success">{exportReport.statistics.uptimePercent}%</p>
+                        <p className="text-xs text-muted-foreground">{t('machines.uptime')}</p>
                       </div>
                       <div className="text-center p-3 rounded-lg bg-muted">
                         <p className="text-2xl font-bold">{formatDuration(exportReport.statistics.totalOnlineTime)}</p>
-                        <p className="text-xs text-muted-foreground">Online</p>
+                        <p className="text-xs text-muted-foreground">{t('machines.online')}</p>
                       </div>
-                      <div className="text-center p-3 rounded-lg bg-red-500/10">
-                        <p className="text-2xl font-bold text-red-500">{exportReport.statistics.offlineCount}</p>
+                      <div className="text-center p-3 rounded-lg bg-destructive/10">
+                        <p className="text-2xl font-bold text-destructive">{exportReport.statistics.offlineCount}</p>
                         <p className="text-xs text-muted-foreground">{t('machines.offlineCount')}</p>
                       </div>
                       <div className="text-center p-3 rounded-lg bg-muted">

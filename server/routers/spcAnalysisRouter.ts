@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+// Doc 31 OP2 (decision #4) — lifecycle gate for direct threshold edits.
+import { assertThresholdEditAllowed } from "../services/thresholdGovernanceService";
 import {
   generateControlChart,
   calculateCapabilityIndices,
@@ -517,7 +519,11 @@ export const spcAnalysisRouter = router({
       } else {
         defectCount = rawValues.filter(r => r.result === 'NG').length;
       }
-      const six = computeSixSigmaMetrics(defectCount, allValues.length);
+      // Gap A8: DPMO needs opportunities. This analysis is scoped to ONE
+      // measurement point, so each sample is exactly 1 evaluated
+      // measurement point → opportunitiesPerUnit = 1 (explicit, not implied).
+      // Board-level aggregations must pass the per-inspection point count.
+      const six = computeSixSigmaMetrics(defectCount, allValues.length, 1);
       const oocCount = chart.primary.points.filter(p => p.outOfControl).length;
       const oocPercent = chart.primary.points.length > 0
         ? Math.round((oocCount / chart.primary.points.length) * 10000) / 100
@@ -665,16 +671,51 @@ export const spcAnalysisRouter = router({
       target: z.number().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // Doc 31 OP2 (decision #4) — this endpoint only ever writes limits, so the
+      // lifecycle gate always applies: allowed while the product is `development`
+      // (no released program), otherwise blocked → approval queue. Throws FORBIDDEN.
+      const gate = await assertThresholdEditAllowed(input.measurementPointDefId);
+
+      const existing = await db.getMeasurementPointDefById(input.measurementPointDefId);
       const toStr = (n: number | null) => (n === null || Number.isNaN(n) ? null : String(n));
+      const after = {
+        upperLimit: toStr(input.usl),
+        lowerLimit: toStr(input.lsl),
+        nominalValue: toStr(input.target),
+      };
       await db.updateMeasurementPointDef(
         input.measurementPointDefId,
-        {
-          upperLimit: toStr(input.usl),
-          lowerLimit: toStr(input.lsl),
-          nominalValue: toStr(input.target),
-        },
+        after,
         { changedBy: (ctx as any).user?.id ?? null, changeReason: "SPC: cập nhật spec USL/LSL/Target" },
       );
+      // Doc 31 OP2 — audit the direct limit edit (before/after + gate decision).
+      try {
+        await db.createAuditLog({
+          userId: (ctx as any).user?.id ?? null,
+          userName: (ctx as any).user?.name ?? undefined,
+          action: "threshold.directEdit",
+          entityType: "measurement_point_def",
+          entityId: input.measurementPointDefId,
+          entityName: existing?.code ?? undefined,
+          details: {
+            source: "spcAnalysis.saveSpecLimits",
+            productModelId: existing?.productModelId ?? null,
+            lifecycleStatus: gate.lifecycleStatus,
+            gateDecision: gate.decision,
+            gateEnforced: gate.enforced,
+            hasReleasedProgram: gate.hasReleasedProgram,
+            before: {
+              lowerLimit: existing?.lowerLimit ?? null,
+              upperLimit: existing?.upperLimit ?? null,
+              nominalValue: existing?.nominalValue ?? null,
+            },
+            after,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (spc threshold.directEdit)", err);
+      }
       return { ok: true };
     }),
 });

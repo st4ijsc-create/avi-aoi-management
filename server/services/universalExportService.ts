@@ -1,6 +1,10 @@
 /**
  * Universal Data Export Service
  * Xuất PDF/Excel cho tất cả báo cáo theo ngôn ngữ hiện tại
+ *
+ * W5-D (doc 27 §6 A10): also hosts the PURE streaming-CSV/JSON primitives the
+ * /api/export + /api/bi routes use (csvEscape / toCsvLine / rowToCsvLine /
+ * jsonStreamChunk) — kept here so they are unit-testable without express.
  */
 import ExcelJS from "exceljs";
 
@@ -265,4 +269,41 @@ export async function generatePdfReport(options: ExportOptions): Promise<string>
   doc.text(`${labels.total}: ${data.length} ${labels.records}`, 14, finalY + 10);
 
   return doc.output("datauristring").split(",")[1]; // Return base64 only
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W5-D (doc 27 §6 A10) — streaming CSV/JSON primitives (pure, no express)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * RFC-4180 CSV field escaping: quote when the value contains a comma, quote,
+ * CR or LF; embedded quotes are doubled. null/undefined → empty field.
+ * Dates serialize as ISO-8601 (stable for BI tools, timezone-explicit).
+ */
+export function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  let s: string;
+  if (value instanceof Date) s = value.toISOString();
+  else if (typeof value === "object") s = JSON.stringify(value);
+  else s = String(value);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/** One CSV line (CRLF-terminated per RFC 4180) from already-ordered values. */
+export function toCsvLine(values: unknown[]): string {
+  return values.map(csvEscape).join(",") + "\r\n";
+}
+
+/** One CSV line from a row object, in the given column order. */
+export function rowToCsvLine(row: Record<string, unknown>, columns: readonly string[]): string {
+  return toCsvLine(columns.map((c) => row[c]));
+}
+
+/**
+ * Streaming-JSON-array chunk for one row: prefixes a comma for every row after
+ * the first, so `[` + chunks + `]` is always a valid JSON array.
+ */
+export function jsonStreamChunk(row: unknown, isFirst: boolean): string {
+  return (isFirst ? "" : ",") + JSON.stringify(row);
 }

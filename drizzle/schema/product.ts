@@ -1,6 +1,9 @@
 // Schema domain: Product tables
+import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, bigint, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { lifecycleStatusEnum, measurementTypeEnum, syncOperationEnum, syncStatusEnum } from "./enums";
+// W3-A (doc 27 M1/M6, 0180): productMachineMappings now carries real FKs to machines.
+import { machines } from "./hierarchy";
 
 /**
  * Product Model - Mẫu sản phẩm với ảnh tham chiếu
@@ -17,6 +20,15 @@ export const productModels = pgTable("product_models", {
   variant: varchar("variant", { length: 100 }), // Product variant
   // Lifecycle status
   lifecycleStatus: lifecycleStatusEnum("lifecycleStatus").default("active").notNull(),
+  // Doc 31 PM2 (decision #6, migration 0197) — free-text engineering revision
+  // (e.g. "A", "B", "Rev2"). NOT a genealogy table: revisions are created by
+  // cloning (PM1) into a new code and bumping this field. Nullable, no default.
+  revision: varchar("revision", { length: 32 }),
+  // Doc 31 PM1/PM2 (0197) — lightweight provenance. When this product was created
+  // via productModel.clone, this holds the source product's id. Plain int, NO hard
+  // FK (soft-ref convention) so deleting the source never blocks the clone. NULL =
+  // authored from scratch.
+  clonedFromId: integer("clonedFromId"),
   // Reference image
   referenceImageUrl: text("referenceImageUrl"), // Ảnh mẫu sản phẩm
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
@@ -191,6 +203,14 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // P3.4: optional product view/camera this point is measured from (e.g., top | bottom | side).
   // NULL = point applies to all views (default legacy behavior).
   productViewId: integer("productViewId"),
+  // ── Doc 29 §1.2 / W8-A (0191) — component linkage for package-level Pareto ──
+  // Which COMPONENT this point measures. componentCode relates BY CODE to
+  // materials.code (same convention as bomLineItems/feederMaterials.componentCode);
+  // refDesignator is the board position (e.g. "R12", "U3"). Both NULLABLE plain
+  // ADD COLUMN (this is a regular table, not a hypertable). The Pareto chain:
+  // measurement_results → pointDef.componentCode → materials.packageId → component_packages.
+  componentCode: varchar("componentCode", { length: 100 }),
+  refDesignator: varchar("refDesignator", { length: 64 }),
   isActive: boolean("isActive").default(true).notNull(),
   // P0 soft-delete marker. NULL = live row. Set when row is logically deleted.
   deletedAt: timestamp("deletedAt"),
@@ -205,6 +225,8 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   index("idx_point_defs_image_hash").on(table.imageHash),
   index("idx_point_defs_deleted_at").on(table.deletedAt),
   index("idx_point_defs_type_code").on(table.measurementTypeCode),
+  // W8-A (0191): partial — the column is sparse until points are linked.
+  index("idx_point_defs_component_code").on(table.componentCode).where(sql`${table.componentCode} IS NOT NULL`),
 ]);
 
 export type MeasurementPointDef = typeof measurementPointDefs.$inferSelect;
@@ -355,6 +377,14 @@ export const defectCatalog = pgTable("defect_catalog", {
   // Optional photo / illustration in storage.
   referenceImageUrl: text("referenceImageUrl"),
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
+  // Doc 31 Đợt B (OP4, migration 0194) — free-text repair / disposition guidance
+  // shown at RepairStation / InspectionDetail when this defect is classified.
+  repairGuidance: text("repairGuidance"),
+  repairGuidanceVi: text("repairGuidanceVi"),
+  // Doc 31 Đợt E (WE-3, migration 0201) — taxonomy consolidation. When a duplicate
+  // code is retired (isActive=false), this points at the SURVIVING canonical code so
+  // an incoming duplicate code still resolves forward (see getDefectCatalogByCode).
+  aliasOfCode: varchar("aliasOfCode", { length: 50 }),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -366,10 +396,39 @@ export const defectCatalog = pgTable("defect_catalog", {
   index("idx_defect_catalog_active").on(table.isActive),
   index("idx_defect_catalog_deleted_at").on(table.deletedAt),
   index("idx_defect_catalog_ipc_section").on(table.ipcSection),
+  index("idx_defect_catalog_alias_of_code").on(table.aliasOfCode).where(sql`${table.aliasOfCode} IS NOT NULL`),
 ]);
 
 export type DefectCatalog = typeof defectCatalog.$inferSelect;
 export type InsertDefectCatalog = typeof defectCatalog.$inferInsert;
+
+// ============================================================
+// Doc 31 Đợt B (OP3, migration 0194) — Unmatched defect-code rollup
+// ------------------------------------------------------------
+// When an inspection reports a defect code that does NOT resolve to a
+// defect_catalog row, ingest records it here (aggregate: one row per code) so
+// engineers get visibility ("code X seen 400× but not in catalog") and can
+// curate it in. machineId/productModelId are LAST-seen sample context.
+// resolvedCatalogId is stamped once the code is added to the catalog.
+// ============================================================
+export const unmatchedDefectCodes = pgTable("unmatched_defect_codes", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull(),
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  seenCount: integer("seenCount").default(0).notNull(),
+  resolvedCatalogId: integer("resolvedCatalogId"),
+  firstSeenAt: timestamp("firstSeenAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_unmatched_defect_code").on(table.code),
+  index("idx_unmatched_defect_last_seen").on(table.lastSeenAt),
+]);
+
+export type UnmatchedDefectCode = typeof unmatchedDefectCodes.$inferSelect;
+export type InsertUnmatchedDefectCode = typeof unmatchedDefectCodes.$inferInsert;
 
 // ============================================================
 // P3.1 — Measurement Instrument Registry
@@ -634,8 +693,12 @@ export type InsertMsaCsvMappingPreset = typeof msaCsvMappingPresets.$inferInsert
  */
 export const productMachineMappings = pgTable("product_machine_mappings", {
   id: serial("id").primaryKey(),
-  productModelId: integer("productModelId").notNull(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (doc 27 M1/M6, 0180): real FKs both sides, ON DELETE CASCADE — a
+  // mapping is a pure join row and dies with either end.
+  productModelId: integer("productModelId").notNull()
+    .references(() => productModels.id, { onDelete: "cascade" }),
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "cascade" }),
   isActive: boolean("isActive").default(true).notNull(),
   priority: integer("priority").default(0).notNull(), // Ưu tiên sản phẩm trên máy
   notes: text("notes"),
@@ -644,6 +707,10 @@ export const productMachineMappings = pgTable("product_machine_mappings", {
 }, (table) => [
   index("idx_pm_mapping_product").on(table.productModelId),
   index("idx_pm_mapping_machine").on(table.machineId),
+  // W3-A (doc 27 M6, 0180): a (product, machine) pair exists at most ONCE —
+  // FULL unique (re-mapping must reactivate/update the existing row, not
+  // insert a duplicate). Conditional build: 0180 defers if duplicates exist.
+  uniqueIndex("uq_pm_mappings_pair").on(table.productModelId, table.machineId),
 ]);
 
 export type ProductMachineMapping = typeof productMachineMappings.$inferSelect;
@@ -902,6 +969,70 @@ export const thresholdApprovals = pgTable("threshold_approvals", {
 
 export type ThresholdApproval = typeof thresholdApprovals.$inferSelect;
 export type InsertThresholdApproval = typeof thresholdApprovals.$inferInsert;
+
+// ============================================================
+// W3-C (doc 27 §2 M9) — Inspection-program approval/release workflow.
+// ------------------------------------------------------------
+// A "program release" is an immutable, checksummed SNAPSHOT of the FULL
+// measurement-point set (+ thresholds) of a product model at a point in time,
+// promoted through draft → pending_approval → approved → released →
+// superseded (or rejected). Mirrors the proven machine_recipes pattern:
+//   • SoD: creator ≠ approver (enforced in inspectionProgramService)
+//   • Atomic release: FOR UPDATE lock per productModelId; the previously
+//     released version of the SAME scope is superseded in the same tx
+//   • Append-only: rows are never deleted; every transition is audited
+// Editing measurement_point_defs stays allowed (implicit draft state) — the
+// release ledger records what was signed off, and getActiveRelease exposes
+// the production-truth program version to ingest/analytics.
+// status/varchar on purpose (no new pg enum → migration stays additive).
+// ============================================================
+export const inspectionProgramReleases = pgTable("inspection_program_releases", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId").notNull(),
+  // NULL = product-level program; set = machine-specific program (mirrors the
+  // optional machineId scoping on measurement_point_defs / productMachineMappings).
+  machineId: integer("machineId"),
+  // Monotonic per productModelId (across machine scopes) — computed in service.
+  version: integer("version").notNull(),
+  // draft | pending_approval | approved | released | superseded | rejected
+  status: varchar("status", { length: 20 }).default("draft").notNull(),
+  // Full point-set + thresholds captured at createRelease time (immutable).
+  snapshot: jsonb("snapshot").$type<Record<string, any>>().notNull(),
+  // sha256 of the stable-stringified snapshot points (dedup/diff/tamper check).
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  pointCount: integer("pointCount").default(0).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  submittedAt: timestamp("submittedAt"),
+  // MUST differ from createdBy — segregation of duties (service-enforced).
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  approvalNote: text("approvalNote"),
+  rejectedBy: integer("rejectedBy"),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectReason: text("rejectReason"),
+  releasedBy: integer("releasedBy"),
+  releasedAt: timestamp("releasedAt"),
+  supersededAt: timestamp("supersededAt"),
+  // Genealogy: the release this one superseded when it went live (nullable).
+  previousReleaseId: integer("previousReleaseId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_prog_rel_product").on(table.productModelId),
+  index("idx_prog_rel_machine").on(table.machineId),
+  index("idx_prog_rel_status").on(table.status),
+  index("idx_prog_rel_created_by").on(table.createdBy),
+  uniqueIndex("uq_prog_rel_product_version").on(table.productModelId, table.version),
+  // At most ONE released program per (productModelId, machine-scope); NULL machineId
+  // is folded to 0 so the product-level scope is also single-released (see 0182).
+  uniqueIndex("uq_prog_rel_one_released")
+    .on(table.productModelId, sql`(COALESCE("machineId", 0))`)
+    .where(sql`"status" = 'released'`),
+]);
+
+export type InspectionProgramRelease = typeof inspectionProgramReleases.$inferSelect;
+export type InsertInspectionProgramRelease = typeof inspectionProgramReleases.$inferInsert;
 
 // (P4.B G9 CAD import tables appended)
 

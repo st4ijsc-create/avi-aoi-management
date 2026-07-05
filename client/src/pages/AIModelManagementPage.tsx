@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, MetricCard, StatusBadge, EmptyState } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -850,9 +851,11 @@ function TrainingPipelineDialog({
 
 // ─── Training Jobs List (WS-1) ───────────────────────────
 function TrainingJobsList({ modelId, t }: { modelId: number; t: (key: string, fallback?: string) => string }) {
+  // Poll hygiene (doc 27 B12): pause the 5s poll when the tab is hidden.
+  const polling = usePollingInterval(5000);
   const { data, isLoading } = trpc.aiLocalTraining.listJobs.useQuery(
     { modelId, limit: 20, offset: 0 },
-    { refetchInterval: 5000 },
+    { ...polling },
   );
   const jobs = data?.items;
 

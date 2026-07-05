@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "$comment": "doc 27 Đợt 7 W7-D (gap V4) — model manifest. Binaries are gitignored (*.onnx, *.gguf); fetch with `node scripts/fetch-models.mjs`. `sha256: null` means not pinned yet — the fetch script computes the hash on first download and pins it into manifest.lock.json; set the env in `sha256Env` (or edit this file) to enforce a specific hash. External (GGUF) entries are NOT downloaded by the script — they are presence-checked at the configured path (already provisioned on this host under GGUF_MODELS_DIR).",
+  "models": [
+    {
+      "name": "dinov2-small",
+      "kind": "onnx",
+      "file": "dinov2.onnx",
+      "required": true,
+      "url": "https://huggingface.co/Xenova/dinov2-small/resolve/main/onnx/model.onnx",
+      "urlEnv": "MODEL_DINOV2_URL",
+      "sha256": null,
+      "sha256Env": "MODEL_DINOV2_SHA256",
+      "maxBytes": 268435456,
+      "input": { "name": "pixel_values", "dims": [1, 3, 224, 224] },
+      "expectedOutput": { "name": "last_hidden_state", "dims": [1, 257, 384] },
+      "requiredBy": [
+        "AOI_EMBEDDING_ENABLED (embed-at-ingest → ai_image_embeddings)",
+        "ANOMALY_DETECTION_ENABLED (PatchCore memory banks / anomaly scoring)",
+        "IMAGE_EMBEDDING_DEFAULT=onnx (visual similarity search)",
+        "AOI_DL_HEAD_ENABLED (first-party embedding-head classifier, 384-d)"
+      ],
+      "notes": "Community ONNX export of facebook/dinov2-small (transformers.js project, repo Xenova/dinov2-small, file onnx/model.onnx, fp32 ~88 MB). Dynamic batch/height/width axes; at 224×224 the output is [N,257,384] (CLS token pooled by aiImageEmbedding.poolEmbeddingFromOutput). Default target path models/dinov2.onnx = DEFAULT_DINOV2_MODEL_PATH read by server/services/aiImageEmbedding.ts."
+    },
+    {
+      "name": "dinov2-base",
+      "kind": "onnx",
+      "file": "dinov2-base.onnx",
+      "required": false,
+      "url": "https://huggingface.co/Xenova/dinov2-base/resolve/main/onnx/model.onnx",
+      "urlEnv": "MODEL_DINOV2_BASE_URL",
+      "sha256": null,
+      "sha256Env": "MODEL_DINOV2_BASE_SHA256",
+      "maxBytes": 536870912,
+      "input": { "name": "pixel_values", "dims": [1, 3, 224, 224] },
+      "expectedOutput": { "name": "last_hidden_state", "dims": [1, 257, 768] },
+      "requiredBy": [
+        "Optional higher-accuracy 768-d embedding tier (set AOI_EMBEDDING_MODEL_CODE=dinov2-base + register an ai_models row pointing at this file)"
+      ],
+      "notes": "Optional upgrade (fp32 ~346 MB). Do NOT mix vector spaces: re-embed history before switching model codes."
+    },
+    {
+      "name": "gguf-deep (Qwen3-30B-A3B-Instruct)",
+      "kind": "external-gguf",
+      "pathEnv": "GGUF_DEFAULT_MODEL",
+      "dirEnv": "GGUF_MODELS_DIR",
+      "required": false,
+      "requiredBy": ["RCA Copilot / exec reports / deep chat tier (aiGgufEngine)"],
+      "notes": "External — already provisioned under GGUF_MODELS_DIR (D:/SOURCES/16.AI on this host). NOT downloaded by fetch-models.mjs; presence-checked only."
+    },
+    {
+      "name": "gguf-fast (Qwen3-4B-Instruct)",
+      "kind": "external-gguf",
+      "pathEnv": "GGUF_FAST_MODEL",
+      "dirEnv": "GGUF_MODELS_DIR",
+      "required": false,
+      "requiredBy": ["Intent/chat/extract fast tier (model router Tier 1)"],
+      "notes": "External — presence-checked only."
+    },
+    {
+      "name": "gguf-vision (Qwen3-VL-8B + mmproj)",
+      "kind": "external-gguf",
+      "pathEnv": "GGUF_VISION_MODEL",
+      "extraPathEnvs": ["GGUF_VISION_MMPROJ"],
+      "dirEnv": "GGUF_MODELS_DIR",
+      "required": false,
+      "requiredBy": [
+        "describeDefect / VLM analyze (aiVisionLanguage)",
+        "text-of-image embedding fallback tier when DINOv2 ONNX is absent"
+      ],
+      "notes": "External — presence-checked only (model + mmproj)."
+    },
+    {
+      "name": "gguf-embed (Qwen3-Embedding-0.6B)",
+      "kind": "external-gguf",
+      "pathEnv": "GGUF_EMBED_MODEL",
+      "dirEnv": "GGUF_MODELS_DIR",
+      "required": false,
+      "requiredBy": ["KB/RAG text embeddings (1024-d)", "text-of-image embedding tier"],
+      "notes": "External — presence-checked only."
+    },
+    {
+      "name": "gguf-reranker (bge-reranker-v2-m3)",
+      "kind": "external-gguf",
+      "pathEnv": "GGUF_RERANKER_MODEL",
+      "dirEnv": "GGUF_MODELS_DIR",
+      "required": false,
+      "requiredBy": ["RAG_RERANKER_MODE=gguf (KB cross-encoder rerank)"],
+      "notes": "External — presence-checked only."
+    }
+  ]
+}

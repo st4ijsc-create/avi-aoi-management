@@ -28,6 +28,12 @@ import { ParetoAnalysisContent } from "./ParetoAnalysis";
 import { QualityGatesContent } from "./QualityGates";
 import { AnnotationComparisonPageContent } from "./AnnotationComparisonPage";
 import { ProductDefectHeatmap } from "@/components/ProductDefectHeatmap";
+// Doc 27 gap A9 (W5-A): paired false-call ↔ escape tuning-tradeoff KPI.
+import { FalseCallEscapePanel } from "@/components/FalseCallEscapePanel";
+// Doc 27 gap V2 (W7-B): "Máy hay báo giả" — per-machine agreement/false-call
+// ranking from the HARVESTED corrections ledger (complementary to the panel
+// above, which reads inspection-row NTF flips only).
+import { FalseCallTrendCard } from "@/components/FalseCallTrendCard";
 
 function getDefaultDateRange() {
   const end = new Date();
@@ -233,6 +239,27 @@ export default function QualityCockpit() {
         />
 
         <ScopeSelector scope={scope} onChange={setScope} />
+
+        {/* Doc 27 A9 — false-call ↔ escape paired KPI (AOI tuning trade-off),
+            driven by the shared cockpit scope. */}
+        <FalseCallEscapePanel
+          scope={{
+            machineId: scope.machineId,
+            productModelId: scope.productModelId,
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+          }}
+        />
+
+        {/* Doc 27 V2 (W7-B) — "Máy hay báo giả": harvested-corrections agreement
+            card (labels banked for training + per-machine false-call ranking). */}
+        <FalseCallTrendCard
+          scope={{
+            machineId: scope.machineId,
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+          }}
+        />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList>

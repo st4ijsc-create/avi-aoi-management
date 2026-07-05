@@ -32,6 +32,7 @@ import {
 import { Layers, Plus, RefreshCw, XCircle, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 
 /** Job status → shared <StatusBadge> map (solid shadcn variant, W4). */
 const STATUS_MAP: Record<string, { variant: BadgeVariant }> = {
@@ -52,9 +53,15 @@ export default function BatchInferencePage() {
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
   // ── Queries ────────────────────────────────────────────────
+  // Poll hygiene (doc 27 B12): pause when the tab is hidden, refetch
+  // immediately on return — see usePollingInterval.
+  const pollList = usePollingInterval(5000);
+  const pollJob = usePollingInterval(selectedJobId !== null ? 3000 : false);
+  const pollProgress = usePollingInterval(selectedJobId !== null ? 2000 : false);
+
   const { data: jobs, isLoading, refetch } = trpc.aiAdvanced.batch.list.useQuery(
     { limit: 50 },
-    { refetchInterval: 5000 },
+    { ...pollList },
   );
 
   const { data: models } = trpc.aiModel.list.useQuery(
@@ -64,12 +71,12 @@ export default function BatchInferencePage() {
 
   const { data: selectedJob, refetch: refetchJob } = trpc.aiAdvanced.batch.getById.useQuery(
     { id: selectedJobId! },
-    { enabled: selectedJobId !== null, refetchInterval: 3000 },
+    { enabled: selectedJobId !== null, ...pollJob },
   );
 
   const { data: progress } = trpc.aiAdvanced.batch.progress.useQuery(
     { id: selectedJobId! },
-    { enabled: selectedJobId !== null, refetchInterval: 2000 },
+    { enabled: selectedJobId !== null, ...pollProgress },
   );
 
   // ── Mutations ──────────────────────────────────────────────

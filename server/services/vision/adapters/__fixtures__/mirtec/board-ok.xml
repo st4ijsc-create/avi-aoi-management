@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MirtecResult>
+  <BoardInfo>
+    <Machine>MIRTEC-MV6</Machine>
+    <Model>MB-X1</Model>
+    <Barcode>SN-2026-000131</Barcode>
+    <Lot>LOT-78</Lot>
+    <StartTime>2026-07-04 08:41:00</StartTime>
+    <EndTime>2026-07-04 08:41:08</EndTime>
+    <Result>GOOD</Result>
+  </BoardInfo>
+  <DefectList/>
+</MirtecResult>

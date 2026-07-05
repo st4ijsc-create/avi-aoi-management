@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { 
@@ -90,6 +92,12 @@ import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar,
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
 
+// W7-B (doc 27 V3) — badge threshold for "Nghi báo giả" rows. Mirrors the
+// server default (env NTF_BADGE_THRESHOLD, ntfPredictorService.ntfBadgeThreshold).
+// The score is an ADVISORY heuristic (repeat-offender + near-limit margin +
+// machine trend) — the badge only suggests verify priority, never a verdict.
+const NTF_SUSPECT_THRESHOLD = 0.7;
+
 export default function History() {
   const { t } = useTranslation();
   const [filters, setFilters] = useState({
@@ -114,6 +122,9 @@ export default function History() {
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [pageSize, setPageSize] = useState(20);
+  // W7-B (doc 27 V3): verify-queue sort — "ntfScore" surfaces suspected false
+  // calls first (server orders ntfScore DESC NULLS LAST). Default: newest.
+  const [sortBy, setSortBy] = useState<"time" | "ntfScore">("time");
   const [listViewMode, setListViewMode] = useState<"card" | "table">("card");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState({
@@ -143,6 +154,32 @@ export default function History() {
     { name: t("history.filterNgToday"), filters: { ...filters, result: "NG" as const, dateRange: "today" as const } },
     { name: t("history.filterThisWeek"), filters: { ...filters, dateRange: "week" as const } },
   ]);
+  // F11 (doc 27 Đợt 5 / W5-E) — save-filter DIALOG replaces window.prompt
+  // (prompt is blocked on kiosk/tablet WebViews and is not accessible).
+  const [saveFilterDialogOpen, setSaveFilterDialogOpen] = useState(false);
+  const [saveFilterName, setSaveFilterName] = useState("");
+  const [saveFilterError, setSaveFilterError] = useState<string | null>(null);
+
+  const handleSaveFilter = () => {
+    const name = saveFilterName.trim();
+    if (!name) {
+      setSaveFilterError(t("history.filterNameRequired"));
+      return;
+    }
+    if (name.length > 60) {
+      setSaveFilterError(t("history.filterNameTooLong"));
+      return;
+    }
+    if (savedFilters.some((sf) => sf.name === name)) {
+      setSaveFilterError(t("history.filterNameExists"));
+      return;
+    }
+    setSavedFilters((prev) => [...prev, { name, filters: { ...filters } }]);
+    toast.success(t("history.filterSaved", { name }));
+    setSaveFilterDialogOpen(false);
+    setSaveFilterName("");
+    setSaveFilterError(null);
+  };
 
   type RecentSearch = { label: string; filters: typeof filters; ts: number };
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(() => {
@@ -212,6 +249,9 @@ export default function History() {
     }
   }, [filters.dateRange, filters.startDate, filters.endDate]);
 
+  const utils = trpc.useUtils();
+  const bulkAcknowledgeMutation = trpc.inspection.bulkAcknowledge.useMutation();
+
   const { data, isLoading, refetch } = trpc.inspection.search.useQuery({
     factoryCode: filters.factoryCode || undefined,
     workshopCode: filters.workshopCode || undefined,
@@ -225,6 +265,7 @@ export default function History() {
     endDate: dateRangeValues.endDate,
     limit,
     offset: (page - 1) * limit,
+    sortBy,
   });
 
   // Fetch all data for analysis (no pagination)
@@ -627,7 +668,8 @@ export default function History() {
     }
   };
 
-  // Bulk Acknowledge function
+  // Bulk Acknowledge — real mutation (doc 27 gap F1): stamps acknowledgedBy/At
+  // server-side + audit log. Note field deferred to Wave 5 (no dialog in this flow yet).
   const handleBulkAcknowledge = async () => {
     if (selectedIds.size === 0) {
       toast.error(t("history.pleaseSelectAtLeast1"));
@@ -636,15 +678,20 @@ export default function History() {
 
     setIsBulkAcknowledging(true);
     try {
-      // Simulate acknowledge action - in real app, this would call an API
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast.success(t("history.acknowledgedRecords", { count: selectedIds.size }));
+      const result = await bulkAcknowledgeMutation.mutateAsync({
+        ids: Array.from(selectedIds),
+      });
+      if (result.acknowledgedCount > 0) {
+        toast.success(t("history.acknowledgedRecords", { count: result.acknowledgedCount }));
+      }
+      if (result.alreadyAcknowledgedCount > 0) {
+        toast.info(t("history.alreadyAcknowledgedRecords", { count: result.alreadyAcknowledgedCount }));
+      }
       handleClearSelection();
-      refetch();
+      await utils.inspection.search.invalidate();
     } catch (error) {
       console.error("Bulk acknowledge error:", error);
-      toast.error(t("history.acknowledgeError"));
+      toast.error(error instanceof Error && error.message ? error.message : t("history.acknowledgeError"));
     } finally {
       setIsBulkAcknowledging(false);
     }
@@ -1130,11 +1177,9 @@ export default function History() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => {
-                        const name = prompt(t("history.enterFilterName"));
-                        if (name) {
-                          setSavedFilters(prev => [...prev, { name, filters: { ...filters } }]);
-                          toast.success(t("history.filterSaved", { name }));
-                        }
+                        setSaveFilterName("");
+                        setSaveFilterError(null);
+                        setSaveFilterDialogOpen(true);
                       }}
                     >
                       <Save className="h-4 w-4 mr-2" />
@@ -1142,6 +1187,53 @@ export default function History() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                {/* F11 — save-filter dialog (replaces window.prompt) */}
+                <Dialog open={saveFilterDialogOpen} onOpenChange={setSaveFilterDialogOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Save className="h-5 w-5" />
+                        {t("history.saveCurrentFilter")}
+                      </DialogTitle>
+                      <DialogDescription>{t("history.saveFilterDescription")}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                      <Label htmlFor="save-filter-name">{t("history.filterNameLabel")}</Label>
+                      <Input
+                        id="save-filter-name"
+                        value={saveFilterName}
+                        autoFocus
+                        maxLength={80}
+                        aria-invalid={!!saveFilterError}
+                        className={saveFilterError ? "border-destructive" : undefined}
+                        placeholder={t("history.enterFilterName")}
+                        onChange={(e) => {
+                          setSaveFilterName(e.target.value);
+                          if (saveFilterError) setSaveFilterError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSaveFilter();
+                          }
+                        }}
+                      />
+                      {saveFilterError && (
+                        <p className="text-xs text-destructive">{saveFilterError}</p>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setSaveFilterDialogOpen(false)}>
+                        {t("common.cancel")}
+                      </Button>
+                      <Button onClick={handleSaveFilter} disabled={!saveFilterName.trim()}>
+                        <Save className="h-4 w-4 mr-2" />
+                        {t("common.save")}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </CardContent>
@@ -1182,6 +1274,20 @@ export default function History() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* W7-B (doc 27 V3): verify-queue sort — suspected false calls first */}
+                    <Select
+                      value={sortBy}
+                      onValueChange={(v) => { setSortBy(v as "time" | "ntfScore"); setPage(1); }}
+                    >
+                      <SelectTrigger className="w-44" aria-label={t("history.sortBy")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="time">{t("history.sortNewest")}</SelectItem>
+                        <SelectItem value="ntfScore">{t("history.sortNtfScore")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+
                     {/* Page Size Selector */}
                     <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
                       <SelectTrigger className="w-25">
@@ -1395,7 +1501,32 @@ export default function History() {
                                   <TableCell className="p-3 text-muted-foreground">{getMachineName(inspection.machineId)}</TableCell>
                                 )}
                                 {visibleColumns.result && (
-                                  <TableCell className="p-3">{getResultBadge(inspection.overallResult)}</TableCell>
+                                  <TableCell className="p-3">
+                                    <div className="flex items-center gap-1.5">
+                                      {getResultBadge(inspection.overallResult)}
+                                      {/* W7-B (V3): advisory false-call suspicion (chỉ gợi ý) */}
+                                      {inspection.overallResult === "NG" &&
+                                        (inspection as any).ntfScore != null &&
+                                        Number((inspection as any).ntfScore) >= NTF_SUSPECT_THRESHOLD && (
+                                        <Badge
+                                          variant="outline"
+                                          className="gap-1 text-warning border-warning/40"
+                                          title={t("history.ntfSuspectTooltip")}
+                                        >
+                                          <AlertTriangle className="h-3 w-3" />
+                                          {t("history.ntfSuspectBadge", {
+                                            pct: Math.round(Number((inspection as any).ntfScore) * 100),
+                                          })}
+                                        </Badge>
+                                      )}
+                                      {(inspection as any).acknowledgedAt && (
+                                        <CheckCheck
+                                          className="h-4 w-4 text-success"
+                                          aria-label={t("history.acknowledgedBadge")}
+                                        />
+                                      )}
+                                    </div>
+                                  </TableCell>
                                 )}
                                 {visibleColumns.time && (
                                   <TableCell className="p-3 text-muted-foreground">{formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}</TableCell>
@@ -1456,6 +1587,27 @@ export default function History() {
                             <div className="flex items-center gap-3">
                               <p className="font-semibold text-foreground">{inspection.serialNumber}</p>
                               {getResultBadge(inspection.overallResult)}
+                              {/* W7-B (V3): advisory false-call suspicion (chỉ gợi ý) */}
+                              {inspection.overallResult === "NG" &&
+                                (inspection as any).ntfScore != null &&
+                                Number((inspection as any).ntfScore) >= NTF_SUSPECT_THRESHOLD && (
+                                <Badge
+                                  variant="outline"
+                                  className="gap-1 text-warning border-warning/40"
+                                  title={t("history.ntfSuspectTooltip")}
+                                >
+                                  <AlertTriangle className="h-3 w-3" />
+                                  {t("history.ntfSuspectBadge", {
+                                    pct: Math.round(Number((inspection as any).ntfScore) * 100),
+                                  })}
+                                </Badge>
+                              )}
+                              {(inspection as any).acknowledgedAt && (
+                                <Badge variant="outline" className="gap-1 text-success border-success/40">
+                                  <CheckCheck className="h-3 w-3" />
+                                  {t("history.acknowledgedBadge")}
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">

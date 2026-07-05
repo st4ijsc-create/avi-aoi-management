@@ -5,7 +5,11 @@
  * to reduce cold start latency and improve user experience.
  */
 
-import { redisService } from './redisService';
+// W4-B (doc 27 B8): warming now writes through the consolidated cacheService
+// facade (L1 + Redis L2) instead of redisService directly, so warmed entries
+// are readable by the facade read path and cleared by pattern invalidation
+// across BOTH tiers.
+import { cacheService } from './cacheService';
 import * as db from '../db';
 
 interface WarmingConfig {
@@ -125,7 +129,7 @@ class CacheWarmingService {
    */
   private async warmYieldRateByCorporate(startDate: Date, endDate: Date): Promise<void> {
     try {
-      const cacheKey = redisService.generateKey('yield:corporate', {
+      const cacheKey = cacheService.generateKey('yield:corporate', {
         startDate,
         endDate,
       });
@@ -135,7 +139,7 @@ class CacheWarmingService {
         endDate,
       });
       
-      await redisService.set(cacheKey, data, 300); // 5 minutes TTL
+      await cacheService.setAsync(cacheKey, data, 300_000); // 5 minutes TTL
       console.log(`[CacheWarming] Warmed yield rate by corporate: ${data.length} records`);
     } catch (error: any) {
       console.error('[CacheWarming] Failed to warm yield rate by corporate:', error.message);
@@ -147,7 +151,7 @@ class CacheWarmingService {
    */
   private async warmYieldRateByFactory(startDate: Date, endDate: Date): Promise<void> {
     try {
-      const cacheKey = redisService.generateKey('yield:factory', {
+      const cacheKey = cacheService.generateKey('yield:factory', {
         startDate,
         endDate,
       });
@@ -157,7 +161,7 @@ class CacheWarmingService {
         endDate,
       });
       
-      await redisService.set(cacheKey, data, 300);
+      await cacheService.setAsync(cacheKey, data, 300_000);
       console.log(`[CacheWarming] Warmed yield rate by factory: ${data.length} records`);
     } catch (error: any) {
       console.error('[CacheWarming] Failed to warm yield rate by factory:', error.message);
@@ -169,7 +173,7 @@ class CacheWarmingService {
    */
   private async warmThroughputByCorporate(startDate: Date, endDate: Date): Promise<void> {
     try {
-      const cacheKey = redisService.generateKey('throughput:corporate', {
+      const cacheKey = cacheService.generateKey('throughput:corporate', {
         startDate,
         endDate,
         interval: 'day',
@@ -181,7 +185,7 @@ class CacheWarmingService {
         interval: 'day',
       });
       
-      await redisService.set(cacheKey, data, 300);
+      await cacheService.setAsync(cacheKey, data, 300_000);
       console.log(`[CacheWarming] Warmed throughput by corporate: ${data.length} records`);
     } catch (error: any) {
       console.error('[CacheWarming] Failed to warm throughput by corporate:', error.message);
@@ -193,7 +197,7 @@ class CacheWarmingService {
    */
   private async warmThroughputByFactory(startDate: Date, endDate: Date): Promise<void> {
     try {
-      const cacheKey = redisService.generateKey('throughput:factory', {
+      const cacheKey = cacheService.generateKey('throughput:factory', {
         startDate,
         endDate,
         interval: 'day',
@@ -205,7 +209,7 @@ class CacheWarmingService {
         interval: 'day',
       });
       
-      await redisService.set(cacheKey, data, 300);
+      await cacheService.setAsync(cacheKey, data, 300_000);
       console.log(`[CacheWarming] Warmed throughput by factory: ${data.length} records`);
     } catch (error: any) {
       console.error('[CacheWarming] Failed to warm throughput by factory:', error.message);
@@ -231,7 +235,7 @@ class CacheWarmingService {
         warmedAt: new Date().toISOString(),
       };
       
-      await redisService.set(cacheKey, stats, 300);
+      await cacheService.setAsync(cacheKey, stats, 300_000);
       console.log('[CacheWarming] Warmed dashboard stats');
     } catch (error: any) {
       console.error('[CacheWarming] Failed to warm dashboard stats:', error.message);

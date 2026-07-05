@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -123,10 +124,12 @@ export default function InterlockRuleManagement() {
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
-  // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem.
+  // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem
+  // hoặc khi tab bị ẩn (doc 27 B12 — usePollingInterval).
+  const eventsPolling = usePollingInterval(canView ? 5000 : false);
   const eventsQuery = trpc.interlock.events.useQuery(
     { limit: 100 },
-    { enabled: canView, refetchInterval: canView ? 5000 : false },
+    { enabled: canView, ...eventsPolling },
   );
 
   const invalidateRules = () => void utils.interlock.list.invalidate();

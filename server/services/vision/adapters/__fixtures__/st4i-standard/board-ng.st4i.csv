@@ -1,0 +1,16 @@
+#ST4I-INSPECTION,1
+H,machine_code,AOI-01
+H,serial_number,SN-2026-000123
+H,program_name,MB-X1-TOP
+H,program_version,1.4.0
+H,lot_code,LOT-77
+H,panel_id,PNL-88
+H,board_index,2
+H,operator_id,OP-0009
+H,started_at,2026-07-04T08:30:00+07:00
+H,finished_at,2026-07-04T08:30:12.480+07:00
+H,cycle_time_sec,12.48
+H,result,NG
+M,R12.1,solder_joint,61.2,%,70,130,100,NG,INSUFFICIENT_SOLDER,major,120,340,48,32,SN-2026-000123__R12.1.jpg,insufficient fillet on pad 1,95.0,88.0,61.2,2.1,3.0,1.2,-3.5,1.1,0.4,40,130
+M,C3,component,99.1,%,,,,OK
+M,U1.pin5,solder_joint,,,,,,NTF,BRIDGING,minor,610,900,22,18,SN-2026-000123__U1.pin5.jpg

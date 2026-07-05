@@ -26,6 +26,18 @@ import {
   isLiveAcquisitionEnabled,
   listImageSourceKinds,
 } from "../services/vision/acquisition";
+import {
+  listHeightMapSources,
+  maybeEnrichCanonicalWithHeightMap,
+  resolveHeightMapSourceKind,
+} from "../services/vision/heightMapSource";
+import { spi3dNativeEnabled } from "../services/aiSpi3d";
+import {
+  getAcquisitionWorkersStatus,
+  startAcquisitionWorker,
+  stopAcquisitionWorker,
+  acquisitionWorkerConfigSchema,
+} from "../services/vision/acquisition/acquisitionWorker";
 import { machineApiRouter } from "./machineApiRouters";
 
 /** Master flag — default OFF. Ingest persists nothing unless explicitly enabled. */
@@ -115,6 +127,14 @@ export const visionAdapterRouter = router({
         });
       }
 
+      // ── V13 (doc 27 Đợt 7.6): native SPI enrichment via the height-map seam ──
+      // Flag-gated (SPI_3D_NATIVE_ENABLED) + fail-safe: any error or absent height
+      // data degrades to the exact vendor pass-through below. Never blocks ingest.
+      const enrichment = await maybeEnrichCanonicalWithHeightMap(canonical, {
+        machineCode: canonical.machineCode,
+      });
+      canonical = enrichment.canonical;
+
       // ── Persist via the EXISTING submitInspection path (no duplicated insert logic) ──
       // submitInspection is a publicProcedure; we call it through a server-side caller
       // so all of its side-effects (image upload, point/defect resolution, NG + MQTT
@@ -133,7 +153,53 @@ export const visionAdapterRouter = router({
           overallResult: canonical.overallResult,
           measurementCount: canonical.measurements.length,
           ngCount,
+          /** True when native SPI metrics (aiSpi3d) were computed from a height-map. */
+          spi3dNative: enrichment.native,
         },
       };
     }),
+
+  /**
+   * V12 (doc 27 Đợt 7.6, decision #7) — read-only discovery of the HEIGHT-MAP source
+   * seam: which kinds exist (vendor-passthrough / file / device), whether each is
+   * genuinely available today, and what the native-SPI flag + resolved default are.
+   */
+  heightMapSources: protectedProcedure
+    .use(requirePermission("machine_alerts", "canView"))
+    .query(async () => {
+      return {
+        nativeSpiEnabled: spi3dNativeEnabled(),
+        defaultKind: resolveHeightMapSourceKind(null),
+        sources: await listHeightMapSources(),
+      };
+    }),
+
+  // ── V14 (doc 27 Đợt 7.6) — acquisition worker admin (status / start / stop). ──
+  // The worker is the first RUNTIME consumer of createImageSource: grab → quality
+  // metrics → (optional) canonical submit. Gated by LIVE_ACQUISITION_ENABLED.
+  // NOTE: intentionally API-only for now — a dedicated UI panel is a follow-up
+  // (slot: EquipmentIntegration → "Acquisition sources" card already lists kinds).
+
+  /** Read-only status of all registered acquisition workers (+ ledger tails). */
+  acquisitionWorkerStatus: protectedProcedure
+    .use(requirePermission("machine_alerts", "canView"))
+    .query(() => getAcquisitionWorkersStatus()),
+
+  /** Start a worker (file/mock source loop). Flag-gated; refuses duplicates. */
+  startAcquisitionWorker: protectedProcedure
+    .use(requirePermission("machine_alerts", "canCreate"))
+    .input(acquisitionWorkerConfigSchema)
+    .mutation(async ({ input }) => {
+      const res = await startAcquisitionWorker(input);
+      if (!res.ok) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: res.reason });
+      }
+      return res;
+    }),
+
+  /** Stop a running worker by id. */
+  stopAcquisitionWorker: protectedProcedure
+    .use(requirePermission("machine_alerts", "canCreate"))
+    .input(z.object({ id: z.string().min(1).max(128) }))
+    .mutation(async ({ input }) => stopAcquisitionWorker(input.id)),
 });

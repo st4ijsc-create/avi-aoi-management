@@ -60,6 +60,7 @@ type SysOut = inferRouterOutputs<AppRouter>["systemHealth"];
 type StoreForwardStatus = SysOut["storeForwardStatus"];
 type ConnSupervisorsOut = SysOut["connectionSupervisors"];
 type AiModelHealthOut = SysOut["aiModelHealth"];
+type DbIngestHealthOut = SysOut["dbIngestHealth"];
 
 /** Minimal structural shape of a tRPC/React-Query result — the fields this page
  *  reads. The real query result is assignable to this, so passing it as a prop
@@ -146,6 +147,7 @@ export default function SystemHealth() {
         />
 
         <StoreForwardSection query={sfQuery} />
+        <DbIngestHealthSection />
         <ConnectionSupervisorsSection query={supQuery} />
         <AiModelHealthSection query={aiQuery} />
         <TwinExportSection />
@@ -236,6 +238,169 @@ function StoreForwardSection({ query }: { query: QueryLike<StoreForwardStatus> }
               {t("systemHealth.sf.disabledNote", "Cờ đang tắt → hành vi passthrough như hiện tại (chèn thẳng vào DB). Bật OT_STORE_FORWARD_ENABLED để kích hoạt bộ đệm bền vững.")}
             </p>
           )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1b) DB & Ingest health — W4-A (doc 27 gap B1). Admin-only (admin_system):
+//     slow-query monitor (instrumented drizzle client), inspection-ingest WAL
+//     depth (deferred W2-C), db_feature_status / timescale state (deferred W1-A).
+// ════════════════════════════════════════════════════════════════════════════
+
+function DbIngestHealthSection() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
+  const query = trpc.systemHealth.dbIngestHealth.useQuery(undefined, {
+    refetchInterval: 30_000,
+    enabled: canView,
+  });
+  const d: DbIngestHealthOut | undefined = query.data;
+
+  const featureTone: Record<string, StatusMapEntry["tone"]> = useMemo(() => ({
+    ok: "success",
+    partial: "warning",
+    deferred: "warning",
+    skipped: "warning",
+    missing: "error",
+  }), []);
+
+  if (!canView) return null;
+
+  const qm = d?.queryMonitor;
+  const wal = d?.inspectionWal;
+  const walDepth = wal?.bufferedCount ?? 0;
+  const walTone: "success" | "warning" | "danger" =
+    walDepth >= 500 ? "danger" : walDepth >= 100 ? "warning" : "success";
+
+  const monitorBadge = qm == null
+    ? null
+    : qm.enabled
+      ? <StatusBadge status="on" tone="success" label={t("systemHealth.db.monitorOn", "Monitor bật · ngưỡng {{n}}ms", { n: qm.thresholdMs })} />
+      : <StatusBadge status="off" tone="warning" label={t("systemHealth.db.monitorOff", "Monitor tắt (QUERY_MONITOR_ENABLED)")} />;
+
+  return (
+    <SectionCard
+      icon={<Database className="h-5 w-5 text-primary" />}
+      title={t("systemHealth.db.title", "Sức khỏe DB & Ingest")}
+      description={t(
+        "systemHealth.db.desc",
+        "Truy vấn chậm (đo trực tiếp trên client drizzle, SQL đã chuẩn hóa — không lưu tham số), độ sâu WAL ingest kiểm tra, và trạng thái tính năng DB (TimescaleDB / partition / FK). Chỉ admin.",
+      )}
+      action={monitorBadge}
+    >
+      {query.isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+          <Loader2 className="h-4 w-4 animate-spin" /> {t("common.loading", "Đang tải…")}
+        </div>
+      ) : query.isError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-6">
+          <AlertTriangle className="h-4 w-4" /> {query.error?.message}
+        </div>
+      ) : !d || !qm ? null : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <MetricCard
+              icon={<Database className="h-4 w-4" />}
+              label={t("systemHealth.db.walDepth", "WAL ingest kiểm tra")}
+              value={walDepth}
+              tone={wal?.enabled === false ? "default" : walTone}
+              delta={
+                wal?.enabled === false
+                  ? t("systemHealth.db.walOff", "tắt (passthrough)")
+                  : t("systemHealth.db.walDelta", "backfill {{b}} · dead-letter {{d}}", {
+                      b: wal?.backfilled ?? 0, d: wal?.deadLettered ?? 0,
+                    })
+              }
+            />
+            <MetricCard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label={t("systemHealth.db.slowQueries", "Truy vấn chậm")}
+              value={qm.slowQueries}
+              tone={qm.slowQueries > 0 ? "warning" : "success"}
+              delta={t("systemHealth.db.slowPct", "{{p}}% trên tổng", { p: qm.slowQueryPercentage })}
+            />
+            <MetricCard
+              icon={<Activity className="h-4 w-4" />}
+              label={t("systemHealth.db.totalQueries", "Tổng truy vấn")}
+              value={qm.totalQueries.toLocaleString()}
+              delta={t("systemHealth.db.avgMs", "TB {{a}}ms · max {{m}}ms", {
+                a: qm.averageExecutionTime, m: qm.maxExecutionTime,
+              })}
+            />
+            <MetricCard
+              icon={<Info className="h-4 w-4" />}
+              label={t("systemHealth.db.patterns", "Mẫu truy vấn theo dõi")}
+              value={qm.patternsTracked}
+              delta={t("systemHealth.db.errors", "lỗi: {{n}}", { n: qm.errorCount })}
+            />
+          </div>
+
+          <div>
+            <div className="mb-1 text-sm font-medium">
+              {t("systemHealth.db.topSlow", "Top truy vấn chậm (chuẩn hóa)")}
+            </div>
+            {qm.topSlow.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t("systemHealth.db.noSlow", "Chưa ghi nhận truy vấn nào vượt ngưỡng chậm.")}
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("systemHealth.db.col.query", "Truy vấn")}</TableHead>
+                      <TableHead className="text-right">{t("systemHealth.db.col.count", "Số lần")}</TableHead>
+                      <TableHead className="text-right">{t("systemHealth.db.col.slowCount", "Lần chậm")}</TableHead>
+                      <TableHead className="text-right">{t("systemHealth.db.col.avg", "TB (ms)")}</TableHead>
+                      <TableHead className="text-right">{t("systemHealth.db.col.max", "Max (ms)")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {qm.topSlow.map((row) => (
+                      <TableRow key={row.query}>
+                        <TableCell className="max-w-[420px]">
+                          <code className="block truncate text-xs" title={row.query}>{row.query}</code>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.slowCount}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.avgTime}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">{row.maxTime}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-1 text-sm font-medium">
+              {t("systemHealth.db.features", "Tính năng DB (db_feature_status)")}
+            </div>
+            {!d.dbFeatures.available ? (
+              <p className="text-sm text-muted-foreground">
+                {t("systemHealth.db.featuresUnavailable", "Bảng db_feature_status chưa tồn tại (migration 0172 chưa chạy trên DB này).")}
+              </p>
+            ) : d.dbFeatures.rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t("systemHealth.db.featuresEmpty", "Chưa có bản ghi trạng thái tính năng nào.")}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm">
+                {d.dbFeatures.rows.map((row) => (
+                  <InfoRow
+                    key={row.feature}
+                    label={<span title={row.detail ?? undefined}><code className="text-xs">{row.feature}</code></span>}
+                    value={<StatusBadge status={row.status} tone={featureTone[row.status] ?? "default"} label={row.status} />}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </SectionCard>

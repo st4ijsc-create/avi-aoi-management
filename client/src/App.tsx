@@ -92,6 +92,10 @@ const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowled
 const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role landing: simplified big-button floor operator shell
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
+const GoldenSamplesPage = React.lazy(() => import("./pages/GoldenSamplesPage")); // W7-C (doc 27 V8/V11): golden-sample capture + approval + align/diff management
+const RepairStation = React.lazy(() => import("./pages/RepairStation")); // W8-C (doc 27 V10): dedicated repair workstation (scan serial → repair walk → re-inspect; ?kiosk=1)
+const DefectCatalogPage = React.lazy(() => import("./pages/DefectCatalogPage")); // Doc 31 Đợt B (OP4): IPC-A-610 defect catalog curation + unmatched-code + repair guidance
+const MeasurementPointHealthPage = React.lazy(() => import("./pages/MeasurementPointHealthPage")); // Doc 31 Đợt B (MP3): __UNMAPPED__ unmatched-rate metric + bulk remap
 const MaintenanceHome = React.lazy(() => import("./pages/MaintenanceHome")); // F1 (doc 23): maintenance/technician workspace front door (role landing)
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
@@ -102,6 +106,8 @@ const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); /
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
+const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
+const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
@@ -127,6 +133,7 @@ const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 
 const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
 const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")); // Doc 13 / F3: read-only modules + license marketplace (admin)
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
+const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage")); // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run
 const UnifiedDeviceMonitor = React.lazy(() => import("./pages/UnifiedDeviceMonitor")); // P3-W2 (doc 12 §8): flagship unified device monitor — default DEVICES & OT landing
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
 const FleetOrchestration = React.lazy(() => import("./pages/FleetOrchestration")); // G1 (doc 16 §7 Khối 2): fleet task allocation + zone traffic (read-mostly; mutations gated by FLEET_ORCH_ENABLED)
@@ -139,6 +146,7 @@ const FieldDevices = React.lazy(() => import("./pages/FieldDevices")); // X1 (do
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
+const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -151,6 +159,8 @@ import QualityGateTemplates from "./pages/QualityGateTemplates";
 import ProductionScheduling from "./pages/ProductionScheduling";
 import MachineRegistration from "./pages/MachineRegistration";
 import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
+const AoiOnboardingWizard = React.lazy(() => import("./pages/AoiOnboardingWizard")); // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)
+const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardingWizard")); // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)
 import CorporateManagement from "./pages/CorporateManagement";
 import LicenseManagement from "./pages/LicenseManagement";
 import MqttNgRateThreshold from "./pages/MqttNgRateThreshold";
@@ -202,7 +212,8 @@ function Router() {
       <Route path="/dashboard"><RouteGuard navHref="/dashboard"><Dashboard /></RouteGuard></Route>
       {/* P1 consolidation: Andon + Predictive Alerts merged into the unified Ops Console. */}
       <Route path="/ops-console"><RouteGuard navHref="/ops-console"><AIPageWrapper><OpsConsole /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/andon"><Redirect to="/ops-console" /></Route>
+      {/* W5-C (doc 27 F7): /andon is now the dedicated TV board (was a redirect to /ops-console). */}
+      <Route path="/andon"><RouteGuard navHref="/andon"><AIPageWrapper><AndonBoard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/predictive-alerts"><Redirect to="/ops-console" /></Route>
       <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
       <Route path="/drill-down"><RouteGuard navHref="/drill-down"><DrillDownDashboard /></RouteGuard></Route>
@@ -230,6 +241,13 @@ function Router() {
       {/* P3-W2: Quality Cockpit is the default QUALITY landing (SPC/Pareto/Heatmap/Gates/Annotation tabs). */}
       <Route path="/quality-cockpit"><RouteGuard navHref="/quality-cockpit"><AIPageWrapper><QualityCockpit /></AIPageWrapper></RouteGuard></Route>
       <Route path="/quality-home"><RouteGuard navHref="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/golden-samples"><RouteGuard navHref="/golden-samples"><GoldenSamplesPage /></RouteGuard></Route>
+      {/* Doc 31 Đợt B (OP4/OP3): defect catalog curation + unmatched defect codes. */}
+      <Route path="/defect-catalog"><RouteGuard navHref="/defect-catalog"><DefectCatalogPage /></RouteGuard></Route>
+      {/* Doc 31 Đợt B (MP3): __UNMAPPED__ measurement-point mapping health + bulk remap. */}
+      <Route path="/measurement-point-health"><RouteGuard navHref="/measurement-point-health"><MeasurementPointHealthPage /></RouteGuard></Route>
+      {/* W8-C (doc 27 V10): dedicated repair workstation — scan serial, one-tap repair walk (?kiosk=1 friendly). */}
+      <Route path="/repair-station"><RouteGuard navHref="/repair-station"><AIPageWrapper><RepairStation /></AIPageWrapper></RouteGuard></Route>
       <Route path="/quality-gate-templates"><RouteGuard navHref="/quality-gate-templates"><QualityGateTemplates /></RouteGuard></Route>
       {/* P3-W2 consolidation: legacy quality screens now live as Cockpit tabs (deep-link ?tab=). */}
       <Route path="/quality-gates"><Redirect to="/quality-cockpit?tab=gates" /></Route>
@@ -262,11 +280,14 @@ function Router() {
       <Route path="/mqtt-topics"><RouteGuard requirePermission="mqtt_monitoring"><MqttTopicsMessages /></RouteGuard></Route>
       <Route path="/mqtt-ng-rate"><RouteGuard requirePermission="mqtt_alerts"><MqttNgRateThreshold /></RouteGuard></Route>
       <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
+      <Route path="/aoi-onboarding"><RouteGuard navHref="/aoi-onboarding"><AIPageWrapper><AoiOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/product-onboarding"><RouteGuard navHref="/product-onboarding"><AIPageWrapper><ProductOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
       <Route path="/uns-mapping"><RouteGuard navHref="/uns-mapping"><UnsMappingDesigner /></RouteGuard></Route>
       <Route path="/system-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/hot-folders"><RouteGuard navHref="/hot-folders"><AIPageWrapper><HotFolderConfigPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-control"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
       <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
@@ -362,6 +383,8 @@ function Router() {
       <Route path="/user-assignments"><RouteGuard requireRole={["admin"]} requirePermission="admin_users"><UserAssignments /></RouteGuard></Route>
       <Route path="/corporate-management"><RouteGuard requireRole={["admin"]}><CorporateManagement /></RouteGuard></Route>
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
+      <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
+      <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
       <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>

@@ -5,6 +5,7 @@ import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import * as cachedStats from "../functions/cachedStatistics";
 import { MACHINE_TYPES } from "../constants/machineTypes";
+import { resolveThresholdEditGate } from "../services/thresholdGovernanceService";
 
 export const importRouter = router({  
   importFactories: adminProcedure
@@ -226,19 +227,38 @@ export const importRouter = router({
       })),
       replaceIfExists: z.boolean().default(false),
     }))
-    .mutation(async ({ input }) => {
-      const results = { success: 0, failed: 0, errors: [] as string[] };
-      
+    .mutation(async ({ input, ctx }) => {
+      // Doc 31 B.6 — `skipped` counts points whose limit change was blocked by the
+      // lifecycle gate (live product → approval queue). Additive to the response.
+      const results = { success: 0, failed: 0, skipped: 0, errors: [] as string[] };
+
       for (const item of input.data) {
         try {
           const productModel = await db.getProductModelByCode(item.productModelCode);
           if (!productModel) {
             throw new Error(`Product model ${item.productModelCode} not found`);
           }
-          
+
           const existing = await db.getMeasurementPointDefByCode(productModel.id, item.code);
           if (existing) {
             if (input.replaceIfExists) {
+              // Doc 31 B.6 — a bulk import overwriting the limits of an EXISTING point
+              // is a direct limit-write and must respect the lifecycle gate (decision
+              // #4). Bulk import normally happens at setup on `development` products;
+              // on a live/released product the limit overwrite is BLOCKED (skipped
+              // with a clear message) so approved limits aren't silently replaced.
+              const touchesLimits =
+                item.upperLimit !== undefined ||
+                item.lowerLimit !== undefined ||
+                item.nominalValue !== undefined;
+              const gate = touchesLimits ? await resolveThresholdEditGate(existing.id) : null;
+              if (gate && gate.decision === "requires_approval" && gate.enforced) {
+                results.skipped++;
+                results.errors.push(
+                  `${item.code}: skipped — product ${gate.hasReleasedProgram ? "has a released program" : `is '${gate.lifecycleStatus}'`}; limit changes require approval (Threshold Approvals queue). / bị bỏ qua — thay đổi ngưỡng phải qua duyệt.`,
+                );
+                continue;
+              }
               await db.updateMeasurementPointDef(existing.id, {
                 name: item.name,
                 measurementType: item.measurementType,
@@ -248,6 +268,40 @@ export const importRouter = router({
                 lowerLimit: item.lowerLimit?.toString(),
                 isActive: item.isActive ?? true,
               });
+              // Audit the allowed direct limit edit (development products only).
+              if (gate) {
+                try {
+                  await db.createAuditLog({
+                    userId: (ctx as any)?.user?.id ?? null,
+                    userName: (ctx as any)?.user?.name ?? undefined,
+                    action: "threshold.directEdit",
+                    entityType: "measurement_point_def",
+                    entityId: existing.id,
+                    entityName: existing.code ?? item.code,
+                    details: {
+                      source: "bulkImport.importMeasurementPoints",
+                      productModelId: productModel.id,
+                      lifecycleStatus: gate.lifecycleStatus,
+                      gateDecision: gate.decision,
+                      gateEnforced: gate.enforced,
+                      hasReleasedProgram: gate.hasReleasedProgram,
+                      before: {
+                        lowerLimit: existing.lowerLimit ?? null,
+                        upperLimit: existing.upperLimit ?? null,
+                        nominalValue: existing.nominalValue ?? null,
+                      },
+                      after: {
+                        lowerLimit: item.lowerLimit?.toString() ?? null,
+                        upperLimit: item.upperLimit?.toString() ?? null,
+                        nominalValue: item.nominalValue?.toString() ?? null,
+                      },
+                    },
+                    status: "success",
+                  });
+                } catch {
+                  /* audit is best-effort — never fail the import on an audit write */
+                }
+              }
               results.success++;
             } else {
               throw new Error('Measurement point code already exists');

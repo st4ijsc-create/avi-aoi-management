@@ -424,9 +424,18 @@ export const aiFeedbackRouter = router({
       };
     }),
 
-  // Export training batch
+  // Export training batch.
+  // W7-B (doc 27 V2): `includeCorrections` (additive, default false) appends the
+  // harvested operator corrections (measurement_corrections, migration 0188) as
+  // a SECOND training-data source — the aiSuggestions feedback path below is
+  // untouched, so existing consumers see the exact same `data`/`format`/`count`.
   exportTrainingBatch: protectedProcedure
-    .input(z.object({ batchId: z.string() }))
+    .input(z.object({
+      batchId: z.string(),
+      includeCorrections: z.boolean().optional().default(false),
+      correctionsSinceDays: z.number().int().min(1).max(365).optional(),
+      correctionsLimit: z.number().int().min(1).max(5000).optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
@@ -464,19 +473,40 @@ export const aiFeedbackRouter = router({
         accuracy: fb.accuracy,
       }));
 
+      // W7-B (doc 27 V2) — second source: harvested operator corrections
+      // (machineLabel vs humanLabel + image-ref snapshot). Fail-open: a
+      // corrections read problem never breaks the primary export.
+      let corrections: unknown[] = [];
+      if (input.includeCorrections) {
+        try {
+          const { getCorrectionTrainingSamples } = await import("../services/ai/measurementCorrectionsService");
+          corrections = await getCorrectionTrainingSamples({
+            limit: input.correctionsLimit,
+            since: input.correctionsSinceDays
+              ? new Date(Date.now() - input.correctionsSinceDays * 86_400_000)
+              : undefined,
+          });
+        } catch (err) {
+          console.warn("[aiFeedback.exportTrainingBatch] corrections source skipped (fail-open):", err instanceof Error ? err.message : err);
+        }
+      }
+
       // Update batch status
       await db
         .update(aiTrainingBatches)
-        .set({ 
+        .set({
           status: "COMPLETED",
           completedAt: new Date(),
         })
         .where(eq(aiTrainingBatches.batchId, input.batchId));
 
-      return { 
-        data: exportData, 
+      return {
+        data: exportData,
         format: batch.exportFormat,
         count: exportData.length,
+        // Additive fields — absent-by-default semantics preserved for old callers.
+        corrections,
+        correctionCount: corrections.length,
       };
     }),
 

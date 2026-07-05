@@ -50,6 +50,21 @@ export interface CanonicalMeasurement {
   // ── defect mapping ──
   defectCatalogCode?: string;
   defectSeverity?: CanonicalDefectSeverity;
+  // ── defect location: pixel bbox on the point/board image (additive, optional) ──
+  // Matches measurement_results.defectBboxX/Y/W/H (drizzle/schema/inspection.ts:109-112).
+  // submitInspection's zod currently strips these (unknown keys are stripped, not rejected),
+  // so populating them is forward-compatible: no-op today, persisted once the router accepts them.
+  defectBboxX?: number;
+  defectBboxY?: number;
+  defectBboxW?: number;
+  defectBboxH?: number;
+  /**
+   * Lossless vendor passthrough (additive, optional): fields the vendor exported that have
+   * no canonical column (unit, spec limits, panel/board index, vendor extensions …).
+   * Stripped by submitInspection's zod today — carried so adapters stay lossless and future
+   * ingest/analytics can consume it without re-parsing vendor files.
+   */
+  rawExtras?: Record<string, unknown>;
 }
 
 /**
@@ -72,7 +87,24 @@ export interface CanonicalInspection {
   stageCode?: string;
   productionOrderCode?: string;
   operatorId?: string;
+  /**
+   * W8-B (doc 29 §2.3): panel multi-up context — machine-reported panel serial
+   * (panelId) + 1-based board index inside the panel. NATIVE submitInspection
+   * fields since migration 0192 (persisted to product_inspections.panelSerial/
+   * boardIndex). Adapters whose vendor format carries them (st4i-standard
+   * header panel_id/board_index) populate these; others leave them undefined.
+   */
+  panelId?: string;
+  boardIndex?: number;
   measurements: CanonicalMeasurement[];
+  /**
+   * Lossless vendor passthrough at inspection level (additive, optional) — e.g.
+   * program_version, attachments. Stripped by submitInspection's zod today
+   * (unknown keys are stripped, not rejected); see CanonicalMeasurement.rawExtras.
+   * panel_id/board_index copies are ALSO kept here by adapters for losslessness,
+   * but the canonical fields above are the ones ingest persists.
+   */
+  rawExtras?: Record<string, unknown>;
 }
 
 /**

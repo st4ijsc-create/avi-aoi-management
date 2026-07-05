@@ -11,6 +11,7 @@
 import * as db from '../db';
 import { sendEmail } from '../_core/email';
 import { notifyOwner } from '../_core/notification';
+import { getFactoryTimezone, nextRunInZone } from '../utils/factoryTime';
 
 // Email template config interface - matches db schema
 interface EmailTemplateConfig {
@@ -53,6 +54,12 @@ export interface ScheduledReport {
   isEnabled: boolean;
   lastRunAt?: Date;
   nextRunAt?: Date;
+  /** Wall-clock fire time "HH:mm" in the FACTORY timezone (doc 27 A1). */
+  scheduleTime?: string;
+  /** 0 (Sunday) – 6, weekly schedules only. */
+  scheduleDayOfWeek?: number | null;
+  /** 1–31, monthly schedules only. */
+  scheduleDayOfMonth?: number | null;
   createdBy: number;
   createdAt: Date;
 }
@@ -225,29 +232,38 @@ class ScheduledReportService {
       isEnabled: r.isActive,
       lastRunAt: r.lastSentAt ?? undefined,
       nextRunAt: r.nextScheduledAt ?? undefined,
+      scheduleTime: r.scheduleTime ?? undefined,
+      scheduleDayOfWeek: r.scheduleDayOfWeek,
+      scheduleDayOfMonth: r.scheduleDayOfMonth,
       createdBy: r.createdBy,
       createdAt: r.createdAt,
     }));
   }
 
-  /** Compute the next scheduled Date after now based on frequency + scheduleTime (HH:mm). */
-  private computeNextRun(frequency: ReportFrequency, scheduleTime: string): Date {
-    const [hh, mm] = (scheduleTime ?? "08:00").split(":").map(Number);
-    const next = new Date();
-    next.setSeconds(0, 0);
-    next.setHours(hh, mm);
-    switch (frequency) {
-      case "daily":
-        next.setDate(next.getDate() + 1);
-        break;
-      case "weekly":
-        next.setDate(next.getDate() + 7);
-        break;
-      case "monthly":
-        next.setMonth(next.getMonth() + 1);
-        break;
-    }
-    return next;
+  /**
+   * Compute the next scheduled run strictly after `after` (default: now).
+   *
+   * Doc 27 §6 A1 (P0): scheduleTime is a FACTORY-timezone wall-clock time.
+   * The old implementation used bare `new Date()` + setHours, i.e. the
+   * server/OS timezone — on a UTC host a "06:00 daily" report drifted to
+   * 06:00 UTC (13:00 Asia/Ho_Chi_Minh), the +7h manual-data-patch incident
+   * (doc 27 §6 A1). Now delegates to nextRunInZone, which evaluates
+   * the schedule on the factory wall clock (env FACTORY_TZ, default
+   * Asia/Ho_Chi_Minh) and returns the correct UTC instant, DST-safe.
+   */
+  private computeNextRun(
+    frequency: ReportFrequency,
+    scheduleTime: string,
+    opts?: { dayOfWeek?: number | null; dayOfMonth?: number | null; after?: Date },
+  ): Date {
+    return nextRunInZone({
+      frequency,
+      time: scheduleTime,
+      dayOfWeek: opts?.dayOfWeek,
+      dayOfMonth: opts?.dayOfMonth,
+      timeZone: getFactoryTimezone(),
+      after: opts?.after,
+    });
   }
 
   /**
@@ -268,8 +284,13 @@ class ScheduledReportService {
       });
     }
 
-    // Advance nextScheduledAt so this report is not re-triggered immediately
-    const nextRun = this.computeNextRun(report.frequency, "08:00");
+    // Advance nextScheduledAt so this report is not re-triggered immediately.
+    // Uses the report's REAL scheduleTime (previously hardcoded "08:00") and
+    // evaluates it on the factory timezone wall clock (doc 27 A1).
+    const nextRun = this.computeNextRun(report.frequency, report.scheduleTime ?? "08:00", {
+      dayOfWeek: report.scheduleDayOfWeek,
+      dayOfMonth: report.scheduleDayOfMonth,
+    });
     await db.updateReportNextSchedule(report.id, nextRun);
 
     // Also notify owner

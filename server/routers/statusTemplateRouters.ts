@@ -3,6 +3,14 @@ import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+// Doc 31 Đợt C (MP7/MP8) — deep bulk-import derivation + lifecycle gate.
+import {
+  deepImportPointSchema,
+  buildInsertFromImportPoint,
+  mapCatalogCategoryToLegacyType,
+  type LegacyMeasurementType,
+} from "../utils/measurementPointImport";
+import { resolveProductThresholdGate } from "../services/thresholdGovernanceService";
 
 export const machineStatusRouter = router({
   listWithStatus: protectedProcedure.query(async () => {
@@ -259,37 +267,84 @@ export const templateRouter = router({
 
 // ============ BULK IMPORT ROUTER ============
 export const bulkImportRouter = router({
+  // Doc 31 Đợt C (MP7/MP8) — DEEP bulk import. The flat legacy shape is now the
+  // `deepImportPointSchema` covering tolerance v2, shape+geometry, 3D/solder
+  // fields and measurementTypeCode. Limits imported into a LIVE product (active/
+  // eol/archived, or one with a released program) are stripped and surfaced via
+  // `skipped` — they must be set through the Threshold Approvals queue (decision #4).
   measurementPoints: adminProcedure
     .input(z.object({
       productModelId: z.number(),
-      points: z.array(z.object({
-        code: z.string().min(1).max(50),
-        name: z.string().min(1).max(255),
-        description: z.string().optional(),
-        measurementType: z.enum(['DIMENSION', 'VISUAL', 'ELECTRICAL', 'POSITION', 'COLOR', 'SURFACE', 'OTHER']),
-        unit: z.string().optional(),
-        lowerLimit: z.number().optional(),
-        upperLimit: z.number().optional(),
-        nominalValue: z.number().optional(),
-        positionX: z.number(),
-        positionY: z.number(),
-        radius: z.number().default(20),
-        cropWidth: z.number().default(100),
-        cropHeight: z.number().default(100),
-        orderIndex: z.number().default(0),
-      })),
+      points: z.array(deepImportPointSchema),
     }))
     .mutation(async ({ input }) => {
-      const pointsWithProductModel = input.points.map((p, index) => ({
-        ...p,
-        productModelId: input.productModelId,
-        orderIndex: p.orderIndex || index + 1,
-        lowerLimit: p.lowerLimit?.toString(),
-        upperLimit: p.upperLimit?.toString(),
-        nominalValue: p.nominalValue?.toString(),
-      }));
-      
-      return db.bulkCreateMeasurementPoints(pointsWithProductModel);
+      // Resolve product dims once (normalized coords) …
+      const product = await db.getProductModelById(input.productModelId);
+      const dims = product
+        ? { imageWidth: product.imageWidth, imageHeight: product.imageHeight }
+        : null;
+      // … and the lifecycle gate once (live product → strip imported limits).
+      let gateLive = false;
+      try {
+        const gate = await resolveProductThresholdGate(input.productModelId);
+        gateLive = gate.decision === "requires_approval" && gate.enforced;
+      } catch {
+        // fail-safe: if the gate cannot resolve, do NOT strip (best-effort import
+        // on a development product); the per-point insert still validates.
+        gateLive = false;
+      }
+
+      // Resolve legacy enum per unique measurementTypeCode (cached).
+      const typeCache = new Map<string, LegacyMeasurementType>();
+      const resolveLegacyType = async (
+        typeCode?: string,
+        fallback?: LegacyMeasurementType,
+      ): Promise<LegacyMeasurementType> => {
+        if (typeCode) {
+          if (typeCache.has(typeCode)) return typeCache.get(typeCode)!;
+          const cat = await db.getMeasurementTypeCatalogByCode(typeCode);
+          const resolved = cat ? mapCatalogCategoryToLegacyType(cat.category) : (fallback ?? "VISUAL");
+          typeCache.set(typeCode, resolved);
+          return resolved;
+        }
+        return fallback ?? "VISUAL";
+      };
+
+      const rows = [];
+      let limitsStrippedCount = 0;
+      const strippedCodes: string[] = [];
+      for (let i = 0; i < input.points.length; i++) {
+        const p = input.points[i];
+        const legacyType = await resolveLegacyType(p.measurementTypeCode, p.measurementType);
+        const built = buildInsertFromImportPoint(
+          p,
+          input.productModelId,
+          legacyType,
+          p.orderIndex || i + 1,
+          dims,
+          gateLive,
+        );
+        if (built.limitsStripped) {
+          limitsStrippedCount++;
+          strippedCodes.push(p.code);
+        }
+        rows.push(built.row);
+      }
+
+      const result = await db.bulkCreateMeasurementPoints(rows);
+      // Additive: `skipped` = points created WITHOUT their limits because the
+      // product is live. Surfaced in the dialog so the engineer routes limits
+      // through approval instead of assuming they imported.
+      const skipped = limitsStrippedCount;
+      const errors = [...result.errors];
+      if (skipped > 0) {
+        errors.push(
+          `${skipped} point(s) imported WITHOUT limits — product is live; set limits via the Threshold Approvals queue. ` +
+            `(${strippedCodes.slice(0, 10).join(", ")}${strippedCodes.length > 10 ? ", …" : ""}) / ` +
+            `bị bỏ ngưỡng vì sản phẩm đang hoạt động — đặt ngưỡng qua hàng đợi duyệt.`,
+        );
+      }
+      return { ...result, skipped, errors };
     }),
 });
 

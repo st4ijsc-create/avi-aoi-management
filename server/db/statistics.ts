@@ -13,8 +13,31 @@ import {
   productModels,
   alertHistory,
   workstations,
+  defectCatalog,
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
+// Shared list projection for product_inspections hot paths (doc 27 gap B9).
+import { inspectionListProjection } from "./inspection";
+// Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
+import {
+  finalYield,
+  fpyFromFirstInspections,
+  roundPct,
+  finalYieldPctSql,
+  fpyAggregateSql,
+  factoryDateSql,
+  factoryDayTextSql,
+  factoryHourTextSql,
+  factoryDateTruncSql,
+  executeRows,
+} from "../utils/kpi";
+// Doc 32 Wave R1 — real shift attribution from shift_configs (decision #3).
+import {
+  getApplicableShiftConfigs,
+  buildShiftClassifierSql,
+  UNASSIGNED_SHIFT,
+  type ShiftWindowMeta,
+} from "./shiftResolution";
 
 // ============ DAILY STATISTICS FUNCTIONS ============
 
@@ -93,6 +116,33 @@ export async function getDailyStatistics(params: {
 }
 
 // ============ DASHBOARD STATS FUNCTIONS ============
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+/**
+ * Machines under a factory/workshop as ONE uncorrelated subquery
+ * (machines ⋈ stations ⋈ production_lines ⋈ workshops). Used with
+ * `inArray(productInspections.machineId, …)` so the whole hierarchy filter is
+ * resolved inside the aggregate query — doc 27 gap B3 (was 4 sequential
+ * round-trips per dashboard render).
+ *
+ * Deliberately NO isActive conditions: the pre-B3 chain never filtered
+ * soft-deleted rows either, and dashboard stats must keep counting history
+ * of retired machines (verified in statistics.hierarchy.b3.test.ts).
+ */
+function machineIdsInHierarchySubquery(db: Db, filters: { factoryId?: number; workshopId?: number }) {
+  const hierarchyConditions: SQL[] = [];
+  if (filters.factoryId) hierarchyConditions.push(eq(workshops.factoryId, filters.factoryId));
+  if (filters.workshopId) hierarchyConditions.push(eq(workshops.id, filters.workshopId));
+  return db
+    .select({ id: machines.id })
+    .from(machines)
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+    .where(and(...hierarchyConditions));
+}
+
 export async function getDashboardStats(filters?: {
   factoryId?: number;
   workshopId?: number;
@@ -103,7 +153,7 @@ export async function getDashboardStats(filters?: {
   userRole?: string;
 }) {
   const db = await getDb();
-  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0 };
+  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0 };
 
   // Build conditions for inspections
   const conditions: SQL[] = [];
@@ -118,83 +168,95 @@ export async function getDashboardStats(filters?: {
     if (accessFilter) conditions.push(accessFilter);
   }
 
-  // If factory or workshop filter, need to join with machines
+  // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of the
+  // previous 4 sequential round-trips (workshops→lines→stations→machines).
+  // Semantics notes vs the old shape (both deliberate fixes, see W4-C tests):
+  //  - workshopId was previously a DEAD parameter (accepted, silently ignored);
+  //    it now actually filters.
+  //  - the old code silently DROPPED the filter (returning global stats) when an
+  //    intermediate level was empty (e.g. a factory with no lines); a factory
+  //    filter that resolves to zero machines now honestly returns zeros.
+  //  - like the old chain, the subquery does NOT filter isActive at any level:
+  //    inspections of soft-deleted machines keep counting toward their factory.
   if (filters?.factoryId || filters?.workshopId) {
-    // Get machine IDs first
-    const machineConditions = [];
-    if (filters?.factoryId) {
-      const workshopsInFactory = await db.select({ id: workshops.id }).from(workshops)
-        .where(eq(workshops.factoryId, filters.factoryId));
-      const workshopIds = workshopsInFactory.map(w => w.id);
-      
-      if (workshopIds.length > 0) {
-        const linesInWorkshops = await db.select({ id: productionLines.id }).from(productionLines)
-          .where(inArray(productionLines.workshopId, workshopIds));
-        const lineIds = linesInWorkshops.map(l => l.id);
-        
-        if (lineIds.length > 0) {
-          const stationsInLines = await db.select({ id: stations.id }).from(stations)
-            .where(inArray(stations.lineId, lineIds));
-          const stationIds = stationsInLines.map(s => s.id);
-          
-          if (stationIds.length > 0) {
-            const machinesInStations = await db.select({ id: machines.id }).from(machines)
-              .where(inArray(machines.stationId, stationIds));
-            const machineIds = machinesInStations.map(m => m.id);
-            
-            if (machineIds.length > 0) {
-              conditions.push(inArray(productInspections.machineId, machineIds));
-            } else {
-              return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0 };
-            }
-          }
-        }
-      }
-    }
+    conditions.push(inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, {
+      factoryId: filters.factoryId,
+      workshopId: filters.workshopId,
+    })));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const result = await db.select({
-    total: sql<number>`count(*)`,
-    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-  }).from(productInspections).where(whereClause);
+  const [result, fpyResult] = await Promise.all([
+    db.select({
+      total: sql<number>`count(*)`,
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+    }).from(productInspections).where(whereClause),
+    // True FPY: first inspection per serial inside the window (decision #4).
+    db.execute(fpyAggregateSql({ where: whereClause })),
+  ]);
 
   const stats = result[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
   const total = Number(stats.total) || 0;
   const ok = Number(stats.ok) || 0;
   const ng = Number(stats.ng) || 0;
   const ntf = Number(stats.ntf) || 0;
-  const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
 
-  return { total, ok, ng, ntf, yieldRate: Math.round(yieldRate * 100) / 100 };
+  const fpyRow = executeRows(fpyResult)[0] || {};
+  const firstTotal = Number(fpyRow.first_total) || 0;
+  const firstPass = Number(fpyRow.first_pass) || 0;
+
+  return {
+    total, ok, ng, ntf,
+    // Canonical FINAL yield (NTF = pass, decision #4).
+    yieldRate: roundPct(finalYield({ ok, ntf, total }), 2),
+    // Canonical true FPY (first inspection per serial, NTF/retests excluded).
+    fpy: roundPct(fpyFromFirstInspections({ firstPass, firstTotal }), 2),
+    firstPass,
+    firstTotal,
+  };
 }
 
 export async function getMachineStats(machineId: number, startDate?: Date, endDate?: Date) {
   const db = await getDb();
-  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0 };
+  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0 };
 
   const conditions = [eq(productInspections.machineId, machineId)];
   if (startDate) conditions.push(gte(productInspections.inspectionTime, startDate));
   if (endDate) conditions.push(lte(productInspections.inspectionTime, endDate));
+  const whereClause = and(...conditions);
 
-  const result = await db.select({
-    total: sql<number>`count(*)`,
-    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-  }).from(productInspections).where(and(...conditions));
+  const [result, fpyResult] = await Promise.all([
+    db.select({
+      total: sql<number>`count(*)`,
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+    }).from(productInspections).where(whereClause),
+    db.execute(fpyAggregateSql({ where: whereClause })),
+  ]);
 
   const stats = result[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
   const total = Number(stats.total) || 0;
   const ok = Number(stats.ok) || 0;
   const ng = Number(stats.ng) || 0;
   const ntf = Number(stats.ntf) || 0;
-  const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
 
-  return { total, ok, ng, ntf, yieldRate: Math.round(yieldRate * 100) / 100 };
+  const fpyRow = executeRows(fpyResult)[0] || {};
+  const firstTotal = Number(fpyRow.first_total) || 0;
+  const firstPass = Number(fpyRow.first_pass) || 0;
+
+  return {
+    total, ok, ng, ntf,
+    // Canonical FINAL yield (NTF = pass, decision #4).
+    yieldRate: roundPct(finalYield({ ok, ntf, total }), 2),
+    // Canonical true FPY (first inspection per serial within window).
+    fpy: roundPct(fpyFromFirstInspections({ firstPass, firstTotal }), 2),
+    firstPass,
+    firstTotal,
+  };
 }
 
 // ============ STATS WITH COMPARISON ============
@@ -223,19 +285,26 @@ export async function getStatsWithComparison(filters?: {
     });
     
     // Calculate trends
-    const outputTrend = prevStats.total > 0 
-      ? ((currentStats.total - prevStats.total) / prevStats.total) * 100 
+    const outputTrend = prevStats.total > 0
+      ? ((currentStats.total - prevStats.total) / prevStats.total) * 100
       : 0;
-    const fpyTrend = prevStats.yieldRate > 0 
-      ? currentStats.yieldRate - prevStats.yieldRate 
+    // trends.fpy is now the TRUE first-pass-yield delta (decision #4); the
+    // final-yield delta is exposed separately as trends.finalYield so the
+    // yieldRate KPI tile can pair with the matching trend.
+    const fpyTrend = prevStats.fpy > 0
+      ? currentStats.fpy - prevStats.fpy
       : 0;
-    
+    const finalYieldTrend = prevStats.yieldRate > 0
+      ? currentStats.yieldRate - prevStats.yieldRate
+      : 0;
+
     return {
       current: currentStats,
       previous: prevStats,
       trends: {
         output: Math.round(outputTrend * 10) / 10,
         fpy: Math.round(fpyTrend * 10) / 10,
+        finalYield: Math.round(finalYieldTrend * 10) / 10,
         ok: prevStats.ok > 0 ? Math.round(((currentStats.ok - prevStats.ok) / prevStats.ok) * 1000) / 10 : 0,
         ng: prevStats.ng > 0 ? Math.round(((currentStats.ng - prevStats.ng) / prevStats.ng) * 1000) / 10 : 0,
         ntf: prevStats.ntf > 0 ? Math.round(((currentStats.ntf - prevStats.ntf) / prevStats.ntf) * 1000) / 10 : 0,
@@ -251,6 +320,35 @@ export async function getStatsWithComparison(filters?: {
 }
 
 // ============ SHIFT STATS ============
+/**
+ * Resolve a factory id → its code (product_inspections stores factoryCode, a
+ * varchar, not the id). Returns undefined when the factory is unknown.
+ */
+async function resolveFactoryCode(db: Db, factoryId: number): Promise<string | undefined> {
+  const [f] = await db
+    .select({ code: factories.code })
+    .from(factories)
+    .where(eq(factories.id, factoryId))
+    .limit(1);
+  return f?.code;
+}
+
+/**
+ * Per-shift yield/NG/output for the Dashboard shift card.
+ *
+ * Doc 32 Wave R1 (decision #3): shifts are now driven by the factory's
+ * `shift_configs` windows (2, 3 or N shifts, custom hours, wrap-aware) instead
+ * of the old hardcoded 6-14 / 14-22 / 22-6 buckets. When a factory has no
+ * applicable shift_configs the legacy hour buckets (morning/afternoon/night)
+ * are used so the card + its icons still render.
+ *
+ * `factoryId` now BOTH scopes the data (was previously accepted but ignored)
+ * AND selects the shift windows — so a factory-scoped card shows that factory's
+ * own shifts over its own data. Shape stays backward-compatible (adds a
+ * `shiftWindow` field; existing shift/shiftName/total/ok/ng/ntf/fpy/finalYield
+ * preserved). FPY per shift = true FPY of boards whose FIRST inspection fell in
+ * the shift (canonical, decision #4).
+ */
 export async function getShiftStats(filters?: {
   factoryId?: number;
   startDate?: Date;
@@ -265,6 +363,12 @@ export async function getShiftStats(filters?: {
   if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
 
+  // Factory scope: filter data to the factory AND drive the shift windows.
+  if (filters?.factoryId) {
+    const factoryCode = await resolveFactoryCode(db, filters.factoryId);
+    if (factoryCode) conditions.push(eq(productInspections.factoryCode, factoryCode));
+  }
+
   // Access filter by user assignments
   if (filters?.userId && filters?.userRole !== 'admin') {
     const { getAccessFilterConditions } = await import("../_core/accessControl");
@@ -274,34 +378,224 @@ export async function getShiftStats(filters?: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  // Define shifts: Morning (6-14), Afternoon (14-22), Night (22-6)
-  // PostgreSQL uses EXTRACT(HOUR FROM timestamp)
-  const shiftExpr = sql<string>`CASE 
-    WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) >= 6 AND EXTRACT(HOUR FROM ${productInspections.inspectionTime}) < 14 THEN 'morning'
-    WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) >= 14 AND EXTRACT(HOUR FROM ${productInspections.inspectionTime}) < 22 THEN 'afternoon'
-    ELSE 'night'
-  END`;
-  
-  const result = await db.select({
-    shift: shiftExpr.as('shift'),
-    total: sql<number>`count(*)`.as('total'),
-    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('ok'),
-    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ng'),
-    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntf'),
-  })
-  .from(productInspections)
-  .where(whereClause)
-  .groupBy(sql`shift`);
+  // Real shift windows from shift_configs (fallback: legacy hour buckets).
+  const configs = await getApplicableShiftConfigs(db, filters?.factoryId);
+  const { expr: shiftExpr, metas } = buildShiftClassifierSql(configs, productInspections.inspectionTime);
+  const metaByCode = new Map<string, ShiftWindowMeta>(metas.map((m) => [m.code, m]));
+  const orderByCode = new Map<string, number>(metas.map((m) => [m.code, m.orderIndex]));
 
-  return result.map(r => ({
-    shift: String(r.shift),
-    shiftName: r.shift === 'morning' ? 'Ca sáng (6h-14h)' : r.shift === 'afternoon' ? 'Ca chiều (14h-22h)' : 'Ca đêm (22h-6h)',
-    total: Number(r.total) || 0,
-    ok: Number(r.ok) || 0,
-    ng: Number(r.ng) || 0,
-    ntf: Number(r.ntf) || 0,
-    fpy: Number(r.total) > 0 ? Math.round(((Number(r.ok) + Number(r.ntf)) / Number(r.total)) * 1000) / 10 : 0,
-  }));
+  const [result, fpyResult] = await Promise.all([
+    db.select({
+      shift: shiftExpr.as('shift'),
+      total: sql<number>`count(*)`.as('total'),
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('ok'),
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ng'),
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntf'),
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(sql`shift`),
+    // True FPY per shift: a board belongs to the shift of its FIRST inspection.
+    db.execute(fpyAggregateSql({ where: whereClause, bucketExpr: shiftExpr, groupBy: 'bucket' })),
+  ]);
+
+  const fpyByShift = new Map<string, { firstPass: number; firstTotal: number }>(
+    executeRows(fpyResult).map((r: any) => [String(r.bucket), {
+      firstPass: Number(r.first_pass) || 0,
+      firstTotal: Number(r.first_total) || 0,
+    }]),
+  );
+
+  const rows = result.map(r => {
+    const code = String(r.shift);
+    const meta = metaByCode.get(code) ?? UNASSIGNED_SHIFT;
+    const total = Number(r.total) || 0;
+    const ok = Number(r.ok) || 0;
+    const ntf = Number(r.ntf) || 0;
+    const firsts = fpyByShift.get(code) || { firstPass: 0, firstTotal: 0 };
+    return {
+      shift: code,
+      shiftName: meta.name,
+      // Additive: factory-local window "HH:MM-HH:MM" of this shift.
+      shiftWindow: meta.window,
+      total,
+      ok,
+      ng: Number(r.ng) || 0,
+      ntf,
+      // Wire name kept for the frontend; VALUE is true FPY (decision #4).
+      fpy: roundPct(fpyFromFirstInspections(firsts), 1),
+      // Canonical final yield (NTF = pass) exposed alongside.
+      finalYield: roundPct(finalYield({ ok, ntf, total }), 1),
+    };
+  });
+
+  // Stable order: configured shift order, unassigned last.
+  rows.sort(
+    (a, b) =>
+      (orderByCode.get(a.shift) ?? UNASSIGNED_SHIFT.orderIndex) -
+        (orderByCode.get(b.shift) ?? UNASSIGNED_SHIFT.orderIndex) ||
+      a.shift.localeCompare(b.shift),
+  );
+  return rows;
+}
+
+// ============ SHIFT REPORT ============
+export interface ShiftReportRow {
+  shift: string;
+  shiftName: string;
+  /** Factory-local window "HH:MM-HH:MM". */
+  shiftWindow: string;
+  startHour: number;
+  startMinute: number;
+  endHour: number;
+  endMinute: number;
+  /** Total inspections (output) in the shift. */
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+  /** Canonical final yield % (NTF counts as pass). */
+  yieldPct: number;
+  /** True first-pass yield % (board's first inspection). */
+  fpy: number;
+  /** Distinct machines that produced inspections in the shift. */
+  machinesActive: number;
+  /** Distinct defect categories seen among failed measurement points. */
+  defectTypeCount: number;
+  /** Which resolution tier produced the shift attribution. */
+  source: "config" | "fallback";
+}
+
+/**
+ * Per-shift rollup over a date range, suitable for a "shift report"
+ * (feeds R3/R4). One row per configured shift (zero-filled when the shift had
+ * no output), ordered by shift order, plus an "unassigned" row only when data
+ * fell outside every configured window.
+ *
+ * Shift attribution uses the factory's shift_configs windows (decision #3 tier
+ * 2); the production_sessions-preferred tier is available row-level via
+ * resolveShiftForInspections — the aggregate stays window-based for scale
+ * (sessions are sparse; a per-row correlated session lookup over the inspection
+ * hypertable is not worth it here).
+ */
+export async function getShiftReport(filters?: {
+  factoryId?: number;
+  lineId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: string;
+}): Promise<ShiftReportRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions: SQL[] = [];
+  if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  if (filters?.factoryId) {
+    const factoryCode = await resolveFactoryCode(db, filters.factoryId);
+    if (factoryCode) conditions.push(eq(productInspections.factoryCode, factoryCode));
+  }
+  if (filters?.lineId) {
+    const [l] = await db
+      .select({ code: productionLines.code })
+      .from(productionLines)
+      .where(eq(productionLines.id, filters.lineId))
+      .limit(1);
+    if (l?.code) conditions.push(eq(productInspections.lineCode, l.code));
+  }
+
+  if (filters?.userId && filters?.userRole !== 'admin') {
+    const { getAccessFilterConditions } = await import("../_core/accessControl");
+    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
+    if (accessFilter) conditions.push(accessFilter);
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const configs = await getApplicableShiftConfigs(db, filters?.factoryId);
+  const { expr: shiftExpr, metas, isFallback } = buildShiftClassifierSql(configs, productInspections.inspectionTime);
+  const source: "config" | "fallback" = isFallback ? "fallback" : "config";
+
+  const [result, fpyResult, defectResult] = await Promise.all([
+    db.select({
+      shift: shiftExpr.as('shift'),
+      total: sql<number>`count(*)`.as('total'),
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('ok'),
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ng'),
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntf'),
+      machinesActive: sql<number>`count(distinct ${productInspections.machineId})`.as('machines_active'),
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(sql`shift`),
+    db.execute(fpyAggregateSql({ where: whereClause, bucketExpr: shiftExpr, groupBy: 'bucket' })),
+    // Distinct defect categories per shift among FAILED measurement points.
+    db.select({
+      shift: shiftExpr.as('shift'),
+      defectTypes: sql<number>`count(distinct ${defectCatalog.category})`.as('defect_types'),
+    })
+    .from(productInspections)
+    .innerJoin(measurementResults, eq(measurementResults.inspectionId, productInspections.id))
+    .innerJoin(defectCatalog, eq(defectCatalog.id, measurementResults.defectCatalogId))
+    .where(whereClause ? and(whereClause, sql`${measurementResults.result} <> 'OK'`) : sql`${measurementResults.result} <> 'OK'`)
+    .groupBy(sql`shift`),
+  ]);
+
+  const fpyByShift = new Map<string, { firstPass: number; firstTotal: number }>(
+    executeRows(fpyResult).map((r: any) => [String(r.bucket), {
+      firstPass: Number(r.first_pass) || 0,
+      firstTotal: Number(r.first_total) || 0,
+    }]),
+  );
+  const defectByShift = new Map<string, number>(
+    defectResult.map((r: any) => [String(r.shift), Number(r.defectTypes) || 0]),
+  );
+  const dataByShift = new Map<string, typeof result[number]>(
+    result.map((r) => [String(r.shift), r]),
+  );
+
+  // One row per configured shift (zero-filled), plus any extra codes present in
+  // the data (e.g. "unassigned").
+  const codes = [...new Set([...metas.map((m) => m.code), ...dataByShift.keys()])];
+  const metaByCode = new Map<string, ShiftWindowMeta>(metas.map((m) => [m.code, m]));
+
+  const rows: ShiftReportRow[] = codes.map((code) => {
+    const meta = metaByCode.get(code) ?? UNASSIGNED_SHIFT;
+    const r = dataByShift.get(code);
+    const total = Number(r?.total) || 0;
+    const ok = Number(r?.ok) || 0;
+    const ng = Number(r?.ng) || 0;
+    const ntf = Number(r?.ntf) || 0;
+    const firsts = fpyByShift.get(code) || { firstPass: 0, firstTotal: 0 };
+    return {
+      shift: code,
+      shiftName: meta.name,
+      shiftWindow: meta.window,
+      startHour: meta.startHour,
+      startMinute: meta.startMinute,
+      endHour: meta.endHour,
+      endMinute: meta.endMinute,
+      total,
+      ok,
+      ng,
+      ntf,
+      yieldPct: roundPct(finalYield({ ok, ntf, total }), 1),
+      fpy: roundPct(fpyFromFirstInspections(firsts), 1),
+      machinesActive: Number(r?.machinesActive) || 0,
+      defectTypeCount: defectByShift.get(code) || 0,
+      source,
+    };
+  });
+
+  rows.sort(
+    (a, b) =>
+      (metaByCode.get(a.shift)?.orderIndex ?? UNASSIGNED_SHIFT.orderIndex) -
+        (metaByCode.get(b.shift)?.orderIndex ?? UNASSIGNED_SHIFT.orderIndex) ||
+      a.shift.localeCompare(b.shift),
+  );
+  return rows;
 }
 
 // ============ TOP/BOTTOM MACHINES ============
@@ -329,17 +623,28 @@ export async function getTopBottomMachines(filters?: {
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   const limit = filters?.limit || 5;
 
-  const result = await db.select({
-    machineId: productInspections.machineId,
-    total: sql<number>`count(*)`,
-    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-  })
-  .from(productInspections)
-  .where(whereClause)
-  .groupBy(productInspections.machineId)
-  .having(sql`count(*) > 0`);
+  const [result, fpyResult] = await Promise.all([
+    db.select({
+      machineId: productInspections.machineId,
+      total: sql<number>`count(*)`,
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(productInspections.machineId)
+    .having(sql`count(*) > 0`),
+    // True FPY per machine: first inspection per (machine, serial).
+    db.execute(fpyAggregateSql({ where: whereClause, groupBy: 'machine' })),
+  ]);
+
+  const fpyByMachine = new Map<number, { firstPass: number; firstTotal: number }>(
+    executeRows(fpyResult).map((r: any) => [Number(r.machine_id), {
+      firstPass: Number(r.first_pass) || 0,
+      firstTotal: Number(r.first_total) || 0,
+    }]),
+  );
 
   // Get machine details
   const machineDetails = await db.select().from(machines);
@@ -350,7 +655,14 @@ export async function getTopBottomMachines(filters?: {
     const total = Number(r.total) || 0;
     const ok = Number(r.ok) || 0;
     const ntf = Number(r.ntf) || 0;
-    const fpy = total > 0 ? ((ok + ntf) / total) * 100 : 0;
+    const firsts = fpyByMachine.get(Number(r.machineId));
+    const finalYieldPct = finalYield({ ok, ntf, total });
+    // Wire name `fpy` kept; VALUE is now true FPY. If a machine has no
+    // usable serials (all empty), fall back to final yield so the ranking
+    // stays meaningful — documented limitation, see utils/kpi.ts.
+    const fpy = firsts && firsts.firstTotal > 0
+      ? fpyFromFirstInspections(firsts)
+      : finalYieldPct;
     return {
       id: r.machineId,
       name: machine?.name || 'Unknown',
@@ -359,7 +671,8 @@ export async function getTopBottomMachines(filters?: {
       ok: Number(r.ok) || 0,
       ng: Number(r.ng) || 0,
       ntf,
-      fpy: Math.round(fpy * 10) / 10,
+      fpy: roundPct(fpy, 1),
+      finalYield: roundPct(finalYieldPct, 1),
     };
   });
 
@@ -395,28 +708,55 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
-  // Use parameterized Drizzle query (safe from SQL injection)
-  const result = await db.execute(sql`
-    SELECT 
-      TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD') as date,
+  // Use parameterized Drizzle query (safe from SQL injection).
+  // Day buckets are computed in the FACTORY timezone (gap A2).
+  const dayBucket = factoryDayTextSql(productInspections.inspectionTime);
+  const whereClause = sql`${productInspections.inspectionTime} >= ${startDate.toISOString()}`;
+  const [result, fpyResult] = await Promise.all([
+    db.execute(sql`
+    SELECT
+      ${dayBucket} as date,
       COUNT(*) as "totalProducts",
       SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END) as "okCount",
       SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END) as "ngCount",
       SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END) as "ntfCount"
     FROM ${productInspections}
-    WHERE ${productInspections.inspectionTime} >= ${startDate.toISOString()}
-    GROUP BY TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD')
+    WHERE ${whereClause}
+    GROUP BY 1
     ORDER BY date DESC
-  `);
+  `),
+    // Doc 27 Đợt 5 / W5-E (Đợt-1.4 leftover): canonical per-day KPIs so the
+    // dashboard sparkline stops computing "(ok+ntf)/total" client-side and
+    // mislabelling it FPY. True FPY = first inspection per serial per day
+    // (same fpyAggregateSql pattern as getHourlyStats).
+    db.execute(fpyAggregateSql({ where: whereClause, bucketExpr: dayBucket, groupBy: "bucket" })),
+  ]);
+
+  const fpyByDay = new Map<string, { firstPass: number; firstTotal: number }>(
+    executeRows(fpyResult).map((r: any) => [String(r.bucket), {
+      firstPass: Number(r.first_pass) || 0,
+      firstTotal: Number(r.first_total) || 0,
+    }]),
+  );
 
   const rows = Array.isArray(result) ? result : (result as any).rows || [];
-  return rows.map((r: any) => ({
-    date: String(r.date),
-    totalProducts: Number(r.totalProducts) || 0,
-    okCount: Number(r.okCount) || 0,
-    ngCount: Number(r.ngCount) || 0,
-    ntfCount: Number(r.ntfCount) || 0,
-  }));
+  return rows.map((r: any) => {
+    const totalProducts = Number(r.totalProducts) || 0;
+    const okCount = Number(r.okCount) || 0;
+    const ntfCount = Number(r.ntfCount) || 0;
+    const firsts = fpyByDay.get(String(r.date)) || { firstPass: 0, firstTotal: 0 };
+    return {
+      date: String(r.date),
+      totalProducts,
+      okCount,
+      ngCount: Number(r.ngCount) || 0,
+      ntfCount,
+      // Canonical true FPY (decision #4); 0 when no usable serials that day.
+      fpy: roundPct(fpyFromFirstInspections(firsts), 2),
+      // Canonical final yield (NTF = pass).
+      finalYield: roundPct(finalYield({ ok: okCount, ntf: ntfCount, total: totalProducts }), 2),
+    };
+  });
 }
 
 // ============ HOURLY STATS ============
@@ -441,18 +781,31 @@ export async function getHourlyStats(filters?: {
   }
   const whereClause = sql.join(conditions, sql` AND `);
 
-  const result = await db.execute(sql`
-    SELECT 
-      TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD HH24:00') as hour,
-      COUNT(*) as "totalProducts",
-      SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END) as "okCount",
-      SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END) as "ngCount",
-      SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END) as "ntfCount"
-    FROM ${productInspections}
-    WHERE ${whereClause}
-    GROUP BY TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD HH24:00')
-    ORDER BY hour ASC
-  `);
+  // Hour buckets in the FACTORY timezone (gap A2).
+  const hourBucket = factoryHourTextSql(productInspections.inspectionTime);
+  const [result, fpyResult] = await Promise.all([
+    db.execute(sql`
+      SELECT
+        ${hourBucket} as hour,
+        COUNT(*) as "totalProducts",
+        SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END) as "okCount",
+        SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END) as "ngCount",
+        SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END) as "ntfCount"
+      FROM ${productInspections}
+      WHERE ${whereClause}
+      GROUP BY 1
+      ORDER BY hour ASC
+    `),
+    // True FPY per hour: a board counts in the bucket of its FIRST inspection.
+    db.execute(fpyAggregateSql({ where: whereClause, bucketExpr: hourBucket, groupBy: 'bucket' })),
+  ]);
+
+  const fpyByHour = new Map<string, { firstPass: number; firstTotal: number }>(
+    executeRows(fpyResult).map((r: any) => [String(r.bucket), {
+      firstPass: Number(r.first_pass) || 0,
+      firstTotal: Number(r.first_total) || 0,
+    }]),
+  );
 
   const rows = Array.isArray(result) ? result : (result as any).rows || [];
   return rows.map((r: any) => {
@@ -460,14 +813,19 @@ export async function getHourlyStats(filters?: {
     const ok = Number(r.okCount) || 0;
     const ng = Number(r.ngCount) || 0;
     const ntf = Number(r.ntfCount) || 0;
+    const firsts = fpyByHour.get(String(r.hour)) || { firstPass: 0, firstTotal: 0 };
     return {
       hour: String(r.hour),
       total,
       ok,
       ng,
       ntf,
-      fpy: ((ok / total) * 100).toFixed(1),
-      fy: ((ng / total) * 100).toFixed(1),
+      // Wire names/types kept (strings). VALUES fixed per decision #4:
+      //   fpy  = true First Pass Yield (was ok/total),
+      //   fy   = FINAL yield, NTF counts as pass (was the NG rate!),
+      //   ntfy = NTF rate (unchanged).
+      fpy: fpyFromFirstInspections(firsts).toFixed(1),
+      fy: finalYield({ ok, ntf, total }).toFixed(1),
       ntfy: ((ntf / total) * 100).toFixed(1),
     };
   });
@@ -489,83 +847,45 @@ export async function searchInspections(params: {
   offset?: number;
   userId?: number;
   userRole?: string;
+  // W7-B (doc 27 V3): "ntfScore" pre-sorts the operator verify queue by
+  // suspected-false-call likelihood (DESC NULLS LAST — unscored rows keep
+  // newest-first order at the tail). Default stays newest-first.
+  sortBy?: "time" | "ntfScore";
 }) {
   const db = await getDb();
   if (!db) return { data: [], total: 0 };
 
-  // Build machine IDs from hierarchy filters
-  let machineIds: number[] | undefined;
-
-  if (params.machineCode) {
-    const machineResult = await db.select({ id: machines.id }).from(machines)
-      .where(like(machines.code, `%${params.machineCode}%`));
-    machineIds = machineResult.map(m => m.id);
-  } else if (params.stationCode || params.lineCode || params.workshopCode || params.factoryCode) {
-    // Build hierarchy filter
-    let stationIds: number[] | undefined;
-    let lineIds: number[] | undefined;
-    let workshopIds: number[] | undefined;
-
-    if (params.factoryCode) {
-      const factoryResult = await db.select({ id: factories.id }).from(factories)
-        .where(like(factories.code, `%${params.factoryCode}%`));
-      if (factoryResult.length > 0) {
-        const workshopResult = await db.select({ id: workshops.id }).from(workshops)
-          .where(inArray(workshops.factoryId, factoryResult.map(f => f.id)));
-        workshopIds = workshopResult.map(w => w.id);
-      }
-    }
-
-    if (params.workshopCode) {
-      const workshopResult = await db.select({ id: workshops.id }).from(workshops)
-        .where(like(workshops.code, `%${params.workshopCode}%`));
-      workshopIds = workshopIds 
-        ? workshopIds.filter(id => workshopResult.some(w => w.id === id))
-        : workshopResult.map(w => w.id);
-    }
-
-    if (workshopIds && workshopIds.length > 0) {
-      const lineResult = await db.select({ id: productionLines.id }).from(productionLines)
-        .where(inArray(productionLines.workshopId, workshopIds));
-      lineIds = lineResult.map(l => l.id);
-    }
-
-    if (params.lineCode) {
-      const lineResult = await db.select({ id: productionLines.id }).from(productionLines)
-        .where(like(productionLines.code, `%${params.lineCode}%`));
-      lineIds = lineIds
-        ? lineIds.filter(id => lineResult.some(l => l.id === id))
-        : lineResult.map(l => l.id);
-    }
-
-    if (lineIds && lineIds.length > 0) {
-      const stationResult = await db.select({ id: stations.id }).from(stations)
-        .where(inArray(stations.lineId, lineIds));
-      stationIds = stationResult.map(s => s.id);
-    }
-
-    if (params.stationCode) {
-      const stationResult = await db.select({ id: stations.id }).from(stations)
-        .where(like(stations.code, `%${params.stationCode}%`));
-      stationIds = stationIds
-        ? stationIds.filter(id => stationResult.some(s => s.id === id))
-        : stationResult.map(s => s.id);
-    }
-
-    if (stationIds && stationIds.length > 0) {
-      const machineResult = await db.select({ id: machines.id }).from(machines)
-        .where(inArray(machines.stationId, stationIds));
-      machineIds = machineResult.map(m => m.id);
-    }
-  }
-
-  // Build inspection query
+  // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of
+  // up to 6 sequential round-trips (factories→workshops→lines→stations→machines
+  // + per-level LIKE intersections). Preserved semantics: `machineCode` still
+  // OVERRIDES the other hierarchy filters (old `if/else if` shape); "no machine
+  // matches" still yields { data: [], total: 0 } (now simply because the IN-set
+  // is empty). Deliberate fix: a code filter that matches nothing at some level
+  // is no longer silently dropped (the old intersect chain could fall through
+  // and return UNFILTERED rows, e.g. nonexistent factoryCode + valid
+  // workshopCode ignored the factory).
   const conditions = [];
-  if (machineIds && machineIds.length > 0) {
-    conditions.push(inArray(productInspections.machineId, machineIds));
-  } else if (params.factoryCode || params.workshopCode || params.lineCode || params.stationCode || params.machineCode) {
-    // No machines found matching filters
-    return { data: [], total: 0 };
+  if (params.machineCode) {
+    conditions.push(inArray(
+      productInspections.machineId,
+      db.select({ id: machines.id }).from(machines)
+        .where(like(machines.code, `%${params.machineCode}%`)),
+    ));
+  } else if (params.stationCode || params.lineCode || params.workshopCode || params.factoryCode) {
+    const hierarchyConditions: SQL[] = [];
+    if (params.factoryCode) hierarchyConditions.push(like(factories.code, `%${params.factoryCode}%`));
+    if (params.workshopCode) hierarchyConditions.push(like(workshops.code, `%${params.workshopCode}%`));
+    if (params.lineCode) hierarchyConditions.push(like(productionLines.code, `%${params.lineCode}%`));
+    if (params.stationCode) hierarchyConditions.push(like(stations.code, `%${params.stationCode}%`));
+    conditions.push(inArray(
+      productInspections.machineId,
+      db.select({ id: machines.id }).from(machines)
+        .innerJoin(stations, eq(machines.stationId, stations.id))
+        .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+        .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eq(workshops.factoryId, factories.id))
+        .where(and(...hierarchyConditions)),
+    ));
   }
 
   if (params.serialNumber) conditions.push(like(productInspections.serialNumber, `%${params.serialNumber}%`));
@@ -585,10 +905,17 @@ export async function searchInspections(params: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+  // W7-B (V3): partial index idx_inspections_ntf_score covers the scored rows.
+  const orderBy = params.sortBy === "ntfScore"
+    ? [sql`${productInspections.ntfScore} DESC NULLS LAST`, desc(productInspections.inspectionTime)]
+    : [desc(productInspections.inspectionTime)];
+
   const [data, countResult] = await Promise.all([
-    db.select().from(productInspections)
+    // Projected hot-path read (gap B9) — History/QualityHome/SupervisorHome
+    // list views; heavy json/text detail columns stay on inspection.getById.
+    db.select(inspectionListProjection).from(productInspections)
       .where(whereClause)
-      .orderBy(desc(productInspections.inspectionTime))
+      .orderBy(...orderBy)
       .limit(params.limit || 50)
       .offset(params.offset || 0),
     db.select({ count: sql<number>`count(*)` }).from(productInspections).where(whereClause)
@@ -1056,7 +1383,7 @@ export async function getWorkstationSummary(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
-        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as "yieldRate"
+        COALESCE(${finalYieldPctSql(sql`mr.result`, { countExpr: sql`COUNT(mr.id)` })}, 0) as "yieldRate"
       FROM workstations w
       LEFT JOIN measurement_point_defs mpd ON mpd."workstationId" = w.id
       LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
@@ -1341,9 +1668,11 @@ export async function getNGTrendByDay(filters?: {
     const startDateStr = filters?.startDate?.toISOString();
     const endDateStr = filters?.endDate?.toISOString();
     
+    // Day buckets in the FACTORY timezone (gap A2). TO_CHAR keeps the wire
+    // format a stable 'YYYY-MM-DD' string (the declared contract).
     const query = sql`
-      SELECT 
-        CAST(pi."inspectionTime" AS DATE) as date,
+      SELECT
+        ${factoryDayTextSql(sql`pi."inspectionTime"`)} as date,
         COALESCE(COUNT(mr.id), 0) as "totalCount",
         COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
@@ -1357,7 +1686,7 @@ export async function getNGTrendByDay(filters?: {
       ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
       ${filters?.workstationId ? sql`AND mpd."workstationId" = ${filters.workstationId}` : sql``}
       ${filters?.measurementPointDefId ? sql`AND mr."pointDefId" = ${filters.measurementPointDefId}` : sql``}
-      GROUP BY CAST(pi."inspectionTime" AS DATE)
+      GROUP BY 1
       ORDER BY date ASC
     `;
 
@@ -1500,7 +1829,7 @@ export async function getNGSummaryByMachine(filters?: {
         COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
         COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
         COALESCE(SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
-        COALESCE(ROUND(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(pi.id), 0), 2), 0) as "yieldRate"
+        COALESCE(${finalYieldPctSql(sql`pi."overallResult"`, { countExpr: sql`COUNT(pi.id)` })}, 0) as "yieldRate"
       FROM machines m
       LEFT JOIN product_inspections pi ON pi."machineId" = m.id
         ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
@@ -1541,9 +1870,10 @@ export async function getNGTrendByDayDirect(filters?: {
     const startDateStr = filters?.startDate?.toISOString();
     const endDateStr = filters?.endDate?.toISOString();
 
+    // Day buckets in the FACTORY timezone (gap A2).
     const query = sql`
-      SELECT 
-        CAST(pi."inspectionTime" AS DATE) as date,
+      SELECT
+        ${factoryDayTextSql(sql`pi."inspectionTime"`)} as date,
         COALESCE(COUNT(pi.id), 0) as "totalCount",
         COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
         COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
@@ -1554,7 +1884,7 @@ export async function getNGTrendByDayDirect(filters?: {
       ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
       ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
       ${filters?.machineId ? sql`AND pi."machineId" = ${filters.machineId}` : sql``}
-      GROUP BY CAST(pi."inspectionTime" AS DATE)
+      GROUP BY 1
       ORDER BY date ASC
     `;
 
@@ -1775,9 +2105,12 @@ export async function getYieldRateByCorporate(filters: {
     okCount: Number(r.okCount),
     ngCount: Number(r.ngCount),
     ntfCount: Number(r.ntfCount),
-    yieldRate: Number(r.totalInspections) > 0 
-      ? (Number(r.okCount) / Number(r.totalInspections) * 100).toFixed(2)
-      : '0.00',
+    // Canonical FINAL yield (NTF = pass, decision #4); wire type stays string.
+    yieldRate: finalYield({
+      ok: Number(r.okCount),
+      ntf: Number(r.ntfCount),
+      total: Number(r.totalInspections),
+    }).toFixed(2),
   }));
 }
 
@@ -1841,9 +2174,12 @@ export async function getYieldRateByFactory(filters: {
     okCount: Number(r.okCount),
     ngCount: Number(r.ngCount),
     ntfCount: Number(r.ntfCount),
-    yieldRate: Number(r.totalInspections) > 0 
-      ? (Number(r.okCount) / Number(r.totalInspections) * 100).toFixed(2)
-      : '0.00',
+    // Canonical FINAL yield (NTF = pass, decision #4); wire type stays string.
+    yieldRate: finalYield({
+      ok: Number(r.okCount),
+      ntf: Number(r.ntfCount),
+      total: Number(r.totalInspections),
+    }).toFixed(2),
   }));
 }
 
@@ -1875,13 +2211,14 @@ export async function getThroughputByCorporate(filters: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+  // Buckets in the FACTORY timezone (gap A2).
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('hour', productInspections.inspectionTime);
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('week', productInspections.inspectionTime);
   } else {
-    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
+    dateFormat = factoryDateSql(productInspections.inspectionTime);
   }
 
   const results = await db
@@ -1944,13 +2281,14 @@ export async function getThroughputByFactory(filters: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+  // Buckets in the FACTORY timezone (gap A2).
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('hour', productInspections.inspectionTime);
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('week', productInspections.inspectionTime);
   } else {
-    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
+    dateFormat = factoryDateSql(productInspections.inspectionTime);
   }
 
   const results = await db
@@ -2080,17 +2418,18 @@ export async function getYieldTrendData(filters: {
     conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
   }
   
+  // Buckets in the FACTORY timezone (gap A2).
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('hour', productInspections.inspectionTime);
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('week', productInspections.inspectionTime);
   } else if (interval === 'month') {
-    dateFormat = sql`DATE_TRUNC('month', ${productInspections.inspectionTime})`;
+    dateFormat = factoryDateTruncSql('month', productInspections.inspectionTime);
   } else {
-    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
+    dateFormat = factoryDateSql(productInspections.inspectionTime);
   }
-  
+
   const results = await db
     .select({
       timeInterval: dateFormat.as('timeInterval'),
@@ -2103,17 +2442,20 @@ export async function getYieldTrendData(filters: {
     .where(and(...conditions))
     .groupBy(dateFormat)
     .orderBy(dateFormat);
-  
+
   return results.map(r => ({
     timeInterval: r.timeInterval,
     totalCount: Number(r.totalCount),
     okCount: Number(r.okCount),
     ngCount: Number(r.ngCount),
     ntfCount: Number(r.ntfCount),
-    yieldRate: Number(r.totalCount) > 0 
-      ? ((Number(r.okCount) / Number(r.totalCount)) * 100)
-      : 0,
-    ngRate: Number(r.totalCount) > 0 
+    // Canonical FINAL yield (NTF = pass, decision #4).
+    yieldRate: finalYield({
+      ok: Number(r.okCount),
+      ntf: Number(r.ntfCount),
+      total: Number(r.totalCount),
+    }),
+    ngRate: Number(r.totalCount) > 0
       ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
       : 0,
   }));
@@ -2145,25 +2487,31 @@ export async function getRecentYieldData(filters: {
   
   const results = await db
     .select({
-      date: sql`CAST(${productInspections.inspectionTime} AS DATE)`.as('date'),
+      // Day bucket in the FACTORY timezone (gap A2).
+      date: factoryDateSql(productInspections.inspectionTime).as('date'),
       totalCount: sql<number>`COUNT(*)`,
       okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
       ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+      ntfCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
     })
     .from(productInspections)
     .where(and(...conditions))
     .groupBy(sql`date`)
     .orderBy(sql`date`);
-  
+
   return results.map(r => ({
     date: r.date,
     totalCount: Number(r.totalCount),
     okCount: Number(r.okCount),
     ngCount: Number(r.ngCount),
-    yieldRate: Number(r.totalCount) > 0 
-      ? ((Number(r.okCount) / Number(r.totalCount)) * 100)
-      : 0,
-    ngRate: Number(r.totalCount) > 0 
+    ntfCount: Number(r.ntfCount),
+    // Canonical FINAL yield (NTF = pass, decision #4).
+    yieldRate: finalYield({
+      ok: Number(r.okCount),
+      ntf: Number(r.ntfCount),
+      total: Number(r.totalCount),
+    }),
+    ngRate: Number(r.totalCount) > 0
       ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
       : 0,
   }));

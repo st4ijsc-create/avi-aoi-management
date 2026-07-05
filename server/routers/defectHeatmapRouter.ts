@@ -1,5 +1,12 @@
 /**
  * Defect Heatmap Router - Heatmap overlay hiển thị vị trí defects
+ *
+ * Doc 27 gap A5 (W5-A): `generate` / `getBboxHeatmap` now aggregate the REAL
+ * pixel bounding boxes (measurement_results.defectBboxX/Y/W/H, bbox center)
+ * instead of the fabricated `pointDefId % gridWidth` layout. The legacy
+ * layout survives only as the explicit `mode: "pointDef"` fallback, labeled
+ * "logical positions" (realCoordinates:false). Coordinate-space rules are
+ * documented in services/defectSpatialHeatmap.ts.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -14,128 +21,86 @@ import {
   productModels
 } from "../../drizzle/schema";
 import { eq, and, gte, lte, desc, sql, isNull } from "drizzle-orm";
+import { resolveFactoryDateWindow } from "../utils/kpi";
+import { computeSpatialHeatmap } from "../services/defectSpatialHeatmap";
+
+const heatmapQueryInput = z.object({
+  machineId: z.number().optional(),
+  productModelId: z.number().optional(),
+  /** Filter to one IPC defect class (measurement_results.defectCatalogId). */
+  defectCatalogId: z.number().optional(),
+  startDate: z.string(),
+  endDate: z.string(),
+  gridWidth: z.number().min(10).max(200).default(100),
+  gridHeight: z.number().min(10).max(200).default(100),
+  /**
+   * "bbox" (default) = REAL spatial aggregation of defectBboxX/Y centers.
+   * "pointDef" = legacy logical layout for datasets with no bbox at all —
+   * positions are pointDefId-derived, NOT spatial.
+   * "panelBoard" (W8-B, doc 29 §2.2) = fold every board of an N-up panel onto
+   * the single-board mm space via the product's ACTIVE panel def + per-board
+   * Pareto; honestly degrades to "bbox" (panelAware:false + reason) when no
+   * usable panel def exists. Requires productModelId to be meaningful.
+   */
+  mode: z.enum(["bbox", "pointDef", "panelBoard"]).default("bbox"),
+  /** Weight grid cells by defect severity (critical=4 … cosmetic=1). */
+  weightBySeverity: z.boolean().default(false),
+});
 
 export const defectHeatmapRouter = router({
-  // Generate heatmap data
+  // Generate + persist heatmap data (bbox-real by default; see module header)
   generate: protectedProcedure
-    .input(z.object({
-      machineId: z.number().optional(),
-      productModelId: z.number().optional(),
+    .input(heatmapQueryInput.extend({
       periodType: z.enum(["HOURLY", "DAILY", "WEEKLY", "MONTHLY"]).default("DAILY"),
-      startDate: z.string(),
-      endDate: z.string(),
-      gridWidth: z.number().min(10).max(200).default(100),
-      gridHeight: z.number().min(10).max(200).default(100),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
       const startTime = Date.now();
-      const periodStart = new Date(input.startDate);
-      const periodEnd = new Date(input.endDate);
+      // Date-only strings are factory-local calendar days (gap A2 at filter level).
+      // The service filters with `lte`, so back an EXCLUSIVE upper bound off by 1ms.
+      const window = resolveFactoryDateWindow(input.startDate, input.endDate);
+      const endInclusive = window.endExclusive ? new Date(window.end.getTime() - 1) : window.end;
 
-      // Build query conditions
-      const conditions = [
-        gte(productInspections.inspectionTime, periodStart),
-        lte(productInspections.inspectionTime, periodEnd),
-        eq(measurementResults.result, "NG"),
-      ];
+      const result = await computeSpatialHeatmap(db, {
+        startDate: window.start,
+        endDate: endInclusive,
+        machineId: input.machineId,
+        productModelId: input.productModelId,
+        defectCatalogId: input.defectCatalogId,
+        gridWidth: input.gridWidth,
+        gridHeight: input.gridHeight,
+        mode: input.mode,
+        weightBySeverity: input.weightBySeverity,
+      });
 
-      if (input.machineId) {
-        conditions.push(eq(productInspections.machineId, input.machineId));
-      }
-      if (input.productModelId) {
-        conditions.push(eq(productInspections.productModelId, input.productModelId));
-      }
-
-      // Get NG measurement results (bounded to prevent OOM on large date ranges)
-      const ngResults = await db
-        .select({
-          id: measurementResults.id,
-          inspectionId: measurementResults.inspectionId,
-          pointDefId: measurementResults.pointDefId,
-          result: measurementResults.result,
-        })
-        .from(measurementResults)
-        .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-        .where(and(...conditions))
-        .limit(500000);
-
-      // Initialize heatmap grid
-      const heatmapGrid: number[][] = [];
-      for (let i = 0; i < input.gridHeight; i++) {
-        heatmapGrid.push(new Array(input.gridWidth).fill(0));
-      }
-
-      // Aggregate defects by location
-      const locationStats = new Map<string, { count: number; types: Map<string, number> }>();
-      
-      for (const result of ngResults) {
-        // Map pointDefId to grid coordinates
-        const gridX = result.pointDefId % input.gridWidth;
-        const gridY = Math.floor(result.pointDefId / input.gridWidth) % input.gridHeight;
-        
-        heatmapGrid[gridY][gridX]++;
-        
-        const key = `${gridX},${gridY}`;
-        const stats = locationStats.get(key) || { count: 0, types: new Map() };
-        stats.count++;
-        stats.types.set(result.result || 'UNKNOWN', (stats.types.get(result.result || 'UNKNOWN') || 0) + 1);
-        locationStats.set(key, stats);
-      }
-
-      // Find hotspots (top 10 locations with most defects)
-      const hotspots: Array<{
-        x: number;
-        y: number;
-        defectCount: number;
-        defectTypes: Array<{ type: string; count: number }>;
-        percentage: number;
-      }> = [];
-
-      const totalDefects = ngResults.length;
-      const sortedLocations = Array.from(locationStats.entries())
-        .sort((a, b) => b[1].count - a[1].count)
-        .slice(0, 10);
-
-      for (const [key, stats] of sortedLocations) {
-        const [x, y] = key.split(",").map(Number);
-        hotspots.push({
-          x,
-          y,
-          defectCount: stats.count,
-          defectTypes: Array.from(stats.types.entries()).map(([type, count]) => ({ type, count })),
-          percentage: totalDefects > 0 ? (stats.count / totalDefects) * 100 : 0,
-        });
-      }
-
-      // Find max defects in any cell
-      let maxDefectsInCell = 0;
-      for (const row of heatmapGrid) {
-        for (const cell of row) {
-          if (cell > maxDefectsInCell) maxDefectsInCell = cell;
-        }
-      }
-
-      // Save heatmap data
-      const [result] = await db.insert(defectHeatmapData).values({
+      // Persist (schema unchanged — hotspot json keeps the legacy keys, with
+      // `defectTypes` now carrying real defect-class codes instead of the
+      // useless constant 'NG').
+      const [saved] = await db.insert(defectHeatmapData).values({
         machineId: input.machineId,
         productModelId: input.productModelId,
         periodType: input.periodType,
-        periodStart,
-        periodEnd,
+        periodStart: window.start,
+        periodEnd: window.end,
         gridWidth: input.gridWidth,
         gridHeight: input.gridHeight,
-        heatmapGrid,
-        totalDefects,
-        maxDefectsInCell,
-        hotspots,
-        topLocations: hotspots.map(h => ({
+        heatmapGrid: result.grid,
+        totalDefects: result.totalDefects,
+        maxDefectsInCell: result.maxDefectsInCell,
+        hotspots: result.hotspots.map(h => ({
+          x: h.x,
+          y: h.y,
+          defectCount: h.defectCount,
+          defectTypes: h.defectTypes,
+          percentage: h.percentage,
+        })),
+        topLocations: result.hotspots.map(h => ({
           gridX: h.x,
           gridY: h.y,
-          realX: h.x * 10,
-          realY: h.y * 10,
+          realX: h.realX,
+          realY: h.realY,
           defectCount: h.defectCount,
           defectTypes: h.defectTypes.map(t => t.type),
           trend: "stable" as const,
@@ -143,7 +108,48 @@ export const defectHeatmapRouter = router({
         processingTimeMs: Date.now() - startTime,
       }).returning({ id: defectHeatmapData.id });
 
-      return { id: result.id, totalDefects, hotspots };
+      // Legacy shape ({id, totalDefects, hotspots}) preserved + honest additions.
+      return {
+        id: saved.id,
+        totalDefects: result.totalDefects,
+        hotspots: result.hotspots,
+        realCoordinates: result.realCoordinates,
+        mode: result.mode,
+        coordinateSpace: result.coordinateSpace,
+        boardWidth: result.boardWidth,
+        boardHeight: result.boardHeight,
+        excludedNoBbox: result.excludedNoBbox,
+        excludedNoBboxPct: result.excludedNoBboxPct,
+        maxDefectsInCell: result.maxDefectsInCell,
+        // W8-B panel-aware extras (undefined outside mode "panelBoard").
+        panelAware: result.panelAware,
+        panelDefId: result.panelDefId,
+        panelFallbackReason: result.panelFallbackReason,
+        perBoard: result.perBoard,
+        unassigned: result.unassigned,
+      };
+    }),
+
+  // Read-only compute (no persist) — used by the board-heatmap UI.
+  getBboxHeatmap: protectedProcedure
+    .input(heatmapQueryInput)
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const window = resolveFactoryDateWindow(input.startDate, input.endDate);
+      const endInclusive = window.endExclusive ? new Date(window.end.getTime() - 1) : window.end;
+      return computeSpatialHeatmap(db, {
+        startDate: window.start,
+        endDate: endInclusive,
+        machineId: input.machineId,
+        productModelId: input.productModelId,
+        defectCatalogId: input.defectCatalogId,
+        gridWidth: input.gridWidth,
+        gridHeight: input.gridHeight,
+        mode: input.mode,
+        weightBySeverity: input.weightBySeverity,
+      });
     }),
 
   // Get heatmap data by ID

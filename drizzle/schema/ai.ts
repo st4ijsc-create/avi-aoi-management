@@ -994,6 +994,13 @@ export const edgeDeployments = pgTable("edge_deployments", {
     runtime?: "ONNX" | "TENSORRT" | "OPENVINO";
     maxBatchSize?: number;
     optimizationLevel?: "basic" | "extended" | "full";
+    // ── W7-D (doc 27 gap V19) — delivery verification, additive (NO DDL):
+    // stamped by confirmDeployment when the device-reported sha256 matches
+    // packageHash. Absent on legacy rows / unverified status reports.
+    deployVerifiedAt?: string;
+    verifiedHash?: string;
+    // used by rollbackDevice (previously an untyped cast)
+    previousDeploymentId?: number;
   }>(),
   lastSyncAt: timestamp("lastSyncAt"),
   lastHeartbeatAt: timestamp("lastHeartbeatAt"),

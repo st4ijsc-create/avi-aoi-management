@@ -33,6 +33,9 @@ export const API_SCOPES = {
   PDM_READ: "pdm:read",
   ANOMALY_READ: "anomaly:read",
   STANDARDS_READ: "standards:read",
+  // W5-D (doc 27 §6 A10) — raw inspection/measurement export + BI dataset feed.
+  EXPORT_READ: "export:read",
+  BI_READ: "bi:read",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -56,6 +59,8 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "pdm:read": "Read predictive-maintenance failure-risk for a machine (U4a).",
   "anomaly:read": "Read ADVISORY robot-behaviour anomaly events (U4a).",
   "standards:read": "Read equipment governance: device types, ISA-18.2 alarm taxonomy, compliance (U4a).",
+  "export:read": "Stream raw inspection/measurement exports as CSV/JSON (/api/export, W5-D A10).",
+  "bi:read": "Read the paged BI dataset feed for Power BI/Tableau (/api/bi/datasets, W5-D A10).",
 };
 
 /**

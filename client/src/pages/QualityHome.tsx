@@ -40,6 +40,7 @@ import {
   ChevronRight,
   Cpu,
   CheckCheck,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -113,6 +114,13 @@ export default function QualityHome() {
   );
   const ngRows: NgRow[] = (ngQuery.data as any)?.data ?? [];
 
+  // W5-B (doc 27 F2) — open repair dispositions count (never blocks the page).
+  const openDispQ = trpc.defectDisposition.countOpen.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 60_000,
+  });
+
   const ackM = trpc.measurementResult.batchAcknowledge.useMutation({
     onSuccess: () => {
       toast.success(t("quality.ackDone", "Đã đánh dấu đã xem"));
@@ -185,6 +193,30 @@ export default function QualityHome() {
 
         {/* Role-aware "Today" summary (quality variant, zero-click) */}
         <TodayBriefing />
+
+        {/* W5-B (doc 27 F2) — open repair dispositions at a glance. Dispositions
+            live on each inspection detail page; /history (NG filter) is the way in. */}
+        {openDispQ.isSuccess && (
+          <button
+            type="button"
+            onClick={() => navigate("/history")}
+            className="flex w-full items-center gap-3 rounded-lg border border-l-4 border-l-warning bg-card/60 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+          >
+            <Wrench className="size-5 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">
+                {t("disposition.openCount", "Disposition đang mở")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("disposition.openCountDesc", "Board NG đang chờ sửa / kiểm lại — mở từ trang chi tiết kiểm tra")}
+              </p>
+            </div>
+            <Badge variant={openDispQ.data > 0 ? "destructive" : "outline"} className="shrink-0 text-sm">
+              {openDispQ.data}
+            </Badge>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          </button>
+        )}
 
         {/* Quick-access QC tools */}
         <section className="space-y-3">

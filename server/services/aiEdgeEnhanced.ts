@@ -13,7 +13,7 @@
 
 import { getDb } from "../db/connection";
 import { sql, eq, and } from "drizzle-orm";
-import { edgeInferenceSync } from "../../drizzle/schema/ai";
+import { edgeInferenceSync, type InsertEdgeDeployment } from "../../drizzle/schema/ai";
 import * as db from "../db/aiAdvanced";
 import { updateMachineHeartbeat } from "../db/hierarchy";
 import { storagePut, storageGet } from "../storage";
@@ -124,11 +124,34 @@ export async function packageModelForDeployment(deploymentId: number): Promise<P
       );
     }
     if (!version.fileKey) {
-      throw new Error(`Model version ${version.id} has no fileKey to package`);
+      throw new Error(
+        `Model version ${version.id} has no fileKey to package — the artifact was never uploaded. ` +
+          `Re-upload the model version, then re-package.`,
+      );
     }
 
-    const buffer = await readStorageBuffer(version.fileKey);
+    // W7-D (doc 27 gap V19) — verify the artifact BEFORE packaging: missing
+    // file ⇒ actionable error (not a raw ENOENT); recorded sha256 mismatch ⇒
+    // abort (never ship corrupt bytes to a machine).
+    let buffer: Buffer;
+    try {
+      buffer = await readStorageBuffer(version.fileKey);
+    } catch (readErr) {
+      throw new Error(
+        `Model artifact MISSING/unreadable for model ${deployment.modelId} v${version.version} ` +
+          `(key ${version.fileKey}): ${readErr instanceof Error ? readErr.message : String(readErr)} — ` +
+          `re-upload the model version or fix storage, then re-package.`,
+      );
+    }
     const hash = sha256Hex(buffer);
+    const recordedHash = (version as { fileHash?: string | null }).fileHash?.toLowerCase() ?? null;
+    if (recordedHash && recordedHash !== hash) {
+      throw new Error(
+        `Model artifact CHECKSUM MISMATCH for model ${deployment.modelId} v${version.version}: ` +
+          `recorded sha256 ${recordedHash}, actual ${hash}. The stored file is corrupt or was overwritten — ` +
+          `re-upload the version before packaging.`,
+      );
+    }
     const size = buffer.length;
 
     const packageKey = `models/edge-packages/${deployment.modelId}/${version.version}.pkg`;
@@ -177,9 +200,20 @@ export async function confirmDeployment(
   const matched = !!expected && expected === got;
 
   if (matched) {
+    const now = new Date();
+    // W7-D (doc 27 gap V19) — delivery verification record: the device proved
+    // (by sha256) that it holds the exact packaged bytes. Stamped additively in
+    // the deployConfig jsonb (NO DDL); the Step-5 wizard reads it to show
+    // packaged → downloaded → VERIFIED honestly.
+    const deployConfig = {
+      ...((deployment.deployConfig as Record<string, unknown> | null) ?? {}),
+      deployVerifiedAt: now.toISOString(),
+      verifiedHash: got,
+    } as InsertEdgeDeployment["deployConfig"];
     await db.updateEdgeDeployment(deploymentId, {
       status: "DEPLOYED",
-      deployedAt: new Date(),
+      deployedAt: now,
+      deployConfig,
       errorMessage: null,
     });
     return { deploymentId, status: "DEPLOYED", matched: true };

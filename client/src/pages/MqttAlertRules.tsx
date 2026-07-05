@@ -14,12 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { 
-  AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle, 
-  Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings
+import {
+  AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle,
+  Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings, ArrowUpCircle
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+// W8-C (doc 27 Đợt 6 leftover): escalation rules admin + activity (alertEscalationRouter).
+import EscalationRulesSection from "@/components/EscalationRulesSection";
 
 const RULE_TYPE_KEYS = [
   { value: 'LATENCY_THRESHOLD', labelKey: 'mqtt.alertRulesPage.types.latencyThreshold', unit: 'ms', descKey: 'mqtt.alertRulesPage.types.latencyThresholdDesc' },
@@ -426,6 +428,10 @@ export default function MqttAlertRules() {
               <History className="w-4 h-4" />
               {t('mqtt.alertRulesPage.history')}
             </TabsTrigger>
+            <TabsTrigger value="escalation" className="flex items-center gap-2">
+              <ArrowUpCircle className="w-4 h-4" />
+              {t('escalation.tab', 'Escalation')}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="rules" className="mt-4">
@@ -596,6 +602,11 @@ export default function MqttAlertRules() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* W8-C (doc 27 Đợt 6 leftover): escalation rules CRUD + escalated-alert ledger. */}
+          <TabsContent value="escalation">
+            <EscalationRulesSection />
           </TabsContent>
         </Tabs>
       </PageContainer>

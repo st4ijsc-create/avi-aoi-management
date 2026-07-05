@@ -1,0 +1,7 @@
+refdes,x,y,rotation,side,package,value
+R1,10.5,20.0,0,top,0402,10K
+R2,15.5,20.0,90,top,0402,4K7
+C1,12.0,25.0,180,top,0603,100nF
+U1,30.0,40.0,270,top,QFN48,MCU-STM32
+D1,50.0,10.0,0,bottom,SOD123,LED-RED
+R2,99.9,99.9,0,top,0402,DUP-SHOULD-BE-DROPPED

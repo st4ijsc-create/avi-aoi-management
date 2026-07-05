@@ -204,6 +204,27 @@ export const workstationRouter = router({
 });
 
 // ============ SCHEDULED REPORT ROUTER ============
+// W5-D (doc 27 §6 A11) — optional pluggable delivery-channel config. Absent/
+// null = legacy direct-e-mail semantics (behaviour unchanged).
+const deliveryChannelsSchema = z
+  .object({
+    email: z.object({ enabled: z.boolean() }).optional(),
+    webhook: z
+      .object({
+        enabled: z.boolean(),
+        url: z.string().url().max(500),
+        secret: z.string().max(200).optional(),
+      })
+      .optional(),
+    inApp: z
+      .object({
+        enabled: z.boolean(),
+        userIds: z.array(z.number().int().positive()).max(50).optional(),
+      })
+      .optional(),
+  })
+  .nullable();
+
 export const scheduledReportRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -244,6 +265,8 @@ export const scheduledReportRouter = router({
       logoUrl: z.string().optional(),
       primaryColor: z.string().optional(),
       footerText: z.string().optional(),
+      // W5-D (A11): pluggable delivery channels (optional; null/absent = legacy e-mail)
+      deliveryChannels: deliveryChannelsSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const id = await db.createScheduledReport({
@@ -292,6 +315,8 @@ export const scheduledReportRouter = router({
       logoUrl: z.string().optional(),
       primaryColor: z.string().optional(),
       footerText: z.string().optional(),
+      // W5-D (A11): pluggable delivery channels (null clears back to legacy e-mail)
+      deliveryChannels: deliveryChannelsSchema.optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -333,6 +358,30 @@ export const scheduledReportRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getScheduledReportLogs(input.reportId, input.limit);
+    }),
+
+  // W5-D (A11) — per-channel delivery ledger for the history drawer.
+  deliveries: protectedProcedure
+    .input(z.object({
+      reportId: z.number(),
+      limit: z.number().min(1).max(200).default(50),
+    }))
+    .query(async ({ input }) => {
+      const { listReportDeliveries } = await import('../services/reportDeliveryService');
+      return listReportDeliveries(input.reportId, input.limit);
+    }),
+
+  // W5-D (A11) — requeue a dead/failed delivery + prompt drain.
+  retryDelivery: adminProcedure
+    .input(z.object({ deliveryId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { retryReportDelivery, drainReportDeliveriesOnce } = await import('../services/reportDeliveryService');
+      const result = await retryReportDelivery(input.deliveryId);
+      if (!result.ok) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason ?? 'Retry failed' });
+      }
+      void drainReportDeliveriesOnce().catch(() => undefined);
+      return { success: true };
     }),
 
   sendTest: adminProcedure

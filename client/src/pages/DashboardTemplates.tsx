@@ -435,7 +435,167 @@ export default function DashboardTemplates() {
             </Card>
           )}
         </div>
+
+        {/* W5-C (doc 27 A12): role → default dashboard binding (admin only) */}
+        {isAdmin && <RoleDefaultsSection />}
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Role → default dashboard (doc 27 A12 / W5-C) ────────────────────────────
+// Admin-only. Binds each role to a shared template OR a public custom dashboard
+// (mutually exclusive) plus an optional landing path override. Resolution for
+// users happens in dashboardWidget.getMyEffectiveDashboard — personal
+// dashboards always win, so a binding only affects users who own none.
+
+const ROLE_OPTIONS = [
+  "admin",
+  "supervisor",
+  "quality_inspector",
+  "operator",
+  "maintenance",
+  "viewer",
+  "user",
+] as const;
+
+function RoleDefaultsSection() {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+
+  const defaultsQuery = trpc.dashboardWidget.listRoleDefaults.useQuery();
+  const templatesQuery = trpc.dashboard.listTemplates.useQuery();
+  const publicDashboardsQuery = trpc.dashboardWidget.listPublicDashboards.useQuery();
+
+  const setMutation = trpc.dashboardWidget.setRoleDefault.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listRoleDefaults.invalidate();
+      toast.success(t('dashboard.roleDefaultSaved', 'Đã lưu mặc định vai trò'));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const clearMutation = trpc.dashboardWidget.clearRoleDefault.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listRoleDefaults.invalidate();
+      toast.success(t('dashboard.roleDefaultCleared', 'Đã xóa mặc định vai trò'));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bindings = defaultsQuery.data || [];
+  const bindingByRole = new Map(bindings.map((b: any) => [b.role, b]));
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">
+          {t('dashboard.roleDefaultsTitle', 'Dashboard mặc định theo vai trò')}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'dashboard.roleDefaultsDesc',
+            'Người dùng CHƯA có dashboard cá nhân sẽ nhận layout này theo vai trò (dashboard cá nhân luôn được ưu tiên). Landing path (tùy chọn) ghi đè trang đích khi vào "/".',
+          )}
+        </p>
+      </div>
+      <Card>
+        <CardContent className="divide-y p-0">
+          {ROLE_OPTIONS.map((role) => (
+            <RoleDefaultRow
+              key={`${role}:${(bindingByRole.get(role) as any)?.updatedAt ?? 'none'}`}
+              role={role}
+              binding={bindingByRole.get(role) as any}
+              templates={(templatesQuery.data as any[]) || []}
+              publicDashboards={(publicDashboardsQuery.data as any[]) || []}
+              onSave={(input) => setMutation.mutate(input)}
+              onClear={() => clearMutation.mutate({ role })}
+              saving={setMutation.isPending || clearMutation.isPending}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RoleDefaultRow({
+  role,
+  binding,
+  templates,
+  publicDashboards,
+  onSave,
+  onClear,
+  saving,
+}: {
+  role: string;
+  binding?: { dashboardTemplateId: number | null; customDashboardId: number | null; landingPath: string | null } | null;
+  templates: Array<{ id: number; name: string }>;
+  publicDashboards: Array<{ id: number; name: string }>;
+  onSave: (input: { role: string; dashboardTemplateId: number | null; customDashboardId: number | null; landingPath: string | null }) => void;
+  onClear: () => void;
+  saving: boolean;
+}) {
+  const { t } = useTranslation();
+  const [target, setTarget] = useState<string>(() => {
+    if (binding?.dashboardTemplateId != null) return `tpl:${binding.dashboardTemplateId}`;
+    if (binding?.customDashboardId != null) return `dash:${binding.customDashboardId}`;
+    return "none";
+  });
+  const [landingPath, setLandingPath] = useState<string>(binding?.landingPath ?? "");
+
+  const handleSave = () => {
+    const trimmed = landingPath.trim();
+    if (trimmed && !trimmed.startsWith("/")) {
+      toast.error(t('dashboard.roleDefaultLandingInvalid', 'Landing path phải bắt đầu bằng "/"'));
+      return;
+    }
+    onSave({
+      role,
+      dashboardTemplateId: target.startsWith("tpl:") ? Number(target.slice(4)) : null,
+      customDashboardId: target.startsWith("dash:") ? Number(target.slice(5)) : null,
+      landingPath: trimmed || null,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center">
+      <div className="w-40 shrink-0">
+        <Badge variant="outline">{t(`roles.${role}`, role)}</Badge>
+      </div>
+      <Select value={target} onValueChange={setTarget}>
+        <SelectTrigger className="w-full lg:w-72">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">{t('dashboard.roleDefaultNone', '— Không đặt —')}</SelectItem>
+          {templates.map((tp) => (
+            <SelectItem key={`tpl-${tp.id}`} value={`tpl:${tp.id}`}>
+              {t('dashboard.roleDefaultTemplatePrefix', 'Template')}: {tp.name}
+            </SelectItem>
+          ))}
+          {publicDashboards.map((d) => (
+            <SelectItem key={`dash-${d.id}`} value={`dash:${d.id}`}>
+              {t('dashboard.roleDefaultDashboardPrefix', 'Dashboard công khai')}: {d.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        value={landingPath}
+        onChange={(e) => setLandingPath(e.target.value)}
+        placeholder={t('dashboard.roleDefaultLandingPlaceholder', 'Landing path (vd /andon) — tùy chọn')}
+        className="w-full lg:w-64"
+      />
+      <div className="flex gap-2">
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {t('common.save', 'Lưu')}
+        </Button>
+        {binding && (
+          <Button size="sm" variant="outline" onClick={onClear} disabled={saving}>
+            {t('common.clear', 'Xóa')}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

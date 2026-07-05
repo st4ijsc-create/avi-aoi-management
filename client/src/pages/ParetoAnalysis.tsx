@@ -69,6 +69,11 @@ export function ParetoAnalysisContent() {
   const [selectedLine, setSelectedLine] = useState<string>("all");
   const [selectedMachine, setSelectedMachine] = useState<string>("all");
   const [timePeriod, setTimePeriod] = useState<"hour" | "shift" | "day" | "week">("day");
+  // Doc 27 gap A6 (W5-A) + M12a (W8-A): the "defect type" tab answers three
+  // different questions — "point" = WHERE we fail (measurement-point Pareto,
+  // legacy), "ipcClass" = WHAT KIND of defect (defect_catalog / IPC-A-610),
+  // "package" = WHICH COMPONENT PACKAGE fails (component library, doc 29 §1.3).
+  const [typeMode, setTypeMode] = useState<"point" | "ipcClass" | "package">("point");
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
@@ -85,6 +90,16 @@ export function ParetoAnalysisContent() {
   const { data: byTypeData, isLoading: byTypeLoading, refetch: refetchByType } =
     trpc.paretoAnalysis.byDefectType.useQuery(commonFilter);
 
+  const { data: byClassData, isLoading: byClassLoading, refetch: refetchByClass } =
+    trpc.paretoAnalysis.byDefectClass.useQuery(commonFilter, {
+      enabled: typeMode === "ipcClass",
+    });
+
+  const { data: byPackageData, isLoading: byPackageLoading, refetch: refetchByPackage } =
+    trpc.paretoAnalysis.byPackage.useQuery(commonFilter, {
+      enabled: typeMode === "package",
+    });
+
   const { data: byMachineData, isLoading: byMachineLoading, refetch: refetchByMachine } =
     trpc.paretoAnalysis.byMachine.useQuery(commonFilter);
 
@@ -96,6 +111,8 @@ export function ParetoAnalysisContent() {
 
   const handleRefresh = () => {
     refetchByType();
+    if (typeMode === "ipcClass") refetchByClass();
+    if (typeMode === "package") refetchByPackage();
     refetchByMachine();
     refetchByLine();
     refetchByTime();
@@ -219,15 +236,84 @@ export function ParetoAnalysisContent() {
             </TabsTrigger>
           </TabsList>
 
-          {/* By Defect Type */}
+          {/* By Defect Type — toggle between measurement-point ("where") and
+              IPC defect-class ("what kind", doc 27 A6) Pareto */}
           <TabsContent value="byType">
-            <ParetoTabContent
-              data={byTypeData}
-              isLoading={byTypeLoading}
-              title={t("pareto.defectTypeTitle", "Phân tích Pareto theo loại lỗi")}
-              onExport={() => handleExportCSV(byTypeData, "pareto_by_type")}
-              t={t}
-            />
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Label>{t("pareto.typeMode", "Nhóm theo")}</Label>
+                <div className="inline-flex rounded-md border overflow-hidden">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "point" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("point")}
+                  >
+                    {t("pareto.byMeasurementPoint", "Theo điểm đo")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "ipcClass" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("ipcClass")}
+                  >
+                    {t("pareto.byIpcClass", "Theo loại lỗi (IPC)")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={typeMode === "package" ? "default" : "ghost"}
+                    className="rounded-none"
+                    onClick={() => setTypeMode("package")}
+                  >
+                    {t("pareto.byPackage", "Theo package linh kiện")}
+                  </Button>
+                </div>
+                {typeMode === "ipcClass" && (byClassData as any)?.unclassifiedDefects > 0 && (
+                  <Badge variant="outline">
+                    {t("pareto.unclassifiedNote", {
+                      count: (byClassData as any).unclassifiedDefects,
+                      defaultValue: "{{count}} lỗi chưa phân loại IPC (defectCatalogId trống)",
+                    })}
+                  </Badge>
+                )}
+                {typeMode === "package" && (byPackageData as any)?.unlinkedDefects > 0 && (
+                  <Badge variant="outline">
+                    {t("pareto.packageUnlinkedNote", {
+                      count: (byPackageData as any).unlinkedDefects,
+                      defaultValue: "{{count}} lỗi chưa gán package (điểm đo thiếu componentCode / vật liệu thiếu packageId)",
+                    })}
+                  </Badge>
+                )}
+              </div>
+              {typeMode === "point" ? (
+                <ParetoTabContent
+                  data={byTypeData}
+                  isLoading={byTypeLoading}
+                  title={t("pareto.defectTypeTitle", "Phân tích Pareto theo điểm đo")}
+                  onExport={() => handleExportCSV(byTypeData, "pareto_by_point")}
+                  t={t}
+                />
+              ) : typeMode === "ipcClass" ? (
+                <ParetoTabContent
+                  data={byClassData}
+                  isLoading={byClassLoading}
+                  title={t("pareto.defectClassTitle", "Phân tích Pareto theo loại lỗi IPC-A-610")}
+                  onExport={() => handleExportCSV(byClassData, "pareto_by_ipc_class")}
+                  t={t}
+                />
+              ) : (
+                <ParetoTabContent
+                  data={byPackageData}
+                  isLoading={byPackageLoading}
+                  title={t("pareto.packageTitle", "Phân tích Pareto theo package linh kiện")}
+                  onExport={() => handleExportCSV(byPackageData, "pareto_by_package")}
+                  t={t}
+                />
+              )}
+            </div>
           </TabsContent>
 
           {/* By Machine */}

@@ -1,0 +1,13 @@
+{
+  "machineCode": "AOI-01",
+  "serial": "SN-2026-000128",
+  "product": "MB-X1",
+  "batch": "LOT-79",
+  "result": "NG",
+  "time": "2026-07-04T08:35:00+07:00",
+  "cycleTime": 11.2,
+  "results": [
+    { "point": "MP001", "value": 0.42, "judged": "OK" },
+    { "point": "MP002", "value": 1.9, "judged": "NG", "defect": "BRIDGING", "severity": "major", "image": "SN-2026-000128_MP002.jpg" }
+  ]
+}

@@ -1,11 +1,12 @@
 import { getDb } from "./connection";
-import { eq, and, desc, asc, like, or, sql, isNull, gte, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gte, inArray, SQL } from "drizzle-orm";
 import {
   productModels, InsertProductModel,
-  measurementPointDefs, InsertMeasurementPointDef,
+  measurementPointDefs, InsertMeasurementPointDef, MeasurementPointDef,
   measurementPointVersions,
   measurementTypeCatalog, InsertMeasurementTypeCatalog,
   defectCatalog, InsertDefectCatalog,
+  unmatchedDefectCodes,
   productMachineMappings, InsertProductMachineMapping,
   productCategories, InsertProductCategory,
   syncLogs, InsertSyncLog,
@@ -19,7 +20,7 @@ import {
   msaCsvMappingPresets, InsertMsaCsvMappingPreset,
   instrumentCalibrations, InsertInstrumentCalibration,
   instrumentMsaRecords, InsertInstrumentMsaRecord,
-  mpLightingProfiles, InsertMpLightingProfile,
+  mpLightingProfiles, InsertMpLightingProfile, MpLightingProfile,
   measurementSamples, InsertMeasurementSample,
   mpSpcAlerts, InsertMpSpcAlert,
   mpSpcRolling, InsertMpSpcRolling,
@@ -27,6 +28,9 @@ import {
   cadImportCandidates, InsertCadImportCandidate,
   stationTraces, InsertStationTrace,
   genealogyChain, InsertGenealogyChain,
+  // Doc 31 PM1 (WC-2) — deep-clone copies panel defs + their board placements.
+  productPanelDefs,
+  productPanelBoards,
 } from "../../drizzle/schema";
 import { measurementResults, productInspections } from "../../drizzle/schema/inspection";
 
@@ -156,6 +160,228 @@ export async function deleteProductModel(id: number) {
   await db.update(productModels)
     .set({ deletedAt: now, isActive: false })
     .where(eq(productModels.id, id));
+}
+
+// ============ Doc 31 PM1 (WC-2) — deep clone a product model ============
+
+/** Shallow copy of a DB row minus the given column names (audit/identity cols). */
+function omitCols<T extends Record<string, any>>(row: T, keys: string[]): Record<string, any> {
+  const drop = new Set(keys);
+  const out: Record<string, any> = {};
+  for (const k of Object.keys(row)) {
+    if (!drop.has(k)) out[k] = row[k];
+  }
+  return out;
+}
+
+export interface CloneProductModelSummary {
+  newCode: string;
+  revision: string | null;
+  clonedFromId: number;
+  measurementPoints: number;
+  fiducialMarks: number;
+  panelDefs: number;
+  panelBoards: number;
+  samplingPlans: number;
+  machineMappings: number;
+}
+
+/**
+ * Deep-clone a product model into a NEW code in ONE transaction.
+ *
+ * COPIED (deep): measurement_point_defs (EVERY column — componentCode/refDesignator/
+ * limits/tolerance/geometry/3D/criteria/extraFields/GD&T...), fiducial_marks,
+ * product_panel_defs + product_panel_boards, sampling_plans, and OPTIONALLY
+ * product_machine_mappings (copyMappings — default FALSE, because a freshly-cloned
+ * board is not on the same machines yet).
+ *
+ * NOT copied (fresh start): inspection results, golden samples (per-image, product-
+ * specific), program releases, measurement_point_versions history.
+ *
+ * The clone is reset to lifecycleStatus='development', pointsConfigVersion=1, and
+ * carries clonedFromId=sourceId (soft provenance). The reference image url/key/dims/
+ * hash ARE copied so the clone is immediately usable — both products then reference
+ * the same stored blob (deleting one never deletes the shared image).
+ *
+ * preferredSamplingPlanId on cloned points is REMAPPED to the freshly-cloned plan
+ * (product-scoped); productViewId is CLEARED (product_views are out of clone scope,
+ * so a dangling cross-product view ref would be worse than the "all views" default).
+ *
+ * Code collision relies on the router's pre-check; the product_models.code UNIQUE
+ * index is the backstop (a 23505 propagates so the router maps it to CONFLICT).
+ */
+export async function cloneProductModel(opts: {
+  sourceId: number;
+  newCode: string;
+  newName?: string;
+  newRevision?: string | null;
+  copyMappings?: boolean;
+}): Promise<{ newProductId: number; summary: CloneProductModelSummary }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.transaction(async (tx) => {
+    // 1) Source product (live only).
+    const [source] = await tx.select().from(productModels)
+      .where(and(eq(productModels.id, opts.sourceId), isNull(productModels.deletedAt)))
+      .limit(1);
+    if (!source) throw new Error(`Source product ${opts.sourceId} not found`);
+
+    // 2) New product row — copy every column, override identity + lifecycle + provenance.
+    const productRest = omitCols(source, ["id", "createdAt", "updatedAt", "deletedAt"]);
+    const revision = opts.newRevision !== undefined ? opts.newRevision : (source.revision ?? null);
+    const [insertedProduct] = await tx.insert(productModels).values({
+      ...(productRest as InsertProductModel),
+      code: opts.newCode,
+      name: opts.newName ?? source.name,
+      revision,
+      lifecycleStatus: "development",
+      pointsConfigVersion: 1,
+      clonedFromId: opts.sourceId,
+      isActive: true,
+    }).returning({ id: productModels.id });
+    const newProductId = insertedProduct.id;
+
+    // 3) Sampling plans first — so point.preferredSamplingPlanId can be remapped.
+    const srcPlans = await tx.select().from(samplingPlans)
+      .where(and(eq(samplingPlans.productModelId, opts.sourceId), isNull(samplingPlans.deletedAt)));
+    const planIdMap = new Map<number, number>();
+    for (const plan of srcPlans) {
+      const planRest = omitCols(plan, ["id", "createdAt", "updatedAt", "deletedAt"]);
+      const [newPlan] = await tx.insert(samplingPlans).values({
+        ...(planRest as InsertSamplingPlan),
+        productModelId: newProductId,
+      }).returning({ id: samplingPlans.id });
+      planIdMap.set(plan.id, newPlan.id);
+    }
+
+    // 4) Measurement point defs — deep copy every field, remap plan, clear view.
+    const srcPoints = await tx.select().from(measurementPointDefs)
+      .where(and(eq(measurementPointDefs.productModelId, opts.sourceId), isNull(measurementPointDefs.deletedAt)));
+    for (const p of srcPoints) {
+      const pointRest = omitCols(p, ["id", "createdAt", "updatedAt", "deletedAt", "lastModifiedAt"]);
+      await tx.insert(measurementPointDefs).values({
+        ...(pointRest as InsertMeasurementPointDef),
+        productModelId: newProductId,
+        preferredSamplingPlanId: p.preferredSamplingPlanId != null
+          ? (planIdMap.get(p.preferredSamplingPlanId) ?? null)
+          : null,
+        productViewId: null,
+      });
+    }
+
+    // 5) Fiducial marks — deep copy.
+    const srcFids = await tx.select().from(fiducialMarks)
+      .where(and(eq(fiducialMarks.productModelId, opts.sourceId), isNull(fiducialMarks.deletedAt)));
+    for (const fid of srcFids) {
+      const fidRest = omitCols(fid, ["id", "createdAt", "updatedAt", "deletedAt"]);
+      await tx.insert(fiducialMarks).values({
+        ...(fidRest as InsertFiducialMark),
+        productModelId: newProductId,
+      });
+    }
+
+    // 6) Panel defs + their board placements.
+    const srcPanels = await tx.select().from(productPanelDefs)
+      .where(and(eq(productPanelDefs.productModelId, opts.sourceId), isNull(productPanelDefs.deletedAt)));
+    let panelBoardCount = 0;
+    for (const panel of srcPanels) {
+      const panelRest = omitCols(panel, ["id", "createdAt", "updatedAt", "deletedAt"]);
+      const [newPanel] = await tx.insert(productPanelDefs).values({
+        ...(panelRest as typeof productPanelDefs.$inferInsert),
+        productModelId: newProductId,
+      }).returning({ id: productPanelDefs.id });
+      const srcBoards = await tx.select().from(productPanelBoards)
+        .where(eq(productPanelBoards.panelDefId, panel.id));
+      for (const board of srcBoards) {
+        const boardRest = omitCols(board, ["id"]);
+        await tx.insert(productPanelBoards).values({
+          ...(boardRest as typeof productPanelBoards.$inferInsert),
+          panelDefId: newPanel.id,
+        });
+        panelBoardCount++;
+      }
+    }
+
+    // 7) Machine mappings — OPT-IN only (a fresh board isn't on the same machines yet).
+    let machineMappingCount = 0;
+    if (opts.copyMappings) {
+      const srcMaps = await tx.select().from(productMachineMappings)
+        .where(eq(productMachineMappings.productModelId, opts.sourceId));
+      for (const map of srcMaps) {
+        const mapRest = omitCols(map, ["id", "createdAt", "updatedAt"]);
+        await tx.insert(productMachineMappings).values({
+          ...(mapRest as InsertProductMachineMapping),
+          productModelId: newProductId,
+        });
+        machineMappingCount++;
+      }
+    }
+
+    return {
+      newProductId,
+      summary: {
+        newCode: opts.newCode,
+        revision,
+        clonedFromId: opts.sourceId,
+        measurementPoints: srcPoints.length,
+        fiducialMarks: srcFids.length,
+        panelDefs: srcPanels.length,
+        panelBoards: panelBoardCount,
+        samplingPlans: srcPlans.length,
+        machineMappings: machineMappingCount,
+      },
+    };
+  });
+}
+
+/**
+ * Doc 31 PM8 — recompute normalized (0..1) coordinates for EVERY live point (and
+ * fiducial) of a product once its image dimensions become known. Coordinates are
+ * otherwise raw pixels and not portable across machines of differing resolution.
+ * Returns how many rows were touched. No-op guard when dims are invalid.
+ */
+export async function backfillNormalizedCoordsForProduct(
+  productModelId: number,
+  imageWidth: number,
+  imageHeight: number,
+): Promise<{ points: number; fiducials: number }> {
+  const db = await getDb();
+  if (!db) return { points: 0, fiducials: 0 };
+  if (!imageWidth || !imageHeight || imageWidth <= 0 || imageHeight <= 0) {
+    return { points: 0, fiducials: 0 };
+  }
+
+  const points = await db.select().from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, productModelId),
+      isNull(measurementPointDefs.deletedAt),
+    ));
+  let pCount = 0;
+  for (const p of points) {
+    await db.update(measurementPointDefs).set({
+      normalizedX: (p.positionX / imageWidth).toFixed(8),
+      normalizedY: (p.positionY / imageHeight).toFixed(8),
+      normalizedRadius: ((p.radius ?? 0) / imageWidth).toFixed(8),
+    }).where(eq(measurementPointDefs.id, p.id));
+    pCount++;
+  }
+
+  const fids = await db.select().from(fiducialMarks)
+    .where(and(
+      eq(fiducialMarks.productModelId, productModelId),
+      isNull(fiducialMarks.deletedAt),
+    ));
+  let fCount = 0;
+  for (const f of fids) {
+    await db.update(fiducialMarks).set({
+      normalizedX: (f.positionX / imageWidth).toFixed(8),
+      normalizedY: (f.positionY / imageHeight).toFixed(8),
+    }).where(eq(fiducialMarks.id, f.id));
+    fCount++;
+  }
+
+  return { points: pCount, fiducials: fCount };
 }
 
 // ============ MEASUREMENT POINT DEFINITION FUNCTIONS ============
@@ -315,7 +541,28 @@ export async function getDefectCatalogByCode(code: string) {
       eq(defectCatalog.isActive, true),
     ))
     .limit(1);
-  return rows[0];
+  if (rows[0]) return rows[0];
+  // Doc 31 Đợt E (WE-3, migration 0201) — taxonomy consolidation forward-alias.
+  // A retired duplicate code (isActive=false, aliasOfCode set by 0201) is resolved
+  // to its surviving canonical row, so incoming duplicate codes never go unmatched.
+  const aliasRows = await db.select({ aliasOfCode: defectCatalog.aliasOfCode })
+    .from(defectCatalog)
+    .where(and(
+      eq(defectCatalog.code, code),
+      isNull(defectCatalog.deletedAt),
+      isNotNull(defectCatalog.aliasOfCode),
+    ))
+    .limit(1);
+  const survivorCode = aliasRows[0]?.aliasOfCode;
+  if (!survivorCode) return undefined;
+  const survivorRows = await db.select().from(defectCatalog)
+    .where(and(
+      eq(defectCatalog.code, survivorCode),
+      isNull(defectCatalog.deletedAt),
+      eq(defectCatalog.isActive, true),
+    ))
+    .limit(1);
+  return survivorRows[0];
 }
 
 export async function getDefectCatalogById(id: number) {
@@ -364,6 +611,374 @@ export async function softDeleteDefectCatalog(id: number) {
   await db.update(defectCatalog)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(defectCatalog.id, id));
+}
+
+// ============ Doc 31 Đợt B (OP3) — Unmatched defect-code telemetry ============
+
+/**
+ * Record a batch of defect codes that did NOT resolve to a defect_catalog row.
+ * Aggregates by code (one row each) — increments seenCount and refreshes the
+ * last-seen context. Best-effort: callers must NOT let a failure here block
+ * inspection ingest (wrap in try/catch at the call site).
+ *
+ * `codes` may contain duplicates (one per measurement) — they are folded into a
+ * per-code count before upserting so the hot path issues at most one statement
+ * per DISTINCT unmatched code.
+ */
+export async function recordUnmatchedDefectCodes(
+  codes: string[],
+  ctx: { machineId?: number | null; productModelId?: number | null },
+): Promise<void> {
+  if (!codes.length) return;
+  const db = await getDb();
+  if (!db) return;
+  // Fold duplicates → { code: count }.
+  const counts = new Map<string, number>();
+  for (const raw of codes) {
+    const code = (raw ?? "").trim().slice(0, 50);
+    if (!code) continue;
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  const now = new Date();
+  for (const [code, n] of counts) {
+    await db
+      .insert(unmatchedDefectCodes)
+      .values({
+        code,
+        seenCount: n,
+        machineId: ctx.machineId ?? null,
+        productModelId: ctx.productModelId ?? null,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: unmatchedDefectCodes.code,
+        set: {
+          seenCount: sql`${unmatchedDefectCodes.seenCount} + ${n}`,
+          machineId: ctx.machineId ?? null,
+          productModelId: ctx.productModelId ?? null,
+          lastSeenAt: now,
+          updatedAt: now,
+        },
+      });
+  }
+}
+
+/**
+ * List unmatched defect codes (rollup) for the curation panel. `onlyUnresolved`
+ * hides codes already curated into the catalog (resolvedCatalogId set).
+ */
+export async function listUnmatchedDefectCodes(filters?: {
+  onlyUnresolved?: boolean;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds: SQL[] = [];
+  if (filters?.onlyUnresolved) {
+    conds.push(isNull(unmatchedDefectCodes.resolvedCatalogId));
+  }
+  const q = db
+    .select()
+    .from(unmatchedDefectCodes)
+    .where(conds.length ? and(...conds) : undefined as unknown as SQL)
+    .orderBy(desc(unmatchedDefectCodes.seenCount))
+    .limit(Math.min(filters?.limit ?? 200, 1000));
+  return q;
+}
+
+/**
+ * Mark an unmatched code as resolved (curated into the catalog). Idempotent —
+ * safe to call when the code row does not exist.
+ */
+export async function markUnmatchedDefectCodeResolved(code: string, catalogId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(unmatchedDefectCodes)
+    .set({ resolvedCatalogId: catalogId, updatedAt: new Date() })
+    .where(eq(unmatchedDefectCodes.code, code.trim()));
+}
+
+/**
+ * Per-component (package) defect tendency: which defect classes trend for which
+ * component. Joins CLASSIFIED NG results (defectCatalogId not null) → point def
+ * componentCode. Tolerates empty componentCode (WB-1 fills it) — such rows are
+ * grouped under a NULL component and can be filtered out client-side.
+ */
+export async function getDefectTendencyByComponent(opts?: {
+  productModelId?: number;
+  fromTs?: Date;
+  toTs?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds: SQL[] = [sql`${measurementResults.defectCatalogId} IS NOT NULL`];
+  if (opts?.productModelId) {
+    conds.push(eq(measurementPointDefs.productModelId, opts.productModelId));
+  }
+  if (opts?.fromTs) conds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
+  if (opts?.toTs) conds.push(sql`${productInspections.inspectionTime} <= ${opts.toTs}`);
+  return db
+    .select({
+      componentCode: measurementPointDefs.componentCode,
+      defectCatalogId: measurementResults.defectCatalogId,
+      defectCode: defectCatalog.code,
+      defectName: defectCatalog.name,
+      severity: defectCatalog.severity,
+      count: sql<number>`COUNT(*)::int`.as("count"),
+    })
+    .from(measurementResults)
+    .innerJoin(productInspections, eq(productInspections.id, measurementResults.inspectionId))
+    .innerJoin(measurementPointDefs, eq(measurementPointDefs.id, measurementResults.pointDefId))
+    .leftJoin(defectCatalog, eq(defectCatalog.id, measurementResults.defectCatalogId))
+    .where(and(...conds))
+    .groupBy(
+      measurementPointDefs.componentCode,
+      measurementResults.defectCatalogId,
+      defectCatalog.code,
+      defectCatalog.name,
+      defectCatalog.severity,
+    )
+    .orderBy(desc(sql`COUNT(*)`))
+    .limit(Math.min(opts?.limit ?? 100, 500));
+}
+
+// ============ Doc 31 Đợt B (MP3) — __UNMAPPED__ point visibility + remap ============
+
+/**
+ * Unmatched-rate metric: fraction of measurement_results whose point definition
+ * lives under the synthetic __UNMAPPED__ product model (auto-provisioned because
+ * the machine-reported point code did not match a real def). Returns an overall
+ * rate plus an optional per-machine breakdown.
+ *
+ * `unmappedModelId` is passed in (from the resolver) to keep this module free of
+ * a resolver import cycle. When it is undefined (no __UNMAPPED__ model exists
+ * yet) the rate is 0 by definition.
+ */
+export async function computeUnmappedPointRate(opts: {
+  unmappedModelId?: number;
+  machineId?: number;
+  productModelId?: number;
+  fromTs?: Date;
+  toTs?: Date;
+}): Promise<{
+  total: number;
+  unmatched: number;
+  rate: number;
+  byMachine: Array<{ machineId: number; total: number; unmatched: number; rate: number }>;
+}> {
+  const db = await getDb();
+  if (!db || !opts.unmappedModelId) {
+    return { total: 0, unmatched: 0, rate: 0, byMachine: [] };
+  }
+  const conds: SQL[] = [];
+  if (opts.machineId) conds.push(eq(productInspections.machineId, opts.machineId));
+  if (opts.fromTs) conds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
+  if (opts.toTs) conds.push(sql`${productInspections.inspectionTime} <= ${opts.toTs}`);
+  // productModelId filter applies to the INSPECTION's product model (what the
+  // machine claimed), not the point def — so we can see "this product's feed is
+  // 68% unmapped".
+  if (opts.productModelId) conds.push(eq(productInspections.productModelId, opts.productModelId));
+
+  const unmatchedExpr = sql<number>`SUM(CASE WHEN ${measurementPointDefs.productModelId} = ${opts.unmappedModelId} THEN 1 ELSE 0 END)::int`;
+
+  const [overall] = await db
+    .select({
+      total: sql<number>`COUNT(*)::int`,
+      unmatched: unmatchedExpr,
+    })
+    .from(measurementResults)
+    .innerJoin(measurementPointDefs, eq(measurementPointDefs.id, measurementResults.pointDefId))
+    .innerJoin(productInspections, eq(productInspections.id, measurementResults.inspectionId))
+    .where(conds.length ? and(...conds) : undefined as unknown as SQL);
+
+  const total = Number(overall?.total ?? 0);
+  const unmatched = Number(overall?.unmatched ?? 0);
+
+  const byMachineRows = await db
+    .select({
+      machineId: productInspections.machineId,
+      total: sql<number>`COUNT(*)::int`,
+      unmatched: unmatchedExpr,
+    })
+    .from(measurementResults)
+    .innerJoin(measurementPointDefs, eq(measurementPointDefs.id, measurementResults.pointDefId))
+    .innerJoin(productInspections, eq(productInspections.id, measurementResults.inspectionId))
+    .where(conds.length ? and(...conds) : undefined as unknown as SQL)
+    .groupBy(productInspections.machineId)
+    .orderBy(desc(unmatchedExpr))
+    .limit(50);
+
+  return {
+    total,
+    unmatched,
+    rate: total > 0 ? unmatched / total : 0,
+    byMachine: byMachineRows.map((r) => {
+      const t = Number(r.total);
+      const u = Number(r.unmatched);
+      return { machineId: r.machineId, total: t, unmatched: u, rate: t > 0 ? u / t : 0 };
+    }),
+  };
+}
+
+/**
+ * List __UNMAPPED__ point defs with their measurement-result counts and a
+ * best-effort remap suggestion (a real product model that has an active point
+ * def with the SAME code). Ordered by result volume (most-impactful first).
+ */
+export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const defs = await db
+    .select({
+      id: measurementPointDefs.id,
+      code: measurementPointDefs.code,
+      name: measurementPointDefs.name,
+      machineId: measurementPointDefs.machineId,
+      createdAt: measurementPointDefs.createdAt,
+    })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, unmappedModelId),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .orderBy(asc(measurementPointDefs.code));
+  if (defs.length === 0) return [];
+
+  const ids = defs.map((d) => d.id);
+  const countRows = await db
+    .select({
+      pointDefId: measurementResults.pointDefId,
+      resultCount: sql<number>`COUNT(*)::int`.as("resultCount"),
+    })
+    .from(measurementResults)
+    .where(sql`${measurementResults.pointDefId} = ANY(${ids})`)
+    .groupBy(measurementResults.pointDefId);
+  const countMap = new Map<number, number>();
+  for (const r of countRows) countMap.set(r.pointDefId, Number(r.resultCount));
+
+  // Suggestion: a real (non-unmapped, active) def sharing the same code.
+  const codes = Array.from(new Set(defs.map((d) => d.code)));
+  const suggestionRows = codes.length
+    ? await db
+        .select({
+          code: measurementPointDefs.code,
+          productModelId: measurementPointDefs.productModelId,
+          productModelCode: productModels.code,
+          productModelName: productModels.name,
+        })
+        .from(measurementPointDefs)
+        .innerJoin(productModels, eq(productModels.id, measurementPointDefs.productModelId))
+        .where(and(
+          sql`${measurementPointDefs.code} = ANY(${codes})`,
+          sql`${measurementPointDefs.productModelId} <> ${unmappedModelId}`,
+          isNull(measurementPointDefs.deletedAt),
+          eq(measurementPointDefs.isActive, true),
+        ))
+    : [];
+  const suggestByCode = new Map<string, { productModelId: number; productModelCode: string; productModelName: string }>();
+  for (const s of suggestionRows) {
+    if (!suggestByCode.has(s.code)) {
+      suggestByCode.set(s.code, {
+        productModelId: s.productModelId,
+        productModelCode: s.productModelCode,
+        productModelName: s.productModelName,
+      });
+    }
+  }
+
+  return defs.map((d) => ({
+    ...d,
+    resultCount: countMap.get(d.id) ?? 0,
+    suggestion: suggestByCode.get(d.code) ?? null,
+  }));
+}
+
+/**
+ * Bulk-remap __UNMAPPED__ point defs to a real product model.
+ *
+ * For each selected def:
+ *   - If the target model already has an ACTIVE def with the same code, MERGE:
+ *     re-point that def's measurement_results to the target def, then soft-delete
+ *     the (now empty) unmapped def.
+ *   - Otherwise MOVE: reassign the def's productModelId to the target (its
+ *     results follow automatically since they reference pointDefId).
+ *
+ * Runs in one transaction. Returns a summary. `targetMachineId` (optional) is
+ * written onto MOVED defs so they can also bind to a machine.
+ */
+export async function remapMeasurementPoints(opts: {
+  pointDefIds: number[];
+  targetProductModelId: number;
+  unmappedModelId: number;
+  targetMachineId?: number | null;
+}): Promise<{ moved: number; merged: number; resultsReassigned: number; skipped: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { pointDefIds, targetProductModelId, unmappedModelId } = opts;
+  if (!pointDefIds.length) return { moved: 0, merged: 0, resultsReassigned: 0, skipped: 0 };
+
+  return db.transaction(async (tx) => {
+    let moved = 0;
+    let merged = 0;
+    let resultsReassigned = 0;
+    let skipped = 0;
+
+    for (const id of pointDefIds) {
+      // Only remap defs that are genuinely under the __UNMAPPED__ model.
+      const [def] = await tx
+        .select()
+        .from(measurementPointDefs)
+        .where(and(
+          eq(measurementPointDefs.id, id),
+          eq(measurementPointDefs.productModelId, unmappedModelId),
+          isNull(measurementPointDefs.deletedAt),
+        ))
+        .limit(1);
+      if (!def) { skipped++; continue; }
+
+      // Is there an existing active target def with the same code?
+      const [target] = await tx
+        .select()
+        .from(measurementPointDefs)
+        .where(and(
+          eq(measurementPointDefs.productModelId, targetProductModelId),
+          eq(measurementPointDefs.code, def.code),
+          isNull(measurementPointDefs.deletedAt),
+          eq(measurementPointDefs.isActive, true),
+        ))
+        .limit(1);
+
+      if (target && target.id !== id) {
+        // MERGE — re-point results, then retire the unmapped def.
+        const reassigned = await tx
+          .update(measurementResults)
+          .set({ pointDefId: target.id })
+          .where(eq(measurementResults.pointDefId, id))
+          .returning({ rid: measurementResults.id });
+        resultsReassigned += reassigned.length;
+        await tx
+          .update(measurementPointDefs)
+          .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
+          .where(eq(measurementPointDefs.id, id));
+        merged++;
+      } else {
+        // MOVE — reassign the def to the target product model.
+        await tx
+          .update(measurementPointDefs)
+          .set({
+            productModelId: targetProductModelId,
+            machineId: opts.targetMachineId ?? def.machineId,
+            updatedAt: new Date(),
+          })
+          .where(eq(measurementPointDefs.id, id));
+        moved++;
+      }
+    }
+    return { moved, merged, resultsReassigned, skipped };
+  });
 }
 
 // ============ P3 FOUNDATION FUNCTIONS ============
@@ -789,38 +1404,107 @@ export async function calculateMsaSummary(studyId: number) {
   };
 }
 
+// ============ Doc 31 UX3 (WD-2) — optimistic lock on measurement-point edits ============
+
+/**
+ * Raised by updateMeasurementPointDef when a compare-and-set finds the row was
+ * modified since the editor loaded it (stale `expectedUpdatedAt`). The router
+ * maps this to a tRPC CONFLICT and forwards `current` so the client can offer
+ * "reload / overwrite anyway". Duck-typed via `.code` (routers must NOT `instanceof`
+ * it — the db module is frequently mocked in tests).
+ */
+export class MeasurementPointConflictError extends Error {
+  readonly code = "MP_STALE_WRITE" as const;
+  readonly current: MeasurementPointDef;
+  readonly expectedUpdatedAt: string | null;
+  readonly actualUpdatedAt: string | null;
+  constructor(current: MeasurementPointDef, expectedUpdatedAt: Date | string | null | undefined) {
+    super("Measurement point was modified by someone else since it was loaded.");
+    this.name = "MeasurementPointConflictError";
+    this.current = current;
+    this.expectedUpdatedAt = toIsoOrNull(expectedUpdatedAt);
+    this.actualUpdatedAt = toIsoOrNull(current.updatedAt ?? null);
+  }
+}
+
+function toIsoOrNull(v: Date | string | null | undefined): string | null {
+  if (v == null) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * PURE compare — is the caller's `expected` timestamp stale vs the row's `current`?
+ * Compared at millisecond granularity (node-postgres already truncates the stored
+ * microseconds to ms on read, so both sides are consistent). `expected == null`
+ * means "no optimistic-lock requested" → never stale (backward compatible).
+ */
+export function isStaleUpdate(
+  current: Date | string | null | undefined,
+  expected: Date | string | null | undefined,
+): boolean {
+  if (expected == null) return false; // opt-in — absent = skip the check
+  const cur = current instanceof Date ? current : current != null ? new Date(current) : null;
+  const exp = expected instanceof Date ? expected : new Date(expected);
+  if (!cur || Number.isNaN(cur.getTime()) || Number.isNaN(exp.getTime())) return false;
+  return cur.getTime() !== exp.getTime();
+}
+
 export async function updateMeasurementPointDef(
   id: number,
   data: Partial<InsertMeasurementPointDef>,
-  options?: { changedBy?: number | null; changeReason?: string | null }
+  options?: {
+    changedBy?: number | null;
+    changeReason?: string | null;
+    // UX3: when supplied, the update is a compare-and-set against the row's
+    // updatedAt — a mismatch throws MeasurementPointConflictError. Absent =
+    // legacy blind update (skip the check).
+    expectedUpdatedAt?: Date | string | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // P0 versioning: snapshot the *previous* state of the row before applying the
-  // update. The latest version row therefore reflects the pre-update state.
-  const [previous] = await db.select().from(measurementPointDefs)
-    .where(eq(measurementPointDefs.id, id))
-    .limit(1);
+  // Do the snapshot + compare-and-set + write in ONE transaction. The previous
+  // row is locked FOR UPDATE so two concurrent editors serialize (mirrors the
+  // program-release / golden FOR-UPDATE pattern) instead of last-write-wins.
+  return db.transaction(async (tx) => {
+    const [previous] = await tx.select().from(measurementPointDefs)
+      .where(eq(measurementPointDefs.id, id))
+      .for("update")
+      .limit(1);
 
-  if (previous) {
-    const [{ maxVersion }] = await db
-      .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
-      .from(measurementPointVersions)
-      .where(eq(measurementPointVersions.pointDefId, id));
+    // UX3 optimistic lock — throw BEFORE mutating anything so no version row is
+    // created for a rejected write.
+    if (previous && isStaleUpdate(previous.updatedAt, options?.expectedUpdatedAt)) {
+      throw new MeasurementPointConflictError(previous as MeasurementPointDef, options?.expectedUpdatedAt);
+    }
 
-    const nextVersion = Number(maxVersion ?? 0) + 1;
+    // P0 versioning: snapshot the *previous* state before applying the update.
+    if (previous) {
+      const [{ maxVersion }] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+        .from(measurementPointVersions)
+        .where(eq(measurementPointVersions.pointDefId, id));
 
-    await db.insert(measurementPointVersions).values({
-      pointDefId: id,
-      version: nextVersion,
-      snapshotJson: previous as unknown as Record<string, any>,
-      changedBy: options?.changedBy ?? null,
-      changeReason: options?.changeReason ?? null,
-    });
-  }
+      const nextVersion = Number(maxVersion ?? 0) + 1;
 
-  await db.update(measurementPointDefs).set(data).where(eq(measurementPointDefs.id, id));
+      await tx.insert(measurementPointVersions).values({
+        pointDefId: id,
+        version: nextVersion,
+        snapshotJson: previous as unknown as Record<string, any>,
+        changedBy: options?.changedBy ?? null,
+        changeReason: options?.changeReason ?? null,
+      });
+    }
+
+    // Bump updatedAt so the NEXT editor's compare-and-set detects this change
+    // (drizzle does not auto-touch updatedAt on update). A caller-supplied
+    // updatedAt in `data` would be overridden here intentionally.
+    await tx.update(measurementPointDefs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(measurementPointDefs.id, id));
+  });
 }
 
 export async function deleteMeasurementPointDef(id: number) {
@@ -921,8 +1605,17 @@ export async function getProductMachineMappings(machineId?: number, productModel
 export async function createProductMachineMapping(data: InsertProductMachineMapping) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
-  return { id: result.id };
+  try {
+    const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
+    return { id: result.id };
+  } catch (err: any) {
+    // W3-A (doc 27 M6, 0180): uq_pm_mappings_pair — a (product, machine) pair
+    // exists at most once. Translate the DB error into an actionable message.
+    if (err?.code === "23505" || /uq_pm_mappings_pair/.test(String(err?.message))) {
+      throw new Error("Mapping đã tồn tại cho cặp sản phẩm/máy này — hãy sửa (kích hoạt lại / đổi priority) bản ghi hiện có thay vì tạo mới.");
+    }
+    throw err;
+  }
 }
 
 export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
@@ -1344,6 +2037,31 @@ export async function listMpLightingProfiles(pointDefId: number) {
       isNull(mpLightingProfiles.deletedAt),
     ))
     .orderBy(asc(mpLightingProfiles.shotIndex));
+}
+
+/**
+ * Doc 31 MP6 — batch-load active lighting profiles for many points at once
+ * (avoids an N+1 in deltaSyncPoints). Returns a Map keyed by pointDefId.
+ */
+export async function listMpLightingProfilesByPointDefIds(
+  pointDefIds: number[],
+): Promise<Map<number, MpLightingProfile[]>> {
+  const out = new Map<number, MpLightingProfile[]>();
+  const db = await getDb();
+  if (!db || pointDefIds.length === 0) return out;
+  const rows = await db.select().from(mpLightingProfiles)
+    .where(and(
+      inArray(mpLightingProfiles.pointDefId, pointDefIds),
+      eq(mpLightingProfiles.isActive, true),
+      isNull(mpLightingProfiles.deletedAt),
+    ))
+    .orderBy(asc(mpLightingProfiles.shotIndex));
+  for (const row of rows) {
+    const list = out.get(row.pointDefId) ?? [];
+    list.push(row);
+    out.set(row.pointDefId, list);
+  }
+  return out;
 }
 
 export async function createMpLightingProfile(data: InsertMpLightingProfile) {

@@ -27,6 +27,7 @@ import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -253,15 +254,17 @@ export default function FleetOrchestration() {
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
-  // Realtime: poll các query trạng thái động mỗi 5s khi có quyền xem; dừng khi mất quyền.
-  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
+  // Realtime: poll các query trạng thái động mỗi 5s khi có quyền xem; dừng khi
+  // mất quyền HOẶC khi tab bị ẩn (doc 27 B12 — usePollingInterval).
+  const fleetPolling = usePollingInterval(canView ? 5000 : false);
+  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, ...fleetPolling });
   const tasksQ = trpc.fleet.listTasks.useQuery(
     { status: (statusFilter || undefined) as (typeof TASK_STATUSES)[number] | undefined, limit: 200 },
-    { enabled: canView, refetchInterval: canView ? 5000 : false },
+    { enabled: canView, ...fleetPolling },
   );
-  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
-  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, refetchInterval: canView ? 5000 : false });
-  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, refetchInterval: canView ? 5000 : false });
+  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, ...fleetPolling });
+  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, ...fleetPolling });
+  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, ...fleetPolling });
 
   const tasks = (tasksQ.data ?? []) as FleetTask[];
   const zones = (zonesQ.data ?? []) as FleetZone[];
@@ -275,13 +278,14 @@ export default function FleetOrchestration() {
   );
   const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? 1;
   const mapActive = canView && tab === "map";
+  const mapPolling = usePollingInterval(mapActive ? 5000 : false);
   const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
     { factoryId: effectiveFactoryId },
     { enabled: mapActive, retry: false },
   );
   const robotPositionsQ = trpc.fleet.robotPositions.useQuery(undefined, {
     enabled: mapActive,
-    refetchInterval: mapActive ? 5000 : false,
+    ...mapPolling,
   });
 
   // ── G2 reads (read RBAC is the same — machine_monitoring/canView) ─────────────

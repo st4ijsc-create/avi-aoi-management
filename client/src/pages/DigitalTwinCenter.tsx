@@ -30,6 +30,7 @@ import { Socket } from "socket.io-client";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import ArticulatedRobot from "@/components/twin/ArticulatedRobot";
 import { getKinematicModel } from "@/lib/kinematics";
@@ -416,11 +417,13 @@ export default function DigitalTwinCenter() {
 
   // Scene graph — polled on a 5s interval ONLY when not actively streaming a live
   // delta (and only in live mode; replay drives positions from frames).
+  // Poll hygiene (doc 27 B12): also paused while the tab is hidden.
+  const scenePolling = usePollingInterval(mode === "live" && !isStreaming ? 5000 : false);
   const sceneQ = trpc.twin.sceneGraph.useQuery(
     { factoryId: activeFactoryId ?? 0 },
     {
       enabled: activeFactoryId != null,
-      refetchInterval: mode === "live" && !isStreaming ? 5000 : false,
+      ...scenePolling,
     },
   );
   const scene = sceneQ.data;

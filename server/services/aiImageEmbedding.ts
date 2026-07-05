@@ -8,6 +8,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { describeDefect } from "./aiVisionLanguage";
+import { gpuSessionSemaphore } from "./aiInferenceEngine";
 
 // B4.1 — nguồn embedding ảnh trả về UI (trung thực):
 //  - "onnx":          model ONNX embedding ACTIVE (vector thật, khác chiều 1024).
@@ -581,7 +582,10 @@ export async function extractEmbedding(
   const inputName = session.inputNames[0];
   if (!inputName) throw new Error("Model has no input names");
 
-  const results = await session.run({ [inputName]: inputTensor });
+  // W7-D (gap V6): embedding extraction shares the per-GPU concurrency
+  // semaphore (AI_GPU_CONCURRENCY) with the inference engine so DINOv2 +
+  // classifier sessions cannot thrash the GPU concurrently.
+  const results = await gpuSessionSemaphore.run(() => session.run({ [inputName]: inputTensor }));
 
   // Try to find an "embedding" or "feature" output, otherwise use last output
   const embOutputName =

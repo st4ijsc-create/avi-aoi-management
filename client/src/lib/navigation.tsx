@@ -33,10 +33,12 @@
   Cog,
   FileBarChart,
   MonitorCheck,
+  Tv,
   Workflow,
   Brain,
   Wrench,
   Rocket,
+  ScanSearch,
   LayoutTemplate,
   Archive,
   Store,
@@ -47,6 +49,8 @@
   GitCompare,
   GitMerge,
   Map,
+  MapPin,
+  Bug,
   Grid3X3,
   Sparkles,
   Search,
@@ -84,6 +88,8 @@
   Network,
   Globe,
   Share2,
+  FolderSearch,
+  Star,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -205,6 +211,16 @@ export const navGroups: NavGroup[] = [
         description: "nav.opsConsoleDesc",
         requiredPermission: "andon",
         permissionCategory: "andon",
+      },
+      {
+        // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle,
+        // socket-first). Gated like the main dashboard — it is a read-only surface.
+        href: "/andon",
+        label: "nav.andonBoard",
+        icon: <Tv className="h-4 w-4" />,
+        description: "nav.andonBoardDesc",
+        requiredPermission: "dashboard_view",
+        permissionCategory: "dashboard",
       },
       {
         href: "/dashboard-center",
@@ -410,6 +426,43 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_defect_heatmap",
         permissionCategory: "analytics",
       },
+      {
+        // W7-C (doc 27 V8/V11) — golden-sample capture + approval + align/diff management.
+        href: "/golden-samples",
+        label: "nav.goldenSamples",
+        icon: <Star className="h-4 w-4" />,
+        description: "nav.goldenSamplesDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        // W8-C (doc 27 V10) — dedicated repair workstation: scan serial → repair walk → re-inspect.
+        href: "/repair-station",
+        label: "nav.repairStation",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.repairStationDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        // Doc 31 Đợt B (OP4) — IPC-A-610 defect catalog curation + unmatched codes + repair guidance.
+        href: "/defect-catalog",
+        label: "nav.defectCatalog",
+        icon: <Bug className="h-4 w-4" />,
+        description: "nav.defectCatalogDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        // Doc 31 Đợt B (MP3) — __UNMAPPED__ unmatched-rate metric + bulk remap tool.
+        href: "/measurement-point-health",
+        label: "nav.measurementPointHealth",
+        icon: <MapPin className="h-4 w-4" />,
+        description: "nav.measurementPointHealthDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+        tier: "advanced",
+      },
     ],
   },
 
@@ -568,6 +621,17 @@ export const navGroups: NavGroup[] = [
         section: "onboarding",
       },
       {
+        // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter +
+        // dry-run + credential + commissioning sign-off (soft gate, tag-only)
+        href: "/aoi-onboarding",
+        label: "nav.aoiOnboarding",
+        icon: <ScanSearch className="h-4 w-4" />,
+        description: "nav.aoiOnboardingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "onboarding",
+      },
+      {
         href: "/machine-registration",
         label: "nav.machineRegistration",
         icon: <Plug className="h-4 w-4" />,
@@ -591,6 +655,16 @@ export const navGroups: NavGroup[] = [
         label: "nav.unsMapping",
         icon: <Share2 className="h-4 w-4" />,
         description: "nav.unsMappingDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+        section: "onboarding",
+      },
+      {
+        // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)
+        href: "/hot-folders",
+        label: "nav.hotFolders",
+        icon: <FolderSearch className="h-4 w-4" />,
+        description: "nav.hotFoldersDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "onboarding",
@@ -1274,6 +1348,9 @@ export const navGroups: NavGroup[] = [
     sections: [
       { key: "securityAccess", label: "nav.section.securityAccess" },
       { key: "platform", label: "nav.section.platform" },
+      // Doc 31 UX7 — coherent "Product & Program" cluster (products/mapping/
+      // component-library) split out of the generic Master Data section.
+      { key: "productProgram", label: "nav.section.productProgram" },
       { key: "masterData", label: "nav.section.masterData" },
       { key: "factoryConfig", label: "nav.section.factoryConfig" },
     ],
@@ -1400,6 +1477,26 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "settings",
         section: "masterData",
       },
+      // W8-A (doc 27 M12a / doc 29 §1): component package/footprint library.
+      {
+        href: "/component-library",
+        label: "nav.componentLibrary",
+        icon: <Cpu className="h-4 w-4" />,
+        description: "nav.componentLibraryDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "productProgram", // Doc 31 UX7
+      },
+      // W8-B (doc 29 §3 — M14): operator/badge master (badgeCode → users.id).
+      {
+        href: "/operator-badges",
+        label: "nav.operatorBadges",
+        icon: <Users className="h-4 w-4" />,
+        description: "nav.operatorBadgesDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+      },
       {
         href: "/products",
         label: "nav.productsPage",
@@ -1407,7 +1504,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.productsPageDesc",
         requiredPermission: "settings_products",
         permissionCategory: "settings",
-        section: "masterData",
+        section: "productProgram", // Doc 31 UX7
+      },
+      {
+        // WD-1 (doc 31 Đợt D · UX1) — guided product setup: ties the 9-10
+        // scattered product-config destinations into one resumable wizard.
+        href: "/product-onboarding",
+        label: "nav.productOnboarding",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.productOnboardingDesc",
+        requiredPermission: "settings_products",
+        permissionCategory: "settings",
+        section: "productProgram", // Doc 31 UX7
       },
       {
         href: "/product-mapping",
@@ -1416,7 +1524,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productMappingDesc",
         requiredPermission: "settings_product_mapping",
         permissionCategory: "settings",
-        section: "masterData",
+        section: "productProgram", // Doc 31 UX7
       },
       {
         href: "/layout",

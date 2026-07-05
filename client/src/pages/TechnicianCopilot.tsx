@@ -639,6 +639,7 @@ function ThresholdAdvisorSection() {
                   size="default"
                   variant="default"
                   onApplied={() => pointsQuery.refetch()}
+                  onSubmitted={() => pointsQuery.refetch()}
                 />
               ) : (
                 <Button size="default" disabled variant="default" className="gap-1">

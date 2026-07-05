@@ -629,3 +629,79 @@
 .kiosk-mode main {
   padding: 0 !important;
 }
+
+/* ── Doc 27 Đợt 5 / W5-E — gap F12: print stylesheet for reports ──────────
+   Pages that wrap their output in `.print-area` (Reports.tsx) print clean:
+   app chrome hidden, black-on-white, sensible page breaks for tables. */
+@media print {
+  /* Hide everything, then re-show only the print area (visibility keeps the
+     layout box so the area's position is preserved before we lift it out). */
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* App chrome never prints, even outside .print-area pages. */
+  [data-app-chrome="sidebar"],
+  [data-app-chrome="header"],
+  nav,
+  aside {
+    display: none !important;
+  }
+
+  /* Black on white regardless of theme. */
+  .print-area,
+  .print-area * {
+    background: transparent !important;
+    color: #000 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+  body,
+  .print-area {
+    background: #fff !important;
+  }
+  .print-area [class*="border"] {
+    border-color: #bbb !important;
+  }
+
+  /* Page-break hygiene. */
+  .print-area table {
+    page-break-inside: auto;
+    width: 100%;
+  }
+  .print-area tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .print-area thead {
+    display: table-header-group;
+  }
+  .print-area h1,
+  .print-area h2,
+  .print-area h3 {
+    page-break-after: avoid;
+  }
+  /* Cards / chart blocks should not be split across pages. */
+  .print-area .print-avoid-break,
+  .print-area [data-slot="card"] {
+    break-inside: avoid;
+  }
+
+  /* Interactive controls make no sense on paper. */
+  .print-area button,
+  .print-area [role="tablist"] {
+    display: none !important;
+  }
+}

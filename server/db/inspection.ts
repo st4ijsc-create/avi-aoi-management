@@ -16,6 +16,48 @@ import {
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
 
+// ============ LIST PROJECTION (doc 27 gap B9) ============
+/**
+ * Columns actually consumed by the LIST consumers of product_inspections
+ * (inspection.list / inspection.listCursor / inspection.search →
+ * History, Dashboard widgets, HistoryInfiniteScroll, drill-down, exports,
+ * cachedStatistics). Heavy/detail-only columns are deliberately NOT read on
+ * these hot paths: notes, tags, ntfConfirmedBy/At, ntfReason, isArchived,
+ * archivedAt/By, aiConfidence, aiModelId, aiProcessedAt, aiDetails (json),
+ * inspectionType, variantPayload (jsonb), operatorId, productionOrderCode,
+ * ingestMode, updatedAt. Detail views (inspection.getById) keep full rows.
+ */
+export const inspectionListProjection = {
+  id: productInspections.id,
+  machineId: productInspections.machineId,
+  productModelId: productInspections.productModelId,
+  corporateCode: productInspections.corporateCode,
+  factoryCode: productInspections.factoryCode,
+  workshopCode: productInspections.workshopCode,
+  lineCode: productInspections.lineCode,
+  stageCode: productInspections.stageCode,
+  serialNumber: productInspections.serialNumber,
+  productModel: productInspections.productModel,
+  batchNumber: productInspections.batchNumber,
+  overallResult: productInspections.overallResult,
+  originalResult: productInspections.originalResult,
+  inspectionTime: productInspections.inspectionTime,
+  cycleTime: productInspections.cycleTime,
+  acknowledgedBy: productInspections.acknowledgedBy,
+  acknowledgedAt: productInspections.acknowledgedAt,
+  aiDecision: productInspections.aiDecision,
+  // W7-B (doc 27 V3): heuristic false-call likelihood — History queue sort +
+  // "Nghi báo giả" badge read it from the list projection (advisory only).
+  ntfScore: productInspections.ntfScore,
+  createdAt: productInspections.createdAt,
+} as const;
+
+/** Row shape returned by the projected list reads. */
+export type InspectionListRow = Pick<
+  typeof productInspections.$inferSelect,
+  keyof typeof inspectionListProjection
+>;
+
 // ============ PRODUCT INSPECTION FUNCTIONS ============
 export async function createProductInspection(data: InsertProductInspection) {
   const db = await getDb();
@@ -79,7 +121,8 @@ export async function getProductInspections(filters: {
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [data, countResult] = await Promise.all([
-    db.select().from(productInspections)
+    // Projected hot-path read (gap B9) — see inspectionListProjection.
+    db.select(inspectionListProjection).from(productInspections)
       .where(whereClause)
       .orderBy(desc(productInspections.inspectionTime))
       .limit(filters.limit || 50)
@@ -150,6 +193,74 @@ export async function updateProductInspectionNTF(id: number, userId: number, rea
   }).where(eq(productInspections.id, id));
 }
 
+/**
+ * Doc 31 MP6 — server spec-gate reconciliation. When the per-point evaluator
+ * (pointResultEvaluator) downgraded at least one point to NG on an inspection
+ * the machine reported OK, promote overallResult to NG so board yield/FPY stays
+ * consistent with the per-point verdicts. Only touches rows STILL recorded OK
+ * (never overrides a machine NG/NTF); leaves `originalResult` = the machine's
+ * original verdict intact for audit. Best-effort — returns whether it changed a row.
+ */
+export async function reconcileInspectionOverallNG(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .update(productInspections)
+    .set({ overallResult: "NG", updatedAt: new Date() })
+    .where(and(eq(productInspections.id, id), eq(productInspections.overallResult, "OK")))
+    .returning({ id: productInspections.id });
+  return rows.length > 0;
+}
+
+/**
+ * Bulk-acknowledge inspections (doc 27 gap F1).
+ *
+ * Stamps acknowledgedBy/acknowledgedAt on the requested rows. Idempotent:
+ * rows that are already acknowledged are left untouched (first acknowledger
+ * wins) and reported separately so callers can give an honest count. Ids that
+ * match no row are simply not counted.
+ */
+export async function bulkAcknowledgeInspections(params: {
+  ids: number[];
+  userId: number;
+}): Promise<{ updatedIds: number[]; alreadyAcknowledgedIds: number[] }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (params.ids.length === 0) return { updatedIds: [], alreadyAcknowledgedIds: [] };
+
+  const now = new Date();
+  const updated = await db
+    .update(productInspections)
+    .set({
+      acknowledgedBy: params.userId,
+      acknowledgedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      inArray(productInspections.id, params.ids),
+      isNull(productInspections.acknowledgedAt),
+    ))
+    .returning({ id: productInspections.id });
+
+  const updatedIds = updated.map((r) => r.id);
+  const updatedSet = new Set(updatedIds);
+  // Whatever was requested but not updated is either already acknowledged or nonexistent.
+  const remaining = params.ids.filter((id) => !updatedSet.has(id));
+  let alreadyAcknowledgedIds: number[] = [];
+  if (remaining.length > 0) {
+    const rows = await db
+      .select({ id: productInspections.id })
+      .from(productInspections)
+      .where(and(
+        inArray(productInspections.id, remaining),
+        isNotNull(productInspections.acknowledgedAt),
+      ));
+    alreadyAcknowledgedIds = rows.map((r) => r.id);
+  }
+
+  return { updatedIds, alreadyAcknowledgedIds };
+}
+
 // ============ MEASUREMENT RESULT FUNCTIONS ============
 export async function createMeasurementResult(data: InsertMeasurementResult) {
   const db = await getDb();
@@ -185,9 +296,14 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
     // Defect classification (NG → defect-code link)
     defectCatalogId: measurementResults.defectCatalogId,
     defectSeverity: measurementResults.defectSeverity,
+    // Doc 31 OP3 — raw code retained when it did NOT resolve to a catalog row.
+    defectCodeRaw: measurementResults.defectCodeRaw,
     defectCode: defectCatalog.code,
     defectName: defectCatalog.name,
     defectNameVi: defectCatalog.nameVi,
+    // Doc 31 OP4 — repair guidance surfaced at RepairStation / InspectionDetail.
+    repairGuidance: defectCatalog.repairGuidance,
+    repairGuidanceVi: defectCatalog.repairGuidanceVi,
     // Point def info
     pointCode: measurementPointDefs.code,
     pointName: measurementPointDefs.name,
@@ -263,7 +379,7 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
   factoryCode?: string;
   userId?: number;
   userRole?: string;
-}): Promise<CursorPaginationResult<typeof productInspections.$inferSelect>> {
+}): Promise<CursorPaginationResult<InspectionListRow>> {
   const db = await getDb();
   if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
 
@@ -317,8 +433,9 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  // Fetch one extra to check if there are more
-  const results = await db.select()
+  // Fetch one extra to check if there are more.
+  // Projected hot-path read (gap B9) — see inspectionListProjection.
+  const results = await db.select(inspectionListProjection)
     .from(productInspections)
     .where(whereClause)
     .orderBy(

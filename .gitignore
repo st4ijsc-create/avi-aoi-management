@@ -108,10 +108,28 @@ temp/
 *.sqlite
 *.sqlite3
 
-# Project-specific build directories (unversioned subprojects)
-FactoryAlertSystem/
-android-mqtt-app/android/.gradle/
-mobile-app/node_modules/
+# FactoryAlertSystem (production mobile app) — SOURCE IS TRACKED (MB1, doc 27).
+# Only dependencies, build outputs, binaries and signing material are ignored.
+FactoryAlertSystem/node_modules/
+FactoryAlertSystem/android/build/
+FactoryAlertSystem/android/app/build/
+FactoryAlertSystem/android/.gradle/
+FactoryAlertSystem/android/tmp-wrapper/
+FactoryAlertSystem/ios/Pods/
+FactoryAlertSystem/*.apk
+FactoryAlertSystem/*.aab
+FactoryAlertSystem/google-play-release/
+FactoryAlertSystem/build_output.txt
+FactoryAlertSystem/tsc_check.txt
+FactoryAlertSystem/tsc_output*.txt
+FactoryAlertSystem/.env
+FactoryAlertSystem/.env.*
+# Signing material & machine-local config — NEVER commit
+# (android/gradle.properties currently holds keystore passwords in plaintext)
+FactoryAlertSystem/android/gradle.properties
+FactoryAlertSystem/android/local.properties
+*.keystore
+*.jks
 
 # Deployment packages
 offline-deploy/
@@ -120,8 +138,10 @@ _deploy/
 # Large binary upload artifacts (never push to GitHub — >100MB limit)
 uploads/gguf-models/
 uploads/factory-alert-releases/
+uploads/mqtt-releases/
 *.gguf
 *.apk
+*.aab
 # Edge model packages produced by WS-2 deployment
 uploads/edge-packages/
 
@@ -140,3 +160,6 @@ __pycache__/
 avi-aoi-management.7z
 knowledge/embeddings.jsonl.*-bak
 *.mxbai-bak
+
+# doc 27 V17 — vision validation harness output (npm run vision:validate)
+validation-reports/

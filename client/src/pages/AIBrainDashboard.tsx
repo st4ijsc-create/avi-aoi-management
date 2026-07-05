@@ -10,6 +10,7 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,10 +59,13 @@ function fmtNum(n?: number): string {
 
 export default function AIBrainDashboard() {
   const { t } = useTranslation();
-  const router = trpc.aiGguf.routerStats.useQuery(undefined, { refetchInterval: 5000 });
-  const health = trpc.aiGguf.health.useQuery(undefined, { refetchInterval: 5000 });
+  // Poll hygiene (doc 27 B12): pause the 3×5s pollers when the tab is hidden,
+  // refetch immediately on return — see usePollingInterval.
+  const polling = usePollingInterval(5000);
+  const router = trpc.aiGguf.routerStats.useQuery(undefined, { ...polling });
+  const health = trpc.aiGguf.health.useQuery(undefined, { ...polling });
   // AI Gateway stats — DB-backed tokens / latency / rate-limit / A/B over the last 24h.
-  const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { refetchInterval: 5000 });
+  const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { ...polling });
 
   const stats = router.data;
   const total = stats?.total ?? 0;

@@ -1,4 +1,4 @@
-import { eq, and, desc, like, or, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray, ne } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   factories, InsertFactory,
@@ -8,7 +8,45 @@ import {
   machines, InsertMachine,
   workstations, InsertWorkstation,
   factoryZones, InsertFactoryZone,
+  MACHINE_LIFECYCLE_TRANSITIONS,
+  MACHINE_LIFECYCLE_EXCLUDED,
+  isLegalLifecycleTransition,
+  type MachineLifecycleStatus,
 } from "../../drizzle/schema";
+
+export { MACHINE_LIFECYCLE_TRANSITIONS, MACHINE_LIFECYCLE_EXCLUDED, isLegalLifecycleTransition };
+export type { MachineLifecycleStatus };
+
+// ── Doc 27 Đợt 3 / W3-B — domain errors (M2/M3/M7) ─────────────────────────
+// Detected by NAME at the router layer (isErrorNamed) so tests can mock ../db
+// without needing class identity across module boundaries.
+
+/** Illegal machine lifecycle transition (M2) → router maps to CONFLICT. */
+export class LifecycleTransitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LifecycleTransitionError";
+  }
+}
+
+/** machines.code already used by an ACTIVE machine (M3/M7) → CONFLICT. */
+export class MachineCodeCollisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MachineCodeCollisionError";
+  }
+}
+
+/** True when the (possibly wrapped) error is a unique violation on the active-code partial index. */
+function isActiveCodeUniqueViolation(e: unknown): boolean {
+  const err = e as { code?: string; constraint_name?: string; message?: string; cause?: { code?: string; constraint_name?: string; message?: string } };
+  const candidates = [err, err?.cause];
+  return candidates.some((c) =>
+    c?.code === "23505" &&
+    ((c?.constraint_name ?? "").includes("machines_code") || (c?.message ?? "").includes("machines_code") ||
+     (c?.constraint_name ?? "").includes("uq_machines_code_active") || (c?.message ?? "").includes("uq_machines_code_active")),
+  );
+}
 
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
@@ -207,8 +245,17 @@ export async function deleteStation(id: number) {
 export async function createMachine(data: InsertMachine) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
-  return result.id;
+  try {
+    const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
+    return result.id;
+  } catch (e) {
+    // M7: routers pre-check duplicates, but a concurrent insert can still hit
+    // the partial unique index — surface a clean domain error, not a raw 500.
+    if (isActiveCodeUniqueViolation(e)) {
+      throw new MachineCodeCollisionError(`Machine code '${data.code}' is already in use by an active machine`);
+    }
+    throw e;
+  }
 }
 
 export async function getMachinesByStation(stationId: number) {
@@ -223,6 +270,71 @@ export async function getMachines() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
+}
+
+// ── Doc 27 Đợt 5 / W5-E — gap F9: server-side search + pagination ──────────
+// MachineRegistration previously pulled the FULL machine list and filtered
+// client-side. This is the paged counterpart of getMachines(); `getMachines`
+// itself is left untouched (30+ consumers rely on the full-list shape).
+export async function getMachinesPaged(opts: {
+  search?: string;
+  registrationStatus?: string;
+  limit?: number;
+  offset?: number;
+} = {}) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  // Bounded server-side regardless of caller input (default 50, hard max 200).
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 200);
+  const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
+
+  const conditions = [eq(machines.isActive, true)];
+  if (opts.registrationStatus) {
+    conditions.push(eq(machines.registrationStatus, opts.registrationStatus));
+  }
+  const search = opts.search?.trim();
+  if (search) {
+    // Escape LIKE wildcards so a literal '%'/'_' in the query stays literal.
+    const escaped = search.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const q = `%${escaped.toLowerCase()}%`;
+    conditions.push(sql`(
+      lower(${machines.code}) LIKE ${q}
+      OR lower(${machines.name}) LIKE ${q}
+      OR lower(coalesce(${machines.serialNumber}, '')) LIKE ${q}
+      OR lower(${machines.machineType}) LIKE ${q}
+    )`);
+  }
+  const where = and(...conditions);
+
+  const [items, totalRows] = await Promise.all([
+    db.select().from(machines).where(where).orderBy(machines.name).limit(limit).offset(offset),
+    db.select({ count: sql<number>`count(*)` }).from(machines).where(where),
+  ]);
+  return { items, total: Number(totalRows[0]?.count) || 0 };
+}
+
+/** F9 — registration status counts for the summary cards (single grouped query). */
+export async function getMachineRegistrationSummary() {
+  const db = await getDb();
+  if (!db) return { pending: 0, approved: 0, rejected: 0, total: 0 };
+  const rows = await db
+    .select({
+      status: machines.registrationStatus,
+      count: sql<number>`count(*)`,
+    })
+    .from(machines)
+    .where(eq(machines.isActive, true))
+    .groupBy(machines.registrationStatus);
+  const summary = { pending: 0, approved: 0, rejected: 0, total: 0 };
+  for (const r of rows) {
+    const n = Number(r.count) || 0;
+    summary.total += n;
+    if (r.status === "pending") summary.pending += n;
+    else if (r.status === "approved") summary.approved += n;
+    else if (r.status === "rejected") summary.rejected += n;
+  }
+  return summary;
 }
 
 // Get machines with full hierarchy info (line, workshop, factory)
@@ -249,13 +361,35 @@ export async function getMachinesWithHierarchy() {
   return result;
 }
 
+// M2 soft-gate: ingest from a decommissioned/retired machine is NOT rejected
+// (consistent with the commissioning-gate fail-open philosophy, 0177/0178) —
+// we only WARN, throttled per machine so a chatty machine cannot flood logs.
+// Hard flagging on the ingest row itself (machineApiRouters) is a Đợt-4 item.
+const lifecycleWarnAt = new Map<number, number>();
+const LIFECYCLE_WARN_INTERVAL_MS = 10 * 60 * 1000;
+
+function warnIfLifecycleExcluded(machine: { id: number; code: string; lifecycleStatus?: string | null }): void {
+  const status = machine.lifecycleStatus;
+  if (!status || !(MACHINE_LIFECYCLE_EXCLUDED as readonly string[]).includes(status)) return;
+  const now = Date.now();
+  const last = lifecycleWarnAt.get(machine.id) ?? 0;
+  if (now - last < LIFECYCLE_WARN_INTERVAL_MS) return;
+  lifecycleWarnAt.set(machine.id, now);
+  console.warn(
+    `[machine-lifecycle] machine ${machine.id} (${machine.code}) is '${status}' but is still authenticating/ingesting — ` +
+    `data is accepted (soft gate), but the machine should be re-commissioned or its credentials revoked`,
+  );
+}
+
 export async function getMachineByApiKey(apiKey: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(machines)
     .where(and(eq(machines.apiKey, apiKey), eq(machines.isActive, true)))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+  warnIfLifecycleExcluded(result[0]);
+  return result[0];
 }
 
 export async function getMachineById(id: number) {
@@ -286,25 +420,36 @@ export async function updateMachine(id: number, data: Partial<InsertMachine>) {
   await db.update(machines).set(data).where(eq(machines.id, id));
 }
 
+/**
+ * M3 soft-delete: the code column is kept INTACT as a tombstone (the partial
+ * unique index uq_machines_code_active makes the code reusable by a new active
+ * machine), and the asset is force-stamped 'retired' (M2 out-of-band stamp —
+ * delete is terminal unless the row is explicitly restored).
+ */
 export async function deleteMachine(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(machines).set({ isActive: false }).where(eq(machines.id, id));
+  await db.update(machines)
+    .set({ isActive: false, lifecycleStatus: "retired", updatedAt: new Date() })
+    .where(eq(machines.id, id));
 }
 
 // Lấy máy theo serialNumber
+// M3: ACTIVE rows only — a soft-deleted tombstone must never be silently
+// resurrected by machine.register (re-registration creates a NEW row; the
+// tombstone stays restorable via the recycle-bin flow).
 export async function getMachineBySerialNumber(serialNumber: string) {
   const db = await getDb();
   if (!db) return undefined;
   // Tìm theo field serialNumber trước, sau đó fallback tìm theo code
   const bySerial = await db.select().from(machines)
-    .where(eq(machines.serialNumber, serialNumber))
+    .where(and(eq(machines.serialNumber, serialNumber), eq(machines.isActive, true)))
     .limit(1);
   if (bySerial.length > 0) return bySerial[0];
 
   // Fallback: tìm theo code dạng SN-xxx
   const byCode = await db.select().from(machines)
-    .where(eq(machines.code, `SN-${serialNumber}`))
+    .where(and(eq(machines.code, `SN-${serialNumber}`), eq(machines.isActive, true)))
     .limit(1);
   return byCode.length > 0 ? byCode[0] : undefined;
 }
@@ -318,7 +463,10 @@ export async function getPendingMachines() {
     .orderBy(desc(machines.createdAt));
 }
 
-// Duyệt máy: cập nhật trạng thái, gán APIKey nếu chưa có
+// Duyệt máy: cập nhật trạng thái, gán APIKey nếu chưa có.
+// M2: approval also advances a 'commissioning' asset to 'active' (the admin
+// sign-off IS the commissioning gate for the register flow) — other lifecycle
+// states (maintenance/decommissioned/retired) are left untouched.
 export async function approveMachine(id: number, data: {
   stationId?: number;
   code?: string;
@@ -332,6 +480,53 @@ export async function approveMachine(id: number, data: {
     registrationStatus: "approved",
     lastSyncAt: new Date(),
   }).where(eq(machines.id, id));
+  await db.update(machines)
+    .set({ lifecycleStatus: "active" })
+    .where(and(eq(machines.id, id), eq(machines.lifecycleStatus, "commissioning")));
+}
+
+/**
+ * Doc 27 Đợt 3 / W3-B — gap M2: the ONLY sanctioned way to move a machine
+ * between asset lifecycle states. Validates against MACHINE_LIFECYCLE_TRANSITIONS
+ * and returns minimal before/after snapshots for the audit trail.
+ *
+ * Throws:
+ *  - Error("Machine not found")     — unknown id (router → NOT_FOUND)
+ *  - LifecycleTransitionError       — illegal transition (router → CONFLICT)
+ */
+export async function transitionMachineLifecycle(
+  id: number,
+  to: MachineLifecycleStatus,
+): Promise<{
+  before: { id: number; code: string; name: string; lifecycleStatus: string };
+  after: { id: number; code: string; name: string; lifecycleStatus: string };
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
+  if (!machine) throw new Error("Machine not found");
+
+  const from = (machine.lifecycleStatus ?? "active") as MachineLifecycleStatus;
+  if (from === to) {
+    throw new LifecycleTransitionError(`Machine is already '${from}'`);
+  }
+  if (!isLegalLifecycleTransition(from, to)) {
+    const allowed = MACHINE_LIFECYCLE_TRANSITIONS[from] ?? [];
+    throw new LifecycleTransitionError(
+      `Illegal lifecycle transition '${from}' → '${to}' (allowed from '${from}': ${allowed.length ? allowed.join(", ") : "none — terminal state"})`,
+    );
+  }
+
+  await db.update(machines)
+    .set({ lifecycleStatus: to, updatedAt: new Date() })
+    .where(eq(machines.id, id));
+
+  const snapshot = { id: machine.id, code: machine.code, name: machine.name };
+  return {
+    before: { ...snapshot, lifecycleStatus: from },
+    after: { ...snapshot, lifecycleStatus: to },
+  };
 }
 
 // Từ chối máy
@@ -627,7 +822,7 @@ export async function cascadeDeleteFactory(factoryId: number) {
         .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
       const stIds = st.map(s => s.id);
       if (stIds.length > 0) {
-        await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+        await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
         await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
       }
       await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
@@ -649,7 +844,7 @@ export async function cascadeDeleteWorkshop(workshopId: number) {
       .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
     const stIds = st.map(s => s.id);
     if (stIds.length > 0) {
-      await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+      await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
       await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
     }
     await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
@@ -665,7 +860,7 @@ export async function cascadeDeleteLine(lineId: number) {
     .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
   const stIds = st.map(s => s.id);
   if (stIds.length > 0) {
-    await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+    await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
     await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
   }
   await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, lineId));
@@ -675,7 +870,7 @@ export async function cascadeDeleteLine(lineId: number) {
 export async function cascadeDeleteStation(stationId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(machines).set({ isActive: false }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
+  await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
   await db.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
 }
 
@@ -743,10 +938,46 @@ export async function restoreStation(id: number) {
   await db.update(stations).set({ isActive: true }).where(eq(stations.id, id));
 }
 
+/**
+ * M3 restore: because code uniqueness is only enforced among ACTIVE machines,
+ * a tombstone's code may have been reused by a newer registration. Restoring
+ * such a machine must fail with a clean domain error (router → CONFLICT with a
+ * message naming the current holder), NOT a raw index violation.
+ *
+ * M2: a restored machine lands on 'decommissioned' — one legal transition away
+ * from 'active' — so it stays excluded from auto-assign until a human
+ * explicitly re-commissions it (decommissioned → active).
+ */
 export async function restoreMachine(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(machines).set({ isActive: true }).where(eq(machines.id, id));
+
+  const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
+  if (!machine) throw new Error("Machine not found");
+  if (machine.isActive) return; // already restored — idempotent
+
+  const [holder] = await db.select({ id: machines.id, name: machines.name }).from(machines)
+    .where(and(eq(machines.code, machine.code), eq(machines.isActive, true), ne(machines.id, id)))
+    .limit(1);
+  if (holder) {
+    throw new MachineCodeCollisionError(
+      `Cannot restore: code '${machine.code}' has been reused by active machine #${holder.id} (${holder.name}). ` +
+      `Rename or delete that machine first.`,
+    );
+  }
+
+  try {
+    await db.update(machines)
+      .set({ isActive: true, lifecycleStatus: "decommissioned", updatedAt: new Date() })
+      .where(eq(machines.id, id));
+  } catch (e) {
+    if (isActiveCodeUniqueViolation(e)) {
+      throw new MachineCodeCollisionError(
+        `Cannot restore: code '${machine.code}' has just been taken by another active machine`,
+      );
+    }
+    throw e;
+  }
 }
 
 export async function restoreWorkstation(id: number) {

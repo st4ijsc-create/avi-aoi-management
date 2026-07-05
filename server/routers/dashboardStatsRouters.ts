@@ -3,6 +3,7 @@ import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import * as db from "../db";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
+import { getHourlyStatsViaMV } from "../functions/cachedStatistics";
 
 export const dashboardRouter = router({
   getStats: protectedProcedure
@@ -143,7 +144,14 @@ export const dashboardRouter = router({
       return db.getActiveAlertsCount();
     }),
 
-  // Hourly stats for timeline chart
+  // Hourly stats for timeline chart.
+  // W4-B (doc 27 A7): this is the main-dashboard hourly rollup (Dashboard.tsx
+  // timeline + throughput widget, both polling). Served from the
+  // hourly_yield_cache materialized view WHEN it is fresh (last refresh
+  // < 2× MATVIEW_REFRESH_INTERVAL_MS) and the filters are MV-representable
+  // (machineId only) — replacing the raw product_inspections counts scan.
+  // Stale/absent MV or hierarchy filters → unchanged live query; data is
+  // never served stale beyond the freshness threshold.
   getHourlyStats: protectedProcedure
     .input(z.object({
       factoryId: z.number().optional(),
@@ -153,6 +161,8 @@ export const dashboardRouter = router({
       hours: z.number().default(24),
     }))
     .query(async ({ input }) => {
+      const viaMv = await getHourlyStatsViaMV(input).catch(() => null);
+      if (viaMv) return viaMv;
       return db.getHourlyStats(input);
     }),
 
@@ -228,6 +238,27 @@ export const dashboardRouter = router({
     .input(z.object({ templateId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       return db.applyDashboardTemplate(ctx.user.id, input.templateId);
+    }),
+
+  // ── Andon/TV board (doc 27 F7 / Đợt 5.4, W5-C) ────────────────────────────
+  // One read-only snapshot for the wall board at /andon: per-line machine tiles
+  // (today counts + canonical final yield + active-andon state), factory KPI
+  // strip (final yield / true FPY / last-hour UPH / open alerts / active
+  // andons) and the active-andon ticker. Plain protectedProcedure like the
+  // other dashboard reads here (the board is a shared shopfloor surface); the
+  // per-user assignment filter IS applied to the inspection aggregates.
+  getAndonBoard: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().int().positive().optional(),
+      lineIds: z.array(z.number().int().positive()).max(50).optional(),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      return db.getAndonBoardData({
+        factoryId: input?.factoryId,
+        lineIds: input?.lineIds,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
     }),
 });
 

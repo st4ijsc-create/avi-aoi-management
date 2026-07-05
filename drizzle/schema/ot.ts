@@ -8,6 +8,8 @@
 import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
 import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
+// W3-A (doc 27 M1, 0180): machineRecipes/recipeDeployments now carry real FKs to machines.
+import { machines } from "./hierarchy";
 
 /**
  * Device Adapters — một kết nối OT đã cấu hình (protocol + endpoint) tới PLC/SCADA/thiết bị.
@@ -131,7 +133,10 @@ export type InsertOtTelemetry = typeof otTelemetry.$inferInsert;
  */
 export const machineRecipes = pgTable("machine_recipes", {
   id: serial("id").primaryKey(),
-  machineId: integer("machineId"),
+  // W3-A (doc 27 M1, 0180): fk_machine_recipes_machine, ON DELETE RESTRICT —
+  // recipes are audit lineage; NULL is legitimate (machine-TYPE recipe).
+  machineId: integer("machineId")
+    .references(() => machines.id, { onDelete: "restrict" }),
   machineType: machineTypeEnum("machineType"),
   code: varchar("code", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -175,12 +180,19 @@ export type InsertMachineRecipe = typeof machineRecipes.$inferInsert;
  */
 export const recipeDeployments = pgTable("recipe_deployments", {
   id: serial("id").primaryKey(),
-  recipeId: integer("recipeId").notNull(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (doc 27 M1, 0180): audit-grade deploy records — RESTRICT on both the
+  // deployed recipe and the machine (a deploy record must never dangle).
+  recipeId: integer("recipeId").notNull()
+    .references(() => machineRecipes.id, { onDelete: "restrict" }),
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
   adapterId: integer("adapterId"),
   deployedBy: integer("deployedBy").notNull(),
   deployedAt: timestamp("deployedAt").defaultNow().notNull(),
-  previousRecipeId: integer("previousRecipeId"),
+  // W3-A (0180): one-step-rollback pointer — SET NULL (losing it degrades
+  // gracefully; it must not block deleting an old archived recipe forever).
+  previousRecipeId: integer("previousRecipeId")
+    .references(() => machineRecipes.id, { onDelete: "set null" }),
   status: deploymentStatusEnum("status").default("pending").notNull(),
   commandLogId: integer("commandLogId"),
   notes: text("notes"),
@@ -189,6 +201,8 @@ export const recipeDeployments = pgTable("recipe_deployments", {
   index("idx_recipe_deployments_recipe").on(table.recipeId),
   index("idx_recipe_deployments_machine").on(table.machineId),
   index("idx_recipe_deployments_deployed").on(table.deployedAt),
+  // W3-A (0180): supports the ON DELETE SET NULL scan on machine_recipes deletes.
+  index("idx_recipe_deployments_previous").on(table.previousRecipeId).where(sql`${table.previousRecipeId} IS NOT NULL`),
 ]);
 
 export type RecipeDeployment = typeof recipeDeployments.$inferSelect;

@@ -5,9 +5,30 @@ import fs from "fs";
 import { getAiModelById } from "../db/ai";
 import { createInferenceResult } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
+import { MicroBatcher, Semaphore, type BatchOutcome } from "./ai/microBatcher";
 
-// LRU session cache — evicts least-recently-used entry when cap is exceeded
-const SESSION_CACHE_MAX = 5;
+// ─── W7-D (doc 27 gap V6) — GPU micro-batching + concurrency knobs ───────────
+//   AI_SESSION_CACHE_MAX  LRU ONNX session cache size (default 5; 8 documented-OK
+//                         on RTX 5090 32GB — see models/README.md).
+//   AI_BATCH_MAX          max images coalesced into ONE [N,C,H,W] session.run
+//                         (default 8; 1 disables micro-batching).
+//   AI_BATCH_WINDOW_MS    collection window before a partial batch flushes (25ms).
+//   AI_GPU_CONCURRENCY    max concurrent session.run calls across ALL models (2).
+function envInt(name: string, def: number, min: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v >= min ? Math.floor(v) : def;
+}
+const SESSION_CACHE_MAX = envInt("AI_SESSION_CACHE_MAX", 5, 1);
+const BATCH_MAX = envInt("AI_BATCH_MAX", 8, 1);
+const BATCH_WINDOW_MS = envInt("AI_BATCH_WINDOW_MS", 25, 0);
+const GPU_CONCURRENCY = envInt("AI_GPU_CONCURRENCY", 2, 1);
+
+/**
+ * Shared per-GPU semaphore around EVERY session.run in this module (and the
+ * embedding path in aiImageEmbedding). Unbounded concurrent session.run only
+ * thrashes VRAM/scheduler — onnxruntime already parallelises intra-op.
+ */
+export const gpuSessionSemaphore = new Semaphore(GPU_CONCURRENCY);
 class LruSessionCache {
   private map = new Map<string, ort.InferenceSession>();
 
@@ -111,7 +132,9 @@ async function getSession(model: AiModel): Promise<ort.InferenceSession> {
 }
 
 /**
- * Evict a model session from cache (e.g. when model is updated)
+ * Evict a model session from cache (e.g. when model is updated).
+ * Also drops the model's micro-batcher + no-batch marker so a new version
+ * re-negotiates batchability from scratch.
  */
 export function evictSessionCache(modelId: number) {
   for (const [key] of sessionCache) {
@@ -119,6 +142,160 @@ export function evictSessionCache(modelId: number) {
       sessionCache.delete(key);
     }
   }
+  for (const key of Array.from(batchers.keys())) {
+    if (key.startsWith(`${modelId}:`)) batchers.delete(key);
+  }
+  for (const key of Array.from(noBatchModels)) {
+    if (key.startsWith(`${modelId}:`)) noBatchModels.delete(key);
+  }
+}
+
+// ─── W7-D (gap V6) — micro-batching internals ────────────────────────────────
+
+interface RunOutput {
+  data: Float32Array;
+  dims: number[];
+}
+
+/** Models whose graph rejected/garbled a stacked [N>1,…] input → permanently N=1. */
+const noBatchModels = new Set<string>();
+/** One MicroBatcher per model cacheKey (modelId:currentVersion). */
+const batchers = new Map<string, MicroBatcher<Float32Array, RunOutput>>();
+
+/**
+ * Batch eligibility:
+ *  – BATCH_MAX 1 disables coalescing outright.
+ *  – DETECTION STAYS N=1 (documented decision): YOLO-style outputs
+ *    ([N,boxes,attrs] — sometimes flattened 2-D, box count possibly
+ *    data-dependent with dynamic shapes) are not reliably splittable per image,
+ *    and parseDetectionOutput + NMS are per-image anyway.
+ *  – Only canonical [1,C,H,W] inputs can be stacked along dim 0.
+ */
+function canMicroBatch(model: AiModel, inputShape: number[], outputType: string): boolean {
+  if (BATCH_MAX <= 1) return false;
+  if (outputType === "detection") return false;
+  if (inputShape.length !== 4 || inputShape[0] !== 1) return false;
+  return !noBatchModels.has(`${model.id}:${model.currentVersion}`);
+}
+
+/** One session.run with the given dims (N=1 or stacked). GPU-semaphore guarded. */
+async function runSessionOnce(model: AiModel, data: Float32Array, dims: number[]): Promise<RunOutput> {
+  const session = await getSession(model);
+  const inputName = session.inputNames[0];
+  if (!inputName) throw new Error("Model has no input names");
+  const outputName = session.outputNames[0];
+  if (!outputName) throw new Error("Model has no output names");
+  const results = await gpuSessionSemaphore.run(() =>
+    session.run({ [inputName]: new ort.Tensor("float32", data, dims) }),
+  );
+  const output = results[outputName];
+  if (!output) throw new Error("No output from model");
+  return { data: output.data as Float32Array, dims: output.dims as number[] };
+}
+
+/**
+ * Execute one flush of the micro-batcher: stack N preprocessed [1,C,H,W]
+ * tensors into ONE [N,C,H,W] session.run, then split the output along dim 0.
+ * Per-item error isolation: if the stacked run fails (e.g. static batch=1
+ * graph) the model is remembered as no-batch and every item re-runs
+ * individually — a failing item rejects only its own promise.
+ */
+async function runStackedBatch(
+  key: string,
+  model: AiModel,
+  inputShape: number[],
+  inputs: Float32Array[],
+): Promise<Array<BatchOutcome<RunOutput>>> {
+  const N = inputs.length;
+  const per = inputs[0]?.length ?? 0;
+  const uniform = per > 0 && inputs.every((t) => t.length === per);
+
+  if (N > 1 && uniform && !noBatchModels.has(key)) {
+    try {
+      const stacked = new Float32Array(N * per);
+      for (let i = 0; i < N; i++) stacked.set(inputs[i], i * per);
+      const out = await runSessionOnce(model, stacked, [N, ...inputShape.slice(1)]);
+      if (out.dims[0] === N && out.data.length % N === 0) {
+        const stride = out.data.length / N;
+        const itemDims = [1, ...out.dims.slice(1)];
+        return inputs.map((_, i) => ({
+          status: "fulfilled" as const,
+          value: { data: out.data.slice(i * stride, (i + 1) * stride), dims: itemDims },
+        }));
+      }
+      // Output does not lead with the batch axis — cannot split safely.
+      noBatchModels.add(key);
+      console.warn(
+        `[aiInferenceEngine] model ${model.code}: batched output dims ${JSON.stringify(out.dims)} ` +
+          `do not lead with N=${N} — marked no-batch, running per-item`,
+      );
+    } catch (err) {
+      noBatchModels.add(key);
+      console.warn(
+        `[aiInferenceEngine] model ${model.code}: stacked session.run failed ` +
+          `(${err instanceof Error ? err.message : String(err)}) — marked no-batch, running per-item`,
+      );
+    }
+  }
+
+  // Per-item path (fallback + N=1): isolate errors per item.
+  const outcomes: Array<BatchOutcome<RunOutput>> = [];
+  for (const input of inputs) {
+    try {
+      outcomes.push({
+        status: "fulfilled",
+        value: await runSessionOnce(model, input, [1, ...inputShape.slice(1)]),
+      });
+    } catch (err) {
+      outcomes.push({ status: "rejected", reason: err });
+    }
+  }
+  return outcomes;
+}
+
+function getBatcher(model: AiModel, inputShape: number[]): MicroBatcher<Float32Array, RunOutput> {
+  const key = `${model.id}:${model.currentVersion}`;
+  let batcher = batchers.get(key);
+  if (!batcher) {
+    batcher = new MicroBatcher<Float32Array, RunOutput>({
+      batchMax: BATCH_MAX,
+      windowMs: BATCH_WINDOW_MS,
+      runBatch: (inputs) => runStackedBatch(key, model, inputShape, inputs),
+    });
+    batchers.set(key, batcher);
+  }
+  return batcher;
+}
+
+/**
+ * Model execution entry for runInference: classification goes through the
+ * per-model micro-batcher (coalesced [N,C,H,W]); detection and non-stackable
+ * shapes run N=1 — all under the shared GPU semaphore.
+ */
+async function runModelForInference(
+  model: AiModel,
+  tensorData: Float32Array,
+  inputShape: number[],
+  outputType: string,
+): Promise<RunOutput> {
+  if (canMicroBatch(model, inputShape, outputType)) {
+    return getBatcher(model, inputShape).enqueue(tensorData);
+  }
+  return runSessionOnce(model, tensorData, inputShape);
+}
+
+/** Telemetry snapshot for health/tests (V6). */
+export function getMicroBatchStats() {
+  return {
+    batchMax: BATCH_MAX,
+    batchWindowMs: BATCH_WINDOW_MS,
+    gpuConcurrency: GPU_CONCURRENCY,
+    sessionCacheMax: SESSION_CACHE_MAX,
+    activeBatchers: batchers.size,
+    noBatchModels: Array.from(noBatchModels),
+    gpuRunning: gpuSessionSemaphore.running,
+    gpuWaiting: gpuSessionSemaphore.waiting,
+  };
 }
 
 /**
@@ -203,8 +380,6 @@ export async function runInference(
   }
 
   try {
-    const session = await getSession(model);
-
     // Preprocess
     const preprocessConfig = (model.preprocessConfig as AiModel["preprocessConfig"]) ?? {
       resize: { width: 224, height: 224 },
@@ -213,23 +388,8 @@ export async function runInference(
     };
     const tensorData = await preprocessImage(imageBuffer, preprocessConfig);
 
-    // Build input shape  
+    // Build input shape
     const inputShape = (model.inputShape as number[]) ?? [1, 3, preprocessConfig.resize?.height ?? 224, preprocessConfig.resize?.width ?? 224];
-    const inputTensor = new ort.Tensor("float32", tensorData, inputShape);
-
-    // Get input name from model
-    const inputName = session.inputNames[0];
-    if (!inputName) throw new Error("Model has no input names");
-
-    const feeds: Record<string, ort.Tensor> = { [inputName]: inputTensor };
-    const results = await session.run(feeds);
-
-    // Get output
-    const outputName = session.outputNames[0];
-    if (!outputName) throw new Error("Model has no output names");
-    const output = results[outputName];
-    if (!output) throw new Error("No output from model");
-    const outputData = output.data as Float32Array;
 
     // Parse predictions based on output type
     const labels = (model.labels as string[]) ?? [];
@@ -238,12 +398,19 @@ export async function runInference(
     const topK = postprocess?.topK ?? 5;
     const outputType: string = (postprocess as any)?.outputType ?? "classification";
 
+    // W7-D (gap V6): classification is coalesced by the per-model micro-batcher
+    // (up to AI_BATCH_MAX images / AI_BATCH_WINDOW_MS into ONE [N,C,H,W]
+    // session.run, output split per item); detection stays N=1. Both paths run
+    // under the shared AI_GPU_CONCURRENCY semaphore. Public API unchanged.
+    const output = await runModelForInference(model, tensorData, inputShape, outputType);
+    const outputData = output.data;
+
     let predictions: Array<{ label: string; confidence: number; box?: { x: number; y: number; w: number; h: number } }>;
 
     if (outputType === "detection") {
       // YOLO-style detection: output shape [1, num_boxes, 5+num_classes]
       // Each row: [cx, cy, w, h, obj_conf, class_conf_0, ..., class_conf_n]
-      predictions = parseDetectionOutput(outputData, output.dims as number[], labels, confidenceThreshold);
+      predictions = parseDetectionOutput(outputData, output.dims, labels, confidenceThreshold);
     } else {
       // Classification: apply temperature scaling then softmax
       // T > 1 softens overconfident logits; T < 1 sharpens (T=1 is identity)
@@ -367,7 +534,9 @@ export async function runInferenceWithFeatureMap(
   const inputName = session.inputNames[0];
   if (!inputName) throw new Error("Model has no input names");
 
-  const results = await session.run({ [inputName]: inputTensor });
+  // V6: XAI path stays N=1 (needs the full multi-output graph) but shares the
+  // GPU concurrency semaphore with the production inference path.
+  const results = await gpuSessionSemaphore.run(() => session.run({ [inputName]: inputTensor }));
 
   // ── Tách feature map vs logits ─────────────────────────────────────────────
   let featureMap: FeatureMapTensor | null = null;
@@ -507,7 +676,9 @@ export async function runSegmentation(
 
   const inputName = session.inputNames[0];
   if (!inputName) throw new Error("Model has no input names");
-  const results = await session.run({ [inputName]: inputTensor });
+  // V6: segmentation stays N=1 (multi-output YOLO-seg / semantic graphs are not
+  // split-safe) but shares the GPU concurrency semaphore.
+  const results = await gpuSessionSemaphore.run(() => session.run({ [inputName]: inputTensor }));
 
   const outputName = session.outputNames[0];
   if (!outputName) throw new Error("Model has no output names");

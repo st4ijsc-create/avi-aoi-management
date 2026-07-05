@@ -12,6 +12,8 @@
 
 import { z } from "zod";
 import { getMeasurementPointDefById, updateMeasurementPointDef } from "../../db/product";
+import { createAuditLog } from "../../db/system";
+import { resolveThresholdEditGate, type ThresholdGateResult } from "../thresholdGovernanceService";
 import {
   registerTool,
   type ActionPreview,
@@ -43,6 +45,28 @@ function numEq(a: string | null | undefined, b: string | null): boolean {
   const bn = b == null ? null : Number(b);
   if (an === null || bn === null) return an === bn;
   return an === bn;
+}
+
+// Doc 31 B.6 — set_spec_limits is a limit-write path, so the same lifecycle gate
+// (decision #4) that guards measurementPoint.update / spcAnalysisRouter must apply
+// here. This is a HITL copilot tool: on a BLOCK we route an honest message into the
+// tool's result (never an uncaught throw), so the copilot tells the user to use the
+// approval queue instead of crashing the turn.
+function gateBlocked(gate: ThresholdGateResult): boolean {
+  return gate.decision === "requires_approval" && gate.enforced;
+}
+
+function gateBlockMessage(gate: ThresholdGateResult, lang: ToolLang): string {
+  const why = gate.hasReleasedProgram ? "has a released inspection program" : `is '${gate.lifecycleStatus}'`;
+  switch (lang) {
+    case "en":
+      return `Blocked: the product ${why} — threshold changes require approval. Submit the new limits via the Threshold Approvals queue.`;
+    case "zh":
+      return `已阻止：该产品${gate.hasReleasedProgram ? "已发布检测程序" : `处于 '${gate.lifecycleStatus}' 状态`}——修改规格限需审批。请通过阈值审批队列提交。`;
+    case "vi":
+    default:
+      return `Đã chặn: sản phẩm ${gate.hasReleasedProgram ? "đã có chương trình phát hành" : `đang ở trạng thái '${gate.lifecycleStatus}'`} — thay đổi ngưỡng phải qua duyệt. Gửi giới hạn mới qua hàng đợi Duyệt ngưỡng.`;
+  }
 }
 
 function summarizeSpec(p: SetSpecLimitsParams, lang: ToolLang): string {
@@ -94,6 +118,15 @@ async function previewSpec(p: SetSpecLimitsParams, _ctx: ToolExecContext): Promi
     changes.push({ field: "nominalValue", oldValue: current.nominalValue ?? null, newValue: nextTarget, displayName: "Target" });
   }
 
+  // Doc 31 B.6 — surface the lifecycle gate in the dry-run so the user sees, BEFORE
+  // confirming, that a live product will reject this direct edit (execute enforces).
+  try {
+    const gate = await resolveThresholdEditGate(p.measurementPointDefId);
+    if (gateBlocked(gate)) warnings.push(gateBlockMessage(gate, _ctx.lang));
+  } catch {
+    // gate resolution is best-effort in preview; execute() is the hard gate.
+  }
+
   return {
     entityType: "measurement_point",
     entityId: current.id,
@@ -119,6 +152,25 @@ export const setSpecLimitsTool: Tool<SetSpecLimitsParams, { ok: boolean }> = {
   summarize: summarizeSpec,
   preview: previewSpec,
   execute: async (p, ctx) => {
+    // Doc 31 B.6 — hard lifecycle gate. On a live product (active/eol/archived or a
+    // dev product that already has a released program) block the direct edit and
+    // route an honest message back into the copilot turn — NEVER an uncaught throw.
+    const before = await getMeasurementPointDefById(p.measurementPointDefId);
+    const gate = await resolveThresholdEditGate(p.measurementPointDefId);
+    if (gateBlocked(gate)) {
+      const msg = gateBlockMessage(gate, ctx.lang);
+      return {
+        type: "action_result",
+        title:
+          ctx.lang === "en" ? `Spec limit change blocked (needs approval)`
+          : ctx.lang === "zh" ? `规格限修改已阻止（需审批）`
+          : `Thay đổi giới hạn spec bị chặn (cần duyệt)`,
+        data: { ok: false },
+        textSummary: msg,
+        note: msg,
+      };
+    }
+
     await updateMeasurementPointDef(
       p.measurementPointDefId,
       {
@@ -128,6 +180,35 @@ export const setSpecLimitsTool: Tool<SetSpecLimitsParams, { ok: boolean }> = {
       } as any,
       { changedBy: ctx.user.id, changeReason: "AI Copilot" },
     );
+    // Doc 31 B.6 — audit the direct (allowed) limit edit with the gate decision.
+    try {
+      await createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: "threshold.directEdit",
+        entityType: "measurement_point_def",
+        entityId: p.measurementPointDefId,
+        entityName: before?.code ?? undefined,
+        details: {
+          source: "aiCopilot.set_spec_limits",
+          productModelId: before?.productModelId ?? null,
+          lifecycleStatus: gate.lifecycleStatus,
+          gateDecision: gate.decision,
+          gateEnforced: gate.enforced,
+          hasReleasedProgram: gate.hasReleasedProgram,
+          before: {
+            lowerLimit: before?.lowerLimit ?? null,
+            upperLimit: before?.upperLimit ?? null,
+            nominalValue: before?.nominalValue ?? null,
+          },
+          after: { upperLimit: toStr(p.usl), lowerLimit: toStr(p.lsl), nominalValue: toStr(p.target) },
+        },
+        status: "success",
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("audit log failed (aiCopilot threshold.directEdit)", err);
+    }
     return {
       type: "action_result",
       title: `Đã cập nhật spec điểm đo #${p.measurementPointDefId}`,
@@ -150,3 +231,4 @@ import "./writeHandlers/visionControl";     // AOI-F (doc 24 Wave-4): reject_div
 import "./writeHandlers/interlock";        // F5a: propose_interlock_rule (HITL; rule always disabled/unapproved; ALERT-ONLY)
 import "./writeHandlers/engineering";      // B1: ENGINEERING write-tools — adjust_ng_threshold / configure_inspection_param / create_ng_threshold / update_product_quality_target (HITL propose→confirm)
 import "./writeHandlers/maintenance";      // RCA Copilot: create_maintenance_workorder (HITL propose→confirm) — maintenance_work_orders
+import "./writeHandlers/qualityAdvisory";  // W7-E (doc 27 V21): run_rca_analysis / request_threshold_review (HITL; analysis/request-only writes)

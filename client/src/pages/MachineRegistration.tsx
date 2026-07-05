@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -83,6 +83,7 @@ import {
   Pencil,
   Undo2,
   Rocket,
+  Recycle,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
@@ -110,6 +111,7 @@ type AllMachine = {
   serialNumber?: string | null;
   firmwareVersion?: string | null;
   registrationStatus?: string | null;
+  lifecycleStatus?: string | null;
   syncMode?: string | null;
   model?: string | null;
   manufacturer?: string | null;
@@ -118,13 +120,41 @@ type AllMachine = {
   stationId: number;
 };
 
+// Doc 27 Đợt 3 / W3-B (M2) — client copy of the legal transition map. The
+// SERVER is the source of truth (drizzle/schema/hierarchy.ts,
+// MACHINE_LIFECYCLE_TRANSITIONS); this mirror only pre-filters the dialog's
+// options — an out-of-date choice still fails server-side with CONFLICT.
+const LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
+  commissioning: ["active"],
+  active: ["maintenance", "decommissioned"],
+  maintenance: ["active", "decommissioned"],
+  decommissioned: ["retired", "active"],
+  retired: [],
+};
+const LIFECYCLE_REASON_REQUIRED = ["decommissioned", "retired"];
+
 export function MachineRegistrationContent() {
   const { t, i18n } = useTranslation();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("pending");
 
   const dateFnsLocale = i18n.language === 'vi' ? vi : i18n.language === 'zh' ? zhCN : enUS;
+
+  // ── F9 (doc 27 Đợt 5 / W5-E) — server-side search + pagination ──────────
+  const PAGE_SIZE = 50;
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  // Search / tab changes restart at page 1.
+  useEffect(() => { setPage(1); }, [debouncedSearch, activeTab]);
+
+  // Bulk approve (pending tab) — multi-select re-using machine.approve per id.
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
 
   // Approve dialog
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -149,14 +179,39 @@ export function MachineRegistrationContent() {
   const [editName, setEditName] = useState("");
   const [editStationId, setEditStationId] = useState<number | undefined>();
 
+  // Lifecycle dialog (doc 27 Đợt 3 / W3-B — M2)
+  const [lifecycleDialogOpen, setLifecycleDialogOpen] = useState(false);
+  const [lifecycleMachine, setLifecycleMachine] = useState<AllMachine | null>(null);
+  const [lifecycleTarget, setLifecycleTarget] = useState<string>("");
+  const [lifecycleReason, setLifecycleReason] = useState("");
+
   // API Key visibility
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
 
   // Queries
   const pendingQuery = trpc.machine.listPending.useQuery();
-  const allMachinesQuery = trpc.machine.list.useQuery();
+  // F9: the table tabs read a PAGED server-side query (search + status filter +
+  // limit/offset) instead of filtering the full machine.list client-side.
+  const listStatusForTab =
+    activeTab === "approved" ? ("approved" as const)
+    : activeTab === "rejected" ? ("rejected" as const)
+    : undefined;
+  const pagedQuery = trpc.machine.listPaged.useQuery({
+    search: debouncedSearch || undefined,
+    registrationStatus: listStatusForTab,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
+  const summaryQuery = trpc.machine.registrationSummary.useQuery();
   const stationsQuery = trpc.station.list.useQuery();
   const utils = trpc.useUtils();
+
+  const invalidateMachines = () => {
+    utils.machine.listPending.invalidate();
+    utils.machine.list.invalidate();
+    utils.machine.listPaged.invalidate();
+    utils.machine.registrationSummary.invalidate();
+  };
 
   // Mutations
   const approveMutation = trpc.machine.approve.useMutation({
@@ -166,8 +221,7 @@ export function MachineRegistrationContent() {
       });
       setApproveDialogOpen(false);
       setSelectedMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.approveError'), { description: err.message });
@@ -180,8 +234,7 @@ export function MachineRegistrationContent() {
       setRejectDialogOpen(false);
       setRejectMachineState(null);
       setRejectReason("");
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.rejectError'), { description: err.message });
@@ -194,11 +247,27 @@ export function MachineRegistrationContent() {
       toast.success(t('machineRegistration.toast.revokeSuccess'));
       setRevokeDialogOpen(false);
       setRevokeMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.revokeError'), { description: err.message });
+    },
+  });
+
+  // Set lifecycle status (M2). CONFLICT (illegal transition / duplicate code)
+  // surfaces err.message from the server as the toast description.
+  const setLifecycleMutation = trpc.machine.setLifecycleStatus.useMutation({
+    onSuccess: (data) => {
+      toast.success(t('machineRegistration.lifecycle.toast.success', {
+        status: t(`machineRegistration.lifecycle.status.${data.lifecycleStatus}`),
+      }));
+      setLifecycleDialogOpen(false);
+      setLifecycleMachine(null);
+      setLifecycleReason("");
+      invalidateMachines();
+    },
+    onError: (err) => {
+      toast.error(t('machineRegistration.lifecycle.toast.error'), { description: err.message });
     },
   });
 
@@ -208,8 +277,7 @@ export function MachineRegistrationContent() {
       toast.success(t('machineRegistration.toast.editSuccess'));
       setEditDialogOpen(false);
       setEditMachine(null);
-      utils.machine.listPending.invalidate();
-      utils.machine.list.invalidate();
+      invalidateMachines();
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.editError'), { description: err.message });
@@ -217,25 +285,11 @@ export function MachineRegistrationContent() {
   });
 
   const pendingMachines = (pendingQuery.data ?? []) as PendingMachine[];
-  const allMachines = (allMachinesQuery.data ?? []) as AllMachine[];
-
-  // Filtered machines
-  const filteredAll = allMachines.filter((m) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      m.code.toLowerCase().includes(q) ||
-      m.name.toLowerCase().includes(q) ||
-      (m.serialNumber?.toLowerCase().includes(q) ?? false) ||
-      m.machineType.toLowerCase().includes(q)
-    );
-  });
-
-  const approvedMachines = filteredAll.filter((m) => m.registrationStatus === "approved");
-  const rejectedMachines = filteredAll.filter((m) => m.registrationStatus === "rejected");
-  const allRegistered = filteredAll.filter((m) =>
-    ["pending", "approved", "rejected"].includes(m.registrationStatus ?? "")
-  );
+  // F9 — page of machines for the current tab (search/status applied server-side).
+  const pagedMachines = (pagedQuery.data?.items ?? []) as AllMachine[];
+  const pagedTotal = pagedQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(pagedTotal / PAGE_SIZE));
+  const registrationSummary = summaryQuery.data ?? { pending: 0, approved: 0, rejected: 0, total: 0 };
 
   // Handlers
   const handleOpenApprove = (machine: PendingMachine) => {
@@ -275,6 +329,42 @@ export function MachineRegistrationContent() {
     setRevokeDialogOpen(true);
   };
 
+  // ── F9 — bulk approve: one machine.approve call per selected id (no code /
+  // name / station overrides — the existing values are kept; individual
+  // failures are counted and reported, not silently swallowed). ─────────────
+  const bulkApproveMutation = trpc.machine.approve.useMutation();
+  const toggleBulkSelected = (id: number) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const handleBulkApprove = async () => {
+    const ids = pendingMachines.filter((m) => bulkSelected.has(m.id)).map((m) => m.id);
+    if (ids.length === 0) return;
+    setIsBulkApproving(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await bulkApproveMutation.mutateAsync({ id });
+        ok++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsBulkApproving(false);
+    setBulkSelected(new Set());
+    invalidateMachines();
+    if (failed === 0) {
+      toast.success(t('machineRegistration.bulk.approveDone', { count: ok }));
+    } else {
+      toast.warning(t('machineRegistration.bulk.approvePartial', { ok, fail: failed }));
+    }
+  };
+
   const handleRevoke = () => {
     if (!revokeMachine) return;
     revokeApprovalMutation.mutate({
@@ -282,6 +372,27 @@ export function MachineRegistrationContent() {
       registrationStatus: "pending",
     });
   };
+
+  const handleOpenLifecycle = (machine: AllMachine) => {
+    setLifecycleMachine(machine);
+    const allowed = LIFECYCLE_TRANSITIONS[machine.lifecycleStatus ?? "active"] ?? [];
+    setLifecycleTarget(allowed[0] ?? "");
+    setLifecycleReason("");
+    setLifecycleDialogOpen(true);
+  };
+
+  const handleLifecycleSave = () => {
+    if (!lifecycleMachine || !lifecycleTarget) return;
+    setLifecycleMutation.mutate({
+      id: lifecycleMachine.id,
+      status: lifecycleTarget as "commissioning" | "active" | "maintenance" | "decommissioned" | "retired",
+      reason: lifecycleReason.trim() || undefined,
+    });
+  };
+
+  const lifecycleAllowed = LIFECYCLE_TRANSITIONS[lifecycleMachine?.lifecycleStatus ?? "active"] ?? [];
+  const lifecycleReasonMissing =
+    LIFECYCLE_REASON_REQUIRED.includes(lifecycleTarget) && lifecycleReason.trim().length === 0;
 
   const handleOpenEdit = (machine: AllMachine) => {
     setEditMachine(machine);
@@ -339,6 +450,35 @@ export function MachineRegistrationContent() {
           <Badge variant="outline" className="text-muted-foreground">
             <AlertTriangle className="h-3 w-3 mr-1" /> {t('machineRegistration.status.unregistered')}
           </Badge>
+        );
+    }
+  };
+
+  // M2 — asset lifecycle badge (semantic tones, mirrors getStatusBadge style)
+  const getLifecycleBadge = (status: string | null | undefined) => {
+    const s = status ?? "active";
+    const label = t(`machineRegistration.lifecycle.status.${s}`, { defaultValue: s });
+    switch (s) {
+      case "active":
+        return (
+          <Badge variant="outline" className="border-success/30 bg-success/15 text-success">{label}</Badge>
+        );
+      case "commissioning":
+        return (
+          <Badge variant="outline" className="border-info/30 bg-info/15 text-info">{label}</Badge>
+        );
+      case "maintenance":
+        return (
+          <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning">{label}</Badge>
+        );
+      case "retired":
+        return (
+          <Badge variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive">{label}</Badge>
+        );
+      case "decommissioned":
+      default:
+        return (
+          <Badge variant="outline" className="text-muted-foreground">{label}</Badge>
         );
     }
   };
@@ -401,7 +541,8 @@ export function MachineRegistrationContent() {
                 size="sm"
                 onClick={() => {
                   pendingQuery.refetch();
-                  allMachinesQuery.refetch();
+                  pagedQuery.refetch();
+                  summaryQuery.refetch();
                 }}
               >
                 <RefreshCw className="h-4 w-4 mr-1" /> {t('machineRegistration.refresh')}
@@ -421,19 +562,19 @@ export function MachineRegistrationContent() {
           <MetricCard
             icon={<CheckCircle2 className="h-5 w-5" />}
             label={t('machineRegistration.summary.approved')}
-            value={approvedMachines.length}
+            value={registrationSummary.approved}
             tone="success"
           />
           <MetricCard
             icon={<XCircle className="h-5 w-5" />}
             label={t('machineRegistration.summary.rejected')}
-            value={rejectedMachines.length}
-            tone={rejectedMachines.length > 0 ? "error" : "default"}
+            value={registrationSummary.rejected}
+            tone={registrationSummary.rejected > 0 ? "error" : "default"}
           />
           <MetricCard
             icon={<Server className="h-5 w-5" />}
             label={t('machineRegistration.summary.total')}
-            value={allMachines.length}
+            value={registrationSummary.total}
             tone="info"
           />
         </div>
@@ -478,6 +619,35 @@ export function MachineRegistrationContent() {
               </Card>
             ) : (
               <div className="grid gap-4">
+                {/* F9 — bulk approve bar */}
+                <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary"
+                      checked={bulkSelected.size > 0 && bulkSelected.size === pendingMachines.length}
+                      onChange={(e) =>
+                        setBulkSelected(e.target.checked
+                          ? new Set(pendingMachines.map((m) => m.id))
+                          : new Set())
+                      }
+                    />
+                    {t('machineRegistration.bulk.selectAll')}
+                  </label>
+                  <Button
+                    size="sm"
+                    disabled={bulkSelected.size === 0 || isBulkApproving}
+                    onClick={handleBulkApprove}
+                    className="bg-success text-success-foreground hover:bg-success/90"
+                  >
+                    {isBulkApproving ? (
+                      <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 mr-1" />
+                    )}
+                    {t('machineRegistration.bulk.approveSelected', { count: bulkSelected.size })}
+                  </Button>
+                </div>
                 {pendingMachines.map((machine) => (
                   <Card
                     key={machine.id}
@@ -486,6 +656,13 @@ export function MachineRegistrationContent() {
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-primary"
+                            aria-label={t('machineRegistration.bulk.selectOne', { name: machine.name })}
+                            checked={bulkSelected.has(machine.id)}
+                            onChange={() => toggleBulkSelected(machine.id)}
+                          />
                           <div className="p-2 bg-warning/15 rounded-lg">
                             <Cpu className="h-5 w-5 text-warning" />
                           </div>
@@ -564,14 +741,9 @@ export function MachineRegistrationContent() {
             )}
           </TabsContent>
 
-          {/* ── All / Approved / Rejected Tabs ── */}
+          {/* ── All / Approved / Rejected Tabs — F9: server-side paged ── */}
           {(["all", "approved", "rejected"] as const).map((tab) => {
-            const data =
-              tab === "all"
-                ? filteredAll
-                : tab === "approved"
-                  ? approvedMachines
-                  : rejectedMachines;
+            const data = pagedMachines;
 
             return (
               <TabsContent key={tab} value={tab} className="space-y-4">
@@ -585,8 +757,11 @@ export function MachineRegistrationContent() {
                       className="pl-9"
                     />
                   </div>
+                  {pagedQuery.isFetching && (
+                    <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
                   <span className="text-sm text-muted-foreground">
-                    {t('machineRegistration.table.machineCount', { count: data.length })}
+                    {t('machineRegistration.table.machineCount', { count: pagedTotal })}
                   </span>
                 </div>
 
@@ -601,6 +776,7 @@ export function MachineRegistrationContent() {
                           <TableHead>{t('machineRegistration.table.serialNumber')}</TableHead>
                           <TableHead>{t('machineRegistration.table.type')}</TableHead>
                           <TableHead>{t('machineRegistration.table.status')}</TableHead>
+                          <TableHead>{t('machineRegistration.lifecycle.columnTitle')}</TableHead>
                           <TableHead>{t('machineRegistration.table.sync')}</TableHead>
                           <TableHead>{t('machineRegistration.table.firmware')}</TableHead>
                           {tab !== "rejected" && <TableHead>{t('machineRegistration.table.apiKey')}</TableHead>}
@@ -611,7 +787,7 @@ export function MachineRegistrationContent() {
                         {data.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={tab !== "rejected" ? 10 : 9}
+                              colSpan={tab !== "rejected" ? 11 : 10}
                               className="text-center py-8 text-muted-foreground"
                             >
                               {t('machineRegistration.table.noResults')}
@@ -635,6 +811,9 @@ export function MachineRegistrationContent() {
                               </TableCell>
                               <TableCell>
                                 {getStatusBadge(machine.registrationStatus)}
+                              </TableCell>
+                              <TableCell>
+                                {getLifecycleBadge(machine.lifecycleStatus)}
                               </TableCell>
                               <TableCell>
                                 {getSyncModeBadge(machine.syncMode)}
@@ -715,6 +894,20 @@ export function MachineRegistrationContent() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
+                                          className="h-7 w-7"
+                                          disabled={(LIFECYCLE_TRANSITIONS[machine.lifecycleStatus ?? "active"] ?? []).length === 0}
+                                          onClick={() => handleOpenLifecycle(machine)}
+                                        >
+                                          <Recycle className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.lifecycle.action')}</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
                                           className="h-7 w-7 text-info hover:text-info"
                                           onClick={() => handleOpenEdit(machine)}
                                         >
@@ -758,6 +951,40 @@ export function MachineRegistrationContent() {
                     </Table>
                   </CardContent>
                 </Card>
+
+                {/* F9 — pagination controls */}
+                {pagedTotal > PAGE_SIZE && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      {t('machineRegistration.pagination.showing', {
+                        from: (page - 1) * PAGE_SIZE + 1,
+                        to: Math.min(page * PAGE_SIZE, pagedTotal),
+                        total: pagedTotal,
+                      })}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1 || pagedQuery.isFetching}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      >
+                        {t('machineRegistration.pagination.prev')}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {t('machineRegistration.pagination.pageOf', { page, pages: totalPages })}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages || pagedQuery.isFetching}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      >
+                        {t('machineRegistration.pagination.next')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             );
           })}
@@ -1067,6 +1294,85 @@ export function MachineRegistrationContent() {
                 <Pencil className="h-4 w-4 mr-1" />
               )}
               {t('machineRegistration.editDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Lifecycle Dialog (doc 27 Đợt 3 / W3-B — M2) ── */}
+      <Dialog open={lifecycleDialogOpen} onOpenChange={setLifecycleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Recycle className="h-5 w-5" />
+              {t('machineRegistration.lifecycle.dialog.title')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('machineRegistration.lifecycle.dialog.description')}{" "}
+              <strong>{lifecycleMachine?.name ?? lifecycleMachine?.code}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-lg bg-muted/50 p-3 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{t('machineRegistration.lifecycle.dialog.currentLabel')}</span>
+              {getLifecycleBadge(lifecycleMachine?.lifecycleStatus)}
+            </div>
+            <div>
+              <Label htmlFor="lifecycle-target">{t('machineRegistration.lifecycle.dialog.targetLabel')}</Label>
+              <Select value={lifecycleTarget} onValueChange={setLifecycleTarget}>
+                <SelectTrigger id="lifecycle-target">
+                  <SelectValue placeholder={t('machineRegistration.lifecycle.dialog.targetPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {lifecycleAllowed.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {t(`machineRegistration.lifecycle.status.${s}`, { defaultValue: s })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {lifecycleAllowed.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('machineRegistration.lifecycle.dialog.noTransitions')}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="lifecycle-reason">
+                {LIFECYCLE_REASON_REQUIRED.includes(lifecycleTarget)
+                  ? t('machineRegistration.lifecycle.dialog.reasonRequiredLabel')
+                  : t('machineRegistration.lifecycle.dialog.reasonLabel')}
+              </Label>
+              <Textarea
+                id="lifecycle-reason"
+                value={lifecycleReason}
+                onChange={(e) => setLifecycleReason(e.target.value)}
+                placeholder={t('machineRegistration.lifecycle.dialog.reasonPlaceholder')}
+                rows={3}
+              />
+              {lifecycleReasonMissing && (
+                <p className="text-xs text-destructive mt-1">
+                  {t('machineRegistration.lifecycle.dialog.reasonRequiredHint')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLifecycleDialogOpen(false)}>
+              {t('machineRegistration.lifecycle.dialog.cancel')}
+            </Button>
+            <Button
+              onClick={handleLifecycleSave}
+              disabled={setLifecycleMutation.isPending || !lifecycleTarget || lifecycleReasonMissing}
+            >
+              {setLifecycleMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Recycle className="h-4 w-4 mr-1" />
+              )}
+              {t('machineRegistration.lifecycle.dialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

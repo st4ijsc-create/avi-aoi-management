@@ -1,17 +1,23 @@
 services:
-  # ── Cơ sở dữ liệu chính (PG16 + pgvector cho RAG / KB embeddings) ──────────
-  # Dùng image pgvector để migration 0121 tạo được EXTENSION vector + HNSW index.
-  # (postgres:16-alpine KHÔNG có extension vector → RAG rớt về brute-force chậm.)
+  # ── Cơ sở dữ liệu chính (TimescaleDB + pgvector) ────────────────────────────
+  # Doc 27 §11 quyết định #1: TimescaleDB BẮT BUỘC trên DB CHÍNH (hypertable cho
+  # product_inspections / measurement_results / telemetry — migration 0172/0173).
+  # Image timescale/timescaledb-ha:pg17 có SẴN CẢ timescaledb LẪN pgvector, nên
+  # vừa thỏa 0121 (EXTENSION vector + HNSW cho RAG) vừa thỏa 0172 (hypertables).
+  # ⚠️ ĐỔI IMAGE = ĐỔI MAJOR/DATA-DIR: volume PG16 cũ (`pgdata`) KHÔNG dùng lại
+  #   trực tiếp được — dump/restore theo runbook scripts/migrate-to-timescaledb.md.
+  #   Volume mới `pgdata_ts` mount vào /home/postgres/pgdata/data (PGDATA của
+  #   image timescaledb-ha, khác image postgres chuẩn).
   postgres:
-    image: pgvector/pgvector:pg16
+    image: timescale/timescaledb-ha:pg17
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aoi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aoi}
       POSTGRES_DB: ${POSTGRES_DB:-aoi_management}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Tạo extension `vector` ngay khi init volume (trước mọi migration — xem file SQL).
+      - pgdata_ts:/home/postgres/pgdata/data
+      # Tạo extension `vector` + `timescaledb` ngay khi init volume (trước mọi migration).
       - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
@@ -172,7 +178,11 @@ services:
       start_period: 30s
 
 volumes:
+  # pgdata: volume PG16 cũ (pgvector/pgvector:pg16) — GIỮ để dump dữ liệu cũ khi
+  # chuyển sang pgdata_ts theo scripts/migrate-to-timescaledb.md; xóa sau khi xong.
   pgdata:
+  # pgdata_ts: dữ liệu PG17 + TimescaleDB (doc 27 quyết định #1).
+  pgdata_ts:
   redisdata:
   appuploads:
   appbackups:

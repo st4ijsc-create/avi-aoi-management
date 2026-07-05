@@ -6,12 +6,18 @@ import type { TrpcContext } from "./context";
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
   errorFormatter({ shape, error }) {
+    // Doc 31 UX3 — additive forward of an optimistic-lock CONFLICT payload. Only
+    // present when a mutation threw TRPCError({ cause: { mpConflict } }); every
+    // other error is unaffected. Lets the client show current values + a
+    // reload/overwrite choice without a second round-trip.
+    const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
     return {
       ...shape,
       data: {
         ...shape.data,
         // Strip stack traces in production to avoid leaking internals
         stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
+        ...(mpConflict ? { conflict: mpConflict } : {}),
       },
     };
   },

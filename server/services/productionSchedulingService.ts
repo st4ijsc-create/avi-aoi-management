@@ -585,13 +585,27 @@ export function buildScheduleRunPayload(
 /**
  * Generate AI-powered explanation for scheduling results.
  * Explains conflicts, risk assessment, and recovery recommendations.
- * Non-blocking — returns null on any failure.
+ * Non-blocking — returns null on any failure, and hard-bounded by
+ * SCHEDULE_AI_EXPLAIN_TIMEOUT_MS (default 3000) so a slow/hung LLM can
+ * never stall the scheduling/what-if path it decorates.
  */
 export async function explainScheduleWithAI(
   result: ScheduleResult,
 ): Promise<string | null> {
   if (result.suggestions.length === 0) return null;
+  const timeoutMs = Number(process.env.SCHEDULE_AI_EXPLAIN_TIMEOUT_MS || 3000);
+  return Promise.race([
+    explainScheduleWithAIUnbounded(result),
+    new Promise<null>((resolve) => {
+      const t = setTimeout(() => resolve(null), timeoutMs);
+      t.unref?.();
+    }),
+  ]);
+}
 
+async function explainScheduleWithAIUnbounded(
+  result: ScheduleResult,
+): Promise<string | null> {
   try {
     const { generateText } = await import('./aiGgufEngine');
 

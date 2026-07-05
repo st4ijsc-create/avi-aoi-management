@@ -4,12 +4,19 @@ import { z } from "zod";
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { storagePut } from "../storage";
+import { storagePut, resolveImageToDataUrl } from "../storage";
 import { detectSpcViolations, detectEwma, rollingCapability } from "../utils/spcRules";
 import { publishSpcAlert, loadDefaultSinksFromEnv } from "../utils/spcAlertSink";
 import { calculateAnovaGrr, calculateBias, calculateLinearity, calculateStability } from "../utils/msaAdvanced";
 import { assertInstrumentReady } from "../utils/instrumentGate";
 import { parseCad } from "../utils/cadParsers";
+// Doc 31 MP5/PM4 (Đợt C, decision #5) — generic centroid/pick-place import.
+import { inspectCentroidHeaders } from "../services/cad/centroidParser";
+import {
+  previewCentroidImport,
+  commitCentroidImport,
+  applyCentroidImport,
+} from "../services/cad/centroidImportService";
 import { createHash } from "node:crypto";
 import {
   measurementGeometrySchema,
@@ -17,9 +24,63 @@ import {
   deriveLegacyAnchor,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+// Doc 31 OP2 (decision #4) — lifecycle gate for direct threshold edits.
+import {
+  assertThresholdEditAllowed,
+  type ThresholdGateResult,
+} from "../services/thresholdGovernanceService";
+// Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
+import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
+// Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
+import {
+  getUnmappedPointRate,
+  getUnmappedProductModelId,
+  type UnmappedRateFilter,
+} from "../services/measurementPointResolver";
+// Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
+import {
+  computeProductReadiness,
+  computeProductReadinessBatch,
+} from "../services/productReadinessService";
+// Doc 31 OP5 (decision #3) — AQL lot-acceptance engine consuming sampling plans.
+import {
+  evaluateLotAcceptance,
+  listLotDispositions,
+} from "../services/lotAcceptanceService";
 
 const legacyMeasurementTypeValues = ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"] as const;
 const legacyMeasurementTypeSchema = z.enum(legacyMeasurementTypeValues);
+
+// Doc 31 MP5/PM4 — centroid import Zod schemas (configurable column map + opts).
+const centroidColumnRef = z.union([z.number().int().nonnegative(), z.string()]);
+const centroidColumnMapSchema = z.object({
+  refDesignator: centroidColumnRef,
+  x: centroidColumnRef,
+  y: centroidColumnRef,
+  rotation: centroidColumnRef.optional(),
+  side: centroidColumnRef.optional(),
+  package: centroidColumnRef.optional(),
+  componentCode: centroidColumnRef.optional(),
+  placedStatus: centroidColumnRef.optional(),
+  name: centroidColumnRef.optional(),
+});
+const centroidParseOptionsSchema = z.object({
+  delimiter: z.enum([",", ";", "\t", "auto"]).optional(),
+  decimal: z.enum([".", ","]).optional(),
+  hasHeader: z.boolean().optional(),
+  commentPrefixes: z.array(z.string().max(4)).max(8).optional(),
+});
+const centroidTransformOptionsSchema = z.object({
+  unit: z.enum(["mm", "cm", "mil", "inch", "um"]).optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
+  targetMode: z.enum(["mm", "pixel"]).optional(),
+  fitToImage: z.boolean().optional(),
+  marginPct: z.number().min(0).max(45).optional(),
+  scale: z.number().positive().max(100000).optional(),
+  offsetX: z.number().optional(),
+  offsetY: z.number().optional(),
+});
 
 const toleranceModeSchema = z.enum(["min_only", "max_only", "range", "bilateral"]);
 const materialConditionSchema = z.enum(["MMC", "LMC", "RFS"]);
@@ -110,6 +171,38 @@ async function resolveLegacyMeasurementType(measurementTypeCode?: string, fallba
   return fallback ?? "VISUAL";
 }
 
+// ── Doc 31 PM8 — image-dimension enforcement flags (read per-call) ────────────
+// A reference image MUST resolve to width/height so point coordinates can be
+// stored resolution-independently (normalized). Default: enforced on upload.
+// Break-glass: PRODUCT_IMAGE_DIMS_REQUIRED=false lets an image through without
+// extractable dims (dev/legacy only).
+function isProductImageDimsRequired(): boolean {
+  return process.env.PRODUCT_IMAGE_DIMS_REQUIRED !== "false";
+}
+// Blocking point-save when the owning product has no dims is OPT-IN (default
+// off) — turning it on before the 4 dev products are backfilled would break
+// authoring, and WC-1 (centroid import) also needs dims. Set
+// PRODUCT_POINT_REQUIRE_DIMS=true once every live product carries dims.
+function isPointSaveDimsRequired(): boolean {
+  return process.env.PRODUCT_POINT_REQUIRE_DIMS === "true";
+}
+// Extract (width,height) from a base64 data URL via sharp. Independent of the
+// storage backend so dims are known even when Forge is not configured.
+async function extractDimsFromDataUrl(
+  dataUrl: string,
+): Promise<{ width?: number; height?: number }> {
+  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches) return {};
+  try {
+    const buffer = Buffer.from(matches[2], "base64");
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(buffer).metadata();
+    return { width: metadata.width, height: metadata.height };
+  } catch {
+    return {};
+  }
+}
+
 // ============ PRODUCT MODEL ROUTER ============
 export const productModelRouter = router({
   list: protectedProcedure
@@ -140,6 +233,24 @@ export const productModelRouter = router({
       return { productModel, measurementPoints };
     }),
 
+  // Doc 31 UX2/PM9 — config-completeness ("readiness") of ONE product: weighted
+  // 0..100 score + per-item checklist (image/dims, points, limits%, componentCode%,
+  // fiducials, golden, release, mapping, panel). Also consumed by WD-1's onboarding
+  // wizard via computeProductReadiness(). Returns null when the product is unknown.
+  getReadiness: protectedProcedure
+    .input(z.object({ productModelId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      return computeProductReadiness(input.productModelId);
+    }),
+
+  // Batched readiness for the product-list badges — CONSTANT query cost (no N+1).
+  getReadinessBatch: protectedProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).max(300) }))
+    .query(async ({ input }) => {
+      if (input.ids.length === 0) return [];
+      return computeProductReadinessBatch(input.ids);
+    }),
+
   create: adminProcedure
     .input(z.object({
       code: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
@@ -149,6 +260,8 @@ export const productModelRouter = router({
       categoryId: z.number().int().positive().optional(),
       productLine: z.string().optional(),
       variant: z.string().optional(),
+      // Doc 31 PM2 (decision #6) — free-text engineering revision ("A", "B", "Rev2").
+      revision: z.string().trim().max(32).optional(),
       lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
       targetYieldRate: z.string().optional(),
       minYieldRate: z.string().optional(),
@@ -166,6 +279,13 @@ export const productModelRouter = router({
       let autoImageWidth: number | undefined;
       let autoImageHeight: number | undefined;
       if (input.referenceImageUrl && input.referenceImageUrl.startsWith('data:')) {
+        // PM8: extract dims FIRST, independent of the storage backend — dims are
+        // a property of the image, not of whether Forge is configured.
+        if (!input.imageWidth || !input.imageHeight) {
+          const dims = await extractDimsFromDataUrl(input.referenceImageUrl);
+          autoImageWidth = dims.width;
+          autoImageHeight = dims.height;
+        }
         const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
         if (!isForgeConfigured) {
           // Forge storage is not configured – skip external upload but do not fail creation
@@ -178,7 +298,7 @@ export const productModelRouter = router({
               const mimeType = matches[1];
               const base64Data = matches[2];
               const buffer = Buffer.from(base64Data, 'base64');
-              
+
               // Determine file extension
               const extMap: Record<string, string> = {
                 'image/jpeg': 'jpg',
@@ -188,31 +308,32 @@ export const productModelRouter = router({
               };
               const ext = extMap[mimeType] || 'jpg';
               const fileKey = `product-models/${input.code}-${nanoid(8)}.${ext}`;
-              
+
               // Upload to S3
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalImageUrl = url;
               finalImageKey = key;
-
-              // Auto-extract image dimensions if not provided
-              if (!input.imageWidth || !input.imageHeight) {
-                try {
-                  const sharp = (await import("sharp")).default;
-                  const metadata = await sharp(buffer).metadata();
-                  if (metadata.width && metadata.height) {
-                    autoImageWidth = metadata.width;
-                    autoImageHeight = metadata.height;
-                  }
-                } catch { /* sharp unavailable or invalid image */ }
-              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
         }
+        // PM8 enforcement: an image was supplied but we could not determine its
+        // dimensions and none were provided manually → refuse (coords would be
+        // raw pixels, not portable). Break-glass via PRODUCT_IMAGE_DIMS_REQUIRED=false.
+        const w = input.imageWidth ?? autoImageWidth;
+        const h = input.imageHeight ?? autoImageHeight;
+        if ((!w || !h) && isProductImageDimsRequired()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+              'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
+          });
+        }
       }
-      
+
       const id = await db.createProductModel({
         ...input,
         referenceImageUrl: finalImageUrl,
@@ -247,6 +368,8 @@ export const productModelRouter = router({
       categoryId: z.number().int().positive().optional(),
       productLine: z.string().optional(),
       variant: z.string().optional(),
+      // Doc 31 PM2 (decision #6) — free-text engineering revision ("A", "B", "Rev2").
+      revision: z.string().trim().max(32).optional(),
       lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
       targetYieldRate: z.string().optional(),
       minYieldRate: z.string().optional(),
@@ -262,17 +385,25 @@ export const productModelRouter = router({
       const { id, changeReason, ...rest } = input;
       const data = rest;
       let finalData = { ...data };
-      
+
+      // Doc 31 WE-2 bug #1: verify the target exists so a bad id returns
+      // NOT_FOUND (was a silent no-op that still wrote a phantom audit row),
+      // consistent with measurementPoint/fiducial/panel update.
+      const existing = await db.getProductModelById(id);
+      if (!existing) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' });
+      }
+
       // Check if code is being updated and if it's a duplicate
       if (data.code) {
-        const existing = await db.getProductModelById(id);
-        if (existing && existing.code !== data.code) {
+        if (existing.code !== data.code) {
           // Code is changing, check for duplicates
           const duplicate = await db.getProductModelByCode(data.code);
           if (duplicate) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã sản phẩm đã tồn tại' });
+            // WE-2 bug #2: CONFLICT for consistency with productModel.clone.
+            throw new TRPCError({ code: 'CONFLICT', message: 'Mã sản phẩm đã tồn tại' });
           }
-        } else if (existing && existing.code === data.code) {
+        } else {
           // Code is not changing, remove it from update data to avoid duplicate key error
           delete finalData.code;
         }
@@ -280,6 +411,14 @@ export const productModelRouter = router({
       
       // Check if referenceImageUrl is a base64 data URL and upload to S3
       if (data.referenceImageUrl && data.referenceImageUrl.startsWith('data:')) {
+        // PM8: extract dims first, independent of the storage backend.
+        if (!data.imageWidth || !data.imageHeight) {
+          const dims = await extractDimsFromDataUrl(data.referenceImageUrl);
+          if (dims.width && dims.height) {
+            finalData.imageWidth = finalData.imageWidth ?? dims.width;
+            finalData.imageHeight = finalData.imageHeight ?? dims.height;
+          }
+        }
         const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
         if (!isForgeConfigured) {
           // Forge storage is not configured – skip external upload but do not fail update
@@ -291,7 +430,7 @@ export const productModelRouter = router({
               const mimeType = matches[1];
               const base64Data = matches[2];
               const buffer = Buffer.from(base64Data, 'base64');
-              
+
               const extMap: Record<string, string> = {
                 'image/jpeg': 'jpg',
                 'image/png': 'png',
@@ -301,31 +440,37 @@ export const productModelRouter = router({
               const ext = extMap[mimeType] || 'jpg';
               const code = data.code || `product-${id}`;
               const fileKey = `product-models/${code}-${nanoid(8)}.${ext}`;
-              
+
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalData.referenceImageUrl = url;
               finalData.referenceImageKey = key;
-
-              // Auto-extract image dimensions if not provided
-              if (!data.imageWidth || !data.imageHeight) {
-                try {
-                  const sharp = (await import("sharp")).default;
-                  const metadata = await sharp(buffer).metadata();
-                  if (metadata.width && metadata.height) {
-                    finalData.imageWidth = finalData.imageWidth ?? metadata.width;
-                    finalData.imageHeight = finalData.imageHeight ?? metadata.height;
-                  }
-                } catch { /* sharp unavailable or invalid image */ }
-              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
         }
+        // PM8 enforcement: a new image without resolvable dims is refused.
+        if ((!finalData.imageWidth || !finalData.imageHeight) && isProductImageDimsRequired()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+              'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
+          });
+        }
       }
-      
+
       await db.updateProductModel(id, finalData);
+      // PM8: when dims are now known, recompute normalized coords for all points
+      // (+ fiducials) so existing pixel coordinates become resolution-independent.
+      if (finalData.imageWidth && finalData.imageHeight) {
+        try {
+          await db.backfillNormalizedCoordsForProduct(id, finalData.imageWidth, finalData.imageHeight);
+        } catch (err) {
+          console.warn("normalized-coord backfill failed (product.update)", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -363,6 +508,153 @@ export const productModelRouter = router({
         console.warn("audit log failed (product.delete)", err);
       }
       return { success: true };
+    }),
+
+  // Doc 31 PM1 (WC-2) — deep clone a product model into a new code. In ONE tx the
+  // clone deep-copies measurement points (every column incl. componentCode/limits/
+  // geometry/3D), fiducials, panel defs+boards, sampling plans, and OPTIONALLY
+  // machine mappings (copyMappings, default false). It does NOT copy inspection
+  // results, golden samples, or program releases (fresh start). Lifecycle resets to
+  // 'development'; clonedFromId records provenance; the reference image is shared.
+  clone: adminProcedure
+    .input(z.object({
+      sourceId: z.number().int().positive(),
+      newCode: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
+      newName: z.string().min(1).max(255).optional(),
+      newRevision: z.string().trim().max(32).optional(),
+      copyMappings: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const source = await db.getProductModelById(input.sourceId);
+      if (!source) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Sản phẩm nguồn không tồn tại" });
+      }
+      // Code collision → CONFLICT (the unique index is the tx-level backstop below).
+      const duplicate = await db.getProductModelByCode(input.newCode);
+      if (duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+      }
+
+      let result: Awaited<ReturnType<typeof db.cloneProductModel>>;
+      try {
+        result = await db.cloneProductModel({
+          sourceId: input.sourceId,
+          newCode: input.newCode,
+          newName: input.newName,
+          newRevision: input.newRevision,
+          copyMappings: input.copyMappings,
+        });
+      } catch (err: any) {
+        // Backstop for a race that slips past the pre-check.
+        if (err?.code === "23505" || /product_models_code/.test(String(err?.message))) {
+          throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+        }
+        throw err;
+      }
+
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.clone",
+          entityType: "product",
+          entityId: result.newProductId,
+          entityName: input.newCode,
+          details: {
+            sourceId: input.sourceId,
+            sourceCode: source.code,
+            newCode: input.newCode,
+            copyMappings: input.copyMappings,
+            summary: result.summary,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.clone)", err);
+      }
+      return { id: result.newProductId, summary: result.summary };
+    }),
+
+  // ── Doc 31 PM8 — backfill image dimensions for existing products ──
+  // For products that have a reference image but no imageWidth/imageHeight (all 4
+  // dev products today), read the stored image, extract dims via sharp, persist
+  // them, and recompute normalized coords for their points + fiducials. Pass a
+  // productModelId to target one; omit to sweep every product missing dims.
+  backfillImageDimensions: adminProcedure
+    .input(z.object({ productModelId: z.number().int().positive().optional() }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const targets = input?.productModelId
+        ? [await db.getProductModelById(input.productModelId)].filter(Boolean)
+        : await db.getProductModels({});
+      const results: Array<{
+        productModelId: number; code: string; status: string;
+        width?: number; height?: number; pointsNormalized?: number; fiducialsNormalized?: number;
+      }> = [];
+
+      for (const pm of targets as any[]) {
+        if (!pm) continue;
+        if (pm.imageWidth && pm.imageHeight) {
+          // Already has dims — just (re)compute normals so points stay consistent.
+          const bf = await db.backfillNormalizedCoordsForProduct(pm.id, pm.imageWidth, pm.imageHeight);
+          results.push({ productModelId: pm.id, code: pm.code, status: "already_had_dims", width: pm.imageWidth, height: pm.imageHeight, pointsNormalized: bf.points, fiducialsNormalized: bf.fiducials });
+          continue;
+        }
+        if (!pm.referenceImageUrl) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "no_image" });
+          continue;
+        }
+        // Resolve the image bytes: data:/uploads → data URL; http(s) → fetch.
+        let buffer: Buffer | null = null;
+        try {
+          const dataUrl = await resolveImageToDataUrl(pm.referenceImageUrl);
+          if (dataUrl && dataUrl.startsWith("data:")) {
+            const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) buffer = Buffer.from(m[2], "base64");
+          } else if (pm.referenceImageUrl.startsWith("http")) {
+            const fetchFn = (globalThis as any).fetch;
+            if (fetchFn) {
+              const resp = await fetchFn(pm.referenceImageUrl);
+              if (resp.ok) buffer = Buffer.from(await resp.arrayBuffer());
+            }
+          }
+        } catch (err) {
+          console.warn("backfillImageDimensions: fetch failed", pm.code, err);
+        }
+        if (!buffer) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "image_unreadable" });
+          continue;
+        }
+        let width: number | undefined;
+        let height: number | undefined;
+        try {
+          const sharp = (await import("sharp")).default;
+          const meta = await sharp(buffer).metadata();
+          width = meta.width; height = meta.height;
+        } catch { /* sharp unavailable */ }
+        if (!width || !height) {
+          results.push({ productModelId: pm.id, code: pm.code, status: "dims_undetermined" });
+          continue;
+        }
+        await db.updateProductModel(pm.id, { imageWidth: width, imageHeight: height });
+        const bf = await db.backfillNormalizedCoordsForProduct(pm.id, width, height);
+        results.push({ productModelId: pm.id, code: pm.code, status: "backfilled", width, height, pointsNormalized: bf.points, fiducialsNormalized: bf.fiducials });
+      }
+
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.backfillImageDimensions",
+          entityType: "product",
+          entityId: input?.productModelId ?? 0,
+          entityName: input?.productModelId ? String(input.productModelId) : "ALL",
+          details: { results },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.backfillImageDimensions)", err);
+      }
+      return { results };
     }),
 });
 
@@ -448,6 +740,14 @@ export const measurementPointRouter = router({
       preferredInstrumentId: z.number().int().positive().optional(),
       preferredSamplingPlanId: z.number().int().positive().optional(),
       productViewId: z.number().int().positive().optional(), // P3.4: multi-camera binding
+      // Doc 31 MP1/PM6 — WHICH component this point measures. componentCode
+      // relates BY CODE to materials.code (this is what lights up the
+      // Pareto-by-package chain — W8-A/0191); refDesignator is the board
+      // position (e.g. "R12"). NEITHER is a limit field, so they never touch
+      // WA-1's threshold gate (which only fires on lowerLimit/upperLimit/
+      // nominalValue/toleranceMode/tolPlus/tolMinus).
+      componentCode: z.string().trim().max(100).optional(),
+      refDesignator: z.string().trim().max(64).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // P1: when caller supplies a geometry, derive legacy positionX/Y/radius
@@ -473,6 +773,17 @@ export const measurementPointRouter = router({
           if (radius != null) {
             normalizedRadius = (radius / productModel.imageWidth).toFixed(8);
           }
+        } else if (isPointSaveDimsRequired()) {
+          // PM8 (opt-in): without image dims the coordinate is a raw pixel that is
+          // not portable across machines — block the save until dims are set
+          // (via image upload or product.backfillImageDimensions). Default off so
+          // the current dim-less dev products still allow authoring.
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "This product has no reference image dimensions; set them before adding points. " +
+              "Sản phẩm chưa có kích thước ảnh — hãy đặt kích thước trước khi thêm điểm đo.",
+          });
         }
       }
       // P3: Validate preferredInstrument if provided
@@ -613,17 +924,43 @@ export const measurementPointRouter = router({
       preferredInstrumentId: z.number().int().positive().optional(),
       preferredSamplingPlanId: z.number().int().positive().optional(),
       productViewId: z.number().int().positive().optional(), // P3.4: multi-camera binding
+      // Doc 31 MP1/PM6 — component linkage (see create input). Non-limit fields:
+      // editing them alone must NOT route through the approval queue, so they are
+      // deliberately excluded from the `touchesLimits` check below.
+      componentCode: z.string().trim().max(100).optional(),
+      refDesignator: z.string().trim().max(64).optional(),
       isActive: z.boolean().optional(),
       shape: pointShapeEnum.optional(),
       geometry: measurementGeometrySchema.optional(),
       changeReason: z.string().max(500).optional(),
+      // Doc 31 UX3 — optimistic lock: the updatedAt the editor loaded. When present
+      // the write is a compare-and-set; a mismatch throws CONFLICT. Optional →
+      // omitting it keeps the legacy blind-update behaviour (backward compatible).
+      expectedUpdatedAt: z.coerce.date().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, changeReason, ...rest } = input;
+      const { id, changeReason, expectedUpdatedAt, ...rest } = input;
       const data: Record<string, unknown> = { ...rest };
       const existingPoint = await db.getMeasurementPointDefById(id);
       if (!existingPoint) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+      }
+
+      // Doc 31 OP2 (decision #4) — a DIRECT limit change is only allowed while the
+      // owning product is in `development` (and has no released program); on a live
+      // product it must go through the approval queue. Non-limit edits (name/shape/
+      // position/…) are never gated. The audit row below records every direct edit.
+      const touchesLimits =
+        rest.lowerLimit !== undefined ||
+        rest.upperLimit !== undefined ||
+        rest.nominalValue !== undefined ||
+        rest.toleranceMode !== undefined ||
+        rest.tolPlus !== undefined ||
+        rest.tolMinus !== undefined;
+      let thresholdGate: ThresholdGateResult | null = null;
+      if (touchesLimits) {
+        // Throws FORBIDDEN (→ approval queue) when the product is live + enforced.
+        thresholdGate = await assertThresholdEditAllowed(id);
       }
 
       // P3: Validate preferredInstrument if provided or changed
@@ -707,10 +1044,95 @@ export const measurementPointRouter = router({
           }
         }
       }
-      await db.updateMeasurementPointDef(id, normalizedData, {
-        changedBy: ctx.user.id,
-        changeReason: changeReason ?? null,
-      });
+      try {
+        await db.updateMeasurementPointDef(id, normalizedData, {
+          changedBy: ctx.user.id,
+          changeReason: changeReason ?? null,
+          expectedUpdatedAt, // UX3 optimistic lock (undefined → skip check)
+        });
+      } catch (err) {
+        // Doc 31 UX3 — a stale compare-and-set surfaces as CONFLICT. Forward the
+        // CURRENT row (selected fields) so the client can show "someone else
+        // changed X" and offer reload / overwrite-anyway. Duck-typed by `.code`
+        // (db module is mocked in some tests → never `instanceof`).
+        if (err && (err as { code?: string }).code === "MP_STALE_WRITE") {
+          const conflictErr = err as {
+            current?: Record<string, unknown>;
+            expectedUpdatedAt?: string | null;
+            actualUpdatedAt?: string | null;
+          };
+          const cur = conflictErr.current ?? {};
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
+              "This measurement point was changed by someone else since you opened it.",
+            cause: {
+              // Read by the additive errorFormatter forward (trpc.ts) → data.conflict.
+              mpConflict: {
+                pointDefId: id,
+                expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
+                actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
+                current: {
+                  code: cur.code ?? null,
+                  name: cur.name ?? null,
+                  lowerLimit: cur.lowerLimit ?? null,
+                  upperLimit: cur.upperLimit ?? null,
+                  nominalValue: cur.nominalValue ?? null,
+                  componentCode: cur.componentCode ?? null,
+                  refDesignator: cur.refDesignator ?? null,
+                  positionX: cur.positionX ?? null,
+                  positionY: cur.positionY ?? null,
+                  radius: cur.radius ?? null,
+                  updatedAt: cur.updatedAt ?? null,
+                },
+              },
+            } as unknown as Error,
+          });
+        }
+        throw err;
+      }
+      // Doc 31 OP2 — every DIRECT limit change leaves a dedicated audit row with
+      // before/after limits + the gate decision (development-direct or override).
+      if (touchesLimits) {
+        try {
+          await db.createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name ?? undefined,
+            action: "threshold.directEdit",
+            entityType: "measurement_point_def",
+            entityId: id,
+            entityName: (data.code as string | undefined) ?? existingPoint.code ?? undefined,
+            details: {
+              productModelId: existingPoint.productModelId,
+              lifecycleStatus: thresholdGate?.lifecycleStatus ?? null,
+              gateDecision: thresholdGate?.decision ?? null,
+              gateEnforced: thresholdGate?.enforced ?? null,
+              hasReleasedProgram: thresholdGate?.hasReleasedProgram ?? null,
+              before: {
+                lowerLimit: existingPoint.lowerLimit,
+                upperLimit: existingPoint.upperLimit,
+                nominalValue: existingPoint.nominalValue,
+                toleranceMode: existingPoint.toleranceMode,
+                tolPlus: existingPoint.tolPlus,
+                tolMinus: existingPoint.tolMinus,
+              },
+              after: {
+                lowerLimit: normalizedData.lowerLimit ?? null,
+                upperLimit: normalizedData.upperLimit ?? null,
+                nominalValue: normalizedData.nominalValue ?? null,
+                toleranceMode: normalizedData.toleranceMode ?? null,
+                tolPlus: normalizedData.tolPlus ?? null,
+                tolMinus: normalizedData.tolMinus ?? null,
+              },
+              changeReason: changeReason ?? null,
+            },
+            status: "success",
+          });
+        } catch (err) {
+          console.warn("audit log failed (threshold.directEdit)", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -731,6 +1153,40 @@ export const measurementPointRouter = router({
         console.warn("audit log failed (measurementPoint.update)", err);
       }
       return { success: true };
+    }),
+
+  // Doc 31 MP1/PM6 — fill empty componentCode on a product's points from its BOM
+  // (refDesignator match). Non-destructive (never overwrites an existing link);
+  // dryRun previews the plan. Returns {matched, updated, unmatched[]}.
+  backfillComponentCodesFromBom: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      dryRun: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await backfillComponentCodesFromBom(input.productModelId, { dryRun: input.dryRun });
+      if (!input.dryRun && result.updated > 0) {
+        try {
+          await db.createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name ?? undefined,
+            action: "measurementPoint.backfillComponentCodes",
+            entityType: "product",
+            entityId: input.productModelId,
+            details: {
+              bomDefinitionId: result.bomDefinitionId,
+              matched: result.matched,
+              updated: result.updated,
+              skippedAlreadyLinked: result.skippedAlreadyLinked,
+              unmatched: result.unmatched.length,
+            },
+            status: "success",
+          });
+        } catch (err) {
+          console.warn("audit log failed (measurementPoint.backfillComponentCodes)", err);
+        }
+      }
+      return result;
     }),
 
   delete: adminProcedure
@@ -801,6 +1257,76 @@ export const measurementPointRouter = router({
       }
 
       return { success: true, imageUrl: url, imageKey: key };
+    }),
+
+  // ── Doc 31 Đợt B (MP3) — __UNMAPPED__ visibility + bulk remap ──
+
+  /** Unmatched-rate metric: % of results resolving under __UNMAPPED__. */
+  unmappedRate: protectedProcedure
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      productModelId: z.number().int().positive().optional(),
+      fromTs: z.coerce.date().optional(),
+      toTs: z.coerce.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const filter: UnmappedRateFilter = {
+        machineId: input?.machineId,
+        productModelId: input?.productModelId,
+        fromTs: input?.fromTs,
+        toTs: input?.toTs,
+      };
+      return getUnmappedPointRate(filter);
+    }),
+
+  /** List __UNMAPPED__ point defs with result counts + a remap suggestion. */
+  listUnmapped: protectedProcedure
+    .query(async () => {
+      const unmappedModelId = await getUnmappedProductModelId();
+      if (!unmappedModelId) return { unmappedModelId: null, points: [] };
+      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId);
+      return { unmappedModelId, points };
+    }),
+
+  /**
+   * Bulk-remap __UNMAPPED__ points to a real product model. Merges into an
+   * existing same-code target def (re-pointing its results) or moves the def.
+   */
+  remapUnmapped: adminProcedure
+    .input(z.object({
+      pointDefIds: z.array(z.number().int().positive()).min(1).max(2000),
+      targetProductModelId: z.number().int().positive(),
+      targetMachineId: z.number().int().positive().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const unmappedModelId = await getUnmappedProductModelId();
+      if (!unmappedModelId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No __UNMAPPED__ model exists — nothing to remap." });
+      }
+      const target = await db.getProductModelById(input.targetProductModelId);
+      if (!target) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Target product model ${input.targetProductModelId} not found.` });
+      }
+      if (input.targetProductModelId === unmappedModelId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot remap into the __UNMAPPED__ model itself." });
+      }
+      const summary = await db.remapMeasurementPoints({
+        pointDefIds: input.pointDefIds,
+        targetProductModelId: input.targetProductModelId,
+        unmappedModelId,
+        targetMachineId: input.targetMachineId ?? undefined,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? undefined,
+        action: "measurementPoint.remapUnmapped",
+        entityType: "product",
+        entityId: input.targetProductModelId,
+        entityName: target.code,
+        details: { requested: input.pointDefIds.length, ...summary },
+        status: "success",
+      });
+      return summary;
     }),
 });
 
@@ -1342,12 +1868,17 @@ export const defectCatalogRouter = router({
       description: z.string().optional(),
       nameVi: z.string().max(255).optional(),
       descriptionVi: z.string().optional(),
+      repairGuidance: z.string().optional(),
+      repairGuidanceVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const id = await db.createDefectCatalog(input);
+      // Doc 31 OP3: if this code was previously seen but unmatched, mark the
+      // rollup row resolved so the curation panel stops flagging it.
+      try { await db.markUnmatchedDefectCodeResolved(input.code, id); } catch { /* best-effort */ }
       await db.createAuditLog({
         userId: ctx.user.id,
         userName: ctx.user.name ?? undefined,
@@ -1377,6 +1908,8 @@ export const defectCatalogRouter = router({
       description: z.string().optional(),
       nameVi: z.string().max(255).optional(),
       descriptionVi: z.string().optional(),
+      repairGuidance: z.string().optional(),
+      repairGuidanceVi: z.string().optional(),
       referenceImageKey: z.string().max(255).optional(),
       referenceImageUrl: z.string().url().optional(),
       isActive: z.boolean().optional(),
@@ -1412,6 +1945,39 @@ export const defectCatalogRouter = router({
         status: "success",
       });
       return { success: true };
+    }),
+
+  // ── Doc 31 Đợt B (OP3) — unmatched-code telemetry for curation ──
+  // Codes reported by machines/AI that did NOT resolve to a catalog row.
+  listUnmatchedCodes: protectedProcedure
+    .input(z.object({
+      onlyUnresolved: z.boolean().optional().default(true),
+      limit: z.number().int().positive().max(1000).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.listUnmatchedDefectCodes({
+        onlyUnresolved: input?.onlyUnresolved ?? true,
+        limit: input?.limit,
+      });
+    }),
+
+  // ── Doc 31 Đợt B (OP4) — per-component defect tendency (Pareto-by-package) ──
+  // Joins classified NG results → point-def componentCode → defect class.
+  // Tolerates empty componentCode (WB-1 fills it) — returns [] gracefully.
+  defectTendency: protectedProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive().optional(),
+      fromTs: z.coerce.date().optional(),
+      toTs: z.coerce.date().optional(),
+      limit: z.number().int().positive().max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getDefectTendencyByComponent({
+        productModelId: input?.productModelId,
+        fromTs: input?.fromTs,
+        toTs: input?.toTs,
+        limit: input?.limit,
+      });
     }),
 });
 
@@ -1610,6 +2176,50 @@ export const defectCatalogRouter = router({
           status: "success",
         });
         return { success: true };
+      }),
+
+    // ── Doc 31 OP5 (decision #3) — AQL lot acceptance ────────────────────────
+    // Evaluate a single lot (by batchNumber) against the product's AQL sampling
+    // plan → accept / reject / pending disposition.
+    evaluateLot: protectedProcedure
+      .input(z.object({
+        productModelId: z.number().int().positive(),
+        samplingPlanId: z.number().int().positive().optional(),
+        batchNumber: z.string().max(100).nullable().optional(),
+        startDate: z.string().datetime().optional(),
+        endDate: z.string().datetime().optional(),
+        machineId: z.number().int().positive().optional(),
+      }))
+      .query(async ({ input }) => {
+        return evaluateLotAcceptance({
+          productModelId: input.productModelId,
+          samplingPlanId: input.samplingPlanId,
+          batchNumber: input.batchNumber ?? undefined,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          machineId: input.machineId,
+        });
+      }),
+
+    // List recent lots + their dispositions for a product (accept/reject board).
+    listLots: protectedProcedure
+      .input(z.object({
+        productModelId: z.number().int().positive(),
+        samplingPlanId: z.number().int().positive().optional(),
+        startDate: z.string().datetime().optional(),
+        endDate: z.string().datetime().optional(),
+        machineId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      }))
+      .query(async ({ input }) => {
+        return listLotDispositions({
+          productModelId: input.productModelId,
+          samplingPlanId: input.samplingPlanId,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          machineId: input.machineId,
+          limit: input.limit,
+        });
       }),
   });
 
@@ -2716,5 +3326,103 @@ export const cadImportRouter = router({
         status: "success",
       });
       return { applied: count };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 31 MP5 / PM4 (Đợt C, decision #5) — GENERIC centroid / pick-place import.
+  // A configurable column map (like the hot-folder adapter) defers all
+  // vendor-specific work to UI mapping — no code change to onboard a real
+  // Fuji / Panasonic / Siemens / KiCad file. Flow: inspect → preview → commit
+  // → apply, reusing cad_import_jobs / cad_import_candidates (no migration).
+  // ══════════════════════════════════════════════════════════════════════════
+  centroidInspect: adminProcedure
+    .input(z.object({
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      delimiter: z.enum([",", ";", "\t", "auto"]).optional(),
+      hasHeader: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return inspectCentroidHeaders(text, {
+        delimiter: input.delimiter,
+        hasHeader: input.hasHeader,
+      });
+    }),
+
+  centroidPreview: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return previewCentroidImport({
+        productModelId: input.productModelId,
+        text,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  centroidCommit: adminProcedure
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      fileName: z.string().min(1).max(255),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema,
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      const buf = Buffer.from(text, "utf-8");
+      return commitCentroidImport({
+        productModelId: input.productModelId,
+        fileName: input.fileName,
+        text,
+        fileSha256: createHash("sha256").update(buf).digest("hex"),
+        fileSizeBytes: buf.length,
+        uploadedBy: ctx.user.id,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  centroidApply: adminProcedure
+    .input(z.object({
+      jobId: z.number().int().positive(),
+      measurementType: legacyMeasurementTypeSchema.optional(),
+      radius: z.number().int().min(1).max(100000).optional(),
+      cropWidth: z.number().int().min(1).max(100000).optional(),
+      cropHeight: z.number().int().min(1).max(100000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await db.getCadImportJobById(input.jobId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Centroid import job not found" });
+      return applyCentroidImport({
+        jobId: input.jobId,
+        appliedBy: ctx.user.id,
+        appliedByName: ctx.user.name ?? undefined,
+        defaults: {
+          measurementType: input.measurementType,
+          radius: input.radius,
+          cropWidth: input.cropWidth,
+          cropHeight: input.cropHeight,
+        },
+      });
     }),
 });

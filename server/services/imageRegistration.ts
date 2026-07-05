@@ -115,7 +115,13 @@ export interface RegistrationResult {
 
 // ─── sharp helpers (decode / resize / grayscale) ──────────────────────────────
 
-/** Resize a 1-channel grayscale raw buffer to w×h (fit:fill). Identity fast-path. */
+/** Resize a 1-channel grayscale raw buffer to w×h (fit:fill). Identity fast-path.
+ *  W7-C fix — .toColourspace("b-w") pins the output to ONE channel: sharp raw
+ *  pipelines otherwise promote 1-channel input to 3-channel sRGB on raw output,
+ *  which silently tripled these buffers (downscale path + pyramid levels read
+ *  the first third of an interleaved plane — geometry scrambled). The finest
+ *  level went through the identity fast-path in typical use, which is why
+ *  registration still converged; coarse capture range was degraded. */
 async function resizeGray(img: GrayImage, w: number, h: number): Promise<Uint8Array> {
   if (img.width === w && img.height === h) {
     return img.data instanceof Uint8Array && !Buffer.isBuffer(img.data)
@@ -126,6 +132,7 @@ async function resizeGray(img: GrayImage, w: number, h: number): Promise<Uint8Ar
     raw: { width: img.width, height: img.height, channels: 1 },
   })
     .resize(w, h, { fit: "fill" })
+    .toColourspace("b-w")
     .raw()
     .toBuffer();
   return new Uint8Array(out);
@@ -136,6 +143,7 @@ async function blurHalve(g: Uint8Array, w: number, h: number, nw: number, nh: nu
   const out = await sharp(Buffer.from(g), { raw: { width: w, height: h, channels: 1 } })
     .blur(1.0) // σ≈1 low-pass before decimation (anti-alias)
     .resize(nw, nh, { fit: "fill" })
+    .toColourspace("b-w")
     .raw()
     .toBuffer();
   return new Uint8Array(out);

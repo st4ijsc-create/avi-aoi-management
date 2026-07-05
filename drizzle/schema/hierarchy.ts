@@ -1,4 +1,5 @@
 // Schema domain: Hierarchy tables (Corporate > Factory > Workshop > Line > Station > Machine)
+import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { machineTypeEnum, statusEnum_1, operationStatusEnum, processTypeEnum } from "./enums";
 
@@ -14,6 +15,24 @@ export type MachineCapabilities = {
   emitsProcessResult?: boolean;
   cycleTimeTracked?: boolean;
   [k: string]: unknown;
+};
+
+/**
+ * Doc 27 §2 M13 / doc 29 §4 (W8-A, 0191) — persisted result of validating
+ * machines.capabilities against the deviceTypes attributesSchema contract
+ * (server/services/standards/capabilitiesValidation.ts). Soft 2-tier gate:
+ * tier 1 stamps this on every capabilities save (warning only); tier 2
+ * (CAPABILITIES_VALIDATION_ENFORCED) rejects on required-attribute violations.
+ */
+export type CapabilitiesValidationStamp = {
+  checkedAt: string;                 // ISO timestamp of the validation run
+  deviceTypeKey: string;             // resolved device type (via mappedMachineTypes)
+  deviceTypeVersion?: string;
+  ok: boolean;                       // no errors (unknown keys never fail it)
+  skipped?: boolean;                 // true when capabilities was NULL/empty
+  errors: Array<{ path: string; expected: string; got: string; required?: boolean }>;
+  unknownKeys: string[];             // vendor-extension keys outside the contract (never blocking)
+  source?: string;                   // 'save' | 'drift-scan'
 };
 
 /** Floor-plan transform for the 3D plant view. x/y mirror layoutPositionX/Y (0–1). */
@@ -54,7 +73,10 @@ export type InsertCorporate = typeof corporates.$inferInsert;
  */
 export const factories = pgTable("factories", {
   id: serial("id").primaryKey(),
-  corporateCode: varchar("corporateCode", { length: 50 }), // FK to corporates.code (nullable for back-compat)
+  // W3-A (doc 27 M1, 0180): real FK to corporates.code (fk_factories_corporate,
+  // ON DELETE RESTRICT). Nullable for back-compat — NULL means "no corporate".
+  corporateCode: varchar("corporateCode", { length: 50 })
+    .references(() => corporates.code, { onDelete: "restrict" }),
   code: varchar("code", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -86,7 +108,9 @@ export type InsertFactory = typeof factories.$inferInsert;
  */
 export const workshops = pgTable("workshops", {
   id: serial("id").primaryKey(),
-  factoryId: integer("factoryId").notNull(),
+  // W3-A (doc 27 M1, 0180): fk_workshops_factory, ON DELETE RESTRICT.
+  factoryId: integer("factoryId").notNull()
+    .references(() => factories.id, { onDelete: "restrict" }),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -97,6 +121,11 @@ export const workshops = pgTable("workshops", {
 }, (table) => [
   index("idx_workshops_factory").on(table.factoryId),
   index("idx_workshops_code").on(table.code),
+  // W3-A (doc 27 M6, 0180): per-factory code uniqueness among ACTIVE rows only —
+  // deletes are soft (isActive=false), a retired code may be reused.
+  // NOTE: DB enforcement is conditional — 0180 defers the build if duplicates
+  // exist (see integrity_scan_results / db_feature_status 'integrity_uq_*').
+  uniqueIndex("uq_workshops_factory_code_active").on(table.factoryId, table.code).where(sql`${table.isActive} = true`),
 ]);
 
 export type Workshop = typeof workshops.$inferSelect;
@@ -107,7 +136,9 @@ export type InsertWorkshop = typeof workshops.$inferInsert;
  */
 export const productionLines = pgTable("production_lines", {
   id: serial("id").primaryKey(),
-  workshopId: integer("workshopId").notNull(),
+  // W3-A (doc 27 M1, 0180): fk_production_lines_workshop, ON DELETE RESTRICT.
+  workshopId: integer("workshopId").notNull()
+    .references(() => workshops.id, { onDelete: "restrict" }),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -119,6 +150,9 @@ export const productionLines = pgTable("production_lines", {
 }, (table) => [
   index("idx_lines_workshop").on(table.workshopId),
   index("idx_lines_code").on(table.code),
+  // W3-A (doc 27 M6, 0180): per-workshop code uniqueness among ACTIVE rows (see
+  // uq_workshops_factory_code_active note — conditional build, soft-delete aware).
+  uniqueIndex("uq_production_lines_workshop_code_active").on(table.workshopId, table.code).where(sql`${table.isActive} = true`),
 ]);
 
 export type ProductionLine = typeof productionLines.$inferSelect;
@@ -129,7 +163,9 @@ export type InsertProductionLine = typeof productionLines.$inferInsert;
  */
 export const stations = pgTable("stations", {
   id: serial("id").primaryKey(),
-  lineId: integer("lineId").notNull(),
+  // W3-A (doc 27 M1, 0180): fk_stations_line, ON DELETE RESTRICT.
+  lineId: integer("lineId").notNull()
+    .references(() => productionLines.id, { onDelete: "restrict" }),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -140,18 +176,75 @@ export const stations = pgTable("stations", {
 }, (table) => [
   index("idx_stations_line").on(table.lineId),
   index("idx_stations_code").on(table.code),
+  // W3-A (doc 27 M6, 0180): per-line code uniqueness among ACTIVE rows (see
+  // uq_workshops_factory_code_active note — conditional build, soft-delete aware).
+  uniqueIndex("uq_stations_line_code_active").on(table.lineId, table.code).where(sql`${table.isActive} = true`),
 ]);
 
 export type Station = typeof stations.$inferSelect;
 export type InsertStation = typeof stations.$inferInsert;
 
 /**
+ * Doc 27 Đợt 3 / W3-B — gap M2: machine ASSET lifecycle (distinct from runtime
+ * operationStatus and from registrationStatus).
+ *
+ * Repo convention for varchar enums (see registrationStatus above,
+ * aoi_commissioning_records.status): plain varchar + app-level validation — no
+ * pg enum / CHECK constraint, so adding states later never needs ALTER TYPE.
+ *
+ * Legal transitions (enforced by server/db/hierarchy.ts transitionMachineLifecycle;
+ * anything not listed is a CONFLICT):
+ *   commissioning  → active
+ *   active         → maintenance | decommissioned
+ *   maintenance    → active | decommissioned
+ *   decommissioned → retired | active (re-commission)
+ *   retired        → (terminal for transitions)
+ * Out-of-band stamps (documented, not part of the transition map):
+ *   deleteMachine  (soft-delete) force-stamps 'retired'
+ *   restoreMachine (undelete)    lands on 'decommissioned' — one legal step from
+ *                                'active', so a restored machine stays excluded
+ *                                from auto-assign until explicitly re-commissioned.
+ */
+export const MACHINE_LIFECYCLE_STATUSES = [
+  "commissioning",
+  "active",
+  "maintenance",
+  "decommissioned",
+  "retired",
+] as const;
+export type MachineLifecycleStatus = (typeof MACHINE_LIFECYCLE_STATUSES)[number];
+
+export const MACHINE_LIFECYCLE_TRANSITIONS: Record<MachineLifecycleStatus, readonly MachineLifecycleStatus[]> = {
+  commissioning: ["active"],
+  active: ["maintenance", "decommissioned"],
+  maintenance: ["active", "decommissioned"],
+  decommissioned: ["retired", "active"],
+  retired: [],
+};
+
+export function isLegalLifecycleTransition(from: string, to: string): boolean {
+  const allowed = MACHINE_LIFECYCLE_TRANSITIONS[from as MachineLifecycleStatus];
+  return Array.isArray(allowed) ? (allowed as readonly string[]).includes(to) : false;
+}
+
+/** Lifecycle states that must be kept OUT of auto-assign/registration reuse. */
+export const MACHINE_LIFECYCLE_EXCLUDED: readonly MachineLifecycleStatus[] = ["decommissioned", "retired"];
+
+/**
  * Machine - Máy AVI/AOI/Tự động hóa
+ *
+ * Doc 27 Đợt 3 / W3-B — gap M3: machines.code is NO LONGER globally unique.
+ * Uniqueness is a PARTIAL unique index (uq_machines_code_active, WHERE
+ * "isActive" = true — migration 0181): soft-deleted machines keep their code as
+ * a tombstone, and the code becomes reusable by a new registration. Restoring a
+ * tombstone whose code has been reused is a CONFLICT (see restoreMachine).
  */
 export const machines = pgTable("machines", {
   id: serial("id").primaryKey(),
-  stationId: integer("stationId").notNull(),
-  code: varchar("code", { length: 50 }).notNull().unique(),
+  // W3-A (doc 27 M1, 0180): fk_machines_station, ON DELETE RESTRICT.
+  stationId: integer("stationId").notNull()
+    .references(() => stations.id, { onDelete: "restrict" }),
+  code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   machineType: machineTypeEnum("machineType").notNull(),
   model: varchar("model", { length: 100 }),
@@ -171,6 +264,8 @@ export const machines = pgTable("machines", {
   firmwareVersion: varchar("firmwareVersion", { length: 50 }), // Phiên bản firmware
   syncMode: statusEnum_1("syncMode").default("online").notNull(), // "online" | "offline"
   registrationStatus: varchar("registrationStatus", { length: 20 }).default("pending").notNull(), // "pending" | "approved" | "rejected" | "unmapped"
+  // Doc 27 Đợt 3 / W3-B — gap M2: asset lifecycle state (varchar-enum, app-validated).
+  lifecycleStatus: varchar("lifecycleStatus", { length: 20 }).$type<MachineLifecycleStatus>().default("active").notNull(),
   lastSyncAt: timestamp("lastSyncAt"),
   pendingConfig: text("pendingConfig"), // Cấu hình chờ duyệt (offline)
   isActive: boolean("isActive").default(true).notNull(),
@@ -178,14 +273,21 @@ export const machines = pgTable("machines", {
   operationStatus: operationStatusEnum("operationStatus").default("stopped").notNull(),
   // Sprint F2 — generic device capability flags (nullable; defaults inferred per machineType)
   capabilities: jsonb("capabilities").$type<MachineCapabilities>(),
+  // Doc 27 M13 / doc 29 §4 (W8-A, 0191): last capabilities-validation result
+  // ({checkedAt, deviceTypeKey, ok, errors, unknownKeys}). NULL = never validated.
+  capabilitiesValidation: jsonb("capabilitiesValidation").$type<CapabilitiesValidationStamp>(),
   layout: jsonb("layout").$type<MachineLayout>(), // floor-plan transform (rotation/footprint); x/y also in layoutPositionX/Y
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_machines_station").on(table.stationId),
   index("idx_machines_code").on(table.code),
+  // M3: code unique ONLY among live rows — tombstones (isActive=false) keep the
+  // code without blocking re-registration (replaces the old machines_code_unique).
+  uniqueIndex("uq_machines_code_active").on(table.code).where(sql`${table.isActive} = true`),
   index("idx_machines_apikey").on(table.apiKey),
   index("idx_machines_registration_status").on(table.registrationStatus),
+  index("idx_machines_lifecycle").on(table.lifecycleStatus),
   index("idx_machines_syncmode").on(table.syncMode),
   index("idx_machines_serial_number").on(table.serialNumber),
 ]);

@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { PollFreshness } from "@/components/PollFreshness";
 import FactoryFloor3D, { statusColor, statusLabel, type MachineNode } from "@/components/FactoryFloor3D";
 import { Factory, Cpu, Activity, CheckCircle2, PauseCircle, XCircle, FlaskConical, Info, RefreshCw, Box, Move } from "lucide-react";
 
@@ -29,7 +31,10 @@ interface Row extends MachineNode {
 export default function FactoryLiveMap3D() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 5000 });
+  // Poll hygiene (doc 27 B12): pause the 5s poll when the tab is hidden,
+  // refetch immediately on return — see usePollingInterval.
+  const polling = usePollingInterval(5000);
+  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { ...polling });
   const [factoryId, setFactoryId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
 
@@ -65,6 +70,8 @@ export default function FactoryLiveMap3D() {
           description={t("flm.subtitle", "Mỗi máy là một khối 3D tô màu theo trạng thái thực — bấm để xem chi tiết & mở mô phỏng cụm")}
           actions={
             <>
+              {/* Stale badge (audit F10): honest "updated Ns ago" for the 5s poll. */}
+              <PollFreshness updatedAt={machinesQ.dataUpdatedAt} isFetching={machinesQ.isFetching} />
               <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => { setFactoryId(Number(v)); setSelected(null); }}>
                 <SelectTrigger className="w-[220px]"><SelectValue placeholder={t("flm.pickFactory", "Chọn nhà máy")} /></SelectTrigger>
                 <SelectContent>

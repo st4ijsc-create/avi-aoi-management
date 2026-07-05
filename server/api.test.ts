@@ -27,6 +27,9 @@ vi.mock("./db", () => ({
   getMachinesByStation: vi.fn().mockResolvedValue([]),
   getMachineByApiKey: vi.fn().mockResolvedValue({ id: 1, code: "AVI001", name: "AVI Machine 1" }),
   getMachineById: vi.fn().mockResolvedValue({ id: 1, code: "AVI001", name: "AVI Machine 1" }),
+  // W3-B (M7): machine.create pre-checks duplicates + audits via createAuditLog
+  getMachineByCode: vi.fn().mockResolvedValue(undefined),
+  createAuditLog: vi.fn().mockResolvedValue({ id: 1 }),
   createMachine: vi.fn().mockResolvedValue(1),
   updateMachineHeartbeat: vi.fn().mockResolvedValue(undefined),
   getProductInspections: vi.fn().mockResolvedValue([]),

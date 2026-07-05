@@ -82,6 +82,17 @@ vi.mock("../db/product", () => ({
   getMeasurementPointDefById: (...a: unknown[]) => getMeasurementPointDefById(...a),
 }));
 
+// Doc 31 B.6 — set_spec_limits now consults the lifecycle gate before writing.
+// Return a permissive (development/direct) decision so these HITL-flow tests still
+// exercise the write path; and stub the audit sink the tool writes on allow.
+vi.mock("./thresholdGovernanceService", () => ({
+  resolveThresholdEditGate: vi.fn(async () => ({
+    decision: "direct", productModelId: 1, lifecycleStatus: "development",
+    hasReleasedProgram: false, enforced: true,
+  })),
+}));
+vi.mock("../db/system", () => ({ createAuditLog: vi.fn(async () => ({ id: 1 })) }));
+
 // Silence audit writes (assert they are called, but they don't touch a DB).
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));
 const logUpdate = vi.fn(async () => {});

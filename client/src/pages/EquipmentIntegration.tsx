@@ -64,7 +64,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plug, RefreshCw, Info, Lock, AlertTriangle, Plus, Cpu, FlaskConical,
   History, Network, CheckCircle2, Send, Rocket, Archive, Undo2, Download,
-  CircleSlash, Activity,
+  CircleSlash, Activity, Camera, Play, Square, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -299,6 +299,8 @@ export default function EquipmentIntegration() {
             <TabsTrigger value="status"><Network className="mr-1 h-4 w-4" />{t("eqIntegration.tab.status", "Integration status")}</TabsTrigger>
             <TabsTrigger value="recipes"><FlaskConical className="mr-1 h-4 w-4" />{t("eqIntegration.tab.recipes", "Recipe versions")}</TabsTrigger>
             <TabsTrigger value="history"><History className="mr-1 h-4 w-4" />{t("eqIntegration.tab.history", "Load history")}</TabsTrigger>
+            {/* W8-C (doc 27 V14 — W7-E's noted UI slot): acquisition worker status/start/stop. */}
+            <TabsTrigger value="acquisition"><Camera className="mr-1 h-4 w-4" />{t("eqIntegration.tab.acquisition", "Acquisition workers")}</TabsTrigger>
           </TabsList>
 
           {/* ════════════════ TAB: Integration status (I1-a) ════════════════ */}
@@ -557,6 +559,11 @@ export default function EquipmentIntegration() {
               </Table>
             </SectionCard>
           </TabsContent>
+
+          {/* ════════════ TAB: Acquisition workers (W8-C — doc 27 V14 UI slot) ════════════ */}
+          <TabsContent value="acquisition" className="flex flex-col gap-4">
+            <AcquisitionWorkersPanel />
+          </TabsContent>
         </Tabs>
       </PageContainer>
 
@@ -802,6 +809,365 @@ function CreateVersionDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
           <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqIntegration.create", "Create version")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// W8-C (doc 27 V14, Đợt 7.6 follow-up) — Acquisition worker panel.
+//
+// UI over visionAdapter.acquisitionWorkerStatus / startAcquisitionWorker /
+// stopAcquisitionWorker (W7-E built them API-only and documented THIS page as
+// the panel slot). RBAC mirrors the router: machine_alerts/canView to read,
+// machine_alerts/canCreate to start/stop. LIVE_ACQUISITION_ENABLED gates
+// starting — the refusal reason from the server is surfaced verbatim (honest).
+// ════════════════════════════════════════════════════════════════════════════
+
+type AcqStatus = RouterOutputs["visionAdapter"]["acquisitionWorkerStatus"];
+type AcqWorker = AcqStatus["workers"][number];
+
+const ACQ_STATE_TONE: Record<string, "success" | "warning" | "error" | "default" | "info"> = {
+  running: "success",
+  completed: "info",
+  stopped: "default",
+  error: "error",
+};
+
+function AcquisitionWorkersPanel() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canViewAcq = hasPermission("machine_alerts", "canView");
+  const canControlAcq = hasPermission("machine_alerts", "canCreate");
+  const utils = trpc.useUtils();
+
+  const [startOpen, setStartOpen] = useState(false);
+
+  const statusQ = trpc.visionAdapter.acquisitionWorkerStatus.useQuery(undefined, {
+    enabled: canViewAcq,
+    refetchInterval: 5_000,
+    retry: false,
+  });
+  const sourcesQ = trpc.visionAdapter.listAcquisitionSources.useQuery(undefined, {
+    enabled: canViewAcq,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  const refresh = () => void utils.visionAdapter.acquisitionWorkerStatus.invalidate();
+
+  const startM = trpc.visionAdapter.startAcquisitionWorker.useMutation({
+    onSuccess: () => {
+      toast.success(t("eqIntegration.acq.started", "Acquisition worker started"));
+      setStartOpen(false);
+      refresh();
+    },
+    // PRECONDITION_FAILED carries the server's honest refusal reason (flag off,
+    // duplicate id, disabled config, source open failure) — show it verbatim.
+    onError: (e) => toast.error(e.message),
+  });
+  const stopM = trpc.visionAdapter.stopAcquisitionWorker.useMutation({
+    onSuccess: () => {
+      toast.success(t("eqIntegration.acq.stopped", "Acquisition worker stopped"));
+      refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (!canViewAcq) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+        <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+        {t("eqIntegration.acq.noPermission", "Viewing acquisition workers requires the machine-alerts view permission.")}
+      </div>
+    );
+  }
+
+  const status = statusQ.data as AcqStatus | undefined;
+  const workers = status?.workers ?? [];
+
+  return (
+    <>
+      {/* Live-flag banner (honest gate — workers refuse to start when off) */}
+      {status && !status.liveEnabled && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            {t(
+              "eqIntegration.acq.flagOff",
+              "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
+            )}
+          </span>
+        </div>
+      )}
+
+      <SectionCard
+        icon={<Camera className="h-4 w-4" />}
+        title={t("eqIntegration.acq.title", "Acquisition workers")}
+        description={t(
+          "eqIntegration.acq.desc",
+          "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
+        )}
+        action={
+          <div className="flex items-center gap-1">
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refresh} title={t("common.refresh", "Refresh")}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            {canControlAcq && (
+              <Button size="sm" variant="outline" className="h-8" onClick={() => setStartOpen(true)}>
+                <Play className="mr-1 h-4 w-4" />
+                {t("eqIntegration.acq.start", "Start worker")}
+              </Button>
+            )}
+          </div>
+        }
+        contentClassName="p-0"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("eqIntegration.acq.col.id", "Worker")}</TableHead>
+              <TableHead>{t("eqIntegration.col.status", "Status")}</TableHead>
+              <TableHead>{t("eqIntegration.acq.col.source", "Source")}</TableHead>
+              <TableHead className="text-right">{t("eqIntegration.acq.col.frames", "Frames")}</TableHead>
+              <TableHead className="text-right">{t("eqIntegration.acq.col.submitted", "Submitted")}</TableHead>
+              <TableHead className="text-right">{t("eqIntegration.acq.col.errors", "Errors")}</TableHead>
+              <TableHead>{t("eqIntegration.acq.col.last", "Last frame / error")}</TableHead>
+              {canControlAcq && <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {statusQ.isLoading && (
+              <TableRow>
+                <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            )}
+            {!statusQ.isLoading && workers.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
+                  {t("eqIntegration.acq.empty", "No acquisition workers registered in this server session.")}
+                </TableCell>
+              </TableRow>
+            )}
+            {workers.map((w: AcqWorker) => {
+              const lastEntry = w.ledger.length > 0 ? w.ledger[w.ledger.length - 1] : null;
+              return (
+                <TableRow key={w.id}>
+                  <TableCell>
+                    <span className="font-mono text-xs font-medium">{w.id}</span>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("eqIntegration.acq.since", "since")} {new Date(w.startedAt).toLocaleString()}
+                      {w.stoppedAt ? ` → ${new Date(w.stoppedAt).toLocaleTimeString()}` : ""}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={w.state} tone={ACQ_STATE_TONE[w.state] ?? "default"} label={t(`eqIntegration.acq.state.${w.state}`, w.state)} />
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className="font-mono text-[11px]">{w.config.source.kind}</Badge>
+                    {w.config.submit && (
+                      <Badge variant="outline" className="ml-1 text-[10px]" title={w.config.machineCode ?? undefined}>
+                        {t("eqIntegration.acq.submits", "submits NTF")}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">{w.framesGrabbed}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{w.submitted}</TableCell>
+                  <TableCell className={`text-right font-mono text-xs ${w.errors > 0 ? "text-destructive" : ""}`}>{w.errors}</TableCell>
+                  <TableCell className="max-w-56">
+                    {w.lastError ? (
+                      <span className="block truncate text-xs text-destructive" title={w.lastError}>{w.lastError}</span>
+                    ) : lastEntry ? (
+                      <span className="text-xs text-muted-foreground">
+                        #{lastEntry.frameId} · {new Date(lastEntry.at).toLocaleTimeString()}
+                        {lastEntry.quality
+                          ? lastEntry.quality.acceptable
+                            ? ` · ${t("eqIntegration.acq.qualityOk", "quality OK")}`
+                            : ` · ${t("eqIntegration.acq.qualityBad", "quality poor")}`
+                          : ""}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  {canControlAcq && (
+                    <TableCell className="text-right">
+                      {w.state === "running" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-destructive hover:text-destructive/80"
+                          disabled={stopM.isPending}
+                          onClick={() => stopM.mutate({ id: w.id })}
+                        >
+                          <Square className="mr-1 h-3.5 w-3.5" />
+                          {t("eqIntegration.acq.stop", "Stop")}
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </SectionCard>
+
+      {/* Discovery card — which source kinds are genuinely usable now */}
+      {sourcesQ.data && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>{t("eqIntegration.acq.sources", "Source kinds")}:</span>
+          {sourcesQ.data.sources.map((s: { kind: string; available: boolean; description?: string }) => (
+            <Badge
+              key={s.kind}
+              variant="outline"
+              className={`font-mono text-[10px] ${s.available ? "" : "text-muted-foreground line-through"}`}
+              title={s.description}
+            >
+              {s.kind}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {startOpen && (
+        <StartAcquisitionWorkerDialog
+          pending={startM.isPending}
+          onClose={() => setStartOpen(false)}
+          onSubmit={(cfg) => startM.mutate(cfg)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── Start-worker dialog (file / mock — the sources that are REAL today) ────────
+function StartAcquisitionWorkerDialog({
+  pending, onClose, onSubmit,
+}: {
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (cfg: {
+    id: string;
+    source: { kind: "file"; directory?: string; loop?: boolean } | { kind: "mock"; width?: number; height?: number; maxFrames?: number };
+    machineCode?: string;
+    intervalMs?: number;
+    maxFrames?: number;
+    submit?: boolean;
+    assessQuality?: boolean;
+  }) => void;
+}) {
+  const { t } = useTranslation();
+  const [id, setId] = useState("");
+  const [kind, setKind] = useState<"file" | "mock">("file");
+  const [directory, setDirectory] = useState("");
+  const [loop, setLoop] = useState(false);
+  const [mockMaxFrames, setMockMaxFrames] = useState("20");
+  const [intervalMs, setIntervalMs] = useState("2000");
+  const [submit, setSubmit] = useState(false);
+  const [machineCode, setMachineCode] = useState("");
+  const [assessQuality, setAssessQuality] = useState(true);
+
+  const doSubmit = () => {
+    if (!id.trim()) {
+      toast.error(t("eqIntegration.acq.idRequired", "Worker id is required.")); return;
+    }
+    if (kind === "file" && !directory.trim()) {
+      toast.error(t("eqIntegration.acq.dirRequired", "Directory is required for a file source.")); return;
+    }
+    if (submit && !machineCode.trim()) {
+      toast.error(t("eqIntegration.acq.machineRequired", "Submitting frames requires a machine code.")); return;
+    }
+    onSubmit({
+      id: id.trim(),
+      source: kind === "file"
+        ? { kind: "file", directory: directory.trim(), loop }
+        : { kind: "mock", maxFrames: Math.max(0, parseInt(mockMaxFrames) || 0) },
+      machineCode: machineCode.trim() || undefined,
+      intervalMs: Math.min(3_600_000, Math.max(50, parseInt(intervalMs) || 2000)),
+      submit,
+      assessQuality,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Camera className="h-4 w-4" />
+            {t("eqIntegration.acq.startTitle", "Start acquisition worker")}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "eqIntegration.acq.startHint",
+              "File source replays a capture folder; mock generates synthetic frames. Submission stamps NTF ('needs inspection') — acquisition is not judgement.",
+            )}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqIntegration.acq.col.id", "Worker")}</Label>
+              <Input value={id} placeholder="replay-line1" onChange={(e) => setId(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqIntegration.acq.kind", "Source kind")}</Label>
+              <Select value={kind} onValueChange={(v) => setKind(v as "file" | "mock")}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="file">file</SelectItem>
+                  <SelectItem value="mock">mock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {kind === "file" ? (
+            <>
+              <div className="grid gap-1">
+                <Label>{t("eqIntegration.acq.directory", "Directory (on the server)")}</Label>
+                <Input value={directory} placeholder="D:\\captures\\line1" onChange={(e) => setDirectory(e.target.value)} />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={loop} onCheckedChange={(v) => setLoop(Boolean(v))} />
+                {t("eqIntegration.acq.loop", "Loop the folder (soak test)")}
+              </label>
+            </>
+          ) : (
+            <div className="grid gap-1">
+              <Label>{t("eqIntegration.acq.maxFrames", "Max frames (0 = until stopped)")}</Label>
+              <Input type="number" min={0} value={mockMaxFrames} onChange={(e) => setMockMaxFrames(e.target.value)} />
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("eqIntegration.acq.interval", "Interval (ms)")}</Label>
+              <Input type="number" min={50} value={intervalMs} onChange={(e) => setIntervalMs(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("eqIntegration.machineCode", "Machine code")}</Label>
+              <Input value={machineCode} placeholder="AOI-01" onChange={(e) => setMachineCode(e.target.value)} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={submit} onCheckedChange={(v) => setSubmit(Boolean(v))} />
+            {t("eqIntegration.acq.submitFrames", "Submit each frame as a canonical NTF inspection (requires machine code)")}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={assessQuality} onCheckedChange={(v) => setAssessQuality(Boolean(v))} />
+            {t("eqIntegration.acq.assessQuality", "Run image-quality metrics per frame")}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={doSubmit} disabled={pending}>
+            {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+            <Play className="mr-1 h-4 w-4" />
+            {t("eqIntegration.acq.start", "Start worker")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

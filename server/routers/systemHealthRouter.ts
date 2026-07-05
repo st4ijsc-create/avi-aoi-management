@@ -24,11 +24,43 @@
  * read ops). ctx.user is the source of truth — never the request body.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getStatus as getStoreForwardStatus } from "../services/ot/storeForward";
 import { listSupervisorStatuses, isConnHaEnabled, isOtRunning } from "../services/ot/otManager";
 import { getDinov2ModelHealth } from "../services/aiImageEmbedding";
+import { getInspectionStoreForwardStatus } from "../services/inspection/inspectionStoreForward";
+import { getQueryStats, getSlowQueries, getTopSlowQueries } from "../queryMonitor";
+
+// ── W4-A (doc 27 gap B1 + deferred W1-A/W2-C surfacing) ──────────────────────
+
+interface DbFeatureStatusRow {
+  feature: string;
+  status: string;
+  detail: string | null;
+  checkedAt: Date | string | null;
+}
+
+/**
+ * Read the tiny ops-status table written by migrations 0172/0173/0180
+ * (timescaledb hypertables / retention / integrity FKs). READ-ONLY. On DBs
+ * where the table does not exist (migrations not applied) we return an honest
+ * `available:false` instead of throwing.
+ */
+async function readDbFeatureStatus(): Promise<{ available: boolean; rows: DbFeatureStatusRow[] }> {
+  try {
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (!db) return { available: false, rows: [] };
+    const result = await db.execute(
+      sql`SELECT "feature", "status", "detail", "checkedAt" FROM db_feature_status ORDER BY "feature"`,
+    );
+    return { available: true, rows: Array.from(result as unknown as DbFeatureStatusRow[]) };
+  } catch {
+    return { available: false, rows: [] };
+  }
+}
 
 export const systemHealthRouter = router({
   /**
@@ -61,4 +93,36 @@ export const systemHealthRouter = router({
   aiModelHealth: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .query(() => getDinov2ModelHealth()),
+
+  /**
+   * W4-A (doc 27 gap B1): one READ-ONLY snapshot for the admin "DB & Ingest
+   * health" card —
+   *   • queryMonitor: live slow-query stats from the instrumented drizzle
+   *     client (top offending normalized patterns + recent slow entries).
+   *   • inspectionWal: inspection ingest store-and-forward WAL depth
+   *     (deferred W2-C surfacing).
+   *   • dbFeatures: db_feature_status rows — timescaledb/partitioning/
+   *     integrity state written by migrations 0172/0173/0180 (deferred W1-A).
+   *   • authCache: session-auth cache hit/miss stats (W4-B, gap B4).
+   * Normalized SQL only (params/literals stripped) — still admin-gated because
+   * query shapes reveal schema internals.
+   */
+  dbIngestHealth: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
+    .query(async () => {
+      const dbFeatures = await readDbFeatureStatus();
+      const { getAuthCacheStats } = await import("../services/authSessionCache");
+      const { getInlineGateBreakerState } = await import("../services/aiQualityGate");
+      return {
+        queryMonitor: {
+          ...getQueryStats(),
+          topSlow: getTopSlowQueries(10),
+          recentSlow: getSlowQueries(10),
+        },
+        inspectionWal: getInspectionStoreForwardStatus(),
+        authCache: getAuthCacheStats(),
+        aiInlineGateBreaker: getInlineGateBreakerState(),
+        dbFeatures,
+      };
+    }),
 });

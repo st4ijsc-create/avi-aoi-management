@@ -153,3 +153,44 @@ export async function resolveOrCreateMeasurementPointDefId(
 
   return newId;
 }
+
+// ============================================================================
+// Doc 31 Đợt B (MP3) — __UNMAPPED__ visibility metric
+// ----------------------------------------------------------------------------
+// 68% of measurement points auto-provisioned under __UNMAPPED__ with no way to
+// SEE it. `getUnmappedPointRate` exposes the fraction of measurement results
+// resolving to __UNMAPPED__ defs (overall + per-machine) so a dashboard can
+// surface the problem and drive the bulk-remap tool.
+// ============================================================================
+
+/**
+ * Read-only lookup of the __UNMAPPED__ product model id. Unlike
+ * `ensureUnmappedProductModelId`, this NEVER creates the model — returns
+ * undefined when it does not exist yet (so a fresh DB reports a 0% rate).
+ */
+export async function getUnmappedProductModelId(): Promise<number | undefined> {
+  if (unmappedProductModelIdCache) return unmappedProductModelIdCache;
+  const existing = await db.getProductModelByCode(UNMAPPED_PRODUCT_MODEL_CODE);
+  if (existing) {
+    unmappedProductModelIdCache = existing.id;
+    return existing.id;
+  }
+  return undefined;
+}
+
+export interface UnmappedRateFilter {
+  machineId?: number;
+  productModelId?: number;
+  fromTs?: Date;
+  toTs?: Date;
+}
+
+/**
+ * Unmatched-rate metric: % of measurement results landing under __UNMAPPED__.
+ * Delegates the aggregate SQL to the db layer; resolves the synthetic model id
+ * here so the db layer stays free of a resolver import cycle.
+ */
+export async function getUnmappedPointRate(filter: UnmappedRateFilter = {}) {
+  const unmappedModelId = await getUnmappedProductModelId();
+  return db.computeUnmappedPointRate({ unmappedModelId, ...filter });
+}

@@ -12,6 +12,7 @@
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
 import { readFileSync } from 'fs';
+import { timingSafeEqual } from 'node:crypto';
 import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
 import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
 import { drizzle } from 'drizzle-orm/mysql2';
@@ -165,6 +166,127 @@ export function processAedesPublish(topic: string, payload: Buffer | string | un
   void import('./sensorIngestService')
     .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload))
     .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
+}
+
+/**
+ * Doc 27 W2-C (R12) — per-device MQTT password verification, HASH AT REST.
+ *
+ * Verification order:
+ *   1. `passwordHash` set → bcrypt.compare (the at-rest credential).
+ *   2. else legacy plaintext `password` set → constant-time compare; on match
+ *      return `upgradeHash` so the caller persists { passwordHash, password: null }
+ *      — transparent upgrade-in-place on the device's next successful connect.
+ *   3. neither set → not enforced ({ ok: true }); enabling MQTT_REQUIRE_PASSWORD
+ *      never locks out devices that have no password configured (existing rule).
+ *
+ * NOTE: before migration 0178 the mqtt_clients table had NO password column at
+ * all — the old `mqttClient.password` check could never enforce. 0178 adds both
+ * columns; this function makes the feature real.
+ */
+export async function verifyMqttDevicePassword(
+  client: { password?: string | null; passwordHash?: string | null },
+  supplied: string,
+): Promise<{ ok: boolean; upgradeHash?: string }> {
+  const bcrypt = (await import('bcryptjs')).default;
+  if (client.passwordHash) {
+    const ok = await bcrypt.compare(supplied, client.passwordHash).catch(() => false);
+    return { ok };
+  }
+  if (client.password) {
+    const a = Buffer.from(String(client.password), 'utf8');
+    const b = Buffer.from(supplied, 'utf8');
+    const match = a.length === b.length && timingSafeEqual(a, b);
+    if (!match) return { ok: false };
+    const upgradeHash = await bcrypt.hash(supplied, 10);
+    return { ok: true, upgradeHash };
+  }
+  return { ok: true };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 27 W2-C (C5 — AOI bridge reliability): bounded in-memory RETRY BUFFER for
+// inbound MQTT handlers that write the DB (DEVICE_INFO update, CONFIGURE_ACK
+// log). Before this, a DB hiccup dropped the write with only a console.error.
+// Inspection results do NOT flow inbound over MQTT (inbound = DEVICE_INFO +
+// CONFIGURE_ACK only) — the heavy disk-WAL durability lives on the HTTP ingest
+// path (services/inspection/inspectionStoreForward). This lighter buffer covers
+// the low-stakes metadata writes: retries every 30s with attempt/age/size
+// bounds, drops are counted + warned (never silent).
+// ════════════════════════════════════════════════════════════════════════════
+interface InboundDbRetryEntry {
+  label: string;
+  attempts: number;
+  enqueuedAt: number;
+  run: () => Promise<void>;
+}
+
+const inboundDbRetryQueue: InboundDbRetryEntry[] = [];
+const INBOUND_RETRY_MAX_ENTRIES = 1000;
+const INBOUND_RETRY_MAX_ATTEMPTS = 10;
+const INBOUND_RETRY_MAX_AGE_MS = 60 * 60 * 1000; // 1h
+const INBOUND_RETRY_FLUSH_MS = 30_000;
+let inboundDbRetryTimer: NodeJS.Timeout | null = null;
+let inboundDbRetryDropped = 0;
+
+function queueInboundDbRetry(label: string, run: () => Promise<void>): void {
+  inboundDbRetryQueue.push({ label, attempts: 0, enqueuedAt: Date.now(), run });
+  while (inboundDbRetryQueue.length > INBOUND_RETRY_MAX_ENTRIES) {
+    inboundDbRetryQueue.shift();
+    inboundDbRetryDropped += 1;
+  }
+  if (inboundDbRetryDropped > 0 && inboundDbRetryQueue.length === INBOUND_RETRY_MAX_ENTRIES) {
+    console.warn(`[MQTT] inbound DB-retry buffer full — dropped ${inboundDbRetryDropped} oldest write(s) so far`);
+  }
+  console.warn(`[MQTT] DB write failed for ${label} — queued for retry (queue=${inboundDbRetryQueue.length})`);
+  if (!inboundDbRetryTimer) {
+    inboundDbRetryTimer = setInterval(() => void flushInboundDbRetryQueue(), INBOUND_RETRY_FLUSH_MS);
+    inboundDbRetryTimer.unref?.();
+  }
+}
+
+async function flushInboundDbRetryQueue(): Promise<void> {
+  const now = Date.now();
+  for (let i = 0; i < inboundDbRetryQueue.length; ) {
+    const entry = inboundDbRetryQueue[i];
+    if (now - entry.enqueuedAt > INBOUND_RETRY_MAX_AGE_MS || entry.attempts >= INBOUND_RETRY_MAX_ATTEMPTS) {
+      inboundDbRetryQueue.splice(i, 1);
+      inboundDbRetryDropped += 1;
+      console.warn(`[MQTT] gave up retrying inbound DB write ${entry.label} (attempts=${entry.attempts})`);
+      continue;
+    }
+    try {
+      await entry.run();
+      inboundDbRetryQueue.splice(i, 1);
+      console.log(`[MQTT] retried inbound DB write ${entry.label} OK (queue=${inboundDbRetryQueue.length})`);
+    } catch {
+      entry.attempts += 1;
+      i += 1; // still failing — leave queued, move on
+    }
+  }
+  if (inboundDbRetryQueue.length === 0 && inboundDbRetryTimer) {
+    clearInterval(inboundDbRetryTimer);
+    inboundDbRetryTimer = null;
+  }
+}
+
+/** Observability snapshot for the inbound retry buffer (health/status use). */
+export function getInboundDbRetryStatus(): { queued: number; dropped: number } {
+  return { queued: inboundDbRetryQueue.length, dropped: inboundDbRetryDropped };
+}
+
+/** Test helper — clears the inbound retry buffer + timer. */
+export function _resetInboundDbRetry(): void {
+  inboundDbRetryQueue.length = 0;
+  inboundDbRetryDropped = 0;
+  if (inboundDbRetryTimer) {
+    clearInterval(inboundDbRetryTimer);
+    inboundDbRetryTimer = null;
+  }
+}
+
+/** Test helper — runs one retry flush pass immediately. */
+export async function _flushInboundDbRetryOnce(): Promise<void> {
+  await flushInboundDbRetryQueue();
 }
 
 // MQTT Broker instance (local)
@@ -406,16 +528,29 @@ function setupEventHandlers() {
       if (existingClient.length > 0) {
         const mqttClient = existingClient[0];
 
-        // Phase 1 WS1.3 — per-device password enforcement (opt-in). Only enforced
-        // when this device has a password configured, so enabling the flag never
-        // locks out existing password-less devices. (Stored plaintext per the
-        // existing column design.)
-        if (MQTT_REQUIRE_PASSWORD && mqttClient.password) {
+        // Phase 1 WS1.3 + doc 27 W2-C (R12) — per-device password enforcement
+        // (opt-in), HASH AT REST. Only enforced when this device has a
+        // credential configured, so enabling the flag never locks out existing
+        // password-less devices. Legacy plaintext values are transparently
+        // upgraded to a bcrypt hash on the first successful connect.
+        if (MQTT_REQUIRE_PASSWORD && (mqttClient.passwordHash || mqttClient.password)) {
           const supplied = password?.toString() ?? '';
-          if (supplied !== mqttClient.password) {
+          const verdict = await verifyMqttDevicePassword(mqttClient, supplied);
+          if (!verdict.ok) {
             console.warn(`[MQTT] Auth rejected (bad password) for device ${deviceId}`);
             callback({ returnCode: 4 } as any, false);
             return;
+          }
+          if (verdict.upgradeHash) {
+            try {
+              await db!.update(schema.mqttClients)
+                .set({ passwordHash: verdict.upgradeHash, password: null })
+                .where(eq(schema.mqttClients.id, mqttClient.id));
+              console.log(`[MQTT] Upgraded device ${deviceId} password to hash-at-rest`);
+            } catch (upErr) {
+              // Non-fatal: plaintext stays until the next successful connect retries.
+              console.warn(`[MQTT] Password hash upgrade failed for ${deviceId}:`, (upErr as Error)?.message || upErr);
+            }
           }
         }
 
@@ -595,11 +730,18 @@ function setupEventHandlers() {
             updateData.deviceName = payload.deviceName;
           }
 
-          await db!.update(schema.mqttClients)
-            .set(updateData)
-            .where(eq(schema.mqttClients.deviceId, deviceId));
-
-          console.log(`[MQTT] Updated device info for ${deviceId}:`, Object.keys(updateData).join(', '));
+          // C5: a DB hiccup must not silently drop the write — queue for retry.
+          const writeDeviceInfo = async () => {
+            await db!.update(schema.mqttClients)
+              .set(updateData)
+              .where(eq(schema.mqttClients.deviceId, deviceId));
+          };
+          try {
+            await writeDeviceInfo();
+            console.log(`[MQTT] Updated device info for ${deviceId}:`, Object.keys(updateData).join(', '));
+          } catch {
+            queueInboundDbRetry(`device-info:${deviceId}`, writeDeviceInfo);
+          }
         }
         return;
       }
@@ -610,22 +752,32 @@ function setupEventHandlers() {
         const payload = JSON.parse(packet.payload.toString());
         if (payload.type === 'CONFIGURE_ACK') {
           console.log(`[MQTT] Configure ACK from ${ackMatch[1]}: command=${payload.commandId} status=${payload.status}`);
-          // Look up client for targetClientId
-          const ackClient = await db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
-            .from(schema.mqttClients)
-            .where(eq(schema.mqttClients.deviceId, ackMatch[1]))
-            .limit(1);
-          // Log the ACK
-          await db!.insert(schema.mqttMessageLogs).values({
-            messageType: 'COMMAND',
-            topic: packet.topic,
-            payload: payload,
-            targetClientId: ackClient[0]?.id ?? null,
-            stationId: ackClient[0]?.stationId ?? null,
-            deliveryStatus: payload.status === 'applied' ? 'DELIVERED' : 'FAILED',
-            deliveredAt: new Date(),
-            errorMessage: payload.error || null,
-          });
+          const ackTopic = packet.topic;
+          const ackDeviceId = ackMatch[1];
+          // C5: a DB hiccup must not silently drop the ACK log — queue for retry.
+          const writeAckLog = async () => {
+            // Look up client for targetClientId
+            const ackClient = await db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
+              .from(schema.mqttClients)
+              .where(eq(schema.mqttClients.deviceId, ackDeviceId))
+              .limit(1);
+            // Log the ACK
+            await db!.insert(schema.mqttMessageLogs).values({
+              messageType: 'COMMAND',
+              topic: ackTopic,
+              payload: payload,
+              targetClientId: ackClient[0]?.id ?? null,
+              stationId: ackClient[0]?.stationId ?? null,
+              deliveryStatus: payload.status === 'applied' ? 'DELIVERED' : 'FAILED',
+              deliveredAt: new Date(),
+              errorMessage: payload.error || null,
+            });
+          };
+          try {
+            await writeAckLog();
+          } catch {
+            queueInboundDbRetry(`configure-ack:${ackDeviceId}`, writeAckLog);
+          }
         }
         return;
       }
@@ -797,6 +949,39 @@ export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>
       }
 
       resolve({ success: true });
+    });
+  });
+}
+
+/**
+ * Generic publish on the LOCAL Aedes broker (the broker FactoryAlertSystem devices
+ * connect to). Used by the escalation sweep (doc 27 MB6) to push ALERT_ESCALATION
+ * notices to mobile clients. Returns false (never throws) when the broker is down
+ * so schedulers can degrade gracefully.
+ */
+export async function publishLocalMqtt(
+  topic: string,
+  payload: Record<string, any>,
+  options?: { retain?: boolean; qos?: 0 | 1 | 2 },
+): Promise<boolean> {
+  if (!aedes) {
+    console.warn('[MQTT] publishLocalMqtt skipped — broker not initialized');
+    return false;
+  }
+  return new Promise((resolve) => {
+    const packet = {
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: (options?.qos ?? 1) as 0 | 1 | 2,
+      retain: options?.retain ?? false,
+    };
+    aedes!.publish(packet as any, (err) => {
+      if (err) {
+        console.error(`[MQTT] publishLocalMqtt error on ${topic}:`, err);
+        resolve(false);
+        return;
+      }
+      resolve(true);
     });
   });
 }

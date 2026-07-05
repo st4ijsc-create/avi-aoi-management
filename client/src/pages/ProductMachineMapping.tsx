@@ -22,7 +22,8 @@ import {
 import { navItems } from "@/lib/navigation";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer } from "@/components/patterns";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearch } from "wouter";
 
 export default function ProductMachineMapping() {
   const { t } = useTranslation();
@@ -36,6 +37,22 @@ export default function ProductMachineMapping() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: products } = trpc.productModel.list.useQuery();
+
+  // Doc 31 UX1 (WD-1) — deep-link prefill: /product-mapping?product=<id> preselects
+  // the product and opens the "add mapping" dialog (used by the onboarding wizard's
+  // machine-mapping step). Applied once so it doesn't fight manual edits.
+  const mappingSearch = useSearch();
+  const prefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (prefillAppliedRef.current || !products) return;
+    const id = new URLSearchParams(mappingSearch).get("product");
+    if (!id) { prefillAppliedRef.current = true; return; }
+    if ((products as any[]).some((p) => String(p.id) === id)) {
+      setSelectedProductId(id);
+      setDialogOpen(true);
+    }
+    prefillAppliedRef.current = true;
+  }, [mappingSearch, products]);
   const { data: mappings, refetch: refetchMappings } = trpc.productMachineMapping.list.useQuery();
 
   // Mutations

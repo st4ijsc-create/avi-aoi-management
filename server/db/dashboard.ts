@@ -11,6 +11,7 @@ import {
   type InsertUserCustomDashboard,
   widgetStylePresets,
   type InsertWidgetStylePreset,
+  roleDashboardDefaults,
 } from "../../drizzle/schema";
 
 // ============ USER SETTINGS FUNCTIONS ============
@@ -461,7 +462,7 @@ export async function getUserWidgetStylePresets(userId: number) {
 export async function getSharedWidgetStylePresets() {
   const db = await getDb();
   if (!db) return [];
-  
+
   return db.select()
     .from(widgetStylePresets)
     .where(
@@ -471,4 +472,78 @@ export async function getSharedWidgetStylePresets() {
       )
     )
     .orderBy(desc(widgetStylePresets.usageCount), widgetStylePresets.name);
+}
+
+
+// ============ ROLE DASHBOARD DEFAULTS (doc 27 A12 / W5-C, migration 0184) ============
+//
+// All reads degrade honestly to null/[] when the table is missing (migration
+// 0184 not applied yet) so the "/" front door and the Dashboard never break —
+// resolution then simply falls back to the static defaults.
+
+export async function listRoleDashboardDefaults() {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db.select().from(roleDashboardDefaults).orderBy(roleDashboardDefaults.role);
+  } catch (e) {
+    console.warn('[roleDashboardDefaults] list failed (migration 0184 applied?):', (e as Error).message);
+    return [];
+  }
+}
+
+export async function getRoleDashboardDefault(role: string) {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = await db.select()
+      .from(roleDashboardDefaults)
+      .where(eq(roleDashboardDefaults.role, role))
+      .limit(1);
+    return rows[0] || null;
+  } catch (e) {
+    console.warn('[roleDashboardDefaults] get failed (migration 0184 applied?):', (e as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Upsert (unique per role). Passing null for a target column CLEARS it —
+ * the admin UI sends the full desired state of the binding each time.
+ */
+export async function upsertRoleDashboardDefault(input: {
+  role: string;
+  dashboardTemplateId: number | null;
+  customDashboardId: number | null;
+  landingPath: string | null;
+  updatedBy: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.insert(roleDashboardDefaults)
+    .values({
+      role: input.role,
+      dashboardTemplateId: input.dashboardTemplateId,
+      customDashboardId: input.customDashboardId,
+      landingPath: input.landingPath,
+      updatedBy: input.updatedBy,
+    })
+    .onConflictDoUpdate({
+      target: roleDashboardDefaults.role,
+      set: {
+        dashboardTemplateId: input.dashboardTemplateId,
+        customDashboardId: input.customDashboardId,
+        landingPath: input.landingPath,
+        updatedBy: input.updatedBy,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return row ?? null;
+}
+
+export async function deleteRoleDashboardDefault(role: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(roleDashboardDefaults).where(eq(roleDashboardDefaults.role, role));
 }

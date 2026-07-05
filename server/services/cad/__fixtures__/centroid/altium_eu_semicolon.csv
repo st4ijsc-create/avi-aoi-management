@@ -1,0 +1,6 @@
+Designator;Comment;Layer;Footprint;Center-X(mm);Center-Y(mm);Rotation
+R1;10K;TopLayer;0402;10,50;20,00;0
+R2;4K7;TopLayer;0402;15,50;20,00;90
+C1;100nF;TopLayer;0603;12,00;25,00;180
+U1;MCU;TopLayer;QFN48;30,00;40,00;270
+Q1;NPN;BottomLayer;SOT23;45,25;12,75;0

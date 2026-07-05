@@ -1,0 +1,23 @@
+{
+  "spec_version": 1,
+  "header": {
+    "machine_code": "AVI-02",
+    "serial_number": "SN-2026-000200",
+    "program_name": "MB-X1-BOT",
+    "started_at": "2026-07-04T09:00:00Z",
+    "finished_at": "2026-07-04T09:00:08Z",
+    "result": "OK"
+  },
+  "measurements": [
+    {
+      "point_name": "board",
+      "type": "surface",
+      "result": "OK",
+      "extra": { "surface_score": 0.98, "algo": "avi-clean-check" }
+    }
+  ],
+  "attachments": {
+    "image_dir": ".",
+    "images": ["SN-2026-000200__board.jpg"]
+  }
+}

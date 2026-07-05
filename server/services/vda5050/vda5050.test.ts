@@ -280,7 +280,10 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
 });
 
 describe("VDA5050 Adapter read path + fail-safe", () => {
-  it("State message → telemetry insert via robotIngest", async () => {
+  // Generous timeout: dynamic adapter import + DB-integration insert can
+  // exceed vitest's 5s default under full-suite parallel load (observed
+  // flaking once the suite grew past ~390 files; passes in 2.4s alone).
+  it("State message → telemetry insert via robotIngest", { timeout: 20_000 }, async () => {
     const { Vda5050Adapter } = await import("./vda5050Adapter");
     const adapter = new Vda5050Adapter({
       robotId: 42,

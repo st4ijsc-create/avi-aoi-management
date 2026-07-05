@@ -15,8 +15,49 @@ import {
   productModels,
 } from "../../drizzle/schema";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
+import { resolveFactoryDateWindow } from "../utils/kpi";
+import { getFalseCallEscapeKpi } from "../services/falseCallEscapeService";
 
 export const productionDashboardRouter = router({
+  /**
+   * Doc 27 gap A9 (W5-A) — paired false-call ↔ escape KPI (the AOI tuning
+   * trade-off). falseCallRate = NTF / machine-NG-calls (honest rename of the
+   * old NTF/total `retestRate` proxy); escapeRate comes from station_traces
+   * (stationTriangulation). Definitions, scope caveats and the visual-only
+   * threshold wiring are documented in services/falseCallEscapeService.ts.
+   * Date-only strings are resolved as FACTORY-local calendar days.
+   */
+  getFalseCallEscape: protectedProcedure
+    .input(z.object({
+      startDate: z.string(),
+      endDate: z.string(),
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      productModelId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const window = resolveFactoryDateWindow(input.startDate, input.endDate);
+
+      // Resolve machine scope from hierarchy filters (single machine wins).
+      let machineIds: number[] | undefined;
+      if (input.machineId) {
+        machineIds = [input.machineId];
+      } else if (input.lineId || input.factoryId) {
+        const database = await getDb();
+        machineIds = database
+          ? await resolveMachineIds(database, { factoryId: input.factoryId, lineId: input.lineId })
+          : [];
+      }
+
+      return getFalseCallEscapeKpi({
+        startDate: window.start,
+        endDate: window.end,
+        machineIds,
+        productModelId: input.productModelId,
+      });
+    }),
+
   /**
    * Get per-station production overview.
    * Each row = 1 station with yield, output, retests, top defects.

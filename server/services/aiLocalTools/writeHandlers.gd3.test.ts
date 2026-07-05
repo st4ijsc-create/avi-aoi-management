@@ -119,6 +119,16 @@ vi.mock("../auditTrailService", () => ({
   logUpdate: (...a: unknown[]) => logUpdate(...a),
 }));
 
+// Doc 31 B.6 — set_spec_limits lifecycle gate. Mock the gate resolver so we can
+// drive the development-allow / active-block branches deterministically, and the
+// audit sink so we can assert the direct-edit audit row on allow.
+const resolveThresholdEditGate = vi.fn();
+vi.mock("../thresholdGovernanceService", () => ({
+  resolveThresholdEditGate: (...a: unknown[]) => resolveThresholdEditGate(...a),
+}));
+const systemCreateAuditLog = vi.fn(async () => ({ id: 1 }));
+vi.mock("../../db/system", () => ({ createAuditLog: (...a: unknown[]) => systemCreateAuditLog(...a) }));
+
 import { getTool } from "./toolRegistry";
 import "./writeHandlers"; // registers all GĐ2 + GĐ3a tools
 import { proposeAction, confirmAction } from "../aiCopilotActions";
@@ -225,6 +235,61 @@ describe("update_measurement_point", () => {
   it("zod requires at least one updatable field", () => {
     const r = (tool("update_measurement_point").parameters as any).safeParse({ id: 12 });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("set_spec_limits — Doc 31 B.6 lifecycle gate", () => {
+  const specCtx = ctx(ADMIN);
+
+  it("development product → applies the limit edit + writes a directEdit audit row", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "direct", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("set_spec_limits").execute!({ measurementPointDefId: 12, usl: 9, lsl: 8, target: 8.5 }, specCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ upperLimit: "9", lowerLimit: "8", nominalValue: "8.5" }),
+      expect.objectContaining({ changedBy: 1, changeReason: "AI Copilot" }),
+    );
+    expect(systemCreateAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "threshold.directEdit",
+      details: expect.objectContaining({ source: "aiCopilot.set_spec_limits", gateDecision: "direct" }),
+    }));
+  });
+
+  it("active product → BLOCKS: returns ok:false with an honest message, NO db write, NO throw", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("set_spec_limits").execute!({ measurementPointDefId: 12, usl: 9, lsl: 8, target: 8.5 }, specCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(res.note ?? res.textSummary).toMatch(/approval|duyệt/i);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+    // A block is NOT audited as a successful direct edit.
+    expect(systemCreateAuditLog).not.toHaveBeenCalledWith(expect.objectContaining({ action: "threshold.directEdit" }));
+  });
+
+  it("released dev product → also blocks (gate enforced)", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: true, enforced: true,
+    });
+    const res = await tool("set_spec_limits").execute!({ measurementPointDefId: 12, usl: 9, lsl: 8, target: 8.5 }, specCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+  });
+
+  it("break-glass (enforced=false) → passes through even on an active product", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: false,
+    });
+    const res = await tool("set_spec_limits").execute!({ measurementPointDefId: 12, usl: 9, lsl: 8, target: 8.5 }, specCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalled();
   });
 });
 

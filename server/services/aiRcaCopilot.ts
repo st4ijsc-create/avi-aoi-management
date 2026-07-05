@@ -62,6 +62,9 @@ export interface EvidenceBundle {
   visionDescription: string | null;
   recentConfigChanges: Array<{ at: string; summary: string }>;
   similarIncidents: Array<{ title: string; sourcePath: string; score: number }>;
+  /** V20 (doc 27 Đợt 7.6): recent operator corrections (measurement_corrections —
+   *  W7-B's table, read DYNAMICALLY; [] when the table does not exist yet). */
+  recentCorrections: Array<{ at: string; summary: string }>;
   causalText: string;
   notes: string[];
 }
@@ -96,6 +99,7 @@ function emptyEvidence(): EvidenceBundle {
     visionDescription: null,
     recentConfigChanges: [],
     similarIncidents: [],
+    recentCorrections: [],
     causalText: "",
     notes: [],
   };
@@ -122,7 +126,7 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   const now = new Date();
   const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30d window
 
-  const [pareto, spc, anomaly, vision, audit, rag, causal] = await Promise.allSettled([
+  const [pareto, spc, anomaly, vision, audit, rag, corrections, causal] = await Promise.allSettled([
     // (a) Pareto top defects
     (async () => {
       const { paretoByDefectType } = await import("./paretoAnalysisService");
@@ -161,6 +165,8 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       const r = await retrieveKnowledge(q, 5);
       return (r.citations ?? []).map((c: any) => ({ title: c.title, sourcePath: c.sourcePath, score: c.score }));
     })(),
+    // (g) V20 — recent operator corrections (W7-B's measurement_corrections; fail-open []).
+    fetchRecentCorrections(input.machineId, start),
     // causal-graph context (hybridDefectContext)
     (async () => {
       const { hybridDefectContext } = await import("./aiCausalGraph");
@@ -187,10 +193,53 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   else bundle.notes.push("audit_unavailable");
   if (rag.status === "fulfilled") bundle.similarIncidents = rag.value;
   else bundle.notes.push("rag_unavailable");
+  if (corrections.status === "fulfilled") bundle.recentCorrections = corrections.value;
+  // (no note when corrections are unavailable — the table may legitimately not exist yet)
   if (causal.status === "fulfilled") bundle.causalText = causal.value;
   else bundle.notes.push("causal_unavailable");
 
   return bundle;
+}
+
+/**
+ * V20 (doc 27 Đợt 7.6) — recent OPERATOR CORRECTIONS as RCA evidence: when a human
+ * overrides machine verdicts (NG→OK/NTF …) around the incident window, that is a
+ * strong signal (false-call cluster / mis-threshold). The measurement_corrections
+ * table is created by W7-B and may NOT exist at runtime here — so this reads it
+ * with RAW SQL guarded by try/catch (fail-open []), never a compile-time schema
+ * coupling. READ-ONLY.
+ */
+async function fetchRecentCorrections(
+  machineId: number | undefined,
+  since: Date,
+): Promise<Array<{ at: string; summary: string }>> {
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    const { sql } = await import("drizzle-orm");
+    const machineFilter =
+      machineId != null ? sql` AND pi."machineId" = ${machineId}` : sql``;
+    const result = await (db as any).execute(sql`
+      SELECT mc."createdAt" AS at,
+             mc."originalResult" AS original,
+             mc."correctedResult" AS corrected,
+             mc."reason" AS reason
+      FROM measurement_corrections mc
+      JOIN measurement_results mr ON mr."id" = mc."measurementResultId"
+      JOIN product_inspections pi ON pi."id" = mr."inspectionId"
+      WHERE mc."createdAt" >= ${since}${machineFilter}
+      ORDER BY mc."createdAt" DESC
+      LIMIT 10
+    `);
+    const rows = ((result as { rows?: unknown[] })?.rows ?? result ?? []) as Array<Record<string, unknown>>;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      at: String(r.at ?? ""),
+      summary: `${String(r.original ?? "?")}→${String(r.corrected ?? "?")}${r.reason ? ` (${String(r.reason).slice(0, 120)})` : ""}`,
+    }));
+  } catch {
+    return []; // table absent / query shape mismatch → honest empty, never a throw
+  }
 }
 
 /** READ-ONLY audit query for recent config changes touching this machine. Fail-safe. */
@@ -261,8 +310,10 @@ async function fetchSuspectImageDescription(
     // Newest NG measurement WITH an image, on an inspection for this machine.
     const [row] = await db
       .select({
+        id: measurementResults.id,
         imageKey: measurementResults.imageKey,
         imageUrl: measurementResults.imageUrl,
+        aiAnalysisResult: measurementResults.aiAnalysisResult,
       })
       .from(measurementResults)
       .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
@@ -275,6 +326,14 @@ async function fetchSuspectImageDescription(
       )
       .orderBy(desc(measurementResults.id))
       .limit(1);
+
+    // V20 — REUSE a persisted VLM description (measurement_results.aiAnalysisResult,
+    // written by the analyze pipeline or a previous RCA run) instead of re-running
+    // the VL model: the doc-27 finding was "output VLM không được tái dùng".
+    const stored = typeof row?.aiAnalysisResult === "string" ? row.aiAnalysisResult.trim() : "";
+    if (stored && !/VLM analysis unavailable|Detailed VLM description unavailable/i.test(stored)) {
+      return stored;
+    }
 
     const storageKey = row?.imageKey || row?.imageUrl;
     if (!storageKey) return null; // no suspect image on record → honest null
@@ -293,6 +352,21 @@ async function fetchSuspectImageDescription(
     // describeDefect degrades to a static "VLM unavailable" string when no vision is
     // configured — treat that as no evidence rather than fabricated vision.
     if (!visionDesc || /VLM analysis unavailable|Detailed VLM description unavailable/i.test(visionDesc)) return null;
+
+    // V20 — PERSIST the fresh per-NG description so advisors/inbox/next RCA runs can
+    // reuse it without re-running the VL model. Additive best-effort UPDATE: it only
+    // fills the column when the row had no stored description; failure never masks
+    // the evidence we already have.
+    if (row?.id != null) {
+      try {
+        await db
+          .update(measurementResults)
+          .set({ aiAnalysisResult: visionDesc.slice(0, 4000) })
+          .where(eq(measurementResults.id, row.id));
+      } catch {
+        /* persistence is best-effort */
+      }
+    }
     return visionDesc;
   } catch {
     return null; // fail-safe: no vision evidence rather than a throw
@@ -353,6 +427,7 @@ function buildEvidenceDigest(ev: EvidenceBundle): string {
   if (ev.visionDescription) lines.push(`Vision: ${ev.visionDescription}`);
   if (ev.recentConfigChanges.length) lines.push(`Recent config changes: ${ev.recentConfigChanges.map((c) => c.summary).join("; ")}`);
   if (ev.similarIncidents.length) lines.push(`Similar past incidents: ${ev.similarIncidents.map((s) => s.title).join("; ")}`);
+  if (ev.recentCorrections.length) lines.push(`Recent operator corrections: ${ev.recentCorrections.map((c) => c.summary).join("; ")}`);
   if (ev.causalText) lines.push(`Causal graph:\n${ev.causalText}`);
   return lines.join("\n");
 }

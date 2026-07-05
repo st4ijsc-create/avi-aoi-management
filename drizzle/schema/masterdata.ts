@@ -95,6 +95,11 @@ export const materials = pgTable("materials", {
   mpn: varchar("mpn", { length: 128 }),                    // manufacturer part number
   manufacturer: varchar("manufacturer", { length: 256 }),
   packageType: varchar("packageType", { length: 64 }),     // e.g. 0402, QFN-48, SOT-23
+  // Doc 29 §1.2 / W8-A (0191): normalized package master link. Soft ref ->
+  // component_packages.id (componentLibrary.ts), NULLABLE — packageType stays
+  // the free-text legacy field; 0191 backfills packageId best-effort where
+  // packageType ≈ component_packages.code (mirrors the 0134 materialId backfill).
+  packageId: integer("packageId"),
   msl: varchar("msl", { length: 8 }),                      // moisture sensitivity level: 1..6
   rohs: boolean("rohs").default(true).notNull(),
   unit: varchar("unit", { length: 16 }).default("pcs").notNull(),
@@ -110,6 +115,7 @@ export const materials = pgTable("materials", {
   index("idx_materials_code").on(table.code),
   index("idx_materials_class").on(table.materialClass),
   index("idx_materials_mpn").on(table.mpn),
+  index("idx_materials_package").on(table.packageId),
   index("idx_materials_supplier").on(table.defaultSupplierCode),
   index("idx_materials_active").on(table.isActive),
 ]);

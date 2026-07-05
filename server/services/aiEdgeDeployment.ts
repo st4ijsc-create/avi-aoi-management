@@ -55,11 +55,28 @@ export async function packageModelForEdge(deploymentId: number) {
   try {
     // Get model version to find the file
     const version = await db.getModelVersionForDeployment(deployment.modelId, deployment.modelVersion ?? "");
-    if (!version) throw new Error(`Model version ${deployment.modelVersion} not found`);
+    if (!version) {
+      throw new Error(
+        `Model version '${deployment.modelVersion ?? "(none)"}' not found for model ${deployment.modelId} — ` +
+          `register/upload the version before packaging (deployment ${deploymentId} left FAILED).`,
+      );
+    }
 
-    // Get the model file URL from storage
+    // ── W7-D (doc 27 gap V19) — VERIFY THE ARTIFACT BEFORE PACKAGING ─────────
+    // Previously this silently depended on the file existing (raw ENOENT /
+    // fetch error). Now: fail LOUD with an actionable message when the storage
+    // key is absent, the file is missing on disk, or the bytes do not match the
+    // version's recorded sha256 (model_versions.fileHash, when present).
     const v = version as any;
-    const { url } = await storageGet(v.storageKey || v.fileKey || v.filePath || "");
+    const storageKey: string = v.storageKey || v.fileKey || v.filePath || "";
+    if (!storageKey) {
+      throw new Error(
+        `Model ${deployment.modelId} v${deployment.modelVersion} has NO storage key/filePath on its version row — ` +
+          `the artifact was never uploaded. Re-upload the model file, then re-package (deployment ${deploymentId} left FAILED).`,
+      );
+    }
+
+    const { url } = await storageGet(storageKey);
     // Read file from local filesystem if local mode
     let modelBuffer: Buffer;
     if (url.startsWith("/uploads/")) {
@@ -67,15 +84,41 @@ export async function packageModelForEdge(deploymentId: number) {
         ? path.resolve(process.env.LOCAL_STORAGE_DIR)
         : path.join(process.cwd(), "uploads");
       const filePath = path.join(uploadsRoot, url.replace("/uploads/", ""));
+      if (!fs.existsSync(filePath)) {
+        throw new Error(
+          `Model artifact MISSING on disk: ${filePath} (model ${deployment.modelId} v${deployment.modelVersion}, key ${storageKey}). ` +
+            `The version row points at a file that does not exist — re-upload the model version or fix LOCAL_STORAGE_DIR, ` +
+            `then re-package (deployment ${deploymentId} left FAILED).`,
+        );
+      }
       modelBuffer = await fs.promises.readFile(filePath);
     } else {
       const resp = await fetch(url);
-      if (!resp.ok) throw new Error("Failed to download model file");
+      if (!resp.ok) {
+        throw new Error(
+          `Model artifact NOT retrievable from storage (HTTP ${resp.status} for key ${storageKey}, ` +
+            `model ${deployment.modelId} v${deployment.modelVersion}) — verify the object exists in the store, ` +
+            `then re-package (deployment ${deploymentId} left FAILED).`,
+        );
+      }
       modelBuffer = Buffer.from(await resp.arrayBuffer());
+    }
+
+    // Checksum gate: when the version row carries a recorded sha256, the bytes
+    // we are about to ship MUST match it (corrupt/overwritten artifact ⇒ abort).
+    const artifactHash = crypto.createHash("sha256").update(modelBuffer).digest("hex");
+    const recordedHash = typeof v.fileHash === "string" && v.fileHash ? v.fileHash.toLowerCase() : null;
+    if (recordedHash && recordedHash !== artifactHash) {
+      throw new Error(
+        `Model artifact CHECKSUM MISMATCH for model ${deployment.modelId} v${deployment.modelVersion}: ` +
+          `recorded sha256 ${recordedHash}, actual ${artifactHash}. The stored file is corrupt or was overwritten — ` +
+          `re-upload the version before packaging (deployment ${deploymentId} left FAILED).`,
+      );
     }
 
     // Create deployment package with metadata
     const packageMeta = {
+      artifactHash,
       modelId: deployment.modelId,
       modelVersion: deployment.modelVersion,
       deviceId: deployment.deviceId,
@@ -121,7 +164,12 @@ export async function packageModelForEdge(deploymentId: number) {
 }
 
 /**
- * Update deployment status (called by edge device)
+ * Update deployment status (called by edge device).
+ *
+ * NOTE (V19): this legacy path carries NO hash, so it can never stamp
+ * deployConfig.deployVerifiedAt — a DEPLOYED set through here is an UNVERIFIED
+ * status report. Devices should use machineApi.confirmDeployment (hash-checked;
+ * stamps deployVerifiedAt) — the Step-5 wizard shows the difference honestly.
  */
 export async function updateDeploymentStatus(
   deploymentId: number,

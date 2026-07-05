@@ -29,7 +29,8 @@ import {
   FileText,
   FileSpreadsheet,
   File,
-  ChevronDown
+  ChevronDown,
+  Printer
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import {
@@ -491,7 +492,14 @@ export default function Reports() {
           <RefreshCw className="h-4 w-4 mr-2" />
           {t('common.refresh')}
         </Button>
-        
+
+        {/* F12 (doc 27 Đợt 5 / W5-E) — browser print of the visible report area
+            (@media print rules in index.css hide the app chrome). */}
+        <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Printer className="h-4 w-4 mr-2" />
+          {t('reports.print')}
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" disabled={isExporting}>
@@ -523,6 +531,8 @@ export default function Reports() {
         </DropdownMenu>
       </div>
 
+      {/* F12 — print-area wraps the report output (summary + active tab) */}
+      <div className="print-area">
       {/* Summary Cards */}
       <div ref={reportRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Card>
@@ -1271,6 +1281,7 @@ export default function Reports() {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
     </DashboardLayout>
   );
 }

@@ -26,6 +26,24 @@
  */
 import express from "express";
 import { sql } from "drizzle-orm";
+// Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
+import {
+  finalYield,
+  fpyFromFirstInspections,
+  roundPct,
+  finalYieldPctSql,
+  fpyAggregateSql,
+  factoryDateTruncSql,
+  factoryHourOfDaySql,
+  factoryDowSql,
+  executeRows,
+} from "../utils/kpi";
+
+// Shorthands over the raw `pi."inspectionTime"` column used by the queries
+// in this file (all buckets must be factory-local — gap A2).
+const piTs = sql`pi."inspectionTime"`;
+const piLocalDay = () => factoryDateTruncSql("day", piTs);
+const piLocalHourOfDay = () => factoryHourOfDaySql(piTs);
 
 // Helper: parse integer query param
 function parseIntParam(val: unknown): number | undefined {
@@ -271,10 +289,7 @@ export function registerExternalInspectionRoutes(
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS "okCount",
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS "ngCount",
           SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS "ntfCount",
-          COALESCE(ROUND(
-            SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0
-            / NULLIF(COUNT(DISTINCT pi.id), 0), 2
-          ), 0) AS "yieldRate",
+          COALESCE(${finalYieldPctSql(sql`pi."overallResult"`, { countExpr: sql`COUNT(DISTINCT pi.id)` })}, 0) AS "yieldRate",
           MIN(pi."inspectionTime") AS "firstInspection",
           MAX(pi."inspectionTime") AS "lastInspection",
           COALESCE(AVG(pi."cycleTime"), 0) AS "avgCycleTime"
@@ -328,9 +343,12 @@ export function registerExternalInspectionRoutes(
           dateRange: { startDate: startStr, endDate: endStr },
           totals: {
             ...totals,
-            yieldRate: totals.totalInspections > 0
-              ? Number(((totals.okCount / totals.totalInspections) * 100).toFixed(2))
-              : 0,
+            // Canonical FINAL yield (NTF = pass, decision #4).
+            yieldRate: roundPct(finalYield({
+              ok: totals.okCount,
+              ntf: totals.ntfCount,
+              total: totals.totalInspections,
+            }), 2),
           },
           details: data,
         },
@@ -383,13 +401,11 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
-      // Build date truncation expression
-      const dateTrunc =
-        groupBy === "hour"
-          ? sql`date_trunc('hour', pi."inspectionTime")`
-          : groupBy === "week"
-            ? sql`date_trunc('week', pi."inspectionTime")`
-            : sql`date_trunc('day', pi."inspectionTime")`;
+      // Build date truncation expression — factory-local buckets (gap A2).
+      const dateTrunc = factoryDateTruncSql(
+        groupBy === "hour" ? "hour" : groupBy === "week" ? "week" : "day",
+        piTs,
+      );
 
       // For measurement-level trend (per point)
       if (pointDefId) {
@@ -465,10 +481,7 @@ export function registerExternalInspectionRoutes(
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS "okCount",
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS "ngCount",
           SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS "ntfCount",
-          COALESCE(ROUND(
-            SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0
-            / NULLIF(COUNT(DISTINCT pi.id), 0), 2
-          ), 0) AS "yieldRate"
+          COALESCE(${finalYieldPctSql(sql`pi."overallResult"`, { countExpr: sql`COUNT(DISTINCT pi.id)` })}, 0) AS "yieldRate"
         FROM product_inspections pi
         LEFT JOIN machines m ON pi."machineId" = m.id
         WHERE pi."inspectionTime" >= ${startStr}::timestamp
@@ -1233,18 +1246,20 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
+      // Factory-local day buckets (gap A2) + canonical FINAL yield (decision #4).
       const result = await db.execute(sql`
         SELECT
-          date_trunc('day', pi."inspectionTime") AS day,
+          ${piLocalDay()} AS day,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
-          SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng
+          SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng,
+          SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS ntf
         FROM product_inspections pi
         WHERE pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY date_trunc('day', pi."inspectionTime")
+        GROUP BY 1
         ORDER BY day ASC
       `);
 
@@ -1254,7 +1269,11 @@ export function registerExternalInspectionRoutes(
         total: Number(r.total) || 0,
         ok: Number(r.ok) || 0,
         ng: Number(r.ng) || 0,
-        yield: Number(r.total) > 0 ? (Number(r.ok) / Number(r.total)) * 100 : 0,
+        yield: finalYield({
+          ok: Number(r.ok) || 0,
+          ntf: Number(r.ntf) || 0,
+          total: Number(r.total) || 0,
+        }),
       }));
 
       const yields = dailyData.map(d => d.yield);
@@ -1461,26 +1480,28 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
+      // Factory-local day buckets (gap A2) + canonical FINAL yield (decision #4).
       const result = await db.execute(sql`
         SELECT
-          date_trunc('day', pi."inspectionTime") AS day,
+          ${piLocalDay()} AS day,
           COUNT(*) AS total,
-          SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok
+          SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
+          SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS ntf
         FROM product_inspections pi
         WHERE pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY date_trunc('day', pi."inspectionTime")
+        GROUP BY 1
         ORDER BY day ASC
       `);
 
       const rows = (result as any).rows || (result as any);
-      const yields = (rows as any[]).map((r: any) => {
-        const total = Number(r.total) || 0;
-        const ok = Number(r.ok) || 0;
-        return total > 0 ? (ok / total) * 100 : 0;
-      });
+      const yields = (rows as any[]).map((r: any) => finalYield({
+        ok: Number(r.ok) || 0,
+        ntf: Number(r.ntf) || 0,
+        total: Number(r.total) || 0,
+      }));
 
       const n = yields.length;
       if (n < 2) {
@@ -1599,14 +1620,16 @@ export function registerExternalInspectionRoutes(
         ORDER BY m.code
       `);
 
-      // By Shift (Morning 6-14, Afternoon 14-22, Night 22-6)
+      // By Shift (Morning 6-14, Afternoon 14-22, Night 22-6) — classified by
+      // FACTORY-LOCAL hour (gap A2).
+      const shiftCase = sql`CASE
+            WHEN ${piLocalHourOfDay()} >= 6 AND ${piLocalHourOfDay()} < 14 THEN 'Morning'
+            WHEN ${piLocalHourOfDay()} >= 14 AND ${piLocalHourOfDay()} < 22 THEN 'Afternoon'
+            ELSE 'Night'
+          END`;
       const shiftResult = await db.execute(sql`
         SELECT
-          CASE
-            WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 6 AND EXTRACT(HOUR FROM pi."inspectionTime") < 14 THEN 'Morning'
-            WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 14 AND EXTRACT(HOUR FROM pi."inspectionTime") < 22 THEN 'Afternoon'
-            ELSE 'Night'
-          END AS shift,
+          ${shiftCase} AS shift,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng,
@@ -1617,21 +1640,13 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
         GROUP BY shift
-        ORDER BY CASE
-          WHEN CASE WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 6 AND EXTRACT(HOUR FROM pi."inspectionTime") < 14 THEN 'Morning'
-                    WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 14 AND EXTRACT(HOUR FROM pi."inspectionTime") < 22 THEN 'Afternoon'
-                    ELSE 'Night' END = 'Morning' THEN 1
-          WHEN CASE WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 6 AND EXTRACT(HOUR FROM pi."inspectionTime") < 14 THEN 'Morning'
-                    WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 14 AND EXTRACT(HOUR FROM pi."inspectionTime") < 22 THEN 'Afternoon'
-                    ELSE 'Night' END = 'Afternoon' THEN 2
-          ELSE 3
-        END
+        ORDER BY CASE ${shiftCase} WHEN 'Morning' THEN 1 WHEN 'Afternoon' THEN 2 ELSE 3 END
       `);
 
-      // By Day of Week
+      // By Day of Week — factory-local (gap A2)
       const dowResult = await db.execute(sql`
         SELECT
-          EXTRACT(DOW FROM pi."inspectionTime") AS dow,
+          ${factoryDowSql(piTs)} AS dow,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng,
@@ -1641,7 +1656,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY EXTRACT(DOW FROM pi."inspectionTime")
+        GROUP BY 1
         ORDER BY dow
       `);
 
@@ -1654,7 +1669,9 @@ export function registerExternalInspectionRoutes(
       const mapRow = (r: any) => {
         const total = Number(r.total) || 0;
         const ok = Number(r.ok) || 0;
-        return { total, ok, ng: Number(r.ng) || 0, ntf: Number(r.ntf) || 0, yield: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0 };
+        const ntf = Number(r.ntf) || 0;
+        // Canonical FINAL yield (NTF = pass, decision #4).
+        return { total, ok, ng: Number(r.ng) || 0, ntf, yield: roundPct(finalYield({ ok, ntf, total }), 2) };
       };
 
       res.json({
@@ -1866,41 +1883,63 @@ export function registerExternalInspectionRoutes(
           ${pmFilter}
       `);
 
+      // TRUE FPY (gap A3, decision #4): first inspection per serial within
+      // the window; NTF/retests are not first passes. The `fpy` wire field
+      // used to be ok/total (that value is FINAL yield territory and is now
+      // exposed as `finalYield`).
+      const fpyResult = await db.execute(fpyAggregateSql({
+        where: sql`product_inspections."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})
+          AND product_inspections."inspectionTime" >= ${startStr}::timestamp
+          AND product_inspections."inspectionTime" <= ${endStr}::timestamp
+          ${resolvedProductModelId ? sql`AND product_inspections."productModelId" = ${resolvedProductModelId}` : sql``}`,
+      }));
+
       const overallRows = (overallResult as any).rows || (overallResult as any);
       const ov = (overallRows as any[])[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
       const total = Number(ov.total) || 0;
       const ok = Number(ov.ok) || 0;
       const ng = Number(ov.ng) || 0;
       const ntf = Number(ov.ntf) || 0;
-      const fpy = total > 0 ? (ok / total) * 100 : 0;
+      const fpyRow = executeRows(fpyResult)[0] || {};
+      const fpy = fpyFromFirstInspections({
+        firstPass: Number(fpyRow.first_pass) || 0,
+        firstTotal: Number(fpyRow.first_total) || 0,
+      });
+      const finalYieldPct = finalYield({ ok, ntf, total });
+      // NTF share of all inspections (schema has no true retest linkage — see utils/kpi.ts).
       const retestRate = total > 0 ? (ntf / total) * 100 : 0;
 
-      // Daily yield for trend analysis
+      // Daily yield for trend analysis — factory-local days (gap A2),
+      // canonical FINAL yield (decision #4).
       const dailyResult = await db.execute(sql`
         SELECT
-          date_trunc('day', pi."inspectionTime") AS day,
+          ${piLocalDay()} AS day,
           COUNT(*) AS total,
-          SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok
+          SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
+          SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS ntf
         FROM product_inspections pi
         WHERE pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${pmFilter}
-        GROUP BY date_trunc('day', pi."inspectionTime")
+        GROUP BY 1
         ORDER BY day ASC
       `);
 
       const dailyRows = (dailyResult as any).rows || (dailyResult as any);
-      const dailyYields = (dailyRows as any[]).map((r: any) => {
-        const t = Number(r.total) || 0;
-        const o = Number(r.ok) || 0;
-        return { day: String(r.day), yield: t > 0 ? (o / t) * 100 : 0 };
-      });
+      const dailyYields = (dailyRows as any[]).map((r: any) => ({
+        day: String(r.day),
+        yield: finalYield({
+          ok: Number(r.ok) || 0,
+          ntf: Number(r.ntf) || 0,
+          total: Number(r.total) || 0,
+        }),
+      }));
 
-      // Hourly pattern for shift analysis
+      // Hourly pattern for shift analysis — factory-local hour (gap A2)
       const hourlyResult = await db.execute(sql`
         SELECT
-          EXTRACT(HOUR FROM pi."inspectionTime") AS hour,
+          ${piLocalHourOfDay()} AS hour,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng
         FROM product_inspections pi
@@ -1908,7 +1947,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${pmFilter}
-        GROUP BY EXTRACT(HOUR FROM pi."inspectionTime")
+        GROUP BY 1
         ORDER BY hour
       `);
 
@@ -2006,7 +2045,13 @@ export function registerExternalInspectionRoutes(
         success: true,
         data: {
           dateRange: { startDate: startStr, endDate: endStr },
-          overallStats: { total, ok, ng, ntf, fpy: Math.round(fpy * 100) / 100, retestRate: Math.round(retestRate * 100) / 100 },
+          overallStats: {
+            total, ok, ng, ntf,
+            // fpy = TRUE first-pass yield (decision #4); finalYield = (OK+NTF)/total.
+            fpy: roundPct(fpy, 2),
+            finalYield: roundPct(finalYieldPct, 2),
+            retestRate: roundPct(retestRate, 2),
+          },
           alerts,
           patterns,
           recommendations,
@@ -2053,9 +2098,10 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
+      // Factory-local hour buckets (gap A2).
       const result = await db.execute(sql`
         SELECT
-          date_trunc('hour', pi."inspectionTime") AS period,
+          ${factoryDateTruncSql('hour', piTs)} AS period,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng
         FROM product_inspections pi
@@ -2063,7 +2109,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY date_trunc('hour', pi."inspectionTime")
+        GROUP BY 1
         HAVING COUNT(*) > 0
         ORDER BY period
       `);
@@ -2146,9 +2192,10 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
+      // Factory-local day buckets (gap A2).
       const result = await db.execute(sql`
         SELECT
-          date_trunc('day', pi."inspectionTime") AS day,
+          ${piLocalDay()} AS day,
           mr."pointDefId",
           mpd.code AS "pointCode",
           mpd.name AS "pointName",
@@ -2165,7 +2212,7 @@ export function registerExternalInspectionRoutes(
           AND pi."inspectionTime" <= ${endStr}::timestamp
           AND mr.result = 'NG'
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY date_trunc('day', pi."inspectionTime"), mr."pointDefId", mpd.code, mpd.name, pm.id, pm.code, pm.name
+        GROUP BY 1, mr."pointDefId", mpd.code, mpd.name, pm.id, pm.code, pm.name
         ORDER BY day, mpd.code
       `);
 
@@ -2248,12 +2295,12 @@ export function registerExternalInspectionRoutes(
       const endStr = endDate.toISOString();
       const pmFilter = resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``;
 
-      // Man (Shift NG rates)
+      // Man (Shift NG rates) — factory-local hour (gap A2)
       const shiftResult = await db.execute(sql`
         SELECT
           CASE
-            WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 6 AND EXTRACT(HOUR FROM pi."inspectionTime") < 14 THEN 'Morning'
-            WHEN EXTRACT(HOUR FROM pi."inspectionTime") >= 14 AND EXTRACT(HOUR FROM pi."inspectionTime") < 22 THEN 'Afternoon'
+            WHEN ${piLocalHourOfDay()} >= 6 AND ${piLocalHourOfDay()} < 14 THEN 'Morning'
+            WHEN ${piLocalHourOfDay()} >= 14 AND ${piLocalHourOfDay()} < 22 THEN 'Afternoon'
             ELSE 'Night'
           END AS shift,
           COUNT(*) AS total,
@@ -2402,18 +2449,20 @@ export function registerExternalInspectionRoutes(
       const startStr = startDate.toISOString();
       const endStr = endDate.toISOString();
 
+      // Factory-local day buckets (gap A2) + canonical FINAL yield (decision #4).
       const result = await db.execute(sql`
         SELECT
-          date_trunc('day', pi."inspectionTime") AS day,
+          ${piLocalDay()} AS day,
           COUNT(*) AS total,
           SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) AS ok,
-          SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng
+          SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) AS ng,
+          SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END) AS ntf
         FROM product_inspections pi
         WHERE pi."machineId" IN (SELECT id FROM machines WHERE "stationId" = ${stationId})
           AND pi."inspectionTime" >= ${startStr}::timestamp
           AND pi."inspectionTime" <= ${endStr}::timestamp
           ${resolvedProductModelId ? sql`AND pi."productModelId" = ${resolvedProductModelId}` : sql``}
-        GROUP BY date_trunc('day', pi."inspectionTime")
+        GROUP BY 1
         ORDER BY day ASC
       `);
 
@@ -2423,7 +2472,11 @@ export function registerExternalInspectionRoutes(
         total: Number(r.total) || 0,
         ok: Number(r.ok) || 0,
         ng: Number(r.ng) || 0,
-        yield: Number(r.total) > 0 ? (Number(r.ok) / Number(r.total)) * 100 : 0,
+        yield: finalYield({
+          ok: Number(r.ok) || 0,
+          ntf: Number(r.ntf) || 0,
+          total: Number(r.total) || 0,
+        }),
       }));
 
       const yields = dailyData.map(d => d.yield);
@@ -2636,14 +2689,15 @@ export function registerExternalInspectionRoutes(
       const curOk = Number(cur.ok) || 0;
       const curNg = Number(cur.ng) || 0;
       const curNtf = Number(cur.ntf) || 0;
-      const curYield = curTotal > 0 ? (curOk / curTotal) * 100 : 0;
+      // Canonical FINAL yield (NTF = pass, decision #4).
+      const curYield = finalYield({ ok: curOk, ntf: curNtf, total: curTotal });
       const curCycleTime = Number(cur.avgCycleTime) || 0;
 
       const prevTotal = Number(prev.total) || 0;
       const prevOk = Number(prev.ok) || 0;
       const prevNg = Number(prev.ng) || 0;
       const prevNtf = Number(prev.ntf) || 0;
-      const prevYield = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;
+      const prevYield = finalYield({ ok: prevOk, ntf: prevNtf, total: prevTotal });
       const prevCycleTime = Number(prev.avgCycleTime) || 0;
 
       const yieldChange = curYield - prevYield;
@@ -2677,6 +2731,171 @@ export function registerExternalInspectionRoutes(
     } catch (error: any) {
       console.error("[External] inspections/yield-comparison error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get yield comparison data" });
+    }
+  });
+
+  // ================================================================
+  // POST /api/external/alerts/:alertId/acknowledge-v2   (doc 27 MB5/MB6)
+  // POST /api/external/alerts/:alertId/resolve-v2
+  //
+  // Additive v2 of the legacy /acknowledge and /resolve endpoints (which live in
+  // _core/index.ts and stay untouched for third parties). Differences:
+  //  - records a COMMENT ("comment"/"ackComment"/"resolutionNote"/"note" body field)
+  //  - records the acting identity even under master-key auth: the Bearer user wins
+  //    (req.externalUser), otherwise the caller-supplied display name
+  //    ("acknowledgedBy"/"resolvedBy" body field) is stored in *ByName columns —
+  //    never a hardcoded placeholder.
+  // alertId format: alert-{id} (alert_history), conn-{id} (mqtt_connection_alerts),
+  // mqtt-{id} (mqtt_alert_history, resolve only — it has no ack concept).
+  // ================================================================
+  app.post("/api/external/alerts/:alertId/acknowledge-v2", validateExternalAuth, async (req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { alertHistory, mqttConnectionAlerts } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      const alertId = req.params.alertId;
+      // Live per-inspection NG (ALT-*) and NG-rate (NGRATE-*) alerts are ephemeral MQTT
+      // events with no ack-able DB row. Accept as a 200 no-op so the app's postAction
+      // succeeds; the acknowledgement stays client/local-only.
+      if (/^(ALT|NGRATE)-/.test(alertId)) {
+        return res.json({
+          success: true,
+          message: "Live inspection alert acknowledged (no server-side alert record to persist)",
+          alertId,
+          acknowledgedAt: new Date().toISOString(),
+          persisted: false,
+          localOnly: true,
+        });
+      }
+      const dashIdx = alertId.indexOf("-");
+      const source = dashIdx > 0 ? alertId.slice(0, dashIdx) : "";
+      const numId = parseInt(alertId.slice(dashIdx + 1), 10);
+      if (!source || isNaN(numId)) {
+        return res.status(400).json({ success: false, message: "Invalid alertId format. Expected: alert-{id} or conn-{id}" });
+      }
+
+      const user = (req as any).externalUser;
+      const userId = user?.id ?? null;
+      const actorName: string | null =
+        (user?.name || user?.username) ??
+        (typeof req.body?.acknowledgedBy === "string" && req.body.acknowledgedBy.trim() ? req.body.acknowledgedBy.trim().substring(0, 255) : null);
+      const comment: string | null =
+        typeof req.body?.comment === "string" && req.body.comment.trim() ? req.body.comment.trim().substring(0, 2000)
+        : typeof req.body?.ackComment === "string" && req.body.ackComment.trim() ? req.body.ackComment.trim().substring(0, 2000)
+        : null;
+      const now = new Date();
+
+      if (source === "alert") {
+        const updated = await database.update(alertHistory)
+          .set({ acknowledgedAt: now, acknowledgedBy: userId, acknowledgedByName: actorName, ackComment: comment })
+          .where(eqOp(alertHistory.id, numId))
+          .returning({ id: alertHistory.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "Alert not found" });
+      } else if (source === "conn") {
+        const updated = await database.update(mqttConnectionAlerts)
+          .set({ isAcknowledged: true, acknowledgedAt: now, acknowledgedBy: userId, acknowledgedByName: actorName, ackComment: comment, updatedAt: now })
+          .where(eqOp(mqttConnectionAlerts.id, numId))
+          .returning({ id: mqttConnectionAlerts.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "Connection alert not found" });
+      } else {
+        return res.status(400).json({ success: false, message: "Acknowledge is supported for alert-{id} and conn-{id} types" });
+      }
+
+      res.json({
+        success: true,
+        message: "Alert acknowledged",
+        alertId,
+        acknowledgedAt: now.toISOString(),
+        acknowledgedBy: actorName,
+        comment,
+      });
+    } catch (error: any) {
+      console.error("[External] alert acknowledge-v2 error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to acknowledge alert" });
+    }
+  });
+
+  app.post("/api/external/alerts/:alertId/resolve-v2", validateExternalAuth, async (req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { mqttAlertHistory, mqttConnectionAlerts, mqttNgRateAlertHistory } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      const alertId = req.params.alertId;
+      // Ephemeral per-inspection NG (ALT-*) and business-id NG-rate (NGRATE-*, uppercase)
+      // alerts have no resolvable DB row reachable via this endpoint. Accept as a 200
+      // no-op so the app's postAction succeeds; the resolve stays local-only. NOTE: the
+      // match is case-SENSITIVE — the lowercase `ngrate-{id}` server id (carried as
+      // serverAlertId in the NG-rate payload) DOES resolve below.
+      if (/^(ALT|NGRATE)-/.test(alertId)) {
+        return res.json({
+          success: true,
+          message: "Live inspection alert resolved (no server-side alert record to persist)",
+          alertId,
+          resolvedAt: new Date().toISOString(),
+          persisted: false,
+          localOnly: true,
+        });
+      }
+      const dashIdx = alertId.indexOf("-");
+      const source = dashIdx > 0 ? alertId.slice(0, dashIdx) : "";
+      const numId = parseInt(alertId.slice(dashIdx + 1), 10);
+      if (!source || isNaN(numId)) {
+        return res.status(400).json({ success: false, message: "Invalid alertId format. Expected: mqtt-{id}, conn-{id} or ngrate-{id}" });
+      }
+
+      const user = (req as any).externalUser;
+      const userId = user?.id ?? null;
+      const actorName: string | null =
+        (user?.name || user?.username) ??
+        (typeof req.body?.resolvedBy === "string" && req.body.resolvedBy.trim() ? req.body.resolvedBy.trim().substring(0, 255) : null);
+      const resolutionNote: string | null =
+        typeof req.body?.resolutionNote === "string" && req.body.resolutionNote.trim() ? req.body.resolutionNote.trim().substring(0, 2000)
+        : typeof req.body?.resolution === "string" && req.body.resolution.trim() ? req.body.resolution.trim().substring(0, 2000)
+        : typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().substring(0, 2000)
+        : null;
+      const now = new Date();
+
+      if (source === "mqtt") {
+        const updated = await database.update(mqttAlertHistory)
+          .set({ isResolved: true, resolvedAt: now, resolvedBy: userId, resolvedByName: actorName, resolutionNote })
+          .where(eqOp(mqttAlertHistory.id, numId))
+          .returning({ id: mqttAlertHistory.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "MQTT alert not found" });
+      } else if (source === "conn") {
+        const updated = await database.update(mqttConnectionAlerts)
+          .set({ isResolved: true, resolvedAt: now, resolvedByName: actorName, resolutionNote, updatedAt: now })
+          .where(eqOp(mqttConnectionAlerts.id, numId))
+          .returning({ id: mqttConnectionAlerts.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "Connection alert not found" });
+      } else if (source === "ngrate") {
+        // NG-rate threshold alert — row pre-persisted by ngRateAlertService with
+        // serverAlertId=`ngrate-{id}`. (No resolvedByName column on this table.)
+        const updated = await database.update(mqttNgRateAlertHistory)
+          .set({ isResolved: true, resolvedAt: now, resolvedBy: userId, resolutionNote })
+          .where(eqOp(mqttNgRateAlertHistory.id, numId))
+          .returning({ id: mqttNgRateAlertHistory.id });
+        if (updated.length === 0) return res.status(404).json({ success: false, message: "NG-rate alert not found" });
+      } else {
+        return res.status(400).json({ success: false, message: "Resolve is supported for mqtt-{id}, conn-{id} and ngrate-{id} types" });
+      }
+
+      res.json({
+        success: true,
+        message: "Alert resolved",
+        alertId,
+        resolvedAt: now.toISOString(),
+        resolvedBy: actorName,
+        resolutionNote,
+      });
+    } catch (error: any) {
+      console.error("[External] alert resolve-v2 error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to resolve alert" });
     }
   });
 }

@@ -1,10 +1,25 @@
 // Schema domain: Inspection tables
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json, jsonb } from "drizzle-orm/pg-core";
+//
+// W3-A (doc 27 §2 M1/M11, migrations 0179/0180): FK declarations below mirror
+// what 0180 enforces at the DB. ⚠ CONDITIONAL-ENFORCEMENT CAVEAT: when 0172 has
+// converted product_inspections/measurement_results to TimescaleDB hypertables,
+// the DB CANNOT hold an FK **to** a hypertable — 0180 then SKIPS
+// fk_measurement_results_inspection (recorded in db_feature_status) and the
+// weekly integrityScanService orphan scan covers it. The .references() here are
+// metadata-only for runtime queries (migrations are hand-written SQL).
+import { sql } from "drizzle-orm";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json, jsonb, real } from "drizzle-orm/pg-core";
 import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
+import { machines } from "./hierarchy";
+import { measurementPointDefs, defectCatalog } from "./product";
 
 export const productInspections = pgTable("product_inspections", {
   id: serial("id").primaryKey(),
-  machineId: integer("machineId").notNull(),
+  // W3-A (0180): fk_product_inspections_machine, ON DELETE RESTRICT — a machine
+  // with inspection history cannot be hard-deleted (deletes are soft anyway).
+  // High-volume table: FK adds a cheap per-insert PK lookup on `machines`.
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
   productModelId: integer("productModelId"), // Liên kết với Product Model
   corporateCode: varchar("corporateCode", { length: 50 }), // Mã tập đoàn
   factoryCode: varchar("factoryCode", { length: 50 }), // Mã nhà máy
@@ -12,7 +27,10 @@ export const productInspections = pgTable("product_inspections", {
   lineCode: varchar("lineCode", { length: 50 }), // Mã dây chuyền
   stageCode: varchar("stageCode", { length: 50 }), // Mã công đoạn
   productionOrderCode: varchar("productionOrderCode", { length: 100 }), // Mã lệnh sản xuất
-  operatorId: varchar("operatorId", { length: 50 }), // Mã công nhân vận hành
+  // Mã công nhân vận hành — doc 29 §3.2: re-defined as the BADGE CODE the machine
+  // sends (operator_badges.badgeCode). Kept varchar (hypertable — no type rewrite);
+  // resolve to users.id via operatorBadgeService / the stamped operatorUserId below.
+  operatorId: varchar("operatorId", { length: 50 }),
   serialNumber: varchar("serialNumber", { length: 100 }).notNull(),
   productModel: varchar("productModel", { length: 100 }), // Backward compatibility
   batchNumber: varchar("batchNumber", { length: 100 }),
@@ -41,6 +59,13 @@ export const productInspections = pgTable("product_inspections", {
     ensembleResults?: Array<{ modelId: number; topLabel: string; confidence: number }>;
     processingTimeMs?: number;
     reviewReason?: string;
+    // Doc 27 W7-A (V18) — honest AI-down marker from the INLINE ingest path:
+    // 'ai_unavailable' (circuit breaker open) | 'ai_error' (gate threw).
+    // Present ⇒ aiDecision=NEEDS_REVIEW was routed WITHOUT an inference verdict
+    // (aiConfidence/aiModelId stay NULL).
+    skipped?: "ai_unavailable" | "ai_error";
+    inline?: boolean;
+    source?: string;
   }>(),
   // ============ P4.C G16 — Specialized subforms ============
   // Discriminator (e.g. "FAI" | "IQC" | "OQC" | "AOI" | "FCT" ...). NULLABLE for back-compat.
@@ -48,6 +73,33 @@ export const productInspections = pgTable("product_inspections", {
   // Polymorphic payload validated server-side via inspectionVariant.validatePayload.
   variantPayload: jsonb("variantPayload").$type<Record<string, unknown>>(),
   // ============ end G16 ============
+  // Doc 27 W2-C/W2-D (gap C4/M8, migration 0178) — SOFT commissioning gate tag.
+  // "commissioning" = the machine had no signed commissioning record at ingest
+  // time (submission accepted but TAGGED, never rejected). NULL = production.
+  ingestMode: varchar("ingestMode", { length: 20 }),
+  // Doc 27 W7-A (Đợt 7, migration 0187) — Đợt-3 deferred stamping: the RELEASED
+  // inspection_program_releases.id in force for (productModelId, machineId) at
+  // ingest time. SOFT ref (product_inspections may be a hypertable — see file
+  // header; 0182/0183 convention). NULL = no released program / legacy row.
+  // Stamped fail-open by processInspectionSubmission via getActiveRelease.
+  programReleaseId: integer("programReleaseId"),
+  // Doc 27 W7-B (gap V3, migration 0188) — heuristic false-call likelihood
+  // (0..1) from ntfPredictorService (repeat-offender + near-limit margin +
+  // machine trend). NULL = not scored. ADVISORY ONLY: pre-sorts the operator
+  // verify queue and drives the "Nghi báo giả" badge — never changes a verdict.
+  ntfScore: real("ntfScore"),
+  // ── Doc 29 §2.3/§3.2 — W8-B (migration 0192, hypertable-safe metadata-only adds) ──
+  // Panel multi-up: the machine-reported panel serial/identifier (st4i header
+  // panel_id) and 1-based board index inside the panel (product_panel_boards.
+  // boardIndex of the product's panel def). NULL = single-board / legacy ingest;
+  // analytics must stay null-safe (COALESCE(boardIndex, 1)).
+  panelSerial: varchar("panelSerial", { length: 100 }),
+  boardIndex: integer("boardIndex"),
+  // Operator/badge master: users.id resolved from operatorId (the BADGE CODE the
+  // machine sends — see operator_badges) at ingest time. Stamped fail-open by
+  // processInspectionSubmission via operatorBadgeService; NULL = badge unknown/
+  // unassigned or pre-0192 row (those resolve on read).
+  operatorUserId: integer("operatorUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -75,8 +127,18 @@ export type InsertProductInspection = typeof productInspections.$inferInsert;
  */
 export const measurementResults = pgTable("measurement_results", {
   id: serial("id").primaryKey(),
-  inspectionId: integer("inspectionId").notNull(),
-  pointDefId: integer("pointDefId").notNull(),
+  // W3-A (0180): fk_measurement_results_inspection, ON DELETE CASCADE — results
+  // die with their inspection. ⚠ DB enforcement is CONDITIONAL: skipped when the
+  // two tables are hypertables (Timescale forbids FKs referencing a hypertable);
+  // the weekly orphan scan covers it there. See file header.
+  inspectionId: integer("inspectionId").notNull()
+    .references(() => productInspections.id, { onDelete: "cascade" }),
+  // W3-A (0180): fk_measurement_results_point_def, ON DELETE RESTRICT (column is
+  // NOT NULL so SET NULL is impossible; point defs are app-soft-deleted anyway).
+  // Legacy hard-deleted defs left orphans → 0180 may leave this NOT VALID until
+  // repaired (see integrity_scan_results).
+  pointDefId: integer("pointDefId").notNull()
+    .references(() => measurementPointDefs.id, { onDelete: "restrict" }),
   measuredValue: decimal("measuredValue", { precision: 15, scale: 6 }),
   measuredValueText: varchar("measuredValueText", { length: 255 }), // Giá trị dạng texts
   result: overallResultEnum("result").notNull(),
@@ -99,9 +161,16 @@ export const measurementResults = pgTable("measurement_results", {
   valueOffsetY: decimal("valueOffsetY", { precision: 15, scale: 6 }),
   valueTilt: decimal("valueTilt", { precision: 15, scale: 6 }),
   valueThickness: decimal("valueThickness", { precision: 15, scale: 6 }),
-  // Optional FK to defect_catalog.id (no DB constraint — soft reference for back-compat).
-  defectCatalogId: integer("defectCatalogId"),
+  // W3-A (doc 27 M11, 0180): now a REAL FK — fk_measurement_results_defect_catalog,
+  // ON DELETE SET NULL (deleting a catalog entry detaches, never breaks, results).
+  defectCatalogId: integer("defectCatalogId")
+    .references(() => defectCatalog.id, { onDelete: "set null" }),
   defectSeverity: varchar("defectSeverity", { length: 20 }),
+  // Doc 31 Đợt B (OP3, migration 0194) — the RAW defect code as reported by the
+  // machine/AI, retained even when it did NOT resolve to a defect_catalog row
+  // (then defectCatalogId stays NULL). Honest, never-dropped fallback so an
+  // unmatched code can be recovered/curated later (see unmatched_defect_codes).
+  defectCodeRaw: varchar("defectCodeRaw", { length: 50 }),
   // ============ Defect location on board image (pixel coordinates) ============
   // Bounding box of defect region on the full board/panel image.
   // Enables: visual overlay in UI, AI training data (YOLO/COCO format), defect density heatmap.
@@ -121,6 +190,9 @@ export const measurementResults = pgTable("measurement_results", {
   // Composite indexes for optimized queries
   index("idx_results_inspection_result").on(table.inspectionId, table.result),
   index("idx_results_point_result").on(table.pointDefId, table.result),
+  // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
+  // is deleted (partial — only rows that actually reference a defect).
+  index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;

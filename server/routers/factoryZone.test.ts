@@ -26,8 +26,19 @@ const { getFactoryZones, createFactoryZone, updateFactoryZone, deleteFactoryZone
 }));
 vi.mock("../db", () => ({ getFactoryZones, createFactoryZone, updateFactoryZone, deleteFactoryZone }));
 
-// Bỏ qua audit fire-and-forget để không kéo theo db thật
-vi.mock("../services/auditTrailService", () => ({ logCrudOperation: vi.fn() }));
+// Bỏ qua audit fire-and-forget để không kéo theo db thật (W3-B: router giờ
+// import thêm logCreate/logUpdate/logDelete/createAuditContext/ENTITY_TYPES)
+vi.mock("../services/auditTrailService", () => ({
+  logCrudOperation: vi.fn(async () => ({ id: 1 })),
+  logCreate: vi.fn(async () => {}),
+  logUpdate: vi.fn(async () => {}),
+  logDelete: vi.fn(async () => {}),
+  createAuditContext: vi.fn(() => ({})),
+  ENTITY_TYPES: {
+    FACTORY: "factory", WORKSHOP: "workshop", LINE: "line",
+    STATION: "station", MACHINE: "machine",
+  },
+}));
 
 import { factoryZoneRouter } from "./hierarchyRouters";
 

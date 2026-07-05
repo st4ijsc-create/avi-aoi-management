@@ -22,6 +22,7 @@ import { Gauge, LogIn, Inbox, CalendarClock, ArrowRight, LayoutDashboard, Lock }
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { FirstRunTour } from "@/components/FirstRunTour";
 import { landingPathForRole } from "@/lib/roleLanding";
+import { resolveRoleLanding } from "@/lib/roleLandingResolve";
 import { MetricCard, ToolTile } from "@/components/patterns";
 import { BRAND } from "@/config/brand";
 import { DOMAINS } from "@/lib/domains";
@@ -99,6 +100,7 @@ export default function Home() {
   const { t } = useTranslation();
   const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: setupCheck } = trpc.auth.checkSetupRequired.useQuery();
 
   const BrandMark = BRAND.logoIcon;
@@ -116,12 +118,19 @@ export default function Home() {
   // single consistent landing. This overview page stays for logged-out / setup, or
   // when a signed-in user deliberately navigates here with ?stay=1. Roles with no
   // dedicated home (landingPathForRole → "/") stay put, so there is no redirect loop.
+  // W5-C (doc 27 A12): an admin-set per-role landingPath (role_dashboard_defaults)
+  // takes precedence; resolveRoleLanding falls back to the static map on any
+  // error/timeout, so this can only ever add a short (<2s) wait, never break "/".
   useEffect(() => {
     if (loading || !isAuthenticated) return;
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stay")) return;
-    const dest = landingPathForRole(user?.role);
-    if (dest !== "/") setLocation(dest, { replace: true });
-  }, [loading, isAuthenticated, user?.role, setLocation]);
+    let cancelled = false;
+    void (async () => {
+      const dest = await resolveRoleLanding(utils, user?.role);
+      if (!cancelled && dest !== "/") setLocation(dest, { replace: true });
+    })();
+    return () => { cancelled = true; };
+  }, [loading, isAuthenticated, user?.role, setLocation, utils]);
 
   return (
     <div className="min-h-screen bg-background">

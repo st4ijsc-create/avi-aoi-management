@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { eq, and, desc, asc, gte, lte, sql, inArray, isNotNull, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, sql, inArray, isNotNull, isNull, SQL } from "drizzle-orm";
 import {
   spcConfigurations,
   InsertSpcConfiguration,
@@ -372,6 +372,41 @@ export async function getActiveViolationCount(filters: {
 }
 
 // ============ CPK HISTORY ============
+
+/**
+ * Doc 31 OP9 — enumerate measurement points that can have a capability index
+ * computed: active, not soft-deleted, with BOTH a lower and upper spec limit.
+ * Used by the periodic cpkSnapshotScheduler. Returns the minimal columns needed
+ * to compute + attribute a snapshot.
+ */
+export async function listPointDefsWithSpecLimits(): Promise<Array<{
+  id: number;
+  productModelId: number;
+  workstationId: number | null;
+  lowerLimit: string | null;
+  upperLimit: string | null;
+  nominalValue: string | null;
+}>> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: measurementPointDefs.id,
+      productModelId: measurementPointDefs.productModelId,
+      workstationId: measurementPointDefs.workstationId,
+      lowerLimit: measurementPointDefs.lowerLimit,
+      upperLimit: measurementPointDefs.upperLimit,
+      nominalValue: measurementPointDefs.nominalValue,
+    })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.isActive, true),
+      isNull(measurementPointDefs.deletedAt),
+      isNotNull(measurementPointDefs.lowerLimit),
+      isNotNull(measurementPointDefs.upperLimit),
+    ));
+  return rows as any;
+}
 
 export async function saveCpkHistory(data: InsertCpkHistory) {
   const db = await getDb();

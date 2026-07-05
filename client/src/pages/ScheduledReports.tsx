@@ -62,7 +62,11 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Bell,
+  History,
+  RotateCcw,
+  Webhook
 } from 'lucide-react';
 
 interface ScheduledReport {
@@ -75,6 +79,136 @@ interface ScheduledReport {
   lastSentAt: Date | null;
   nextScheduledAt: Date | null;
   createdAt: Date;
+}
+
+// ── W5-D (doc 27 A11) — delivery-channel config UI state ─────────────────────
+
+interface DeliveryChannelsConfig {
+  email?: { enabled: boolean };
+  webhook?: { enabled: boolean; url: string; secret?: string };
+  inApp?: { enabled: boolean; userIds?: number[] };
+}
+
+interface ChannelFormState {
+  emailEnabled: boolean;
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  webhookSecret: string;
+  inAppEnabled: boolean;
+}
+
+const DEFAULT_CHANNEL_FORM: ChannelFormState = {
+  emailEnabled: true,
+  webhookEnabled: false,
+  webhookUrl: '',
+  webhookSecret: '',
+  inAppEnabled: false,
+};
+
+function channelFormFromConfig(config: DeliveryChannelsConfig | null | undefined): ChannelFormState {
+  if (!config) return { ...DEFAULT_CHANNEL_FORM };
+  return {
+    emailEnabled: config.email?.enabled ?? false,
+    webhookEnabled: config.webhook?.enabled ?? false,
+    webhookUrl: config.webhook?.url ?? '',
+    webhookSecret: config.webhook?.secret ?? '',
+    inAppEnabled: config.inApp?.enabled ?? false,
+  };
+}
+
+/**
+ * Form → config. Returns `null` for the untouched default (email-only, no
+ * webhook/in-app) — the server treats null/absent as LEGACY direct e-mail,
+ * so default behaviour stays byte-identical.
+ */
+function channelFormToConfig(f: ChannelFormState): DeliveryChannelsConfig | null {
+  if (f.emailEnabled && !f.webhookEnabled && !f.inAppEnabled) return null;
+  const config: DeliveryChannelsConfig = { email: { enabled: f.emailEnabled } };
+  if (f.webhookEnabled) {
+    config.webhook = {
+      enabled: true,
+      url: f.webhookUrl.trim(),
+      ...(f.webhookSecret.trim() ? { secret: f.webhookSecret.trim() } : {}),
+    };
+  }
+  if (f.inAppEnabled) config.inApp = { enabled: true };
+  return config;
+}
+
+function channelBadges(config: DeliveryChannelsConfig | null | undefined): string[] {
+  if (!config) return [];
+  const out: string[] = [];
+  if (config.email?.enabled) out.push('email');
+  if (config.webhook?.enabled) out.push('webhook');
+  if (config.inApp?.enabled) out.push('in_app');
+  return out;
+}
+
+/** Shared channel-config fields (create dialog + per-report dialog). */
+function DeliveryChannelFields({
+  value,
+  onChange,
+}: {
+  value: ChannelFormState;
+  onChange: (v: ChannelFormState) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <p className="text-sm font-medium">{t('scheduledReports.deliveryChannels', 'Delivery channels')}</p>
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-2 font-normal">
+          <Mail className="h-4 w-4 text-muted-foreground" />
+          {t('scheduledReports.channelEmail', 'Email (recipients above)')}
+        </Label>
+        <Switch
+          checked={value.emailEnabled}
+          onCheckedChange={(v) => onChange({ ...value, emailEnabled: v })}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-2 font-normal">
+          <Webhook className="h-4 w-4 text-muted-foreground" />
+          {t('scheduledReports.channelWebhook', 'Webhook')}
+        </Label>
+        <Switch
+          checked={value.webhookEnabled}
+          onCheckedChange={(v) => onChange({ ...value, webhookEnabled: v })}
+        />
+      </div>
+      {value.webhookEnabled && (
+        <div className="space-y-2 pl-6">
+          <Input
+            placeholder="https://example.com/hooks/report"
+            value={value.webhookUrl}
+            onChange={(e) => onChange({ ...value, webhookUrl: e.target.value })}
+          />
+          <Input
+            placeholder={t('scheduledReports.webhookSecretPlaceholder', 'HMAC secret (optional)')}
+            type="password"
+            value={value.webhookSecret}
+            onChange={(e) => onChange({ ...value, webhookSecret: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('scheduledReports.webhookSecretHint', 'Requests are signed with X-Report-Signature: sha256=HMAC(secret, body)')}
+          </p>
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-2 font-normal">
+          <Bell className="h-4 w-4 text-muted-foreground" />
+          {t('scheduledReports.channelInApp', 'In-app notification')}
+        </Label>
+        <Switch
+          checked={value.inAppEnabled}
+          onCheckedChange={(v) => onChange({ ...value, inAppEnabled: v })}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t('scheduledReports.deliveryChannelsHint', 'Email-only with nothing else = default direct email (no retry ledger). Enabling any channel routes delivery through the retry queue.')}
+      </p>
+    </div>
+  );
 }
 
 export function ScheduledReportsContent() {
@@ -93,9 +227,30 @@ export function ScheduledReportsContent() {
     recipients: '',
     isActive: true,
   });
+  // W5-D (A11) — delivery channels for the create dialog (default = legacy email).
+  const [newChannels, setNewChannels] = useState<ChannelFormState>({ ...DEFAULT_CHANNEL_FORM });
+  // Per-report channel-config dialog + deliveries-history drawer.
+  const [channelTarget, setChannelTarget] = useState<{ id: number; name: string } | null>(null);
+  const [channelForm, setChannelForm] = useState<ChannelFormState>({ ...DEFAULT_CHANNEL_FORM });
+  const [deliveriesTarget, setDeliveriesTarget] = useState<{ id: number; name: string } | null>(null);
 
   // Fetch scheduled reports
   const { data: reports, refetch, isLoading } = trpc.scheduledReport.list.useQuery();
+
+  // W5-D (A11) — delivery history for the open drawer.
+  const deliveriesQuery = trpc.scheduledReport.deliveries.useQuery(
+    { reportId: deliveriesTarget?.id ?? 0 },
+    { enabled: deliveriesTarget != null },
+  );
+  const retryDeliveryMutation = trpc.scheduledReport.retryDelivery.useMutation({
+    onSuccess: () => {
+      toast.success(t('scheduledReports.retrySuccess', 'Delivery requeued'));
+      deliveriesQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(t('scheduledReports.retryError', 'Retry failed'), { description: error.message });
+    },
+  });
 
   // Mutations
   const createMutation = trpc.scheduledReport.create.useMutation({
@@ -109,6 +264,7 @@ export function ScheduledReportsContent() {
         recipients: '',
         isActive: true,
       });
+      setNewChannels({ ...DEFAULT_CHANNEL_FORM });
       refetch();
     },
     onError: (error) => {
@@ -171,13 +327,42 @@ export function ScheduledReportsContent() {
       return;
     }
 
+    // W5-D (A11): webhook channel needs a valid URL before submit.
+    if (newChannels.webhookEnabled && !/^https?:\/\/.+/i.test(newChannels.webhookUrl.trim())) {
+      toast.error(t('scheduledReports.webhookUrlRequired', 'Webhook URL is required (http/https)'));
+      return;
+    }
+    const deliveryChannels = channelFormToConfig(newChannels);
+
     createMutation.mutate({
       name: newReport.name,
       description: newReport.description || undefined,
       schedule: newReport.frequency.toUpperCase() as 'DAILY' | 'WEEKLY' | 'MONTHLY',
       recipients,
       isActive: newReport.isActive,
+      // null → omit: keep the legacy email-only default untouched.
+      ...(deliveryChannels ? { deliveryChannels } : {}),
     });
+  };
+
+  // W5-D (A11) — open / save the per-report delivery-channels dialog.
+  const openChannelDialog = (report: { id: number; name: string; deliveryChannels?: DeliveryChannelsConfig | null }) => {
+    setChannelForm(channelFormFromConfig(report.deliveryChannels));
+    setChannelTarget({ id: report.id, name: report.name });
+  };
+
+  const handleSaveChannels = () => {
+    if (!channelTarget) return;
+    if (channelForm.webhookEnabled && !/^https?:\/\/.+/i.test(channelForm.webhookUrl.trim())) {
+      toast.error(t('scheduledReports.webhookUrlRequired', 'Webhook URL is required (http/https)'));
+      return;
+    }
+    updateMutation.mutate({
+      id: channelTarget.id,
+      // null clears back to the legacy email-only default on the server.
+      deliveryChannels: channelFormToConfig(channelForm),
+    });
+    setChannelTarget(null);
   };
 
   const handleDelete = (id: number) => {
@@ -309,6 +494,8 @@ export function ScheduledReportsContent() {
                       {t('scheduledReports.recipientHint')}
                     </p>
                   </div>
+                  {/* W5-D (A11) — pluggable delivery channels */}
+                  <DeliveryChannelFields value={newChannels} onChange={setNewChannels} />
                   <div className="flex items-center justify-between">
                     <Label>{t('scheduledReports.activateNow')}</Label>
                     <Switch
@@ -460,6 +647,16 @@ export function ScheduledReportsContent() {
                             </Badge>
                           )}
                         </div>
+                        {/* W5-D (A11) — configured channel badges (absent = legacy email) */}
+                        {channelBadges((report as any).deliveryChannels).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {channelBadges((report as any).deliveryChannels).map((ch) => (
+                              <Badge key={ch} variant="outline" className="text-[10px] uppercase">
+                                {ch === 'in_app' ? t('scheduledReports.channelInAppShort', 'in-app') : ch}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {report.isActive ? (
@@ -493,6 +690,22 @@ export function ScheduledReportsContent() {
                             title={t('scheduledReports.sendNow')}
                           >
                             <Send className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openChannelDialog(report as any)}
+                            title={t('scheduledReports.configureChannels', 'Delivery channels')}
+                          >
+                            <Webhook className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeliveriesTarget({ id: report.id, name: report.name })}
+                            title={t('scheduledReports.deliveriesTitle', 'Delivery history')}
+                          >
+                            <History className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -574,6 +787,130 @@ export function ScheduledReportsContent() {
             </div>
           </CardContent>
         </Card>
+
+        {/* W5-D (A11) — per-report delivery-channel config */}
+        <Dialog open={channelTarget != null} onOpenChange={(open) => { if (!open) setChannelTarget(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('scheduledReports.configureChannels', 'Delivery channels')}</DialogTitle>
+              <DialogDescription>{channelTarget?.name}</DialogDescription>
+            </DialogHeader>
+            <DeliveryChannelFields value={channelForm} onChange={setChannelForm} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setChannelTarget(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleSaveChannels} disabled={updateMutation.isPending}>
+                {t('common.save', 'Save')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* W5-D (A11) — deliveries-history drawer (per-channel status/attempts/lastError) */}
+        <Dialog open={deliveriesTarget != null} onOpenChange={(open) => { if (!open) setDeliveriesTarget(null); }}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
+            <DialogHeader>
+              <DialogTitle>{t('scheduledReports.deliveriesTitle', 'Delivery history')}</DialogTitle>
+              <DialogDescription>{deliveriesTarget?.name}</DialogDescription>
+            </DialogHeader>
+            {deliveriesQuery.isLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : !deliveriesQuery.data || deliveriesQuery.data.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t('scheduledReports.deliveriesEmpty', 'No channel deliveries yet — this report may use the default direct email path.')}
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('scheduledReports.deliveryChannel', 'Channel')}</TableHead>
+                    <TableHead>{t('scheduledReports.status')}</TableHead>
+                    <TableHead>{t('scheduledReports.deliveryAttempts', 'Attempts')}</TableHead>
+                    <TableHead>{t('scheduledReports.deliveryLastError', 'Last error')}</TableHead>
+                    <TableHead>{t('scheduledReports.lastSent')}</TableHead>
+                    <TableHead className="text-right">{t('scheduledReports.actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deliveriesQuery.data.map((d: any) => (
+                    <TableRow key={d.id}>
+                      <TableCell>
+                        <Badge variant="outline" className="uppercase text-[10px]">
+                          {d.channel === 'in_app' ? t('scheduledReports.channelInAppShort', 'in-app') : d.channel}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {d.status === 'sent' ? (
+                          <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            {t('scheduledReports.deliverySent', 'Sent')}
+                          </Badge>
+                        ) : d.status === 'dead' ? (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                            <XCircle className="mr-1 h-3 w-3" />
+                            {t('scheduledReports.deliveryDead', 'Dead')}
+                          </Badge>
+                        ) : d.status === 'failed' ? (
+                          <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
+                            <AlertTriangle className="mr-1 h-3 w-3" />
+                            {t('scheduledReports.deliveryFailed', 'Retrying')}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">
+                            <Clock className="mr-1 h-3 w-3" />
+                            {t('scheduledReports.deliveryQueued', 'Queued')}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">{d.attempts}</TableCell>
+                      <TableCell className="max-w-[220px]">
+                        {d.lastError ? (
+                          <span className="block truncate text-xs text-muted-foreground" title={d.lastError}>
+                            {d.lastError}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {d.sentAt
+                          ? new Date(d.sentAt).toLocaleString('vi-VN')
+                          : new Date(d.createdAt).toLocaleString('vi-VN')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {(d.status === 'dead' || d.status === 'failed') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => retryDeliveryMutation.mutate({ deliveryId: d.id })}
+                            disabled={retryDeliveryMutation.isPending}
+                            title={t('scheduledReports.retryDelivery', 'Retry now')}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => deliveriesQuery.refetch()}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {t('common.refresh')}
+              </Button>
+              <Button variant="outline" onClick={() => setDeliveriesTarget(null)}>
+                {t('common.close')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Delete confirmation */}
         <AlertDialog open={deleteTarget != null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

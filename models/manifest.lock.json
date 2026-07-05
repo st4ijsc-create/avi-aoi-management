@@ -1,0 +1,8 @@
+{
+  "dinov2-small": {
+    "sha256": "83141175ec78b4ff9a2bb58a4c7c264ba0054d1c2e122e5a8114b79a8d4179ea",
+    "sizeBytes": 88459888,
+    "url": "https://huggingface.co/Xenova/dinov2-small/resolve/main/onnx/model.onnx",
+    "fetchedAt": "2026-07-04T10:43:11.248Z"
+  }
+}

@@ -882,6 +882,52 @@ export const aoiPackageRouter = router({
             console.error("[wipIngest] Failed to import wipIngestService:", (e as any)?.message ?? e);
           }
 
+          // V1/V5/V18 (doc 27 Đợt 7.1 — W7-A): INLINE AI quality gate on the
+          // package ingest path. Flag-gated (AI_INLINE_GATE_ENABLED, default
+          // OFF) fire-and-forget via setImmediate — the commit ACK is never
+          // delayed. Gate image = the first NG measurement's file from the
+          // already-loaded ZIP (else the first with a file), extracted lazily
+          // INSIDE the hook. Per-machine/product enablement, the AI-down
+          // circuit breaker and the NEEDS_REVIEW fallback live inside
+          // runInlineQualityGate (same write shape as the on-demand UI path).
+          try {
+            const inlineGateOn = (process.env.AI_INLINE_GATE_ENABLED ?? "false").toLowerCase() === "true";
+            if (inlineGateOn && linkedInspectionId) {
+              const withFile = normalizedMeasurements.filter((p) => p.fileName);
+              const gatePoint = withFile.find((p) => p.result === "NG") ?? withFile[0];
+              const gateFileName = gatePoint?.fileName;
+              if (gateFileName) {
+                const gateInspectionId = linkedInspectionId;
+                const gateProductModelId = resolvedProductModel?.id ?? null;
+                const gateMachineId = machine.id;
+                setImmediate(() => {
+                  import("../services/aiQualityGate")
+                    .then(({ runInlineQualityGate }) =>
+                      runInlineQualityGate({
+                        inspectionId: gateInspectionId,
+                        machineId: gateMachineId,
+                        productModelId: gateProductModelId,
+                        source: "aoi_package",
+                        getImage: async () => {
+                          const f = zip.file(`images/${gateFileName}`) || zip.file(gateFileName);
+                          if (!f) return null;
+                          return Buffer.from(await f.async("uint8array"));
+                        },
+                      }),
+                    )
+                    .catch((err) => {
+                      console.error(
+                        `[InlineGate] post-commit AI gate failed for package ${pkg.packageId}:`,
+                        (err as Error)?.message ?? err,
+                      );
+                    });
+                });
+              }
+            }
+          } catch (e) {
+            console.error("[InlineGate] failed to schedule inline gate:", (e as any)?.message ?? e);
+          }
+
           return {
             success: true,
             alreadyCommitted: false,

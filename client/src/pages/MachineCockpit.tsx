@@ -155,6 +155,43 @@ function KV({ k, v, mono }: { k: React.ReactNode; v: React.ReactNode; mono?: boo
   );
 }
 
+// ── W8-A (doc 27 M13 / doc 29 §4.2): capabilities-vs-deviceType validation badge ──
+// Fresh re-check via machine.checkCapabilities; honest three-state:
+// validated OK / warnings (errors or unknown vendor keys) / nothing declared.
+function CapabilitiesValidationBadge({ machineId }: { machineId: number }) {
+  const { t } = useTranslation();
+  const q = trpc.machine.checkCapabilities.useQuery({ id: machineId }, { retry: false, staleTime: 60_000 });
+  if (q.isLoading || q.isError || !q.data) return null;
+  const fresh = q.data.fresh;
+  if (fresh.skipped) {
+    return (
+      <Badge variant="outline" className="text-[10px] text-muted-foreground">
+        {t("cockpit.capsNone", "No declared capabilities")}
+      </Badge>
+    );
+  }
+  const warnCount = fresh.errors.length + fresh.unknownKeys.length;
+  if (fresh.ok && warnCount === 0) {
+    return (
+      <Badge className="bg-emerald-500 text-[10px] text-white">
+        {t("cockpit.capsOk", "Capabilities validated")} · {fresh.deviceTypeKey}
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="destructive"
+      className="text-[10px]"
+      title={[
+        ...fresh.errors.map((e: any) => `${e.path}: expected ${e.expected}, got ${e.got}`),
+        ...(fresh.unknownKeys.length ? [`${t("cockpit.capsUnknownKeys", "vendor keys")}: ${fresh.unknownKeys.join(", ")}`] : []),
+      ].join("\n")}
+    >
+      {t("cockpit.capsWarn", "Capabilities drift")} · {fresh.errors.length}/{fresh.unknownKeys.length}
+    </Badge>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 3D — glTF via drei <Gltf>, else a primitive block (same fallback as the twin).
 // ════════════════════════════════════════════════════════════════════════════
@@ -436,6 +473,8 @@ export default function MachineCockpit() {
 
                 {/* Resolved capability */}
                 <SectionCard icon={<Activity className="h-4 w-4" />} title={t("cockpit.capability", "Resolved capability")}>
+                  {/* W8-A (M13): declared-capabilities validation vs deviceTypes contract */}
+                  <div className="mb-1"><CapabilitiesValidationBadge machineId={machineId} /></div>
                   <SectionValue available={d.resolvedCapability.available}>
                     {d.resolvedCapability.value && (
                       <div className="space-y-2">
