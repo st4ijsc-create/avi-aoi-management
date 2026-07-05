@@ -10,6 +10,7 @@
  * invoked on demand). The cron framework is real; the providers are the later, per-integration step.
  */
 import { reconcile, type ReconcileInput, type ReconciliationReport } from "./reconciliation";
+import { registerExampleReconcileProviders } from "./providers/exampleRestProvider";
 
 /** A reconciliation source: pulls (internal, external) metric maps for one external system. */
 export interface ReconcileProvider {
@@ -66,4 +67,35 @@ export async function runReconciliationCycle(): Promise<CycleResult> {
 /** Is the scheduled reconciliation cron enabled? Default OFF. */
 export function reconcileCronEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.RECONCILE_CRON === "true" || env.RECONCILE_CRON === "1";
+}
+
+// ─── Scheduler bootstrap (doc 33 §11 · I6 completion) ─────────────────────────
+// Wires runReconciliationCycle into a daily schedule when RECONCILE_CRON is on, and registers any
+// env-configured example providers. Interval-based (unref'd) to match the other schedulers; a
+// discrepancy raises a warning (investigation ticket), never a silent self-heal. Default OFF.
+let cronTimer: NodeJS.Timeout | null = null;
+
+export function startReconciliationScheduler(): void {
+  if (cronTimer) return;
+  if (!reconcileCronEnabled()) return; // default OFF — the cycle stays callable on demand
+  registerExampleReconcileProviders(registerReconcileProvider);
+  const intervalMs = Math.max(60_000, Number(process.env.RECONCILE_INTERVAL_MS ?? 86_400_000)); // daily
+  cronTimer = setInterval(() => {
+    void runReconciliationCycle()
+      .then((r) => {
+        if (r.providers === 0) return; // honest: nothing to do until a provider is registered
+        if (r.tickets > 0) console.warn(`[Reconcile] ${r.tickets} discrepancy ticket(s) across ${r.providers} provider(s)`);
+        else console.log(`[Reconcile] cycle ok (${r.providers} provider(s), 0 tickets)`);
+      })
+      .catch((e) => console.error("[Reconcile] cycle failed:", e?.message ?? e));
+  }, intervalMs);
+  if (typeof cronTimer.unref === "function") cronTimer.unref();
+  console.log(`[Reconcile] scheduler started (every ${intervalMs}ms)`);
+}
+
+export function stopReconciliationScheduler(): void {
+  if (cronTimer) {
+    clearInterval(cronTimer);
+    cronTimer = null;
+  }
 }

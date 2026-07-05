@@ -8,6 +8,8 @@ import {
   listReconcileProviders,
   runReconciliationCycle,
   reconcileCronEnabled,
+  startReconciliationScheduler,
+  stopReconciliationScheduler,
   _clearReconcileProviders,
 } from "./reconciliationCron";
 
@@ -47,5 +49,12 @@ describe("reconciliationCron", () => {
   it("reconcileCronEnabled reads the flag (default off)", () => {
     expect(reconcileCronEnabled({})).toBe(false);
     expect(reconcileCronEnabled({ RECONCILE_CRON: "true" })).toBe(true);
+  });
+
+  it("scheduler is a safe no-op when RECONCILE_CRON is off; stop is idempotent", () => {
+    delete process.env.RECONCILE_CRON;
+    expect(() => startReconciliationScheduler()).not.toThrow(); // early-returns (default OFF)
+    expect(() => stopReconciliationScheduler()).not.toThrow();
+    expect(() => stopReconciliationScheduler()).not.toThrow();
   });
 });

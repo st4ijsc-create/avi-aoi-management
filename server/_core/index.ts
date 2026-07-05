@@ -825,6 +825,31 @@ async function startServer() {
     }
   });
 
+  // doc 33 §11 (R3 "publish") — public machine-readable API specs for the Developer Portal.
+  // DEV_PORTAL-gated (404 when off). Stable REST URLs so external tooling (Postman / Swagger import)
+  // can consume the OpenAPI 3.1 + AsyncAPI 2.6 surface without an authenticated tRPC call.
+  const specDevPortalOn = () => process.env.DEV_PORTAL === "true" || process.env.DEV_PORTAL === "1";
+  app.get("/api/v1/openapi.json", async (_req, res) => {
+    if (!specDevPortalOn()) return res.status(404).json({ error: "Developer Portal disabled" });
+    try {
+      const { buildSeedSpecs } = await import("../services/contracts/apiSpec");
+      res.json(buildSeedSpecs().openapi);
+    } catch (error: any) {
+      console.error("[DevPortal] openapi.json error:", error);
+      res.status(500).json({ error: "spec build failed" });
+    }
+  });
+  app.get("/api/v1/asyncapi.json", async (_req, res) => {
+    if (!specDevPortalOn()) return res.status(404).json({ error: "Developer Portal disabled" });
+    try {
+      const { buildSeedSpecs } = await import("../services/contracts/apiSpec");
+      res.json(buildSeedSpecs().asyncapi);
+    } catch (error: any) {
+      console.error("[DevPortal] asyncapi.json error:", error);
+      res.status(500).json({ error: "spec build failed" });
+    }
+  });
+
   // GET /api/factory-alert/version.json — Returns active version info for FactoryAlertSystem OTA.
   // MB7 (doc 27 Đợt 6): also mints a short-lived signed `downloadToken` (HMAC,
   // 15-min TTL) that the app appends to the download URL as ?token= — see
