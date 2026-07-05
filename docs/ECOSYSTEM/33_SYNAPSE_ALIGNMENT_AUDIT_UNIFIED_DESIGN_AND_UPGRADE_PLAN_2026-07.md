@@ -489,4 +489,59 @@ Theo "làm nốt phần còn lại" — mọi hạng mục **phần-mềm-làm-�
 **TỔNG KẾT TOÀN PHIÊN:** **F1-F8 (8) + I1-I6 (6) + H4/H6/P6/W4/W5 (5) = 19+ commit** trên `synapse-foundation`; SYNAPSE test-suite xanh toàn bộ; **0 regression** trên mọi test production hiện có; 3 migration additive. Worktree sẵn sàng PR khi phiên doc-32 (main tree) commit xong.
 
 ---
-*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 framework-level, trích dẫn file · ĐÃ DUYỆT §5B · thực thi §7 (foundation F1-F8) + §9 (integration I1-I6) + §10 (remaining H4/H6/P6/W4/W5) trong worktree `../avi-aoi-synapse` · runbook kích hoạt: doc 35.*
+
+## 11. ĐỢT KIỂM ĐỊNH ĐỐI-KHÁNG & HOÀN TẤT PHẦN MỀM (Audit + completion wave, 2026-07-05)
+
+Sau "wire sâu vào engine thật" (D1–D4) + cockpit UI, chạy một **workflow kiểm định đối-kháng 14 agent** (5 chiều review: pure-logic · integration/regression · security · db-migration · frontend → **verify từng phát hiện** một cách đối-kháng + 2 agent completeness) trên toàn bộ 25 commit `e17d205..HEAD`. Kết quả: **6 phát hiện THẬT đã xác nhận** (mọi cái nằm trong primitive **flag-OFF mặc định** → 0 regression production hôm nay, nhưng là khiếm khuyết đúng/an-toàn của nền tảng) + danh sách phần-mềm-còn-lại đã phân loại trung thực. Đã **sửa cả 6** (kèm test hồi quy) và **hoàn tất 5 wave phần mềm** (B–F).
+
+### 11.1 Bổ sung công việc chưa ghi ở §10 (UI cockpit + deep-wire D1–D4)
+
+| Hạng mục | Nội dung | Commit |
+|---|---|---|
+| UI Cockpit | trang `/synapse-platform` 6-tab **read-only** (edition · plugins · security · observability · contracts · dev-portal) + route/nav/module-registry/i18n | `f5e27cd` |
+| D1 RunEvent | foeEngine append RUN_CREATED/COMPLETED/FAILED + TASK_* vào `run_events` (FOE_DURABLE) | `ed27476` |
+| D2 Space-time occupancy | trafficManager dùng `effectiveOccupancy` từ reservation table (TRAFFIC_SPACETIME) | `427d5db` |
+| D3 RL shadow | `rlShadowAllocation` trong allocator thật — **log-only**, không đổi phân bổ (RL_ADVISOR) | `fdaef6a` |
+| D4 CRUD content-hash | auditTrailService per-row hash tamper-evidence (SEC_PLATFORM) | `693383c` |
+
+### 11.2 Kiểm định đối-kháng — 6 phát hiện đã xác nhận & SỬA (Wave A `d64cf73`)
+
+| # | Mức | File | Lỗi (input→sai) | Sửa + test |
+|---|---|---|---|---|
+| 1 | **HIGH** | `traffic/spaceTimeAStar` | `earliestFreeDeparture` chỉ tiến +`buffer` (buffer>1) → `overlaps` (giãn 2 phía) vẫn báo xung đột → planner phát tuyến mà `reserve()` từ chối | tiến `+2·buffer+1` (buffer=0 giữ nguyên); test buffer=1500 |
+| 2 | MED | `orchestration/eventSourcing` | `resumePlan` vẫn trả `dispatch` forward khi trạng thái `compensating` → khởi động nhánh mới giữa saga-rollback | `dispatch=[]` khi compensating; test TASK_FAILED |
+| 3 | MED | `license/licensePolicy` | allowlist khớp **cả namespace** → `robot.create`/`setEnabled`, `inspectionProgram.approve/release`, `field.registerDiscovered` vượt license (mất đòn bẩy thương mại) | tách RUNTIME vs MIXED + loại verb config/authoring; test locked/no_license |
+| 4 | MED | `auditTrailService` (D4) | content-hash SHA256 **không khoá** → kẻ có quyền ghi DB ký lại nội dung sửa | HMAC-SHA256 (AUDIT_HASH_SECRET) + ghi rõ phạm vi thật (không thay trigger append-only / chain I4) |
+| 5 | LOW | `audit/controlAuditService` (I4) | verify chỉ nạp `hash IS NOT NULL` → strip hash **đuôi** ẩn được sửa đổi | nạp **mọi** row id-order, chặn null-hash sau khi chain đã bắt đầu (prefix legacy vẫn cho); test strip-tail |
+| 6 | MED | `orchestration/runEventStore` (D1) | `COALESCE(MAX(seq),0)+1` không nguyên tử → append đồng thời trùng `seq` → sai thứ tự replay | `pg_advisory_xact_lock(ns,runId)` + `UNIQUE(runId,seq)` (migration **0223**) |
+
+> 1 phát hiện phụ (`policyEngine` `eq` dùng `===`) được verify là **KHÔNG phải lỗi** — hành vi trung thành với config, flag-OFF; không sửa.
+
+### 11.3 Hoàn tất 5 wave phần mềm (B–F) — flag-gated/additive, tsc 0 + test xanh
+
+| Wave | Hạng mục | Nội dung | Commit | Cờ |
+|---|---|---|---|---|
+| **B** (H2) | OTel export | bridge correlation→span + decision→span; phụ thuộc `@opentelemetry/api` qua **dynamic-import no-op fallback** (bật khi operator cài SDK) — hoàn tất phần H2 hoãn | `76c22c7` | OBSERVABILITY |
+| **C** (I6) | Reconcile + specs | cron bootstrap (backgroundJobs) + **example REST provider** + endpoint công khai `/api/v1/openapi.json`·`asyncapi.json` (DEV_PORTAL) | `b5b3e42` | RECONCILE_CRON |
+| **D** (P4) | Plugin transport thật | JSON-lines-over-stdio codec + `nodeSpawner` (child_process) + sample sidecar + supervisor bootstrap; test có **round-trip tiến trình con thật** | `7ea1998` | PLUGIN_SIDECAR |
+| **E** (UX) | Cockpit tools | tab **"Công cụ"** 9 widget dry-run (route/DAG/four-eyes/policy/SLO/schema-compat/reconcile/drift/RL) gọi endpoint read-only sẵn có | `d8f8200` | — |
+| **F** (P1) | Deploy thật | Helm chart (site/site-ha) + K3s manifest (line/edge) + CI 2-profile smoke thay scaffold README | `(pending)` | — |
+
+### 11.4 Cập nhật PHẠM VI — nhiều mục §10 "ngoài phạm vi" nay ĐÃ LÀM trong phần mềm
+
+- ✅ **Nay software-complete:** OTel correlation→span bridge (B) · JSON-lines stdio plugin transport (D) · example reconcile provider + cron (C) · public API-spec endpoints (C) · interactive cockpit tools (E) · Helm/K3s/CI deploy artifacts (F).
+- ⏸️ **Hoãn CÓ CHỦ ĐÍCH** (medium-risk, cần feed/kịch bản thật để kiểm chứng — không vội sửa cuối phiên vì rủi ro hồi quy > giá trị):
+  - **Event-sourced FOE replay THUẦN** từ `run_events` (I5 hiện re-walk `run_steps` — *đang chạy đúng*; thay bằng replay-from-events cần kịch bản crash thật để verify tính đúng).
+  - **SLO burn-rate → prom-client + alert rule** (cần Prometheus sống để kiểm chứng burn-rate).
+  - **Twin drift feed** nối bảng OEE/cycle-time thật (wiring dữ liệu; cần đối chiếu KPI sống).
+  - **Hợp nhất ~110 env-flag** vào module-registry (mechanical nhưng blast-radius rất lớn; rủi ro hồi quy cao — cần đợt riêng có bao phủ test).
+  - **RL train offline** trên DES/monteCarlo (cần harness train + validate; hiện shadow placeholder most-battery).
+  - **Join-wizard + mDNS bridge** (cần lib mDNS + surface mới).
+- ⛔ **Genuinely blocked (phần cứng / hệ ngoài thật):** C2 (Safety-PLC SIL, GigE/GenICam, FOCAS Fwlib32, robot FAT, EtherCAT, UWB/LiDAR) · sidecar bọc **DLL hãng thật** (transport đã có) · endpoint **MES/ERP/WMS khách thật** · TPM-EK native · **gRPC/unix-socket** transport (stdio đã có; gRPC là bước sau cùng seam) · **OTLP collector sống** để XEM trace · phát hành license Ed25519 production/PKI.
+
+### 11.5 Migration & tổng kết đợt 11
+
+Migration mới: **0223** (`UNIQUE(runId,seq)` cho run_events). Router read-only giữ nguyên (9 router gov). **TỔNG PHIÊN mở rộng:** F1-F8 (8) + I1-I6 (6) + H4/H6/P6/W4/W5 (5) + UI (1) + D1-D4 (4) + **Wave A audit-fix (1) + B–F (5)** ≈ **30 commit** trên `synapse-foundation`; **tsc 0**; SYNAPSE suite xanh (thêm test hồi quy Wave A + test B/C/D/E); **0 regression** production; **4 migration additive** (0220–0223). Phần cứng + hệ-ngoài-thật là backlog vận hành, không phải thiết kế lại.
+
+---
+*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 framework-level, trích dẫn file · ĐÃ DUYỆT §5B · thực thi §7 (foundation F1-F8) + §9 (integration I1-I6) + §10 (remaining H4/H6/P6/W4/W5) + §11 (kiểm định đối-kháng 14-agent + fix 6 + hoàn tất wave B-F) trong worktree `../avi-aoi-synapse` · runbook kích hoạt: doc 35.*
