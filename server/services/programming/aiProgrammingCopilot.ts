@@ -36,6 +36,7 @@ import {
   type ProgDiagnostic,
 } from "./programmingAdapter";
 import { selectGoldenExamples, formatGoldenExamplesForPrompt } from "./goldenExamples";
+import { getCodegenJsonSchema } from "./codegenSchemas";
 
 export type CopilotLang = "vi" | "en" | "zh";
 
@@ -404,6 +405,61 @@ async function runCodeModel(system: string, user: string): Promise<string | null
   }
 }
 
+/**
+ * Doc 34 · P4 (1b) — STRUCTURED-JSON codegen for ir-flow / iec61131-pou. Grammar-constrains the
+ * model to `schema` (node-llama-cpp GBNF via generateJSON), so it emits a SCHEMA-VALID object:
+ * the array wrapper (`blocks` / `pous`) + the discriminator are FORCED and generation STOPS at
+ * the closing brace — which is exactly what the eval's two structural failures needed (a missing
+ * `pous` wrapper; trailing prose after the IR JSON). Returns the pretty-printed JSON string.
+ *
+ * Fail-safe: returns NULL when GGUF is offline OR on ANY error (grammar build / generation /
+ * parse) — the caller then FALLS BACK to the free-text runCodeModel path, so a grammar hiccup
+ * never crashes and never blocks a suggestion. Routes via aiModelRouter (task:"code") like
+ * runCodeModel; CODE_CTX caps the KV-cache (see warmCodeModel). Dynamically imported to keep the
+ * module light (mirrors the lazy-engine pattern).
+ */
+async function runStructuredCodeModel(
+  system: string,
+  user: string,
+  schema: object,
+): Promise<string | null> {
+  try {
+    const { isGgufAvailable, generateJSON } = await import("../aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+
+    let maxTokens = 1536;
+    let temperature = 0.2;
+    let contextSize: number = CODE_CTX;
+    let modelId: string | undefined;
+    try {
+      const { route } = await import("../aiModelRouter");
+      const d = route({ task: "code", text: user, requiredQuality: "high" });
+      maxTokens = Math.max(512, d.maxTokens ?? maxTokens);
+      temperature = d.temperature ?? temperature;
+      contextSize = Math.min(d.contextSize ?? CODE_CTX, CODE_CTX);
+      modelId = d.modelId;
+    } catch {
+      /* keep defaults — router is best-effort */
+    }
+
+    const result = await generateJSON<unknown>(
+      schema,
+      { systemPrompt: system, prompt: user, maxTokens, temperature, contextSize },
+      modelId,
+    );
+    if (result?.data == null) return null;
+    // The grammar guarantees a valid object; JSON.stringify gives the artifact `content` the
+    // programmingAdapter validates. Pretty-printed to mirror the free-text codegen style.
+    return JSON.stringify(result.data, null, 2);
+  } catch (e) {
+    console.warn(
+      "[aiProgrammingCopilot] structured JSON codegen failed (falling back to free-text):",
+      (e as Error)?.message ?? e,
+    );
+    return null;
+  }
+}
+
 /** Retrieve cited programming-manual context (fail-safe → empty, never throws). */
 async function retrieveContext(
   query: string,
@@ -537,11 +593,23 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   const system = buildSystemPrompt(mode, outKind, language);
   const user = buildCodePrompt(mode, kind, outKind, language, request, input?.contextCode, goldenBlock, answerContext);
 
-  const out = await runCodeModel(system, user);
-  if (out == null) {
-    return { ok: false, refused: false, kind: outKind, citations, note: "AI code model offline — no suggestion generated (fail-safe)." };
+  // Doc 34 · P4 (1b): STRUCTURED-JSON kinds (ir-flow / iec61131-pou) → GBNF grammar-constrained
+  // generation so the model emits a schema-valid object (forced array wrapper + discriminator,
+  // stops at the closing brace → no trailing text). Both eval failures were purely structural.
+  // Fail-safe: offline OR any grammar/generation error → fall through to the free-text path.
+  const jsonSchema = getCodegenJsonSchema(outKind);
+  let code = "";
+  if (jsonSchema) {
+    const json = await runStructuredCodeModel(system, user, jsonSchema);
+    if (json != null) code = json; // else falls through to free-text below
   }
-  const code = extractCode(out);
+  if (!code) {
+    const out = await runCodeModel(system, user);
+    if (out == null) {
+      return { ok: false, refused: false, kind: outKind, citations, note: "AI code model offline — no suggestion generated (fail-safe)." };
+    }
+    code = extractCode(out);
+  }
   if (!code) {
     return { ok: false, refused: false, kind: outKind, citations, note: "The model returned no code." };
   }

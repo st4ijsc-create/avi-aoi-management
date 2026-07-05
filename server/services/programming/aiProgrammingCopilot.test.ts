@@ -29,6 +29,16 @@ vi.mock("../aiGgufEngine", () => ({
     tokensPerSecond: 0,
     modelId: "mock",
   })),
+  // P4 (1b): grammar-constrained JSON codegen for structured kinds (ir-flow / iec61131-pou).
+  generateJSON: vi.fn(async () => ({
+    data: {},
+    raw: "{}",
+    tokensGenerated: 0,
+    tokensPrompt: 0,
+    totalTimeMs: 1,
+    tokensPerSecond: 0,
+    modelId: "mock",
+  })),
   stripThinking: (t: string) => ({ answer: t, thinking: "" }),
 }));
 vi.mock("../aiModelRouter", () => ({
@@ -59,7 +69,7 @@ import {
   copilotEnabled,
   generateProgram,
 } from "./aiProgrammingCopilot";
-import { isGgufAvailable, chatCompletion } from "../aiGgufEngine";
+import { isGgufAvailable, chatCompletion, generateJSON } from "../aiGgufEngine";
 import { searchProgrammingKb } from "../aiProgrammingKnowledgeService";
 
 /** Build a GgufGenerateResult-shaped mock return from a text body. */
@@ -227,5 +237,84 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(r.code).toContain("MOVEABS");
     expect(r.validation!.ok).toBe(true); // validated via the ZmotionBasicAdapter (output kind)
     expect(r.ok).toBe(true);
+  });
+
+  // ── P4 (1b): STRUCTURED-JSON kinds route through GBNF grammar-constrained generateJSON ──
+  it("STRUCTURED KIND iec61131-pou → GBNF JSON path (generateJSON), NOT free-text, returns validated parseable JSON with the `pous` wrapper", async () => {
+    // The eval's failure was a MISSING `pous` wrapper; the grammar forces it. Here the model's
+    // content is a known-valid single-POU LAD project INSIDE that wrapper.
+    const project = {
+      name: "Demo",
+      pous: [
+        {
+          name: "P",
+          pouType: "program",
+          vars: [
+            { name: "A", type: "BOOL", section: "VAR_INPUT" },
+            { name: "Y", type: "BOOL", section: "VAR_OUTPUT" },
+          ],
+          body: {
+            language: "LD",
+            networks: [{ logic: { kind: "contact", variable: "A" }, coils: [{ variable: "Y", kind: "coil" }] }],
+          },
+        },
+      ],
+    };
+    vi.mocked(generateJSON).mockResolvedValueOnce({
+      data: project, raw: JSON.stringify(project),
+      tokensGenerated: 0, tokensPrompt: 0, totalTimeMs: 1, tokensPerSecond: 0, modelId: "mock",
+    });
+    const r = await generateProgram({ kind: "iec61131-pou", request: "seal-in start/stop program" });
+    // Routed through the grammar path — NOT the free-text chatCompletion path.
+    expect(generateJSON).toHaveBeenCalledTimes(1);
+    expect(chatCompletion).not.toHaveBeenCalled();
+    // Output is parseable JSON carrying the (previously-missing) `pous` array wrapper.
+    expect(r.code).toBeDefined();
+    const parsed = JSON.parse(r.code!);
+    expect(Array.isArray(parsed.pous)).toBe(true);
+    expect(parsed.pous[0].name).toBe("P");
+    // Validated + compiled through the REAL Iec61131PouAdapter → ok.
+    expect(r.validation!.ok).toBe(true);
+    expect(r.ok).toBe(true);
+  });
+
+  it("STRUCTURED KIND ir-flow → GBNF JSON path produces validated parseable JSON with the `blocks` wrapper (no trailing text)", async () => {
+    // The grammar stops at the closing brace, so the eval's "trailing text after JSON" failure
+    // cannot occur. `safe_move` is the linter's canonical safe fixture (lints + transpiles ok).
+    const flow = {
+      flow_id: "safe_move",
+      target_device_type: "universal-robots",
+      version: 1,
+      blocks: [
+        { id: "b1", type: "move_linear", target_pose: { x: 100, y: 100, z: 300, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 1, blend_radius: 0 },
+      ],
+    };
+    vi.mocked(generateJSON).mockResolvedValueOnce({
+      data: flow, raw: JSON.stringify(flow),
+      tokensGenerated: 0, tokensPrompt: 0, totalTimeMs: 1, tokensPerSecond: 0, modelId: "mock",
+    });
+    const r = await generateProgram({ kind: "ir-flow", request: "move linearly to a pick pose" });
+    expect(generateJSON).toHaveBeenCalledTimes(1);
+    expect(chatCompletion).not.toHaveBeenCalled();
+    expect(r.code).toBeDefined();
+    const parsed = JSON.parse(r.code!);
+    expect(Array.isArray(parsed.blocks)).toBe(true);
+    expect(parsed.blocks[0].type).toBe("move_linear");
+    expect(r.validation!.ok).toBe(true);
+    expect(r.ok).toBe(true);
+  });
+
+  it("STRUCTURED KIND falls back to the free-text path when grammar generation throws (no crash)", async () => {
+    // generateJSON throwing (e.g. a grammar-build failure) must NOT crash — it degrades to the
+    // free-text chatCompletion path, which then validates as usual.
+    vi.mocked(generateJSON).mockRejectedValueOnce(new Error("grammar build failed"));
+    vi.mocked(chatCompletion).mockResolvedValueOnce(
+      llm('```json\n{"flow_id":"f","target_device_type":"generic","version":1,"blocks":[{"id":"b1","type":"wait","ms":100}]}\n```'),
+    );
+    const r = await generateProgram({ kind: "ir-flow", request: "wait a moment" });
+    expect(generateJSON).toHaveBeenCalledTimes(1);
+    expect(chatCompletion).toHaveBeenCalledTimes(1); // fell back to free-text
+    expect(r.code).toBeDefined();
+    expect(JSON.parse(r.code!).flow_id).toBe("f");
   });
 });

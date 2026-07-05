@@ -406,8 +406,15 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 - **BUG P1 vá (harness phát hiện):** `aiProgrammingKnowledgeService.parseJsonlLines` dùng `readFileSync(utf8)` → **throw >512MB** → delta(639MB)+mitsubishi(573MB) âm thầm rơi keyword-only dù có embeddings. Sửa: đọc Buffer + cắt theo dòng (an toàn UTF-8, ≤~2GB). → semantic 2 corpus lớn nhất khôi phục (verified sem=true).
 - **Engine load-order hardening:** thêm primitive tái dùng `aiGgufEngine.warmModel()` (vá tổng quát fragmentation nạp-model-lớn-sau-nhỏ, ảnh cả ops-AI); copilot refactor dùng nó. tsc 0, copilot test 15/15.
 
-### QUYẾT ĐỊNH cần bạn (từ baseline)
-- **Qwen3-Coder-30B (D2):** baseline chứng minh **CẦN cho POU/IR (JSON có cấu trúc, 0%)**; text languages đã tốt. **2 hướng:** (a) tải Qwen3-Coder-30B (~17GB, có thể nâng first-pass validity cả 2 nhóm) — tôi có thể tải nếu bạn OK; **(b) rẻ hơn/khuyên thử trước: GBNF grammar-constrain** cho kind POU/IR (engine đã có `generateJSON` GBNF — ép đúng JSON schema, không cần model mới). Khuyến nghị làm (b) trước, đo lại, rồi mới cân nhắc (a).
+### P4b — Đã duyệt & thực thi 2026-07-05 (4 mục)
+- **(1b) GBNF cho POU/IR** (`codegenSchemas.ts` + `generateJSON` trong copilot, schema mirror zod thật, fallback free-text): **IR-flow 0/3 → 3/3 ✅** (hết trailing-text, JSON sạch valid). **POU vẫn 0/3** — node-llama-cpp GBNF **không enforce `minItems`** nên LLM ra `"pous":[]` rỗng + nhét nội dung ra top-level. **Chấp nhận được:** POU (LAD/FBD/SFC đồ họa) vốn soạn ở **PouStudio** chứ không viết tay JSON; copilot mạnh ở text-lang + IR. Substrate bắt POU sai đúng như thiết kế. **Overall validPass 60% → 68%**, safety 4/4.
+- **(2) engineer + 2FA:** thêm `engineer` vào `PRIVILEGED_ROLES` (trpc.ts) — IEC 62443 CL2, engineer giữ machine_control nên bắt buộc 2FA.
+- **(3) FIM model:** tải **Qwen2.5-Coder-1.5B-Instruct-Q4_K_M** (986MB) → `GGUF_FIM_MODEL` set → autocomplete Continue dùng FIM thật (không còn fallback 4B).
+- **(4) Gateway go-live:** `OPENAI_GATEWAY_ENABLED=true` + `OPENAI_GATEWAY_API_KEY` set → VS Code+Continue nối được ngay. **Ops-path warmModel HOÃN** (sửa ops chat/RCA cần test app chạy; primitive `warmModel` đã sẵn).
+
+### Còn lại (tùy chọn)
+- **POU JSON validity:** nếu muốn copilot sinh POU tốt (ngoài PouStudio) → (a) tải Qwen3-Coder-30B (~17GB) hoặc (b) đổi schema POU sang "single-POU + wrap trong code" (né giới hạn minItems của GBNF). Khuyến nghị: để POU cho PouStudio, không cần thêm.
+- **QLoRA** (D9 hoãn). **Ops-path warmModel** (cần app test). **Verify FIM model load** trên engine (fallback 4B nếu lỗi).
 
 ### CHƯA làm (chờ duyệt)
 - **QLoRA→GGUF** (D9 = HOÃN tới khi prompt+RAG tới hạn; baseline cho thấy RAG+prompt đã tốt cho text, structured cần GBNF trước LoRA).
