@@ -308,23 +308,39 @@ function clamp01(n: number): number {
 // ─── JSONL / loading (best-effort; never throws on a bad line/file) ───────────
 
 function parseJsonlLines<T>(filePath: string): T[] {
-  let raw: string;
+  // Read as a Buffer (not a utf8 string): a per-vendor embeddings.jsonl can exceed Node's
+  // ~512 MiB max-string limit (delta ~640 MB, mitsubishi ~570 MB). readFileSync(path,"utf8")
+  // would THROW on those and the old catch returned [] → those vendors silently degraded to
+  // keyword-only despite having full embeddings. A Buffer holds up to ~2 GiB; we slice it
+  // per-line and only ever materialize one (small) line-string at a time. Newlines (0x0A) never
+  // occur inside a UTF-8 multi-byte sequence, so slicing on them is encoding-safe.
+  let buf: Buffer;
   try {
     if (!fs.existsSync(filePath)) return [];
-    raw = fs.readFileSync(filePath, "utf8");
+    buf = fs.readFileSync(filePath);
   } catch {
     return [];
   }
   const out: T[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    const s = line.trim();
-    if (!s) continue;
+  const NL = 0x0a;
+  let start = 0;
+  const pushLine = (end: number) => {
+    if (end <= start) return;
+    const s = buf.toString("utf8", start, end).trim();
+    if (!s) return;
     try {
       out.push(JSON.parse(s) as T);
     } catch {
       // Skip a malformed line — a partial ingestion must not break the corpus.
     }
+  };
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === NL) {
+      pushLine(i);
+      start = i + 1;
+    }
   }
+  pushLine(buf.length); // trailing line without a final newline
   return out;
 }
 
