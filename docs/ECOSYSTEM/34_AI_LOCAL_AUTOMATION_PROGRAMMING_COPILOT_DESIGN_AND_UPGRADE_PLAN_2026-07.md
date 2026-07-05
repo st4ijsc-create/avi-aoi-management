@@ -395,8 +395,11 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 - **Ảnh vào chat (D8)**: attach/paste ảnh (ladder/HMI/datasheet/màn lỗi) → backend `aiLocalKnowledgeApi` gọi `describeImage` (Qwen3-VL) → augment câu hỏi → RAG/answer; SSE "🖼️ Ảnh đã đọc (VL)"; degrade text-only nếu VL offline. Cap 6MB png/jpg/webp.
 - tsc union 0; locale vi/en/zh valid.
 
+### P3b — Role `engineer` (D6) — XONG (bạn duyệt 2026-07-05, migration đã áp)
+- Thêm `engineer` vào `roleEnum` (migration `0203_add_engineer_role.sql` = `ALTER TYPE roleenum ADD VALUE IF NOT EXISTS`, áp dev+test, verified 8 giá trị). 6 MUST + 9 SHOULD edit (2 `UserRole` union, 3 zod enum, `DEFAULT_ROLE_PERMISSIONS.engineer` 17 quyền: machine_monitoring/machine_control/settings_* CVE + view analytics/history/reports/andon/interlock/mes_bom, `listRoleTypes` card, RoleManagement icon/màu crash-guard, aiRole+aiChat persona map, AGENTIC_ROLES, escalation ×2, roleLanding→/engineering-home, i18n roles.engineer vi/en/zh). tsc 0, permissions test 10/10, auth smoke pass.
+- **Quyết định auth để mở (khuyến nghị bạn chốt):** engineer có `machine_control` (execute OT qua HITL) nhưng **KHÔNG** nằm trong `PRIVILEGED_ROLES` (chưa bắt buộc 2FA — như maintenance). Nếu muốn siết theo IEC 62443, thêm `engineer` vào `PRIVILEGED_ROLES` (server/_core/trpc.ts). canExport/canDelete=false (least-privilege).
+
 ### CHƯA làm
-- **P3 role `engineer` (D6) — HOÃN, cần bạn duyệt:** `roleEnum` là pgEnum (~100 ref landing/permissions/RLS); `ALTER TYPE ADD VALUE` **khó revert** (postgres không drop enum value). Copilot đã chạy bằng RBAC `machine_monitoring` + persona `engineer`. Nên làm pass riêng, test auth kỹ, sau khi bạn OK.
 - **P4**: eval code (syntax/compile-pass, precision@k) + QLoRA→GGUF + **tải Qwen3-Coder-30B** (tăng first-pass validity) + FIM model + engine load-order hardening (defrag/ưu tiên nạp model lớn — latent, ảnh cả ops-AI). Gateway đã live-smoke; bật `OPENAI_GATEWAY_ENABLED`+key khi go-live.
 
 ---

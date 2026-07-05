@@ -33,7 +33,7 @@ const ruleCreateSchema = z.object({
   severity: severitySchema.optional(), // null/omitted = any (conn alerts only when set)
   alertType: z.string().max(50).nullable().optional(), // null/omitted = any
   escalateAfterMin: z.number().int().min(1).max(24 * 60).default(15),
-  notifyRoles: z.array(z.enum(["admin", "supervisor", "quality_inspector", "operator", "maintenance", "viewer", "user"])).default([]),
+  notifyRoles: z.array(z.enum(["admin", "supervisor", "quality_inspector", "operator", "maintenance", "engineer", "viewer", "user"])).default([]),
   notifyUserIds: z.array(z.number().int().positive()).default([]),
   enabled: z.boolean().default(true),
 });

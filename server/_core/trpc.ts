@@ -153,7 +153,7 @@ export const adminProcedure = t.procedure.use(
 ).use(auditMutationMiddleware).use(tenantScopeMiddleware);
 
 // Role-based procedure factory — accepts an array of allowed roles
-type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'viewer' | 'user';
+type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
 // Privileged roles that MUST have 2FA enabled (IEC 62443-2-1 CL2 requirement)
 const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector'];

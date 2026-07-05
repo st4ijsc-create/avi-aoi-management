@@ -45,7 +45,7 @@ type RouterOutputs = inferRouterOutputs<AppRouter>;
 type EscalationRule = RouterOutputs["alertEscalation"]["list"][number];
 type EscalationActivityRow = RouterOutputs["alertEscalation"]["recentEscalations"][number];
 
-const ROLES = ["admin", "supervisor", "quality_inspector", "operator", "maintenance", "viewer", "user"] as const;
+const ROLES = ["admin", "supervisor", "quality_inspector", "operator", "maintenance", "engineer", "viewer", "user"] as const;
 type NotifyRole = (typeof ROLES)[number];
 
 /** Known alertType values the sweep can match (conn enum + mqtt rule types). */

@@ -24,6 +24,8 @@ export function landingPathForRole(role?: string | null): string {
       return "/operator";
     case "maintenance":
       return "/maintenance-home";
+    case "engineer":
+      return "/engineering-home";
     case "quality_inspector":
       return "/quality-home";
     case "supervisor":

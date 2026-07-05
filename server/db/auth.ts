@@ -16,7 +16,7 @@ import { ENV } from '../_core/env';
 // otherwise bounded by the ≤TTL staleness window).
 import { invalidateAuthUser } from '../services/authSessionCache';
 
-export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'viewer' | 'user';
+export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
 // ============ USER FUNCTIONS ============
 export async function upsertUser(user: InsertUser): Promise<void> {

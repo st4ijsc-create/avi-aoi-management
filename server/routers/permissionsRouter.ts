@@ -241,6 +241,38 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // but NOT execute high-risk commands (canCreate:false → start/stop/recipe gated to supervisor/admin)
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
   ],
+  engineer: [
+    // Automation-programming engineer (PLC/robot/Zmotion) — machine setup + control,
+    // measurement/product/alert authoring (canCreate/canEdit); read-only across quality
+    // surfaces. (doc 34 P3 / decision D6)
+    // Dashboard
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // History
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Analytics
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Reports
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Settings — engineer authors measurement points, products + alert thresholds
+    { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Machine Monitoring
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Machine Control (Sprint F4a) — engineer can execute (canCreate) + set param/ack (canEdit)
+    { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Andon (F5a) — engineer raises/ack/resolve
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Interlock (F5a) — read-only view
+    { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // MES BOM (G2.4) — read-only view
+    { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ],
   viewer: [
     // Viewer has read-only access to dashboards and reports
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -345,6 +377,13 @@ export const permissionsRouter = router({
           color: 'orange'
         },
         {
+          value: 'engineer',
+          label: 'Engineer',
+          description: 'Automation-programming engineer (PLC/robot/Zmotion)',
+          icon: 'cpu',
+          color: 'cyan'
+        },
+        {
           value: 'viewer',
           label: 'Viewer',
           description: 'Read-only access - can only view dashboards and reports',
@@ -365,7 +404,7 @@ export const permissionsRouter = router({
   updateUserRole: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -404,7 +443,7 @@ export const permissionsRouter = router({
   // Get default permissions for a role
   getDefaultPermissionsForRole: adminProcedure
     .input(z.object({
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .query(({ input }) => {
       return DEFAULT_ROLE_PERMISSIONS[input.role] || [];
@@ -414,7 +453,7 @@ export const permissionsRouter = router({
   applyRolePermissions: adminProcedure
     .input(z.object({
       userId: z.number(),
-      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'engineer', 'viewer', 'user'])
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();

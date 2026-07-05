@@ -26,8 +26,9 @@ import {
   Users, 
   ClipboardCheck, 
   UserCog, 
-  Wrench, 
-  Eye, 
+  Wrench,
+  Cpu,
+  Eye,
   User,
   Search,
   Filter
@@ -40,6 +41,7 @@ const roleIcons: Record<string, any> = {
   quality_inspector: ClipboardCheck,
   operator: UserCog,
   maintenance: Wrench,
+  engineer: Cpu,
   viewer: Eye,
   user: User,
 };
@@ -50,6 +52,7 @@ const roleColors: Record<string, string> = {
   quality_inspector: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   operator: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   maintenance: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  engineer: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
   viewer: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
   user: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200",
 };

@@ -8,6 +8,7 @@ export const roleEnum = pgEnum("roleenum", [
   "quality_inspector", // QC specialist - focus on quality control and reports
   "operator",        // Machine operator - submit inspections, view assigned machines
   "maintenance",     // Maintenance technician - machine status and logs
+  "engineer",        // Automation-programming engineer (PLC/robot/Zmotion)
   "viewer",          // Read-only access - dashboards and reports only
   "user"             // Basic user access (default)
 ]);
