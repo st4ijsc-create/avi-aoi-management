@@ -210,6 +210,9 @@ async function setRunStatus(
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
     .where(eq(orchestrationRuns.id, runId));
+  // doc 33 D1 (F8 §5.1.2) — durable RunEvent log: terminal run transitions (FOE_DURABLE, best-effort).
+  if (status === "completed") void appendRunEvent(runId, "RUN_COMPLETED", { ts: Date.now() });
+  else if (status === "failed" || status === "aborted") void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status } });
 }
 
 async function upsertStep(
@@ -252,6 +255,16 @@ async function upsertStep(
         finishedAt: patch.finishedAt ?? undefined,
       },
     });
+  // doc 33 D1 (F8) — durable RunEvent log: step transitions (FOE_DURABLE, best-effort).
+  const stepEvt =
+    patch.status === "running"
+      ? "TASK_STARTED"
+      : patch.status === "completed"
+        ? "TASK_COMPLETED"
+        : patch.status === "failed"
+          ? "TASK_FAILED"
+          : null;
+  if (stepEvt) void appendRunEvent(runId, stepEvt, { taskId: stepId, ts: Date.now() });
 }
 
 async function persistContext(rc: RunContext): Promise<void> {
