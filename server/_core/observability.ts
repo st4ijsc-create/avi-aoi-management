@@ -77,7 +77,10 @@ async function initOpenTelemetry(): Promise<void> {
       instrumentations: [getNodeAutoInstrumentations()],
     });
     await sdk.start();
-    console.log("[Observability] OpenTelemetry tracing enabled.");
+    // doc 33 §11 — light up the SYNAPSE correlation→span bridge so decisions/correlation ids ride
+    // the OTLP export as first-class span attributes (no-op if OBSERVABILITY is off).
+    await import("../services/observability/otelBridge").then((m) => m.initOtelBridge()).catch(() => undefined);
+    console.log("[Observability] OpenTelemetry tracing enabled (+ SYNAPSE correlation bridge).");
 
     const shutdown = () => {
       sdk.shutdown().catch(() => undefined);
