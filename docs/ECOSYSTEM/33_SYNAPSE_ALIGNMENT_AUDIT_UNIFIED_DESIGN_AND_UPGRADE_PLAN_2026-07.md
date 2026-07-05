@@ -396,7 +396,19 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** tsc 0 · test xanh.
 **Còn lại của H5 (đợt sau):** wire gate vào CI (chạy trên PR chạm `contracts/`); auto-extract OpenAPI từ mọi route + AsyncAPI từ `topicBuilder` thật; cron đối soát ngày nối MES/ERP/WMS; Pact contract-test 2 phía ERP.
 
-**Kế tiếp:** F8 (H3) Durable event-sourced orchestration.
+### ✅ F8 (H3) — Durable orchestration primitives — 2026-07-05
+**Phạm vi giao:** 3 primitive §5.1/§5.3 còn thiếu, **additive** (KHÔNG đụng `foeEngine` production). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/orchestration/dag.ts` — **recipe→DAG + topological check** (Kahn) + phát hiện cycle/missing-ref + `readySet` (nút đủ điều kiện chạy song song). Thay "tree" bằng DAG đúng đặc-tả.
+- `server/services/orchestration/eventSourcing.ts` — **durable execution**: `replayRun` (reducer từ event log) + `resumePlan` → **AUTO-continue sau crash** (resume task đang chạy + dispatch nút ready) thay vì `held` thủ công.
+- `server/services/orchestration/slaPolicy.ts` — **P0-P3 priority + aging chống đói + EDF + preemption** + **four-eyes** (uỷ quyền cho policy-engine F5: deny/require_approval → cần duyệt). Tích hợp chéo F5.
+- `server/routers/orchestrationGovRouter.ts` (READ-ONLY `validateDag`/`orderQueue`/`fourEyesCheck`) + đăng ký `orchestrationGov:`.
+- `.env.example` — flag `FOE_DURABLE`.
+- Test: `server/services/orchestration/durableOrchestration.test.ts` — DAG topo/cycle/readySet, replay+crash-resume, priority aging/EDF/preempt/four-eyes.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H3 (đợt sau):** wire event-sourcing vào `foeEngine` (persist per-transition + replay-on-boot thay `held`); compiler sinh DAG thật; dispatcher dùng `orderQueue` + four-eyes gate; migration `decision_traces`/`run_events` (đánh số tránh trùng doc-32).
+
+**🏁 ĐỢT NỀN TẢNG HOÀN TẤT F1/F2/F4/F5/F6/F7/F8 (7/8 phase; F3 sidecar là phase cuối).** Kế tiếp: F3 (P4) Plugin out-of-process gRPC sidecar.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
