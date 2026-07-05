@@ -525,7 +525,7 @@ Sau "wire sâu vào engine thật" (D1–D4) + cockpit UI, chạy một **workfl
 | **C** (I6) | Reconcile + specs | cron bootstrap (backgroundJobs) + **example REST provider** + endpoint công khai `/api/v1/openapi.json`·`asyncapi.json` (DEV_PORTAL) | `b5b3e42` | RECONCILE_CRON |
 | **D** (P4) | Plugin transport thật | JSON-lines-over-stdio codec + `nodeSpawner` (child_process) + sample sidecar + supervisor bootstrap; test có **round-trip tiến trình con thật** | `7ea1998` | PLUGIN_SIDECAR |
 | **E** (UX) | Cockpit tools | tab **"Công cụ"** 9 widget dry-run (route/DAG/four-eyes/policy/SLO/schema-compat/reconcile/drift/RL) gọi endpoint read-only sẵn có | `d8f8200` | — |
-| **F** (P1) | Deploy thật | Helm chart (site/site-ha) + K3s manifest (line/edge) + CI 2-profile smoke thay scaffold README | `(pending)` | — |
+| **F** (P1) | Deploy thật | Helm chart (site/site-ha) + K3s manifest (line/edge) + CI 2-profile smoke thay scaffold README; validated `helm lint`/kubeconform K8s 1.29 | `aeac109` | — |
 
 ### 11.4 Cập nhật PHẠM VI — nhiều mục §10 "ngoài phạm vi" nay ĐÃ LÀM trong phần mềm
 
