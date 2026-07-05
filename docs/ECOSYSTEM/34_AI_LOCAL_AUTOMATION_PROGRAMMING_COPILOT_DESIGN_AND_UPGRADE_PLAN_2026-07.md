@@ -409,7 +409,7 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 ### P4b — Đã duyệt & thực thi 2026-07-05 (4 mục)
 - **(1b) GBNF cho POU/IR** (`codegenSchemas.ts` + `generateJSON` trong copilot, schema mirror zod thật, fallback free-text): **IR-flow 0/3 → 3/3 ✅** (hết trailing-text, JSON sạch valid). **POU vẫn 0/3** — node-llama-cpp GBNF **không enforce `minItems`** nên LLM ra `"pous":[]` rỗng + nhét nội dung ra top-level. **Chấp nhận được:** POU (LAD/FBD/SFC đồ họa) vốn soạn ở **PouStudio** chứ không viết tay JSON; copilot mạnh ở text-lang + IR. Substrate bắt POU sai đúng như thiết kế. **Overall validPass 60% → 68%**, safety 4/4.
 - **(2) engineer + 2FA:** thêm `engineer` vào `PRIVILEGED_ROLES` (trpc.ts) — IEC 62443 CL2, engineer giữ machine_control nên bắt buộc 2FA.
-- **(3) FIM model:** tải **Qwen2.5-Coder-1.5B-Instruct-Q4_K_M** (986MB) → `GGUF_FIM_MODEL` set → autocomplete Continue dùng FIM thật (không còn fallback 4B).
+- **(3) FIM model:** tải **Qwen2.5-Coder-1.5B-Instruct-Q4_K_M** (986MB) → `GGUF_FIM_MODEL` set, model **load OK 1.2s**. ⚠️ NHƯNG đường generateFim/gateway hiện **bọc chat template** (không dùng native FIM token) → output kiểu chat, chưa phải infill thật. **Follow-up:** thêm đường raw-completion (node-llama-cpp `LlamaCompletion.generateInfillCompletion({prefix,suffix})`) để autocomplete Continue chuẩn — model đã sẵn, chỉ cần đổi path.
 - **(4) Gateway go-live:** `OPENAI_GATEWAY_ENABLED=true` + `OPENAI_GATEWAY_API_KEY` set → VS Code+Continue nối được ngay. **Ops-path warmModel HOÃN** (sửa ops chat/RCA cần test app chạy; primitive `warmModel` đã sẵn).
 
 ### Còn lại (tùy chọn)
