@@ -12,16 +12,18 @@
 // @ts-ignore - pdfkit has no bundled type declarations
 import PDFDocument from "pdfkit";
 import * as db from "../db";
+import { registerVietnameseFontPdfKit } from "./fontAssets";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface PDFReportConfig {
   title: string;
   subtitle?: string;
-  logoUrl?: string;
+  logoUrl?: string;        // company logo (http(s) URL or data: URI) — drawn in header
   companyName?: string;
   primaryColor?: string;   // hex color
   accentColor?: string;
+  footerText?: string;     // branding footer line (falls back to companyName)
   generatedBy?: string;
   confidential?: boolean;
   pageSize?: "A4" | "LETTER";
@@ -118,6 +120,65 @@ function lightenColor(hex: string, amount: number): string {
   return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
 }
 
+// ─── Logo / letterhead (doc 32 §2 P3 #17) ────────────────────────────────────
+
+/**
+ * Resolve a company-profile logo (http(s) URL or data: URI) into a raster Buffer
+ * that PDFKit's `doc.image()` can embed. Best-effort: returns undefined on any
+ * failure (bad URL, non-image, oversized, fetch error) so the report always
+ * renders name-only rather than crashing. PDFKit only supports PNG/JPEG — other
+ * formats will throw at draw time and are caught by the caller.
+ */
+export async function resolveLogoBuffer(logoUrl?: string | null): Promise<Buffer | undefined> {
+  if (!logoUrl) return undefined;
+  try {
+    if (logoUrl.startsWith("data:")) {
+      const comma = logoUrl.indexOf(",");
+      if (comma < 0) return undefined;
+      const meta = logoUrl.slice(5, comma); // e.g. "image/png;base64"
+      if (!/^image\//i.test(meta)) return undefined;
+      const isB64 = /;base64/i.test(meta);
+      const buf = isB64
+        ? Buffer.from(logoUrl.slice(comma + 1), "base64")
+        : Buffer.from(decodeURIComponent(logoUrl.slice(comma + 1)), "utf8");
+      return buf.length > 0 && buf.length <= 2_000_000 ? buf : undefined;
+    }
+    if (!/^https?:\/\//i.test(logoUrl)) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(logoUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return undefined;
+    const mime = res.headers.get("content-type") || "";
+    if (mime && !/^image\//i.test(mime)) return undefined;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > 0 && buf.length <= 2_000_000 ? buf : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Draw the letterhead logo into the coloured header band, best-effort. Returns
+ * true when an image was actually embedded (so the caller can indent the title
+ * text to make room). Never throws.
+ */
+function drawHeaderLogo(
+  doc: any,
+  logoBuf: Buffer | undefined,
+  x: number,
+  y: number,
+  fit: [number, number],
+): boolean {
+  if (!logoBuf) return false;
+  try {
+    doc.image(logoBuf, x, y, { fit, align: "left", valign: "center" });
+    return true;
+  } catch {
+    return false; // unsupported format (e.g. SVG/WEBP) → name-only fallback
+  }
+}
+
 // ─── PDF Generation Functions ───────────────────────────────────────────────
 
 /**
@@ -131,6 +192,9 @@ export async function generateInspectionReportPDF(
   const accent = config.accentColor || "#10b981";
   const [pr, pg, pb] = hexToRgb(primary);
 
+  // Resolve the branding logo before the synchronous PDFKit draw (best-effort).
+  const logoBuf = await resolveLogoBuffer(config.logoUrl);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: config.pageSize || "A4",
@@ -143,6 +207,10 @@ export async function generateInspectionReportPDF(
       },
     });
 
+    // Embed the Vietnamese font so diacritics render (was mojibake with the
+    // WinAnsi core font — doc 32 §2 P0 #4). Sets BeVietnamPro as the default.
+    registerVietnameseFontPdfKit(doc);
+
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -153,15 +221,19 @@ export async function generateInspectionReportPDF(
       .rect(0, 0, doc.page.width, 100)
       .fill(primary);
 
+    // Letterhead logo (doc 32 §2 P3 #17) — indent the title when drawn.
+    const logoDrawn = drawHeaderLogo(doc, logoBuf, 40, 22, [46, 56]);
+    const headTextX = logoDrawn ? 96 : 40;
+
     doc
       .fontSize(22)
       .fillColor("white")
-      .text(config.title, 40, 25, { align: "left" });
+      .text(config.title, headTextX, 25, { align: "left" });
 
     doc
       .fontSize(10)
       .fillColor("rgba(255,255,255,0.8)")
-      .text(config.companyName || "AVI/AOI Factory Management", 40, 55, { align: "left" });
+      .text(config.companyName || "AVI/AOI Factory Management", headTextX, 55, { align: "left" });
 
     doc
       .fontSize(10)
@@ -352,7 +424,7 @@ export async function generateInspectionReportPDF(
         .fontSize(7)
         .fillColor("#999")
         .text(
-          `${config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+          `${config.footerText || config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
           40,
           doc.page.height - 30,
           { align: "center", width: doc.page.width - 80 }
@@ -373,6 +445,9 @@ export async function generateQualityReportPDF(
   const primary = config.primaryColor || "#2563eb";
   const accent = config.accentColor || "#10b981";
 
+  // Resolve the branding logo before the synchronous PDFKit draw (best-effort).
+  const logoBuf = await resolveLogoBuffer(config.logoUrl);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: config.pageSize || "A4",
@@ -384,6 +459,9 @@ export async function generateQualityReportPDF(
       },
     });
 
+    // Embed the Vietnamese font so diacritics render (doc 32 §2 P0 #4).
+    registerVietnameseFontPdfKit(doc);
+
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -391,9 +469,14 @@ export async function generateQualityReportPDF(
 
     // ─── Header ──────────────────────────────────────────
     doc.rect(0, 0, doc.page.width, 90).fill(primary);
-    doc.fontSize(22).fillColor("white").text(config.title, 40, 20);
+
+    // Letterhead logo (doc 32 §2 P3 #17) — indent the title when drawn.
+    const logoDrawn = drawHeaderLogo(doc, logoBuf, 40, 18, [44, 54]);
+    const headTextX = logoDrawn ? 94 : 40;
+
+    doc.fontSize(22).fillColor("white").text(config.title, headTextX, 20);
     doc.fontSize(11).fillColor("rgba(255,255,255,0.85)")
-      .text(`${formatDateVN(data.period.start)} - ${formatDateVN(data.period.end)}`, 40, 48);
+      .text(`${formatDateVN(data.period.start)} - ${formatDateVN(data.period.end)}`, headTextX, 48);
 
     if (data.filters) {
       const parts: string[] = [];
@@ -401,7 +484,7 @@ export async function generateQualityReportPDF(
       if (data.filters.workshopName) parts.push(`Xưởng: ${data.filters.workshopName}`);
       if (data.filters.lineName) parts.push(`Line: ${data.filters.lineName}`);
       if (parts.length > 0) {
-        doc.fontSize(9).fillColor("rgba(255,255,255,0.7)").text(parts.join(" • "), 40, 65);
+        doc.fontSize(9).fillColor("rgba(255,255,255,0.7)").text(parts.join(" • "), headTextX, 65);
       }
     }
 
@@ -523,7 +606,7 @@ export async function generateQualityReportPDF(
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
       doc.fontSize(7).fillColor("#999").text(
-        `${config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+        `${config.footerText || config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
         40, doc.page.height - 30, { align: "center", width: doc.page.width - 80 }
       );
     }

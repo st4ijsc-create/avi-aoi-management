@@ -4,13 +4,15 @@
  * MB11 decomposition: moved verbatim from StationDetailScreen.tsx.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Linking, Share, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, { Polyline } from 'react-native-svg';
 
 import { useTheme } from '../../../context';
 import type { InspectionPoint, Language } from '../../../types';
 import type { MpStatisticsItem, PointImageItem } from '../../../services/stationService';
+import { getServerBaseUrl } from '../../../services/serverConfig';
+import { buildStationWebReportUrl } from '../../../services/webReportLink';
 import { DK, LK, STATUS_COLORS, STATUS_LABELS_VI, STATUS_LABELS_EN, STATUS_LABELS_ZH } from '../palette';
 import { STATION_T } from '../translations';
 import { RealCaptureCard } from './panelParts';
@@ -27,10 +29,48 @@ const FullReportModal: React.FC<{
   mpStatistics: MpStatisticsItem | null;
   pointImages: PointImageItem[];
   apiBaseUrl: string;
+  /** Numeric server station id (selectApiStationId) — targets the web report deep-link. */
+  stationId?: string | null;
   onImagePress?: (imageUrl: string, label?: string, isNG?: boolean) => void;
-}> = ({ visible, onClose, point, t, language, mpStatistics, pointImages, apiBaseUrl, onImagePress }) => {
+}> = ({ visible, onClose, point, t, language, mpStatistics, pointImages, apiBaseUrl, stationId, onImagePress }) => {
   const { theme } = useTheme();
   const C = theme.isDark ? DK : LK;
+
+  // R3 (doc 32, decision #5): mobile stays light — no server-render file
+  // download. Instead deep-link into the full WEB report (all charts + tables),
+  // which the device browser renders with its own login/session. `datePreset:
+  // 'today'` scopes it to the current/live station view shown in this modal.
+  const buildWebReportUrl = React.useCallback(
+    () => buildStationWebReportUrl({ baseUrl: getServerBaseUrl(), stationId: stationId ?? null, datePreset: 'today' }),
+    [stationId],
+  );
+
+  const handleOpenWebReport = React.useCallback(async () => {
+    const url = buildWebReportUrl();
+    if (!url) {
+      Alert.alert(t.fullReport, t.webReportError);
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(t.fullReport, t.webReportError);
+    }
+  }, [buildWebReportUrl, t]);
+
+  const handleShareReportLink = React.useCallback(async () => {
+    const url = buildWebReportUrl();
+    if (!url) {
+      Alert.alert(t.fullReport, t.webReportError);
+      return;
+    }
+    try {
+      await Share.share({ message: url, title: t.fullReport });
+    } catch {
+      /* user cancelled the share sheet — ignore */
+    }
+  }, [buildWebReportUrl, t]);
+
   if (!point) return null;
 
   const sc = STATUS_COLORS[point.status];
@@ -51,6 +91,27 @@ const FullReportModal: React.FC<{
           </View>
 
           <ScrollView style={{ flex: 1, padding: 16 }} showsVerticalScrollIndicator={false}>
+            {/* R3 (doc 32, decision #5): open the full WEB report in the browser
+                (view-in-place stays intact below) + share the report link. */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <TouchableOpacity
+                onPress={handleOpenWebReport}
+                activeOpacity={0.85}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.accent, paddingVertical: 11, borderRadius: 10 }}
+              >
+                <Icon name="open-in-new" size={16} color="#ffffff" />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#ffffff' }}>{t.openWebReport}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleShareReportLink}
+                activeOpacity={0.85}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 10, backgroundColor: C.surfaceRaised, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border }}
+              >
+                <Icon name="share-variant" size={16} color={C.accent} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: C.accent }}>{t.shareReportLink}</Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Point Info */}
             <View style={{ backgroundColor: C.surfaceRaised, borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border }}>
               <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 4 }}>{point.name}</Text>

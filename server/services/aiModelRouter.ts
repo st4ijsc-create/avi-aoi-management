@@ -36,7 +36,11 @@ export type TaskKind =
   | "rca"
   | "report"
   | "vision"
-  | "embed";
+  | "embed"
+  // Doc 34 (P0) — Automation Programming Copilot tiers. `code` = deep-tier code chat/edit/gen;
+  // `fim` = fast-tier fill-in-middle / inline autocomplete. Both are flag-gated (see route()).
+  | "code"
+  | "fim";
 
 export type Difficulty = "trivial" | "easy" | "medium" | "hard";
 
@@ -159,6 +163,53 @@ function warnThinkingFileMissing(tid: string): void {
   );
 }
 
+// ─── Doc 34 (P0) — Code / FIM tier resolution ──────────────────
+/**
+ * Master switch for the Automation Programming Copilot's code/FIM tiers. Default OFF: `code`/`fim`
+ * route BYTE-IDENTICALLY to the existing deep/fast tiers (same tier + same model) and the new
+ * GGUF_CODE_MODEL/GGUF_FIM_MODEL envs are IGNORED — so turning this off is a guaranteed no-op.
+ * ON: `code` → the code model (deep-tier semantics, large RAG-friendly ctx) and `fim` → the fim
+ * model (fast-tier semantics, small ctx / low latency for inline completion).
+ */
+function codeRouterEnabled(): boolean {
+  const v = (process.env.AI_CODE_ROUTER_ENABLED || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/**
+ * Basename of the CODE model. Reads GGUF_CODE_MODEL; when unset, falls back to GGUF_DEFAULT_MODEL
+ * (decision D2 §VI-bis: reuse the resident 30B-A3B-Instruct rather than downloading a separate
+ * coder model). Like defaultModelId() it returns an EXPLICIT basename (never undefined for a
+ * configured system) so the engine pins the intended model instead of reusing whatever is hot.
+ */
+function codeModelId(): string | undefined {
+  const v = (process.env.GGUF_CODE_MODEL || "").trim();
+  if (v.length) return stripGguf(v);
+  return defaultModelId();
+}
+
+/**
+ * Basename of the FIM (fill-in-middle / inline-completion) model. Reads GGUF_FIM_MODEL; when unset,
+ * falls back to the fast model, then the default — mirroring the Tier-1 `fastModelId() ??
+ * defaultModelId()` chain so autocomplete degrades gracefully and NEVER routes undefined.
+ */
+function fimModelId(): string | undefined {
+  const v = (process.env.GGUF_FIM_MODEL || "").trim();
+  if (v.length) return stripGguf(v);
+  return fastModelId() ?? defaultModelId();
+}
+
+/**
+ * Requested context size for the ON `code` tier: up to GGUF_MAX_CTX but capped at a sane 32K
+ * default (doc 34 §5.1: default 32K, open 128K only for large repo/manual reads). The engine
+ * clamps this into [256, GGUF_MAX_CTX] on first load, so requesting the operator's max is safe.
+ */
+function codeContextSize(): number {
+  const n = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
+  const max = Number.isFinite(n) && n > 0 ? n : 32768;
+  return Math.min(max, 32768);
+}
+
 // ─── Difficulty classifier (Tier-0, heuristic, no LLM) ─────────
 const MULTISTEP_HINTS = /\b(and then|sau đó|từng bước|step by step|compare|so sánh|analy[sz]e|phân tích|root cause|nguyên nhân|why|tại sao|forecast|dự báo|optimi|tối ưu|plan|kế hoạch)\b/i;
 
@@ -215,6 +266,30 @@ export function route(input: RouteInput): RouteDecision {
   // Vision dùng tiến trình sidecar riêng (LLAMA_VISION_CTX) — KHÔNG đặt contextSize ở đây.
   if (input.task === "vision" || input.hasImage) {
     return decide(3, undefined, false, 512, 0.2, false, "has image → Tier 3 vision sidecar");
+  }
+
+  // Doc 34 (P0) — first-class `code` and `fim` tiers for the Automation Programming Copilot.
+  // Flag-gated by AI_CODE_ROUTER_ENABLED (default OFF). When OFF, both route BYTE-IDENTICALLY to
+  // the existing deep/fast tiers (same tier + same model) and GGUF_CODE_MODEL/GGUF_FIM_MODEL are
+  // ignored — a guaranteed no-op. When ON, `code` → the code model (Tier 2, deep-tier semantics,
+  // large RAG-friendly ctx) and `fim` → the fim model (Tier 1, fast-tier semantics, small ctx /
+  // low latency for inline completion). The resolvers NEVER return undefined for a configured
+  // system (code→GGUF_DEFAULT_MODEL, fim→GGUF_FAST_MODEL→GGUF_DEFAULT_MODEL), so we never reuse
+  // whatever model happens to be hot — mirroring the deep/thinking-tier explicit-basename bugfix.
+  // (Placed after the image check so a code/fim request carrying an image still hits vision.)
+  if (input.task === "code") {
+    return codeRouterEnabled()
+      ? decide(2, codeModelId(), false, 1536, 0.3, false,
+          "code → Tier 2 code model (AI_CODE_ROUTER_ENABLED on; RAG-friendly large ctx)", codeContextSize())
+      : decide(2, defaultModelId(), false, 1536, 0.3, false,
+          "code → Tier 2 deep (code router off → byte-identical to deep tier, GGUF_DEFAULT_MODEL)", 8192);
+  }
+  if (input.task === "fim") {
+    return codeRouterEnabled()
+      ? decide(1, fimModelId(), false, 256, 0.15, false,
+          "fim → Tier 1 fim model (AI_CODE_ROUTER_ENABLED on; inline completion, small ctx/low latency)", 4096)
+      : decide(1, fastModelId() ?? defaultModelId(), false, 512, 0.4, false,
+          "fim → Tier 1 fast (code router off → byte-identical to fast tier)", 2048);
   }
 
   const difficulty = classifyDifficulty(input);

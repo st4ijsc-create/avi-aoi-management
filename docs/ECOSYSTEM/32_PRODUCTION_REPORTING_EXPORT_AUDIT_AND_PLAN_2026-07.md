@@ -1,6 +1,6 @@
 # 32 — AVI/AOI Production Reporting & Export: Audit + Ý tưởng + Kế hoạch thực hiện
 
-**Ngày:** 2026-07-05 · **Trạng thái:** ✅ ĐÃ DUYỆT 2026-07-05 (6/6 quyết định — §5) — ĐANG THỰC THI (R0 baseline xanh, R1 khởi động)
+**Ngày:** 2026-07-05 · **Trạng thái:** ✅ **HOÀN THÀNH TOÀN BỘ R0–R5** (2026-07-05) — nghiệm thu cuối: tsc 0 + vite build OK + **441 file/4.660 test/0 fail** + app jest 158, 1 migration (0202) applied, UNCOMMITTED chờ review. Tổng kết §8.
 **Phương pháp:** 3 agent audit read-only (server report engine · web-app reporting/export UX · mobile export + data model) + 1 agent deep-dive **độ đầy đủ export ở /production-dashboard & /station-analysis** (§6). Toàn bộ dẫn chứng `file:line` trong các phần dưới.
 
 ---
@@ -157,16 +157,16 @@ Report Definition          Data Layer            Render Layer           Archive 
 - ⚠️ **Readiness gap phát hiện (trung thực):** `oee_metrics` chỉ ghi on-demand (nút Calculate OEE thủ công), KHÔNG có scheduler tính+lưu liên tục → báo cáo OEE thưa/gappy. Cần OEE snapshot scheduler (đưa vào R5). Follow-up R4: `Dashboard.tsx` chọn shift icon theo code cũ, cần map theo window.
 - *Verify:* unit + DB-integration test mỗi aggregator; factory-TZ + shift qua-nửa-đêm chứng minh.
 
-**Wave R2 — Unified render engine + artifact store (P1).**
-- Nâng `universalExportService` thành engine chuẩn: nhúng font Unicode VN/CJK (Noto Sans/Be Vietnam) cho jsPDF + PDFKit; wire branding/logo từ company profile; PDF/XLSX/CSV/HTML/PPTX qua 1 API.
-- Bảng `report_artifacts` + service persist (dùng `storagePut`/S3 đã có) + re-download route.
-- Retire: `scheduledReportService.start()` chết, đường jsPDF ASCII, trùng lặp SheetJS/exceljs rải rác.
-- *Verify:* render mẫu mỗi format, mở file kiểm tra dấu tiếng Việt + logo; tsc.
+**Wave R2 — Unified render engine + artifact store (P1).** ✅ **XONG XANH** (431 file pass + 1 flake doc-27 fetch-models, tsc 0, 0202 applied).
+- Engine (R2-A): fetch **Be Vietnam Pro** (OFL, full-glyph VN verify) → `server/assets/fonts/` + `scripts/fetch-fonts.mjs` + loader fail-loud; API `renderReport({type,format,locale,branding,data})` phủ PDF(jsPDF font VN nhúng)/XLSX/CSV/HTML; branding từ `email_template_config`; puppeteer làm renderer 'premium'. **Bắt bug:** đường PDF jsPDF vốn đã chết (ESM default namespace) — engine "đẹp nhất" trước chưa từng render PDF được; PDFKit cũng cắm font VN (hết mojibake WinAnsi). ⚠️ Deploy: `server/assets/fonts` phải ship kèm (esbuild external không copy) hoặc set `FONT_ASSETS_DIR`.
+- Artifact store (R2-B): bảng `report_artifacts` (0202) + `persistArtifact` = **đường lưu trữ duy nhất** (storagePut hash-namespaced + sha256 dedupe + `expiresAt=now+365d`); route re-download tRPC + REST `/api/reports/artifacts/:id/download` (access-control + expiry 410 GONE); cleanup job daily (flag ON).
+- Wave-lead vá test andonRobotDispatch (thêm `sql` passthrough vào mock drizzle-orm — schema report_artifacts kéo `sql` qua barrel).
+- Tồn đọng chuyển R4: retire `scheduledReportService.start()` + đường ASCII `lib/pdfExport.ts` (còn dùng bởi HistoryComparison — R4).
 
-**Wave R3 — External + Mobile report path THẬT (P0).**
-- Viết lại `POST /api/external/reports/generate` + download: gọi aggregators (R1) + render engine (R2) + artifact store; tôn trọng `format` (pdf/xlsx/csv); reportType thật (daily/shift/defect/station/product).
-- Mobile: gọi endpoint thật, **tải & lưu/chia sẻ file** (thêm lib share-file); nút export cho `FullReportModal` (station full report); wire hoặc xoá `exportService`/`dashboardService` dead.
-- *Verify:* app tsc/jest; tải PDF/XLSX thật từ mobile về; số khớp server.
+**Wave R3 — External + Mobile report path THẬT (P0).** ✅ **XONG XANH** (server 433 file/4.597 test/0 fail, app tsc 0 + jest 158, không migration).
+- External (R3-A): `POST /api/external/reports/generate` viết lại thành pipeline thật (aggregator R1 → renderReport R2 → persistArtifact R2), 7 reportType (daily/weekly/shift/defect/product/station/oee) **tôn trọng format** (pdf/xlsx/csv — hết bug bỏ qua format), trả `{reportId=artifact id, downloadUrl, artifactUrl, expiresAt}` thật; retire Map in-memory; giữ tương thích tên legacy để mobile hiện tại chạy tiếp; OEE thưa → file hợp lệ + `emptyState` trung thực; `externalReportService` dùng lại cho R4. Download stream file thật (410 khi hết hạn).
+- Mobile (R3-B, QĐ #5 nhẹ): `FullReportModal` + nút "Mở báo cáo web" (deep-link `/station-analysis/:id`) + "Chia sẻ liên kết"; **xoá dead code** `exportService.ts` + `dashboardService.generateReport` (0 caller, không wrap giả); giữ view-tại-chỗ. **KHÔNG** thêm lib render file mobile.
+- Wave-lead: 32 file DB-integration fail 1 lần do cạn kết nối Postgres (phiên song song) — re-run xác nhận 0 fail, không phải regression.
 
 **Wave R4 — Web consolidation & UX (P0/P1).**
 - Lấp dữ liệu máy/nhà máy rỗng ở `Reports.tsx`; thêm export cho `AIReportsPage`.
@@ -176,11 +176,44 @@ Report Definition          Data Layer            Render Layer           Archive 
 - Report Builder: filter station/product/shift/line/date-range + nút export + link sang schedule; "email cho tôi báo cáo này" cho on-demand.
 - *Verify:* build web; đi từng trang xuất PDF/XLSX/CSV; print layout.
 
-**Wave R5 — Polish / i18n / compliance / API.**
-- EN/ZH cho report live; UI company profile/logo (branding).
-- Mở rộng REST `/api/export` (XLSX/PDF + dataset yield/OEE/defect-pareto).
-- Sửa `annotationComparisonRouter.generatePdfReport` (đổi tên hoặc implement thật), import `mysql2` ở `mqttSummaryScheduler`.
-- *Verify:* tsc + smoke đa ngôn ngữ.
+> **KẾT QUẢ THỰC THI ĐỢT R4 (2026-07-05, 3 agent):** ✅ Hoàn thành xanh — tsc 0, full suite 436 file/4.622 test/0 fail, vite build OK.
+> - **R4-A engine §6:** phân trang PDF theo block (không cắt đôi chart/hàng, table lặp header khi tràn); header+scope-band+footer mọi trang; resolver màu in (oklch + hsl-var + var()); helper `capturePrintCharts` mount mọi chart off-screen; section type `gallery` (ảnh NG) + `imageDataUrl` (ảnh bo mạch). API `chartRender` thunk cho R4-B.
+> - **R4-B 2 trang:** ProductionDashboard async prefetch + 7 chart id + print-view (0→đủ chart export); StationAnalysis chụp cả 10 chart thay 1/10 + measurement-mode SPC + ảnh bo mạch + gallery NG; cap fail-history 50→200; mọi chart kèm bảng số; scope metadata.
+> - **R4-C nội dung + gom:** Reports.tsx lấp dữ liệu máy/nhà máy thật (getTopBottomMachines + yieldRateByFactory); AIReportsPage thêm export; xoá orphan ReportScheduling.tsx + ReportScheduler.tsx (861 dòng); retire vòng lặp chết `scheduledReportService.start()` (giữ content library); HistoryExportScheduling format list trung thực; thêm ReportExportButton cho CategoryAnalytics/ProductComparison/CorporateDashboard (hoãn 9 trang chart-heavy); ReportBuilder filter + export + "email báo cáo này" (`reportArtifact.generate` source=on_demand → artifact history).
+> - Trung thực: rasterize recharts + fidelity PDF cần verify browser thật (§6.5 acceptance); delay chụp 1.9s cần tune kiosk yếu; ảnh cross-origin cần CORS.
+
+**Wave R5 — Polish / i18n / compliance / API.** ✅ **XONG XANH** (441 file/4.660 test/0 fail, tsc 0, vite build OK, không migration).
+- R5-A: **OEE snapshot scheduler** (lấp gap R1 — dùng path compute của nút Calculate OEE, cron hourly+daily, flag `OEE_SNAPSHOT_ENABLED` default OFF, idempotent, skip trung thực); REST `/api/export` mở rộng XLSX/PDF + dataset yield/oee/defect-pareto + `/api/bi` +3 dataset; `generatePdfReport` render PDF VN thật (không chỉ đổi tên); import mysql2 hóa ra **dead import** đã gỡ.
+- R5-B: report surface đã ~95% localize sẵn (chỉ 2 chuỗi hardcode thật) — backfill zh đóng gap 28 key + namespace `rtReport`; UI branding đã có (`EmailTemplateEditor`) + note vai trò report; **vẽ logo/letterhead PDFKit** (best-effort PNG/JPEG, fallback tên, không crash) + wire branding từ admin config.
+
+---
+
+## 8. TỔNG KẾT THỰC THI DOC 32 (2026-07-05)
+
+**6/6 wave (R0–R5) hoàn thành trong một phiên**, mỗi wave nghiệm thu xanh trước khi sang wave kế. **13 agent thực thi** (2+2+2+2+3+2) + 4 agent audit, **1 migration mới (0202 report_artifacts, applied)**, test suite server tăng **~424 → 441 file (4.660 test, 0 fail)** + app jest 158.
+
+Bài toán đúng như audit chẩn đoán — **consolidation + wiring + lấp gap, không phải xây mới**. Kết quả đảo ngược "sâu nhưng phân mảnh":
+- **External/mobile report thật:** endpoint stub (đếm alert, bỏ format, Map TTL 30') → pipeline thật (7 reportType, tôn trọng format PDF/XLSX/CSV, artifact bền 1 năm); mobile nhẹ (deep-link web + xoá dead code).
+- **1 engine i18n có font VN:** `universalExportService` (trước **chưa từng render PDF được** do bug ESM) → engine chuẩn với Be Vietnam Pro nhúng thật; puppeteer thành premium tùy chọn; PDFKit hết mojibake + có logo.
+- **Artifact store:** Map volatile → bảng `report_artifacts` S3 + dedupe + retention 365 ngày + re-download + cleanup.
+- **Data gap lấp:** shift thật (join production_sessions), Pareto theo loại lỗi, per-product, per-week, workstationHeatmap thật, OEE scheduler.
+- **Export "đầy đủ nhất" (§6):** ProductionDashboard 0 chart → đủ; StationAnalysis 1/10 → cả 10 + ảnh bo mạch/gallery NG; PDF phân trang theo block; màu in an toàn; scope-band mọi trang.
+- **Dọn nợ:** xoá orphan scheduler 861 dòng, retire scheduler chết, Reports.tsx hết rỗng, AIReports có export, sửa 2 smell (naming + mysql2 dead import).
+
+**Bug thật phát hiện ngoài audit:** universalExportService PDF vốn đã chết (ESM default namespace) — engine "đẹp nhất" chưa từng render PDF; `annotationComparisonRouter.generatePdfReport` tên PDF trả JSON; import mysql2 dead trong dự án Postgres; `getShiftStats` bỏ qua factoryId.
+
+### Việc còn chờ NGƯỜI (không chặn)
+| # | Việc | Nguồn |
+|---|------|-------|
+| 1 | **Verify visual PDF/HTML trên browser thật** (§6.5): rasterize recharts, dấu tiếng Việt, logo, phân trang — mở thử 1 PDF/HTML mỗi trang ProductionDashboard/StationAnalysis; tune delay chụp 1.9s nếu kiosk yếu | R4 §6.5 |
+| 2 | Bật `OEE_SNAPSHOT_ENABLED=true` ở production để OEE report có dữ liệu liên tục; cân nhắc single-worker | R5/R1 |
+| 3 | Deploy: ship `server/assets/fonts` (esbuild external không copy) hoặc set `FONT_ASSETS_DIR`; CORS cho ảnh NG/bo mạch cross-origin (html2canvas) | R2/R4 |
+| 4 | Đặt company logo/name/màu qua Admin Settings → EmailTemplate/Branding để PDF/XLSX có letterhead thật | R5 |
+| 5 | (Kế thừa) doc 27 §13 + doc 31 §10 human items (backup keystore, commit toàn tree, cutover Timescale, ...) | doc 27/31 |
+
+---
+
+*Doc 32 · Audit 4-agent + thực thi 13-agent 6 wave 2026-07-05 · HOÀN THÀNH, UNCOMMITTED chờ review.*
 
 ---
 

@@ -112,6 +112,27 @@ export const BI_DATASETS = [
     params: { from: "ISO date (default now-30d)", to: "ISO date (default now)", machineId: "optional int", nextToken: "continuation", pageSize: `≤${MAX_PAGE_SIZE}` },
     columns: ["day", "machine_id", "machine_code", "availability", "performance", "quality", "oee", "total_count", "good_count", "reject_count"],
   },
+  {
+    name: "defect_category",
+    description:
+      "Defect Pareto rolled up by a defect_catalog DIMENSION (category | severity | ipcSection) over the window, with share-of-total + cumulative %. NG rows with no defectCatalogId land in an honest UNCLASSIFIED bucket (never hidden). Complements defect_pareto (per exact defect code).",
+    params: { from: "ISO date (default now-30d)", to: "ISO date (default now)", machineId: "optional int", dimension: "category|severity|ipcSection (default category)", nextToken: "continuation", pageSize: `≤${MAX_PAGE_SIZE}` },
+    columns: ["key", "count", "percentage", "cumulative_percentage", "bucket"],
+  },
+  {
+    name: "yield_by_product",
+    description:
+      "Per product-model output + canonical FINAL yield ((OK+NTF)/total) over the window, ordered by output. Inspections with no product model roll up into one honest null-product row.",
+    params: { from: "ISO date (default now-30d)", to: "ISO date (default now)", machineId: "optional int", nextToken: "continuation", pageSize: `≤${MAX_PAGE_SIZE}` },
+    columns: ["product_model_id", "product_code", "product_name", "total", "ok", "ng", "ntf", "yield_rate"],
+  },
+  {
+    name: "shift",
+    description:
+      "Per configured shift rollup (real shift_configs windows, factory-local, cross-midnight aware) over the window: output, final yield %, FPY %, machines active, distinct defect types.",
+    params: { from: "ISO date (default now-30d)", to: "ISO date (default now)", factoryId: "optional int", lineId: "optional int", nextToken: "continuation", pageSize: `≤${MAX_PAGE_SIZE}` },
+    columns: ["shift", "shift_name", "shift_window", "total", "ok", "ng", "ntf", "yield_pct", "fpy", "machines_active", "defect_type_count", "source"],
+  },
 ] as const;
 
 export type BiDatasetName = (typeof BI_DATASETS)[number]["name"];
@@ -274,6 +295,83 @@ async function queryMachineOee(
   return executeRows(res);
 }
 
+// ── Aggregator-backed datasets (bounded rollups; in-memory offset slice) ──────
+// These reuse the Wave R1 report aggregators (server/db/reportAggregators.ts) +
+// getShiftReport (server/db/statistics.ts). The rollups are small (top-N pareto,
+// per-product, per-shift) so paging by slicing the full result in memory is
+// correct and cheap — no LIMIT/OFFSET push-down needed.
+
+function sliceRows(rows: Rows, offset: number, pageSize: number): Rows {
+  // Return up to pageSize+1 so the caller detects "more" exactly like the SQL path.
+  return rows.slice(offset, offset + pageSize + 1);
+}
+
+async function queryDefectCategory(
+  window: { from: Date; to: Date },
+  machineId: number | undefined,
+  dimension: "category" | "severity" | "ipcSection",
+  offset: number,
+  pageSize: number,
+): Promise<Rows> {
+  const { getDefectParetoByCategory } = await import("../../db/reportAggregators");
+  const res = await getDefectParetoByCategory({ startDate: window.from, endDate: window.to, machineId, dimension });
+  const all: Rows = res.items.map((i) => ({
+    key: i.key,
+    count: i.count,
+    percentage: i.percentage,
+    cumulative_percentage: i.cumulativePercentage,
+    bucket: i.bucket,
+  }));
+  return sliceRows(all, offset, pageSize);
+}
+
+async function queryYieldByProduct(
+  window: { from: Date; to: Date },
+  machineId: number | undefined,
+  offset: number,
+  pageSize: number,
+): Promise<Rows> {
+  const { getYieldByProduct } = await import("../../db/reportAggregators");
+  const res = await getYieldByProduct({ startDate: window.from, endDate: window.to, machineId });
+  const all: Rows = res.map((r) => ({
+    product_model_id: r.productModelId,
+    product_code: r.productCode,
+    product_name: r.productName,
+    total: r.total,
+    ok: r.ok,
+    ng: r.ng,
+    ntf: r.ntf,
+    yield_rate: r.yieldRate,
+  }));
+  return sliceRows(all, offset, pageSize);
+}
+
+async function queryShift(
+  window: { from: Date; to: Date },
+  factoryId: number | undefined,
+  lineId: number | undefined,
+  offset: number,
+  pageSize: number,
+): Promise<Rows> {
+  const { getShiftReport } = await import("../../db/statistics");
+  const res = await getShiftReport({ startDate: window.from, endDate: window.to, factoryId, lineId });
+  const all: Rows = res.map((r) => ({
+    shift: r.shift,
+    shift_name: r.shiftName,
+    shift_window: r.shiftWindow,
+    total: r.total,
+    ok: r.ok,
+    ng: r.ng,
+    ntf: r.ntf,
+    yield_pct: r.yieldPct,
+    fpy: r.fpy,
+    machines_active: r.machinesActive,
+    defect_type_count: r.defectTypeCount,
+    source: r.source,
+  }));
+  return sliceRows(all, offset, pageSize);
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export function createBiRouter(): Router {
@@ -300,12 +398,23 @@ export function createBiRouter(): Router {
     const { offset, pageSize } = pageParams(req);
     const machineIdRaw = Number(req.query.machineId);
     const machineId = Number.isInteger(machineIdRaw) && machineIdRaw > 0 ? machineIdRaw : undefined;
+    const factoryIdRaw = Number(req.query.factoryId);
+    const factoryId = Number.isInteger(factoryIdRaw) && factoryIdRaw > 0 ? factoryIdRaw : undefined;
+    const lineIdRaw = Number(req.query.lineId);
+    const lineId = Number.isInteger(lineIdRaw) && lineIdRaw > 0 ? lineIdRaw : undefined;
+    const dimension =
+      req.query.dimension === "severity" || req.query.dimension === "ipcSection"
+        ? (req.query.dimension as "severity" | "ipcSection")
+        : "category";
 
     try {
       let rows: Rows;
       if (name === "inspections_daily") rows = await queryInspectionsDaily(window, machineId, offset, pageSize);
       else if (name === "defect_pareto") rows = await queryDefectPareto(window, machineId, offset, pageSize);
-      else rows = await queryMachineOee(window, machineId, offset, pageSize);
+      else if (name === "machine_oee") rows = await queryMachineOee(window, machineId, offset, pageSize);
+      else if (name === "defect_category") rows = await queryDefectCategory(window, machineId, dimension, offset, pageSize);
+      else if (name === "yield_by_product") rows = await queryYieldByProduct(window, machineId, offset, pageSize);
+      else rows = await queryShift(window, factoryId, lineId, offset, pageSize);
 
       const hasMore = rows.length > pageSize;
       const page = hasMore ? rows.slice(0, pageSize) : rows;

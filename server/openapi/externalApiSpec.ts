@@ -210,22 +210,96 @@ export function buildExternalOpenApiSpec(serverUrl = "/") {
       "/api/external/reports/generate": {
         post: {
           tags: ["Reports"],
-          summary: "Sinh báo cáo",
+          summary: "Sinh báo cáo sản xuất (render + lưu artifact)",
+          description:
+            "Sinh báo cáo THẬT từ dữ liệu sản xuất, render đúng định dạng yêu cầu (pdf/xlsx/csv) và lưu vào report_artifacts (giữ 1 năm). Trả về id artifact + link tải. reportType: daily|weekly|shift|defect|product|station|oee (chấp nhận alias cũ daily_summary/shift_report/defect_analysis/station_report).",
           security: [{ masterKey: [] }, { bearerAuth: [] }],
-          requestBody: { content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
-          responses: { "200": { description: "OK", content: { "application/json": { schema: okEnvelope } } }, "401": unauthorized },
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["reportType"],
+                  properties: {
+                    reportType: {
+                      type: "string",
+                      enum: ["daily", "weekly", "shift", "defect", "product", "station", "oee"],
+                    },
+                    format: { type: "string", enum: ["pdf", "xlsx", "csv"], default: "pdf" },
+                    dateFrom: { type: "string", description: "YYYY-MM-DD hoặc ISO (mặc định: hôm nay)" },
+                    dateTo: { type: "string", description: "YYYY-MM-DD hoặc ISO" },
+                    locale: { type: "string", enum: ["vi", "en", "zh"], default: "vi" },
+                    filters: {
+                      type: "object",
+                      properties: {
+                        factoryId: { type: "integer" },
+                        lineId: { type: "integer" },
+                        machineId: { type: "integer" },
+                        productModelId: { type: "integer" },
+                        shift: { type: "string" },
+                        machineType: { type: "string" },
+                      },
+                      additionalProperties: true,
+                    },
+                  },
+                  additionalProperties: true,
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "OK — artifact đã sinh",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      reportId: { type: "integer", description: "id artifact (report_artifacts) — dùng cho download" },
+                      downloadUrl: { type: "string", description: "Đường tải qua external-auth (x-master-key): /api/external/reports/{reportId}/download" },
+                      artifactUrl: { type: "string", description: "Link artifact chuẩn (session web / API key scope export:read): /api/reports/artifacts/{id}/download" },
+                      format: { type: "string", enum: ["pdf", "xlsx", "csv"] },
+                      reportType: { type: "string" },
+                      title: { type: "string" },
+                      rowCount: { type: "integer" },
+                      fileSize: { type: "integer" },
+                      generatedAt: { type: "string", format: "date-time" },
+                      expiresAt: { type: "string", format: "date-time" },
+                      emptyState: { type: "boolean" },
+                      emptyReason: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+            "400": { description: "reportType/format không hợp lệ" },
+            "401": unauthorized,
+          },
         },
       },
       "/api/external/reports/{reportId}/download": {
         get: {
           tags: ["Reports"],
-          summary: "Tải báo cáo đã sinh",
+          summary: "Tải file báo cáo đã sinh (stream artifact)",
+          description:
+            "Stream file artifact đã render (PDF/XLSX/CSV). reportId = id artifact trả về từ /reports/generate. Header X-Artifact-Sha256 kèm theo.",
           security: [{ masterKey: [] }, { bearerAuth: [] }],
-          parameters: [{ name: "reportId", in: "path", required: true, schema: { type: "string" } }],
+          parameters: [{ name: "reportId", in: "path", required: true, schema: { type: "integer" } }],
           responses: {
-            "200": { description: "Report file (CSV hoặc JSON attachment)" },
+            "200": {
+              description: "File báo cáo (pdf/xlsx/csv attachment)",
+              content: {
+                "application/pdf": {},
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {},
+                "text/csv": {},
+              },
+            },
+            "400": { description: "reportId không hợp lệ" },
             "401": unauthorized,
-            "404": { description: "Report không tồn tại hoặc đã hết hạn" },
+            "403": { description: "Không có quyền truy cập artifact này" },
+            "404": { description: "Artifact không tồn tại" },
+            "410": { description: "Artifact đã hết hạn lưu trữ" },
           },
         },
       },

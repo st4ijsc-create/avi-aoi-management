@@ -9,6 +9,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import {
+  OFFSCREEN_PRINT_STYLE,
+  withScope,
+  buildScopeMeta,
+  filterStationRows,
+  computeFactoryAggregate,
+  buildProductionDashboardSections,
+  waitForChartRender,
+  type ReportTFn,
+} from "@/lib/reportSections";
 import MachineAISummary from "@/components/MachineAISummary";
 import QuickIssueReport from "@/components/QuickIssueReport";
 import { Button } from "@/components/ui/button";
@@ -233,6 +243,16 @@ function StationRowSkeleton() {
   );
 }
 
+/* ── Report print-view data snapshot (all charts mounted off-screen) ── */
+interface ProductionPrintData {
+  defect: any;
+  trend: any;
+  spc: any[];
+  rul: any[];
+  factoryAgg: ReturnType<typeof computeFactoryAggregate>;
+  interval: "hour" | "day" | "week";
+}
+
 /* ── Main Component ── */
 
 export default function ProductionDashboard() {
@@ -250,6 +270,15 @@ export default function ProductionDashboard() {
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [trendInterval, setTrendInterval] = useState<"hour" | "day" | "week">("day");
+  // Station-table search is lifted here so the export can honestly reflect the
+  // applied filter (search + low-yield) in its scope metadata (doc 32 §6.4 #9).
+  const [stationSearch, setStationSearch] = useState("");
+
+  // tRPC utils to prefetch every dataset for the "most complete" export, plus a
+  // snapshot of that data that the off-screen print view renders all charts from.
+  const utils = trpc.useUtils();
+  const [printData, setPrintData] = useState<ProductionPrintData | null>(null);
+  const printCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dateRange = useMemo(() => {
     if (datePreset === "custom" && customRange?.from) {
@@ -396,68 +425,131 @@ export default function ProductionDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const getExportConfig = useCallback((): ReportExportConfig => {
-    const dateStr = `${formatDate.short(dateRange.start)} — ${formatDate.short(dateRange.end)}`;
-    const sections: ReportExportConfig["sections"] = [];
+  // Keep the off-screen print view mounted long enough for the export capture to
+  // finish, then unmount it to free the recharts instances.
+  const schedulePrintCleanup = useCallback(() => {
+    if (printCleanupRef.current) clearTimeout(printCleanupRef.current);
+    printCleanupRef.current = setTimeout(() => setPrintData(null), 20000);
+  }, []);
+  useEffect(() => () => { if (printCleanupRef.current) clearTimeout(printCleanupRef.current); }, []);
 
-    sections.push({
-      title: t("productionDashboard.exportOverview", "Overview"),
-      type: "stats",
-      stats: [
-        { label: t("productionDashboard.totalStations", "Stations"), value: summary.totalStations },
-        { label: t("productionDashboard.avgFPY", "Avg FPY"), value: `${summary.avgFPY}%` },
-        { label: t("productionDashboard.totalOutput", "Total Output"), value: summary.totalOutput.toLocaleString() },
-        { label: t("productionDashboard.avgRetests", "Avg Retests"), value: `${summary.avgRetests}%` },
-        { label: t("productionDashboard.lowYieldStations", "Low Yield"), value: summary.lowYieldStations },
-      ],
+  // Async prefetch so the export always carries EVERY chart + full data, no matter
+  // which tab is active (doc 32 §6.2). Datasets are fetched via tRPC utils, an
+  // off-screen print view mounts all charts, then sections reference their ids.
+  const getExportConfig = useCallback(async (): Promise<ReportExportConfig> => {
+    const dateStr = `${formatDate.short(dateRange.start)} — ${formatDate.short(dateRange.end)}`;
+
+    const [defectRes, trendRes, spcRes, rulRes] = await Promise.allSettled([
+      utils.productionDashboard.getDefectAnalysis.fetch(commonInput),
+      utils.productionDashboard.getTrendData.fetch({ ...commonInput, interval: trendInterval }),
+      utils.productionDashboard.getSpcSummary.fetch(commonInput),
+      utils.predictiveMaintenance.listRulForecast.fetch({ limit: 50 }).catch(() => []),
+    ]);
+    const val = <T,>(r: PromiseSettledResult<T>): T | undefined => (r.status === "fulfilled" ? r.value : undefined);
+    const defect = val(defectRes) as any;
+    const trend = val(trendRes) as any;
+    const spc = ((val(spcRes) as any[]) || []) as any[];
+    const rul = ((val(rulRes) as any[]) || []) as any[];
+
+    const factoryAgg = computeFactoryAggregate(stationData);
+    const filteredRows = filterStationRows(stationData, { search: stationSearch, lowYield: lowYieldFilter });
+    const stationRowsFiltered = !!(stationSearch.trim() || lowYieldFilter);
+
+    // Mount off-screen charts + wait for recharts layout/animation before capture.
+    setPrintData({ defect, trend, spc, rul, factoryAgg, interval: trendInterval });
+    await waitForChartRender();
+    schedulePrintCleanup();
+
+    const sections = buildProductionDashboardSections({
+      t: t as unknown as ReportTFn,
+      summary,
+      stationRows: filteredRows,
+      stationRowsFiltered,
+      defectData: defect,
+      trendData: trend,
+      spcData: spc,
+      rulData: rul,
+      factoryAgg,
     });
 
-    if (stationData.length > 0) {
-      sections.push({
-        title: t("productionDashboard.exportStationPerf", "Station Performance"),
-        type: "table",
-        tableHeaders: [
-          t("productionDashboard.colStation", "Station"),
-          t("productionDashboard.colCategory", "Category"),
-          t("productionDashboard.colFPY", "FPY %"),
-          t("productionDashboard.colChange", "Change %"),
-          t("productionDashboard.colFinalYield", "Final Yield %"),
-          t("productionDashboard.colOutput", "Output"),
-          t("productionDashboard.colRetests", "Retest %"),
-        ],
-        tableRows: stationData.map((r: any) => [
-          r.station.name, r.workshop?.name || r.line?.name || "",
-          r.firstPassYield.toFixed(1), r.yieldChange.toFixed(2), r.finalYield.toFixed(1),
-          r.output, r.retestRate.toFixed(1),
-        ]),
-      });
-    }
+    const factoryName = factoriesData?.find((f: any) => String(f.id) === selectedFactory)?.name;
+    const lineName = lines?.find((l: any) => String(l.id) === selectedLine)?.name;
+    const scope = buildScopeMeta({
+      factory: selectedFactory === "all" ? undefined : factoryName || `#${selectedFactory}`,
+      line: selectedLine === "all" ? undefined : lineName || `#${selectedLine}`,
+      dateRange: dateStr,
+      interval: trendInterval,
+      search: stationSearch.trim() || undefined,
+      lowYield: lowYieldFilter ? "FPY < 70%" : undefined,
+      compareMode: compareMode ? "on" : undefined,
+      stationRows: stationRowsFiltered ? "filtered view" : "all rows",
+    });
 
-    if (defectData?.defectsByType?.length) {
-      sections.push({
-        title: t("productionDashboard.exportTopDefects", "Top Defects"),
-        type: "table",
-        tableHeaders: [
-          t("productionDashboard.colCode", "Code"),
-          t("productionDashboard.colName", "Name"),
-          t("productionDashboard.colCount", "Count"),
-          t("productionDashboard.colRate", "Rate"),
-        ],
-        tableRows: defectData.defectsByType.map((d: any) => [d.code, d.name, d.ngCount, `${d.percentage || 0}%`]),
-      });
-    }
-
-    return {
-      title: t("productionDashboard.exportTitle", "Production Dashboard Report"),
-      subtitle: dateStr,
-      sections,
-      filenamePrefix: "production_dashboard",
-      orientation: "landscape",
-    };
-  }, [summary, stationData, defectData, dateRange, t]);
+    return withScope(
+      {
+        title: t("productionDashboard.exportTitle", "Production Dashboard Report"),
+        subtitle: dateStr,
+        sections,
+        filenamePrefix: "production_dashboard",
+        orientation: "landscape",
+      } as ReportExportConfig,
+      { scope, filters: scope },
+    );
+  }, [
+    t, utils, commonInput, stationData, summary, dateRange, formatDate, trendInterval,
+    stationSearch, lowYieldFilter, selectedFactory, selectedLine, compareMode,
+    factoriesData, lines, schedulePrintCleanup,
+  ]);
 
   return (
     <DashboardLayout>
+      {/* ── Off-screen report print view: mounts EVERY chart from prefetched data
+          so ReportExportButton can capture them regardless of the active tab
+          (doc 32 §6.5). Rendered first so getElementById resolves these
+          light-themed copies. ── */}
+      {printData && (
+        <div style={OFFSCREEN_PRINT_STYLE} aria-hidden data-report-print-view>
+          <div style={{ padding: 24 }}>
+            {printData.factoryAgg.length > 0 && (
+              <div id="chart-factory-compare" style={{ width: 1040, height: 300, background: "#fff", marginBottom: 24 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={printData.factoryAgg} margin={{ top: 10, right: 16, left: 0, bottom: 24 }}>
+                    <CartesianGrid {...chartGridProps} opacity={0.2} />
+                    <XAxis dataKey="name" tick={chartAxisTick} interval={0} angle={-15} textAnchor="end" height={50} />
+                    <YAxis yAxisId="left" tick={chartAxisTick} domain={[0, 100]} />
+                    <YAxis yAxisId="right" orientation="right" tick={chartAxisTick} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar yAxisId="right" dataKey="output" name={t("productionDashboard.totalOutput", "Total Output")} fill={chartColor(0)} isAnimationActive={false} radius={[4, 4, 0, 0]} />
+                    <Line yAxisId="left" type="monotone" dataKey="avgFPY" name={t("productionDashboard.avgFPY", "Avg FPY")} stroke={chartColor(1)} strokeWidth={2} isAnimationActive={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <DefectAnalysisTab data={printData.defect} isLoading={false} navigate={() => {}} t={t} />
+            <TrendTab data={printData.trend} isLoading={false} interval={printData.interval} onIntervalChange={() => {}} t={t} />
+            {printData.spc.length > 0 && (
+              <SpcTab data={printData.spc.slice(0, 15) as any} isLoading={false} navigate={() => {}} t={t} datePreset={datePreset} dateRange={dateRange} />
+            )}
+            {printData.rul.length > 0 && (
+              <div id="chart-machine-rul" style={{ width: 1040, height: 300, background: "#fff", marginTop: 24 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={printData.rul.map((m: any) => ({ code: m.machineCode, risk: Math.round((m.failureRisk || 0) * 100) }))}
+                    margin={{ top: 10, right: 16, left: 0, bottom: 40 }}
+                  >
+                    <CartesianGrid {...chartGridProps} opacity={0.2} />
+                    <XAxis dataKey="code" tick={chartAxisTick} interval={0} angle={-25} textAnchor="end" height={60} />
+                    <YAxis domain={[0, 100]} tick={chartAxisTick} tickFormatter={(v) => `${v}%`} />
+                    <Tooltip contentStyle={chartTooltipStyle} />
+                    <Bar dataKey="risk" name={t("productionDashboard.machineRul", "Failure Risk %")} fill={chartColor(3)} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* F4a: adopt the DS PageContainer shell (fluid = full-bleed monitor page).
           Padding/rhythm are zeroed here because this dense layout owns its own
           edge-to-edge sticky strips + horizontal-scroll table. */}
@@ -753,7 +845,7 @@ export default function ProductionDashboard() {
                     {t("productionDashboard.compareHint", "Compare KPIs across factories")}
                   </span>
                 </div>
-                <div className="h-56 sm:h-64">
+                <div id="chart-factory-compare" className="h-56 sm:h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={factoryAgg} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
                       <CartesianGrid {...chartGridProps} opacity={0.2} />
@@ -805,6 +897,8 @@ export default function ProductionDashboard() {
               datePreset={datePreset}
               dateRange={dateRange}
               lowYieldFilter={lowYieldFilter}
+              searchText={stationSearch}
+              onSearchChange={setStationSearch}
               onClearLowYieldFilter={() => {
                 setLowYieldFilter(false);
                 updateUrl({ lowYield: false });
@@ -873,7 +967,7 @@ function MachineAISignalsSection({ t }: { t: any }) {
 
   return (
     <div className="px-3 sm:px-7 pt-3 sm:pt-4">
-      <div className="bg-card border border-border rounded-md p-3 sm:p-4">
+      <div id="chart-machine-rul" className="bg-card border border-border rounded-md p-3 sm:p-4">
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
@@ -933,6 +1027,8 @@ function StationViewTab({
   datePreset,
   dateRange,
   lowYieldFilter,
+  searchText,
+  onSearchChange,
   onClearLowYieldFilter,
 }: {
   stationData: any[];
@@ -942,25 +1038,16 @@ function StationViewTab({
   datePreset: string;
   dateRange: { start: Date; end: Date };
   lowYieldFilter?: boolean;
+  searchText: string;
+  onSearchChange: (v: string) => void;
   onClearLowYieldFilter?: () => void;
 }) {
-  const [searchText, setSearchText] = useState("");
+  const setSearchText = onSearchChange;
 
-  const filteredData = useMemo(() => {
-    let rows = stationData;
-    if (lowYieldFilter) {
-      rows = rows.filter((row: any) => row.totalInspections > 0 && row.firstPassYield < 70);
-    }
-    if (!searchText.trim()) return rows;
-    const q = searchText.toLowerCase().trim();
-    return rows.filter((row: any) => {
-      const name = (row.station?.name || "").toLowerCase();
-      const code = (row.station?.code || "").toLowerCase();
-      const line = (row.line?.name || "").toLowerCase();
-      const workshop = (row.workshop?.name || "").toLowerCase();
-      return name.includes(q) || code.includes(q) || line.includes(q) || workshop.includes(q);
-    });
-  }, [stationData, searchText, lowYieldFilter]);
+  const filteredData = useMemo(
+    () => filterStationRows(stationData, { search: searchText, lowYield: lowYieldFilter }),
+    [stationData, searchText, lowYieldFilter],
+  );
 
   return (
     <div className="min-w-275">
@@ -1279,7 +1366,7 @@ function DefectAnalysisTab({
       {/* Pareto Chart + Table */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Pareto Bar Chart */}
-        <div className="bg-card border border-border rounded-xl p-6">
+        <div id="chart-defect-pareto" className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-primary" />
             {t("productionDashboard.defectPareto", "Defect Pareto Analysis")}
@@ -1358,7 +1445,7 @@ function DefectAnalysisTab({
       </div>
 
       {/* Defects by Station */}
-      <div className="bg-card border border-border rounded-xl p-6">
+      <div id="chart-ng-by-station" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4">
           {t("productionDashboard.defectsByStation", "NG Distribution by Station")}
         </h3>
@@ -1468,7 +1555,7 @@ function TrendTab({
       ) : (
         <>
           {/* Yield Trend */}
-          <div className="bg-card border border-border rounded-xl p-6">
+          <div id="chart-yield-trend" className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-success" />
               {t("productionDashboard.yieldTrend", "Yield Trend")}
@@ -1492,7 +1579,7 @@ function TrendTab({
           </div>
 
           {/* Output & NG Trend */}
-          <div className="bg-card border border-border rounded-xl p-6">
+          <div id="chart-output-trend" className="bg-card border border-border rounded-xl p-6">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-info" />
               {t("productionDashboard.outputTrend", "Output & NG Trend")}
@@ -1589,7 +1676,7 @@ function SpcTab({
   const anyOutOfControl = spcRows.some((r: any) => r?.cpk < 1);
 
   return (
-    <div className="p-4 sm:p-7 space-y-4">
+    <div id="chart-spc" className="p-4 sm:p-7 space-y-4">
       {/* Summary Cards (F4a: MetricCard grid) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <MetricCard

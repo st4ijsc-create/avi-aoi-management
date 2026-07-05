@@ -144,6 +144,54 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
   };
 }
 
+/**
+ * Delete a stored object by key. Used by the report-artifact retention cleanup
+ * (doc 32 Wave R2). Best-effort and non-fatal by contract — the caller deletes
+ * the DB row regardless of the storage-object outcome so a missing/unreachable
+ * blob never wedges retention. Returns whether the object was removed.
+ *
+ *  - local mode: path-guarded unlink under the uploads root; a missing file is
+ *    treated as already-deleted (deleted:false, error:undefined).
+ *  - forge mode: DELETE against the storage proxy; any non-2xx / network error
+ *    is swallowed and surfaced as {deleted:false, error} for logging.
+ */
+export async function storageDelete(relKey: string): Promise<{ deleted: boolean; error?: string }> {
+  const key = normalizeKey(relKey);
+  const storageMode = process.env.STORAGE_MODE ?? "forge";
+
+  if (storageMode === "local") {
+    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+      : path.join(process.cwd(), "uploads");
+    const filePath = path.join(uploadsRoot, key);
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && resolved !== path.resolve(uploadsRoot)) {
+      return { deleted: false, error: "path traversal blocked" };
+    }
+    try {
+      await fs.promises.unlink(resolved);
+      return { deleted: true };
+    } catch (err: any) {
+      if (err?.code === "ENOENT") return { deleted: false }; // already gone
+      return { deleted: false, error: err?.message ?? String(err) };
+    }
+  }
+
+  // Forge storage proxy mode.
+  try {
+    const { baseUrl, apiKey } = getStorageConfig();
+    const url = new URL("v1/storage/delete", ensureTrailingSlash(baseUrl));
+    url.searchParams.set("path", key);
+    const response = await fetch(url, { method: "DELETE", headers: buildAuthHeaders(apiKey) });
+    if (!response.ok) {
+      return { deleted: false, error: `${response.status} ${response.statusText}` };
+    }
+    return { deleted: true };
+  } catch (err: any) {
+    return { deleted: false, error: err?.message ?? String(err) };
+  }
+}
+
 const MIME_MAP: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

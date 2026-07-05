@@ -293,6 +293,42 @@ describe("computeNextRun — factory timezone (doc 27 A1)", () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 32 R4 (item 7) — the standalone setInterval scheduler was RETIRED (the live
+// scheduler is the node-cron reportScheduler). These assertions prove the dead
+// loop is gone while the content library the live path consumes is intact.
+// ════════════════════════════════════════════════════════════════════════════
+describe("scheduler retirement + content library (doc 32 R4)", () => {
+  const svc = scheduledReportService as any;
+
+  it("retired the dead setInterval scheduler methods", () => {
+    expect(svc.start).toBeUndefined();
+    expect(svc.stop).toBeUndefined();
+    expect(svc.runReport).toBeUndefined();
+    expect(svc.checkAndRunReports).toBeUndefined();
+    expect(svc.getDueReports).toBeUndefined();
+  });
+
+  it("keeps the content-generation library consumed by reportScheduler + systemRouters", () => {
+    for (const method of [
+      "generateReportContent",
+      "formatReportHtml",
+      "previewReport",
+      "generateAndSendReport",
+      "generateOEEReportContent",
+      "formatOEEReportHtml",
+      "generateMachineHealthReportContent",
+      "formatMachineHealthReportHtml",
+    ]) {
+      expect(typeof svc[method]).toBe("function");
+    }
+  });
+
+  it("retains computeNextRun (factory-TZ correctness helper)", () => {
+    expect(typeof svc.computeNextRun).toBe("function");
+  });
+});
+
 describe("Logo Upload", () => {
   it("should generate unique filename for uploaded logo", () => {
     const timestamp = Date.now();

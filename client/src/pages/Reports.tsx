@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
+import { buildMachineComparison, buildFactoryComparison } from "@/lib/reportsData";
 
 // Result colours map to semantic tokens (success/destructive/warning) so charts
 // follow the theme; series colours use the DS chart palette.
@@ -101,6 +102,28 @@ export default function Reports() {
   const { data: weeklyCOPQ } = trpc.corporateFactoryStats.weeklyCOPQ.useQuery({
     weeks: timeRange === "7d" ? 4 : timeRange === "30d" ? 12 : timeRange === "90d" ? 13 : 52,
     factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+  });
+
+  // Report window mirroring the yield window — feeds the real per-machine /
+  // per-factory aggregates below (doc 32 P0 #2: these were hardcoded []).
+  const reportWindow = useMemo(() => {
+    const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    return { startDate, endDate };
+  }, [timeRange]);
+
+  // Top + bottom machines (name/code/total/finalYield/ng) for the machine tab.
+  const { data: topBottomMachines } = trpc.dashboard.getTopBottomMachines.useQuery({
+    startDate: reportWindow.startDate,
+    endDate: reportWindow.endDate,
+    limit: 10,
+  });
+  // Per-factory yield rollup (final yield, decision #4) for the factory tab.
+  const { data: factoryYield } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({
+    startDate: reportWindow.startDate,
+    endDate: reportWindow.endDate,
   });
 
   // Define type for daily stats
@@ -186,12 +209,12 @@ export default function Reports() {
       });
   }, [dailyStats]);
 
-  // Machine comparison data — requires a per-machine stats query that is not yet
-  // wired here. Ship an explicit empty set (honest) rather than synthetic
-  // Math.random() placeholders so the UI never shows fabricated numbers.
-  const machineComparisonData = useMemo<
-    { name: string; code: string; total: number; yieldRate: number; ngRate: number }[]
-  >(() => [], []);
+  // Machine comparison data — real per-machine rollup from getTopBottomMachines
+  // (top + bottom performers, deduped). See lib/reportsData.buildMachineComparison.
+  const machineComparisonData = useMemo(
+    () => buildMachineComparison(topBottomMachines as any, machines as any, selectedFactory),
+    [topBottomMachines, machines, selectedFactory],
+  );
 
   // Result distribution data
   const resultDistributionData = useMemo(() => {
@@ -202,11 +225,12 @@ export default function Reports() {
     ];
   }, [aggregatedStats]);
 
-  // Factory comparison data — same as above: no per-factory yield query is wired
-  // here yet, so return an explicit empty set instead of synthetic placeholders.
-  const factoryComparisonData = useMemo<
-    { name: string; code: string; total: number; yieldRate: number; machines: number }[]
-  >(() => [], []);
+  // Factory comparison data — real per-factory yield rollup (final yield). See
+  // lib/reportsData.buildFactoryComparison.
+  const factoryComparisonData = useMemo(
+    () => buildFactoryComparison(factoryYield as any, factories as any, machines as any, selectedFactory),
+    [factoryYield, factories, machines, selectedFactory],
+  );
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -1225,14 +1249,14 @@ export default function Reports() {
                           formatter={(value: any, name: string) => {
                             if (name === 'copqNG') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NG)'];
                             if (name === 'copqNTF') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NTF)'];
-                            if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, 'Tỷ lệ NG'];
+                            if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, t('reports.ngRateShort', 'Tỷ lệ NG')];
                             return [value, name];
                           }}
                         />
                         <Legend />
                         <Bar yAxisId="left" dataKey="copqNG" stackId="copq" fill={COLORS.ng} name="COPQ (NG)" />
                         <Bar yAxisId="left" dataKey="copqNTF" stackId="copq" fill={COLORS.ntf} name="COPQ (NTF)" />
-                        <Line yAxisId="right" type="monotone" dataKey="defectRate" stroke={COLORS.secondary} strokeWidth={2} name="Tỷ lệ NG (%)" dot={{ r: 3 }} />
+                        <Line yAxisId="right" type="monotone" dataKey="defectRate" stroke={COLORS.secondary} strokeWidth={2} name={t('reports.ngRatePercent', 'Tỷ lệ NG (%)')} dot={{ r: 3 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
 

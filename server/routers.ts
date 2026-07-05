@@ -68,6 +68,7 @@ import { executiveReportRouter } from "./routers/executiveReportRouter"; // Phas
 import { enhancedAuditRouter } from "./routers/enhancedAuditRouter";
 import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
 import { reportAggregatorsRouter } from "./routers/reportAggregatorsRouter"; // Wave R1 (doc 32): defect-category Pareto / yield-by-product / yield-trend-by-week
+import { reportArtifactRouter } from "./routers/reportArtifactRouter"; // Wave R2 (doc 32): persisted report artifact store (list/get/download/delete)
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
@@ -107,6 +108,7 @@ import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRout
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
+import { aiProgrammingKbRouter } from "./routers/aiProgrammingKbRouter"; // doc 34 · P1: programming (vendor-manual) KB retrieval
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
@@ -497,10 +499,12 @@ export const appRouter = router({
   enhancedAudit: enhancedAuditRouter,
   paretoAnalysis: paretoAnalysisRouter,
   reportAggregators: reportAggregatorsRouter,
+  reportArtifact: reportArtifactRouter,
   qualityGateTemplate: qualityGateTemplateRouter,
 
   // License Management
   license: licenseRouter,
+
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,
@@ -583,6 +587,8 @@ export const appRouter = router({
   aiAdvancedVision: aiAdvancedVisionRouter,
   // AI Local Knowledge Base — Phase 2 codebase Q&A
   aiLocalKb: aiLocalKbRouter,
+  // AI Programming KB — doc 34 · P1: vendor-manual retrieval (page-cited), separate from ops KB
+  aiProgrammingKb: aiProgrammingKbRouter,
   // AI Copilot — GĐ2 HITL write-action confirm/cancel/get
   aiCopilot: aiCopilotRouter,
   aiRcaCopilot: aiRcaCopilotRouter,

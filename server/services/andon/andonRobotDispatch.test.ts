@@ -10,6 +10,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("drizzle-orm", () => ({
   eq: (col: any, val: any) => ({ __op: "eq", __k: col?.name, __v: val }),
+  // sql`` is referenced at module-eval by schema files pulled in via the
+  // barrel (e.g. report_artifacts default now()+interval); provide a passthrough
+  // tag so the partial mock loads. Not used by this test's fake db logic.
+  sql: (strings: TemplateStringsArray, ...vals: any[]) => ({ __sql: String.raw({ raw: strings } as any, ...vals) }),
 }));
 
 type Row = Record<string, any>;

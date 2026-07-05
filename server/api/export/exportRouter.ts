@@ -33,7 +33,15 @@ import { apiKeyGenerator } from "../../_core/rateLimitConfig";
 import { resolvePrincipal, type ApiPrincipal } from "../v1/auth";
 import { API_SCOPES } from "../v1/scopes";
 import { scopeSatisfied } from "../v1/scopes";
-import { toCsvLine, rowToCsvLine, jsonStreamChunk } from "../../services/universalExportService";
+import {
+  toCsvLine,
+  rowToCsvLine,
+  jsonStreamChunk,
+  renderReport,
+  resolveBranding,
+  type ExportColumn,
+  type ReportFormat,
+} from "../../services/universalExportService";
 
 // ── Tunables ──────────────────────────────────────────────────────────────────
 
@@ -48,6 +56,18 @@ export const EXPORT_MAX_WINDOW_DAYS = intEnv("EXPORT_MAX_WINDOW_DAYS", 92);
 const INSPECTION_PAGE_SIZE = intEnv("EXPORT_INSPECTION_PAGE_SIZE", 500);
 /** Rows per DB page for the measurements stream. */
 const MEASUREMENT_PAGE_SIZE = intEnv("EXPORT_MEASUREMENT_PAGE_SIZE", 1000);
+/**
+ * XLSX/PDF are BUFFERED (renderReport can't stream), so the row-level datasets
+ * (inspections/measurements) are capped for the document formats to bound memory
+ * — CSV/JSON stay streamed and uncapped. Aggregate datasets (yield/oee/defect)
+ * are naturally small rollups.
+ */
+const XLSX_MAX_ROWS = intEnv("EXPORT_XLSX_MAX_ROWS", 100000);
+const PDF_MAX_ROWS = intEnv("EXPORT_PDF_MAX_ROWS", 5000);
+
+function docRowCap(format: "xlsx" | "pdf"): number {
+  return format === "pdf" ? PDF_MAX_ROWS : XLSX_MAX_ROWS;
+}
 
 // ── Authentication (session OR scoped API key) ───────────────────────────────
 
@@ -246,6 +266,279 @@ function auditExport(
     .catch((err) => console.error("[Export] audit log failed:", (err as Error)?.message ?? err));
 }
 
+// ── Buffered document (XLSX/PDF) + aggregate-dataset helpers ─────────────────
+
+/** Set content headers for a fully-buffered document and send it. */
+function sendBufferedDoc(
+  res: Response,
+  out: { buffer: Buffer; mimeType: string; filename: string },
+): void {
+  res.setHeader("Content-Type", out.mimeType);
+  res.setHeader("Content-Disposition", `attachment; filename="${out.filename}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(out.buffer);
+}
+
+/** Render a bounded dataset to a branded XLSX/PDF via the canonical engine. */
+async function renderDoc(params: {
+  type: string;
+  title: string;
+  subtitle?: string;
+  format: "xlsx" | "pdf";
+  columns: ExportColumn[];
+  data: Record<string, unknown>[];
+  fileName: string;
+}) {
+  const branding = await resolveBranding().catch(() => ({}));
+  return renderReport({
+    type: params.type,
+    title: params.title,
+    subtitle: params.subtitle,
+    format: params.format as ReportFormat,
+    branding,
+    columns: params.columns,
+    data: params.data,
+    fileName: params.fileName,
+  });
+}
+
+/** identity-header columns for a raw dataset (key === header). */
+function idColumns(keys: readonly string[]): ExportColumn[] {
+  return keys.map((k) => ({ key: k, header: k }));
+}
+
+/** Collect up to `cap` inspection rows (bounded — for the XLSX/PDF doc path). */
+async function collectInspections(
+  from: Date,
+  to: Date,
+  filters: CommonFilters,
+  principal: ExportPrincipal,
+  cap: number,
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const { getProductInspectionsCursor } = await import("../../db/inspection");
+  const rows: Record<string, unknown>[] = [];
+  let truncated = false;
+  let cursor: string | undefined;
+  do {
+    const page = await getProductInspectionsCursor({
+      startDate: from,
+      endDate: to,
+      machineId: filters.machineId,
+      result: filters.result,
+      productModel: filters.product,
+      factoryCode: filters.factoryCode,
+      corporateCode: filters.corporateCode,
+      limit: INSPECTION_PAGE_SIZE,
+      cursor,
+      userId: principal.userId,
+      userRole: principal.userRole,
+    });
+    for (const row of page.data) {
+      if (rows.length >= cap) {
+        truncated = true;
+        break;
+      }
+      rows.push(row as Record<string, unknown>);
+    }
+    cursor = !truncated && page.hasMore && page.nextCursor ? page.nextCursor : undefined;
+  } while (cursor);
+  return { rows, truncated };
+}
+
+/** Collect up to `cap` measurement rows (bounded keyset — for XLSX/PDF). */
+async function collectMeasurements(
+  from: Date,
+  to: Date,
+  filters: CommonFilters,
+  cap: number,
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const { getDb } = await import("../../db/connection");
+  const schema = await import("../../../drizzle/schema");
+  const db = await getDb();
+  if (!db) return { rows: [], truncated: false };
+  const mr = schema.measurementResults;
+  const pi = schema.productInspections;
+  const mp = schema.measurementPointDefs;
+  const dc = schema.defectCatalog;
+
+  const rows: Record<string, unknown>[] = [];
+  let truncated = false;
+  let lastId = 0;
+  for (;;) {
+    const conditions = [gt(mr.id, lastId), gte(pi.inspectionTime, from), lte(pi.inspectionTime, to)];
+    if (filters.machineId) conditions.push(eq(pi.machineId, filters.machineId));
+    if (filters.result) conditions.push(eq(mr.result, filters.result));
+    if (filters.product) conditions.push(like(pi.productModel, `%${filters.product}%`));
+    if (filters.factoryCode) conditions.push(eq(pi.factoryCode, filters.factoryCode));
+    if (filters.corporateCode) conditions.push(eq(pi.corporateCode, filters.corporateCode));
+
+    const page = await db
+      .select({
+        id: mr.id,
+        inspectionId: mr.inspectionId,
+        serialNumber: pi.serialNumber,
+        inspectionTime: pi.inspectionTime,
+        machineId: pi.machineId,
+        pointDefId: mr.pointDefId,
+        pointCode: mp.code,
+        pointName: mp.name,
+        measuredValue: mr.measuredValue,
+        measuredValueText: mr.measuredValueText,
+        result: mr.result,
+        defectCatalogId: mr.defectCatalogId,
+        defectCode: dc.code,
+        defectName: dc.name,
+        defectSeverity: mr.defectSeverity,
+        aiConfidence: mr.aiConfidence,
+      })
+      .from(mr)
+      .innerJoin(pi, eq(mr.inspectionId, pi.id))
+      .leftJoin(mp, eq(mr.pointDefId, mp.id))
+      .leftJoin(dc, eq(mr.defectCatalogId, dc.id))
+      .where(and(...conditions))
+      .orderBy(asc(mr.id))
+      .limit(MEASUREMENT_PAGE_SIZE);
+
+    for (const row of page) {
+      if (rows.length >= cap) {
+        truncated = true;
+        break;
+      }
+      rows.push(row as Record<string, unknown>);
+      lastId = (row as { id: number }).id;
+    }
+    if (truncated || page.length < MEASUREMENT_PAGE_SIZE) break;
+  }
+  return { rows, truncated };
+}
+
+// ── Aggregate datasets (yield / oee / defect-pareto) — bounded rollups ────────
+
+export interface AggregateDataset {
+  dataset: string;
+  columns: ExportColumn[];
+  rows: Record<string, unknown>[];
+}
+
+/** Per-product output + canonical final yield (getYieldByProduct — R1). */
+async function buildYieldDataset(from: Date, to: Date, machineId?: number): Promise<AggregateDataset> {
+  const { getYieldByProduct } = await import("../../db/reportAggregators");
+  const rows = await getYieldByProduct({ startDate: from, endDate: to, machineId });
+  return {
+    dataset: "yield",
+    columns: [
+      { key: "productModelId", header: "productModelId", format: "number" },
+      { key: "productCode", header: "productCode" },
+      { key: "productName", header: "productName" },
+      { key: "total", header: "total", format: "number" },
+      { key: "ok", header: "ok", format: "number" },
+      { key: "ng", header: "ng", format: "number" },
+      { key: "ntf", header: "ntf", format: "number" },
+      { key: "yieldRate", header: "yieldRate" },
+    ],
+    rows: rows as unknown as Record<string, unknown>[],
+  };
+}
+
+/** Defect Pareto by defect_catalog dimension (getDefectParetoByCategory — R1). */
+async function buildDefectParetoDataset(
+  from: Date,
+  to: Date,
+  machineId: number | undefined,
+  dimension: "category" | "severity" | "ipcSection",
+): Promise<AggregateDataset> {
+  const { getDefectParetoByCategory } = await import("../../db/reportAggregators");
+  const res = await getDefectParetoByCategory({ startDate: from, endDate: to, machineId, dimension });
+  return {
+    dataset: "defect-pareto",
+    columns: [
+      { key: "key", header: dimension },
+      { key: "count", header: "count", format: "number" },
+      { key: "percentage", header: "percentage" },
+      { key: "cumulativePercentage", header: "cumulativePercentage" },
+      { key: "bucket", header: "bucket" },
+    ],
+    rows: res.items as unknown as Record<string, unknown>[],
+  };
+}
+
+/** Per machine per day OEE averages from oee_metrics (%; ×100 stored → /100). */
+async function buildOeeDataset(from: Date, to: Date, machineId?: number): Promise<AggregateDataset> {
+  const { getDb } = await import("../../db/connection");
+  const { sql } = await import("drizzle-orm");
+  const { executeRows } = await import("../../utils/kpi");
+  const db = await getDb();
+  const columns: ExportColumn[] = [
+    { key: "day", header: "day" },
+    { key: "machine_id", header: "machine_id", format: "number" },
+    { key: "machine_code", header: "machine_code" },
+    { key: "availability", header: "availability" },
+    { key: "performance", header: "performance" },
+    { key: "quality", header: "quality" },
+    { key: "oee", header: "oee" },
+    { key: "total_count", header: "total_count", format: "number" },
+    { key: "good_count", header: "good_count", format: "number" },
+    { key: "reject_count", header: "reject_count", format: "number" },
+  ];
+  if (!db) return { dataset: "oee", columns, rows: [] };
+  const machineFilter = machineId ? sql` AND "machineId" = ${machineId}` : sql``;
+  const res = await db.execute(sql`
+    SELECT
+      TO_CHAR(date_trunc('day', "timestamp"), 'YYYY-MM-DD') AS day,
+      "machineId"   AS machine_id,
+      "machineCode" AS machine_code,
+      ROUND(AVG(availability) / 100.0, 2)::float AS availability,
+      ROUND(AVG(performance)  / 100.0, 2)::float AS performance,
+      ROUND(AVG(quality)      / 100.0, 2)::float AS quality,
+      ROUND(AVG(oee)          / 100.0, 2)::float AS oee,
+      SUM("totalCount")::int  AS total_count,
+      SUM("goodCount")::int   AS good_count,
+      SUM("rejectCount")::int AS reject_count
+    FROM oee_metrics
+    WHERE "timestamp" >= ${from} AND "timestamp" < ${to}${machineFilter}
+    GROUP BY 1, 2, 3
+    ORDER BY 1, 2
+  `);
+  return { dataset: "oee", columns, rows: executeRows(res) };
+}
+
+/** Emit an aggregate dataset as clean CSV / JSON / branded XLSX. */
+async function emitAggregate(
+  res: Response,
+  format: "csv" | "json" | "xlsx",
+  ds: AggregateDataset,
+  from: Date,
+  to: Date,
+): Promise<number> {
+  const keys = ds.columns.map((c) => c.key);
+  const basename = `${ds.dataset}_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
+  if (format === "json") {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${basename}.json"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.end(JSON.stringify({ dataset: ds.dataset, from: from.toISOString(), to: to.toISOString(), count: ds.rows.length, rows: ds.rows }));
+  } else if (format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${basename}.csv"`);
+    res.setHeader("Cache-Control", "no-store");
+    let body = toCsvLine(keys);
+    for (const row of ds.rows) body += rowToCsvLine(row, keys);
+    res.end(body);
+  } else {
+    const out = await renderDoc({
+      type: ds.dataset,
+      title: ds.dataset.toUpperCase(),
+      subtitle: `${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`,
+      format: "xlsx",
+      columns: ds.columns,
+      data: ds.rows,
+      fileName: basename,
+    });
+    sendBufferedDoc(res, out);
+  }
+  return ds.rows.length;
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export function createExportRouter(): Router {
@@ -265,9 +558,10 @@ export function createExportRouter(): Router {
     }),
   );
 
-  // GET /inspections.csv | /inspections.json — streamed list projection.
-  r.get(/^\/inspections\.(csv|json)$/, async (req: Request, res: Response) => {
-    const format = req.path.endsWith(".json") ? "json" : "csv";
+  // GET /inspections.csv|.json — streamed list projection;
+  //     /inspections.xlsx|.pdf — bounded branded document (renderReport).
+  r.get(/^\/inspections\.(csv|json|xlsx|pdf)$/, async (req: Request, res: Response) => {
+    const ext = req.path.slice(req.path.lastIndexOf(".") + 1) as "csv" | "json" | "xlsx" | "pdf";
     const auth = await authenticateExportRequest(req, API_SCOPES.EXPORT_READ);
     if (!auth.principal) return res.status(auth.status).json({ error: auth.message });
 
@@ -276,6 +570,45 @@ export function createExportRouter(): Router {
     const { from, to } = parsed.window;
     const filters = parseCommonFilters(req);
 
+    // Buffered document path (XLSX/PDF): bounded row count, rendered branded.
+    if (ext === "xlsx" || ext === "pdf") {
+      let rows = 0;
+      let completed = false;
+      try {
+        const cap = docRowCap(ext);
+        const collected = await collectInspections(from, to, filters, auth.principal, cap);
+        rows = collected.rows.length;
+        const basename = `inspections_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
+        const out = await renderDoc({
+          type: "inspections",
+          title: "Inspections",
+          subtitle:
+            `${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}` +
+            (collected.truncated ? `  (truncated to ${cap} rows)` : ""),
+          format: ext,
+          columns: idColumns(INSPECTION_EXPORT_COLUMNS),
+          data: collected.rows,
+          fileName: basename,
+        });
+        sendBufferedDoc(res, out);
+        completed = true;
+      } catch (err) {
+        console.error("[Export] inspections doc failed:", (err as Error)?.message ?? err);
+        if (!res.headersSent) res.status(500).json({ error: "Export failed." });
+      } finally {
+        auditExport(req, auth.principal, {
+          endpoint: `/api/export/inspections.${ext}`,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          filters,
+          rows,
+          completed,
+        });
+      }
+      return;
+    }
+
+    const format = ext; // "csv" | "json"
     let aborted = false;
     res.on("close", () => {
       if (!res.writableEnded) aborted = true;
@@ -339,10 +672,10 @@ export function createExportRouter(): Router {
     }
   });
 
-  // GET /measurements.csv | /measurements.json — raw measurement rows in the
-  // window (keyset on measurement id ASC; window applied via the inspection join).
-  r.get(/^\/measurements\.(csv|json)$/, async (req: Request, res: Response) => {
-    const format = req.path.endsWith(".json") ? "json" : "csv";
+  // GET /measurements.csv|.json — raw measurement rows in the window (keyset on
+  // measurement id ASC); /measurements.xlsx|.pdf — bounded branded document.
+  r.get(/^\/measurements\.(csv|json|xlsx|pdf)$/, async (req: Request, res: Response) => {
+    const ext = req.path.slice(req.path.lastIndexOf(".") + 1) as "csv" | "json" | "xlsx" | "pdf";
     const auth = await authenticateExportRequest(req, API_SCOPES.EXPORT_READ);
     if (!auth.principal) return res.status(auth.status).json({ error: auth.message });
 
@@ -351,6 +684,45 @@ export function createExportRouter(): Router {
     const { from, to } = parsed.window;
     const filters = parseCommonFilters(req);
 
+    // Buffered document path (XLSX/PDF): bounded row count, rendered branded.
+    if (ext === "xlsx" || ext === "pdf") {
+      let rows = 0;
+      let completed = false;
+      try {
+        const cap = docRowCap(ext);
+        const collected = await collectMeasurements(from, to, filters, cap);
+        rows = collected.rows.length;
+        const basename = `measurements_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
+        const out = await renderDoc({
+          type: "measurements",
+          title: "Measurements",
+          subtitle:
+            `${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}` +
+            (collected.truncated ? `  (truncated to ${cap} rows)` : ""),
+          format: ext,
+          columns: idColumns(MEASUREMENT_EXPORT_COLUMNS),
+          data: collected.rows,
+          fileName: basename,
+        });
+        sendBufferedDoc(res, out);
+        completed = true;
+      } catch (err) {
+        console.error("[Export] measurements doc failed:", (err as Error)?.message ?? err);
+        if (!res.headersSent) res.status(500).json({ error: "Export failed." });
+      } finally {
+        auditExport(req, auth.principal, {
+          endpoint: `/api/export/measurements.${ext}`,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          filters,
+          rows,
+          completed,
+        });
+      }
+      return;
+    }
+
+    const format = ext; // "csv" | "json"
     let aborted = false;
     res.on("close", () => {
       if (!res.writableEnded) aborted = true;
@@ -449,11 +821,73 @@ export function createExportRouter(): Router {
     }
   });
 
+  // GET /yield.csv|.json|.xlsx — per-product output + final yield rollup.
+  // GET /oee.csv|.json|.xlsx — per machine per day OEE averages (oee_metrics).
+  // GET /defect-pareto.csv|.json|.xlsx — defect Pareto by defect_catalog dimension.
+  // All three are bounded aggregate rollups (scope + window guard + audit).
+  r.get(/^\/(yield|oee|defect-pareto)\.(csv|json|xlsx)$/, async (req: Request, res: Response) => {
+    const lastDot = req.path.lastIndexOf(".");
+    const name = req.path.slice(1, lastDot); // "yield" | "oee" | "defect-pareto"
+    const format = req.path.slice(lastDot + 1) as "csv" | "json" | "xlsx";
+    const auth = await authenticateExportRequest(req, API_SCOPES.EXPORT_READ);
+    if (!auth.principal) return res.status(auth.status).json({ error: auth.message });
+
+    const parsed = parseExportWindow(req.query.from, req.query.to);
+    if (!parsed.window) return res.status(400).json({ error: parsed.error });
+    const { from, to } = parsed.window;
+    const filters = parseCommonFilters(req);
+    const dimensionRaw = req.query.dimension;
+    const dimension =
+      dimensionRaw === "severity" || dimensionRaw === "ipcSection" ? dimensionRaw : "category";
+
+    let rows = 0;
+    let completed = false;
+    try {
+      let ds: AggregateDataset;
+      if (name === "yield") ds = await buildYieldDataset(from, to, filters.machineId);
+      else if (name === "oee") ds = await buildOeeDataset(from, to, filters.machineId);
+      else ds = await buildDefectParetoDataset(from, to, filters.machineId, dimension);
+
+      rows = await emitAggregate(res, format, ds, from, to);
+      completed = true;
+    } catch (err) {
+      console.error(`[Export] ${name} dataset failed:`, (err as Error)?.message ?? err);
+      if (!res.headersSent) res.status(500).json({ error: "Export failed." });
+    } finally {
+      auditExport(req, auth.principal, {
+        endpoint: `/api/export/${name}.${format}`,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        filters,
+        rows,
+        completed,
+      });
+    }
+  });
+
   // Unknown /api/export path → structured 404.
   r.use((_req, res) =>
     res.status(404).json({
       error: "Unknown /api/export endpoint.",
-      available: ["/api/export/inspections.csv", "/api/export/inspections.json", "/api/export/measurements.csv", "/api/export/measurements.json"],
+      available: [
+        "/api/export/inspections.csv",
+        "/api/export/inspections.json",
+        "/api/export/inspections.xlsx",
+        "/api/export/inspections.pdf",
+        "/api/export/measurements.csv",
+        "/api/export/measurements.json",
+        "/api/export/measurements.xlsx",
+        "/api/export/measurements.pdf",
+        "/api/export/yield.csv",
+        "/api/export/yield.json",
+        "/api/export/yield.xlsx",
+        "/api/export/oee.csv",
+        "/api/export/oee.json",
+        "/api/export/oee.xlsx",
+        "/api/export/defect-pareto.csv",
+        "/api/export/defect-pareto.json",
+        "/api/export/defect-pareto.xlsx",
+      ],
     }),
   );
 

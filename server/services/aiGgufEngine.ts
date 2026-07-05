@@ -912,6 +912,146 @@ export async function generateJSON<T = unknown>(
   });
 }
 
+// ─── Doc 34 (P0) — Code / FIM model resolution + fill-in-middle ─
+
+/**
+ * Doc 34 (P0) — Resolve the CODE model basename (sans ".gguf") for the Automation Programming
+ * Copilot. Reads GGUF_CODE_MODEL; when unset, falls back to GGUF_DEFAULT_MODEL (decision D2
+ * §VI-bis: reuse the resident 30B-A3B-Instruct rather than downloading a separate coder model).
+ * Returns an EXPLICIT basename — never undefined for a configured system — so callers pin the
+ * intended model instead of reusing whatever is hot. Returns undefined ONLY when neither env is set.
+ * Mirrors aiModelRouter.codeModelId(); exposed here for the OpenAI gateway / codegen callers.
+ */
+export function codeModelBasename(): string | undefined {
+  const v = (process.env.GGUF_CODE_MODEL || "").trim();
+  if (v) return path.basename(v).replace(/\.gguf$/i, "");
+  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
+  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+}
+
+/**
+ * Doc 34 (P0) — Resolve the FIM (fill-in-middle / inline-completion) model basename. Reads
+ * GGUF_FIM_MODEL; when unset, falls back to the fast model (GGUF_FAST_MODEL) and finally to
+ * GGUF_DEFAULT_MODEL, so autocomplete degrades gracefully on a system with no dedicated small FIM
+ * model. Never undefined for a configured system. Mirrors aiModelRouter.fimModelId().
+ */
+export function fimModelBasename(): string | undefined {
+  const v = (process.env.GGUF_FIM_MODEL || "").trim();
+  if (v) return path.basename(v).replace(/\.gguf$/i, "");
+  const fast = (process.env.GGUF_FAST_MODEL || "").trim();
+  if (fast) return path.basename(fast).replace(/\.gguf$/i, "");
+  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
+  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+}
+
+export interface GgufFimOptions {
+  /** Code BEFORE the cursor (required for a meaningful completion). */
+  prefix: string;
+  /** Code AFTER the cursor (optional — enables true fill-in-middle context). */
+  suffix?: string;
+  /** Max tokens for the infill. Default 128 (autocomplete is short). */
+  maxTokens?: number;
+  /** Temperature. Default 0.1 (deterministic inline completion). */
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  /** Extra stop sequences appended to the FIM sentinels. */
+  stopSequences?: string[];
+  /** KV-cache sizing hint (n_ctx on first load). Small by default (see router `fim` tier). */
+  contextSize?: number;
+}
+
+/**
+ * Standard FIM sentinel strings for the Qwen2.5/3-Coder & StarCoder families. These are used only
+ * as TEXT markers to shape the prompt for a coder model — genuine special-token infill decoding
+ * (plus prefix-cache) is the job of the persistent llama-server coder gateway (doc 34 §3.3a / P0).
+ */
+const FIM_SENTINELS = {
+  prefix: "<|fim_prefix|>",
+  suffix: "<|fim_suffix|>",
+  middle: "<|fim_middle|>",
+} as const;
+const FIM_STOP = ["<|endoftext|>", "<|fim_pad|>", "<|file_sep|>", "<|repo_name|>"];
+
+/**
+ * Best-effort signal that the resolved model supports fill-in-middle. Authoritative when the model
+ * is already resident (node-llama-cpp exposes `model.tokens.infill.*` for FIM-capable GGUFs);
+ * otherwise heuristic: trust FIM only when a DEDICATED GGUF_FIM_MODEL is configured. The reused
+ * default instruct model (D2 fallback) is deliberately NOT treated as FIM-capable, so we do not
+ * feed it raw sentinels it never trained on — we degrade to plain prefix completion instead.
+ * Fully fail-safe: any error → false (→ prefix completion).
+ */
+function modelSupportsFim(modelId?: string): boolean {
+  try {
+    if (modelId && loadedModels.has(modelId)) {
+      const infill = (loadedModels.get(modelId) as any)?.model?.tokens?.infill;
+      return !!(infill && (infill.prefix != null || infill.middle != null || infill.suffix != null));
+    }
+  } catch {
+    /* fall through to the config heuristic */
+  }
+  return !!(process.env.GGUF_FIM_MODEL || "").trim();
+}
+
+/**
+ * Doc 34 (P0) — Best-effort fill-in-middle (inline autocomplete) using the resident coder/fast
+ * model. IMPORTANT: high-quality FIM with native special-token infill + prefix-cache is the job of
+ * the persistent llama-server coder gateway (doc 34 §3.3a / P0). node-llama-cpp's in-process
+ * `LlamaChatSession` does not expose native infill decoding here, so this method is a FAIL-SAFE
+ * fallback so autocomplete still works WITHOUT the gateway:
+ *   • If the resolved model advertises FIM tokens (or a dedicated GGUF_FIM_MODEL is configured) AND
+ *     a suffix is given, assemble a Prefix–Suffix–Middle (PSM) template with the standard sentinels.
+ *   • Otherwise degrade to a plain PREFIX completion, passing the suffix as trailing context so the
+ *     model stays consistent with the code that follows.
+ * Reuses generateText() so it inherits the GGUF concurrency slot, latency telemetry and KV sizing.
+ * Never throws for a missing FIM model — falls back to the fast/default model. New signature; no
+ * existing method is modified.
+ */
+export async function generateFim(
+  options: GgufFimOptions,
+  modelId?: string,
+): Promise<GgufGenerateResult> {
+  const prefix = typeof options.prefix === "string" ? options.prefix : "";
+  const suffix = typeof options.suffix === "string" ? options.suffix : "";
+
+  // Resolve the model: explicit arg → FIM model → fast → default (fimModelBasename()).
+  const effectiveId = modelId ?? fimModelBasename();
+
+  const useFim = !!suffix && modelSupportsFim(effectiveId);
+  const stop = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
+
+  let systemPrompt: string | undefined;
+  let prompt: string;
+
+  if (useFim) {
+    // Prefix–Suffix–Middle template (the order most coder models are trained on).
+    prompt = `${FIM_SENTINELS.prefix}${prefix}${FIM_SENTINELS.suffix}${suffix}${FIM_SENTINELS.middle}`;
+  } else {
+    // Plain prefix completion; give the following code as context so the model stays consistent.
+    systemPrompt = suffix
+      ? "You are an inline code completion engine. Continue the code at the cursor so it fits the " +
+        "code that FOLLOWS. Output ONLY the missing code, no explanation, no fences.\n\n" +
+        `// ---- code after the cursor ----\n${suffix}`
+      : "You are an inline code completion engine. Continue the code at the cursor. Output ONLY the " +
+        "missing code, no explanation, no fences.";
+    prompt = prefix;
+  }
+
+  return generateText(
+    {
+      systemPrompt,
+      prompt,
+      maxTokens: options.maxTokens ?? 128,
+      temperature: options.temperature ?? 0.1,
+      topP: options.topP ?? 0.9,
+      topK: options.topK,
+      stopSequences: stop.length ? stop : undefined,
+      contextSize: options.contextSize,
+    },
+    effectiveId,
+  );
+}
+
 // ─── Vision (LLaVA) ────────────────────────────────────────────
 
 export interface LlavaModelConfig extends GgufModelConfig {

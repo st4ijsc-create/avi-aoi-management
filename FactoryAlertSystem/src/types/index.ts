@@ -973,6 +973,11 @@ export interface DashboardSummaryResponse {
 }
 
 // --- 11.5: Export/Report API ---
+// NOTE (doc 32, Wave R3, decision #5): the mobile app no longer calls the
+// server report-generate endpoint (dashboardService.generateReport was
+// removed — mobile stays light with a WEB-report deep-link, not a downloaded
+// file). These interfaces are retained only to document the server-side
+// contract (owned by R3-A); no app code consumes them.
 
 export interface ReportGenerateRequest {
   reportType: 'daily_summary' | 'shift_report' | 'defect_analysis' | 'station_report';

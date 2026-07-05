@@ -161,5 +161,10 @@ avi-aoi-management.7z
 knowledge/embeddings.jsonl.*-bak
 *.mxbai-bak
 
+# doc 34 — generated programming KB corpus (~2GB: vendor-manual chunks + embeddings).
+# Regenerate on the server via: node scripts/ai-kb/ingest-manuals.mjs && node scripts/ai-kb/embed-programming.mjs
+# (source PDFs live at PROG_KB_MANUALS_DIR, not in the repo). Never commit the corpus.
+knowledge/programming/
+
 # doc 27 V17 — vision validation harness output (npm run vision:validate)
 validation-reports/

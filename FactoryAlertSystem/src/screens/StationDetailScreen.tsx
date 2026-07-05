@@ -906,6 +906,7 @@ const StationDetailScreen: React.FC = () => {
         mpStatistics={mpStatistics}
         pointImages={pointImages}
         apiBaseUrl={useSettingsStore.getState().settings.app.apiBaseUrl}
+        stationId={apiStationId ?? null}
         onImagePress={handlePointImagePress}
       />
 

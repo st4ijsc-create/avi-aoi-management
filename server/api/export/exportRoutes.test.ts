@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   auditMock: vi.fn(async () => ({ id: 1 })),
   sessionUser: null as Record<string, unknown> | null,
   measurementPages: [] as Array<Array<Record<string, unknown>>>,
+  oeeExecRows: [] as Array<Record<string, unknown>>,
 }));
 
 // Master key: only "MASTER" is valid in this test.
@@ -51,8 +52,10 @@ vi.mock("../../db/inspection", () => ({
 }));
 
 // Measurements keyset query → fake drizzle chain returning scripted pages.
+// Also exposes `execute` (used by the /oee aggregate dataset).
 vi.mock("../../db/connection", () => ({
   getDb: vi.fn(async () => ({
+    execute: async (_q: unknown) => h.oeeExecRows,
     select: (_cols: unknown) => ({
       from: (_t: unknown) => ({
         innerJoin: (_t2: unknown, _on: unknown) => ({
@@ -68,6 +71,24 @@ vi.mock("../../db/connection", () => ({
         }),
       }),
     }),
+  })),
+}));
+
+// Aggregate datasets (yield / defect-pareto) reuse the R1 report aggregators.
+vi.mock("../../db/reportAggregators", () => ({
+  getYieldByProduct: vi.fn(async () => [
+    { productModelId: 5, productCode: "PM-5", productName: "Board X", total: 100, ok: 95, ng: 4, ntf: 1, yieldRate: 96 },
+  ]),
+  getDefectParetoByCategory: vi.fn(async () => ({
+    dimension: "category",
+    items: [
+      { key: "SOLDER", count: 8, percentage: 66.67, cumulativePercentage: 66.67, bucket: "value" },
+      { key: "UNCLASSIFIED", count: 4, percentage: 33.33, cumulativePercentage: 100, bucket: "unclassified" },
+    ],
+    totalDefects: 12,
+    classifiedDefects: 8,
+    unclassifiedDefects: 4,
+    topN: 10,
   })),
 }));
 
@@ -127,6 +148,7 @@ beforeEach(() => {
   h.sessionUser = null;
   h.auditMock.mockClear();
   h.measurementPages = [];
+  h.oeeExecRows = [];
   seedTwoPages();
 });
 
@@ -295,6 +317,87 @@ describe("measurements endpoint", () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.available).toContain("/api/export/inspections.csv");
+    expect(body.available).toContain("/api/export/inspections.xlsx");
+    expect(body.available).toContain("/api/export/yield.csv");
+    expect(body.available).toContain("/api/export/oee.xlsx");
+  });
+});
+
+describe("buffered documents (item 19: XLSX/PDF)", () => {
+  it("inspections.xlsx renders a bounded branded workbook + audits the row count", async () => {
+    const res = await fetch(`${baseUrl}/api/export/inspections.xlsx?${WINDOW}`, {
+      headers: { "x-api-key": "MASTER" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("spreadsheetml");
+    expect(res.headers.get("content-disposition")).toContain("inspections_2026-06-01_2026-06-08.xlsx");
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.length).toBeGreaterThan(0);
+    expect(buf.slice(0, 2).toString("latin1")).toBe("PK"); // xlsx = zip → "PK" magic
+
+    await vi.waitFor(() => expect(h.auditMock).toHaveBeenCalled());
+    const entry = h.auditMock.mock.calls.at(-1)![0] as Record<string, any>;
+    expect(entry.details.endpoint).toBe("/api/export/inspections.xlsx");
+    expect(entry.details.rows).toBe(3);
+    expect(entry.details.completed).toBe(true);
+  });
+});
+
+describe("aggregate datasets (item 19: yield / oee / defect-pareto)", () => {
+  it("yield.csv is a clean data CSV (header + product rows)", async () => {
+    const res = await fetch(`${baseUrl}/api/export/yield.csv?${WINDOW}`, {
+      headers: { "x-api-key": "MASTER" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines[0]).toBe("productModelId,productCode,productName,total,ok,ng,ntf,yieldRate");
+    expect(lines[1]).toContain("PM-5");
+    expect(lines[1]).toContain("96");
+  });
+
+  it("yield.xlsx renders a workbook", async () => {
+    const res = await fetch(`${baseUrl}/api/export/yield.xlsx?${WINDOW}`, {
+      headers: { "x-api-key": "MASTER" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("spreadsheetml");
+  });
+
+  it("defect-pareto.json returns the dimension Pareto incl. UNCLASSIFIED", async () => {
+    const res = await fetch(`${baseUrl}/api/export/defect-pareto.json?${WINDOW}`, {
+      headers: { "x-api-key": "MASTER" },
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.parse(await res.text());
+    expect(body.dataset).toBe("defect-pareto");
+    expect(body.rows.map((r: { key: string }) => r.key)).toEqual(["SOLDER", "UNCLASSIFIED"]);
+  });
+
+  it("oee.json returns per machine/day averages from oee_metrics", async () => {
+    h.oeeExecRows = [
+      { day: "2026-06-01", machine_id: 1, machine_code: "AOI-01", availability: 90, performance: 95, quality: 99, oee: 84.6, total_count: 100, good_count: 99, reject_count: 1 },
+    ];
+    const res = await fetch(`${baseUrl}/api/export/oee.json?${WINDOW}`, {
+      headers: { "x-api-key": "MASTER" },
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.parse(await res.text());
+    expect(body.dataset).toBe("oee");
+    expect(body.rows[0].machine_code).toBe("AOI-01");
+    expect(body.rows[0].oee).toBe(84.6);
+  });
+
+  it("aggregate datasets still enforce the window guard (missing from/to → 400)", async () => {
+    const res = await fetch(`${baseUrl}/api/export/yield.csv`, { headers: { "x-api-key": "MASTER" } });
+    expect(res.status).toBe(400);
+  });
+
+  it("aggregate datasets still enforce scope (machine key → 403)", async () => {
+    const res = await fetch(`${baseUrl}/api/export/yield.csv?${WINDOW}`, {
+      headers: { "x-api-key": "MACHINE_KEY" },
+    });
+    expect(res.status).toBe(403);
   });
 });
 

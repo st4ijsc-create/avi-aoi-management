@@ -386,6 +386,9 @@ export function EmailTemplateEditor() {
                 </TabsList>
 
                 <TabsContent value="branding" className="space-y-4 mt-4">
+                  <p className="text-xs text-muted-foreground rounded-md border border-border/60 bg-muted/40 px-3 py-2">
+                    {t('settings.email.reportBrandingNote', 'This branding (logo, company name, primary color, footer) is also applied to exported PDF/Excel/HTML reports. Set a template as default (⭐) to use it for reports.')}
+                  </p>
                   <div className="grid gap-4">
                     <div className="space-y-2">
                       <Label>{t('settings.email.templateName')}</Label>

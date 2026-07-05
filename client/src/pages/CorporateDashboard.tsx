@@ -5,7 +5,6 @@ import { RelatedViews } from "@/components/RelatedViews";
 import { PageHeader, MetricCard, chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
@@ -16,9 +15,9 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   Activity,
-  Calendar,
-  FileDown
+  Calendar
 } from "lucide-react";
+import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { 
   AreaChart, 
@@ -132,6 +131,58 @@ export default function CorporateDashboard() {
       });
   }, [dailyStats]);
 
+  // Real export (PDF / XLSX / HTML) — replaces the "coming soon" placeholder.
+  const getExportConfig = (): ReportExportConfig => {
+    const sections: ReportExportConfig["sections"] = [];
+    sections.push({
+      title: t('reports.summary', 'Summary'),
+      type: 'stats',
+      stats: [
+        { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
+        { label: t('corporate.company'), value: corporateOverview.totalCompanies },
+        { label: t('corporate.factory', 'Factories'), value: corporateOverview.totalFactories },
+        { label: t('corporate.line', 'Lines'), value: corporateOverview.totalLines },
+        { label: t('corporate.machine', 'Machines'), value: corporateOverview.totalMachines },
+        { label: t('reports.yieldRate', 'Yield Rate'), value: `${corporateOverview.avgYield}%` },
+        { label: 'OEE', value: corporateOverview.avgOEE != null ? `${corporateOverview.avgOEE}%` : '—' },
+      ],
+    });
+    if (corporationData.length)
+      sections.push({
+        title: t('corporate.byCorporation', 'By corporation'),
+        type: 'table',
+        tableHeaders: [
+          t('corporate.corporation'), t('corporate.company', 'Companies'),
+          t('corporate.factory', 'Factories'), t('reports.yieldRate', 'Yield Rate'),
+        ],
+        tableRows: corporationData.map((c) => [c.name, c.companies, c.factories, `${c.yield}%`]),
+      });
+    if (yieldByFactory && yieldByFactory.length)
+      sections.push({
+        title: t('corporate.byFactory', 'By factory'),
+        type: 'table',
+        tableHeaders: [
+          t('corporate.corporation'), t('reports.factoryCode', 'Factory'),
+          t('reports.totalProducts', 'Total'), t('reports.yieldRate', 'Yield Rate'),
+        ],
+        tableRows: yieldByFactory.map((f: any) => [f.corporateCode, f.factoryCode, f.totalInspections, `${f.yieldRate}%`]),
+      });
+    if (monthlyTrend.length)
+      sections.push({
+        title: t('corporate.monthlyTrend', 'Monthly trend'),
+        type: 'table',
+        tableHeaders: [t('common.month', 'Month'), t('reports.yieldRate', 'Yield Rate'), t('reports.output', 'Output')],
+        tableRows: monthlyTrend.map((m) => [m.month, `${m.yield}%`, m.output]),
+      });
+    return {
+      title: t('corporate.dashboard'),
+      subtitle: t(`corporate.this${selectedPeriod.charAt(0).toUpperCase()}${selectedPeriod.slice(1)}`, selectedPeriod),
+      sections,
+      filenamePrefix: 'corporate_dashboard',
+      orientation: 'landscape',
+    };
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -170,15 +221,7 @@ export default function CorporateDashboard() {
                   <SelectItem value="year">{t('corporate.thisYear')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled
-                title={t('corporate.exportComingSoon')}
-              >
-                <FileDown className="h-4 w-4 mr-2" />
-                {t('corporate.exportReport')}
-              </Button>
+              <ReportExportButton getConfig={getExportConfig} />
             </>
           }
         />

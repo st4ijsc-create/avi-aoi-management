@@ -134,12 +134,13 @@ export function AnnotationComparison() {
   // Export PDF mutation
   const exportPdfMutation = trpc.annotationComparison.generatePdfReport.useMutation({
     onSuccess: (data) => {
-      // Create downloadable JSON report (can be converted to PDF on client)
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      // Server now renders a REAL PDF (base64) via the canonical engine.
+      const bytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: data.pdfMimeType || 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.json`;
+      a.download = data.pdfFileName || `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

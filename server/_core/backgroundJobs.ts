@@ -75,6 +75,16 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[ReportDelivery] worker start failed:", (err as any)?.message || err);
   }
 
+  // Doc 32 Wave R2 (decision #4) — report-artifact retention cleanup. Deletes
+  // the storage object + row once expiresAt (default now+365d) has passed.
+  // Default ON; disable with REPORT_ARTIFACT_CLEANUP_ENABLED=false.
+  try {
+    const { startReportArtifactCleanup } = await import("../services/reportArtifactService");
+    startReportArtifactCleanup();
+  } catch (err) {
+    console.error("[ReportArtifact] cleanup start failed:", (err as any)?.message || err);
+  }
+
   // Scheduled backups (ISO 22301 DR — non-blocking).
   try {
     const { initializeScheduledBackups } = await import("../services/backupSchedulerService");
@@ -173,6 +183,16 @@ export async function startBackgroundSchedulers(): Promise<void> {
     startCpkSnapshotScheduler();
   } catch (err) {
     console.error("[cpkSnapshotScheduler] init failed:", (err as any)?.message || err);
+  }
+
+  // Doc 32 Wave R5 (R1 gap) — periodic OEE snapshot → oee_metrics (hourly + daily
+  // rollup), so OEE reports/BI have continuous data instead of only on-demand
+  // rows. Opt in via OEE_SNAPSHOT_ENABLED=true (WRITES data — default OFF).
+  try {
+    const { startOeeSnapshotScheduler } = await import("../services/oeeSnapshotScheduler");
+    startOeeSnapshotScheduler();
+  } catch (err) {
+    console.error("[oeeSnapshotScheduler] init failed:", (err as any)?.message || err);
   }
 
   // doc 11 · W1.2 — KB auto-sync nightly cron. Opt in via KB_AUTOSYNC_ENABLED=true.
@@ -297,6 +317,9 @@ export function stopBackgroundSchedulers(): void {
   import("../services/reportDeliveryService")
     .then((m) => m.stopReportDeliveryWorker())
     .catch(() => {});
+  import("../services/reportArtifactService")
+    .then((m) => m.stopReportArtifactCleanup())
+    .catch(() => {});
   import("../services/backupSchedulerService")
     .then((m) => m.shutdownScheduledBackups())
     .catch(() => {});
@@ -332,6 +355,9 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/cpkSnapshotScheduler")
     .then((m) => m.stopCpkSnapshotScheduler())
+    .catch(() => {});
+  import("../services/oeeSnapshotScheduler")
+    .then((m) => m.stopOeeSnapshotScheduler())
     .catch(() => {});
   import("../services/kbSyncScheduler")
     .then((m) => m.stopKbSyncScheduler())

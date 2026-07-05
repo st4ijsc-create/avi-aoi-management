@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,12 +51,62 @@ export function ProductComparison() {
     setProduct2Id(temp);
   };
 
+  // Full localized export (PDF / XLSX / HTML) — this page previously had none.
+  const getExportConfig = (): ReportExportConfig => {
+    const sections: ReportExportConfig["sections"] = [];
+    if (comparison) {
+      sections.push({
+        title: t('reports.summary', 'Summary'),
+        type: 'stats',
+        stats: [
+          { label: `${product1?.code ?? 'P1'} · ${t('products.totalPoints')}`, value: comparison.totalPoints1 },
+          { label: t('products.commonPoints'), value: comparison.common.length },
+          { label: `${product2?.code ?? 'P2'} · ${t('products.totalPoints')}`, value: comparison.totalPoints2 },
+        ],
+      });
+      if (comparison.onlyInProduct1.length)
+        sections.push({
+          title: `${t('products.onlyIn')} ${product1?.code ?? 'P1'}`,
+          type: 'table',
+          tableHeaders: [t('products.code'), t('products.name'), t('products.type')],
+          tableRows: comparison.onlyInProduct1.map((p) => [p.code, p.name, p.measurementType]),
+        });
+      if (comparison.onlyInProduct2.length)
+        sections.push({
+          title: `${t('products.onlyIn')} ${product2?.code ?? 'P2'}`,
+          type: 'table',
+          tableHeaders: [t('products.code'), t('products.name'), t('products.type')],
+          tableRows: comparison.onlyInProduct2.map((p) => [p.code, p.name, p.measurementType]),
+        });
+      if (comparison.common.length)
+        sections.push({
+          title: t('products.commonPoints'),
+          type: 'table',
+          tableHeaders: [
+            t('products.code'), t('products.name'), t('products.type'),
+            t('products.unit'), t('products.lowerLimit'), t('products.upperLimit'),
+          ],
+          tableRows: comparison.common.map((p) => [
+            p.code, p.name, p.measurementType, p.unit || '-', p.lowerLimit ?? '-', p.upperLimit ?? '-',
+          ]),
+        });
+    }
+    return {
+      title: t('products.comparison'),
+      subtitle: `${product1?.code ?? ''} vs ${product2?.code ?? ''}`,
+      sections,
+      filenamePrefix: 'product_comparison',
+      orientation: 'landscape',
+    };
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <PageHeader
           title={t('products.comparison')}
           description={t('products.comparisonDescription')}
+          actions={comparison ? <ReportExportButton getConfig={getExportConfig} /> : undefined}
         />
 
         {/* Product Selection */}

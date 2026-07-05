@@ -3,7 +3,12 @@
  */
 
 import * as cron from 'node-cron';
-import { drizzle } from 'drizzle-orm/mysql2';
+// NOTE: this Postgres project's DB handle comes from getDb() (initSummaryScheduler
+// below assigns it via `import('../db').then(m => m.getDb())`). The daily/weekly
+// summary jobs DO run when MQTT_ENABLED=true (registered in server/_core/index.ts).
+// A stray `import { drizzle } from 'drizzle-orm/mysql2'` used to sit here — a
+// wrong-driver smell (doc 32 §2 item 20): it was never used (nothing calls
+// drizzle()), so it is removed rather than "fixed" to the pg driver.
 import { eq, and, sql, gte, lte, desc } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import { publishSummary, isMqttRunning } from './mqttService';

@@ -11,6 +11,32 @@ import * as db from "../db";
 import { generateInspectionReportPDF, generateQualityReportPDF } from "../services/pdfTemplateService";
 import type { PDFReportConfig, QualityReportData, InspectionReportData } from "../services/pdfTemplateService";
 
+// ─── Branding resolution ─────────────────────────────────────────────────────
+
+/**
+ * Merge report branding from the admin company-profile (`email_template_config`
+ * default row — logo/name/color/footer) with any per-request overrides. Explicit
+ * request values win for name/color; the admin config supplies the logo + footer
+ * (doc 32 §2 P3 #17). Best-effort: DB failure just yields the request values.
+ */
+async function resolveReportBranding(inputConfig?: {
+  companyName?: string;
+  primaryColor?: string;
+}): Promise<Pick<PDFReportConfig, "companyName" | "primaryColor" | "logoUrl" | "footerText">> {
+  let cfg: Awaited<ReturnType<typeof db.getDefaultEmailTemplateConfig>> | null = null;
+  try {
+    cfg = await db.getDefaultEmailTemplateConfig();
+  } catch {
+    cfg = null;
+  }
+  return {
+    companyName: inputConfig?.companyName ?? cfg?.companyName ?? undefined,
+    primaryColor: inputConfig?.primaryColor ?? cfg?.primaryColor ?? undefined,
+    logoUrl: cfg?.logoUrl ?? undefined,
+    footerText: cfg?.footerText ?? undefined,
+  };
+}
+
 // ─── PDF Report Template Router ─────────────────────────────────────────────
 
 export const pdfReportRouter = router({
@@ -78,10 +104,10 @@ export const pdfReportRouter = router({
         productModel,
       };
 
+      const branding = await resolveReportBranding(input.config);
       const config: PDFReportConfig = {
         title: input.config?.title || `Báo cáo kiểm tra #${inspection.id}`,
-        companyName: input.config?.companyName,
-        primaryColor: input.config?.primaryColor,
+        ...branding,
         accentColor: input.config?.accentColor,
         confidential: input.config?.confidential,
         pageSize: input.config?.pageSize,
@@ -175,10 +201,10 @@ export const pdfReportRouter = router({
         if (l) data.filters!.lineName = l.name;
       }
 
+      const branding = await resolveReportBranding(input.config);
       const config: PDFReportConfig = {
         title: input.config?.title || "Báo cáo chất lượng tổng hợp",
-        companyName: input.config?.companyName,
-        primaryColor: input.config?.primaryColor,
+        ...branding,
         accentColor: input.config?.accentColor,
         confidential: input.config?.confidential,
         pageSize: input.config?.pageSize,

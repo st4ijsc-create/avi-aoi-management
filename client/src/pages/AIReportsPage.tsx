@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import ReportExportButton from "@/components/ReportExportButton";
+import { buildAiExportConfig } from "@/lib/aiReportExport";
 import { trpc } from "@/lib/trpc";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +79,27 @@ export default function AIReportsPage() {
   const currentReport =
     dailySummary.data || rcaReport.data || modelPerformance.data || executiveSummary.data;
 
+  // Data of the CURRENTLY-selected tab (what's on screen) — drives the export.
+  const activeData =
+    activeTab === "daily"
+      ? dailySummary.data
+      : activeTab === "rca"
+        ? rcaReport.data
+        : activeTab === "model"
+          ? modelPerformance.data
+          : executiveSummary.data;
+
+  // Build a ReportExportConfig from the on-screen AI report so the richest
+  // management content can leave the page as PDF / XLSX / HTML (doc 32 P0 #3).
+  // Logic lives in lib/aiReportExport.buildAiExportConfig (unit-tested).
+  const buildExportConfig = useCallback(
+    () =>
+      buildAiExportConfig(activeTab, activeData, dateRange, (k: string, d?: string) =>
+        d !== undefined ? t(k, d) : t(k),
+      ),
+    [activeTab, activeData, dateRange, t],
+  );
+
   return (
     <DashboardLayout>
       <PageContainer>
@@ -115,6 +138,8 @@ export default function AIReportsPage() {
                   ? t("rp.generating", "Đang tạo...")
                   : t("rp.generate", "Tạo báo cáo")}
               </Button>
+              {/* Export the on-screen AI report (PDF / XLSX / HTML) — doc 32 P0 #3. */}
+              {activeData && <ReportExportButton getConfig={buildExportConfig} />}
             </div>
           </CardContent>
         </Card>

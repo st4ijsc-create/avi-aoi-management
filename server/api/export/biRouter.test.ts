@@ -37,6 +37,31 @@ vi.mock("../../functions/cachedStatistics", () => ({
   getMvFreshness: vi.fn(async () => h.mvFresh),
 }));
 
+// Aggregator-backed datasets (defect_category / yield_by_product) — R1 helpers.
+vi.mock("../../db/reportAggregators", () => ({
+  getDefectParetoByCategory: vi.fn(async () => ({
+    dimension: "category",
+    items: [
+      { key: "SOLDER", count: 8, percentage: 66.67, cumulativePercentage: 66.67, bucket: "value" },
+      { key: "UNCLASSIFIED", count: 4, percentage: 33.33, cumulativePercentage: 100, bucket: "unclassified" },
+    ],
+    totalDefects: 12,
+    classifiedDefects: 8,
+    unclassifiedDefects: 4,
+    topN: 10,
+  })),
+  getYieldByProduct: vi.fn(async () => [
+    { productModelId: 5, productCode: "PM-5", productName: "Board X", total: 100, ok: 95, ng: 4, ntf: 1, yieldRate: 96 },
+  ]),
+}));
+
+// Shift dataset — getShiftReport (R1).
+vi.mock("../../db/statistics", () => ({
+  getShiftReport: vi.fn(async () => [
+    { shift: "A", shiftName: "Ca sáng", shiftWindow: "06:00-14:00", total: 50, ok: 48, ng: 2, ntf: 0, yieldPct: 96, fpy: 94, machinesActive: 3, defectTypeCount: 1, source: "config" },
+  ]),
+}));
+
 import { createBiRouter, encodeNextToken, decodeNextToken, BI_DATASETS } from "./biRouter";
 
 let server: Server;
@@ -78,9 +103,12 @@ describe("auth (bi:read scope)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.datasets.map((d: { name: string }) => d.name).sort()).toEqual([
+      "defect_category",
       "defect_pareto",
       "inspections_daily",
       "machine_oee",
+      "shift",
+      "yield_by_product",
     ]);
     expect(body.odata).toContain("NOT supported");
   });
@@ -172,6 +200,36 @@ describe("dataset endpoint", () => {
     });
     const body2 = await res2.json();
     expect(body2.rows[0].oee).toBe(84.6);
+  });
+
+  it("defect_category returns the dimension Pareto incl. the UNCLASSIFIED bucket", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/bi/datasets/defect_category?from=2026-06-01&to=2026-06-08&dimension=category`,
+      { headers: MASTER },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.dataset).toBe("defect_category");
+    expect(body.rows.map((r: { key: string }) => r.key)).toEqual(["SOLDER", "UNCLASSIFIED"]);
+    expect(body.rows[0].cumulative_percentage).toBe(66.67);
+  });
+
+  it("yield_by_product returns per-product final yield", async () => {
+    const res = await fetch(`${baseUrl}/api/bi/datasets/yield_by_product?from=2026-06-01&to=2026-06-08`, {
+      headers: MASTER,
+    });
+    const body = await res.json();
+    expect(body.dataset).toBe("yield_by_product");
+    expect(body.rows[0]).toMatchObject({ product_code: "PM-5", yield_rate: 96 });
+  });
+
+  it("shift returns per-shift rollup with real shift windows", async () => {
+    const res = await fetch(`${baseUrl}/api/bi/datasets/shift?from=2026-06-01&to=2026-06-08`, {
+      headers: MASTER,
+    });
+    const body = await res.json();
+    expect(body.dataset).toBe("shift");
+    expect(body.rows[0]).toMatchObject({ shift: "A", shift_window: "06:00-14:00", yield_pct: 96, source: "config" });
   });
 });
 

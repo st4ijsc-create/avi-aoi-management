@@ -1,0 +1,17 @@
+{
+  "_safety_note": "AI-assisted golden example. The author reviews it; the platform validates it through the IR safety-linter (ISO/TS 15066 speed<=250mm/s, force<=150N, workspace AABB, blend<=100mm) then the kinematic sim gate and HIL URSim before any gated (HITL) deploy. Motion/process only - never E-stop / protective-stop / safety-plane logic. This underscore field is ignored by flowSchema (unknown keys are stripped).",
+  "flow_id": "pick_place_demo",
+  "target_device_type": "universal-robots",
+  "version": 1,
+  "author": "st4i-golden-code",
+  "blocks": [
+    { "type": "move_linear", "target_pose": { "x": 400, "y": -200, "z": 300, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 200, "acceleration": 0.8, "blend_radius": 10 },
+    { "type": "move_linear", "target_pose": { "x": 400, "y": -200, "z": 120, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 80, "acceleration": 0.4, "blend_radius": 0 },
+    { "type": "grip", "tool_id": "vacuum_gripper", "force_limit_n": 40, "timeout_ms": 1500 },
+    { "type": "move_linear", "target_pose": { "x": 400, "y": -200, "z": 300, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 150, "acceleration": 0.8, "blend_radius": 10 },
+    { "type": "move_linear", "target_pose": { "x": 400, "y": 200, "z": 300, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 200, "acceleration": 0.8, "blend_radius": 10 },
+    { "type": "move_linear", "target_pose": { "x": 400, "y": 200, "z": 120, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 80, "acceleration": 0.4, "blend_radius": 0 },
+    { "type": "release", "tool_id": "vacuum_gripper" },
+    { "type": "move_linear", "target_pose": { "x": 400, "y": 200, "z": 300, "rx": 3.14159, "ry": 0, "rz": 0 }, "speed_mms": 150, "acceleration": 0.8, "blend_radius": 0 }
+  ]
+}

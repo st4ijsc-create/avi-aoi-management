@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -7,6 +7,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import {
+  OFFSCREEN_PRINT_STYLE,
+  withScope,
+  buildScopeMeta,
+  buildStationAnalysisSections,
+  flattenNgImages,
+  waitForChartRender,
+  STATION_FAIL_HISTORY_CAP,
+  type ReportTFn,
+} from "@/lib/reportSections";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
@@ -89,6 +99,33 @@ function getPresetDateRange(preset: DatePreset): { from: Date; to: Date } {
 }
 
 const PARETO_COLORS = Array.from({ length: 15 }, (_, i) => chartColor(i));
+
+/* Western-Electric rule palette/labels for the measurement-SPC print view (mirror
+   of the constants inside SpcContent — kept module-level so the off-screen
+   MeasurementSpcView can render without SpcContent's local state). */
+const MP_RULE_COLORS: Record<number, string> = { 1: "var(--destructive)", 2: "var(--warning)", 3: "var(--warning)", 4: "var(--success)", 5: "var(--chart-5)", 6: "var(--info)", 7: "var(--primary)", 8: "var(--chart-4)" };
+const MP_RULE_LABELS: Record<number, string> = {
+  1: "1σ Beyond 3σ", 2: "9 Same Side", 3: "6 Increasing/Decreasing",
+  4: "14 Alternating", 5: "2/3 Beyond 2σ", 6: "4/5 Beyond 1σ",
+  7: "15 Within 1σ", 8: "8 Beyond 1σ Both",
+};
+
+/* Report print-view data snapshot — all charts mounted off-screen for export. */
+interface StationPrintData {
+  summary?: any;
+  hourlyData?: any;
+  defectData?: any;
+  spcData?: any;
+  failHistory?: any;
+  diagnostics?: any;
+  histogramData?: any;
+  scatterData?: any;
+  stratData?: any;
+  aiData?: any;
+  stationDetail?: any;
+  mpSpc?: any;
+  ngImages: Array<{ id: any; url: string; label: string }>;
+}
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Activity },
@@ -179,17 +216,27 @@ export default function StationAnalysis() {
   // tRPC utils for prefetching data during export
   const utils = trpc.useUtils();
 
-  // Export config builder — async to prefetch all data from non-active tabs
-  const getExportConfig = useCallback(async (): Promise<ReportExportConfig> => {
-    const e = (k: string) => t(`stationAnalysis.export.${k}`);
+  // Snapshot of prefetched data that the off-screen print view renders EVERY chart
+  // from (so the export captures all charts, not just the active tab — §6.3/§6.5).
+  const [printData, setPrintData] = useState<StationPrintData | null>(null);
+  const printCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedulePrintCleanup = useCallback(() => {
+    if (printCleanupRef.current) clearTimeout(printCleanupRef.current);
+    printCleanupRef.current = setTimeout(() => setPrintData(null), 20000);
+  }, []);
+  useEffect(() => () => { if (printCleanupRef.current) clearTimeout(printCleanupRef.current); }, []);
 
+  // Export config builder — async to prefetch all data from every tab, mount an
+  // off-screen print view with all charts, then delegate section building to the
+  // shared (unit-tested) buildStationAnalysisSections helper.
+  const getExportConfig = useCallback(async (): Promise<ReportExportConfig> => {
     // Prefetch all queries in parallel (returns cached data if already fetched)
     const results = await Promise.allSettled([
       utils.stationAnalysis.getStationSummary.fetch(commonInput),
       utils.stationAnalysis.getHourlyYield.fetch(commonInput),
       utils.stationAnalysis.getStationDefects.fetch(commonInput),
       utils.stationAnalysis.getYieldControlChart.fetch(commonInput),
-      utils.stationAnalysis.getFailHistory.fetch({ ...commonInput, limit: 50 }),
+      utils.stationAnalysis.getFailHistory.fetch({ ...commonInput, limit: STATION_FAIL_HISTORY_CAP }),
       utils.stationAnalysis.getDiagnostics.fetch(commonInput),
       utils.stationAnalysis.getHistogramData.fetch(commonInput),
       utils.stationAnalysis.getScatterData.fetch(commonInput),
@@ -198,16 +245,17 @@ export default function StationAnalysis() {
       utils.stationAnalysis.getStratificationData.fetch(commonInput),
       utils.stationAnalysis.getAiAnalysis.fetch(commonInput),
       utils.stationAnalysis.getStationDetail.fetch(commonInput),
+      utils.stationAnalysis.getStationMeasurementPoints.fetch({ stationId, productModelId }),
     ]);
 
     const val = <T,>(r: PromiseSettledResult<T>): T | undefined =>
       r.status === "fulfilled" ? r.value : undefined;
 
-    const summary = val(results[0]);
-    const hourlyData = val(results[1]);
-    const defectData = val(results[2]);
+    const summary = val(results[0]) as any;
+    const hourlyData = val(results[1]) as any;
+    const defectData = val(results[2]) as any;
     const spcData = val(results[3]) as any;
-    const failHistory = val(results[4]);
+    const failHistory = val(results[4]) as any;
     const diagnostics = val(results[5]) as any;
     const histogramData = val(results[6]) as any;
     const scatterData = val(results[7]) as any;
@@ -216,336 +264,70 @@ export default function StationAnalysis() {
     const stratData = val(results[10]) as any;
     const aiData = val(results[11]) as any;
     const stationDetail = val(results[12]) as any;
+    const mpPoints = ((val(results[13]) as any[]) || []) as any[];
 
-    const stationName = summary ? `${(summary as any).station.code}: ${(summary as any).station.name}` : `Station ${stationId}`;
+    // Measurement-mode SPC for the first measurement point (§6.4 #3).
+    let mpSpc: any = undefined;
+    if (mpPoints.length > 0) {
+      try {
+        mpSpc = await utils.stationAnalysis.getMeasurementPointSPC.fetch({
+          stationId,
+          measurementPointDefId: mpPoints[0].id,
+          productModelId,
+          startDate: dateRange.from,
+          endDate: dateRange.to,
+          subgroupSize: 5,
+          enabledRules: [1, 2, 3, 4, 5, 6, 7, 8],
+        });
+      } catch { /* measurement SPC optional */ }
+    }
+
+    const ngImages = flattenNgImages(stationDetail);
+
+    // Mount the off-screen print view (every chart) + wait for recharts layout.
+    setPrintData({
+      summary, hourlyData, defectData, spcData, failHistory, diagnostics,
+      histogramData, scatterData, stratData, aiData, stationDetail, mpSpc, ngImages,
+    });
+    await waitForChartRender();
+    schedulePrintCleanup();
+
+    const sections = buildStationAnalysisSections({
+      t: t as unknown as ReportTFn,
+      stationId,
+      summary, hourlyData, defectData, spcData, failHistory, diagnostics,
+      histogramData, scatterData, checkSheetData, causeEffectData, stratData,
+      aiData, stationDetail, mpSpc,
+      ngImageCount: ngImages.length,
+      hasBoardImage: !!stationDetail?.productImage?.url,
+    });
+
+    const stationName = summary ? `${summary.station.code}: ${summary.station.name}` : `Station ${stationId}`;
     const dateStr = `${dateRange.from.toLocaleDateString()} — ${dateRange.to.toLocaleDateString()}`;
-    const sections: ReportExportConfig["sections"] = [];
+    const pm = productModelId ? stationProductModels?.find((x: any) => x.id === productModelId) : undefined;
+    const scope = buildScopeMeta({
+      factory: summary?.factory?.name,
+      workshop: summary?.workshop?.name,
+      line: summary?.line?.name,
+      station: stationName,
+      product: pm ? `${pm.code} - ${pm.name}` : undefined,
+      dateRange: dateStr,
+      datePreset,
+    });
 
-    /* ── 1. Overview stats ───────────────────────────── */
-    if (summary) {
-      const s = summary as any;
-      sections.push({
-        title: e("overviewSection"),
-        type: "stats",
-        stats: [
-          { label: "FPY", value: `${s.firstPassYield}%` },
-          { label: "Final Yield", value: `${s.finalYield}%` },
-          { label: e("total"), value: s.totalInspections.toLocaleString() },
-          { label: "NG", value: s.ngCount },
-          { label: "Retest", value: `${s.retestRate}%` },
-        ],
-      });
-    }
+    return withScope(
+      {
+        title: `${t("stationAnalysis.export.reportTitle")} — ${stationName}`,
+        subtitle: dateStr,
+        sections,
+        filenamePrefix: `station_analysis_${stationId}`,
+        orientation: "landscape",
+      } as ReportExportConfig,
+      { scope, filters: scope },
+    );
+  }, [t, utils, commonInput, stationId, dateRange, productModelId, datePreset, stationProductModels, schedulePrintCleanup]);
 
-    /* ── 2. Hourly yield chart + table ───────────────── */
-    if (hourlyData && (hourlyData as any[])?.length) {
-      sections.push({
-        title: e("hourlyYieldSection"),
-        type: "chart",
-        chartElementId: "chart-hourly-yield",
-      });
-      sections.push({
-        title: e("hourlyYieldSection"),
-        type: "table",
-        tableHeaders: [e("hour"), e("total"), e("ng"), e("yield")],
-        tableRows: (hourlyData as any[]).map((h: any) => [`${h.hour}:00`, h.total, h.ng, `${h.yield}%`]),
-      });
-    }
 
-    /* ── 3. Top defects table ────────────────────────── */
-    if (defectData?.length) {
-      const defects = Array.isArray(defectData) ? defectData : [];
-      if (defects.length) {
-        sections.push({
-          title: e("topDefectsSection"),
-          type: "table",
-          tableHeaders: [e("code"), e("name"), e("count"), e("rate")],
-          tableRows: defects.map((d: any) => [d.code, d.name, d.ngCount, `${d.percentage?.toFixed(1)}%`]),
-        });
-      }
-    }
-
-    /* ── 4. Pareto chart ─────────────────────────────── */
-    if (defectData?.length) {
-      sections.push({
-        title: e("topDefectsSection") + " — Pareto",
-        type: "chart",
-        chartElementId: "chart-pareto",
-      });
-    }
-
-    /* ── 5. Fail history table ───────────────────────── */
-    if (failHistory?.length) {
-      const records = Array.isArray(failHistory) ? failHistory : [];
-      if (records.length) {
-        sections.push({
-          title: e("failHistorySection"),
-          type: "table",
-          tableHeaders: [e("time"), e("barcode"), e("failedPoints"), e("machine")],
-          tableRows: records.map((r: any) => [
-            new Date(r.inspectionTime).toLocaleString(),
-            r.barcode || "—",
-            r.failedPoints?.map((fp: any) => `${fp.pointCode}: ${fp.pointName}`).join(", ") || "—",
-            r.machineCode || "—",
-          ]),
-        });
-      }
-    }
-
-    /* ── 6. SPC charts ───────────────────────────────── */
-    if (spcData?.points?.length > 1) {
-      sections.push({
-        title: e("spcSection") + " — X̄",
-        type: "chart",
-        chartElementId: "chart-spc-xbar",
-      });
-      sections.push({
-        title: e("spcSection") + " — MR",
-        type: "chart",
-        chartElementId: "chart-spc-mr",
-      });
-      sections.push({
-        title: e("spcSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("yieldPct"), e("zone"), e("violatedRules")],
-        tableRows: spcData.points.map((p: any) => [
-          p.day, `${p.yield}%`, p.zone || "—",
-          (p.violatedRules || []).join(", ") || "—",
-        ]),
-      });
-    }
-
-    /* ── 7. Histogram chart + stats ──────────────────── */
-    if (histogramData?.bins?.length) {
-      sections.push({
-        title: e("histogramSection"),
-        type: "chart",
-        chartElementId: "chart-histogram",
-      });
-      const s = histogramData.stats;
-      if (s) {
-        sections.push({
-          title: e("histogramSection"),
-          type: "stats",
-          stats: [
-            { label: "Mean", value: `${s.mean}%` },
-            { label: "Median", value: `${s.median}%` },
-            { label: "Std Dev", value: s.stddev?.toFixed(2) },
-            { label: "Skewness", value: s.skewness?.toFixed(2) },
-            { label: "Kurtosis", value: s.kurtosis?.toFixed(2) },
-            { label: "N", value: String(s.n) },
-            { label: "Min", value: `${s.min}%` },
-            { label: "Max", value: `${s.max}%` },
-          ],
-        });
-      }
-    }
-
-    /* ── 8. Scatter chart + correlation stats ─────────── */
-    if (scatterData?.points?.length) {
-      sections.push({
-        title: e("scatterSection"),
-        type: "chart",
-        chartElementId: "chart-scatter",
-      });
-      sections.push({
-        title: e("scatterSection"),
-        type: "stats",
-        stats: [
-          { label: e("correlation"), value: String(scatterData.correlation) },
-          { label: e("rSquared"), value: String(scatterData.rSquared) },
-          { label: e("relationship"), value: `${Math.abs(scatterData.correlation) > 0.7 ? "Strong" : Math.abs(scatterData.correlation) > 0.3 ? "Moderate" : "Weak"} ${scatterData.correlation >= 0 ? "+" : "−"}` },
-        ],
-      });
-    }
-
-    /* ── 9. Ishikawa (Cause-Effect) ──────────────────── */
-    if (causeEffectData?.categories?.length) {
-      const catText = causeEffectData.categories.map((cat: any) => {
-        const causes = cat.causes?.map((c: any) => `  • [${c.severity}] ${c.cause}: ${c.detail}`).join("\n") || "";
-        return `${cat.name}:\n${causes}`;
-      }).join("\n\n");
-      sections.push({
-        title: e("ishikawaSection"),
-        type: "text",
-        text: catText,
-      });
-    }
-
-    /* ── 10. Check sheet ─────────────────────────────── */
-    if (checkSheetData?.matrix?.length) {
-      const dt = checkSheetData.defectTypes || [];
-      sections.push({
-        title: e("checkSheetSection"),
-        type: "table",
-        tableHeaders: [e("date"), ...dt.map((d: any) => d.code), e("total")],
-        tableRows: checkSheetData.matrix.map((row: any) => [
-          row.period,
-          ...dt.map((d: any) => row[`d${d.id}`] || 0),
-          checkSheetData.totals?.byPeriod?.[row.period] || 0,
-        ]),
-      });
-    }
-
-    /* ── 11. Stratification charts + tables ───────────── */
-    if (stratData?.byMachine?.length) {
-      sections.push({
-        title: e("stratByMachine"),
-        type: "chart",
-        chartElementId: "chart-strat-machine",
-      });
-      sections.push({
-        title: e("stratByMachine"),
-        type: "table",
-        tableHeaders: [e("machineCode"), e("ok"), e("ng"), e("ntf"), e("yield")],
-        tableRows: stratData.byMachine.map((m: any) => [m.machineCode, m.ok, m.ng, m.ntf, `${m.yield}%`]),
-      });
-    }
-    if (stratData?.byShift?.length) {
-      sections.push({
-        title: e("stratByShift"),
-        type: "chart",
-        chartElementId: "chart-strat-shift",
-      });
-      sections.push({
-        title: e("stratByShift"),
-        type: "table",
-        tableHeaders: [e("shift"), e("ok"), e("ng"), e("yield")],
-        tableRows: stratData.byShift.map((s: any) => [s.shift, s.ok, s.ng, `${s.yield}%`]),
-      });
-    }
-    if (stratData?.byDay?.length) {
-      sections.push({
-        title: e("stratByDay"),
-        type: "chart",
-        chartElementId: "chart-strat-day",
-      });
-      sections.push({
-        title: e("stratByDay"),
-        type: "table",
-        tableHeaders: [e("dayOfWeek"), e("total"), e("ng"), e("yield")],
-        tableRows: stratData.byDay.map((d: any) => [d.day, d.total, d.ng, `${d.yield}%`]),
-      });
-    }
-
-    /* ── 12. AI insights text ────────────────────────── */
-    if (aiData?.insights?.length) {
-      sections.push({
-        title: e("aiInsightsSection"),
-        type: "text",
-        text: aiData.insights.map((ins: any) => `[${ins.severity}] ${ins.title}: ${ins.description}`).join("\n"),
-      });
-    }
-
-    /* ── 13. Process capability stats ────────────────── */
-    if (aiData?.processCapability) {
-      const pc = aiData.processCapability;
-      sections.push({
-        title: e("processCapSection"),
-        type: "stats",
-        stats: [
-          { label: "Cp", value: pc.cp },
-          { label: "Cpk", value: pc.cpk },
-          { label: "PPM", value: pc.ppm },
-          { label: "USL", value: `${pc.usl}%` },
-          { label: "LSL", value: `${pc.lsl}%` },
-          { label: "Mean", value: `${pc.mean}%` },
-          { label: "Std Dev", value: pc.stddev },
-        ],
-      });
-    }
-
-    /* ── 14. AI forecast chart ───────────────────────── */
-    if (aiData?.forecast?.length) {
-      sections.push({
-        title: e("forecastSection"),
-        type: "chart",
-        chartElementId: "chart-ai-forecast",
-      });
-      sections.push({
-        title: e("forecastSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("predicted"), e("upper"), e("lower")],
-        tableRows: aiData.forecast.map((f: any) => [
-          (() => { try { return new Date(f.day).toLocaleDateString(); } catch { return f.day; } })(),
-          `${f.predicted}%`, `${f.upper}%`, `${f.lower}%`,
-        ]),
-      });
-    }
-
-    /* ── 15. AI anomalies table ──────────────────────── */
-    if (aiData?.anomalies?.length) {
-      sections.push({
-        title: e("anomaliesSection"),
-        type: "table",
-        tableHeaders: [e("day"), e("yield"), e("type"), e("zScore")],
-        tableRows: aiData.anomalies.map((a: any) => [
-          (() => { try { return new Date(a.day).toLocaleDateString(); } catch { return a.day; } })(),
-          `${a.yield}%`, a.type?.replace("_", " "), a.zScore,
-        ]),
-      });
-    }
-
-    /* ── 16. AI clustering stats ─────────────────────── */
-    if (aiData?.clusters?.length) {
-      sections.push({
-        title: e("clusterSection"),
-        type: "stats",
-        stats: aiData.clusters.map((cl: any) => ({
-          label: `${cl.label} (${cl.count} ${e("days")})`,
-          value: `${e("centroid")}: ${cl.centroid}%`,
-        })),
-      });
-    }
-
-    /* ── 17. Diagnostics ─────────────────────────────── */
-    if (diagnostics?.alerts?.length) {
-      sections.push({
-        title: e("diagnosticsAlertsSection"),
-        type: "table",
-        tableHeaders: [e("severity"), e("alertTitle"), e("description")],
-        tableRows: diagnostics.alerts.map((a: any) => [a.severity, a.title, a.description]),
-      });
-    }
-    if (diagnostics?.patterns?.length) {
-      sections.push({
-        title: e("diagnosticsPatternsSection"),
-        type: "table",
-        tableHeaders: [e("type"), e("confidence"), e("description")],
-        tableRows: diagnostics.patterns.map((p: any) => [p.type, `${Math.round(p.confidence * 100)}%`, p.description]),
-      });
-    }
-    if (diagnostics?.recommendations?.length) {
-      sections.push({
-        title: e("diagnosticsRecsSection"),
-        type: "table",
-        tableHeaders: [e("priority"), e("action"), e("rationale")],
-        tableRows: diagnostics.recommendations.map((r: any) => [r.priority, r.action, r.rationale]),
-      });
-    }
-
-    /* ── 18. Station detail — inspection points ──────── */
-    if (stationDetail?.points?.length) {
-      sections.push({
-        title: e("stationDetailSection"),
-        type: "table",
-        tableHeaders: [e("pointCode"), e("pointName"), e("status"), e("totalInspected"), e("totalDefects"), e("defectRate")],
-        tableRows: stationDetail.points.map((p: any) => [
-          p.pointCode, p.pointName, p.status,
-          p.totalInspected ?? "—", p.totalDefects ?? "—",
-          p.defectRate != null ? `${p.defectRate}%` : "—",
-        ]),
-      });
-    }
-
-    return {
-      title: `${e("reportTitle")} — ${stationName}`,
-      subtitle: dateStr,
-      sections,
-      filenamePrefix: `station_analysis_${stationId}`,
-      orientation: "landscape",
-    };
-  }, [t, utils, commonInput, stationId, dateRange]);
 
   if (isNaN(stationId)) {
     return (
@@ -563,6 +345,63 @@ export default function StationAnalysis() {
 
   return (
     <DashboardLayout>
+      {/* ── Off-screen report print view: mounts EVERY chart (all tabs + the
+          measurement-mode SPC + board image + NG gallery) from prefetched data so
+          ReportExportButton captures them regardless of the active tab (§6.3/§6.5).
+          Rendered first so getElementById resolves these light-themed copies. ── */}
+      {printData && (
+        <div style={OFFSCREEN_PRINT_STYLE} aria-hidden data-report-print-view>
+          <div style={{ padding: 24 }}>
+            <OverviewContent
+              hourlyData={printData.hourlyData} hourlyLoading={false}
+              defectData={printData.defectData} defectLoading={false}
+              spcData={printData.spcData} spcLoading={false}
+              diagnostics={printData.diagnostics} diagLoading={false}
+              t={t}
+            />
+            <DefectsContent data={printData.defectData} isLoading={false} failHistory={printData.failHistory} failLoading={false} t={t} />
+            <YieldSpcView data={printData.spcData} isLoading={false} t={t} />
+            <HistogramContent data={printData.histogramData} isLoading={false} t={t} />
+            <ScatterContent data={printData.scatterData} isLoading={false} t={t} />
+            <StratificationContent data={printData.stratData} isLoading={false} t={t} />
+            <AiAnalysisContent data={printData.aiData} isLoading={false} t={t} />
+            {printData.mpSpc && (
+              <MeasurementSpcView
+                data={printData.mpSpc} isLoading={false} t={t}
+                RULE_COLORS={MP_RULE_COLORS} RULE_LABELS={MP_RULE_LABELS}
+                showSampleTable={false} setShowSampleTable={() => {}}
+              />
+            )}
+            {/* Board reference image + inspection-point markers */}
+            {printData.stationDetail?.productImage?.url && (
+              <div id="chart-board-image" style={{ position: "relative", width: 760, background: "#0b1e16", marginTop: 24, borderRadius: 8, overflow: "hidden" }}>
+                <img src={printData.stationDetail.productImage.url} alt="board" crossOrigin="anonymous" style={{ width: "100%", display: "block", opacity: 0.85 }} />
+                {(printData.stationDetail.points || []).map((pt: any) => {
+                  const bw = printData.stationDetail.productImage?.width || 800;
+                  const bh = printData.stationDetail.productImage?.height || 600;
+                  const x = ((pt.positionX ?? 0) / bw) * 100;
+                  const y = ((pt.positionY ?? 0) / bh) * 100;
+                  const color = pt.status === "fail" ? "#ff3d5a" : pt.status === "warn" ? "#ffbb33" : "#10e878";
+                  return (
+                    <div key={pt.id} style={{ position: "absolute", left: `${x}%`, top: `${y}%`, width: 10, height: 10, borderRadius: "50%", background: color, transform: "translate(-50%, -50%)", border: "1px solid #ffffff" }} />
+                  );
+                })}
+              </div>
+            )}
+            {/* NG defect image gallery (URLs already available) */}
+            {printData.ngImages.length > 0 && (
+              <div id="chart-ng-gallery" style={{ width: 1040, background: "#ffffff", marginTop: 24, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                {printData.ngImages.map((img) => (
+                  <div key={img.id} style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
+                    <img src={img.url} alt={img.label} crossOrigin="anonymous" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+                    <div style={{ fontSize: 9, padding: "2px 4px", color: "#334155" }}>{img.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col h-full bg-background">
         {/* ── Header ── */}
         <div className="border-b border-border bg-card px-7 py-4">

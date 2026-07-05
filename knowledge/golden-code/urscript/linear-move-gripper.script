@@ -1,0 +1,27 @@
+# SAFETY: AI-assisted golden example. This is the TARGET dialect the IR->URScript transpiler
+# emits (irToUrscript.ts); the author reviews it and the platform validates it on a VIRTUAL
+# URSim controller (HIL) before any gated (HITL) deploy. Motion/process only - never author
+# E-stop / protective-stop / safety-plane logic (that lives in the UR safety configuration).
+#
+# URScript units: movel pose p[x, y, z, rx, ry, rz] in METRES + radians; a in m/s^2, v in m/s,
+# r (blend) in m. Mirrors what IR flow "pick_place_demo" generates; # [IR ...] markers link
+# each native line group back to its source IR block for 2-eyes review.
+
+def pick_place_demo():
+  # [IR move_linear #b1] approach above the pick
+  movel(p[0.4, -0.2, 0.3, 3.14159, 0, 0], a=0.8, v=0.2, r=0.01)
+  # [IR move_linear #b2] descend to the part (slow)
+  movel(p[0.4, -0.2, 0.12, 3.14159, 0, 0], a=0.4, v=0.08, r=0)
+  # [IR grip #b3] tool "vacuum_gripper" close, force<=40N, timeout=1500ms
+  set_tool_digital_out(0, True)
+  # [IR move_linear #b4] retract
+  movel(p[0.4, -0.2, 0.3, 3.14159, 0, 0], a=0.8, v=0.15, r=0.01)
+  # [IR move_linear #b5] traverse to the place
+  movel(p[0.4, 0.2, 0.3, 3.14159, 0, 0], a=0.8, v=0.2, r=0.01)
+  # [IR move_linear #b6] descend to the drop (slow)
+  movel(p[0.4, 0.2, 0.12, 3.14159, 0, 0], a=0.4, v=0.08, r=0)
+  # [IR release #b7]
+  set_tool_digital_out(0, False)
+  # [IR move_linear #b8] retract
+  movel(p[0.4, 0.2, 0.3, 3.14159, 0, 0], a=0.8, v=0.15, r=0)
+end

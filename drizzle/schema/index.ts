@@ -57,3 +57,4 @@ export * from "./productPanel";
 export * from "./operatorBadge";
 export * from "./componentLibrary";
 export * from "./productOnboarding";
+export * from "./reportArtifact";

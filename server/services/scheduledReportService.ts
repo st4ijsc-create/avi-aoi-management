@@ -1,16 +1,18 @@
 /**
- * Scheduled Report Service
- * 
- * Features:
- * - Schedule daily/weekly reports
- * - Generate report content (statistics summary)
- * - Send reports via email
- * - Store report history
+ * Scheduled Report Content Library
+ *
+ * doc 32 R4: this is NO LONGER a scheduler. The standalone setInterval loop
+ * (start/stop/checkAndRunReports/getDueReports/runReport) was RETIRED — the live
+ * scheduler is the node-cron `reportScheduler` (server/services/reportScheduler.ts).
+ *
+ * What remains here is a CONTENT LIBRARY consumed by the live path:
+ * - statistics / OEE / machine-health report content builders,
+ * - the branded HTML formatters,
+ * - previewReport / generateAndSendReport (used by reportScheduler + systemRouters).
  */
 
 import * as db from '../db';
 import { sendEmail } from '../_core/email';
-import { notifyOwner } from '../_core/notification';
 import { getFactoryTimezone, nextRunInZone } from '../utils/factoryTime';
 
 // Email template config interface - matches db schema
@@ -163,83 +165,6 @@ export interface MachineHealthReportContent {
 }
 
 class ScheduledReportService {
-  private intervalId: NodeJS.Timeout | null = null;
-  private isRunning = false;
-
-  /**
-   * Start the scheduler
-   */
-  start(): void {
-    if (this.isRunning) {
-      console.log('[ScheduledReport] Scheduler already running');
-      return;
-    }
-
-    console.log('[ScheduledReport] Starting scheduler...');
-    this.isRunning = true;
-
-    // Check every hour for reports to run
-    this.intervalId = setInterval(() => {
-      this.checkAndRunReports();
-    }, 60 * 60 * 1000); // 1 hour
-
-    // Also run immediately on start
-    this.checkAndRunReports();
-  }
-
-  /**
-   * Stop the scheduler
-   */
-  stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.isRunning = false;
-    console.log('[ScheduledReport] Scheduler stopped');
-  }
-
-  /**
-   * Check and run due reports
-   */
-  private async checkAndRunReports(): Promise<void> {
-    try {
-      const reports = await this.getDueReports();
-      
-      for (const report of reports) {
-        try {
-          await this.runReport(report);
-        } catch (err: any) {
-          console.error(`[ScheduledReport] Failed to run report ${report.id}:`, err.message);
-        }
-      }
-    } catch (err: any) {
-      console.error('[ScheduledReport] Error checking reports:', err.message);
-    }
-  }
-
-  /**
-   * Get reports that are due to run, queried from the database.
-   */
-  private async getDueReports(): Promise<ScheduledReport[]> {
-    const rows = await db.getReportsDueForSending();
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: (r.reportType ?? "statistics") as ReportType,
-      frequency: (r.schedule?.toLowerCase() ?? "daily") as ReportFrequency,
-      recipients: (r.recipients as string[]) ?? [],
-      isEnabled: r.isActive,
-      lastRunAt: r.lastSentAt ?? undefined,
-      nextRunAt: r.nextScheduledAt ?? undefined,
-      scheduleTime: r.scheduleTime ?? undefined,
-      scheduleDayOfWeek: r.scheduleDayOfWeek,
-      scheduleDayOfMonth: r.scheduleDayOfMonth,
-      createdBy: r.createdBy,
-      createdAt: r.createdAt,
-    }));
-  }
-
   /**
    * Compute the next scheduled run strictly after `after` (default: now).
    *
@@ -264,42 +189,6 @@ class ScheduledReportService {
       timeZone: getFactoryTimezone(),
       after: opts?.after,
     });
-  }
-
-  /**
-   * Run a specific report
-   */
-  async runReport(report: ScheduledReport): Promise<void> {
-    console.log(`[ScheduledReport] Running report: ${report.name}`);
-
-    const content = await this.generateReportContent(report);
-    const html = await this.formatReportHtml(content);
-
-    // Send to all recipients
-    for (const email of report.recipients) {
-      await sendEmail({
-        to: email,
-        subject: `[AVI/AOI] ${content.title}`,
-        html,
-      });
-    }
-
-    // Advance nextScheduledAt so this report is not re-triggered immediately.
-    // Uses the report's REAL scheduleTime (previously hardcoded "08:00") and
-    // evaluates it on the factory timezone wall clock (doc 27 A1).
-    const nextRun = this.computeNextRun(report.frequency, report.scheduleTime ?? "08:00", {
-      dayOfWeek: report.scheduleDayOfWeek,
-      dayOfMonth: report.scheduleDayOfMonth,
-    });
-    await db.updateReportNextSchedule(report.id, nextRun);
-
-    // Also notify owner
-    await notifyOwner({
-      title: `Báo cáo tự động: ${report.name}`,
-      content: `Đã gửi báo cáo ${report.frequency} đến ${report.recipients.length} người nhận.\nTổng kiểm tra: ${content.summary.totalInspections}\nYield Rate: ${content.summary.yieldRate}%`,
-    });
-
-    console.log(`[ScheduledReport] Report sent to ${report.recipients.length} recipients. Next run: ${nextRun.toISOString()}`);
   }
 
   /**

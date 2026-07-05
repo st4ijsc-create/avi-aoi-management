@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -195,6 +196,41 @@ export default function CategoryAnalytics() {
     URL.revokeObjectURL(url);
   };
 
+  // Full localized export (PDF / XLSX / HTML) in addition to the raw CSV above.
+  const getExportConfig = (): ReportExportConfig => {
+    const d = analyticsData;
+    const sections: ReportExportConfig["sections"] = [];
+    if (d) {
+      sections.push({
+        title: t('reports.summary', 'Summary'),
+        type: 'stats',
+        stats: [
+          { label: t('dashboard.totalProduction'), value: d.totals.total },
+          { label: 'OK', value: d.totals.ok },
+          { label: 'NG', value: d.totals.ng },
+          { label: 'NTF', value: d.totals.ntf },
+          { label: t('reports.yieldRate', 'Yield Rate'), value: `${d.totals.yieldRate}%` },
+        ],
+      });
+      sections.push({
+        title: t('reports.detailByCategory', 'By category'),
+        type: 'table',
+        tableHeaders: [
+          t('common.category', 'Category'), t('common.total', 'Total'), 'OK', 'NG', 'NTF',
+          t('reports.yieldRate', 'Yield Rate'),
+        ],
+        tableRows: d.categoryData.map((c) => [c.name, c.total, c.ok, c.ng, c.ntf, `${c.yieldRate}%`]),
+      });
+    }
+    return {
+      title: t('reports.categoryAnalytics'),
+      subtitle: `${format(dateRange.start, 'yyyy-MM-dd')} → ${format(dateRange.end, 'yyyy-MM-dd')}`,
+      sections,
+      filenamePrefix: 'category_analytics',
+      orientation: 'landscape',
+    };
+  };
+
   return (
     <DashboardLayout title={t('dashboard.aviAoiManagement')} currentPath="/category-analytics">
       <div className="p-6 space-y-6">
@@ -242,6 +278,8 @@ export default function CategoryAnalytics() {
                 <Download className="h-4 w-4 mr-2" />
                 {t('common.exportCSV')}
               </Button>
+
+              {analyticsData && <ReportExportButton getConfig={getExportConfig} />}
             </>
           }
         />

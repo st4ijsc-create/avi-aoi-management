@@ -34,6 +34,7 @@ import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../licens
 import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
+import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger, { installConsoleBridge } from "../logger";
@@ -2279,142 +2280,132 @@ async function startServer() {
 
   // ============================================================
   // Report Generation API — on-demand reports for mobile/third-party
-  // POST /api/external/reports/generate            — build a report, returns downloadUrl
-  // GET  /api/external/reports/:reportId/download  — stream the generated report
+  // POST /api/external/reports/generate            — build a REAL report file, returns downloadUrl
+  // GET  /api/external/reports/:reportId/download  — stream the persisted artifact
   // ============================================================
-  // In-memory store for generated reports (generate is a summary-only stub, so the
-  // download route serves exactly what generate produced). TTL-bounded to avoid leaks.
-  const externalReportStore = new Map<string, {
-    reportType: string;
-    format: string;
-    generatedAt: string;
-    summary: any;
-    expiresAt: number;
-  }>();
-  const EXTERNAL_REPORT_TTL_MS = 30 * 60 * 1000; // 30 minutes
-  const pruneExternalReports = () => {
-    const now = Date.now();
-    for (const [key, rec] of externalReportStore) {
-      if (rec.expiresAt < now) externalReportStore.delete(key);
-    }
-  };
-
+  // Wave R3 (doc 32 §2 P0 #1): the old summary-only stub (in-memory Map, TTL 30',
+  // ignored `format`, counted alerts) is RETIRED. Reports now run through
+  // externalReportService: R1 aggregators → renderReport (R2-A, honors pdf/xlsx/csv)
+  // → persistArtifact (R2-B report_artifacts store, 1-year retention). The report id
+  // IS the artifact row id; the download route streams the persisted file. Auth
+  // preserved (validateExternalAuth: x-master-key OR JWT bearer).
   app.post("/api/external/reports/generate", validateExternalAuth, async (req, res) => {
     try {
-      const database = await getDb();
-      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { reportType, format, dateFrom, dateTo, filters, locale } = req.body || {};
+      // JWT callers carry a user (→ createdBy); master-key server-to-server does not.
+      const createdBy = (req as any).externalUser?.id ?? null;
 
-      const { reportType, format, filters } = req.body || {};
-      const validTypes = ["daily_summary", "shift_report", "defect_analysis", "station_report"];
-      const validFormats = ["pdf", "csv", "excel"];
-
-      if (!reportType || !validTypes.includes(reportType)) {
-        return res.status(400).json({ success: false, message: `Invalid reportType. Must be one of: ${validTypes.join(", ")}` });
+      const { generateExternalReport, ExternalReportError } = await import("../services/externalReportService");
+      try {
+        const result = await generateExternalReport({
+          reportType,
+          format,
+          dateFrom,
+          dateTo,
+          filters,
+          locale,
+          createdBy,
+          source: "external",
+        });
+        return res.json({
+          success: true,
+          reportId: result.reportId,
+          // External-auth download path (works with x-master-key — backward-compatible
+          // with the current mobile client). See artifactUrl for the canonical link.
+          downloadUrl: `/api/external/reports/${result.reportId}/download`,
+          // Canonical auth-gated artifact link (web session / scoped export:read key).
+          artifactUrl: result.downloadUrl,
+          format: result.format,
+          reportType: result.reportType,
+          title: result.title,
+          rowCount: result.rowCount,
+          fileSize: result.fileSize,
+          generatedAt: result.generatedAt,
+          expiresAt: result.expiresAt.toISOString(),
+          emptyState: result.emptyState,
+          ...(result.emptyReason ? { emptyReason: result.emptyReason } : {}),
+          deduped: result.deduped,
+        });
+      } catch (err: any) {
+        if (err instanceof ExternalReportError) {
+          return res.status(err.status).json({ success: false, message: err.message });
+        }
+        throw err;
       }
-      if (!format || !validFormats.includes(format)) {
-        return res.status(400).json({ success: false, message: `Invalid format. Must be one of: ${validFormats.join(", ")}` });
-      }
-
-      const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
-      const { sql, count, gte, lte, and, eq: eqOp } = await import("drizzle-orm");
-
-      // Parse filters
-      const startDate = filters?.startDate ? parseLocalDate(filters.startDate) : new Date(new Date().setHours(0, 0, 0, 0));
-      const endDate = filters?.endDate ? parseLocalDate(filters.endDate) : new Date();
-      const stationIds: number[] = (filters?.stationIds || []).map((id: string) => parseInt(id, 10)).filter((id: number) => !isNaN(id));
-
-      // Gather summary data for the report
-      const conditions: any[] = [gte(alertHistory.createdAt, startDate), lte(alertHistory.createdAt, endDate)];
-      const [alertCount] = await database.select({ total: count() }).from(alertHistory).where(and(...conditions));
-      const [mqttAlertCount] = await database.select({ total: count() }).from(mqttAlertHistory)
-        .where(and(gte(mqttAlertHistory.triggeredAt, startDate), lte(mqttAlertHistory.triggeredAt, endDate)));
-      const [bulletinCount] = await database.select({ total: count() }).from(mqttBulletinHistory)
-        .where(and(gte(mqttBulletinHistory.createdAt, startDate), lte(mqttBulletinHistory.createdAt, endDate)));
-
-      // Generate a report ID (timestamp-based)
-      const reportId = `RPT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const generatedAt = new Date().toISOString();
-      const summary = {
-        reportType,
-        format,
-        period: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-        stationIds,
-        alerts: { total: (alertCount?.total || 0) + (mqttAlertCount?.total || 0) },
-        bulletins: { total: bulletinCount?.total || 0 },
-      };
-
-      // Persist so GET /reports/:reportId/download can serve it
-      pruneExternalReports();
-      externalReportStore.set(reportId, {
-        reportType,
-        format,
-        generatedAt,
-        summary,
-        expiresAt: Date.now() + EXTERNAL_REPORT_TTL_MS,
-      });
-
-      res.json({
-        success: true,
-        reportId,
-        downloadUrl: `/api/external/reports/${reportId}/download`,
-        generatedAt,
-        summary,
-      });
     } catch (error: any) {
       console.error("[External] report generate error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to generate report" });
     }
   });
 
-  // GET /api/external/reports/:reportId/download — serve the report produced by generate.
-  // The generate endpoint is a summary-only stub, so download returns that summary:
-  // CSV when format=csv, otherwise the structured JSON summary as an attachment.
+  // GET /api/external/reports/:reportId/download — stream the persisted artifact.
+  // :reportId is the report_artifacts row id (returned by generate). Auth preserved
+  // (validateExternalAuth): x-master-key callers are trusted server-to-server
+  // (privileged) readers; JWT callers read their own artifacts (or any, when their
+  // role is privileged). Retired: the old in-memory Map / 1-line-CSV / JSON-summary.
   app.get("/api/external/reports/:reportId/download", validateExternalAuth, async (req, res) => {
     try {
-      const reportId = req.params.reportId;
-      const record = externalReportStore.get(reportId);
-      if (!record || record.expiresAt < Date.now()) {
-        if (record) externalReportStore.delete(reportId);
-        return res.status(404).json({
-          success: false,
-          message: "Report not found or expired. Re-generate via POST /api/external/reports/generate.",
-        });
+      const id = parseInt(String(req.params.reportId), 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ success: false, message: "Invalid reportId (expected an artifact id)." });
       }
 
-      if (record.format === "csv") {
-        const s = record.summary;
-        const csv = [
-          "reportType,format,periodStart,periodEnd,alertsTotal,bulletinsTotal,generatedAt",
-          [
-            record.reportType,
-            record.format,
-            s.period?.startDate ?? "",
-            s.period?.endDate ?? "",
-            s.alerts?.total ?? 0,
-            s.bulletins?.total ?? 0,
-            record.generatedAt,
-          ].join(","),
-        ].join("\n");
-        res.set("Content-Type", "text/csv; charset=utf-8");
-        res.set("Content-Disposition", `attachment; filename="${reportId}.csv"`);
-        return res.send(csv);
+      const externalUser = (req as any).externalUser;
+      const viewer = externalUser
+        ? { id: externalUser.id, role: (externalUser as any).role }
+        : { privileged: true }; // trusted x-master-key server-to-server caller
+
+      const { getDownloadTarget, ArtifactError } = await import("../services/reportArtifactService");
+      let target;
+      try {
+        target = await getDownloadTarget(id, viewer);
+      } catch (err: any) {
+        if (err instanceof ArtifactError) {
+          const status = err.reason === "forbidden" ? 403 : err.reason === "expired" ? 410 : 404;
+          return res.status(status).json({ success: false, reason: err.reason, message: err.message });
+        }
+        throw err;
       }
 
-      // pdf / excel: binary rendering is not produced by this stub — return the
-      // structured summary as a JSON attachment (honest, consistent with generate).
-      res.set("Content-Type", "application/json; charset=utf-8");
-      res.set("Content-Disposition", `attachment; filename="${reportId}.json"`);
-      return res.send(JSON.stringify({
-        success: true,
-        reportId,
-        reportType: record.reportType,
-        format: record.format,
-        generatedAt: record.generatedAt,
-        summary: record.summary,
-      }, null, 2));
+      const { artifact, directUrl, filename } = target;
+      res.setHeader("Content-Type", artifact.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Artifact-Sha256", artifact.fileHash);
+      res.setHeader("Cache-Control", "private, no-store");
+
+      // Local-disk storage: stream from the uploads root (path-guarded).
+      if (directUrl.startsWith("/uploads/")) {
+        const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+          ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+          : path.join(process.cwd(), "uploads");
+        const resolved = path.resolve(path.join(uploadsRoot, directUrl.replace("/uploads/", "")));
+        if (!resolved.startsWith(path.resolve(uploadsRoot) + path.sep)) {
+          return res.status(400).json({ success: false, message: "Invalid artifact path" });
+        }
+        if (!fs.existsSync(resolved)) {
+          return res.status(404).json({ success: false, message: "Artifact file missing from storage" });
+        }
+        res.setHeader("Content-Length", fs.statSync(resolved).size);
+        return fs.createReadStream(resolved).pipe(res);
+      }
+
+      // Remote storage (Forge/S3): fetch upstream + pipe through.
+      const { Readable } = await import("stream");
+      const upstream = await fetch(directUrl);
+      if (!upstream.ok) {
+        return res.status(502).json({ success: false, message: "Upstream storage fetch failed" });
+      }
+      const cl = upstream.headers.get("content-length");
+      if (cl) res.setHeader("Content-Length", cl);
+      if (!upstream.body) return res.end();
+      return Readable.fromWeb(upstream.body as never).pipe(res);
     } catch (error: any) {
       console.error("[External] report download error:", error);
-      res.status(500).json({ success: false, message: error?.message || "Failed to download report" });
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: error?.message || "Failed to download report" });
+      } else {
+        res.end();
+      }
     }
   });
 
@@ -4611,6 +4602,10 @@ async function startServer() {
 
   // Register AI SSE streaming routes (before tRPC mount)
   registerAiStreamingRoutes(app);
+  // Doc 34 §IV-P0 — OpenAI-compatible gateway (/v1/*). Gated by OPENAI_GATEWAY_ENABLED
+  // (default OFF) and fail-closed on a missing API key. Mounted before license
+  // middleware so trusted-LAN IDE tooling (VS Code + Continue) can reach it.
+  registerOpenAiGateway(app);
   registerAiLocalKnowledgeRoutes(app);
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
@@ -4646,6 +4641,18 @@ async function startServer() {
     console.log("[Export] streaming export mounted at /api/export, BI feed at /api/bi");
   } catch (err) {
     console.error("[Export] /api/export + /api/bi mount failed:", (err as any)?.message || err);
+  }
+
+  // ============================================================
+  // Doc 32 Wave R2 (decision #4/#5) — persisted report-artifact re-download.
+  //   GET /api/reports/artifacts/:id/download — auth-gated (session or
+  //   export:read API key), access + expiry checked, streams the stored file.
+  // ============================================================
+  try {
+    const { registerReportArtifactRoutes } = await import("../routes/reportArtifactRoutes");
+    registerReportArtifactRoutes(app);
+  } catch (err) {
+    console.error("[ReportArtifact] download route mount failed:", (err as any)?.message || err);
   }
 
   // U1 (doc 21 §6) — Unified Event Backbone: (a) subscribe the ecosystem bridge so
@@ -5078,7 +5085,7 @@ async function startServer() {
 
   server.listen(port, () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
-    
+
     // Initialize cache warming service
     cacheWarmingService.initialize().catch(err => {
       logger.error({ err }, '[CacheWarming] Failed to initialize');

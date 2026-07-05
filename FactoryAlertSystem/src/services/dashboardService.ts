@@ -8,8 +8,6 @@
 import {
   DashboardSummaryParams,
   DashboardSummaryResponse,
-  ReportGenerateRequest,
-  ReportGenerateResponse,
   UserPreferencesData,
   UserPreferencesResponse,
 } from '../types';
@@ -118,41 +116,11 @@ class DashboardService {
     }
   }
 
-  /**
-   * Tạo report/export
-   * POST /api/external/reports/generate
-   */
-  async generateReport(request: ReportGenerateRequest): Promise<ReportGenerateResponse | null> {
-    const { signal, clear } = createTimeoutSignal(30000);
-    try {
-      const baseUrl = getBaseUrl();
-      const url = `${baseUrl}/api/external/reports/generate`;
-      console.log('[DashboardService] generateReport:', request.reportType, request.format);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: buildExternalHeaders(),
-        body: JSON.stringify(request),
-        signal,
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        console.warn(`[DashboardService] generateReport HTTP ${response.status}:`, text.substring(0, 200));
-        return null;
-      }
-
-      const result = await response.json();
-      console.log('[DashboardService] generateReport OK:', result?.reportId);
-      return result as ReportGenerateResponse;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.warn('[DashboardService] generateReport failed:', msg);
-      return null;
-    } finally {
-      clear();
-    }
-  }
+  // NOTE (doc 32, Wave R3, decision #5): the former `generateReport()` — which
+  // POSTed to the stub `/api/external/reports/generate` to server-render a
+  // report FILE for the phone to download — was removed. Mobile stays light:
+  // FullReportModal now deep-links into the full WEB report (see
+  // services/webReportLink.ts) instead of downloading a rendered file.
 
   /**
    * Lấy user preferences từ server
