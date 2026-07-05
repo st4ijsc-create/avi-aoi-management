@@ -360,7 +360,19 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** tsc 0 · test xanh.
 **Còn lại của H1 (đợt sau):** mTLS/SPIFFE-lite service identity + device X.509 onboarding (cần PKI/infra); wire hash-chain vào `controlAudit` writer thật; OPA server thật cho Site edition; Vault (tuỳ chọn Site).
 
-**Kế tiếp:** F6 (H2) Observability — OpenTelemetry + decision-trace + SLO.
+### ✅ F6 (H2) — Observability (đợt 1) — 2026-07-05
+**Phạm vi giao:** nền observability tự-chứa, **ít phụ thuộc** (không thêm OTel SDK nặng lúc này — full OTLP export hoãn). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/observability/slo.ts` — **SLO catalogue + error-budget + multi-window burn-rate** (SRE workbook: critical 14.4×, warning 6×). `DEFAULT_SLOS` = target SDD §5.12.2 (dispatch P95 ≤500ms, UNS P99 ≤250ms, twin ≤1s, API ≥99.9%).
+- `server/services/observability/decisionTrace.ts` — **truy vết quyết định** (ring buffer bounded): candidate set + điểm + ràng buộc loại ai + version thuật toán → trả lời "vì sao robot X được chọn lúc 14:32". `recordDecision/queryDecisions/explainDecision`.
+- `server/services/observability/correlation.ts` — **correlation backbone** qua `AsyncLocalStorage` (không cần OTel SDK): 1 correlation_id chạy order→wo→task→robot-command→ack; decision-trace tự gắn id.
+- `server/routers/observabilityRouter.ts` (READ-ONLY `slos`/`evaluateSlo` preview/`recentDecisions`) + đăng ký `observability:`.
+- `.env.example` — flag `OBSERVABILITY`.
+- Test: `server/services/observability/observability.test.ts` — SLO budget/burn, decision record/query/explain, correlation propagation.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H2 (đợt sau):** **OpenTelemetry SDK thật** (OTLP→Tempo/Jaeger) wire vào HTTP pipeline; persist decision-trace vào hypertable (migration đánh số tránh trùng 0202); bật `METRICS_ENABLED` mặc định + burn-rate alert nối Prometheus; Loki/ClickHouse shipping.
+
+**Kế tiếp:** theo lựa chọn của bạn — quay lại F3 (sidecar) / F4 (licensing) hoặc F7/F8.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
