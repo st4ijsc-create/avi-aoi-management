@@ -8,7 +8,52 @@
  * - Configurable detail levels
  */
 
+import { createHash } from "node:crypto";
 import * as db from "../db";
+import { canonicalize } from "./security/auditChain"; // doc 33 D4 (F5 §5.11.2)
+import { secPlatformEnabled } from "./security/policyGate";
+
+// ─── Content-hash integrity (doc 33 D4) ──────────────────────────────────────
+// The high-frequency CRUD audit gets a per-row CONTENT hash (tamper-evident for edits) rather
+// than a serialized chain — a chain here would add lock contention on a hot path (the full
+// hash-chain is reserved for the low-frequency control audit, I4). SEC_PLATFORM-gated.
+
+/** Stored `details` without the integrity fields (so the hash is over stable content). */
+function stableDetails(details: Record<string, any> | null | undefined): Record<string, any> {
+  const { contentHash, hashTs, ...rest } = (details ?? {}) as Record<string, any>;
+  void contentHash;
+  void hashTs;
+  return rest;
+}
+
+/** Deterministic content hash over a CRUD audit row's core + details. */
+export function computeCrudContentHash(
+  row: { userId?: number | null; action: string; entityType: string; entityId: unknown; entityName?: string | null; details?: Record<string, any> | null },
+  hashTs: number,
+): string {
+  return createHash("sha256")
+    .update(canonicalize({
+      userId: row.userId ?? null,
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId ?? null,
+      entityName: row.entityName ?? null,
+      details: stableDetails(row.details),
+      hashTs,
+    }))
+    .digest("hex");
+}
+
+/** Verify a stored CRUD audit row's content hash. Legacy/unhashed rows pass (ok). */
+export function verifyCrudContentHash(row: {
+  userId?: number | null; action: string; entityType: string; entityId: unknown; entityName?: string | null; details?: Record<string, any> | null;
+}): { ok: boolean; reason?: string } {
+  const d = (row.details ?? {}) as Record<string, any>;
+  if (d.contentHash == null || d.hashTs == null) return { ok: true }; // unhashed (legacy / flag was off)
+  return computeCrudContentHash(row, Number(d.hashTs)) === d.contentHash
+    ? { ok: true }
+    : { ok: false, reason: "content hash mismatch (row altered)" };
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -207,6 +252,23 @@ export async function logCrudOperation(
   entry: AuditLogEntry
 ): Promise<{ id: number }> {
   try {
+    const details: Record<string, any> = {
+      ...entry.details,
+      source: context.source || "web",
+      sessionId: context.sessionId,
+      requestId: context.requestId,
+      timestamp: new Date().toISOString(),
+    };
+    // doc 33 D4 (F5 §5.11.2) — per-row content hash for tamper-evidence (SEC_PLATFORM). No
+    // serialization (perf-safe on this hot path); catches content edits.
+    if (secPlatformEnabled()) {
+      const hashTs = Date.now();
+      details.hashTs = hashTs;
+      details.contentHash = computeCrudContentHash(
+        { userId: context.userId, action: entry.action, entityType: entry.entityType, entityId: entry.entityId, entityName: entry.entityName, details },
+        hashTs,
+      );
+    }
     const result = await db.createAuditLog({
       userId: context.userId,
       userName: context.userName,
@@ -214,13 +276,7 @@ export async function logCrudOperation(
       entityType: entry.entityType,
       entityId: entry.entityId,
       entityName: entry.entityName,
-      details: {
-        ...entry.details,
-        source: context.source || "web",
-        sessionId: context.sessionId,
-        requestId: context.requestId,
-        timestamp: new Date().toISOString(),
-      },
+      details,
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
       status: entry.status,
