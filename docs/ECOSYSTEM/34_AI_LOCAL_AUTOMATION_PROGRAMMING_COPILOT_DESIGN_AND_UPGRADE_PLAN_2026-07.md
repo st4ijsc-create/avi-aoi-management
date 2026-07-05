@@ -5,7 +5,7 @@
 |---|---|
 | **Mã tài liệu** | ECOSYSTEM-34 |
 | **Ngày** | 2026-07-05 |
-| **Trạng thái** | 🟢 **P0 + P1 XONG & VALIDATED** 2026-07-05 (tsc 0, tests pass, smoke PASS, benchmark ghi). P2/P3/P4 chờ duyệt. Xem §Nhật ký thực thi. |
+| **Trạng thái** | 🟢 **P0 + P1 + P2 XONG & VALIDATED** 2026-07-05 (tsc 0, tests pass, codegen E2E 5/5, flags ON). P3/P4 chờ duyệt. Xem §Nhật ký thực thi. |
 | **Nguồn đối chiếu** | `D:\SOURCES\AI Local\AI_Local_Lap_trinh_Tu_dong_hoa.docx` (bản `AI-LOCAL-SDD-001 v1.0`, 04/07/2026) |
 | **Phương pháp** | 6 agent khảo sát song song mã nguồn hiện tại (engine, RAG, code-authoring, agent/tools, UX/IDE, MLOps) + đối chiếu từng lớp với báo cáo |
 | **Kế thừa** | doc 03 (AI brain design), doc 04 (AI nextgen), doc 06 (Technician Copilot), doc 09 (Device Programming), doc 16 (Automation Orchestration), doc 24 (Advanced Capabilities), doc 25 (Machine Control Tier) |
@@ -379,8 +379,17 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 - Tải model FIM nhỏ (Qwen2.5-Coder-1.5B) để autocomplete FIM chuẩn hơn — nay fim→4B fallback đã hoạt động.
 - Minor: 1 truy vấn (MELSERVO, có vendor-filter) trả `semanticUsed=false` (rơi keyword+rerank) nhưng kết quả vẫn đúng tuyệt đối — soi lại cờ semanticUsed khi rảnh.
 
+### P2 — LLM codegen nối substrate an toàn (BUILT & GREEN + E2E, committed sau P0/P1)
+- **Copilot LLM** (`server/services/programming/aiProgrammingCopilot.ts`): template tĩnh → `generateProgram()` — prompt vai trò + golden few-shot (`goldenExamples.ts`) + PROG_KB RAG có trích dẫn → code-tier LLM (route task:"code") → **validate qua `programmingAdapter` TRƯỚC khi trả** (diagnostics lộ ra, không giấu). Modes: generate/complete/translate/review/explain. `programmingRouter.copilotGenerate`. Test 15/15.
+- **Safety (paramount):** hard-refuse mã an toàn (E-stop/interlock/SIL, đa ngữ vi/en/CJK) TRƯỚC khi gọi model; display-only (không deploy/run); citations luôn kèm. Verified live.
+- **9 agent-tool lập trình** (`aiLocalTools/readToolsProgramming.ts` + `writeHandlers/programmingFile.ts`): retrieve_programming_kb, lookup_error_code, syntax_check_program, compile_program, simulate_program, generate_program, calc (parser an toàn, không eval), read_project_file (giới hạn workspace), **write_project_file (HITL + confined)**. Registry auto-NL-route. Test 28/28.
+- **Load-order VRAM fix (runtime, quan trọng):** node-llama-cpp phân mảnh VRAM khi model LỚN (30B 16.7GB) nạp SAU model nhỏ (embed RAG) → `warmCodeModel()` nạp 30B TRƯỚC RAG + cap `GGUF_CODE_CTX=8192`. Đây là fix cho cả app thật (RCA/chat cũng RAG-rồi-30B).
+- **E2E codegen smoke 5/5** (`scripts/ai-kb/smoke-codegen.ts`, .env mặc định): Zmotion (VN) → ZBasic hợp lệ **validation.ok=TRUE** cite RTBasic p.243; ST moving-average/debounce + IR pick-place → sinh code + validate (diagnostics lộ đúng — substrate bắt lỗi first-pass, đúng thiết kế); SAFETY refuse OK. Đa ngữ VN→code.
+- **Flags ON** (.env): AI_PROGRAMMING_COPILOT_ENABLED=true, PROG_KB_ENABLED=true, AI_CODE_ROUTER_ENABLED=true, PROG_CODEGEN_VALIDATE_REQUIRED=true. Gateway vẫn OFF (chờ live smoke).
+- **Ghi chú chất lượng:** một số ST/IR validation.ok=false (30B-Instruct chung, chưa phải coder-model chuyên) — substrate bắt được, an toàn. Tải Qwen3-Coder-30B (D2, P4) sẽ tăng tỉ lệ hợp-lệ-first-pass.
+
 ### CHƯA làm (đúng kế hoạch — chờ wave sau)
-- **P2** (LLM codegen nối substrate) · **P3** (Monaco + Continue + ảnh-chat) · **P4** (eval/QLoRA/ops). Flag `AI_PROGRAMMING_COPILOT_ENABLED` vẫn OFF.
+- **P3** (Monaco in-app + VS Code/Continue + ảnh-vào-chat + role `engineer`) · **P4** (eval code/QLoRA→GGUF/ops + tải Qwen3-Coder). Gateway live-smoke (bật OPENAI_GATEWAY_ENABLED+key + curl).
 
 ---
 

@@ -166,5 +166,10 @@ knowledge/embeddings.jsonl.*-bak
 # (source PDFs live at PROG_KB_MANUALS_DIR, not in the repo). Never commit the corpus.
 knowledge/programming/
 
+# doc 34 P2 — AI programming-copilot workspace (read/write_project_file confined here).
+# Keep the dir (README) but never commit AI-written files.
+programming-workspace/*
+!programming-workspace/README.md
+
 # doc 27 V17 — vision validation harness output (npm run vision:validate)
 validation-reports/

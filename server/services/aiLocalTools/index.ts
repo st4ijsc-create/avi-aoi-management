@@ -16,6 +16,11 @@ import "./readToolsP2";
 import "./readToolsP2bc";
 // Phase P2 (group D) — anomalies, genealogy trace, energy/ENPI, routing.
 import "./readToolsP2d";
+// Doc 34 P2 — Automation Programming Copilot tools: READ (KB retrieve / error-code /
+// syntax-check / compile / simulate / generate / calc / read-file) + WRITE (workspace
+// file write, HITL). Safe adapters + confined workspace; no device, no DB writes.
+import "./readToolsProgramming";
+import "./writeHandlers/programmingFile";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";

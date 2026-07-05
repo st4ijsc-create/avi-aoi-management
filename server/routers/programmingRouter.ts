@@ -50,6 +50,7 @@ import {
   suggestProgram,
   explainProgram,
   copilotEnabled,
+  generateProgram,
 } from "../services/programming/aiProgrammingCopilot";
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
 import { getEngineeringStreamManager } from "../services/programming/engineeringStream";
@@ -473,6 +474,31 @@ export const programmingRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ kind: KIND, source: z.string().max(2_000_000) }))
     .query(({ input }) => explainProgram(input.kind, input.source)),
+
+  /**
+   * Doc 34 · P2 — LLM CODE COPILOT (generate / complete / translate / review / explain).
+   *
+   * ADVISORY + DISPLAY-ONLY: generateProgram runs every generated program through the SAME
+   * programmingAdapter validate()/compile() gate before it is returned (PROG_CODEGEN_VALIDATE_
+   * REQUIRED, default true), HARD-REFUSES safety-function requests, attaches RAG citations, and
+   * opens NO device path — nothing is deployed. The engineer reviews the result and saves it via
+   * createArtifact (machine_control / canCreate) to enter the existing gated build/deploy
+   * pipeline. Read-gated exactly like copilotSuggest (machine_monitoring / canView) — a
+   * proposal, not a control action; saving the proposal is the write.
+   */
+  copilotGenerate: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        kind: KIND,
+        request: z.string().min(1).max(4000),
+        mode: z.enum(["generate", "complete", "translate", "review", "explain"]).optional(),
+        vendor: z.string().max(64).optional(),
+        contextCode: z.string().max(2_000_000).optional(),
+        targetKind: KIND.optional(),
+      }),
+    )
+    .mutation(async ({ input }) => generateProgram(input)),
 
   // ── IEC 61131-3 structured POU (LAD/FBD/SFC) — P4 (doc 24 Wave-3) ──
   //
