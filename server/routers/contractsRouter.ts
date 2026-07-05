@@ -10,6 +10,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { buildSeedSpecs } from "../services/contracts/apiSpec";
 import { listSchemas, checkBackwardCompat } from "../services/contracts/schemaRegistry";
 import { reconcile } from "../services/contracts/reconciliation";
+import { listReconcileProviders, runReconciliationCycle } from "../services/contracts/reconciliationCron"; // doc 33 I6
 
 const jsonSchema = z.record(z.string(), z.unknown());
 
@@ -39,4 +40,10 @@ export const contractsRouter = router({
       }),
     )
     .query(({ input }) => reconcile(input)),
+
+  /** doc 33 I6: registered reconciliation providers (MES/ERP/WMS). */
+  reconcileProviders: protectedProcedure.query(() => listReconcileProviders()),
+
+  /** doc 33 I6: run a reconciliation cycle across all providers now (read-only; raises tickets). */
+  reconcileCycle: protectedProcedure.query(() => runReconciliationCycle()),
 });

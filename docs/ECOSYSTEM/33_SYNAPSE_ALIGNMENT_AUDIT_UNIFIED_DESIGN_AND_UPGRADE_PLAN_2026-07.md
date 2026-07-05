@@ -445,4 +445,25 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Merge:** worktree `synapse-foundation` sẵn sàng review/PR khi phiên doc-32 ở main tree hoàn tất.
 
 ---
-*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
+
+## 9. ĐỢT NỐI-VÀO-ENGINE THẬT (Integration wave I1–I6, 2026-07-05)
+
+Sau khi chủ sở hữu chọn **"nối primitive vào engine thật (foundation THỰC SỰ)"**, 6 tích hợp biến primitive advisory thành *đang chạy trong code production* — mỗi cái **flag-gated/additive**, tsc 0 + test xanh, commit riêng:
+
+| # | Tích hợp | Vào code thật | Commit | Cờ (mặc định OFF) |
+|---|---|---|---|---|
+| I1 | F6 decision-trace | `fleet/taskAllocator` — mỗi allocation ghi "vì sao device X" | `ccfd04d` | (trong FLEET_ORCH) |
+| I2 | F5 policy-as-code | `ot/commandDispatcher` write-gate (deny/four-eyes trước interlock) | `40d565f` | `SEC_PLATFORM` |
+| I3 | F1 edition ceiling | `license.getAllowedModules` bound theo edition | `8bd6bbf` | `EDITION_PROFILE` |
+| I4 | F5 hash-chain WORM | `controlAuditService` (advisory-lock, migration **0220**) | `434976f` | `SEC_PLATFORM` |
+| I5 | F8 durable exec | `foeEngine` auto-resume interrupted runs (vs `held` thủ công) | `b57c7b2` | `FOE_DURABLE` |
+| I6 | F7 reconciliation | cron cycle + provider registry (MES/ERP/WMS) + CI contract-gate | *(this)* | `RECONCILE_CRON` |
+
+**Nguyên tắc giữ vững:** mọi tích hợp mặc định TẮT → hành vi cũ y nguyên (mọi test production hiện có vẫn xanh: dispatcher 36, fleet 53, foe 27, controlAudit 2…). Chỉ 1 migration (0220, additive/nullable/idempotent, số 0220 tránh trùng doc-32 0202). Không mở control path mới; policy-gate chạy TRƯỚC interlock (governance→safety), không tự-khoá interlock action.
+
+**Còn lại (deep, đợt sau):** OTel OTLP export thật + persist decision-trace (bảng, migration); RunEvent persistence đầy đủ cho replay-from-events (I5 hiện tái dùng run_steps re-walk); provider MES/ERP/WMS thật cho reconciliation; wire hash-chain vào các audit writer khác; bật cờ staged (C1) + phần cứng (C2).
+
+**Tổng kết phiên:** **8 phase nền tảng (F1-F8) + 6 tích hợp (I1-I6) = 14 commit** trên `synapse-foundation`, ~110+ test SYNAPSE xanh, mọi test production hiện có không đổi.
+
+---
+*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 (foundation) + §9 (integration) trong worktree `../avi-aoi-synapse`.*
