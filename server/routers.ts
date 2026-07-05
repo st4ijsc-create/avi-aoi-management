@@ -72,6 +72,7 @@ import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
 import { editionRouter } from "./routers/editionRouter"; // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment-profile info
 import { pluginRouter } from "./routers/pluginRouter"; // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue + auto-form config
+import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -505,6 +506,7 @@ export const appRouter = router({
   license: licenseRouter,
   edition: editionRouter, // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment profile
   plugin: pluginRouter, // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue
+  security: securityRouter, // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,

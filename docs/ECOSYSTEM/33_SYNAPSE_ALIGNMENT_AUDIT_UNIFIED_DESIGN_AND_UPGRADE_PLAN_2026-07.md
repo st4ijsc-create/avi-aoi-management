@@ -348,7 +348,19 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** `tsc --noEmit` exit 0 · test xanh (xem commit).
 **Còn lại của P3 (đợt sau):** gắn manifest vào registry secsgem/robot/programming; wizard UI tiêu thụ `plugin.get.configSchema`; conformance suite chạy như CI bắt buộc cho adapter mới; `synapse plugin new` template.
 
-**Kế tiếp:** F3 (P4) Plugin out-of-process gRPC sidecar.
+### ✅ F5 (H1) — Security platform-grade (đợt 1) — 2026-07-05
+**Ưu tiên lại theo chủ sở hữu:** làm F5 Security + F6 Observability TRƯỚC F3/F4 (đường tới hạn "nền bán-được"). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm (2 trụ tự-chứa, giá trị cao nhất):**
+- `server/services/security/policyEngine.ts` — **OPA-lite policy-as-code**: rule model khai báo được (serializable, versioned) + evaluator thuần (deny > require_approval > allow, fail-safe). `DEFAULT_POLICIES` hiện thực đúng ví dụ SDD §5.11.2 (cấm skip AOI class-3; duyệt override khi zone đông; duyệt recipe-write khi line running). Callers (write-gate) opt-in.
+- `server/services/security/auditChain.ts` — **hash-chain WORM audit**: `appendRecord`/`verifyChain` (sha256, canonical JSON, genesis, seq tăng dần) → mọi sửa/chèn/xoá bản ghi bị phát hiện. Nâng audit từ "append-only theo quy ước" → tamper-evident.
+- `server/routers/securityRouter.ts` (READ-ONLY `policies`/`evaluate` dry-run) + đăng ký `security:`.
+- `.github/workflows/sbom-cve.yml` — SBOM (CycloneDX) + CVE audit hằng tuần (advisory).
+- `.env.example` — flag `SEC_PLATFORM`.
+- Test: `server/services/security/security.test.ts` — policy precedence + tamper-detection.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H1 (đợt sau):** mTLS/SPIFFE-lite service identity + device X.509 onboarding (cần PKI/infra); wire hash-chain vào `controlAudit` writer thật; OPA server thật cho Site edition; Vault (tuỳ chọn Site).
+
+**Kế tiếp:** F6 (H2) Observability — OpenTelemetry + decision-trace + SLO.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*

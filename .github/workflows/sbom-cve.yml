@@ -1,0 +1,46 @@
+# SBOM + CVE scan — SYNAPSE §5.11 / §9.6 (doc 33 F5 · H1 Security).
+# Weekly + on-demand software bill-of-materials + vulnerability scan. Advisory (does not
+# block by default); tighten `continue-on-error: false` once the baseline is clean.
+name: sbom-cve
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch: {}
+  push:
+    branches: [synapse-foundation]
+    paths: ["package.json", "pnpm-lock.yaml", ".github/workflows/sbom-cve.yml"]
+
+jobs:
+  sbom-cve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install (no scripts — supply-chain safety)
+        run: pnpm install --frozen-lockfile --ignore-scripts || pnpm install --no-frozen-lockfile --ignore-scripts
+
+      - name: Generate CycloneDX SBOM
+        continue-on-error: true
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json || echo "sbom generation skipped"
+
+      - name: CVE audit (advisory)
+        continue-on-error: true
+        run: pnpm audit --audit-level=high || echo "pnpm audit reported findings (advisory)"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: ignore
