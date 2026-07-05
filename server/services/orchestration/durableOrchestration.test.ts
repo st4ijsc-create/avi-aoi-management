@@ -87,6 +87,24 @@ describe("event-sourced replay + crash-resume", () => {
     ]);
     expect(resumePlan(s, dag).terminal).toBe(true);
   });
+  it("holds forward dispatch during a saga rollback (compensating)", () => {
+    // A fails → run enters `compensating`; the independent branch B is unstarted but must NOT be
+    // dispatched mid-rollback (only compensations resume). Regression: dispatch was ['B'] before.
+    const dag2: DagNode[] = [
+      { id: "A", deps: [] },
+      { id: "B", deps: [] },
+    ];
+    const s = replayRun("run-x", [
+      { seq: 1, type: "RUN_CREATED", ts: 1 },
+      { seq: 2, type: "TASK_STARTED", taskId: "A", ts: 2 },
+      { seq: 3, type: "TASK_FAILED", taskId: "A", ts: 3 },
+    ]);
+    expect(s.status).toBe("compensating");
+    const plan = resumePlan(s, dag2);
+    expect(plan.terminal).toBe(false);
+    expect(plan.dispatch).toEqual([]); // hold new forward dispatch
+    expect(plan.reason).toMatch(/compensating/);
+  });
 });
 
 describe("priority / SLA / four-eyes", () => {

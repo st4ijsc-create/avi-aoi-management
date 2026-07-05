@@ -20,14 +20,14 @@
  */
 
 /**
- * Namespace prefixes that must keep working even with an expired/absent license — the
- * "never stop the line" allowlist: inspection recording, production sessions, machine/OT
- * telemetry, andon, safety/interlock, alerts/notifications, command audit, quality recording.
- * A tRPC procedure "inspection.record" matches prefix "inspection". Tunable per vendor.
+ * Namespaces whose EVERY procedure is runtime recording / production execution / safety — these
+ * must keep working even with an expired/absent license (the "never stop the line" allowlist):
+ * inspection recording, production sessions, machine/OT telemetry, andon, safety/interlock,
+ * alerts/notifications, command audit, quality recording. A tRPC procedure "inspection.record"
+ * matches namespace "inspection". Tunable per vendor.
  */
-export const PRODUCTION_CRITICAL_PREFIXES: readonly string[] = [
+export const RUNTIME_CRITICAL_PREFIXES: readonly string[] = [
   "inspection",
-  "inspectionProgram",
   "inspectionVariant",
   "machineStatus",
   "machineApi",
@@ -45,17 +45,45 @@ export const PRODUCTION_CRITICAL_PREFIXES: readonly string[] = [
   "predictiveAlert",
   "spcAlerts",
   "notification",
-  "equipment",
-  "robot",
-  "field",
 ];
 
-const CRITICAL_SET = new Set(PRODUCTION_CRITICAL_PREFIXES);
+/**
+ * Namespaces that MIX runtime execution with premium CONFIG/AUTHORING. A procedure here is
+ * production-critical ONLY when it is NOT a config/authoring mutation — those legitimately wait for
+ * license renewal (the commercial lever). This closes the license-bypass where whole-namespace
+ * matching let `robot.create` / `robot.setEnabled` / `inspectionProgram.createDraft|submit|approve|
+ * release` / `field.registerDiscovered` ride the allowlist and mutate config on a lapsed license.
+ * — doc 33 §11 audit fix.
+ */
+export const MIXED_CRITICAL_PREFIXES: readonly string[] = ["robot", "equipment", "inspectionProgram", "field"];
 
-/** Is a tRPC procedure part of the never-stop-production path? (matches on the router namespace) */
+/**
+ * Verbs (the procedure's method segment) that are config/authoring, never never-stop, even inside a
+ * MIXED critical namespace. Kept to UNAMBIGUOUS config verbs so genuine runtime ops
+ * (robot.sendCommand, equipment.reportStatus, inspectionProgram.<runtime>) stay critical.
+ */
+const CONFIG_AUTHORING_VERBS = new Set<string>([
+  "create", "createDraft", "update", "delete", "remove", "setEnabled", "enable", "disable",
+  "approve", "reject", "release", "submit", "publish", "register", "registerDiscovered",
+  "import", "rename", "archive", "assign", "unassign", "duplicate", "clone",
+  "bulkCreate", "bulkUpdate", "bulkDelete",
+]);
+
+const RUNTIME_SET = new Set(RUNTIME_CRITICAL_PREFIXES);
+const MIXED_SET = new Set(MIXED_CRITICAL_PREFIXES);
+
+/** Back-compat: the full union of namespaces that CAN be production-critical (for tuning/inspection). */
+export const PRODUCTION_CRITICAL_PREFIXES: readonly string[] = [...RUNTIME_CRITICAL_PREFIXES, ...MIXED_CRITICAL_PREFIXES];
+
+/**
+ * Is a tRPC procedure part of the never-stop-production path? Runtime namespaces are always
+ * critical; MIXED namespaces are critical EXCEPT for config/authoring verbs (which wait for renewal).
+ */
 export function isProductionCritical(procedure: string): boolean {
-  const ns = procedure.split(".")[0];
-  return CRITICAL_SET.has(ns);
+  const [ns, verb = ""] = procedure.split(".");
+  if (RUNTIME_SET.has(ns)) return true;
+  if (MIXED_SET.has(ns)) return !CONFIG_AUTHORING_VERBS.has(verb);
+  return false;
 }
 
 /** Is the never-stop-production policy active? Default TRUE (SYNAPSE §4.3). */

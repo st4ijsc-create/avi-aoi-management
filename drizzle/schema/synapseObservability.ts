@@ -7,7 +7,7 @@
 // pure modules stay DB-free. Imported directly (not via the shared schema index) to avoid
 // churning that file while a concurrent branch also edits it.
 // ════════════════════════════════════════════════════════════════════════════
-import { pgTable, serial, varchar, text, jsonb, bigint, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, jsonb, bigint, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const decisionTraces = pgTable("decision_traces", {
   id: serial("id").primaryKey(),
@@ -34,7 +34,9 @@ export const orchestrationRunEvents = pgTable("orchestration_run_events", {
   ts: bigint("ts", { mode: "number" }).notNull(),
   dataJson: jsonb("dataJson"),
 }, (t) => [
-  index("idx_run_events_run").on(t.runId, t.seq),
+  // UNIQUE so a lost seq-assignment race fails loudly instead of writing a duplicate seq
+  // (belt-and-suspenders to the advisory-lock serialisation in runEventStore). — doc 33 §11 fix.
+  uniqueIndex("idx_run_events_run").on(t.runId, t.seq),
 ]);
 
 export type DecisionTraceRow = typeof decisionTraces.$inferSelect;

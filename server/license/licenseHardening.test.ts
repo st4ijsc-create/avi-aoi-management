@@ -32,6 +32,29 @@ describe("licensePolicy — never stop production (SYNAPSE §4.3)", () => {
     expect(isProductionCritical("settings.upsert")).toBe(false);
   });
 
+  it("MIXED namespaces: runtime verbs stay critical, config/authoring verbs do NOT (bypass fix)", () => {
+    // genuine runtime execution keeps the line running even on a lapsed license
+    expect(isProductionCritical("robot.sendCommand")).toBe(true);
+    expect(isProductionCritical("equipment.reportStatus")).toBe(true);
+    // config/authoring mutations are NOT never-stop → they wait for renewal (commercial lever)
+    for (const p of [
+      "robot.create", "robot.update", "robot.setEnabled",
+      "inspectionProgram.createDraft", "inspectionProgram.submit", "inspectionProgram.approve",
+      "inspectionProgram.release", "field.registerDiscovered", "equipment.create",
+    ]) {
+      expect(isProductionCritical(p)).toBe(false);
+    }
+  });
+
+  it("locked/no_license blocks premium config in MIXED namespaces but never blocks runtime exec", () => {
+    for (const state of ["locked", "no_license"] as LicenseState[]) {
+      expect(isProcedureAllowed({ procedure: "robot.create", method: "POST", state, alwaysAllowed })).toBe(false);
+      expect(isProcedureAllowed({ procedure: "inspectionProgram.approve", method: "POST", state, alwaysAllowed })).toBe(false);
+      // runtime execution still never halts
+      expect(isProcedureAllowed({ procedure: "robot.sendCommand", method: "POST", state, alwaysAllowed })).toBe(true);
+    }
+  });
+
   it("neverStopProduction defaults TRUE, false only when explicitly disabled", () => {
     expect(neverStopProduction({})).toBe(true);
     expect(neverStopProduction({ LICENSE_NEVER_STOP_PRODUCTION: "false" })).toBe(false);

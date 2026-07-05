@@ -49,7 +49,11 @@ export function earliestFreeDeparture(
     const slot: TimeInterval = { start: t, end: t + travelMs, robotId };
     const blocker = others.find((iv) => overlaps(iv, slot, buffer));
     if (!blocker) return t;
-    t = blocker.end + buffer + 1; // wait until the blocker clears
+    // `overlaps` expands BOTH intervals by `buffer`, so a slot is clear of the blocker only when
+    // slot.start ≥ blocker.end + 2·buffer (gap ≥ 2·buffer). Advancing by `buffer + 1` (the old code)
+    // under-cleared for buffer > 1, so the returned departure still conflicted and reserve() would
+    // refuse it. (buffer = 0 is unchanged: end + 1, keeping the existing test green.) — doc 33 §11 fix.
+    t = blocker.end + 2 * buffer + 1; // wait until the blocker (± safety buffer) fully clears
   }
   return t <= horizon ? t : null;
 }

@@ -15,9 +15,15 @@ function foeDurableEnabled(): boolean {
   return process.env.FOE_DURABLE === "true" || process.env.FOE_DURABLE === "1";
 }
 
+/** Advisory-lock namespace that serialises per-run seq assignment (arbitrary constant). */
+const RUN_EVENT_LOCK_NS = 771_004_221;
+
 /**
- * Append a run event (best-effort). seq is assigned as max(seq)+1 for the run. No-op unless
- * FOE_DURABLE. Never throws.
+ * Append a run event (best-effort). seq is assigned as max(seq)+1 for the run, SERIALISED per-run
+ * by a transaction advisory lock so concurrent appends (parallel DAG branches, fire-and-forget
+ * transitions) cannot read the same MAX(seq) and write a duplicate seq. A UNIQUE(runId, seq)
+ * constraint (migration 0223) is the fail-loud backstop. No-op unless FOE_DURABLE. Never throws.
+ * — doc 33 §11 fix.
  */
 export async function appendRunEvent(
   runId: number,
@@ -28,17 +34,21 @@ export async function appendRunEvent(
   try {
     const db = await getDb();
     if (!db) return;
-    const [{ maxSeq } = { maxSeq: 0 }] = await db
-      .select({ maxSeq: sql<number>`COALESCE(MAX(${orchestrationRunEvents.seq}), 0)` })
-      .from(orchestrationRunEvents)
-      .where(eq(orchestrationRunEvents.runId, runId));
-    await db.insert(orchestrationRunEvents).values({
-      runId,
-      seq: Number(maxSeq) + 1,
-      type,
-      taskId: opts.taskId ?? null,
-      ts: opts.ts,
-      dataJson: (opts.data ?? null) as never,
+    await db.transaction(async (tx) => {
+      // Serialise seq assignment for THIS run (other runs proceed concurrently — key includes runId).
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${RUN_EVENT_LOCK_NS}, ${runId})`);
+      const [{ maxSeq } = { maxSeq: 0 }] = await tx
+        .select({ maxSeq: sql<number>`COALESCE(MAX(${orchestrationRunEvents.seq}), 0)` })
+        .from(orchestrationRunEvents)
+        .where(eq(orchestrationRunEvents.runId, runId));
+      await tx.insert(orchestrationRunEvents).values({
+        runId,
+        seq: Number(maxSeq) + 1,
+        type,
+        taskId: opts.taskId ?? null,
+        ts: opts.ts,
+        dataJson: (opts.data ?? null) as never,
+      });
     });
   } catch {
     /* durable log is best-effort */

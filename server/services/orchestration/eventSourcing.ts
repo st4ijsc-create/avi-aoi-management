@@ -108,7 +108,13 @@ export function resumePlan(state: RunState, dag: readonly DagNode[]): ResumePlan
   );
   // Ready = DAG deps satisfied, not already running/paused/failed/done.
   const busy = new Set(Object.keys(state.tasks).filter((id) => state.tasks[id] !== "completed"));
-  const dispatch = readySet(dag, completed).filter((id) => !busy.has(id));
+  // During a saga rollback (`compensating`) we ONLY resume compensations — hold ALL new forward
+  // dispatch, matching the reason string. Previously `dispatch` was computed regardless of status,
+  // so an unstarted independent branch could be launched mid-rollback. — doc 33 §11 fix.
+  const dispatch =
+    state.status === "compensating"
+      ? []
+      : readySet(dag, completed).filter((id) => !busy.has(id));
   return {
     resume,
     dispatch,

@@ -70,6 +70,18 @@ describe("planSpaceTimeRoute", () => {
     expect(earliestFreeDeparture(iv, "a", 0, 5, 0, 1000)).toBe(11);
     expect(earliestFreeDeparture(iv, "a", 20, 5, 0, 1000)).toBe(20);
   });
+  it("clears the FULL 2·buffer gap so the slot is actually reservable (buffer>1 regression)", () => {
+    // Old code advanced by buffer+1 (→2501), which still conflicts because `overlaps` expands BOTH
+    // sides by buffer (needs a ≥2·buffer gap) → reserve() would refuse the planner's own slot.
+    const iv = [{ start: 0, end: 1000, robotId: "b" }];
+    const buffer = 1500;
+    const dep = earliestFreeDeparture(iv, "a", 0, 500, buffer, 10_000_000)!;
+    expect(dep).toBeGreaterThanOrEqual(1000 + 2 * buffer);
+    // the returned slot does NOT conflict under the SAME buffer reserve()/conflictsAt use
+    const r = new SpaceTimeReservations(buffer);
+    r.reserve("e", iv[0]);
+    expect(r.conflictsAt("e", { start: dep, end: dep + 500, robotId: "a" })).toEqual([]);
+  });
 });
 
 describe("InfraCoordinator", () => {

@@ -8,15 +8,28 @@
  * - Configurable detail levels
  */
 
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import * as db from "../db";
 import { canonicalize } from "./security/auditChain"; // doc 33 D4 (F5 §5.11.2)
 import { secPlatformEnabled } from "./security/policyGate";
 
-// ─── Content-hash integrity (doc 33 D4) ──────────────────────────────────────
-// The high-frequency CRUD audit gets a per-row CONTENT hash (tamper-evident for edits) rather
-// than a serialized chain — a chain here would add lock contention on a hot path (the full
-// hash-chain is reserved for the low-frequency control audit, I4). SEC_PLATFORM-gated.
+// ─── Content-hash integrity (doc 33 D4, hardened §11) ────────────────────────
+// The high-frequency CRUD audit gets a per-row KEYED content hash (HMAC-SHA256), tamper-evident
+// against in-place EDITS of a still-hashed row — rather than a serialized chain (a chain here would
+// add lock contention on a hot path; the full hash-chain is reserved for the low-frequency control
+// audit, I4). SEC_PLATFORM-gated.
+//
+// HONEST SCOPE: this detects content EDITS to hashed rows. It does NOT by itself detect a DB-writer
+// who also STRIPS the hash fields — a per-row scheme has no neighbour to notice a missing hash. That
+// stronger threat is covered by the audit_log append-only trigger (migration 0102) and, for control-
+// critical events, the I4 hash-CHAIN (server/services/audit/controlAuditService.ts). The HMAC key
+// (AUDIT_HASH_SECRET, else SESSION_SECRET) prevents an attacker from RE-SIGNING altered content;
+// set AUDIT_HASH_SECRET in production for real tamper-evidence.
+
+/** Stable secret for the CRUD-audit HMAC. MUST be constant across restarts so old rows still verify. */
+function auditHashKey(): string {
+  return process.env.AUDIT_HASH_SECRET || process.env.SESSION_SECRET || "synapse-crud-audit-v1";
+}
 
 /** Stored `details` without the integrity fields (so the hash is over stable content). */
 function stableDetails(details: Record<string, any> | null | undefined): Record<string, any> {
@@ -26,12 +39,12 @@ function stableDetails(details: Record<string, any> | null | undefined): Record<
   return rest;
 }
 
-/** Deterministic content hash over a CRUD audit row's core + details. */
+/** Deterministic keyed (HMAC-SHA256) content hash over a CRUD audit row's core + details. */
 export function computeCrudContentHash(
   row: { userId?: number | null; action: string; entityType: string; entityId: unknown; entityName?: string | null; details?: Record<string, any> | null },
   hashTs: number,
 ): string {
-  return createHash("sha256")
+  return createHmac("sha256", auditHashKey())
     .update(canonicalize({
       userId: row.userId ?? null,
       action: row.action,
@@ -44,12 +57,16 @@ export function computeCrudContentHash(
     .digest("hex");
 }
 
-/** Verify a stored CRUD audit row's content hash. Legacy/unhashed rows pass (ok). */
+/**
+ * Verify a stored CRUD audit row's content hash. Legacy/unhashed rows pass (ok) — a per-row scheme
+ * cannot distinguish a genuine pre-flag row from a stripped one (see HONEST SCOPE above; the
+ * append-only trigger / I4 chain cover the strip threat).
+ */
 export function verifyCrudContentHash(row: {
   userId?: number | null; action: string; entityType: string; entityId: unknown; entityName?: string | null; details?: Record<string, any> | null;
 }): { ok: boolean; reason?: string } {
   const d = (row.details ?? {}) as Record<string, any>;
-  if (d.contentHash == null || d.hashTs == null) return { ok: true }; // unhashed (legacy / flag was off)
+  if (d.contentHash == null || d.hashTs == null) return { ok: true, reason: "unhashed (legacy / flag was off) — not covered by the per-row hash" };
   return computeCrudContentHash(row, Number(d.hashTs)) === d.contentHash
     ? { ok: true }
     : { ok: false, reason: "content hash mismatch (row altered)" };

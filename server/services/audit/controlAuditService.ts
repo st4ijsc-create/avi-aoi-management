@@ -128,14 +128,32 @@ export interface ChainVerification {
   reason?: string;
 }
 
-/** Verify a set of hashed rows (id-ordered). Pure — any edit/insert/delete surfaces. */
+/**
+ * Verify an id-ordered set of rows (hashed AND unhashed). Pure — any edit/insert/delete surfaces.
+ *
+ * ANCHORING (doc 33 §11 fix): a LEADING contiguous prefix of unhashed rows is allowed (legacy
+ * rows written before SEC_PLATFORM was enabled). But once the chain has STARTED (first hashed row
+ * seen), any subsequent unhashed row is treated as TAMPERING — an attacker with DB-write access
+ * could otherwise strip `hash`/`prevHash` from the newest hashed row(s) to make them vanish from a
+ * "hashed rows only" query and hide an edit. Note: disabling SEC_PLATFORM after it was on will
+ * therefore make this report the unhashed tail (by design — do not turn off the WORM chain).
+ */
 export function verifyAuditRows(rows: readonly HashedAuditRow[]): ChainVerification {
   let prevHash = GENESIS_HASH;
+  let started = false; // true once the first hashed row is seen (legacy prefix has ended)
+  let checked = 0;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (r.hash == null || r.hashTs == null) continue; // legacy unhashed row — skip
+    const hashed = r.hash != null && r.hashTs != null;
+    if (!hashed) {
+      if (started) {
+        return { ok: false, checked, brokenAtId: r.id, reason: "unhashed row after chain start (hash stripped?)" };
+      }
+      continue; // legacy pre-SEC_PLATFORM prefix row — allowed
+    }
+    started = true;
     if ((r.prevHash ?? GENESIS_HASH) !== prevHash) {
-      return { ok: false, checked: i, brokenAtId: r.id, reason: "prevHash mismatch" };
+      return { ok: false, checked, brokenAtId: r.id, reason: "prevHash mismatch" };
     }
     const fields: AuditHashFields = {
       entityType: r.entityType,
@@ -146,20 +164,23 @@ export function verifyAuditRows(rows: readonly HashedAuditRow[]): ChainVerificat
       after: r.afterJson ?? null,
       reason: r.reason,
     };
-    if (computeAuditHash(r.prevHash ?? GENESIS_HASH, fields, r.hashTs) !== r.hash) {
-      return { ok: false, checked: i, brokenAtId: r.id, reason: "hash mismatch (row altered)" };
+    if (computeAuditHash(r.prevHash ?? GENESIS_HASH, fields, r.hashTs!) !== r.hash) {
+      return { ok: false, checked, brokenAtId: r.id, reason: "hash mismatch (row altered)" };
     }
     prevHash = r.hash;
+    checked++;
   }
-  return { ok: true, checked: rows.length, brokenAtId: null };
+  return { ok: true, checked, brokenAtId: null };
 }
 
-/** Verify the persisted control-audit hash-chain (hashed rows only, id order). */
+/**
+ * Verify the persisted control-audit hash-chain. Loads ALL rows in id order (not just hashed) so a
+ * stripped-hash tail row is detectable (see verifyAuditRows anchoring).
+ */
 export async function verifyControlAuditChain(db: Db, limit = 10_000): Promise<ChainVerification> {
   const rows = (await db
     .select()
     .from(controlAuditLog)
-    .where(sql`${controlAuditLog.hash} IS NOT NULL`)
     .orderBy(asc(controlAuditLog.id))
     .limit(limit)) as unknown as HashedAuditRow[];
   return verifyAuditRows(rows);
