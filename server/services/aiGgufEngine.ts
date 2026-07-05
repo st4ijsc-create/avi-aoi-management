@@ -704,6 +704,24 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
 // ─── Text Generation ───────────────────────────────────────────
 
 /**
+ * Warm (pre-load) a model into GPU memory so the LARGE model is resident BEFORE any small one.
+ * node-llama-cpp fragments VRAM when a large model (30B ~16.7 GB) loads AFTER a small one (e.g.
+ * the 0.6B embedder pulled in by RAG) — the large alloc then fails even with plenty of free VRAM.
+ * Warming the deep model first (a 1-token generation) sidesteps it. Best-effort: never throws.
+ * Returns true if the model is now resident. Callers that do RAG-embed-THEN-deep (codegen, and
+ * ideally the ops chat/RCA paths) should call this before the RAG step. See doc 34 §P4.
+ */
+export async function warmModel(modelId?: string, contextSize?: number): Promise<boolean> {
+  try {
+    if (!(await isGgufAvailable())) return false;
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize }, modelId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Generate text using a loaded GGUF model
  */
 export async function generateText(options: GgufGenerateOptions, modelId?: string): Promise<GgufGenerateResult> {

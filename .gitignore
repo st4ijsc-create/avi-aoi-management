@@ -173,3 +173,6 @@ programming-workspace/*
 
 # doc 27 V17 — vision validation harness output (npm run vision:validate)
 validation-reports/
+
+# doc 34 P4 — eval run reports (regenerate via scripts/ai-eval/*). Keep cases/harness, not runs.
+scripts/ai-eval/reports/

@@ -342,8 +342,7 @@ const CODE_CTX = Number(process.env.GGUF_CODE_CTX) || 8192;
 
 async function warmCodeModel(): Promise<void> {
   try {
-    const { isGgufAvailable, generateText } = await import("../aiGgufEngine");
-    if (!(await isGgufAvailable())) return;
+    const { warmModel } = await import("../aiGgufEngine");
     let modelId: string | undefined;
     try {
       const { route } = await import("../aiModelRouter");
@@ -351,7 +350,8 @@ async function warmCodeModel(): Promise<void> {
     } catch {
       /* best-effort routing */
     }
-    await generateText({ prompt: "ok", maxTokens: 1, contextSize: CODE_CTX }, modelId);
+    // Warm the deep code model FIRST (before RAG loads the small embedder) — see warmModel.
+    await warmModel(modelId, CODE_CTX);
   } catch {
     /* best-effort warm; codegen still tries and degrades gracefully on failure */
   }

@@ -5,7 +5,7 @@
 |---|---|
 | **Mã tài liệu** | ECOSYSTEM-34 |
 | **Ngày** | 2026-07-05 |
-| **Trạng thái** | 🟢 **P0–P3 XONG & VALIDATED** 2026-07-05 (tsc 0, codegen E2E 5/5, gateway live 5/5, IDE+copilot+ảnh-chat). Còn P3-role `engineer` (hoãn, cần duyệt) + P4. Xem §Nhật ký thực thi. |
+| **Trạng thái** | 🟢 **P0–P4 XONG & VALIDATED** 2026-07-05 (5 commit: a75bc8f/ff0a97f/febb9ec/c6d38c4/+P4). RAG precision 0.97, codegen validPass 60% (text ~85%, JSON-struct 0%→cần GBNF/Coder), safety 4/4, engineer role live. Chờ bạn: Qwen3-Coder vs GBNF, 2FA. Xem §Nhật ký thực thi. |
 | **Nguồn đối chiếu** | `D:\SOURCES\AI Local\AI_Local_Lap_trinh_Tu_dong_hoa.docx` (bản `AI-LOCAL-SDD-001 v1.0`, 04/07/2026) |
 | **Phương pháp** | 6 agent khảo sát song song mã nguồn hiện tại (engine, RAG, code-authoring, agent/tools, UX/IDE, MLOps) + đối chiếu từng lớp với báo cáo |
 | **Kế thừa** | doc 03 (AI brain design), doc 04 (AI nextgen), doc 06 (Technician Copilot), doc 09 (Device Programming), doc 16 (Automation Orchestration), doc 24 (Advanced Capabilities), doc 25 (Machine Control Tier) |
@@ -399,8 +399,22 @@ Tôi **không có nguồn tải nội bộ** các PDF manual hãng (và hệ air
 - Thêm `engineer` vào `roleEnum` (migration `0203_add_engineer_role.sql` = `ALTER TYPE roleenum ADD VALUE IF NOT EXISTS`, áp dev+test, verified 8 giá trị). 6 MUST + 9 SHOULD edit (2 `UserRole` union, 3 zod enum, `DEFAULT_ROLE_PERMISSIONS.engineer` 17 quyền: machine_monitoring/machine_control/settings_* CVE + view analytics/history/reports/andon/interlock/mes_bom, `listRoleTypes` card, RoleManagement icon/màu crash-guard, aiRole+aiChat persona map, AGENTIC_ROLES, escalation ×2, roleLanding→/engineering-home, i18n roles.engineer vi/en/zh). tsc 0, permissions test 10/10, auth smoke pass.
 - **Quyết định auth để mở (khuyến nghị bạn chốt):** engineer có `machine_control` (execute OT qua HITL) nhưng **KHÔNG** nằm trong `PRIVILEGED_ROLES` (chưa bắt buộc 2FA — như maintenance). Nếu muốn siết theo IEC 62443, thêm `engineer` vào `PRIVILEGED_ROLES` (server/_core/trpc.ts). canExport/canDelete=false (least-privilege).
 
-### CHƯA làm
-- **P4**: eval code (syntax/compile-pass, precision@k) + QLoRA→GGUF + **tải Qwen3-Coder-30B** (tăng first-pass validity) + FIM model + engine load-order hardening (defrag/ưu tiên nạp model lớn — latent, ảnh cả ops-AI). Gateway đã live-smoke; bật `OPENAI_GATEWAY_ENABLED`+key khi go-live.
+### P4 — Eval + hardening (BUILT & GREEN, baseline đo được)
+- **Eval harness** (`scripts/ai-eval/`): codegen 29 case (7 kind Tier-A + 4 safety) qua oracle `programmingAdapter.validate` + RAG 15 case precision@k. Report JSON `scripts/ai-eval/reports/{codegen,rag}-baseline-2026-07-05.json`.
+- **RAG baseline (xuất sắc):** OVERALL **hit@k 15/15, precision@k 0.97, semantic 100%, cites 5.0/query**, mọi vendor trúng manual+trang. delta 2/2 + mitsubishi 2/2 sem=true (sau khi vá bug JSONL).
+- **Codegen baseline (30B-Instruct):** codeProduced **100%**, validPass **60%**, safety-refuse **4/4**, false-refuse **0/25**, ~65s/case. **Lưỡng cực:** text/tabular cao (Zmotion 4/4, Techman 3/3, MELSEC 3/4, LD 3/4, ST ~2-3/4) nhưng **JSON có cấu trúc = 0%** (POU 0/3, IR 0/3 — LLM sinh JSON lệch schema, **substrate bắt 100%, không lọt cái sai nào**).
+- **BUG P1 vá (harness phát hiện):** `aiProgrammingKnowledgeService.parseJsonlLines` dùng `readFileSync(utf8)` → **throw >512MB** → delta(639MB)+mitsubishi(573MB) âm thầm rơi keyword-only dù có embeddings. Sửa: đọc Buffer + cắt theo dòng (an toàn UTF-8, ≤~2GB). → semantic 2 corpus lớn nhất khôi phục (verified sem=true).
+- **Engine load-order hardening:** thêm primitive tái dùng `aiGgufEngine.warmModel()` (vá tổng quát fragmentation nạp-model-lớn-sau-nhỏ, ảnh cả ops-AI); copilot refactor dùng nó. tsc 0, copilot test 15/15.
+
+### QUYẾT ĐỊNH cần bạn (từ baseline)
+- **Qwen3-Coder-30B (D2):** baseline chứng minh **CẦN cho POU/IR (JSON có cấu trúc, 0%)**; text languages đã tốt. **2 hướng:** (a) tải Qwen3-Coder-30B (~17GB, có thể nâng first-pass validity cả 2 nhóm) — tôi có thể tải nếu bạn OK; **(b) rẻ hơn/khuyên thử trước: GBNF grammar-constrain** cho kind POU/IR (engine đã có `generateJSON` GBNF — ép đúng JSON schema, không cần model mới). Khuyến nghị làm (b) trước, đo lại, rồi mới cân nhắc (a).
+
+### CHƯA làm (chờ duyệt)
+- **QLoRA→GGUF** (D9 = HOÃN tới khi prompt+RAG tới hạn; baseline cho thấy RAG+prompt đã tốt cho text, structured cần GBNF trước LoRA).
+- **FIM model** (Qwen2.5-Coder-1.5B) cho autocomplete Continue chuẩn hơn (nay fallback 4B).
+- **engineer ∈ PRIVILEGED_ROLES (2FA)** — quyết định auth (§P3b).
+- **Ops-path warmModel:** áp `warmModel()` vào ops chat/RCA (RAG-rồi-30B) — cần test app chạy.
+- Gateway go-live: bật `OPENAI_GATEWAY_ENABLED`+key.
 
 ---
 

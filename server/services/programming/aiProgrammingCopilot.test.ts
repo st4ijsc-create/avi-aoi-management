@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 // ── Mock the heavy services generateProgram dynamically imports (no model, no disk) ──
 vi.mock("../aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
+  warmModel: vi.fn(async () => true),
   chatCompletion: vi.fn(async () => ({
     text: "",
     tokensGenerated: 0,
@@ -203,9 +204,9 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
   });
 
   it("GGUF offline → graceful degrade (ok:false, note, no code, no crash)", async () => {
-    // Offline path probes isGgufAvailable twice (warmCodeModel + runCodeModel); both false.
-    // Use two Once() so the override is fully consumed and does not leak to later tests.
-    vi.mocked(isGgufAvailable).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    // Offline: runCodeModel probes isGgufAvailable (warmModel is mocked separately, so it
+    // does not consume this mock). One Once(false), fully consumed — no leak to later tests.
+    vi.mocked(isGgufAvailable).mockResolvedValueOnce(false);
     const r = await generateProgram({ kind: "iec61131-st", request: "moving average filter" });
     expect(r.ok).toBe(false);
     expect(r.refused).toBe(false);
