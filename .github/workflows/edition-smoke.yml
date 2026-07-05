@@ -1,0 +1,136 @@
+# =============================================================================
+# SYNAPSE edition smoke — doc 33 §11 / ADR-007 "collapsible deployment".
+# Boots BOTH edition profiles from their real compose files and asserts the app comes
+# up green on the REAL liveness endpoint (GET /health → {"status":"ok"} on port 3000),
+# then asserts the startup log reports the EXPECTED edition. This prevents "edition
+# drift" — a change that keeps one profile working while silently breaking the other.
+#
+#   job "machine": deploy/compose/docker-compose.machine.yml  (embedded: EDITION=machine)
+#   job "site"   : docker-compose.yml                         (external: EDITION=site, default)
+#
+# Both jobs BUILD the repo-root Dockerfile via compose (heavy but authoritative). If build
+# cost becomes a problem, gate this workflow to deploy/** + Dockerfile changes (as below)
+# or pre-build/push the image and swap the compose `build:` for an `image:` ref.
+# =============================================================================
+name: edition-smoke
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".github/workflows/edition-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
+
+concurrency:
+  group: edition-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  machine:
+    name: Machine edition (embedded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_FILE: deploy/compose/docker-compose.machine.yml
+      EXPECTED_EDITION: machine
+    steps:
+      - uses: actions/checkout@v4
+
+      # compose needs .env for env_file + ${VAR:?} interpolation; .env.example ships
+      # working non-secret defaults (JWT_SECRET/SIGNOFF_SECRET/MASTER_API_KEY/POSTGRES_*).
+      - name: Seed .env from .env.example
+        run: cp .env.example .env
+
+      - name: Boot machine profile (build + up)
+        run: docker compose -f "$COMPOSE_FILE" --env-file .env up -d --build
+
+      - name: Wait for liveness (GET /health → status:ok)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/health -o health.json 2>/dev/null && grep -q '"status":"ok"' health.json; then
+              echo "healthy after $((i*10))s:"; cat health.json; echo; exit 0
+            fi
+            echo "attempt $i/60 — not ready yet"; sleep 10
+          done
+          echo "::error::machine profile never became healthy on /health"; exit 1
+
+      - name: Assert reported edition (anti-drift)
+        run: |
+          docker compose -f "$COMPOSE_FILE" logs app > app.log 2>&1 || true
+          if grep -q "\"edition\":\"$EXPECTED_EDITION\"" app.log || grep -qi "($EXPECTED_EDITION)" app.log; then
+            echo "OK — startup log reports edition=$EXPECTED_EDITION"
+            grep -i '\[edition\]' app.log | tail -n 3 || true
+          else
+            echo "::error::expected edition=$EXPECTED_EDITION not found in startup log"
+            grep -i '\[edition\]' app.log | tail -n 5 || true
+            exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "===== compose ps ====="; docker compose -f "$COMPOSE_FILE" ps || true
+          echo "===== compose logs ====="; docker compose -f "$COMPOSE_FILE" logs --no-color --tail=300 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f "$COMPOSE_FILE" down -v --remove-orphans || true
+
+  site:
+    name: Site edition (external)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_FILE: docker-compose.yml
+      EXPECTED_EDITION: site
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seed .env from .env.example
+        run: cp .env.example .env
+
+      # Full site profile: postgres(ts-ha) + redis + emqx + timescaledb + migrate +
+      # timescaledb-init + app. Default edition (no EDITION set) = site; UNS_BROKER_URL +
+      # TSDB_URL are set in the compose app env → infra=external / broker=external-emqx.
+      - name: Boot site profile (build + up)
+        run: docker compose -f "$COMPOSE_FILE" --env-file .env up -d --build
+
+      - name: Wait for liveness (GET /health → status:ok)
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:3000/health -o health.json 2>/dev/null && grep -q '"status":"ok"' health.json; then
+              echo "healthy after $((i*10))s:"; cat health.json; echo; exit 0
+            fi
+            echo "attempt $i/90 — not ready yet"; sleep 10
+          done
+          echo "::error::site profile never became healthy on /health"; exit 1
+
+      - name: Assert reported edition (anti-drift)
+        run: |
+          docker compose -f "$COMPOSE_FILE" logs app > app.log 2>&1 || true
+          if grep -q "\"edition\":\"$EXPECTED_EDITION\"" app.log || grep -qi "($EXPECTED_EDITION)" app.log; then
+            echo "OK — startup log reports edition=$EXPECTED_EDITION"
+            grep -i '\[edition\]' app.log | tail -n 3 || true
+          else
+            echo "::error::expected edition=$EXPECTED_EDITION not found in startup log"
+            grep -i '\[edition\]' app.log | tail -n 5 || true
+            exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "===== compose ps ====="; docker compose -f "$COMPOSE_FILE" ps || true
+          echo "===== compose logs ====="; docker compose -f "$COMPOSE_FILE" logs --no-color --tail=300 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f "$COMPOSE_FILE" down -v --remove-orphans || true

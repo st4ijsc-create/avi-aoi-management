@@ -1,0 +1,63 @@
+# =============================================================================
+# SYNAPSE — SITE HA overrides. doc 33 §11 / ADR-007.
+# Layer ON TOP of values.yaml:
+#   helm upgrade --install synapse deploy/helm/synapse \
+#     -f deploy/helm/synapse/values.yaml \
+#     -f deploy/helm/synapse/values-site-ha.yaml \
+#     --set-string secrets.databaseUrl=... --set-string secrets.jwtSecret=... (etc.)
+# =============================================================================
+
+# ≥3 server replicas + autoscaling own the count (replicaCount is ignored while HPA is on).
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 80
+
+# Keep quorum during voluntary disruptions (node drains, rollouts).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Spread server pods across zones (soft) and nodes (hard). labelSelector matches the
+# server pod labels emitted by deployment.yaml (name + component=server).
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: synapse
+        app.kubernetes.io/component: server
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: synapse
+        app.kubernetes.io/component: server
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m" # AOI image uploads
+  hosts:
+    - host: synapse.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: synapse-tls
+  #    hosts: [synapse.example.com]
