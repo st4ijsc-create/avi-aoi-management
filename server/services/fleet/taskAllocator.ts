@@ -38,6 +38,48 @@ import type { Task } from "../../../drizzle/schema/fleet";
 import { getDefaultCapability, type EquipmentCapability } from "../equipment/capabilityModel";
 import { publishTaskEvent } from "../ecosystem/ecosystemEvents";
 import { recordDecision } from "../observability/decisionTrace"; // doc 33 I1 (F6): "why device X chosen"
+import { adviseDispatch, newRlAdvisorState, type RlMode } from "../ai/rlDispatchAdvisor"; // doc 33 D3 (H6): RL shadow
+
+/** doc 33 D3 — current RL advisor mode. OFF unless RL_ADVISOR; RL_ADVISOR_MODE (default shadow). */
+function rlAdvisorMode(): RlMode {
+  if (!(process.env.RL_ADVISOR === "true" || process.env.RL_ADVISOR === "1")) return "off";
+  const m = (process.env.RL_ADVISOR_MODE ?? "shadow").toLowerCase();
+  return (["shadow", "suggest", "auto", "off"].includes(m) ? m : "shadow") as RlMode;
+}
+
+/**
+ * doc 33 D3 (H6 §5.3.4) — SHADOW the heuristic allocation with an alternative policy via the RL
+ * advisor, and log the comparison to the F6 decision-trace. This is shadow-only: it NEVER changes
+ * the allocation (the allocator keeps using decision.best). The alternative pick here is a distinct
+ * single-factor policy (most-battery) — a PLACEHOLDER for a trained RL model; swap it in later.
+ */
+export function rlShadowAllocation(decision: AllocationDecision, candidates: AllocCandidate[]): void {
+  const mode = rlAdvisorMode();
+  if (mode === "off" || !decision.best) return;
+  const eligibleIds = decision.ranked.filter((r) => r.eligible).map((r) => String(r.deviceId));
+  const heuristicChoice = String(decision.best.deviceId);
+  const byBattery = candidates
+    .filter((c) => eligibleIds.includes(String(c.deviceId)))
+    .sort((a, b) => (b.batteryPct ?? -1) - (a.batteryPct ?? -1));
+  const rlChoice = byBattery[0] ? String(byBattery[0].deviceId) : heuristicChoice;
+  const advice = adviseDispatch(newRlAdvisorState(mode), { heuristicChoice, rlChoice, candidateSet: eligibleIds });
+  try {
+    recordDecision({
+      decisionType: "rl-shadow",
+      subject: `alloc-${decision.taskCapability}`,
+      chosen: advice.emittedChoice, // shadow/suggest → still the heuristic pick
+      candidates: [
+        { id: heuristicChoice, score: 1, eliminatedBy: "heuristic" },
+        { id: rlChoice, score: 0, eliminatedBy: "rl-alt-policy" },
+      ],
+      version: `rl-${mode}`,
+      ts: Date.now(),
+      note: advice.note,
+    });
+  } catch {
+    /* shadow telemetry is best-effort */
+  }
+}
 
 /**
  * doc 33 I1 — emit an F6 decision-trace for an allocation so the Control Tower can answer
@@ -328,6 +370,7 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
   const candidates = await loadCandidatesFromDb();
   const decision = scoreCandidates(taskToAllocInput(task), candidates);
   traceAllocation(`task-${taskId}`, decision); // doc 33 I1 (F6) decision-trace
+  rlShadowAllocation(decision, candidates); // doc 33 D3 (H6) RL shadow comparison (log-only)
   if (!decision.best) {
     console.log(`[Fleet] allocateTask ${taskId}: no eligible device`);
     return { ok: false, enabled: true, decision, message: "no eligible device" };
