@@ -37,6 +37,32 @@ import { tasks, robots, robotTelemetry } from "../../../drizzle/schema";
 import type { Task } from "../../../drizzle/schema/fleet";
 import { getDefaultCapability, type EquipmentCapability } from "../equipment/capabilityModel";
 import { publishTaskEvent } from "../ecosystem/ecosystemEvents";
+import { recordDecision } from "../observability/decisionTrace"; // doc 33 I1 (F6): "why device X chosen"
+
+/**
+ * doc 33 I1 — emit an F6 decision-trace for an allocation so the Control Tower can answer
+ * "vì sao device X được chọn cho task Y?" (candidate set + scores + eliminating reasons +
+ * allocator version). Best-effort: a bounded in-memory ring; never throws into the allocator.
+ */
+function traceAllocation(subject: string, decision: AllocationDecision, note?: string): void {
+  try {
+    recordDecision({
+      decisionType: "task-allocation",
+      subject,
+      chosen: decision.best ? String(decision.best.deviceId) : null,
+      candidates: decision.ranked.map((r) => ({
+        id: String(r.deviceId),
+        score: Number.isFinite(r.score) ? r.score : -999999,
+        eliminatedBy: r.eligible ? undefined : r.reasons[0],
+      })),
+      version: "fleet-allocator-g1",
+      ts: Date.now(),
+      note,
+    });
+  } catch {
+    /* decision-trace is best-effort observability — never affect allocation */
+  }
+}
 
 /** Flag — default OFF (mirrors foeEnabled / erpInboundEnabled). */
 export function fleetOrchEnabled(): boolean {
@@ -301,6 +327,7 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
 
   const candidates = await loadCandidatesFromDb();
   const decision = scoreCandidates(taskToAllocInput(task), candidates);
+  traceAllocation(`task-${taskId}`, decision); // doc 33 I1 (F6) decision-trace
   if (!decision.best) {
     console.log(`[Fleet] allocateTask ${taskId}: no eligible device`);
     return { ok: false, enabled: true, decision, message: "no eligible device" };
@@ -405,6 +432,7 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
   for (const t of open) {
     const candidates = (await loadCandidatesFromDb()).filter((c) => c.deviceId !== deviceId);
     const decision = scoreCandidates(taskToAllocInput(t), candidates);
+    traceAllocation(`task-${t.id}`, decision, `rebalance (${reason})`); // doc 33 I1 (F6)
     if (decision.best) {
       await db
         .update(tasks)
