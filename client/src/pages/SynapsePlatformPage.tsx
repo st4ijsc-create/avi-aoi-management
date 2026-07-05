@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { ToolCard } from "@/components/synapse/ToolCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +25,7 @@ import {
   CheckCircle2,
   XCircle,
   Gauge,
+  Wrench,
 } from "lucide-react";
 
 function Loading() {
@@ -240,6 +242,96 @@ function DevPortalTab() {
   );
 }
 
+function ToolsTab() {
+  const { t } = useTranslation();
+  const u = trpc.useUtils();
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <ToolCard
+        title={t("synapse.tools.route", "Route planner (space-time)")}
+        description={t("synapse.tools.routeDesc", "Tuyến đến sớm nhất qua đồ thị, tránh các slot đã đặt (H4).")}
+        seed={{
+          graph: { edges: [
+            { id: "AB", from: "A", to: "B", travelMs: 10 },
+            { id: "BC", from: "B", to: "C", travelMs: 10 },
+            { id: "AC", from: "A", to: "C", travelMs: 30 },
+          ] },
+          start: "A", goal: "C", reserved: [],
+        }}
+        run={(i) => u.trafficGov.planRoute.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.dag", "DAG validate")}
+        description={t("synapse.tools.dagDesc", "Kiểm tra công thức: thiếu ref + chu trình → thứ tự topo (F8).")}
+        seed={{ nodes: [
+          { id: "print", deps: [] },
+          { id: "spi", deps: ["print"] },
+          { id: "place", deps: ["spi"] },
+          { id: "reflow", deps: ["place"] },
+          { id: "aoi", deps: ["reflow"] },
+        ] }}
+        run={(i) => u.orchestrationGov.validateDag.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.fourEyes", "Four-eyes check")}
+        description={t("synapse.tools.fourEyesDesc", "Hành động này có cần phê duyệt 4-mắt không? (F5 policy).")}
+        seed={{ context: { action: "skip_step", step: { type: "AOI" }, product: { class: 3 } } }}
+        run={(i) => u.orchestrationGov.fourEyesCheck.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.policy", "Policy evaluate")}
+        description={t("synapse.tools.policyDesc", "Chạy thử một quyết định policy-as-code cho ngữ cảnh giả định (F5).")}
+        seed={{ context: { action: "manual_override", zone: { density: 0.9 } } }}
+        run={(i) => u.security.evaluate.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.slo", "SLO evaluate")}
+        description={t("synapse.tools.sloDesc", "Trạng thái + burn-rate từ (good,total) quan sát (F6).")}
+        seed={{
+          sloId: "dispatch-latency-p95",
+          window: { good: 995, total: 1000 },
+          shortWindow: { good: 90, total: 100 },
+          longWindow: { good: 995, total: 1000 },
+        }}
+        run={(i) => u.observability.evaluateSlo.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.compat", "Schema compat")}
+        description={t("synapse.tools.compatDesc", "Kiểm tra tương thích ngược giữa hai JSON-Schema (F7).")}
+        seed={{
+          prev: { type: "object", properties: { a: { type: "string" } }, required: ["a"] },
+          next: { type: "object", properties: { a: { type: "string" }, b: { type: "number" } }, required: ["a"] },
+        }}
+        run={(i) => u.contracts.checkCompat.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.reconcile", "Reconcile preview")}
+        description={t("synapse.tools.reconcileDesc", "Đối soát bản đồ metric nội bộ ↔ ngoài, sinh ticket khi lệch (I6).")}
+        seed={{ internal: { produced: 100 }, external: { produced: 108 }, toleranceRel: 0.02 }}
+        run={(i) => u.contracts.reconcilePreview.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.drift", "Twin drift report")}
+        description={t("synapse.tools.driftDesc", "Độ lệch twin↔thực cho các cặp (mô phỏng, thực) (H6).")}
+        seed={{
+          pairs: [
+            { metric: "cycle_time", simulated: 30, actual: 34 },
+            { metric: "throughput", simulated: 100, actual: 98 },
+          ],
+          threshold: 0.1,
+        }}
+        run={(i) => u.twinGov.driftReport.fetch(i as never)}
+      />
+      <ToolCard
+        title={t("synapse.tools.rl", "RL dispatch advice")}
+        description={t("synapse.tools.rlDesc", "Lời khuyên điều phối RL theo mode + lựa chọn heuristic/RL (H6).")}
+        seed={{ mode: "shadow", heuristicChoice: "robot-1", rlChoice: "robot-2", candidateSet: ["robot-1", "robot-2"] }}
+        run={(i) => u.twinGov.rlAdvice.fetch(i as never)}
+      />
+    </div>
+  );
+}
+
 export default function SynapsePlatformPage() {
   const { t } = useTranslation();
   return (
@@ -247,7 +339,7 @@ export default function SynapsePlatformPage() {
       <PageContainer>
         <PageHeader
           title={t("synapse.title", "SYNAPSE Platform")}
-          description={t("synapse.subtitle", "Editions · Plugins · Security · Observability · Contracts · Dev Portal (read-only)")}
+          description={t("synapse.subtitle", "Editions · Plugins · Security · Observability · Contracts · Dev Portal · Tools (read-only / dry-run)")}
         />
         <Tabs defaultValue="edition" className="mt-4">
           <TabsList className="flex flex-wrap">
@@ -257,6 +349,7 @@ export default function SynapsePlatformPage() {
             <TabsTrigger value="obs"><Activity className="mr-1 h-4 w-4" />{t("synapse.tab.obs", "Observability")}</TabsTrigger>
             <TabsTrigger value="contracts"><FileJson className="mr-1 h-4 w-4" />{t("synapse.tab.contracts", "Contracts")}</TabsTrigger>
             <TabsTrigger value="dev"><BookOpen className="mr-1 h-4 w-4" />{t("synapse.tab.dev", "Dev Portal")}</TabsTrigger>
+            <TabsTrigger value="tools"><Wrench className="mr-1 h-4 w-4" />{t("synapse.tab.tools", "Công cụ")}</TabsTrigger>
           </TabsList>
           <TabsContent value="edition" className="mt-4"><EditionTab /></TabsContent>
           <TabsContent value="plugins" className="mt-4"><PluginsTab /></TabsContent>
@@ -264,6 +357,7 @@ export default function SynapsePlatformPage() {
           <TabsContent value="obs" className="mt-4"><ObservabilityTab /></TabsContent>
           <TabsContent value="contracts" className="mt-4"><ContractsTab /></TabsContent>
           <TabsContent value="dev" className="mt-4"><DevPortalTab /></TabsContent>
+          <TabsContent value="tools" className="mt-4"><ToolsTab /></TabsContent>
         </Tabs>
       </PageContainer>
     </DashboardLayout>
