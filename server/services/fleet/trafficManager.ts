@@ -48,6 +48,34 @@ import {
   type DStarLiteState,
   type CellChange,
 } from "../twin/dstarLite";
+import { overlaps } from "../traffic/spaceTimeReservation"; // doc 33 D2 (H4 §5.4.3): space-time aware occupancy
+
+/** doc 33 D2 — is the space-time reservation model active? Default OFF → count-semaphore. */
+function spaceTimeEnabled(): boolean {
+  return process.env.TRAFFIC_SPACETIME === "true" || process.env.TRAFFIC_SPACETIME === "1";
+}
+
+/**
+ * Count active reservations whose [reservedFrom, reservedUntil] window TIME-OVERLAPS the requested
+ * window (± buffer). Unlike the raw count, two time-disjoint reservations do NOT both consume a
+ * slot — the space-time view. A null end = open-ended (conflicts with any window).
+ */
+export function overlappingReservationCount(
+  reqFromMs: number,
+  reqUntilMs: number | null,
+  rows: Array<{ deviceId: number; reservedFrom: Date | string; reservedUntil: Date | string | null }>,
+  bufferMs = 1500,
+): number {
+  const req = { start: reqFromMs, end: reqUntilMs ?? Number.POSITIVE_INFINITY, robotId: "req" };
+  return rows.filter((r) => {
+    const other = {
+      start: new Date(r.reservedFrom).getTime(),
+      end: r.reservedUntil ? new Date(r.reservedUntil).getTime() : Number.POSITIVE_INFINITY,
+      robotId: String(r.deviceId),
+    };
+    return overlaps(req, other, bufferMs);
+  }).length;
+}
 
 export interface ReserveInput {
   zoneId: number;
@@ -69,6 +97,8 @@ export interface ReserveResult {
   occupancy?: number;
   capacity?: number;
   message?: string;
+  /** doc 33 D2 (H4) — time-overlapping occupancy when TRAFFIC_SPACETIME is on (advisory). */
+  spaceTimeOccupancy?: number;
 }
 
 /** Count of ACTIVE reservations in a zone (derived occupancy). */
@@ -120,27 +150,35 @@ export async function reserveZone(input: ReserveInput): Promise<ReserveResult> {
       .where(and(eq(zoneReservations.zoneId, input.zoneId), eq(zoneReservations.status, "active")));
     const occupancy = activeRows.length;
 
+    // doc 33 D2 (H4 §5.4.3) — space-time capacity: count only reservations whose window OVERLAPS
+    // the requested [now, reservedUntil]. Time-disjoint reservations don't both consume a slot.
+    // Flag OFF → effectiveOccupancy === raw count (unchanged count-semaphore behavior).
+    const spaceTimeOccupancy = spaceTimeEnabled()
+      ? overlappingReservationCount(Date.now(), input.reservedUntil ? input.reservedUntil.getTime() : null, activeRows)
+      : occupancy;
+    const effectiveOccupancy = spaceTimeEnabled() ? spaceTimeOccupancy : occupancy;
+
     if (existing) {
-      return { ok: true, enabled: true, status: "active", reservationId: existing.id, occupancy, capacity: zone.maxConcurrentRobots };
+      return { ok: true, enabled: true, status: "active", reservationId: existing.id, occupancy, capacity: zone.maxConcurrentRobots, spaceTimeOccupancy };
     }
 
     const queueIfFull = input.queueIfFull ?? true;
 
-    if (occupancy >= zone.maxConcurrentRobots) {
+    if (effectiveOccupancy >= zone.maxConcurrentRobots) {
       // Zone full — virtual red light.
       if (!queueIfFull) {
         const [row] = await tx
           .insert(zoneReservations)
           .values({ ...baseRes(input), status: "rejected" })
           .returning({ id: zoneReservations.id });
-        return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots, message: "zone at capacity" };
+        return { ok: false, enabled: true, status: "rejected", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots, message: "zone at capacity", spaceTimeOccupancy };
       }
       const [row] = await tx
         .insert(zoneReservations)
         .values({ ...baseRes(input), status: "queued" })
         .returning({ id: zoneReservations.id });
       console.log(`[Fleet] zone ${input.zoneId} full (${occupancy}/${zone.maxConcurrentRobots}) → device ${input.deviceId} QUEUED`);
-      return { ok: true, enabled: true, status: "queued", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots };
+      return { ok: true, enabled: true, status: "queued", reservationId: row?.id, occupancy, capacity: zone.maxConcurrentRobots, spaceTimeOccupancy };
     }
 
     // Green light — grant.
@@ -148,7 +186,7 @@ export async function reserveZone(input: ReserveInput): Promise<ReserveResult> {
       .insert(zoneReservations)
       .values({ ...baseRes(input), status: "active" })
       .returning({ id: zoneReservations.id });
-    return { ok: true, enabled: true, status: "active", reservationId: row?.id, occupancy: occupancy + 1, capacity: zone.maxConcurrentRobots };
+    return { ok: true, enabled: true, status: "active", reservationId: row?.id, occupancy: occupancy + 1, capacity: zone.maxConcurrentRobots, spaceTimeOccupancy: spaceTimeEnabled() ? spaceTimeOccupancy + 1 : undefined };
   });
 }
 
