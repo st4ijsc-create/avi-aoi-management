@@ -372,7 +372,19 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** tsc 0 · test xanh.
 **Còn lại của H2 (đợt sau):** **OpenTelemetry SDK thật** (OTLP→Tempo/Jaeger) wire vào HTTP pipeline; persist decision-trace vào hypertable (migration đánh số tránh trùng 0202); bật `METRICS_ENABLED` mặc định + burn-rate alert nối Prometheus; Loki/ClickHouse shipping.
 
-**Kế tiếp:** theo lựa chọn của bạn — quay lại F3 (sidecar) / F4 (licensing) hoặc F7/F8.
+### ✅ F4 (P2) — Licensing hardening — 2026-07-05
+**Thứ tự chủ sở hữu:** F4 → F7 → F8 → F3. **Lưu ý:** F4 sửa hành vi enforcement THẬT (không chỉ module mới) — giữ *status* license trung thực, chỉ đổi *cưỡng chế*.
+**Đã làm:**
+- `server/license/licensePolicy.ts` — **"không bao giờ dừng sản xuất vì license"** (SYNAPSE §4.3): allowlist procedure **production-critical** (inspection/session/andon/safety/interlock/telemetry/alert/equipment/robot/field) LUÔN qua ở MỌI state; `locked` **degrade → readonly** cho cấu hình khi `LICENSE_NEVER_STOP_PRODUCTION` (mặc định TRUE). Pure `isProcedureAllowed`/`decideLicenseBatch`.
+- `server/license/license-middleware.ts` — refactor `licenseEnforcementMiddleware` dùng `decideLicenseBatch` (giữ nguyên 403 shape; thông điệp mới nêu rõ sản xuất-cốt-lõi vẫn chạy). **Thay hành vi "hết hạn = chặn mọi mutation / khoá cứng" (halt máy) → chỉ khoá cấu hình.**
+- `server/license/ed25519License.ts` — đường **Ed25519** sign/verify (song song RSA, dùng Node crypto) + **TPM-bound fingerprint** scaffold (kết hợp TPM-EK/CPU/MAC/disk; TPM-read cần agent, hoãn).
+- `server/license/deviceMetering.ts` — **metering per-connected-device** (floating license Line/Site); over-limit = **cảnh báo, KHÔNG chặn**.
+- `.env.example` — `LICENSE_NEVER_STOP_PRODUCTION` (default true).
+- Test: `server/license/licenseHardening.test.ts` — policy (critical luôn qua/ mọi state; locked→readonly; batch), Ed25519 roundtrip/tamper, fingerprint TPM/stable, metering.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của P2 (đợt sau):** phát hành license Ed25519 thật + rotate RSA→Ed25519; agent đọc TPM-EK; collector metering nối Robot/Equipment registry đẩy License Server; nút "grace banner" trên UI.
+
+**Kế tiếp:** F7 (H5) Schema registry + OpenAPI/AsyncAPI.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
