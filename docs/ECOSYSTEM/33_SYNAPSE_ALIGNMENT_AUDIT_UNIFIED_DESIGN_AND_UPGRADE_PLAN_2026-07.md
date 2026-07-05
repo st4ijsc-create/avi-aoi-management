@@ -384,7 +384,19 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** tsc 0 · test xanh.
 **Còn lại của P2 (đợt sau):** phát hành license Ed25519 thật + rotate RSA→Ed25519; agent đọc TPM-EK; collector metering nối Robot/Equipment registry đẩy License Server; nút "grace banner" trên UI.
 
-**Kế tiếp:** F7 (H5) Schema registry + OpenAPI/AsyncAPI.
+### ✅ F7 (H5) — Schema registry + contracts — 2026-07-05
+**Phạm vi giao:** nền "contracts kỷ luật" tự-chứa. **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/contracts/schemaRegistry.ts` — **BACKWARD-compat gate**: `checkBackwardCompat` phát hiện breaking (xoá field / đổi type / thêm required / thu hẹp enum; thêm optional = an toàn) + `registerSchema` **từ chối** breaking (trừ `allowBreaking` = major mới …/v2). Chống "đổi schema UNS gây vỡ hàng loạt".
+- `server/services/contracts/apiSpec.ts` — **build OpenAPI 3.1 (REST /api/v1) + AsyncAPI 2.6 (UNS/Sparkplug channels)** từ registry khai báo; seed surface hiện có → spec công bố được cho Developer Portal + đối tác.
+- `server/services/contracts/reconciliation.ts` — **engine đối soát** (SDD §5.9.2): so internal↔external (MES/ERP/WMS) theo tolerance abs/rel → lệch = **phiếu điều tra**, không tự-sửa.
+- `server/routers/contractsRouter.ts` (READ-ONLY `openapi`/`asyncapi`/`schemas`/`checkCompat`/`reconcilePreview`) + đăng ký `contracts:`.
+- `.env.example` — flag `SCHEMA_REGISTRY`.
+- Test: `server/services/contracts/contracts.test.ts` — compat gate (additive/removal/type/required/enum), spec builders, reconciliation.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H5 (đợt sau):** wire gate vào CI (chạy trên PR chạm `contracts/`); auto-extract OpenAPI từ mọi route + AsyncAPI từ `topicBuilder` thật; cron đối soát ngày nối MES/ERP/WMS; Pact contract-test 2 phía ERP.
+
+**Kế tiếp:** F8 (H3) Durable event-sourced orchestration.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*

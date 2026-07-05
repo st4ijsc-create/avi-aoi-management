@@ -74,6 +74,7 @@ import { editionRouter } from "./routers/editionRouter"; // doc 33 F1 (SYNAPSE A
 import { pluginRouter } from "./routers/pluginRouter"; // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue + auto-form config
 import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
 import { observabilityRouter } from "./routers/observabilityRouter"; // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO/burn-rate + decision-trace
+import { contractsRouter } from "./routers/contractsRouter"; // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema BACKWARD gate + reconciliation
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -509,6 +510,7 @@ export const appRouter = router({
   plugin: pluginRouter, // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue
   security: securityRouter, // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
   observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
+  contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,
