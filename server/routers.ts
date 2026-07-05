@@ -76,6 +76,7 @@ import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE
 import { observabilityRouter } from "./routers/observabilityRouter"; // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO/burn-rate + decision-trace
 import { contractsRouter } from "./routers/contractsRouter"; // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema BACKWARD gate + reconciliation
 import { orchestrationGovRouter } from "./routers/orchestrationGovRouter"; // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG validate + priority/SLA + four-eyes
+import { trafficGovRouter } from "./routers/trafficGovRouter"; // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -513,6 +514,7 @@ export const appRouter = router({
   observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
   contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
   orchestrationGov: orchestrationGovRouter, // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG + priority/SLA + four-eyes
+  trafficGov: trafficGovRouter, // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
 
   // NG Rate Threshold Alerts
   ngRateThreshold: ngRateThresholdRouter,
