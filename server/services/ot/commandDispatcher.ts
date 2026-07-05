@@ -76,6 +76,7 @@ import { isCommissioned, isCommissioningRequired } from "./commissioningService"
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
 // không tạo vòng phụ thuộc).
 import { evaluateInterlockGate } from "../interlock/interlockGate";
+import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGate"; // doc 33 I2 (F5): policy-as-code gate
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -155,6 +156,12 @@ export interface DispatchInput {
   lang?: "vi" | "en" | "zh";
   /** Unique key → at most one effective dispatch. */
   idempotencyKey: string;
+  /**
+   * doc 33 I2 (F5): optional policy-as-code context for the SEC_PLATFORM governance gate —
+   * `{ action, zone, product, line, approved }`. Absent → action defaults to "device_write"
+   * (no default policy matches → allow). See server/services/security/policyGate.ts.
+   */
+  policyContext?: { action?: string; approved?: boolean } & Record<string, unknown>;
 }
 
 /** Resolve the (requestedBy, confirmedBy) pair recorded on commandLog rows. */
@@ -367,6 +374,23 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   //         interlock (đã qua verifyInterlockAuthorization) — nếu chặn nó bằng cổng này
   //         thì lệnh an toàn không bao giờ ghi được (tự khoá). Cổng KHÔNG áp cho
   //         dry-run/emulator (đường đó đã trả simulated ở bước 5, không có real-write).
+  // ── (5a-policy) doc 33 I2 (F5 §5.11.2) — policy-as-code governance gate. SEC_PLATFORM
+  //         default OFF → skipped (fully non-breaking). When on, a high-risk command whose
+  //         policyContext matches a `deny` policy is REJECTED here; a `require_approval` policy
+  //         is rejected unless a four-eyes approval is present. hitl-only (never self-locks an
+  //         interlock action). Runs BEFORE the interlock gate (governance → safety).
+  if (input.triggeredBy.kind === "hitl" && secPlatformEnabled()) {
+    const verdict = evaluateCommandPolicy(
+      { action: "device_write", ...(input.policyContext ?? {}) },
+      { enabled: true, approved: input.policyContext?.approved === true },
+    );
+    if (!verdict.allow) {
+      const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+      const ids = await writeRejected(db, input, reason, verdict.reason);
+      return { ok: false, simulated: false, status: "rejected", reason, results: failedResults(input, reason), commandLogIds: ids };
+    }
+  }
+
   if (input.triggeredBy.kind === "hitl") {
     const gate = await evaluateInterlockGate({
       adapterId: input.adapterId,
