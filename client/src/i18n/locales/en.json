@@ -5179,6 +5179,8 @@
     "federationDashboardDesc": "Read-only cross-site KPI roll-up across the federation (admin)",
     "modules": "Modules",
     "modulesDesc": "Platform modules and their licensed status for this deployment (read-only)",
+    "synapsePlatform": "SYNAPSE Platform",
+    "synapsePlatformDesc": "Editions, plugins, security policies, SLOs/decision-traces, contracts and developer portal (read-only)",
     "edgeNodes": "Edge Nodes",
     "edgeNodesDesc": "Register & monitor edge coordination runtimes",
     "workOrders": "Work Orders",

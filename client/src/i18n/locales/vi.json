@@ -5179,6 +5179,8 @@
     "federationDashboardDesc": "Tổng hợp KPI cross-site chỉ đọc trên toàn federation (admin)",
     "modules": "Mô-đun",
     "modulesDesc": "Các mô-đun nền tảng và trạng thái license cho triển khai này (chỉ đọc)",
+    "synapsePlatform": "SYNAPSE Platform",
+    "synapsePlatformDesc": "Edition, plugin, chính sách bảo mật, SLO/decision-trace, contracts và developer portal (chỉ đọc)",
     "edgeNodes": "Node biên",
     "edgeNodesDesc": "Đăng ký & theo dõi runtime điều phối biên",
     "workOrders": "Lệnh bảo trì",

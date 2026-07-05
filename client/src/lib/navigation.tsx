@@ -1448,6 +1448,18 @@ export const navGroups: NavGroup[] = [
         section: "platform",
       },
       {
+        // doc 33 — SYNAPSE platform cockpit (read-only: editions/plugins/security/observability/contracts/dev-portal)
+        href: "/synapse-platform",
+        label: "nav.synapsePlatform",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.synapsePlatformDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+        section: "platform",
+        beta: true,
+      },
+      {
         href: "/backup-restore",
         label: "nav.backupRestore",
         icon: <Archive className="h-4 w-4" />,
