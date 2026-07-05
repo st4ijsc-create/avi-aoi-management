@@ -335,7 +335,20 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Gate:** `tsc --noEmit` exit 0 · 20/20 test xanh. Flag `EDITION_PROFILE=false` (advisory).
 **Còn lại của P1 (đợt sau):** enforce module-ceiling/quota trong license-middleware (advisory → cưỡng chế) · hợp nhất ~110 env-flag operational vào registry · Helm/K3s HA manifests thật · Join wizard + UNS bridge (mDNS) · CI 2-profile smoke · client edition badge (dùng `trpc.edition.current`).
 
-**Kế tiếp:** F2 (P3) Plugin Manifest & SDK v1.
+### ✅ F2 (P3) — Plugin Manifest & SDK v1 — 2026-07-05
+**Phạm vi giao:** tầng manifest plugin (ADR-008) cấp registry + apiVersion gate + auto-form, **non-breaking / advisory** (metadata, không mở control path, không đổi hành vi adapter). KHÔNG migration.
+**Đã làm:**
+- `shared/plugin/manifest.ts` — hợp đồng `PluginManifest` (id/version SemVer/`apiVersion` range/kind 6-extension-point/protocols/configSchema/permissions/signature) + **`satisfiesApiVersion`** (^, x, ">=a <b", exact; **fail-closed**) + `validateManifest` (pure).
+- `server/services/plugins/pluginRegistry.ts` — register-and-go; **apiVersion GATE**: manifest ngoài dải → `PluginRejectedError` (Hub từ chối, không "chạy liều"). `registerPlugin`/`tryRegisterPlugin`/`list`/`get`/`byKind`.
+- `server/services/plugins/configForm.ts` — **Zod → JSON-Schema** (zod v4 `z.toJSONSchema`) cho Setup Wizard tự sinh form; fail-safe.
+- `server/services/plugins/otConnectorManifests.ts` + `index.ts` — seed manifest **5 OT connector** (opcua/modbus/s7/mitsubishi-mc/ethernet-ip) với config-form + permissions ACL topic; register-and-go tại import. Chứng minh "thêm hãng = khai báo manifest + auto-form, không sửa lõi".
+- `server/routers/pluginRouter.ts` (READ-ONLY `apiVersion`/`list`/`listByKind`/`get`) + đăng ký `plugin:` vào appRouter.
+- `.env.example` — flag `PLUGIN_MANIFEST` (advisory).
+- Test: `server/services/plugins/manifest.test.ts` — apiVersion gate reject, validate good/bad, 5 seed conformance (valid+compatible+signed+auto-form).
+**Gate:** `tsc --noEmit` exit 0 · test xanh (xem commit).
+**Còn lại của P3 (đợt sau):** gắn manifest vào registry secsgem/robot/programming; wizard UI tiêu thụ `plugin.get.configSchema`; conformance suite chạy như CI bắt buộc cho adapter mới; `synapse plugin new` template.
+
+**Kế tiếp:** F3 (P4) Plugin out-of-process gRPC sidecar.
 
 ---
 *Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 trong worktree `../avi-aoi-synapse`.*
