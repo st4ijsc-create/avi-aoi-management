@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SYNAPSE Machine Edition",
+  "version": "0.1.0",
+  "identifier": "com.st4i.synapse.machine",
+  "build": {
+    "//": "doc 33 W5 / ADR-006 — SAME React SPA as the browser Control Tower, no second UI.",
+    "frontendDist": "../../../client/dist",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SYNAPSE Machine",
+        "fullscreen": true,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": false,
+        "width": 1920,
+        "height": 1080
+      }
+    ],
+    "security": {
+      "//": "Kiosk shell points at the local app (embedded profile). Tighten CSP per deployment.",
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "identifier": "com.st4i.synapse.machine",
+    "icon": ["icons/icon.png"],
+    "longDescription": "SYNAPSE Machine Edition desktop kiosk — wraps the web Control Tower for a single OEM machine (auto-start, fullscreen, offline). ADR-006."
+  }
+}

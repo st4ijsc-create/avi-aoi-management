@@ -466,4 +466,27 @@ Sau khi chủ sở hữu chọn **"nối primitive vào engine thật (foundatio
 **Tổng kết phiên:** **8 phase nền tảng (F1-F8) + 6 tích hợp (I1-I6) = 14 commit** trên `synapse-foundation`, ~110+ test SYNAPSE xanh, mọi test production hiện có không đổi.
 
 ---
-*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 là framework-level, trích dẫn file · ĐÃ DUYỆT §5B, thực thi §7 (foundation) + §9 (integration) trong worktree `../avi-aoi-synapse`.*
+
+## 10. ĐỢT HOÀN TẤT PHẦN CÒN LẠI (Remaining wave W1–W5, 2026-07-05)
+
+Theo "làm nốt phần còn lại" — mọi hạng mục **phần-mềm-làm-được** đã hoàn tất (flag-gated/additive, tsc 0 + test xanh, commit riêng); chỉ còn phần **phần cứng** (C2) và **hệ ngoài thật** (gRPC vendor-DLL, provider MES/ERP) là ngoài phạm vi.
+
+| # | Hạng mục | Nội dung | Commit | Cờ |
+|---|---|---|---|---|
+| H4 | Traffic space-time | interval reservation + time-expanded A* (wait-avoidance) + infra coordinator (elevator/door 3-step) | `e1e97ba` | `TRAFFIC_SPACETIME` |
+| H6 | Twin/AI nâng cao | twin↔reality drift detector + Monte-Carlo N≥30/CI (mulberry32) + RL advisor shadow→suggest→auto + circuit-breaker | `2ab53c2` | `TWIN_DRIFT`/`RL_ADVISOR` |
+| P6 | Developer Portal | serve OpenAPI/AsyncAPI + `synapse plugin new` scaffold + conformance checklist + sandbox validate + guide | `604ab7d` | `DEV_PORTAL` |
+| W4 | Persistence sâu | decision_traces (0221) via sink + orchestration_run_events (0222) + wire RUN_CREATED; query/replay API | `074f3f4` | (OBSERVABILITY/FOE_DURABLE) |
+| W5 | Đóng gói + runbook | Tauri machine-shell scaffold (`apps/machine-shell/`) + Local Agent spec + **doc 34 flag-flip runbook** | *(this)* | — |
+
+**Router read-only tổng cộng:** `edition · plugin · security · observability · contracts · orchestrationGov · trafficGov · twinGov · devPortal` (9). **Migration SYNAPSE:** 0220/0221/0222 (đánh số cao tránh 0202 của doc-32).
+
+**⛔ Ngoài phạm vi phần mềm (giữ nguyên là backlog):**
+- **C2 phần cứng**: Safety PLC SIL + UWB/LiDAR, FOCAS Fwlib32, GigE/GenICam, robot FAT, EtherCAT — cần thiết bị thật. Cổng phần mềm + hợp đồng sidecar + spec Local Agent đã SẴN SÀNG nhận.
+- **Hệ ngoài thật**: gRPC/unix-socket wire + sidecar bọc DLL hãng; provider MES/ERP/WMS thật cho reconciliation; OTel OTLP export tới Tempo/Jaeger (correlation backbone đã có, chỉ thiếu exporter dep). Đều là "cắm provider/exporter", không phải thiết kế lại.
+- **C1 kích hoạt**: doc 34 là runbook bật cờ staged — thực thi trên staging là bước vận hành của chủ sở hữu.
+
+**TỔNG KẾT TOÀN PHIÊN:** **F1-F8 (8) + I1-I6 (6) + H4/H6/P6/W4/W5 (5) = 19+ commit** trên `synapse-foundation`; SYNAPSE test-suite xanh toàn bộ; **0 regression** trên mọi test production hiện có; 3 migration additive. Worktree sẵn sàng PR khi phiên doc-32 (main tree) commit xong.
+
+---
+*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 framework-level, trích dẫn file · ĐÃ DUYỆT §5B · thực thi §7 (foundation F1-F8) + §9 (integration I1-I6) + §10 (remaining H4/H6/P6/W4/W5) trong worktree `../avi-aoi-synapse` · runbook kích hoạt: doc 34.*
