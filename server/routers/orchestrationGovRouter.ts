@@ -9,6 +9,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { validateDag } from "../services/orchestration/dag";
 import { orderQueue, requiresFourEyes, type PriorityBand, type PrioritizedTask } from "../services/orchestration/slaPolicy";
+import { loadRunEvents, replayPersistedRun } from "../services/orchestration/runEventStore"; // doc 33 W4
 
 export const orchestrationGovRouter = router({
   /** Validate a recipe DAG (missing refs + cycle detection) → topological order. */
@@ -45,4 +46,14 @@ export const orchestrationGovRouter = router({
   fourEyesCheck: protectedProcedure
     .input(z.object({ context: z.record(z.string(), z.unknown()) }))
     .query(({ input }) => requiresFourEyes(input.context as { action?: string })),
+
+  /** doc 33 W4: durable RunEvent log for a run (seq order). */
+  runEvents: protectedProcedure
+    .input(z.object({ runId: z.number() }))
+    .query(({ input }) => loadRunEvents(input.runId)),
+
+  /** doc 33 W4: replay a run's persisted events into its reconstructed state (F8 reducer). */
+  replayRun: protectedProcedure
+    .input(z.object({ runId: z.number() }))
+    .query(({ input }) => replayPersistedRun(input.runId)),
 });

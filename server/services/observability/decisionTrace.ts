@@ -49,6 +49,14 @@ const RING_MAX = 5000;
 const ring: DecisionTrace[] = [];
 let nextId = 1;
 
+/** doc 33 W4 — optional persistence sink. A DB-backed sink registers here when OBSERVABILITY is
+ *  on; this module stays DB-free/pure. The sink is best-effort — it must never throw. */
+export type DecisionSink = (trace: DecisionTrace) => void;
+let sink: DecisionSink | null = null;
+export function setDecisionSink(fn: DecisionSink | null): void {
+  sink = fn;
+}
+
 /** Record a decision. Auto-attaches the current correlation id if not supplied. Never throws. */
 export function recordDecision(input: DecisionTraceInput): DecisionTrace {
   const rec: DecisionTrace = {
@@ -58,6 +66,13 @@ export function recordDecision(input: DecisionTraceInput): DecisionTrace {
   };
   ring.push(rec);
   if (ring.length > RING_MAX) ring.shift();
+  if (sink) {
+    try {
+      sink(rec);
+    } catch {
+      /* persistence is best-effort — never affect the caller */
+    }
+  }
   return rec;
 }
 

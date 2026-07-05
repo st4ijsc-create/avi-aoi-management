@@ -8,6 +8,8 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { DEFAULT_SLOS, sloStatus, burnRate } from "../services/observability/slo";
 import { queryDecisions } from "../services/observability/decisionTrace";
+// Importing activates the decision-trace DB sink (doc 33 W4) — persists to decision_traces when OBSERVABILITY on.
+import { queryPersistedDecisions } from "../services/observability/decisionTracePersistence";
 
 const obsSchema = z.object({ good: z.number().min(0), total: z.number().min(0) });
 
@@ -36,7 +38,7 @@ export const observabilityRouter = router({
       return { found: true as const, status, burn };
     }),
 
-  /** Recent decision traces (most recent first). */
+  /** Recent decision traces from the in-memory ring (most recent first). */
   recentDecisions: protectedProcedure
     .input(
       z
@@ -49,4 +51,18 @@ export const observabilityRouter = router({
         .optional(),
     )
     .query(({ input }) => queryDecisions(input ?? {})),
+
+  /** doc 33 W4: persisted decision traces from the DB (survives restarts; historical). */
+  persistedDecisions: protectedProcedure
+    .input(
+      z
+        .object({
+          decisionType: z.string().optional(),
+          subject: z.string().optional(),
+          since: z.number().optional(),
+          limit: z.number().min(1).max(1000).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => queryPersistedDecisions(input ?? {})),
 });

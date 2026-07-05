@@ -25,6 +25,7 @@
  */
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
+import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
   orchestrationWorkflows,
   orchestrationWorkflowVersions,
@@ -916,6 +917,8 @@ export async function startRun(
       })
       .returning();
     runId = run.id;
+    // doc 33 W4 (F8 §5.1.2) — durable event log: record RUN_CREATED (best-effort, FOE_DURABLE-gated).
+    void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: wf.ref } });
 
     // OPT-IN async: tách drive khỏi request. Trả 'queued' + runId ngay; drive nền.
     if (opts?.async) {
