@@ -331,7 +331,18 @@ Agent đã trích **bảng mã lỗi thật** (sẵn schema `{vendor, device_cla
 
 ---
 
-*Tài liệu 37 · audit 4 agent tầng máy + 4 agent manual-grounded · §8 = kết quả thực thi Đợt A (`ad4e2bb`) + Đợt B (`1a65eb7`, mig 0231) · A1/A2 env = bước operator có chủ đích · khung 15 năng lực doc 08/09/16/24/33/35.*
+**Đợt D-drivers — spec-verify vs tài liệu comms thật (owner đã tải đủ) — commit `fa03384`, tsc+build green, 60 test driver pass, drivers vẫn dry-run:**
+- **Fanuc RMI (B-84184EN)** — nhiều **bug thật**: two-port flow bắt buộc (16001 connect-only→reconnect PortNumber), joint dùng `FRC_JointMotionJRep` (không phải JointMotion=Cartesian), getState `FRC_ReadCartesianPosition` live, TPMode boolean auto/manual, busy=RMIMotionStatus===1, SequenceID từ NextSequenceID, handshake pre-check; cần R-30iB Plus + **option R912** (không phải R632) + AUTO. Test cập nhật 13/13.
+- **Mitsubishi (SH-081227/SH-080956/BFP-A3379)**: `mcAddress` sửa TS/TC/CS/CC WORD→BIT + chấp nhận hex device-number; TODO SLMP-3E encoder (tự viết node:net, không đổi lib); MELFA port 10000-10009 + MXT/UDP + CR800 SLMP-server 45237.
+- **Delta robot**: manual thực ra là **HIWIN RCD controller** (delta=kiểu cơ cấu) — không có host protocol → giữ MOCK document trung thực (đường thật: HIWIN HRSS / AS300 Modbus).
+- **Zmotion**: chữ ký ZAux thật từ `Zmcaux.cs` (OpenEth chỉ IP, không Modbus:502) → `deployFile` đúng contract + FFI TODO (koffi, không dep).
+- **Omron**: +44 mã 8-hex W503 (mig 0232 applied → 51 mã omron); preset port 44818 verify vs W506 (lưu ý route-path Omron direct-CPU khác AB — verify HW).
+
+**Tài liệu vẫn cần cho ĐỦ spec (owner cân nhắc):** HIWIN HRSS network/remote-API manual (Delta/HIWIN robot host); MELFA support-software comm telegram (semicolon format) nếu dùng kênh TCP-command thay SLMP-server.
+
+---
+
+*Tài liệu 37 · audit 4 agent tầng máy + 4 agent manual-grounded + 4 agent driver-spec-verify · §8 = thực thi Đợt A (`ad4e2bb`) + B (`1a65eb7`, mig 0231) + D-drivers (`fa03384`, mig 0232) · A1/A2 env = bước operator · khung 15 năng lực doc 08/09/16/24/33/35.*
 
 ---
 
