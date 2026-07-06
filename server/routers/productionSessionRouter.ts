@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { createHmac, createHash } from "crypto";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
 import { productionSessions, dailyStatistics } from "../../drizzle/schema/production";
 
@@ -112,6 +113,7 @@ export const productionSessionRouter = router({
     }),
 
   open: protectedProcedure
+    .use(requirePermission("production_orders", "canCreate"))
     .input(z.object({
       shiftConfigId: z.number(),
       factoryId: z.number(),
@@ -151,6 +153,7 @@ export const productionSessionRouter = router({
     }),
 
   pause: protectedProcedure
+    .use(requirePermission("production_orders", "canEdit"))
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -165,6 +168,7 @@ export const productionSessionRouter = router({
     }),
 
   resume: protectedProcedure
+    .use(requirePermission("production_orders", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -179,6 +183,7 @@ export const productionSessionRouter = router({
     }),
 
   close: protectedProcedure
+    .use(requirePermission("production_orders", "canEdit"))
     .input(z.object({ id: z.number(), operatorNotes: z.string().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -212,6 +217,7 @@ export const productionSessionRouter = router({
     }),
 
   handover: protectedProcedure
+    .use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       fromSessionId: z.number(),
       toSessionId: z.number(),
