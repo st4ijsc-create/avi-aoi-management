@@ -14,14 +14,17 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
 import { useKioskMode } from "./hooks/useKioskMode";
 import Home from "./pages/Home";
-import Dashboard from "./pages/Dashboard";
-import History from "./pages/History";
+// Wave 1 (foundation): code-split the heaviest eager page monoliths (2.7k–7.2k LOC)
+// so they no longer inflate the initial bundle. Rendered under the top-level
+// <Suspense> added around <Router/> below. (audit T5 — code-split monoliths.)
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const History = React.lazy(() => import("./pages/History"));
+const DataSettings = React.lazy(() => import("./pages/DataSettings"));
+const ApiDocs = React.lazy(() => import("./pages/ApiDocs"));
+const ProductModels = React.lazy(() => import("./pages/ProductModels"));
 import InspectionDetail from "./pages/InspectionDetail";
 import Layout from "./pages/Layout";
 import Settings from "./pages/Settings";
-import DataSettings from "./pages/DataSettings";
-import ApiDocs from "./pages/ApiDocs";
-import ProductModels from "./pages/ProductModels";
 import CorporateLayout from "./pages/CorporateLayout";
 import Reports from "./pages/Reports";
 import Alerts from "./pages/Alerts";
@@ -175,7 +178,8 @@ import AnalyticsSettings from "./pages/AnalyticsSettings";
 import AdminSettings from "./pages/AdminSettings";
 import DashboardCenter from "./pages/DashboardCenter";
 import ProductionDashboard from "./pages/ProductionDashboard";
-import StationAnalysis from "./pages/StationAnalysis";
+const StationAnalysis = React.lazy(() => import("./pages/StationAnalysis")); // Wave 1: code-split (2.7k LOC)
+const ComponentShowcase = React.lazy(() => import("./pages/ComponentShowcase")); // Wave 1: dev showcase of DS + foundation primitives
 
 function AIPageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -213,6 +217,9 @@ function Router() {
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
       <Route path="/api-docs" component={ApiDocs} />
+      {/* Wave 1 (foundation): dev-open showcase of the shared design-system +
+          the new foundation primitives (DataTable/AsyncBoundary/FilterBar/FormScaffold). */}
+      <Route path="/component-showcase" component={ComponentShowcase} />
 
       {/* ── OVERVIEW ─────────────────────────────────────────────────────── */}
       <Route path="/dashboard"><RouteGuard navHref="/dashboard"><Dashboard /></RouteGuard></Route>
@@ -457,7 +464,13 @@ function App() {
             <AiCopilotProvider>
               <ConnectionBanner />
               <Toaster />
-              <Router />
+              {/* Wave 1 (foundation): a single top-level Suspense boundary so any
+                  code-split page (including bare `component={}` routes like /api-docs)
+                  has a fallback while its chunk loads. Per-page AIPageWrapper boundaries
+                  still take precedence where present. */}
+              <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+                <Router />
+              </Suspense>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
                   lazy AI pages. The bubble hides itself when not logged in. */}

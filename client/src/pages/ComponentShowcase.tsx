@@ -5,6 +5,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// ── Wave 1 (foundation) shared primitives — showcased below ──────────────────
+import { z } from "zod";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { AsyncBoundary } from "@/components/AsyncBoundary";
+import { FilterBar, type FilterDef } from "@/components/FilterBar";
+import { FormScaffold, TextField, SelectField } from "@/components/FormScaffold";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -243,6 +249,9 @@ export default function ComponentsShowcase() {
         </div>
 
         <div className="space-y-12">
+          {/* Wave 1 foundation primitives (DataTable / AsyncBoundary / FilterBar / FormScaffold) */}
+          <Wave1PrimitivesShowcase />
+
           {/* Text Colors Section */}
           <section className="space-y-4">
             <h3 className="text-2xl font-semibold">Text Colors</h3>
@@ -1433,5 +1442,162 @@ export default function ComponentsShowcase() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 1 (foundation) — live demos of the four shared primitives every page will
+// adopt: DataTable, AsyncBoundary, FilterBar (URL-synced), FormScaffold (zod).
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DemoMachine {
+  id: number;
+  name: string;
+  line: string;
+  status: "running" | "idle" | "down";
+  oee: number;
+}
+
+const DEMO_MACHINES: DemoMachine[] = [
+  { id: 1, name: "AOI-01", line: "SMT-A", status: "running", oee: 92.4 },
+  { id: 2, name: "AOI-02", line: "SMT-A", status: "idle", oee: 74.1 },
+  { id: 3, name: "AVI-01", line: "SMT-B", status: "down", oee: 0 },
+  { id: 4, name: "AVI-02", line: "SMT-B", status: "running", oee: 88.7 },
+  { id: 5, name: "SPI-01", line: "SMT-C", status: "running", oee: 95.2 },
+  { id: 6, name: "SPI-02", line: "SMT-C", status: "idle", oee: 61.3 },
+];
+
+const demoFormSchema = z.object({
+  name: z.string().min(2, "At least 2 characters"),
+  role: z.string().min(1, "Pick a role"),
+});
+
+function Wave1PrimitivesShowcase() {
+  const [selected, setSelected] = useState<Array<string | number>>([]);
+  const [asyncPhase, setAsyncPhase] = useState<"loaded" | "loading" | "error" | "empty">("loaded");
+
+  const columns: DataTableColumn<DemoMachine>[] = [
+    { id: "name", header: "Machine", cell: (r) => <span className="font-medium">{r.name}</span>, sortValue: (r) => r.name, filterValue: (r) => r.name },
+    { id: "line", header: "Line", cell: (r) => r.line, sortValue: (r) => r.line, filterValue: (r) => r.line },
+    {
+      id: "status", header: "Status",
+      cell: (r) => (
+        <Badge variant={r.status === "running" ? "default" : r.status === "idle" ? "secondary" : "destructive"}>
+          {r.status}
+        </Badge>
+      ),
+      sortValue: (r) => r.status, filterValue: (r) => r.status,
+    },
+    { id: "oee", header: "OEE %", align: "right", cell: (r) => <span className="tabular-nums">{r.oee.toFixed(1)}</span>, sortValue: (r) => r.oee },
+  ];
+
+  const filters: FilterDef[] = [
+    { key: "q", type: "search", label: "Search", placeholder: "Search machines…" },
+    { key: "line", type: "select", label: "Line", options: [
+      { value: "SMT-A", label: "SMT-A" }, { value: "SMT-B", label: "SMT-B" }, { value: "SMT-C", label: "SMT-C" },
+    ] },
+    { key: "shift", type: "daterange", label: "Date range" },
+  ];
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h3 className="text-2xl font-semibold">Foundation primitives (Wave 1)</h3>
+        <p className="text-sm text-muted-foreground">
+          Shared building blocks introduced by the platform upgrade — adopt these instead of hand-rolling tables, async states, filters, and forms.
+        </p>
+      </div>
+
+      {/* DataTable */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">DataTable</CardTitle>
+          <CardDescription>Sort · global search · pagination · selection · keyboard-operable rows. {selected.length} selected.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            data={DEMO_MACHINES}
+            getRowId={(r) => r.id}
+            searchable
+            searchPlaceholder="Search machines…"
+            pageSize={4}
+            selectable
+            selectedIds={selected}
+            onSelectionChange={setSelected}
+            onRowClick={(r) => sonnerToast.info(`Row clicked: ${r.name}`)}
+            initialSort={{ columnId: "oee", dir: "desc" }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* AsyncBoundary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">AsyncBoundary</CardTitle>
+          <CardDescription>One primitive for loading / error / empty / loaded. Toggle a phase:</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(["loaded", "loading", "error", "empty"] as const).map((p) => (
+              <Button key={p} size="sm" variant={asyncPhase === p ? "default" : "outline"} onClick={() => setAsyncPhase(p)}>
+                {p}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-lg border p-4">
+            <AsyncBoundary
+              isLoading={asyncPhase === "loading"}
+              isError={asyncPhase === "error"}
+              error={new Error("Demo: upstream request failed (503)")}
+              isEmpty={asyncPhase === "empty"}
+              onRetry={() => setAsyncPhase("loaded")}
+              preset="table"
+              errorTitle="Couldn’t load machines"
+            >
+              <p className="text-sm text-foreground">✓ Loaded content renders here.</p>
+            </AsyncBoundary>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* FilterBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">FilterBar (URL-synced)</CardTitle>
+          <CardDescription>Filter state persists in the URL query string — shareable &amp; bookmarkable. Check the address bar as you change filters.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FilterBar filters={filters} />
+        </CardContent>
+      </Card>
+
+      {/* FormScaffold */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">FormScaffold (react-hook-form + zod)</CardTitle>
+          <CardDescription>Schema-validated form in ~10 lines. Try submitting empty.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormScaffold
+            schema={demoFormSchema}
+            defaultValues={{ name: "", role: "" }}
+            onSubmit={(values) => { sonnerToast.success("Submitted", { description: JSON.stringify(values) }); }}
+            submitLabel="Create user"
+          >
+            {(form) => (
+              <div className="space-y-4">
+                <TextField form={form} name="name" label="Name" placeholder="Jane Operator" />
+                <SelectField form={form} name="role" label="Role" options={[
+                  { value: "operator", label: "Operator" },
+                  { value: "supervisor", label: "Supervisor" },
+                  { value: "admin", label: "Admin" },
+                ]} />
+              </div>
+            )}
+          </FormScaffold>
+        </CardContent>
+      </Card>
+    </section>
   );
 }

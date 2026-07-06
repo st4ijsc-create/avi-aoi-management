@@ -9,7 +9,22 @@ import { getLoginUrl } from "./const";
 import "./index.css";
 import "./i18n"; // Initialize i18n
 
-const queryClient = new QueryClient();
+// Wave 1 (foundation): sane query defaults for the whole app. Previously the
+// client was constructed bare — staleTime 0 + refetchOnWindowFocus on = every
+// page re-fetched all of its tRPC queries on mount AND on every tab-focus,
+// which was the single biggest source of repo-wide over-fetching (audit T5).
+// Pages that need live data keep using refetchInterval / sockets, which still
+// win over staleTime; this only stops the redundant background churn.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000, // 30s — treat data as fresh; kills mount/focus refetch storms
+      gcTime: 5 * 60_000, // keep unused cache 5 min for instant back-nav
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
