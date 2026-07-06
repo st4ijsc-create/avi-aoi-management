@@ -36,7 +36,7 @@ import {
   chatCompletion,
   chatCompletionStream,
   generateText,
-  generateTextStream,
+  generateFim,
   generateEmbedding,
   generateEmbeddings,
   isGgufAvailable,
@@ -159,21 +159,8 @@ function toGgufMessages(messages: any[]): GgufChatMessage[] {
     }));
 }
 
-/** Assemble a fill-in-middle prompt (best-effort — Qwen coder FIM sentinels). */
-function buildFimPrompt(prefix: string, suffix: string): string {
-  return `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>`;
-}
-
-/** Stop sequences that terminate a FIM completion. */
-const FIM_STOPS = [
-  "<|fim_prefix|>",
-  "<|fim_suffix|>",
-  "<|fim_middle|>",
-  "<|fim_pad|>",
-  "<|endoftext|>",
-  "<|repo_name|>",
-  "<|file_sep|>",
-];
+// FIM prompt assembly + stop sequences now live in aiGgufEngine.generateFim (native infill);
+// the gateway just forwards prefix/suffix to it.
 
 function jsonError(
   res: Response,
@@ -400,16 +387,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
 
-      // Best-effort FIM: no dedicated engine FIM method (that lands with the
-      // persistent llama-server coder branch), so assemble a fill-in-middle
-      // prompt with Qwen sentinels and stop on the FIM/EOT tokens.
-      const enginePrompt = isFim ? buildFimPrompt(prompt, suffix) : prompt;
-      const stopSequences = isFim ? FIM_STOPS : undefined;
+      // Native fill-in-middle via the engine's generateFim (LlamaCompletion.generateInfillCompletion
+      // when the coder model supports infill; raw completion otherwise) — no chat template, so the
+      // model returns clean inline code for Continue autocomplete. `suffix` present → real infill.
+      const fimOpts = { prefix: prompt, suffix, maxTokens, temperature, topP };
 
       const id = genId("cmpl");
       const created = nowUnix();
 
-      // ── Streaming (SSE, OpenAI text_completion chunk shape) ──
+      // ── Streaming (SSE, OpenAI text_completion shape). generateFim is non-streaming, so emit the
+      //    whole completion as ONE chunk then [DONE] — fine for short inline autocomplete. ──
       if (body.stream === true) {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
@@ -417,33 +404,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           Connection: "keep-alive",
           "X-Accel-Buffering": "no",
         });
-
-        const abort = new AbortController();
-        req.on("close", () => abort.abort());
-
-        const stream = generateTextStream(
-          { prompt: enginePrompt, maxTokens, temperature, topP, stopSequences },
-          modelId,
-          abort.signal,
-        );
-        for await (const chunk of stream) {
-          if (res.destroyed) break;
-          if (chunk.type === "token" && chunk.token) {
-            const delta = {
-              id,
-              object: "text_completion",
-              created,
-              model: modelLabel,
-              choices: [{ index: 0, text: chunk.token, finish_reason: null }],
-            };
-            res.write(`data: ${JSON.stringify(delta)}\n\n`);
-          } else if (chunk.type === "error") {
+        try {
+          const result = await generateFim(fimOpts, modelId);
+          if (!res.destroyed && result.text) {
             res.write(
-              `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "error" }], error: { message: chunk.error || "generation error" } })}\n\n`,
+              `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: result.text, finish_reason: null }] })}\n\n`,
             );
           }
+        } catch (e: any) {
+          res.write(
+            `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "error" }], error: { message: e?.message || "generation error" } })}\n\n`,
+          );
         }
-
         res.write(
           `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "stop" }] })}\n\n`,
         );
@@ -453,10 +425,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       // ── Non-streaming ──
-      const result = await generateText(
-        { prompt: enginePrompt, maxTokens, temperature, topP, stopSequences },
-        modelId,
-      );
+      const result = await generateFim(fimOpts, modelId);
       res.json({
         id,
         object: "text_completion",

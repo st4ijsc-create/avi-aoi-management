@@ -27,6 +27,11 @@ vi.mock("../services/aiGgufEngine", () => ({
     h.lastGenerateTextArgs = { opts, modelId };
     return { text: "completed text", tokensPrompt: 5, tokensGenerated: 2, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
   }),
+  // /v1/completions now routes to native FIM (generateFim), forwarding {prefix, suffix}.
+  generateFim: vi.fn(async (opts: any, modelId?: string) => {
+    h.lastFimArgs = { opts, modelId };
+    return { text: "completed text", tokensPrompt: 5, tokensGenerated: 2, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
+  }),
   generateEmbedding: vi.fn(async (_text: string) => ({ embedding: [0.1, 0.2, 0.3], dimensions: 3, modelId: "embed" })),
   generateEmbeddings: vi.fn(async (texts: string[]) => ({ embeddings: texts.map((_t, i) => [i, i + 1]), dimensions: 2, modelId: "embed" })),
   // Stream exports (present for import completeness; not exercised here).
@@ -188,21 +193,19 @@ describe("POST /v1/completions", () => {
     expect(body.usage.total_tokens).toBe(7);
   });
 
-  it("suffix ⇒ FIM prompt is assembled (prefix + suffix + sentinels + stops)", async () => {
-    h.lastGenerateTextArgs = null;
+  it("suffix ⇒ native FIM: generateFim receives raw prefix + suffix (no chat template)", async () => {
+    h.lastFimArgs = null;
     const res = await fetch(`${enabled.url}/v1/completions`, {
       method: "POST",
       headers: { ...AUTH, "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: "def foo():\n  ", suffix: "\n  return x" }),
     });
     expect(res.status).toBe(200);
-    const sentPrompt: string = h.lastGenerateTextArgs.opts.prompt;
-    expect(sentPrompt).toContain("<|fim_prefix|>");
-    expect(sentPrompt).toContain("def foo():");
-    expect(sentPrompt).toContain("<|fim_suffix|>");
-    expect(sentPrompt).toContain("return x");
-    expect(sentPrompt).toContain("<|fim_middle|>");
-    expect(h.lastGenerateTextArgs.opts.stopSequences).toContain("<|endoftext|>");
+    // The gateway forwards prefix/suffix to the engine's native infill (LlamaCompletion),
+    // NOT an assembled sentinel prompt through the chat path.
+    expect(h.lastFimArgs).not.toBeNull();
+    expect(h.lastFimArgs.opts.prefix).toContain("def foo():");
+    expect(h.lastFimArgs.opts.suffix).toContain("return x");
   });
 });
 
