@@ -263,4 +263,34 @@ Hoàn tất phần F1-F8 còn thiếu sau merge (đối chiếu lại) · SPC OO
 | 12 | License grace HALT (trái nguyên tắc "không dừng sản xuất") | Thương mại | W1 |
 
 ---
-*Tài liệu 35 · deep audit 6+20 agent · kế thừa doc 16/22/24/27/31/32/33/34 · mọi số liệu có file:line trong báo cáo agent gốc · chờ phê duyệt §9.*
+
+## 11. ✅ KẾT QUẢ THỰC THI (2026-07-06)
+
+**Chủ sở hữu duyệt §9 (6/6):** (1) thực thi, (2) chiến lược **A = merge synapse-foundation**, (3) thứ tự W0→W1→W2→(W3∥W2)→W4→W5, (4) làm đủ 8 mục W4, (5) Timescale cutover đợt này, (6) nối AI mồ côi vào UI.
+
+**8 commit trên `automation-orchestration-r0`** (mọi wave qua green-gate `tsc --noEmit` + `vite/esbuild build`; cấm subagent git; flag mới OFF mặc định):
+
+| Wave | Commit | Nội dung |
+|---|---|---|
+| **W0** hotfix an ninh | `6356ba6` (+`.env` local) | Chặn leak HiveMQ (`EXTERNAL_MQTT_ENABLED=false`), ship default `MACHINE_SHARED_KEY_ALLOWED=false`, auth `aiLocalKb` (3 protected + reload admin), `requirePermission` cho 5 `productionSession` mutation, **migration 0224** avi_app least-privilege + FORCE RLS + WORM enforce |
+| **W1** merge | `1940031` | Hợp nhất `synapse-foundation` (33 commit, +9.790 dòng): F1-F8 + license-never-stop + WORM hash-chain + OTel + durable-FOE + space-time reservation + RL advisor + Helm/K3s + plugin sidecar + dev-portal + Tauri shell. 1 conflict `_core/index.ts` resolved. **Đóng luôn W1-license-grace + phần lớn W5** |
+| **W2** data-integrity | `5506564` | AOI-ZIP spec-gate, threshold→`pointsConfigVersion` bump (đóng vòng approve→máy) + version-ledger, robot interlock gate, escalation-boot + andon SLA-breach, OT-WAL restore, SECS/GEM honest, retention 90d, cascade/mqtt transactions, v1-aware guard |
+| **W3** frontend | `d902bf4`, `5a589ba` | Orphan quality UI (calibration/MSA/SPC-alerts/IPC), reportAggregators + twin USD + AI Analysis Hub, 6 nav entry, zh full-parity (+2.659 key), role-UX `useCanWrite` gating |
+| **W4** quy trình (8/8) | `1b0042c`, `80e69ad` | **0225** PM-scheduler + spare-parts ledger + MTTR/MTBF unify · **0226** WIP-hold enum-fix + NCR/MRB + FAI gate + golden-revalidation · **0227** feeder-verify + MSD clock + stencil · **0228** ECN-lite + componentCode backfill · **0229** shift-handover UI + operator clock-in + routing-master |
+| **W5** rút gọn | `a818d64` | SPC OOC → alert/Andon trung tâm + fix cpk-gate stub · **0230** dim/fact mart (dim_shift/dim_product/fact_inspection_hourly) |
+
+**Phát hiện đắt giá lúc thực thi:** (a) WIP NG upsert ghi `"on_hold"` — KHÔNG phải member của `wipstatusenum` → mọi held serial bị enum âm thầm reject, **chưa bao giờ được ghi là hold** (W4-B fix `"hold"`); (b) `synapse-foundation` đã thực thi F1-F8 sẵn ở worktree riêng → merge rẻ hơn xây lại; (c) role-UX thực tế 10/12 trang đã gate (audit bi quan).
+
+**BƯỚC OPERATOR CÒN LẠI (không thể tự động trong session — cần môi trường/quyền):**
+1. **Áp migrations 0224-0230** qua `scripts/migrate-standalone.mjs` (đều additive/idempotent, artifact — chưa áp vào dev DB vì không có psql).
+2. **W0.2 switch DATABASE_URL** khỏi superuser `postgres` → `avi_app` (sau `ALTER ROLE avi_app WITH LOGIN PASSWORD`) để WORM/RLS có hiệu lực thật (hướng dẫn trong 0224).
+3. **Timescale cutover** (quyết định #5): cài extension timescaledb trên main DB → re-apply 0172/0173 → đặt `RETENTION_OT_TELEMETRY_DAYS=0`. Tạm thời retention app-level 90d đã bảo vệ.
+4. **Bật cờ pilot** theo runbook doc 19/23: `ERP_INBOUND/OUTBOX_ENABLED`, `PM_SCHEDULE_GEN_ENABLED`, `WIP_HOLD_ENFORCED`, `FAI_GATE_ENABLED`, `GOLDEN_REVALIDATION_REQUIRED`, `FEEDER_VERIFY_ENFORCED`, `ALERT_ESCALATION_SWEEP_ENABLED`, `ANDON_SLA_ESCALATION_ENABLED`, `SPC_CENTRAL_ALERT_ENABLED`, `REPORTING_MART_ENABLED`, `OPENAI_GATEWAY_ENABLED`+key… (tất cả default OFF, bật staged → smoke).
+5. **Doc hoá cờ mới vào `.env.example`** (nhiều cờ W2-W5 chưa có stanza).
+6. **componentCode backfill** từ BOM thật qua panel mới (`/engineering-changes`).
+7. **W5 defer**: worker-role split + leader election (deploy/infra), E2E golden-thread + k6 load (initiative test).
+
+**Đường tới hạn đã đóng:** 12/12 P0 §10 (11 done, #6 Timescale = migration sẵn + cutover operator). Hệ chuyển từ "audit thấy gap" sang "gap đã vá code, chờ bật cờ + áp migration".
+
+---
+*Tài liệu 35 · deep audit 6+20 agent + thực thi 6 wave / 20 exec-agent (2026-07-06) · kế thừa doc 16/22/24/27/31/32/33/34 · §11 = kết quả thực thi.*
