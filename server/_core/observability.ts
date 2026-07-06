@@ -37,6 +37,12 @@ export async function initObservability(): Promise<void> {
   try {
     const { startSloEvaluator } = await import("../services/observability/sloAlerting");
     startSloEvaluator();
+    // doc 38 Đợt P (P0-A) — register the HTTP-derived observation feed for every catalogue SLO so
+    // the evaluator has REAL (good,total) short/long windows to burn against. No-op when
+    // OBSERVABILITY is off (evaluator is off too). Must run AFTER startSloEvaluator so the loop is
+    // already scheduled to pick up the freshly-registered providers on its next tick.
+    const { installSloMetricsProviders } = await import("../services/observability/sloMetricsProvider");
+    installSloMetricsProviders();
   } catch (err: any) {
     console.error("[Observability] SLO evaluator start failed:", err?.message ?? err);
   }

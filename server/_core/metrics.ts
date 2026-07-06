@@ -81,25 +81,40 @@ export async function initMetrics(): Promise<boolean> {
   }
 }
 
+// doc 38 Đợt P — the same request `finish` hook also feeds the SLO rolling-window tracker, so the
+// burn-rate evaluator gets a REAL (good,total) feed. Imported statically (light module, no cycle:
+// sloMetricsProvider imports slo/sloAlerting, never metrics). Both fns self-gate — cost when
+// inactive is one boolean read.
+import { recordHttpForSlo, sloHttpTrackingActive } from "../services/observability/sloMetricsProvider";
+
 /**
- * Express middleware ghi nhận latency + đếm request. No-op khi metrics chưa bật.
+ * Express middleware ghi nhận latency + đếm request (prom-client) và cấp feed cho SLO evaluator.
+ * No-op khi CẢ METRICS_ENABLED (prom) LẪN OBSERVABILITY (SLO tracker) đều tắt — không đính listener.
  */
 export function metricsMiddleware() {
   return (req: any, res: any, next: () => void) => {
-    if (!registry || !httpRequestCounter || !httpDurationHistogram) return next();
+    const promActive = !!(registry && httpRequestCounter && httpDurationHistogram);
+    const sloActive = sloHttpTrackingActive();
+    if (!promActive && !sloActive) return next();
     const start = process.hrtime.bigint();
     res.on("finish", () => {
       try {
         const durationSec = Number(process.hrtime.bigint() - start) / 1e9;
-        // Dùng route pattern nếu có để tránh nổ cardinality từ path động.
-        const route = (req.route?.path as string) || req.baseUrl || req.path || "unknown";
-        const labels = {
-          method: String(req.method),
-          route: String(route),
-          status: String(res.statusCode),
-        };
-        httpRequestCounter!.inc(labels);
-        httpDurationHistogram!.observe(labels, durationSec);
+        const statusCode = Number(res.statusCode);
+        if (promActive) {
+          // Dùng route pattern nếu có để tránh nổ cardinality từ path động.
+          const route = (req.route?.path as string) || req.baseUrl || req.path || "unknown";
+          const labels = {
+            method: String(req.method),
+            route: String(route),
+            status: String(statusCode),
+          };
+          httpRequestCounter!.inc(labels);
+          httpDurationHistogram!.observe(labels, durationSec);
+        }
+        if (sloActive) {
+          recordHttpForSlo(durationSec * 1000, statusCode);
+        }
       } catch {
         /* no-op: không để metrics làm hỏng request */
       }
