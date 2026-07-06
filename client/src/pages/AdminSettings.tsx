@@ -182,7 +182,7 @@ export default function AdminSettings() {
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex gap-6">
               {/* Vertical Sidebar Navigation */}
-              <div className="w-64 shrink-0 space-y-1">
+              <div className="hidden" data-legacy-hub-menu="true">
                 {/* Overview button */}
                 <button
                   onClick={() => handleTabChange("overview")}

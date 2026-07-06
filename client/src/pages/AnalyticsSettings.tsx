@@ -116,7 +116,7 @@ export default function AnalyticsSettings() {
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex gap-6">
               {/* Vertical Sidebar Navigation */}
-              <div className="w-64 shrink-0 space-y-1">
+              <div className="hidden" data-legacy-hub-menu="true">
 
                 {/* Category: Reports */}
                 <div className="space-y-1">

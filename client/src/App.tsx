@@ -344,7 +344,9 @@ function Router() {
       <Route path="/nonconformance"><RouteGuard navHref="/nonconformance"><AIPageWrapper><NonconformanceReports /></AIPageWrapper></RouteGuard></Route>
       <Route path="/routing-master"><RouteGuard navHref="/routing-master"><AIPageWrapper><RoutingMaster /></AIPageWrapper></RouteGuard></Route>
       <Route path="/oee-target-settings"><RouteGuard navHref="/oee-target-settings"><OEETargetSettings /></RouteGuard></Route>
-      <Route path="/analytics-setting"><RouteGuard requireRole={["admin"]}><AnalyticsSettings /></RouteGuard></Route>
+      {/* doc 36 follow-up — REDUNDANT hub: every tab is its own route (surfaced in the
+          Analytics/Quality app menus). Redirect the bare hub away. */}
+      <Route path="/analytics-setting"><Redirect to="/reports" /></Route>
 
       {/* ── AI ───────────────────────────────────────────────────────────── */}
       {/* Workspace (read-open to all roles): chat / hub / management-insight. */}

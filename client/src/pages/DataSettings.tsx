@@ -742,7 +742,7 @@ export default function DataSettings() {
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
-            <div className="w-64 shrink-0 space-y-1">
+            <div className="hidden" data-legacy-hub-menu="true">
 
               {/* Category: Infrastructure */}
               <div className="space-y-1">

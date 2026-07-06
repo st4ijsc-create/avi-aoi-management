@@ -87,7 +87,7 @@ export default function DashboardCenter() {
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex gap-6">
               {/* Vertical Sidebar Navigation */}
-              <div className="w-64 shrink-0 space-y-1">
+              <div className="hidden" data-legacy-hub-menu="true">
                 {sidebarButton("custom-dashboard", <LayoutDashboard className="h-4 w-4" />, t("dashboardCenter.sidebar.customDashboard"))}
                 {sidebarButton("dashboard-templates", <FileText className="h-4 w-4" />, t("dashboardCenter.sidebar.dashboardTemplates"))}
                 {sidebarButton("dashboard-marketplace", <ShoppingBag className="h-4 w-4" />, t("dashboardCenter.sidebar.dashboardMarketplace"))}
