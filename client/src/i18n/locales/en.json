@@ -4787,6 +4787,7 @@
       "openLauncher": "Open app grid",
       "classicMenu": "Classic menu",
       "launcherMenu": "App menu",
+      "current": "Active",
       "locked": "Not activated",
       "upgrade": "Upgrade",
       "overview": "Overview",
