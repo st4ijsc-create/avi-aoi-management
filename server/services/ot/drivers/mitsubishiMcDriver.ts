@@ -1,6 +1,12 @@
 /**
  * Sprint F1.3 — Mitsubishi MELSEC MC driver THẬT (package `mcprotocol`, nạp qua loadPackage()).
  *
+ * ⚠️ doc 37 §6.2 / M7 — GIỚI HẠN THƯ VIỆN: `mcprotocol` CHỈ hỗ trợ **1E frame (A-compatible,
+ * đã test FX3U-ENET / Q-series E71)** — KHÔNG phải 3E/4E SLMP mà iQ-R/iQ-F dùng mặc định.
+ * → Với PLC iQ-R: hoặc (a) cấu hình Ethernet module chấp nhận "A-compatible 1E frame" trong
+ * Open Setting của GX Works3, hoặc (b) thay bằng thư viện SLMP 3E/4E. Port KHÔNG có mặc định
+ * chuẩn — kỹ sư phải nhập port khớp Open Setting. Cần bổ sung SH-080008/SH-080956 để verify.
+ *
  * mcprotocol có API callback + translation giống NodeS7:
  *   - new MC(); initiateConnection({port,host,ascii}, cb(err))
  *   - setTranslationCB(tag => address); addItems([...]); readAllItems(cb(anythingBad, values))

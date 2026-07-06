@@ -102,10 +102,13 @@ BEGIN
     ALTER TABLE ot_telemetry ADD PRIMARY KEY (id, "ts");
     PERFORM create_hypertable('ot_telemetry', 'ts',
       chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE, migrate_data => TRUE);
+    -- doc 37 Q6 fix: canonical ot_telemetry (0132) has NO "adapterId" column — segment by
+    -- the real columns (machineId, metric) to match drizzle/timescale/0003. The old value
+    -- would ALTER-fail at Timescale cutover on the main DB.
     ALTER TABLE ot_telemetry SET (
       timescaledb.compress,
       timescaledb.compress_orderby = '"ts" DESC',
-      timescaledb.compress_segmentby = '"adapterId"');
+      timescaledb.compress_segmentby = '"machineId","metric"');
     PERFORM add_compression_policy('ot_telemetry', INTERVAL '30 days', if_not_exists => TRUE);
   END IF;
 

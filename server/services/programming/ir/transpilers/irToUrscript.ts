@@ -109,7 +109,9 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
       case "set_output": {
         // value may be a literal (backward-compatible) or a safe expression.
         const val = slotUr(block.value);
-        lines.push(`${indent}set_digital_out(${block.signal}, ${val})`);
+        // doc 37 M3: set_digital_out is DEPRECATED (URScript §17.1.44) — use the
+        // standard-digital-out replacement.
+        lines.push(`${indent}set_standard_digital_out(${block.signal}, ${val})`);
         break;
       }
       case "wait": {

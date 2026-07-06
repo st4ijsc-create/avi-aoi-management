@@ -38,7 +38,9 @@ export const UR_PORTS = {
 
 export interface UrsimEndpoint {
   host: string;
-  /** Script port — primary (30001, default) or secondary (30002). */
+  /** Script port — secondary (30002, default) or primary (30001). doc 37 M2: URScript
+   *  manual §2 documents the secondary interface (30002) for sending a script from an
+   *  external client, so 30002 is the default. */
   scriptPort?: number;
   /** Dashboard port (29999 default). */
   dashboardPort?: number;
@@ -49,7 +51,7 @@ export interface UrsimEndpoint {
 function resolve(ep: UrsimEndpoint) {
   return {
     host: ep.host,
-    scriptPort: ep.scriptPort ?? UR_PORTS.primary,
+    scriptPort: ep.scriptPort ?? UR_PORTS.secondary,
     dashboardPort: ep.dashboardPort ?? UR_PORTS.dashboard,
     timeoutMs: Math.max(500, ep.timeoutMs ?? 5000),
   };
@@ -147,9 +149,11 @@ export class UrsimClient {
   }
 
   /**
-   * Send a URScript program to the controller over the primary/secondary interface.
-   * The controller compiles + runs it immediately. Returns after the bytes are flushed;
-   * the controller does NOT ack over this channel (state is read via the dashboard).
+   * Send a URScript program to the controller over the secondary/primary interface.
+   * The controller compiles + runs it immediately. doc 37 M1: the URScript manual §2 warns
+   * that "at least 79 bytes have to be read from the socket before closing", otherwise the
+   * data sent from the client may be DISCARDED before the script is executed — so we drain
+   * up to 79 bytes (or until the read timeout) before ending the socket.
    * Throws (honest) when the endpoint is unreachable.
    */
   async sendScript(urscript: string): Promise<{ sent: boolean; bytes: number }> {
@@ -158,6 +162,18 @@ export class UrsimClient {
       const payload = urscript.endsWith("\n") ? urscript : urscript + "\n";
       await new Promise<void>((resolve, reject) => {
         sock.write(payload, "utf8", (err) => (err ? reject(err) : resolve()));
+      });
+      // doc 37 M1: read >=79 bytes (best-effort, bounded by timeout) so the controller
+      // does not discard the script before executing it.
+      await new Promise<void>((resolve) => {
+        let read = 0;
+        const done = () => { cleanup(); resolve(); };
+        const onData = (b: Buffer) => { read += b.length; if (read >= 79) done(); };
+        const timer = setTimeout(done, Math.min(this.ep.timeoutMs, 2000));
+        function cleanup() { clearTimeout(timer); sock.off("data", onData); sock.off("end", done); sock.off("error", done); }
+        sock.on("data", onData);
+        sock.once("end", done);
+        sock.once("error", done);
       });
       return { sent: true, bytes: Buffer.byteLength(payload, "utf8") };
     } finally {

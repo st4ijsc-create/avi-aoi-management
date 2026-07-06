@@ -21,7 +21,15 @@ const otConnectorConfig = z.object({
   readOnly: z.boolean().default(true).describe("Chỉ đọc (an toàn mặc định)"),
 });
 
-const CONFIG_FORM = zodToConfigForm(otConnectorConfig);
+// doc 37 M4: build the auto-form PER connector so the declared defaultPort is actually
+// carried into the JSON-Schema (previously CONFIG_FORM was shared → the port field rendered
+// empty even though defaultPort was declared).
+const configFormFor = (defaultPort: number) =>
+  zodToConfigForm(
+    otConnectorConfig.extend({
+      port: z.number().int().min(1).max(65535).default(defaultPort).describe("Cổng"),
+    }),
+  );
 
 interface OtConnectorSeed {
   id: string;
@@ -41,6 +49,10 @@ const OT_CONNECTORS: readonly OtConnectorSeed[] = [
     defaultPort: 5007,
   },
   { id: "builtin-ethernet-ip", name: "EtherNet/IP Connector", protocol: "ethernet-ip", defaultPort: 44818 },
+  // doc 37 Q8: Omron NJ/NX PLCs are EtherNet/IP CIP tag-symbolic (same family as
+  // Allen-Bradley Logix) → reuse the ethernet-ip driver via a preset, no new FINS driver.
+  // Requires variables flagged "Network Publish" in Sysmac Studio.
+  { id: "builtin-omron-njnx", name: "Omron NJ/NX (EtherNet/IP)", protocol: "ethernet-ip", defaultPort: 44818 },
 ];
 
 /** Build the first-party OT device-connector manifests. */
@@ -52,7 +64,7 @@ export function buildOtConnectorManifests(): PluginManifest[] {
     apiVersion: "^1.0",
     kind: "device-connector" as const,
     protocols: [c.protocol],
-    configSchema: CONFIG_FORM,
+    configSchema: configFormFor(c.defaultPort),
     permissions: {
       publish: [`syn/{site}/{area}/{line}/{cell}/${c.protocol}-*/telemetry`],
       subscribe: [`syn/{site}/{area}/{line}/{cell}/${c.protocol}-*/cmd`],
