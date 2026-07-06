@@ -144,6 +144,14 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[MatviewRefresh] init failed:", (err as any)?.message || err);
   }
 
+  // doc 35 W5-B — dim/fact reporting mart refresh. NO-OP unless REPORTING_MART_ENABLED=true.
+  try {
+    const { startReportingMartRefresh } = await import("../services/reportingMartService");
+    startReportingMartRefresh();
+  } catch (err) {
+    console.error("[ReportingMart] start failed:", (err as any)?.message || err);
+  }
+
   // P1 WS1.1 — Data retention pruning. Opt in via DATA_RETENTION_ENABLED=true.
   try {
     const { startDataRetention } = await import("../services/dataRetentionService");

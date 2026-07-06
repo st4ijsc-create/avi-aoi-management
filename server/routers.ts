@@ -185,6 +185,7 @@ import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-li
 import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
 import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
 import { routingRouter } from "./routers/routingRouter"; // doc 35 W4-E — ISA-95 routing master
+import { reportingMartRouter } from "./routers/reportingMartRouter"; // doc 35 W5-B — dim/fact reporting mart
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -413,6 +414,7 @@ export const appRouter = router({
   stencil: stencilRouter, // doc 35 W4-C
   ecn: ecnRouter, // doc 35 W4-D
   routing: routingRouter, // doc 35 W4-E
+  reportingMart: reportingMartRouter, // doc 35 W5-B
   digitalTwin: digitalTwinRouter,
   realtimeReport: realtimeReportRouter,
   machineContract: machineContractRouter,

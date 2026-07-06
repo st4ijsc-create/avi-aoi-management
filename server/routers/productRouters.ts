@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { storagePut, resolveImageToDataUrl } from "../storage";
 import { detectSpcViolations, detectEwma, rollingCapability } from "../utils/spcRules";
 import { publishSpcAlert, loadDefaultSinksFromEnv } from "../utils/spcAlertSink";
+import { routeSpcViolationsToCentral } from "../services/spcCentralAlertBridge";
 import { calculateAnovaGrr, calculateBias, calculateLinearity, calculateStability } from "../utils/msaAdvanced";
 import { assertInstrumentReady } from "../utils/instrumentGate";
 import { parseCad } from "../utils/cadParsers";
@@ -3026,6 +3027,12 @@ export const measurementSamplesRouter = router({
             summary: v.summary,
           }, sinks).catch(() => undefined);
         }
+        // W5-A: additionally route persisted OOC violations into the CENTRAL
+        // alert/Andon path (predictive_alerts + notify, optional advisory Andon).
+        // Flag-gated (SPC_CENTRAL_ALERT_ENABLED, default OFF); fire-and-forget and
+        // de-duped per (pointDefId, ruleCode) inside the bridge — never blocks this
+        // mutation nor the SPC-only sink fan-out above.
+        routeSpcViolationsToCentral(allViolations, { pointDefId: input.pointDefId });
       }
       if (input.persistRolling) {
         await db.upsertRollingSpc({

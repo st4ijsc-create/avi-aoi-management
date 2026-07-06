@@ -105,6 +105,55 @@ function estimateWithinSubgroupSigma(values: number[], subgroupSize = 5): number
   return limits.estimatedSigma > 0 ? limits.estimatedSigma : stdDev(values, mean(values), true);
 }
 
+/**
+ * Worst-case (minimum) Cpk across every measurement point in a quality gate's scope
+ * (workstation / machine / product-model). Returns null when no point in scope has
+ * both spec limits and enough measurement data to compute a finite Cpk.
+ *
+ * Used by the cpk_threshold quality gate — previously a `currentValue = 0` placeholder
+ * ("CPK requires separate calculation"), which made the gate never trip on real Cpk.
+ * We take the MINIMUM Cpk (the worst point) because a gate breaches if ANY point is
+ * incapable.
+ */
+async function computeWorstCaseCpk(
+  gate: { workstationId?: number | null; productModelId?: number | null; machineId?: number | null },
+  machineIdOverride: number | undefined,
+  windowSize: number,
+): Promise<number | null> {
+  // Collect candidate points from whatever scope(s) the gate defines, deduped by id.
+  const byId = new Map<number, any>();
+  const collect = (rows: any[]) => { for (const r of rows) if (r?.id != null) byId.set(r.id, r); };
+  if (gate.workstationId != null) collect(await db.getMeasurementPointDefsByWorkstation(gate.workstationId));
+  if (gate.machineId != null) collect(await db.getMeasurementPointDefsByMachine(gate.machineId));
+  if (gate.productModelId != null) collect(await db.getMeasurementPointDefsByProductModel(gate.productModelId));
+
+  const withSpec = [...byId.values()].filter(p => p.upperLimit != null && p.lowerLimit != null);
+  if (withSpec.length === 0) return null;
+
+  const machineId = machineIdOverride ?? gate.machineId ?? undefined;
+  let worst: number | null = null;
+  for (const p of withSpec) {
+    const rows = await db.getMeasurementValuesForSPC({
+      measurementPointDefId: p.id,
+      machineId,
+      limit: windowSize,
+    });
+    const values = rows
+      .map((r: any) => Number(r.value))
+      .filter((v: number) => Number.isFinite(v));
+    if (values.length < 2) continue;
+    const usl = Number(p.upperLimit);
+    const lsl = Number(p.lowerLimit);
+    if (!(usl > lsl)) continue;
+    // Cpk uses within-subgroup sigma (R̄/d2); mirrors the workstation-capability path.
+    const estimatedSigma = estimateWithinSubgroupSigma(values, 5);
+    const indices = calculateCapabilityIndices(values, usl, lsl, estimatedSigma);
+    if (indices?.cpk == null || !Number.isFinite(indices.cpk)) continue;
+    worst = worst == null ? indices.cpk : Math.min(worst, indices.cpk);
+  }
+  return worst;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -838,13 +887,35 @@ export const qualityGateRouter = router({
         else break;
       }
 
+      // cpk_threshold gates evaluate the REAL worst-case Cpk across the gate's
+      // measurement points (not a 0 placeholder). Computed from measurement values +
+      // spec limits via the shared capability calc. If nothing in scope is computable,
+      // return a clear not-triggered result rather than a bogus 0 that would trip a
+      // `cpk < threshold` gate on every evaluation.
+      let cpkValue: number | null = null;
+      if (gate.gateType === 'cpk_threshold') {
+        cpkValue = await computeWorstCaseCpk(gate, input.machineId, windowSize);
+        if (cpkValue == null) {
+          return {
+            triggered: false,
+            currentValue: null,
+            threshold: Number(gate.threshold),
+            gateType: gate.gateType,
+            action: gate.action,
+            windowSize: total,
+            details: { total, ngCount, yieldRate, ngRate, consecutiveNG },
+            message: `Quality gate "${gate.name}": Cpk not computable (no measurement point in scope has spec limits + sufficient data)`,
+          };
+        }
+      }
+
       let currentValue: number;
       switch (gate.gateType) {
         case 'yield_rate': currentValue = yieldRate; break;
         case 'ng_count': currentValue = ngCount; break;
         case 'ng_rate': currentValue = ngRate; break;
         case 'consecutive_ng': currentValue = consecutiveNG; break;
-        case 'cpk_threshold': currentValue = 0; break; // CPK requires separate calculation
+        case 'cpk_threshold': currentValue = cpkValue as number; break; // real worst-case Cpk
         default: currentValue = 0;
       }
 

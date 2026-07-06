@@ -63,3 +63,4 @@ export * from "./maintenanceParts"; // doc 35 W4-A — work-order spare-parts co
 export * from "./ncr"; // doc 35 W4-B — nonconformance reports + golden-revalidation flags
 export * from "./ecn"; // doc 35 W4-D — engineering change control (ECN/ECO)
 export * from "./routing"; // doc 35 W4-E — ISA-95 routing master + steps
+export * from "./reportingMart"; // doc 35 W5-B — dim/fact reporting mart
