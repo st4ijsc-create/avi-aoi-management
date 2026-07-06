@@ -23,7 +23,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq, desc } from "drizzle-orm";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { collaborationSessions, operatorAssignments } from "../../drizzle/schema";

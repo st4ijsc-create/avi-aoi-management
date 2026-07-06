@@ -7,7 +7,10 @@
  * confirm no row was tampered with.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
 import {

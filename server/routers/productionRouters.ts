@@ -1,4 +1,7 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, moduleGate, writeProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -301,7 +304,10 @@ export const productionOrderRouter = router({
       return { success: true };
     }),
 
-  createFromTemplate: protectedProcedure
+  // Doc 38 Đợt Q — write floor (block read-only viewer/user) + keep the MOD_PRODUCTION
+  // license gate. Creating a production order from a template is a write op.
+  createFromTemplate: writeProcedure
+    .use(moduleGate("MOD_PRODUCTION"))
     .input(z.object({
       templateId: z.number(),
       orderCode: z.string().min(1),

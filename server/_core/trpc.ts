@@ -223,3 +223,58 @@ export function roleProcedure(...allowedRoles: UserRole[]) {
 export const supervisorProcedure = roleProcedure('admin', 'supervisor').use(require2FA);
 export const qualityProcedure = roleProcedure('admin', 'supervisor', 'quality_inspector').use(require2FA);
 export const operatorProcedure = roleProcedure('admin', 'supervisor', 'operator');
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 38 Đợt Q — RBAC hardening: role-floor procedures.
+//
+// Root gap this closes: `accessControl.requirePermission` only checks the per-user
+// permission BIT — it has NO role-floor. A user of ANY role granted a stray
+// machine_control/canCreate bit could therefore reach a deploy/actuation path.
+// These procedures add a hard role ceiling that composes ON TOP of (never replaces)
+// the existing per-user permission `.use(requirePermission(...))` chains.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Roles that are read-only by default → blocked from writing master-data mutations.
+const WRITE_DENIED_ROLES: UserRole[] = ['viewer', 'user'];
+
+const requireWrite = t.middleware(async opts => {
+  const { ctx, next } = opts;
+  if (!ctx.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  }
+  if (WRITE_DENIED_ROLES.includes(ctx.user.role as UserRole)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Tài khoản chỉ-đọc (viewer/user) không có quyền thay đổi dữ liệu.",
+    });
+  }
+  return next({ ctx: { ...ctx, user: ctx.user } });
+});
+
+/**
+ * `writeProcedure` — a default write floor: authenticated + NOT a read-only role
+ * (viewer/user). Use for master-data mutations that currently sit on a bare
+ * `protectedProcedure` with no other guard. Fine-grained `requirePermission(...)`
+ * still composes on top when a module-level check is wanted.
+ */
+export const writeProcedure = protectedProcedure.use(requireWrite);
+
+// Actuation / deploy role-floor: ONLY these roles may issue a device-control or a
+// deploy command, regardless of any per-user permission bit. All three are in
+// PRIVILEGED_ROLES → 2FA is mandatory (enforced by require2FA below).
+const ACTUATION_ROLES: UserRole[] = ['admin', 'supervisor', 'engineer'];
+
+/**
+ * `actuationProcedure` — role-floor (admin/supervisor/engineer) + 2FA. Use for EVERY
+ * machine-control / deploy path. Chain the per-user permission on top when applying,
+ * e.g. `actuationProcedure.use(requirePermission('machine_control','canCreate'))`, and
+ * append `.use(moduleGate('MOD_X'))` to also license-gate the surface.
+ */
+export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2FA);
+
+/**
+ * `deployProcedure` — deploy of a program / workflow / recipe / fleet-task shares the
+ * same role-floor + 2FA as actuation. Kept as a distinct name so call-sites read
+ * intent; identical enforcement to `actuationProcedure`.
+ */
+export const deployProcedure = actuationProcedure;

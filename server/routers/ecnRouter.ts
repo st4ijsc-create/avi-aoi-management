@@ -17,7 +17,10 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, roleProcedure, router } from "../_core/trpc";
+import { moduleProcedure, roleProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_ENGINEERING (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 import {
   createEcn,
   getEcnById,

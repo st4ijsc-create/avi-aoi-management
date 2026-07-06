@@ -19,9 +19,16 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
+// Doc 38 Đợt Q — license-gate the recipe surface behind MOD_OT_CONTROL (moduleGate is
+// pass-through until the deployment's SKU is configured — no-brick). Shadows
+// `protectedProcedure`; per-action RBAC (machine_control/*) is unchanged.
+const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
+// approve / deploy / rollback change what a MACHINE runs → actuation role-floor
+// (admin/supervisor/engineer) + 2FA, plus the MOD_OT_CONTROL license gate.
+const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 import { machineRecipes, recipeDeployments, machines } from "../../drizzle/schema";
 import {
   createRecipe,
@@ -182,7 +189,7 @@ export const machineRecipeRouter = router({
      * from the creator must approve a recipe version before it can be deployed. The
      * creator self-approving is rejected in the DB layer.
      */
-    approve: protectedProcedure
+    approve: actuationProcedure
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({
         recipeId: z.number().int().positive(),
@@ -202,7 +209,7 @@ export const machineRecipeRouter = router({
      * It does NOT push a select_recipe command to the device (no commandDispatcher).
      * W2-9: refuses to deploy a recipe that has not been approved (second-approver).
      */
-    deploy: protectedProcedure
+    deploy: actuationProcedure
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({
         recipeId: z.number().int().positive(),
@@ -235,7 +242,7 @@ export const machineRecipeRouter = router({
         }
       }),
 
-    rollback: protectedProcedure
+    rollback: actuationProcedure
       .use(requirePermission("machine_control", "canEdit"))
       .input(z.object({ machineId: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {

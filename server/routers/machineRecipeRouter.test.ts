@@ -95,7 +95,10 @@ vi.mock("../_core/accessControl", () => ({
 
 import { machineRecipeRouter } from "./machineRecipeRouter";
 
-const ctx = { user: { id: 7, role: "supervisor", name: "Sup" } } as any;
+// Doc 38 Đợt Q — recipes.approve/deploy/rollback are now actuationProcedure
+// (role-floor admin/supervisor/engineer + 2FA). The privileged supervisor fixture
+// must have 2FA enabled to reach these paths.
+const ctx = { user: { id: 7, role: "supervisor", name: "Sup", twoFactorEnabled: true } } as any;
 const caller = machineRecipeRouter.createCaller(ctx);
 
 beforeEach(() => {

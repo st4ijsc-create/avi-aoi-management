@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { robots, robotTelemetry, robotJobs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
@@ -13,18 +14,26 @@ const vendorEnum = z.enum(["fanuc", "mitsubishi", "delta", "techman", "sim", "vd
 const kindEnum = z.enum(["arm", "scara", "cobot", "agv"]);
 
 export const robotRouter = router({
-  list: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(robots).orderBy(desc(robots.updatedAt));
-  }),
+  // Doc 38 Đợt Q — these rows carry `endpoint` + `connectionOptions` (device address
+  // and, potentially, connection credentials). Gate behind machine_control/canView so
+  // the connection surface is not exposed to every authenticated user.
+  list: protectedProcedure
+    .use(requirePermission("machine_control", "canView"))
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(robots).orderBy(desc(robots.updatedAt));
+    }),
 
-  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return null;
-    const [row] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
-    return row ?? null;
-  }),
+  get: protectedProcedure
+    .use(requirePermission("machine_control", "canView"))
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [row] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
+      return row ?? null;
+    }),
 
   telemetry: protectedProcedure
     .input(z.object({ robotId: z.number(), limit: z.number().min(1).max(500).default(100) }))

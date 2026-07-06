@@ -10,7 +10,10 @@
  * Read-only / protected. Auto-degrade về rỗng khi DB chưa sẵn sàng.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleProcedure, router } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { getDb } from "../db/connection";
 import { and, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import {

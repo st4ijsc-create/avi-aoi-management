@@ -16,9 +16,16 @@
 import { z } from "zod";
 import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+// Doc 38 Đợt Q — license-gate the whole programming surface behind MOD_ENGINEERING
+// (moduleGate is pass-through until the deployment's SKU is configured — no-brick).
+// Shadows `protectedProcedure`; per-action RBAC is unchanged.
+const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
+// Deploy/rollback of a built program to a device is an ACTUATION path → role-floor
+// (admin/supervisor/engineer) + 2FA, plus the same MOD_ENGINEERING license gate.
+const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
 import {
   programProjects,
   programArtifacts,
@@ -283,7 +290,7 @@ export const programmingRouter = router({
         .orderBy(desc(programDeployments.id));
     }),
 
-  deployBuild: protectedProcedure
+  deployBuild: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -291,12 +298,19 @@ export const programmingRouter = router({
         stage: z.enum(["staging", "production"]).default("staging"),
         idempotencyKey: z.string().min(1).max(128),
         deviceId: z.number().int().positive().optional(),
-        /** HITL sign-off: the confirming user. Required for a REAL deploy. */
+        /** HITL sign-off: the confirming (second) user. */
         confirmedBy: z.number().int().positive().optional(),
         actionId: z.string().min(1).max(128),
         /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
         reason: z.string().max(2000).optional(),
-      }),
+      })
+        // Doc 38 Đợt Q — four-eyes enforced AT THE SCHEMA for the sensitive path: a
+        // PRODUCTION deploy must name a confirming approver (staging may self-sign).
+        // The service layer additionally rejects the requester self-approving.
+        .refine((v) => v.stage !== "production" || v.confirmedBy != null, {
+          message: "Deploy production bắt buộc có người ký duyệt (four-eyes): thiếu confirmedBy.",
+          path: ["confirmedBy"],
+        }),
     )
     .mutation(async ({ input, ctx }) => {
       return deployBuild(
@@ -336,7 +350,7 @@ export const programmingRouter = router({
         .orderBy(users.username);
     }),
 
-  rollbackDeployment: protectedProcedure
+  rollbackDeployment: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({

@@ -18,13 +18,17 @@
 import { z } from "zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 // Doc 37 P0-3 — gate the Orchestration Studio surface behind MOD_ENGINEERING
-// (flag LICENSE_MODULE_GATE_ENABLED, default OFF → pass-through). Shadows
+// (flag LICENSE_MODULE_GATE_ENABLED → pass-through until SKU configured). Shadows
 // `protectedProcedure`; per-action RBAC + FOE_ENABLED guards are unchanged.
 const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
+// Doc 38 Đợt Q — role-floor (admin/supervisor/engineer) + 2FA for every deploy/run
+// (device-actuation) path, PLUS the same MOD_ENGINEERING license gate. Per-action
+// requirePermission("machine_control", …) still composes on top.
+const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
@@ -87,7 +91,7 @@ export const orchestrationRouter = router({
     }),
 
   /** Deploy (validate + persist) a workflow definition. Flag-gated. */
-  deployWorkflow: protectedProcedure
+  deployWorkflow: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ definition: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ input, ctx }) => {
@@ -134,7 +138,7 @@ export const orchestrationRouter = router({
    * W3-11 — ROLL BACK a workflow to an earlier version by re-deploying that version's
    * definition as a NEW version (append-only). Flag-gated; machine_control/canCreate.
    */
-  rollbackWorkflow: protectedProcedure
+  rollbackWorkflow: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ workflowId: z.number().int().positive(), version: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -173,7 +177,7 @@ export const orchestrationRouter = router({
     }),
 
   /** Start a run of a deployed workflow (by ref). Flag-gated. */
-  startRun: protectedProcedure
+  startRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -186,7 +190,7 @@ export const orchestrationRouter = router({
     }),
 
   /** Resume a run paused at a hitl_gate (approve/reject). Flag-gated. */
-  resumeRun: protectedProcedure
+  resumeRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -283,7 +287,7 @@ export const orchestrationRouter = router({
     }),
 
   /** Abort an in-flight run (terminal). */
-  abortRun: protectedProcedure
+  abortRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ runId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ input, ctx }) => {

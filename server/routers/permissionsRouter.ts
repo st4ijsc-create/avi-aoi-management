@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+// Doc 38 Đợt Q — import the CANONICAL adminProcedure (admin role + 2FA enforced)
+// instead of the local no-2FA shim that used to live in this file.
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { eq, and } from "drizzle-orm";
 import { getDb as getDbRaw } from "../db";
@@ -290,30 +292,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
   ]
 };
 
-// Admin procedure - only admin users can access
-const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
-  }
-  return next({ ctx });
-});
-
-// Supervisor procedure - admin or supervisor can access
-const supervisorProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== 'admin' && ctx.user.role !== 'supervisor') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Supervisor access required' });
-  }
-  return next({ ctx });
-});
-
-// Quality inspector procedure - admin, supervisor, or quality_inspector can access
-const qualityProcedure = protectedProcedure.use(({ ctx, next }) => {
-  const allowedRoles = ['admin', 'supervisor', 'quality_inspector'];
-  if (!allowedRoles.includes(ctx.user.role)) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Quality inspector access required' });
-  }
-  return next({ ctx });
-});
+// Doc 38 Đợt Q — the local admin/supervisor/quality procedure shims (which did NOT
+// enforce 2FA and thus undercut the canonical guards) have been removed. `adminProcedure`
+// now comes from _core/trpc (admin + 2FA). The supervisor/quality shims were dead code
+// (every handler used adminProcedure) and were dropped.
 
 // Permission category enum for validation
 const permissionCategoryEnum = z.enum([

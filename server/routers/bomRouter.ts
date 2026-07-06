@@ -16,7 +16,10 @@
  * authenticated operator) — parallel to processResult.
  */
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
+// until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
+const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import { recordComponentInstallation } from "../services/componentInstallationService";

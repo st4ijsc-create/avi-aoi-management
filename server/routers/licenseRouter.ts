@@ -52,7 +52,13 @@ const publicLicenseRouter = router({
    * Activate a license key online via License Server, fallback to local DB
    * Flow: License Server API → store locally → return result
    */
-  activate: publicProcedure
+  // Doc 38 Đợt Q — was publicProcedure (NO auth): anyone could push a license key onto
+  // the deployment. Now admin-only (+2FA). RSA signature verification inside
+  // licenseService is unchanged. NOTE (bootstrap): CORE_ADMIN pages stay reachable in
+  // the no_license state, so an admin can always log in and activate; if a headless
+  // first-boot provisioning flow needs an unauthenticated path, add a separate
+  // rate-limited + audited bootstrap route instead of reopening this one.
+  activate: adminProcedure
     .input(z.object({
       licenseKey: z.string().min(1),
       productCode: z.string().min(1),
@@ -362,7 +368,8 @@ const publicLicenseRouter = router({
    * Returns base64-encoded JSON with { licenseKey, hardwareFingerprint, productCode, timestamp }
    * Admin sends this data to License Server → offlineActivation.generatePackage
    */
-  generateOfflineRequest: publicProcedure
+  // Doc 38 Đợt Q — admin-only (was public). Emits a hardware-bound activation request.
+  generateOfflineRequest: adminProcedure
     .input(z.object({
       licenseKey: z.string().min(1),
     }))
@@ -381,7 +388,9 @@ const publicLicenseRouter = router({
    * Step 3: Apply offline license package
    * Validates the signed package from License Server, stores in DB, saves to disk
    */
-  applyOfflineLicense: publicProcedure
+  // Doc 38 Đợt Q — admin-only (was public). The signed package is still verified
+  // against the RSA public key inside licenseService before it is applied.
+  applyOfflineLicense: adminProcedure
     .input(z.object({
       offlinePackageBase64: z.string().min(1),
       licenseKey: z.string().min(1),

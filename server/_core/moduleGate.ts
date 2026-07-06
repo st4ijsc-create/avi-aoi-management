@@ -14,18 +14,29 @@
  * `trpc.ts`. It ADDS to (never replaces) existing RBAC/permission checks.
  *
  * ── Behaviour ─────────────────────────────────────────────────────────────────
- *   flag OFF (default)         → pass-through (identical to today)
- *   LICENSE_BYPASS=true        → pass-through (offline deployment)
- *   unknown / core module      → pass-through (never lock a CORE_* app)
- *   ON + module licensed       → pass-through
- *   ON + module NOT licensed   → TRPCError FORBIDDEN (marker: MODULE_NOT_LICENSED)
+ *   flag OFF                    → pass-through (identical to legacy behaviour)
+ *   LICENSE_BYPASS=true         → pass-through (offline deployment)
+ *   unknown / core module       → pass-through (never lock a CORE_* app)
+ *   SKU NOT configured          → pass-through (see "No-brick" below)
+ *   ON + module licensed        → pass-through
+ *   ON + module NOT licensed    → TRPCError FORBIDDEN (marker: MODULE_NOT_LICENSED)
+ *
+ * ── Doc 38 Đợt Q — flag DEFAULT ON, but NO-BRICK ─────────────────────────────
+ * `LICENSE_MODULE_GATE_ENABLED` now defaults ON (set it to "false" to fully disable).
+ * To guarantee flipping it on can NEVER brick a deployment, the gate enforces ONLY
+ * when the deployment's SKU is EXPLICITLY populated. Concretely it fails OPEN when:
+ *   (a) there is NO license row at all, OR
+ *   (b) every license row's `allowed_modules` is empty/null (and no disk-cache SKU).
+ * i.e. a system that has never been told which modules it owns lets everything
+ * through. A module is denied only once at least one license row lists modules
+ * explicitly and the requested module is absent from that union.
  *
  * ── Fail-safe ─────────────────────────────────────────────────────────────────
  * Entitlement resolution touches the DB / license guard. If that resolution THROWS
  * (DB down, guard mid-init, …) we ALLOW-with-log rather than deny, so a transient
  * infrastructure blip can never self-lock a production tenant out of a paid module.
- * A genuine "not licensed" outcome (resolution succeeded, module absent) is a hard
- * deny. This asymmetry is deliberate.
+ * A genuine "not licensed" outcome (resolution succeeded, SKU configured, module
+ * absent) is a hard deny. This asymmetry is deliberate.
  *
  * Load-order safety: only pure shared/registry helpers + ENV are imported at module
  * top. The DB / licenseGuard / licenseService are dynamically imported INSIDE the
@@ -44,29 +55,30 @@ import { ENV } from "./env";
 import type { TrpcContext } from "./context";
 
 /**
+ * Result of entitlement resolution.
+ *  - `configured: false` → the deployment has never listed which modules it owns
+ *    (no license row, or all rows have empty allowed_modules). Caller fails OPEN.
+ *  - `configured: true`  → `allowed` is the authoritative set to enforce against.
+ */
+type Entitlement = { configured: false } | { configured: true; allowed: string[] };
+
+/**
  * Resolve the set of module codes the current deployment is entitled to.
  *
- * This mirrors the aggregation logic of `licenseRouter.getAllowedModules`
- * (single source of truth for entitlement): LicenseGuard state gates whether any
- * optional modules are visible, then modules are aggregated across ALL active +
- * expired (grace-period) licenses, with a disk-cache fallback, and finally bounded
- * by the deployment EDITION ceiling when a profile is enforced. Core modules are
- * always included.
+ * Mirrors `licenseRouter.getAllowedModules` aggregation (single source of truth):
+ * modules are aggregated across ALL active + expired (grace-period) licenses, with a
+ * disk-cache fallback, and finally bounded by the deployment EDITION ceiling when a
+ * profile is enforced. Core modules are always included.
+ *
+ * Doc 38 no-brick: if NO license row carries an explicit `allowed_modules` list
+ * (and no disk-cache SKU exists) the deployment is treated as UNCONFIGURED → the
+ * caller allows the request rather than restricting to core-only.
  *
  * @throws if the DB / guard cannot be reached — caller treats a throw as fail-safe.
  */
-async function resolveAllowedModuleCodes(): Promise<string[]> {
+async function resolveEntitlement(): Promise<Entitlement> {
   const db = await import("../db");
-  const { licenseGuard } = await import("../license/license-guard");
   const { licenseService } = await import("../license/license-service");
-
-  const guardState = licenseGuard.getStatus().state; // normal|warning|readonly|locked|no_license
-  const isGuardAllowing = ["normal", "warning", "readonly"].includes(guardState);
-
-  // Guard blocks optional modules (locked / no_license) → core only.
-  if (!isGuardAllowing) {
-    return [...CORE_MODULE_CODES];
-  }
 
   // Aggregate module codes from every active + expired (grace) license.
   const { licenses: activeLicenses } = await db.getAllLicenses({ status: "active", limit: 100 });
@@ -87,6 +99,11 @@ async function resolveAllowedModuleCodes(): Promise<string[]> {
     }
   }
 
+  // ── No-brick: SKU never populated → deployment is UNCONFIGURED → fail OPEN. ──
+  if (aggregated.length === 0) {
+    return { configured: false };
+  }
+
   let all = [...new Set([...CORE_MODULE_CODES, ...aggregated])];
 
   // Bound by edition ceiling (doc 33 I3) when a deployment profile is enforced.
@@ -95,7 +112,7 @@ async function resolveAllowedModuleCodes(): Promise<string[]> {
     all = resolveEditionModules(profile.edition, all);
   }
 
-  return all;
+  return { configured: true, allowed: all };
 }
 
 /**
@@ -129,9 +146,13 @@ export function moduleGate(moduleCode: string) {
     }
 
     try {
-      const allowed = await resolveAllowedModuleCodes();
-      if (!allowed.includes(moduleCode)) {
-        // Hard deny — resolution succeeded and the module is genuinely absent.
+      const entitlement = await resolveEntitlement();
+      // No-brick: SKU never configured → allow (never lock an unconfigured system).
+      if (!entitlement.configured) {
+        return next({ ctx });
+      }
+      if (!entitlement.allowed.includes(moduleCode)) {
+        // Hard deny — resolution succeeded, SKU configured, module genuinely absent.
         throw new TRPCError({
           code: "FORBIDDEN",
           // "MODULE_NOT_LICENSED" marker lets the client distinguish a license

@@ -1,4 +1,4 @@
-import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
+import { protectedProcedure, qualityProcedure, writeProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import * as db from "../db";
@@ -1354,7 +1354,7 @@ export const productMachineMappingRouter = router({
       return db.getMappingsByProduct(input.productModelId);
     }),
 
-  create: protectedProcedure
+  create: writeProcedure
     .input(z.object({
       productModelId: z.number().int().positive(),
       machineId: z.number().int().positive(),
@@ -1379,7 +1379,7 @@ export const productMachineMappingRouter = router({
       return result;
     }),
 
-  update: protectedProcedure
+  update: writeProcedure
     .input(z.object({
       id: z.number().int().positive(),
       priority: z.number().int().nonnegative().optional(),
@@ -1405,7 +1405,7 @@ export const productMachineMappingRouter = router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: writeProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       await db.deleteProductMachineMapping(input.id);
@@ -1534,7 +1534,7 @@ export const productDocumentRouter = router({
         .orderBy(desc(productDocuments.createdAt));
     }),
 
-  upload: protectedProcedure
+  upload: writeProcedure
     .input(z.object({
       productModelId: z.number(),
       fileName: z.string().min(1).max(255),

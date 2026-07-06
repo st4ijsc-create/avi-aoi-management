@@ -1,4 +1,4 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import * as db from "../db";
 
@@ -15,7 +15,7 @@ export const shiftConfigRouter = router({
       return db.getDefaultShiftConfigs();
     }),
 
-  create: protectedProcedure
+  create: writeProcedure
     .input(z.object({
       factoryId: z.number().optional(),
       name: z.string(),
@@ -30,7 +30,7 @@ export const shiftConfigRouter = router({
       return db.createShiftConfig(input);
     }),
 
-  update: protectedProcedure
+  update: writeProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().optional(),
@@ -48,7 +48,7 @@ export const shiftConfigRouter = router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: writeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteShiftConfig(input.id);

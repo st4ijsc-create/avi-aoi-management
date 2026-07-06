@@ -21,13 +21,17 @@
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 // Doc 37 P0-3 — gate the fleet-orchestration (OT) surface behind MOD_OT_CONTROL
-// (flag LICENSE_MODULE_GATE_ENABLED, default OFF → pass-through). Shadows
+// (flag LICENSE_MODULE_GATE_ENABLED → pass-through until SKU configured). Shadows
 // `protectedProcedure`; per-action RBAC + FLEET_ORCH_ENABLED guards are unchanged.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
+// Doc 38 Đợt Q — every fleet WRITE (task/zone/reservation/resource/charging) drives
+// robot/AMR movement → actuation role-floor (admin/supervisor/engineer) + 2FA, plus
+// the MOD_OT_CONTROL license gate. requirePermission("machine_control", …) composes on top.
+const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../drizzle/schema";
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";
@@ -187,7 +191,7 @@ export const fleetRouter = router({
     }),
 
   // ── TASKS (admin actions) — flag-gated ────────────────────────────────────
-  createTask: protectedProcedure
+  createTask: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -230,7 +234,7 @@ export const fleetRouter = router({
     }),
 
   /** Run the allocator on a pending task (assign best device). */
-  allocate: protectedProcedure
+  allocate: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
@@ -239,7 +243,7 @@ export const fleetRouter = router({
     }),
 
   /** Manually (re)assign a task to a specific device. */
-  assign: protectedProcedure
+  assign: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive(), deviceId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
@@ -288,7 +292,7 @@ export const fleetRouter = router({
    * completion transition a FOE workflow / scheduler calls when a task's device work
    * finishes. Publishes task.completed / task.failed on the eventBus (U1-a).
    */
-  completeTask: protectedProcedure
+  completeTask: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -330,7 +334,7 @@ export const fleetRouter = router({
     }),
 
   /** Rebalance a device's open tasks (e.g. after it went offline). */
-  rebalanceDevice: protectedProcedure
+  rebalanceDevice: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), reason: z.string().max(200).optional() }))
     .mutation(async ({ input }) => {
@@ -339,7 +343,7 @@ export const fleetRouter = router({
     }),
 
   /** Cancel a task (terminal). */
-  cancelTask: protectedProcedure
+  cancelTask: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive(), reason: z.string().max(200).optional() }))
     .mutation(async ({ input }) => {
@@ -358,7 +362,7 @@ export const fleetRouter = router({
     }),
 
   // ── ZONES + reservations (admin actions) — flag-gated ─────────────────────
-  createZone: protectedProcedure
+  createZone: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -389,7 +393,7 @@ export const fleetRouter = router({
       return { ok: true, id: row?.id };
     }),
 
-  reserve: protectedProcedure
+  reserve: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -404,7 +408,7 @@ export const fleetRouter = router({
       return reserveZone({ zoneId: input.zoneId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
     }),
 
-  release: protectedProcedure
+  release: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), zoneId: z.number().int().positive().optional() }))
     .mutation(async ({ input }) => {
@@ -417,7 +421,7 @@ export const fleetRouter = router({
    * waiter in each detected cycle to break it (reservation STATE only, no device
    * command). Flag-gated + machine_control/canCreate.
    */
-  resolveDeadlock: protectedProcedure
+  resolveDeadlock: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .mutation(async () => {
       requireFlag();
@@ -455,7 +459,7 @@ export const fleetRouter = router({
     }),
 
   // ── G2-a OPERATIONS (admin) — flag-gated ───────────────────────────────────
-  createOperation: protectedProcedure
+  createOperation: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -493,7 +497,7 @@ export const fleetRouter = router({
     }),
 
   /** Map a qualified program to an operation (deviceKind-scoped). */
-  mapOperationProgram: protectedProcedure
+  mapOperationProgram: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -540,7 +544,7 @@ export const fleetRouter = router({
     .query(async ({ input }) => pickVariantForProgram(input.programProjectId, input.seed)),
 
   /** Record an A/B outcome against a variant arm (folds into rolling metrics). */
-  recordVariantOutcome: protectedProcedure
+  recordVariantOutcome: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ variantId: z.number().int().positive(), success: z.boolean(), cycleMs: z.number().int().min(0).optional() }))
     .mutation(async ({ input }) => {
@@ -548,7 +552,7 @@ export const fleetRouter = router({
       return recordVariantOutcome(input.variantId, { success: input.success, cycleMs: input.cycleMs });
     }),
 
-  createVariant: protectedProcedure
+  createVariant: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -622,7 +626,7 @@ export const fleetRouter = router({
         .limit(input?.limit ?? 200);
     }),
 
-  createResource: protectedProcedure
+  createResource: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -655,7 +659,7 @@ export const fleetRouter = router({
       return { ok: true, id: row?.id };
     }),
 
-  reserveResource: protectedProcedure
+  reserveResource: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -670,7 +674,7 @@ export const fleetRouter = router({
       return claimResource({ resourceId: input.resourceId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
     }),
 
-  releaseResource: protectedProcedure
+  releaseResource: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), resourceId: z.number().int().positive().optional() }))
     .mutation(async ({ input }) => {
@@ -710,7 +714,7 @@ export const fleetRouter = router({
         .limit(input?.limit ?? 200);
     }),
 
-  createCharger: protectedProcedure
+  createCharger: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -744,7 +748,7 @@ export const fleetRouter = router({
     }),
 
   /** Run the predictive-charging sweep on demand (also runs on a background timer). */
-  sweepCharging: protectedProcedure
+  sweepCharging: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .mutation(async () => {
       requireResourceFlag();
