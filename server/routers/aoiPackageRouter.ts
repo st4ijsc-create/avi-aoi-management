@@ -28,6 +28,7 @@ import {
   machines,
   productInspections,
   packageActivityLogs,
+  measurementResults,
 } from "../../drizzle/schema";
 import JSZip from "jszip";
 import fs from "fs";
@@ -588,29 +589,78 @@ export const aoiPackageRouter = router({
           // canonical serverDowngradeCount → reconcileInspectionOverallNG path).
           let zipDowngradeCount = 0;
 
-          // Insert package image records
-          if (normalizedMeasurements.length > 0) {
-            const imageRecords = normalizedMeasurements.map((point: any) => ({
-              packageId: pkg.id,
-              pointCode: point.pointId || point.pointCode || point.code || 'UNKNOWN',
-              pointName: point.name || null,
-              fileName: point.fileName,
-              result: point.result as "OK" | "NG" | "NTF" | undefined,
-              measurementValue: (point.measuredValue || point.value)?.toString() || null,
-            }));
-
-            if (imageRecords.length > 0) {
-              await database.insert(packageImages).values(imageRecords);
-            }
+          // ── P1-A (doc 38 R-2b): pre-resolve point-def ids ONCE, outside tx ──
+          // Each measurement-insert branch below used to call
+          // `await resolvePointDefId(code)` per row (a DB round-trip + possible
+          // auto-create INSIDE the write loop). Resolve every image-bearing
+          // measurement ONCE here, keyed by its ABSOLUTE index (the same index
+          // the branches use for the `Point_N` fallback code). Point-def
+          // auto-creation is idempotent master-data and intentionally stays
+          // OUTSIDE the atomic result-write transaction. The spec-gate EVAL is
+          // kept inline per branch so OK→NG is only counted for rows that are
+          // actually (re)written with a result (the imageUrl-only UPDATE path is
+          // NOT gated — unchanged behavior).
+          const pointsWithImages = normalizedMeasurements.filter((point) => point.fileName);
+          const resolvedPoints: Array<{
+            pointCode: string;
+            pointName: string;
+            pointDefId: number;
+            gateDef: any | null;
+            measuredVal: any;
+            measuredStr: string | null;
+            isNumeric: boolean;
+          }> = [];
+          for (let k = 0; k < pointsWithImages.length; k++) {
+            const point = pointsWithImages[k] as any;
+            const pointCode = point.pointId || point.pointCode || point.code || `Point_${k + 1}`;
+            const pointName = point.name || pointCode;
+            const measuredVal =
+              point.measuredValue !== undefined ? point.measuredValue : point.value;
+            const measuredStr =
+              measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
+            const isNumeric =
+              measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== "";
+            const pointDefId = await resolvePointDefId(pointCode);
+            assertValidPointDefId(
+              pointDefId,
+              `AOI commit (pkg=${pkg.packageId}, point=${pointCode})`,
+            );
+            const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
+            resolvedPoints.push({ pointCode, pointName, pointDefId, gateDef, measuredVal, measuredStr, isNumeric });
           }
 
-          // Create or link to inspection record
+          // Outer-scope values needed AFTER the tx commits (logging/hooks/return).
           let linkedInspectionId: number | undefined;
           let createdInspection = false;
+          let finalOverallResult: "OK" | "NG" | "NTF" = "OK";
+
+          // ── P1-A: ONE atomic transaction for ALL commit writes ──────────────
+          // package images + inspection (find/create) + measurement results +
+          // spec-gate overall-NG promotion + package status→committed. A crash
+          // mid-write can no longer leave a partially-committed package (e.g.
+          // measurement rows with no committed header, or an OK header over NG
+          // points). ZIP/object I/O and point-def auto-create already ran ABOVE
+          // (outside the tx); the post-commit hooks run BELOW (outside).
+          await database.transaction(async (tx) => {
+            // Insert package image records
+            if (normalizedMeasurements.length > 0) {
+              const imageRecords = normalizedMeasurements.map((point: any) => ({
+                packageId: pkg.id,
+                pointCode: point.pointId || point.pointCode || point.code || 'UNKNOWN',
+                pointName: point.name || null,
+                fileName: point.fileName,
+                result: point.result as "OK" | "NG" | "NTF" | undefined,
+                measurementValue: (point.measuredValue || point.value)?.toString() || null,
+              }));
+
+              if (imageRecords.length > 0) {
+                await tx.insert(packageImages).values(imageRecords);
+              }
+            }
 
           if (metaData?.serialNumber) {
             // Try to find existing inspection
-            const inspections = await database
+            const inspections = await tx
               .select()
               .from(productInspections)
               .where(
@@ -638,7 +688,7 @@ export const aoiPackageRouter = router({
               const overallResult = metaData.overallResult 
                 || (metaData.summary?.ng && metaData.summary.ng > 0 ? "NG" : "OK");
 
-              const [newInspection] = await database
+              const [newInspection] = await tx
                 .insert(productInspections)
                 .values({
                   machineId: machine.id,
@@ -672,165 +722,109 @@ export const aoiPackageRouter = router({
 
             // Create or update measurement results with image URLs pointing to AOI package images
             // Applies for BOTH new and existing inspections
-            if (linkedInspectionId && normalizedMeasurements.length > 0) {
-              const { measurementResults } = await import("../../drizzle/schema");
-
+            if (linkedInspectionId && pointsWithImages.length > 0) {
               const inspectionTime2Raw = metaData.inspectionTime
                 ? new Date(metaData.inspectionTime)
                 : metaData.startedAt
                 ? new Date(metaData.startedAt)
                 : new Date();
               const inspectionTime = new Date(inspectionTime2Raw.getTime() - inspectionTime2Raw.getTimezoneOffset() * 60000);
-              
-              const pointsWithImages = normalizedMeasurements
-                .filter((point) => point.fileName);
 
-              if (pointsWithImages.length > 0) {
-                // For existing inspections, try to update existing records instead of creating duplicates
-                if (!createdInspection) {
-                  const existingRecords = await database
-                    .select({ id: measurementResults.id, remark: measurementResults.remark })
-                    .from(measurementResults)
-                    .where(eq(measurementResults.inspectionId, linkedInspectionId!))
-                    .orderBy(measurementResults.id);
+              // Build one measurement_results row from a pre-resolved point
+              // (pointDefId/gateDef resolved OUTSIDE the tx above). The spec-gate
+              // EVAL runs here so `zipDowngradeCount` is only bumped for rows we
+              // actually (re)write with a result.
+              const buildRecord = (absIdx: number, point: any) => {
+                const rp = resolvedPoints[absIdx];
+                let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
+                let specGateRemark: string | undefined;
+                if (rp.gateDef) {
+                  const evalRes = evaluatePointResult(rp.gateDef as any, { measuredValue: rp.measuredVal as any }, effectiveResult);
+                  effectiveResult = evalRes.result;
+                  if (evalRes.overridden) {
+                    zipDowngradeCount++;
+                    specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+                  }
+                }
+                return {
+                  inspectionId: linkedInspectionId!,
+                  pointDefId: rp.pointDefId,
+                  measuredValue: rp.isNumeric ? rp.measuredStr : null,
+                  measuredValueText: rp.measuredStr,
+                  result: effectiveResult,
+                  imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
+                  remark: specGateRemark ?? (point.remark || `${rp.pointName}${rp.measuredVal !== undefined ? ` (${rp.measuredVal}${point.unit || ''})` : ''}`),
+                  createdAt: inspectionTime,
+                };
+              };
 
-                  if (existingRecords.length > 0) {
-                    // Update existing records by index order (both lists correspond 1:1)
-                    const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
+              // For existing inspections, update existing records instead of creating duplicates
+              if (!createdInspection) {
+                const existingRecords = await tx
+                  .select({ id: measurementResults.id, remark: measurementResults.remark })
+                  .from(measurementResults)
+                  .where(eq(measurementResults.inspectionId, linkedInspectionId!))
+                  .orderBy(measurementResults.id);
+
+                if (existingRecords.length > 0) {
+                  // Batch UPDATE existing rows' imageUrl by index order (was one
+                  // UPDATE per row): pair id↔url via a VALUES list so it runs as
+                  // a SINGLE statement (each id/url is a bound scalar param).
+                  const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
+                  if (updateCount > 0) {
+                    const pairs = [];
                     for (let i = 0; i < updateCount; i++) {
-                      const point = pointsWithImages[i];
-                      await database
-                        .update(measurementResults)
-                        .set({ imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}` })
-                        .where(eq(measurementResults.id, existingRecords[i].id));
+                      const url = `/api/aoi/image/${pkg.packageId}/${pointsWithImages[i].fileName}`;
+                      pairs.push(sql`(${existingRecords[i].id}::int, ${url}::text)`);
                     }
+                    await tx.execute(sql`
+                      UPDATE ${measurementResults} AS mr
+                      SET "imageUrl" = data.image_url
+                      FROM (VALUES ${sql.join(pairs, sql`, `)}) AS data(id, image_url)
+                      WHERE mr.id = data.id
+                    `);
+                  }
 
-                    // Insert any extra AOI measurements beyond existing count
-                    if (pointsWithImages.length > existingRecords.length) {
-                      const extraSource = pointsWithImages.slice(existingRecords.length);
-                      const extraRecords = [];
-                      for (let idx = 0; idx < extraSource.length; idx++) {
-                        const point = extraSource[idx];
-                        const realIdx = existingRecords.length + idx;
-                        const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${realIdx + 1}`;
-                        const pointName = point.name || pointCode;
-                        const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
-                        const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
-                        const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                        const pointDefId = await resolvePointDefId(pointCode);
-                        assertValidPointDefId(pointDefId, `AOI commit extra record (pkg=${pkg.packageId}, point=${pointCode})`);
-                        // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
-                        const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
-                        let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
-                        let specGateRemark: string | undefined;
-                        if (gateDef) {
-                          const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
-                          effectiveResult = evalRes.result;
-                          if (evalRes.overridden) {
-                            zipDowngradeCount++;
-                            specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
-                          }
-                        }
-                        extraRecords.push({
-                          inspectionId: linkedInspectionId!,
-                          pointDefId,
-                          measuredValue: isNumeric ? measuredStr : null,
-                          measuredValueText: measuredStr,
-                          result: effectiveResult,
-                          imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                          remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
-                          createdAt: inspectionTime,
-                        });
-                      }
-                      await database.insert(measurementResults).values(extraRecords);
+                  // Insert any extra AOI measurements beyond existing count
+                  if (pointsWithImages.length > existingRecords.length) {
+                    const extraRecords = [];
+                    for (let realIdx = existingRecords.length; realIdx < pointsWithImages.length; realIdx++) {
+                      extraRecords.push(buildRecord(realIdx, pointsWithImages[realIdx] as any));
                     }
-                  } else {
-                    // Existing inspection but no measurement records yet — insert all
-                    const measurementRecords = [];
-                    for (let idx = 0; idx < pointsWithImages.length; idx++) {
-                      const point = pointsWithImages[idx];
-                      const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
-                      const pointName = point.name || pointCode;
-                      const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
-                      const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
-                      const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                      const pointDefId = await resolvePointDefId(pointCode);
-                      assertValidPointDefId(pointDefId, `AOI commit existing-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
-                      // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
-                      const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
-                      let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
-                      let specGateRemark: string | undefined;
-                      if (gateDef) {
-                        const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
-                        effectiveResult = evalRes.result;
-                        if (evalRes.overridden) {
-                          zipDowngradeCount++;
-                          specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
-                        }
-                      }
-                      measurementRecords.push({
-                        inspectionId: linkedInspectionId!,
-                        pointDefId,
-                        measuredValue: isNumeric ? measuredStr : null,
-                        measuredValueText: measuredStr,
-                        result: effectiveResult,
-                        imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                        remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
-                        createdAt: inspectionTime,
-                      });
-                    }
-                    await database.insert(measurementResults).values(measurementRecords);
+                    await tx.insert(measurementResults).values(extraRecords);
                   }
                 } else {
-                  // New inspection — insert all measurement records
+                  // Existing inspection but no measurement records yet — insert all
                   const measurementRecords = [];
                   for (let idx = 0; idx < pointsWithImages.length; idx++) {
-                    const point = pointsWithImages[idx];
-                    const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
-                    const pointName = point.name || pointCode;
-                    const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
-                    const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
-                    const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                    const pointDefId = await resolvePointDefId(pointCode);
-                    assertValidPointDefId(pointDefId, `AOI commit new-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
-                    // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
-                    const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
-                    let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
-                    let specGateRemark: string | undefined;
-                    if (gateDef) {
-                      const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
-                      effectiveResult = evalRes.result;
-                      if (evalRes.overridden) {
-                        zipDowngradeCount++;
-                        specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
-                      }
-                    }
-                    measurementRecords.push({
-                      inspectionId: linkedInspectionId!,
-                      pointDefId,
-                      measuredValue: isNumeric ? measuredStr : null,
-                      measuredValueText: measuredStr,
-                      result: effectiveResult,
-                      imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                      remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
-                      createdAt: inspectionTime,
-                    });
+                    measurementRecords.push(buildRecord(idx, pointsWithImages[idx] as any));
                   }
-                  await database.insert(measurementResults).values(measurementRecords);
+                  await tx.insert(measurementResults).values(measurementRecords);
                 }
+              } else {
+                // New inspection — insert all measurement records
+                const measurementRecords = [];
+                for (let idx = 0; idx < pointsWithImages.length; idx++) {
+                  measurementRecords.push(buildRecord(idx, pointsWithImages[idx] as any));
+                }
+                await tx.insert(measurementResults).values(measurementRecords);
               }
             }
 
-            // W2-A / doc 35 D2 — if the spec gate downgraded any point OK→NG,
-            // promote the inspection overall to NG (idempotent; only flips an
-            // OK header). Mirrors the canonical reconcileInspectionOverallNG path.
+            // W2-A / doc 35 D2 — spec-gate overall-NG promotion, now INSIDE the
+            // same atomic tx (mirrors reconcileInspectionOverallNG: only flips an
+            // OK header to NG; idempotent). Being part of the atomic unit, a
+            // failure here rolls the whole commit back rather than leaving an
+            // OK header over NG points.
             if (zipDowngradeCount > 0 && linkedInspectionId) {
-              try {
-                await db.reconcileInspectionOverallNG(linkedInspectionId);
-                console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
-              } catch (reconErr) {
-                console.error("[AOI commit] overall NG reconciliation failed (non-fatal):", reconErr);
-              }
+              await tx
+                .update(productInspections)
+                .set({ overallResult: "NG", updatedAt: new Date() })
+                .where(and(
+                  eq(productInspections.id, linkedInspectionId),
+                  eq(productInspections.overallResult, "OK"),
+                ));
+              console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
             }
           }
 
@@ -842,12 +836,13 @@ export const aoiPackageRouter = router({
             ntf: normalizedMeasurements.filter(p => !p.result || p.result === 'NTF').length,
           };
 
-          // Determine overall result
-          const finalOverallResult = metaData?.overallResult 
-            || (calculatedSummary.ng > 0 ? "NG" : "OK");
+          // Determine overall result (assigns the outer-scope var used by the
+          // post-commit WIP hook below).
+          finalOverallResult = (metaData?.overallResult
+            || (calculatedSummary.ng > 0 ? "NG" : "OK")) as "OK" | "NG" | "NTF";
 
-          // Update package record
-          await database
+          // Update package record → committed (atomic with the writes above)
+          await tx
             .update(inspectionPackages)
             .set({
               status: "committed",
@@ -856,15 +851,15 @@ export const aoiPackageRouter = router({
               productModel: metaData?.productModel || null,
               factoryCode: metaData?.factoryCode || metaData?.factory || null,
               lineCode: metaData?.lineCode || metaData?.line || null,
-              overallResult: finalOverallResult as "OK" | "NG" | "NTF",
+              overallResult: finalOverallResult,
               totalPoints: calculatedSummary.totalPoints,
               okCount: calculatedSummary.ok,
               ngCount: calculatedSummary.ng,
               imageCount: imageFiles.length,
-              inspectionTime: metaData?.inspectionTime 
+              inspectionTime: metaData?.inspectionTime
                 ? new Date(metaData.inspectionTime)
-                : metaData?.startedAt 
-                ? new Date(metaData.startedAt) 
+                : metaData?.startedAt
+                ? new Date(metaData.startedAt)
                 : null,
               metaJson: metaData as any,
               committedAt: new Date(),
@@ -872,6 +867,7 @@ export const aoiPackageRouter = router({
               updatedAt: new Date(),
             })
             .where(eq(inspectionPackages.id, pkg.id));
+          });
 
           // Log: commit_success
           const commitDuration = Date.now() - commitStartTime;

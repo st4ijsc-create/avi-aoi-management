@@ -69,6 +69,42 @@ export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): P
   await ingestTelemetry([sampleToCanonical(adapter, sample)]);
 
   // 2) Optional UNS republish (UNCHANGED default behaviour). Isolated so it can't break (1).
+  await republishSampleToUns(adapter, sample);
+}
+
+/**
+ * R-2a (doc 38 P0-D) — Ingest ALL samples of ONE poll tick as a SINGLE bus call.
+ *
+ * The OT drivers hand back a full `OtSample[]` per readTags() tick. Routing the whole
+ * array through ONE `ingestTelemetry(...)` collapses the historical
+ * "1 INSERT per tag per poll" round-trips into ONE multi-row insert per tick (the
+ * bus already bulk-inserts `values(rows)`), matching what MTConnect already did.
+ * `ingestSample` (single) is retained for compatibility. Order is preserved: the
+ * canonical write lands the whole tick first, then per-sample UNS republish runs in
+ * the original tag order. Each UNS republish is independently isolated so one tag's
+ * publish error can never break the batch. Never throws into the poll loop.
+ */
+export async function ingestSamples(adapter: RuntimeAdapter, samples: OtSample[]): Promise<void> {
+  if (!samples || samples.length === 0) return;
+
+  // 1) Canonical path — ONE bus call for the whole tick (persist + broadcast).
+  await ingestTelemetry(samples.map((s) => sampleToCanonical(adapter, s)));
+
+  // 2) Optional UNS republish, per sample, in order (UNCHANGED per-sample behaviour).
+  if (process.env.OT_INGEST_TO_UNS === "true") {
+    for (const sample of samples) {
+      await republishSampleToUns(adapter, sample);
+    }
+  }
+}
+
+/**
+ * Optional UNS republish of ONE sample (UNCHANGED default behaviour). No-op unless
+ * OT_INGEST_TO_UNS==="true". Fully isolated in its own try/catch so a UNS error can
+ * never break the canonical telemetry write. Extracted from `ingestSample` so both
+ * the single- and batch-ingest paths share EXACTLY the same republish semantics.
+ */
+async function republishSampleToUns(adapter: RuntimeAdapter, sample: OtSample): Promise<void> {
   if (process.env.OT_INGEST_TO_UNS === "true") {
     try {
       const { isUnsBridgeEnabled } = await import("../unsBridge");

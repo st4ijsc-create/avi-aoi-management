@@ -1,0 +1,79 @@
+-- ============================================================================
+-- Migration 0234: Performance indexes — doc 38 Đợt R-1 (quick wins)
+--
+-- ADDITIVE and IDEMPOTENT. This migration only CREATEs an index; it does NOT
+-- drop, alter, or rewrite any existing object, so it is safe to apply on a live
+-- system and safe to re-run (every statement is IF NOT EXISTS).
+--
+-- (a) measurement_results is the hottest / largest table in the system. It has
+--     idx_results_point (pointDefId) and idx_results_point_result
+--     (pointDefId, result) but NO index that pairs the measurement point with
+--     TIME. Per-point time-ordered reads (SPC trend, "recent results for point
+--     X", per-point drift windows) therefore range-scan by point and then SORT
+--     by createdAt. The (pointDefId, createdAt) composite lets the planner
+--     range-scan by point AND time and return rows already ordered.
+--
+-- COLUMN NAMES: this schema stores columns in QUOTED camelCase
+-- ("pointDefId", "createdAt") — verified against drizzle/schema/inspection.ts
+-- (measurement_results). Do NOT snake_case them.
+--
+-- HYPERTABLE / HOT-TABLE NOTE: measurement_results may be a TimescaleDB
+-- hypertable, and it takes constant ingest. A plain CREATE INDEX holds a lock
+-- that blocks writes for the duration of the build. To build WITHOUT blocking
+-- ingest, prefer the CONCURRENTLY form below — but CREATE INDEX CONCURRENTLY
+-- CANNOT run inside a transaction block, so apply this file with psql WITHOUT a
+-- wrapping transaction (i.e. do NOT pass -1 / --single-transaction):
+--
+--     psql "$DATABASE_URL" -f drizzle/0234_perf_indexes.sql
+--
+-- If your migration runner wraps every file in a transaction, use the plain
+-- (non-CONCURRENTLY) statement instead — it is functionally identical, just
+-- blocking during the build.
+-- ============================================================================
+
+-- (a) Per-point, time-ordered index on the hottest table.
+--     Zero-downtime build (must run OUTSIDE a transaction — see header):
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_results_pointdef_created
+  ON measurement_results ("pointDefId", "createdAt");
+
+-- Blocking equivalent (use ONLY if your runner forces a transaction wrapper;
+-- comment out the CONCURRENTLY statement above if you use this instead):
+-- CREATE INDEX IF NOT EXISTS idx_results_pointdef_created
+--   ON measurement_results ("pointDefId", "createdAt");
+
+
+-- ============================================================================
+-- (b) CANDIDATE index DROPs on product_inspections — DO NOT RUN BLINDLY.
+--
+-- product_inspections carries several single-column indexes whose leftmost
+-- column is already the leading column of a composite index, making the
+-- single-column index potentially redundant:
+--
+--   idx_inspections_machine    (machineId)              ⊂ idx_inspections_machine_time (machineId, inspectionTime)
+--   idx_inspections_corporate  (corporateCode)          ⊂ idx_inspections_corporate_factory (corporateCode, factoryCode)
+--
+-- A redundant index still costs write amplification + storage on this hot,
+-- high-ingest table. HOWEVER a leftmost-prefix composite does NOT always fully
+-- replace the single-column index (e.g. index-only scans, planner cost, bloat),
+-- so DO NOT drop until you have measured real production usage.
+--
+-- STEP 1 — measure how often each index is actually used (run in production,
+-- ideally after a representative window since the last stats reset):
+--
+--   SELECT relname            AS table_name,
+--          indexrelname       AS index_name,
+--          idx_scan           AS times_used,
+--          pg_size_pretty(pg_relation_size(indexrelid)) AS index_size
+--     FROM pg_stat_user_indexes
+--    WHERE relname = 'product_inspections'
+--    ORDER BY idx_scan ASC;
+--
+-- STEP 2 — only if idx_scan for the redundant single-column index is ~0 AND the
+-- composite covers the workload, drop it (CONCURRENTLY, outside a transaction):
+--
+--   -- DROP INDEX CONCURRENTLY IF EXISTS idx_inspections_machine;
+--   -- DROP INDEX CONCURRENTLY IF EXISTS idx_inspections_corporate;
+--
+-- These DROPs are intentionally left COMMENTED OUT. The owner should measure
+-- first (STEP 1) before uncommenting anything in STEP 2.
+-- ============================================================================

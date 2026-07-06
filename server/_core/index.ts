@@ -228,13 +228,31 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   // Skip JSON parsing for raw binary upload routes (APK uploads etc.)
   const rawUploadPaths = ["/api/factory-alert/upload", "/api/aoi/upload/"];
+  // R-1 (doc 38): scope the 200MB ceiling to the routes that legitimately carry
+  // large base64/JSON bodies, and cap everything else at a sane default so a
+  // single oversized POST to a generic endpoint can't force a 200MB in-memory
+  // parse (memory-exhaustion DoS). Large-body prefixes:
+  //   /trpc/        — tRPC mutations incl. documents.upload (base64 files) and
+  //                   AOI package commit metadata.
+  //   /api/machine/ — machine REST proxies that embed base64 images
+  //                   (submit-inspection, upload-image, sync-*-image).
+  //   /api/ai/      — local-KB / streaming endpoints that accept an inline
+  //                   base64 image for the Qwen3-VL vision model.
+  // The OpenAI gateway (/v1) mounts its OWN json({limit: OPENAI_GATEWAY_BODY_LIMIT
+  // || "20mb"}); the default below is ≥ that so it is unaffected. Override the
+  // default with HTTP_BODY_LIMIT.
+  const LARGE_BODY_LIMIT = "200mb";
+  const DEFAULT_BODY_LIMIT = process.env.HTTP_BODY_LIMIT || "25mb";
+  const largeBodyPrefixes = ["/trpc/", "/api/machine/", "/api/ai/"];
+  const bodyLimitFor = (p: string): string =>
+    largeBodyPrefixes.some((x) => p.startsWith(x)) ? LARGE_BODY_LIMIT : DEFAULT_BODY_LIMIT;
   app.use((req, res, next) => {
     if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
-    express.json({ limit: "200mb" })(req, res, next);
+    express.json({ limit: bodyLimitFor(req.path) })(req, res, next);
   });
   app.use((req, res, next) => {
     if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
-    express.urlencoded({ limit: "200mb", extended: true })(req, res, next);
+    express.urlencoded({ limit: bodyLimitFor(req.path), extended: true })(req, res, next);
   });
 
   // Security headers
@@ -5126,6 +5144,30 @@ async function startServer() {
   }
 
   const protocol = HTTPS_ENABLED ? "https" : "http";
+
+  // ── R-1 (doc 38): HTTP timeouts — slow-loris / slow-body hardening ──────────
+  // requestTimeout bounds the time to receive an ENTIRE request (headers+body).
+  // Node clears this timer the moment the request is fully parsed, so long-lived
+  // RESPONSES are NOT affected: the SSE stream (/api/stream), socket.io upgrades
+  // and any long-poll all complete their request quickly and keep streaming.
+  //   • headersTimeout — max time to receive request headers (the primary
+  //     slow-loris defense); must sit slightly above requestTimeout.
+  //   • keepAliveTimeout — idle window BETWEEN requests on a kept-alive socket.
+  // NOTE for operators: requestTimeout also bounds large UPLOADS (200MB APK /
+  // AOI ZIP). On a factory LAN a 200MB body finishes well under 60s; if you push
+  // very large uploads over a slow WAN, raise HTTP_REQUEST_TIMEOUT_MS accordingly
+  // (set 0 to disable the request-receipt bound entirely).
+  const httpRequestTimeoutMs = Number(process.env.HTTP_REQUEST_TIMEOUT_MS);
+  const httpHeadersTimeoutMs = Number(process.env.HTTP_HEADERS_TIMEOUT_MS);
+  server.requestTimeout =
+    Number.isFinite(httpRequestTimeoutMs) && httpRequestTimeoutMs >= 0
+      ? httpRequestTimeoutMs
+      : 60_000;
+  server.headersTimeout =
+    Number.isFinite(httpHeadersTimeoutMs) && httpHeadersTimeoutMs > 0
+      ? httpHeadersTimeoutMs
+      : 65_000;
+  server.keepAliveTimeout = 61_000;
 
   server.listen(port, () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);

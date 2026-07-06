@@ -291,13 +291,18 @@ async function readVramState(): Promise<{ used: number; total: number } | null> 
     }
   }
   // 2) nvidia-smi fallback (bytes = MiB * 1024 * 1024).
+  // R-1 (doc 38): use the ASYNC execFile so the ~3s nvidia-smi call never blocks
+  // the event loop (the sync variant froze all request handling for its duration).
   try {
-    const { execFileSync } = await import("child_process");
-    const out = execFileSync(
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync(
       "nvidia-smi",
       ["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
       { timeout: 3000, windowsHide: true },
-    ).toString();
+    );
+    const out = stdout.toString();
     const first = out.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
     const [usedMib, totalMib] = first.split(",").map((s) => parseInt(s.trim(), 10));
     if (Number.isFinite(usedMib) && Number.isFinite(totalMib) && totalMib > 0) {

@@ -143,10 +143,68 @@ async function resolveMachineId(machineCode: string): Promise<number | null> {
   return resolved;
 }
 
+// ── R-2a (doc 38 P1-I) — sensor-insert coalescing (default OFF) ──────────────
+// Each sensor MQTT message historically did 1 INSERT. When SENSOR_INGEST_BATCH_ENABLED
+// is true, resolved readings are buffered and flushed as ONE multi-row insert (per
+// SENSOR_INGEST_FLUSH_MS, default 500ms, or SENSOR_INGEST_MAX_BATCH, default 500). When
+// OFF the insert is immediate — byte-for-byte the prior behaviour. A hard crash can lose
+// at most one window of buffered readings (inherent to any in-mem buffer); flushed on
+// `beforeExit`. Set the flag OFF (default) for strict no-buffer durability.
+type SensorRow = { machineId: number; sensorType: string; value: string; unit?: string; timestamp: Date; source: string };
+
+function sensorBatchEnabled(): boolean {
+  return process.env.SENSOR_INGEST_BATCH_ENABLED === "true";
+}
+function sensorIntEnv(name: string, def: number, min = 1): number {
+  const n = parseInt(String(process.env[name] ?? ""), 10);
+  return Number.isFinite(n) && n >= min ? n : def;
+}
+
+let sensorBuffer: SensorRow[] = [];
+let sensorFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let sensorShutdownWired = false;
+
+function ensureSensorShutdownFlush(): void {
+  if (sensorShutdownWired) return;
+  sensorShutdownWired = true;
+  try {
+    process.on("beforeExit", () => { void flushSensorReadings(); });
+  } catch {
+    // no process → best-effort only
+  }
+}
+function scheduleSensorFlush(): void {
+  if (sensorFlushTimer) return;
+  const t = setTimeout(() => { sensorFlushTimer = null; void flushSensorReadings(); },
+    sensorIntEnv("SENSOR_INGEST_FLUSH_MS", 500));
+  if (typeof (t as { unref?: () => void }).unref === "function") (t as { unref: () => void }).unref();
+  sensorFlushTimer = t;
+}
+
+/** Flush buffered sensor readings as ONE multi-row insert. Never throws. */
+export async function flushSensorReadings(): Promise<number> {
+  if (sensorFlushTimer) { clearTimeout(sensorFlushTimer); sensorFlushTimer = null; }
+  if (sensorBuffer.length === 0) return 0;
+  const batch = sensorBuffer;
+  sensorBuffer = [];
+  try {
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (!db) return 0;
+    const { machineSensorReadings } = await import("../../drizzle/schema");
+    await db.insert(machineSensorReadings).values(batch as any);
+    return batch.length;
+  } catch (err) {
+    logger.error({ err: (err as Error)?.message }, "[SensorIngest] batch flush failed");
+    return 0;
+  }
+}
+
 /**
  * Handle ONE sensor MQTT message: gate → parse → resolve machine → insert into
  * machine_sensor_readings (source='mqtt'). Fail-safe & non-blocking: returns true
- * only when a row was actually written, and NEVER throws into the publish loop.
+ * only when a row was actually written (or accepted into the coalescing buffer), and
+ * NEVER throws into the publish loop.
  */
 export async function handleSensorMessage(
   topic: string,
@@ -174,12 +232,7 @@ export async function handleSensorMessage(
       return false;
     }
 
-    const { getDb } = await import("../db/connection");
-    const db = await getDb();
-    if (!db) return false; // DB-absent (tests / headless) → safe no-op.
-
-    const { machineSensorReadings } = await import("../../drizzle/schema");
-    await db.insert(machineSensorReadings).values({
+    const row: SensorRow = {
       machineId,
       sensorType: reading.sensorType,
       // decimal column → string is the safe representation across drivers.
@@ -187,7 +240,26 @@ export async function handleSensorMessage(
       unit: reading.unit ?? undefined,
       timestamp: reading.timestamp,
       source: "mqtt",
-    } as any);
+    };
+
+    if (sensorBatchEnabled()) {
+      // Coalesced path: buffer + flush as ONE multi-row insert.
+      ensureSensorShutdownFlush();
+      sensorBuffer.push(row);
+      if (sensorBuffer.length >= sensorIntEnv("SENSOR_INGEST_MAX_BATCH", 500)) {
+        void flushSensorReadings();
+      } else {
+        scheduleSensorFlush();
+      }
+      return true; // accepted into the buffer
+    }
+
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (!db) return false; // DB-absent (tests / headless) → safe no-op.
+
+    const { machineSensorReadings } = await import("../../drizzle/schema");
+    await db.insert(machineSensorReadings).values(row as any);
 
     return true;
   } catch (err) {

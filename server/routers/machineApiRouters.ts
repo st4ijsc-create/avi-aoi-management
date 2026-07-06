@@ -408,8 +408,93 @@ export async function processInspectionSubmission(
       const inlineGateOn = (process.env.AI_INLINE_GATE_ENABLED ?? "false").toLowerCase() === "true";
       let inlineGateImage: Buffer | null = null;
       let inlineGateImageIsNg = false;
-      
-      for (const measurement of input.measurements) {
+
+      // ── P1-2 (doc 38 R-2b): warm the point-def cache ONCE per board ──────────
+      // Resolve every DISTINCT measurement-point code up front (read-only, with
+      // a small concurrency cap) so the per-point build loop below hits the
+      // shared caches instead of issuing a serial DB lookup per row. Codes are
+      // distinct (Set) so parallel warmers never double-read the same key.
+      // Genuinely-missing codes are still auto-provisioned inside the loop
+      // (the write path stays sequential + idempotent).
+      {
+        const distinctCodes = new Set<string>();
+        for (const m of input.measurements) {
+          if (m.pointId) distinctCodes.add(m.pointId);
+          if (m.pointCode) distinctCodes.add(m.pointCode);
+        }
+        const codes = Array.from(distinctCodes);
+        let wc = 0;
+        const warmWorker = async () => {
+          for (let j = wc++; j < codes.length; j = wc++) {
+            try {
+              await resolveMeasurementPointDefinition(
+                codes[j],
+                productModelRecord?.id,
+                machine.id,
+                productPointCache,
+                machinePointCache,
+              );
+            } catch { /* warm is best-effort; the loop re-resolves on miss */ }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(6, codes.length) }, () => warmWorker()),
+        );
+      }
+
+      // ── P1-2: bounded-concurrency image PRE-UPLOAD (was one sequential
+      // storagePut per point). Decode each base64 image and upload with a fixed
+      // concurrency cap via a hand-rolled semaphore (no new dependency), BEFORE
+      // the DB record build/transaction. Results are keyed by measurement index
+      // so input order is preserved; per-image failures are swallowed exactly as
+      // the previous inline try/catch did. The inline-gate image is captured
+      // here in input order (NG preferred) — identical selection to before.
+      const uploadedImages: Array<{ url?: string; key?: string } | undefined> =
+        new Array(input.measurements.length);
+      {
+        type UploadJob = { index: number; buffer: Buffer; ext: string; pointCode: string };
+        const jobs: UploadJob[] = [];
+        for (let i = 0; i < input.measurements.length; i++) {
+          const m = input.measurements[i];
+          if (!m.imageBase64 || m.imageBase64.length <= 200) continue;
+          const pointCode = m.pointId || m.pointCode || 'UNKNOWN';
+          // Already a URL — use as-is (no upload, no key), same as before.
+          if (m.imageBase64.startsWith('http') || m.imageBase64.startsWith('/uploads')) {
+            uploadedImages[i] = { url: m.imageBase64 };
+            continue;
+          }
+          const base64Data = m.imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          // V1 inline-gate image capture (before upload; NG preferred).
+          if (inlineGateOn && (!inlineGateImage || (!inlineGateImageIsNg && m.result === "NG"))) {
+            inlineGateImage = buffer;
+            inlineGateImageIsNg = m.result === "NG";
+          }
+          const ext = m.imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
+          jobs.push({ index: i, buffer, ext, pointCode });
+        }
+
+        const IMAGE_UPLOAD_CONCURRENCY = 6;
+        let cursor = 0;
+        const uploadWorker = async () => {
+          for (let j = cursor++; j < jobs.length; j = cursor++) {
+            const job = jobs[j];
+            try {
+              const fileKey = `inspections/${inspectionId}/${job.pointCode}-${nanoid(8)}.${job.ext}`;
+              const { url } = await storagePut(fileKey, job.buffer, `image/${job.ext === 'png' ? 'png' : 'jpeg'}`);
+              uploadedImages[job.index] = { url, key: fileKey };
+            } catch (imgErr) {
+              console.error(`[submitInspection] Image upload failed for point ${job.pointCode}:`, imgErr);
+            }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(IMAGE_UPLOAD_CONCURRENCY, jobs.length) }, () => uploadWorker()),
+        );
+      }
+
+      for (let mi = 0; mi < input.measurements.length; mi++) {
+        const measurement = input.measurements[mi];
         const candidateCodes = [measurement.pointId, measurement.pointCode].filter((code): code is string => Boolean(code));
         let pointDef: Awaited<ReturnType<typeof resolveMeasurementPointDefinition>> = null;
         let usedCode: string | undefined;
@@ -461,34 +546,11 @@ export async function processInspectionSubmission(
           }
         }
 
-        // Auto-upload image to storage if base64 is provided
-        let uploadedImageUrl: string | undefined = undefined;
-        let uploadedImageKey: string | undefined = undefined;
-        if (measurement.imageBase64 && measurement.imageBase64.length > 200) {
-          try {
-            // If already a URL, use as-is
-            if (measurement.imageBase64.startsWith('http') || measurement.imageBase64.startsWith('/uploads')) {
-              uploadedImageUrl = measurement.imageBase64;
-            } else {
-              // Strip data URI prefix if present
-              const base64Data = measurement.imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
-              const buffer = Buffer.from(base64Data, 'base64');
-              // V1 inline-gate image capture (before upload — an upload failure
-              // must not deprive the AI gate of the already-decoded image).
-              if (inlineGateOn && (!inlineGateImage || (!inlineGateImageIsNg && measurement.result === "NG"))) {
-                inlineGateImage = buffer;
-                inlineGateImageIsNg = measurement.result === "NG";
-              }
-              const ext = measurement.imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
-              const fileKey = `inspections/${inspectionId}/${pointCode}-${nanoid(8)}.${ext}`;
-              const { url } = await storagePut(fileKey, buffer, `image/${ext === 'png' ? 'png' : 'jpeg'}`);
-              uploadedImageUrl = url;
-              uploadedImageKey = fileKey;
-            }
-          } catch (imgErr) {
-            console.error(`[submitInspection] Image upload failed for point ${pointCode}:`, imgErr);
-          }
-        }
+        // Image was already uploaded in the bounded-concurrency pre-pass above
+        // (P1-2, doc 38 R-2b); read this row's pre-computed result by index.
+        const uploaded = uploadedImages[mi];
+        const uploadedImageUrl: string | undefined = uploaded?.url;
+        const uploadedImageKey: string | undefined = uploaded?.key;
 
         let defectCatalogId: number | undefined;
         let defectCodeRaw: string | undefined;

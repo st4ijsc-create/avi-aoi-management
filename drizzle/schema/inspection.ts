@@ -190,6 +190,11 @@ export const measurementResults = pgTable("measurement_results", {
   // Composite indexes for optimized queries
   index("idx_results_inspection_result").on(table.inspectionId, table.result),
   index("idx_results_point_result").on(table.pointDefId, table.result),
+  // R-1 (doc 38, migration 0234): time-ordered scans of the hottest table by
+  // measurement point (per-point trend / SPC / recent-results queries). The
+  // (pointDefId, createdAt) composite lets the planner range-scan by point AND
+  // time without a separate sort. Additive — see drizzle/0234_perf_indexes.sql.
+  index("idx_results_pointdef_created").on(table.pointDefId, table.createdAt),
   // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
   // is deleted (partial — only rows that actually reference a defect).
   index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),

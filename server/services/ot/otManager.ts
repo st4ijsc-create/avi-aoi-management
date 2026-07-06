@@ -15,7 +15,7 @@
  * live connection. When the flag is OFF (the DEFAULT) the legacy single-endpoint
  * path below runs EXACTLY as before — no supervisor is created.
  */
-import type { OtSubscriptionHandle, OtDriver, OtSample } from "./otDriver";
+import type { OtSubscriptionHandle, OtDriver, OtSample, OnOtSample } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import { createDriver } from "./driverRegistry";
 import {
@@ -68,13 +68,73 @@ function haHealthIntervalMs(pollIntervalMs: number): number {
   return Math.max(50, Math.min(poll, def));
 }
 
-/** Build a supervisor for one runtime adapter (primary + optional secondary). */
-function buildSupervisor(adapter: RuntimeAdapter): ConnectionSupervisor {
-  // Lazy import keeps the ingest path identical to the legacy loop.
-  const onSample = async (sample: OtSample): Promise<void> => {
-    const { ingestSample } = await import("./ingest");
-    await ingestSample(adapter, sample);
+/**
+ * R-2a (doc 38 P0-D) — is per-tick write-coalescing engaged? Default OFF (opt-in via
+ * OT_POLL_BATCH_ENABLED=true). When ON, an adapter's per-sample `onSample` callbacks
+ * are coalesced into ONE `ingestSamples()` per poll tick (one multi-row insert instead
+ * of one INSERT per tag), collapsing the write-amplification at the source. When OFF
+ * the sink is the exact per-sample `ingestSample` path (unchanged). NOTE: the bus-level
+ * ring buffer (TELEMETRY_BATCH_ENABLED) coalesces DB writes across ALL adapters even
+ * with this flag OFF, so it is the primary throughput lever; this flag additionally
+ * batches at the source (fewer bus calls + one UNS republish loop per tick).
+ */
+function batchPollEnabled(): boolean {
+  return process.env.OT_POLL_BATCH_ENABLED === "true";
+}
+
+/**
+ * Build the ingest sink (an `OnOtSample`) for one adapter.
+ *
+ * The OtDriver contract delivers samples ONE AT A TIME via `onSample` (and the
+ * OPC-UA monitored-item PUSH path also emits per-notification), so we keep
+ * driver.subscribe() intact (never bypass it — that preserves the real-push option)
+ * and coalesce at the SINK: each sample is pushed to a per-adapter buffer and, on the
+ * FIRST push of a burst, a `setImmediate` flush is scheduled. Because every real
+ * driver's poll tick delivers its whole `readTags()` array synchronously within one
+ * event-loop turn (awaiting only microtasks between samples), the setImmediate
+ * macrotask fires AFTER the entire tick is buffered → the whole tick is ingested in a
+ * SINGLE `ingestSamples()` call. Bursts on the push path coalesce the same way.
+ *
+ * No sample loss: a scheduled flush always runs (setImmediate is queued before any
+ * subsequent poll I/O), and handle.close()/stopOt only clear the driver's interval —
+ * a pending setImmediate still fires and drains the final buffer. When batching is
+ * OFF the sink is the exact legacy per-sample `ingestSample` call.
+ */
+async function makeIngestSink(adapter: RuntimeAdapter): Promise<OnOtSample> {
+  const mod = await import("./ingest");
+  if (!batchPollEnabled()) {
+    // Default path — per-sample ingest. Only `ingestSample` is touched (keeps strict
+    // test mocks that stub only `ingestSample` working; `ingestSamples` is never read).
+    return (sample: OtSample) => mod.ingestSample(adapter, sample);
+  }
+  const ingestSamples = mod.ingestSamples;
+  let buf: OtSample[] = [];
+  let scheduled = false;
+  const flush = (): void => {
+    scheduled = false;
+    if (buf.length === 0) return;
+    const batch = buf;
+    buf = [];
+    // ingestSamples is itself fail-safe (bus never throws); .catch is defensive so a
+    // rejected promise can never surface as an unhandled rejection.
+    void ingestSamples(adapter, batch).catch((e) =>
+      console.error(`[OT] batch ingest failed for "${adapter.code}":`, (e as Error)?.message ?? e),
+    );
   };
+  return (sample: OtSample) => {
+    buf.push(sample);
+    if (!scheduled) {
+      scheduled = true;
+      setImmediate(flush);
+    }
+  };
+}
+
+/** Build a supervisor for one runtime adapter (primary + optional secondary). */
+async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSupervisor> {
+  // Coalescing sink keeps the HA ingest path identical in shape to the legacy loop
+  // (per-tick batch when OT_POLL_BATCH_ENABLED, else per-sample).
+  const onSample = await makeIngestSink(adapter);
   const endpoints: EndpointConfig[] = [{ label: "primary", connection: adapter.connection }];
   if (adapter.backupConnection) {
     endpoints.push({ label: "secondary", connection: adapter.backupConnection });
@@ -122,7 +182,7 @@ export async function startOt(): Promise<boolean> {
   if (isConnHaEnabled()) {
     for (const adapter of adapters) {
       try {
-        const supervisor = buildSupervisor(adapter);
+        const supervisor = await buildSupervisor(adapter);
         // start() never throws: a failed initial connect schedules a backoff retry
         // rather than crashing the host (preserves the fail-safe behaviour).
         await supervisor.start();
@@ -141,13 +201,15 @@ export async function startOt(): Promise<boolean> {
   }
 
   // ── LEGACY PATH (OT_CONN_HA_ENABLED off) — single endpoint, exactly as before.
-  const { ingestSample } = await import("./ingest");
+  // R-2a: the ingest sink coalesces each poll tick into ONE multi-row insert when
+  // OT_POLL_BATCH_ENABLED (default OFF) is on, while keeping driver.subscribe() intact.
   for (const adapter of adapters) {
     try {
       await adapter.driver.connect(adapter.connection);
+      const sink = await makeIngestSink(adapter);
       const handle = await adapter.driver.subscribe(
         adapter.tags,
-        (sample) => ingestSample(adapter, sample),
+        sink,
         adapter.pollIntervalMs,
       );
       active.push({ adapter, handle });

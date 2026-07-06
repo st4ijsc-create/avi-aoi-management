@@ -241,8 +241,128 @@ async function ensureStoreForwardWired(): Promise<typeof import("./ot/storeForwa
   return sf;
 }
 
+// ── R-2a (doc 38 P0-D) — WRITE-COALESCING RING BUFFER ───────────────────────
+// Optional in-memory ring buffer that coalesces samples from EVERY reader (all OT
+// adapters, MTConnect, SECS, robots…) into ONE multi-row insert per flush window,
+// eliminating the historical 1-INSERT-per-tag-per-poll write amplification at the
+// bus level (on top of the per-tick coalescing done by ingest.ingestSamples).
+//
+// FLAG: TELEMETRY_BATCH_ENABLED (default OFF). Rationale for default-OFF:
+//   • When OFF the ingest path is byte-for-byte the prior synchronous behaviour —
+//     every batch persists + broadcasts immediately, no in-memory window, so the
+//     "never lose a sample" invariant holds trivially (nothing is ever buffered).
+//   • When ON a small (<= TELEMETRY_FLUSH_MS, default 250ms) in-memory window is
+//     introduced. It is drained on: the flush timer, a size threshold
+//     (TELEMETRY_MAX_BATCH, default 500 → backpressure via an awaited flush), and
+//     `beforeExit`. A HARD crash (SIGKILL/power-loss) can still lose at most one
+//     window — inherent to any in-memory buffer — so callers wanting zero-loss
+//     across SIGTERM should invoke flushTelemetryBuffer() from their shutdown hook
+//     (exported below) or keep the flag OFF. Store-and-forward is UNCHANGED and
+//     still protects against DB-down (it runs inside ingestNow per flushed batch).
+function batchEnabled(): boolean {
+  return process.env.TELEMETRY_BATCH_ENABLED === "true";
+}
+function intEnv(name: string, def: number, min = 1): number {
+  const n = parseInt(String(process.env[name] ?? ""), 10);
+  return Number.isFinite(n) && n >= min ? n : def;
+}
+function flushMs(): number {
+  return intEnv("TELEMETRY_FLUSH_MS", 250);
+}
+function maxBatch(): number {
+  return intEnv("TELEMETRY_MAX_BATCH", 500);
+}
+
+let telemetryBuffer: CanonicalSample[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let shutdownFlushWired = false;
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  const t = setTimeout(() => {
+    flushTimer = null;
+    void flushTelemetryBuffer();
+  }, flushMs());
+  if (typeof (t as { unref?: () => void }).unref === "function") {
+    (t as { unref: () => void }).unref();
+  }
+  flushTimer = t;
+}
+
 /**
- * THE unified ingest entry. Normalize → resolve machineId → bulk-insert into
+ * Register a best-effort `beforeExit` flush so a graceful drain of the event loop
+ * flushes any buffered samples. NOTE: we deliberately DO NOT add SIGTERM/SIGINT
+ * listeners here — adding a signal listener overrides Node's default terminate
+ * behaviour and could HANG the process on Ctrl-C. Operators wanting a guaranteed
+ * SIGTERM flush should call flushTelemetryBuffer() from their existing shutdown
+ * hook. Registered lazily (only once batching is actually engaged) so the default
+ * (flag-OFF) path adds no process listeners at all.
+ */
+function ensureShutdownFlush(): void {
+  if (shutdownFlushWired) return;
+  shutdownFlushWired = true;
+  try {
+    process.on("beforeExit", () => {
+      void flushTelemetryBuffer();
+    });
+  } catch {
+    // no process (unlikely) → best-effort only
+  }
+}
+
+/** Number of samples currently buffered (for tests / metrics). */
+export function bufferedTelemetryCount(): number {
+  return telemetryBuffer.length;
+}
+
+/**
+ * Flush the coalescing buffer NOW as ONE multi-row insert (via ingestNow, which
+ * owns persist + store-forward + broadcast + taps). Idempotent, never throws.
+ * Exported so a shutdown hook can guarantee no buffered sample is lost on SIGTERM.
+ */
+export async function flushTelemetryBuffer(): Promise<number> {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (telemetryBuffer.length === 0) return 0;
+  const batch = telemetryBuffer;
+  telemetryBuffer = [];
+  try {
+    return await ingestNow(batch);
+  } catch (err) {
+    console.error("[TelemetryBus] buffered flush failed:", (err as Error)?.message || err);
+    return 0;
+  }
+}
+
+/**
+ * THE unified ingest entry. When TELEMETRY_BATCH_ENABLED is OFF (default) this is a
+ * thin pass-through to ingestNow (byte-for-byte the prior behaviour). When ON it
+ * appends to the coalescing ring buffer and returns fast; the buffer is drained by
+ * the flush timer, by a size-threshold backpressure flush (awaited), or on exit.
+ * The order of samples is preserved (FIFO). Never throws into the caller's loop.
+ */
+export async function ingestTelemetry(samples: CanonicalSample[]): Promise<number> {
+  if (!samples || samples.length === 0) return 0;
+
+  if (!batchEnabled()) {
+    return ingestNow(samples);
+  }
+
+  // Buffered (coalescing) path.
+  ensureShutdownFlush();
+  for (const s of samples) telemetryBuffer.push(s);
+  if (telemetryBuffer.length >= maxBatch()) {
+    // Backpressure: bound memory + apply latency to the caller by flushing inline.
+    return flushTelemetryBuffer();
+  }
+  scheduleFlush();
+  return samples.length; // accepted into the buffer (best-effort count)
+}
+
+/**
+ * THE unified ingest core. Normalize → resolve machineId → bulk-insert into
  * ot_telemetry → broadcast on `telemetry:sample`. Fail-safe: returns the count
  * actually persisted; never throws into the caller's poll loop.
  *
@@ -252,7 +372,7 @@ async function ensureStoreForwardWired(): Promise<typeof import("./ot/storeForwa
  * and a write SUCCEEDS, a bounded backfill opportunistically drains anything buffered
  * while offline. With the flag OFF the code path is byte-for-byte the prior behaviour.
  */
-export async function ingestTelemetry(samples: CanonicalSample[]): Promise<number> {
+async function ingestNow(samples: CanonicalSample[]): Promise<number> {
   if (!samples || samples.length === 0) return 0;
 
   // 1+2: normalize + resolve machineId for each sample.

@@ -605,6 +605,18 @@ function setupEventHandlers() {
     }
   };
 
+  // R-2a (doc 38 P1-I) — coalesce the per-keepalive heartbeat write. A client PING
+  // fires every keepalive interval and each historically did one UPDATE of
+  // mqttClients.lastHeartbeat. When MQTT_HEARTBEAT_THROTTLE_MS > 0 (default 0 = OFF,
+  // i.e. the prior write-every-ping behaviour) we skip the write if the last one for
+  // this client was within the window — collapsing a ping storm to at most one write
+  // per window while keeping heartbeat resolution bounded by the configured value.
+  const lastHeartbeatWriteAt = new Map<string, number>();
+  const heartbeatThrottleMs = (): number => {
+    const n = parseInt(String(process.env.MQTT_HEARTBEAT_THROTTLE_MS ?? ''), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
   // Client-level errors (e.g., protocol violations, write failures)
   aedes.on('clientError', (client, error) => {
     console.error(`[MQTT] Client error for ${client.id}:`, error.message);
@@ -635,7 +647,8 @@ function setupEventHandlers() {
   // Client disconnected
   aedes.on('clientDisconnect', async (client) => {
     console.log(`[MQTT] Client disconnected: ${client.id}`);
-    
+    lastHeartbeatWriteAt.delete(client.id); // R-2a — release throttle bookkeeping
+
     try {
       await db!.update(schema.mqttClients)
         .set({
@@ -679,6 +692,14 @@ function setupEventHandlers() {
 
   // Heartbeat/ping handler
   aedes.on('ping', async (packet, client) => {
+    // R-2a — throttle/coalesce the heartbeat write (no-op window when flag is 0).
+    const throttle = heartbeatThrottleMs();
+    if (throttle > 0 && client) {
+      const now = Date.now();
+      const last = lastHeartbeatWriteAt.get(client.id) ?? 0;
+      if (now - last < throttle) return; // within window → coalesce (skip write)
+      lastHeartbeatWriteAt.set(client.id, now);
+    }
     try {
       await db!.update(schema.mqttClients)
         .set({ lastHeartbeat: new Date() })

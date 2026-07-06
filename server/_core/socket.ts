@@ -854,6 +854,59 @@ export interface TelemetryBroadcastSample {
  */
 export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
   if (!io || samples.length === 0) return;
+  // R-2a (doc 38 P1-I) — optional emit coalescing for the `telemetry:sample` firehose.
+  // TELEMETRY_EMIT_COALESCE_MS > 0 buffers samples and emits ONE merged frame per
+  // window (bounded by TELEMETRY_EMIT_MAX_BATCH, default 1000). Default 0 = emit
+  // immediately (unchanged behaviour). Order is preserved (FIFO).
+  const ms = telemetryEmitCoalesceMs();
+  if (ms <= 0) {
+    doEmitTelemetrySamples(samples);
+    return;
+  }
+  for (const s of samples) telemetryEmitBuffer.push(s);
+  const max = telemetryEmitMaxBatch();
+  if (telemetryEmitBuffer.length >= max) {
+    flushTelemetryEmit();
+    return;
+  }
+  if (!telemetryEmitTimer) {
+    const t = setTimeout(flushTelemetryEmit, ms);
+    if (typeof (t as { unref?: () => void }).unref === "function") (t as { unref: () => void }).unref();
+    telemetryEmitTimer = t;
+  }
+}
+
+function telemetryEmitCoalesceMs(): number {
+  const n = parseInt(String(process.env.TELEMETRY_EMIT_COALESCE_MS ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function telemetryEmitMaxBatch(): number {
+  const n = parseInt(String(process.env.TELEMETRY_EMIT_MAX_BATCH ?? ""), 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1000;
+}
+
+let telemetryEmitBuffer: TelemetryBroadcastSample[] = [];
+let telemetryEmitTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Flush the coalesced telemetry emit buffer as ONE merged frame. Never throws. */
+function flushTelemetryEmit(): void {
+  if (telemetryEmitTimer) {
+    clearTimeout(telemetryEmitTimer);
+    telemetryEmitTimer = null;
+  }
+  if (telemetryEmitBuffer.length === 0) return;
+  const batch = telemetryEmitBuffer;
+  telemetryEmitBuffer = [];
+  try {
+    doEmitTelemetrySamples(batch);
+  } catch (e) {
+    console.error("[Socket.io] telemetry emit flush failed:", (e as any)?.message ?? e);
+  }
+}
+
+/** The actual room fan-out (immediate). Shared by the direct + coalesced paths. */
+function doEmitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
+  if (!io || samples.length === 0) return;
   io.to("global").emit("telemetry:sample", { samples });
   // Per-machine fan-out: group by machineId so each machine room gets its subset.
   const byMachine = new Map<number, TelemetryBroadcastSample[]>();

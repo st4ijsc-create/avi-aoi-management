@@ -34,7 +34,10 @@
  * Best-effort: every entry point is try/caught and NEVER throws to its caller
  * (a broken mart must not take down ingest or boot).
  */
-import { getDb } from "../db/connection";
+// R-1 (doc 38): mart roll-ups can hold a connection for a while — route them
+// through the dedicated background-jobs pool (DB_POOL_MAX_JOBS), same as
+// materializedViewRefreshService, so they never starve the request pool.
+import { getJobsDb as getDb } from "../db/connection";
 import { sql, eq } from "drizzle-orm";
 import {
   productInspections,
