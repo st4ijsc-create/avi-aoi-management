@@ -295,6 +295,22 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[DR] init failed:", (err as any)?.message || err);
   }
 
+  // SYNAPSE I6 (doc 33 §11) — daily MES/ERP/WMS reconciliation cycle. No-op unless RECONCILE_CRON=true.
+  try {
+    const { startReconciliationScheduler } = await import("../services/contracts/reconciliationCron");
+    startReconciliationScheduler();
+  } catch (err) {
+    console.error("[Reconcile] scheduler start failed:", (err as any)?.message || err);
+  }
+
+  // SYNAPSE P4 (doc 33 §11) — out-of-process plugin sidecar supervisor. No-op unless PLUGIN_SIDECAR=true.
+  try {
+    const { startPluginSidecar } = await import("../services/plugins/sidecar/pluginSidecarBootstrap");
+    startPluginSidecar();
+  } catch (err) {
+    console.error("[PluginSidecar] start failed:", (err as any)?.message || err);
+  }
+
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
 }
 
@@ -385,6 +401,12 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/disasterRecoveryService")
     .then((m) => m.stopDisasterRecoveryService())
+    .catch(() => {});
+  import("../services/contracts/reconciliationCron")
+    .then((m) => m.stopReconciliationScheduler())
+    .catch(() => {});
+  import("../services/plugins/sidecar/pluginSidecarBootstrap")
+    .then((m) => m.stopPluginSidecar())
     .catch(() => {});
   started = false;
 }

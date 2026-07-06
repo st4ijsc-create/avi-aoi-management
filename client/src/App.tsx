@@ -133,6 +133,7 @@ const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control 
 const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 13 / F0: Multi-site Federation sites registry (admin)
 const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
 const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")); // Doc 13 / F3: read-only modules + license marketplace (admin)
+const SynapsePlatformPage = React.lazy(() => import("./pages/SynapsePlatformPage")); // doc 33: read-only SYNAPSE platform cockpit
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage")); // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run
 const UnifiedDeviceMonitor = React.lazy(() => import("./pages/UnifiedDeviceMonitor")); // P3-W2 (doc 12 §8): flagship unified device monitor — default DEVICES & OT landing
@@ -378,6 +379,7 @@ function Router() {
       <Route path="/sites"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SitesRegistry /></AIPageWrapper></RouteGuard></Route>
       <Route path="/federation-dashboard"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><FederationDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/modules"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><ModulesMarketplace /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/synapse-platform"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SynapsePlatformPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
       <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>

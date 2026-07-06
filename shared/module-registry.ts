@@ -124,7 +124,7 @@ const SEED_MODULES: SystemModule[] = [
     description: "Quản trị hệ thống, quản lý user, role, audit, license, backup, sessions, user assignments",
     version: "1.0.0",
     isCore: true,
-    routes: ["/admin", "/users", "/role-builder", "/enhanced-audit", "/audit-logs", "/api-docs", "/user-guide", "/license", "/backup-restore", "/sessions", "/user-assignments"],
+    routes: ["/admin", "/users", "/role-builder", "/enhanced-audit", "/audit-logs", "/api-docs", "/user-guide", "/license", "/backup-restore", "/sessions", "/user-assignments", "/synapse-platform"],
     permissionCategories: ["admin"],
     features: [
       { code: "ADMIN_USERS", name: "QL Người dùng", featureType: "boolean", defaultValue: "true" },

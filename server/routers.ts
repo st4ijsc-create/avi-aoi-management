@@ -71,6 +71,15 @@ import { reportAggregatorsRouter } from "./routers/reportAggregatorsRouter"; // 
 import { reportArtifactRouter } from "./routers/reportArtifactRouter"; // Wave R2 (doc 32): persisted report artifact store (list/get/download/delete)
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
+import { editionRouter } from "./routers/editionRouter"; // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment-profile info
+import { pluginRouter } from "./routers/pluginRouter"; // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue + auto-form config
+import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
+import { observabilityRouter } from "./routers/observabilityRouter"; // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO/burn-rate + decision-trace
+import { contractsRouter } from "./routers/contractsRouter"; // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema BACKWARD gate + reconciliation
+import { orchestrationGovRouter } from "./routers/orchestrationGovRouter"; // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG validate + priority/SLA + four-eyes
+import { trafficGovRouter } from "./routers/trafficGovRouter"; // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
+import { twinGovRouter } from "./routers/twinGovRouter"; // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
+import { devPortalRouter } from "./routers/devPortalRouter"; // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold + sandbox)
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
@@ -504,6 +513,15 @@ export const appRouter = router({
 
   // License Management
   license: licenseRouter,
+  edition: editionRouter, // doc 33 F1 (SYNAPSE ADR-007): READ-ONLY edition + deployment profile
+  plugin: pluginRouter, // doc 33 F2 (SYNAPSE ADR-008): READ-ONLY plugin manifest catalogue
+  security: securityRouter, // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
+  observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
+  contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
+  orchestrationGov: orchestrationGovRouter, // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG + priority/SLA + four-eyes
+  trafficGov: trafficGovRouter, // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
+  twinGov: twinGovRouter, // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
+  devPortal: devPortalRouter, // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold)
 
 
   // NG Rate Threshold Alerts

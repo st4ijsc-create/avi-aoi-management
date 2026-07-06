@@ -18,6 +18,7 @@
 
 import { licenseService } from './license-service';
 import { licenseGuard } from './license-guard';
+import { decideLicenseBatch, type LicenseState } from './licensePolicy'; // doc 33 F4 (SYNAPSE §4.3): never-stop-production
 import { ENV } from '../_core/env';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -123,71 +124,52 @@ const ALWAYS_ALLOWED_PROCEDURES = new Set([
 export function licenseEnforcementMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     if (ENV.licenseBypass) return next();
-    const state = licenseGuard.getState();
+    const state = licenseGuard.getState() as LicenseState;
 
     // Normal and warning states: allow everything
     if (state === 'normal' || state === 'warning') {
       return next();
     }
 
-    // Extract procedure name(s) from tRPC URL
-    // URL pattern: /api/trpc/procedureName or /api/trpc/proc1,proc2 (batch)
-    const urlPath = req.path; // e.g., /license.activate or /license.activate,auth.me
-    const procedures = urlPath.replace(/^\//, '').split(',').filter(Boolean);
+    // Extract procedure name(s) from tRPC URL (batch = comma-separated).
+    const procedures = req.path.replace(/^\//, '').split(',').filter(Boolean);
     const method = req.method.toUpperCase();
 
-    // Check if ALL procedures in the batch are allowed
-    const allAllowed = procedures.every(proc => ALWAYS_ALLOWED_PROCEDURES.has(proc));
+    // doc 33 F4 (SYNAPSE §4.3 "không bao giờ dừng sản xuất vì license"):
+    // production-critical procedures (inspection/session/andon/safety/telemetry/alerts)
+    // ALWAYS pass; `locked` degrades to read-only for non-critical config when
+    // never-stop-production is on (default). License STATUS stays honest; only enforcement
+    // changes so the line never halts.
+    const decision = decideLicenseBatch({
+      procedures,
+      method,
+      state,
+      alwaysAllowed: (proc) => ALWAYS_ALLOWED_PROCEDURES.has(proc),
+    });
+    if (decision.allow) return next();
 
-    if (allAllowed) {
-      return next();
-    }
-
-    if (state === 'readonly') {
-      // READONLY: Allow GET (queries), block POST (mutations) unless always-allowed
-      if (method === 'GET') {
-        return next();
-      }
-
-      // POST request with non-allowed procedures
-      const status = licenseGuard.getStatus();
-      res.status(403).json({
-        error: {
-          message: `Hệ thống đang ở chế độ chỉ đọc do license đã hết hạn. Vui lòng gia hạn license.`,
-          code: 'LICENSE_READONLY',
-          data: {
-            state: status.state,
-            message: status.message,
-            daysUntilExpiry: status.daysUntilExpiry,
-            daysPastExpiry: status.daysPastExpiry,
-          },
+    const status = licenseGuard.getStatus();
+    const messages: Record<string, string> = {
+      LICENSE_READONLY:
+        'License hết hạn: thao tác sản xuất/kiểm tra/an toàn vẫn chạy — chỉ khoá cấu hình & tính năng cao cấp. Vui lòng gia hạn.',
+      LICENSE_LOCKED: `Cấu hình bị khoá do license hết hạn quá ${status.daysPastExpiry ?? '?'} ngày (sản xuất-cốt-lõi vẫn hoạt động). Vui lòng gia hạn.`,
+      NO_LICENSE:
+        'Hệ thống chưa có license — vui lòng kích hoạt để dùng đầy đủ (thao tác sản xuất-cốt-lõi vẫn hoạt động).',
+    };
+    const code = decision.code ?? 'LICENSE_LOCKED';
+    res.status(403).json({
+      error: {
+        message: messages[code] ?? messages.LICENSE_LOCKED,
+        code,
+        data: {
+          state: status.state,
+          message: status.message,
+          daysUntilExpiry: status.daysUntilExpiry,
+          daysPastExpiry: status.daysPastExpiry,
         },
-      });
-      return;
-    }
-
-    if (state === 'locked' || state === 'no_license') {
-      // LOCKED: Block everything except always-allowed
-      const status = licenseGuard.getStatus();
-      res.status(403).json({
-        error: {
-          message: state === 'locked'
-            ? `Hệ thống đã bị khóa hoàn toàn do license hết hạn quá ${status.daysPastExpiry} ngày. Chỉ có thể kích hoạt lại license.`
-            : `Hệ thống chưa có license. Vui lòng kích hoạt license để sử dụng.`,
-          code: state === 'locked' ? 'LICENSE_LOCKED' : 'NO_LICENSE',
-          data: {
-            state: status.state,
-            message: status.message,
-            daysUntilExpiry: status.daysUntilExpiry,
-            daysPastExpiry: status.daysPastExpiry,
-          },
-        },
-      });
-      return;
-    }
-
-    // Unknown state: allow by default
-    next();
+      },
+    });
+    return;
   };
 }
 

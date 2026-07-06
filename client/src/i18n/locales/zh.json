@@ -4735,6 +4735,8 @@
     "federationDashboardDesc": "跨站点 KPI 只读汇总，覆盖整个联邦（管理员）",
     "modules": "模块",
     "modulesDesc": "本部署的平台模块及其许可状态（只读）",
+    "synapsePlatform": "SYNAPSE 平台",
+    "synapsePlatformDesc": "版本、插件、安全策略、SLO/决策追踪、契约与开发者门户（只读）",
     "edgeNodes": "边缘节点",
     "edgeNodesDesc": "注册并监控边缘协调运行时",
     "workOrders": "维护工单",

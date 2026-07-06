@@ -39,6 +39,8 @@ import * as db from "../db";
 import { licenseService } from "../license/license-service";
 import { licenseGuard } from "../license/license-guard";
 import { SYSTEM_MODULES, toExportFormat, isRouteAllowed, CORE_MODULE_CODES, ALL_MODULE_CODES } from "@shared/module-registry";
+import { resolveEditionModules } from "@shared/editions"; // doc 33 I3 (F1): edition module-ceiling
+import { resolveDeploymentProfile } from "../_core/deploymentProfile";
 import { ENV } from "../_core/env";
 
 // ═══════════════════════════════════════════════════════════════
@@ -196,10 +198,17 @@ const publicLicenseRouter = router({
       licenseKey: z.string().min(1),
     }))
     .query(async ({ input }) => {
+      // doc 33 I3 (F1 · ADR-007): bound the licensed modules by the deployment EDITION's ceiling
+      // (a Machine edition never shows Site-only modules). Gated by EDITION_PROFILE (default OFF →
+      // pass-through, fully backward-compatible). Core modules always survive.
+      const profile = resolveDeploymentProfile();
+      const applyEditionCeiling = (mods: string[]): string[] =>
+        profile.profileEnforced ? resolveEditionModules(profile.edition, mods) : mods;
+
       // ── LICENSE_BYPASS: return all modules ──
       if (ENV.licenseBypass) {
         return {
-          modules: [...ALL_MODULE_CODES],
+          modules: applyEditionCeiling([...ALL_MODULE_CODES]),
           isLicensed: true,
           licenseStatus: 'normal',
           expiresAt: null,
@@ -261,8 +270,8 @@ const publicLicenseRouter = router({
         }
       }
 
-      // Merge core + aggregated modules
-      const uniqueModules = [...new Set([...CORE_MODULE_CODES, ...aggregatedModules])];
+      // Merge core + aggregated modules, then bound by the edition ceiling (I3).
+      const uniqueModules = applyEditionCeiling([...new Set([...CORE_MODULE_CODES, ...aggregatedModules])]);
 
       // Use the best license (or guard status) for metadata
       const refLicense = bestLicense || null;

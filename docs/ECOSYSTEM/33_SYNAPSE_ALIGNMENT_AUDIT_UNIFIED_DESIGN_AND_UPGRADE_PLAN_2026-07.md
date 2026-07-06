@@ -3,7 +3,7 @@
 > **Đầu vào:** báo cáo tham khảo **SYNAPSE** (`D:\SOURCES\SYNAPSE\`) gồm (1) Bản thiết kế chi tiết hệ thống *SYN-RAOE-SDD-001 v1.0* (16 chương, 12 thành phần cốt lõi) và (2) Kế hoạch phát triển phần mềm *SYN-RAOE-DEVPLAN-001* (3 edition, 3 ADR, release train R0–R4).
 > **Đối chiếu với:** hệ **AVI/AOI Management** thực tế (React 19 + tRPC v11 + Drizzle/PostgreSQL 17 + TimescaleDB · MQTT Aedes/EMQX · local-LLM Qwen3 trên RTX 5090 · Docker) — branch `automation-orchestration-r0`.
 > **Phương pháp:** 6 agent audit đọc-chỉ song song (kiểm chứng code thật, trích dẫn file) + kế thừa doc 16/18/21/22/24/27.
-> **Ngày:** 2026-07-05 · **Tác giả:** Principal Systems Architect · **Trạng thái:** 🟡 *Draft — chờ DUYỆT trước khi gọi agent thực thi (§5).*
+> **Ngày:** 2026-07-05 · **Tác giả:** Principal Systems Architect · **Trạng thái:** 🟢 *ĐÃ DUYỆT (§5B) — đang thực thi Đợt Nền tảng trong git worktree riêng `../avi-aoi-synapse` (branch `synapse-foundation`), tách khỏi phiên doc-32. Nhật ký: §7.*
 
 ---
 
@@ -316,4 +316,232 @@ Hệ AVI/AOI hiện tại **đã hiện thực phần lớn *chức năng* của
 **Bước kế tiếp:** bạn duyệt **§5** → tôi chốt phạm vi/thứ tự → gọi agent thực thi.
 
 ---
-*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · mọi con số maturity là framework-level, trích dẫn file trong §2 · chờ phê duyệt §5.*
+
+## 7. NHẬT KÝ THỰC THI (append-only)
+
+**Git-hygiene + isolation (2026-07-05):** commit checkpoint `e17d205` toàn bộ working tree tồn đọng (doc 25/26/27/31, đã lọc secrets/APK/test-results; gate `tsc --noEmit` exit 0) trên `automation-orchestration-r0`. Phát hiện **một phiên song song đang thực thi doc-32 (reporting/export) trong CÙNG working tree**; theo quyết định của chủ sở hữu, **tách git worktree riêng** cho SYNAPSE: main tree trả về `automation-orchestration-r0` (doc-32 nguyên vẹn), công việc SYNAPSE chuyển sang worktree **`../avi-aoi-synapse`** (branch `synapse-foundation`, node_modules junction + .env sao chép). Migration mới bắt đầu `0202` (lưu ý: doc-32 đã dùng 0202 ở tree kia — SYNAPSE sẽ đánh số tránh trùng khi cần migration).
+
+### ✅ F1 (P1) — Edition & Collapsible Deploy — 2026-07-05
+**Phạm vi giao:** hạ tầng "gập được" cấp descriptor + hồ sơ triển khai, **non-breaking / advisory** (EDITION mặc định = `site` = hành vi cũ y nguyên). KHÔNG migration.
+**Đã làm:**
+- `shared/editions.ts` — descriptor 3 edition (machine/line/site) + semantics: edition **BOUND** license (module ceiling + quota clamp + infra default), không bao giờ cấp vượt license; core luôn cho phép. Helpers `getEdition/resolveEditionModules/clampQuota/isModuleAllowedInEdition`. Treo lên `module-registry` (một artifact, nhiều khóa).
+- `server/_core/deploymentProfile.ts` — resolver edition + infra profile từ env, suy ra broker (embedded-aedes/external-emqx) + time-series (main-db/dedicated-timescale) thật; `describeDeployment()` cho startup log.
+- `server/routers/editionRouter.ts` (READ-ONLY `current`/`list`) + đăng ký vào `appRouter` (`edition:`).
+- Startup log `[edition] …` trong `server/_core/index.ts` (dynamic import, non-breaking).
+- `deploy/compose/docker-compose.machine.yml` — Machine single-node "collapsed" (postgres ts-ha + redis + app; **không EMQX, không TSDB riêng**; broker nhúng; TS degrade→main).
+- `deploy/EDITIONS.md` (ma trận + cách chạy + upgrade path) · `deploy/helm/README.md` + `deploy/k3s/README.md` (scaffold Site/edge).
+- `.env.example` — block `EDITION` / `INFRA_PROFILE` / `EDITION_PROFILE` (mặc định site/advisory).
+- Tests: `server/_core/editions.test.ts` (12) + `server/_core/deploymentProfile.test.ts` (8) — **20/20 xanh** (đặt dưới `server/` vì vitest include chỉ `server/**` + `client/src/**`).
+**Gate:** `tsc --noEmit` exit 0 · 20/20 test xanh. Flag `EDITION_PROFILE=false` (advisory).
+**Còn lại của P1 (đợt sau):** enforce module-ceiling/quota trong license-middleware (advisory → cưỡng chế) · hợp nhất ~110 env-flag operational vào registry · Helm/K3s HA manifests thật · Join wizard + UNS bridge (mDNS) · CI 2-profile smoke · client edition badge (dùng `trpc.edition.current`).
+
+### ✅ F2 (P3) — Plugin Manifest & SDK v1 — 2026-07-05
+**Phạm vi giao:** tầng manifest plugin (ADR-008) cấp registry + apiVersion gate + auto-form, **non-breaking / advisory** (metadata, không mở control path, không đổi hành vi adapter). KHÔNG migration.
+**Đã làm:**
+- `shared/plugin/manifest.ts` — hợp đồng `PluginManifest` (id/version SemVer/`apiVersion` range/kind 6-extension-point/protocols/configSchema/permissions/signature) + **`satisfiesApiVersion`** (^, x, ">=a <b", exact; **fail-closed**) + `validateManifest` (pure).
+- `server/services/plugins/pluginRegistry.ts` — register-and-go; **apiVersion GATE**: manifest ngoài dải → `PluginRejectedError` (Hub từ chối, không "chạy liều"). `registerPlugin`/`tryRegisterPlugin`/`list`/`get`/`byKind`.
+- `server/services/plugins/configForm.ts` — **Zod → JSON-Schema** (zod v4 `z.toJSONSchema`) cho Setup Wizard tự sinh form; fail-safe.
+- `server/services/plugins/otConnectorManifests.ts` + `index.ts` — seed manifest **5 OT connector** (opcua/modbus/s7/mitsubishi-mc/ethernet-ip) với config-form + permissions ACL topic; register-and-go tại import. Chứng minh "thêm hãng = khai báo manifest + auto-form, không sửa lõi".
+- `server/routers/pluginRouter.ts` (READ-ONLY `apiVersion`/`list`/`listByKind`/`get`) + đăng ký `plugin:` vào appRouter.
+- `.env.example` — flag `PLUGIN_MANIFEST` (advisory).
+- Test: `server/services/plugins/manifest.test.ts` — apiVersion gate reject, validate good/bad, 5 seed conformance (valid+compatible+signed+auto-form).
+**Gate:** `tsc --noEmit` exit 0 · test xanh (xem commit).
+**Còn lại của P3 (đợt sau):** gắn manifest vào registry secsgem/robot/programming; wizard UI tiêu thụ `plugin.get.configSchema`; conformance suite chạy như CI bắt buộc cho adapter mới; `synapse plugin new` template.
+
+### ✅ F5 (H1) — Security platform-grade (đợt 1) — 2026-07-05
+**Ưu tiên lại theo chủ sở hữu:** làm F5 Security + F6 Observability TRƯỚC F3/F4 (đường tới hạn "nền bán-được"). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm (2 trụ tự-chứa, giá trị cao nhất):**
+- `server/services/security/policyEngine.ts` — **OPA-lite policy-as-code**: rule model khai báo được (serializable, versioned) + evaluator thuần (deny > require_approval > allow, fail-safe). `DEFAULT_POLICIES` hiện thực đúng ví dụ SDD §5.11.2 (cấm skip AOI class-3; duyệt override khi zone đông; duyệt recipe-write khi line running). Callers (write-gate) opt-in.
+- `server/services/security/auditChain.ts` — **hash-chain WORM audit**: `appendRecord`/`verifyChain` (sha256, canonical JSON, genesis, seq tăng dần) → mọi sửa/chèn/xoá bản ghi bị phát hiện. Nâng audit từ "append-only theo quy ước" → tamper-evident.
+- `server/routers/securityRouter.ts` (READ-ONLY `policies`/`evaluate` dry-run) + đăng ký `security:`.
+- `.github/workflows/sbom-cve.yml` — SBOM (CycloneDX) + CVE audit hằng tuần (advisory).
+- `.env.example` — flag `SEC_PLATFORM`.
+- Test: `server/services/security/security.test.ts` — policy precedence + tamper-detection.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H1 (đợt sau):** mTLS/SPIFFE-lite service identity + device X.509 onboarding (cần PKI/infra); wire hash-chain vào `controlAudit` writer thật; OPA server thật cho Site edition; Vault (tuỳ chọn Site).
+
+### ✅ F6 (H2) — Observability (đợt 1) — 2026-07-05
+**Phạm vi giao:** nền observability tự-chứa, **ít phụ thuộc** (không thêm OTel SDK nặng lúc này — full OTLP export hoãn). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/observability/slo.ts` — **SLO catalogue + error-budget + multi-window burn-rate** (SRE workbook: critical 14.4×, warning 6×). `DEFAULT_SLOS` = target SDD §5.12.2 (dispatch P95 ≤500ms, UNS P99 ≤250ms, twin ≤1s, API ≥99.9%).
+- `server/services/observability/decisionTrace.ts` — **truy vết quyết định** (ring buffer bounded): candidate set + điểm + ràng buộc loại ai + version thuật toán → trả lời "vì sao robot X được chọn lúc 14:32". `recordDecision/queryDecisions/explainDecision`.
+- `server/services/observability/correlation.ts` — **correlation backbone** qua `AsyncLocalStorage` (không cần OTel SDK): 1 correlation_id chạy order→wo→task→robot-command→ack; decision-trace tự gắn id.
+- `server/routers/observabilityRouter.ts` (READ-ONLY `slos`/`evaluateSlo` preview/`recentDecisions`) + đăng ký `observability:`.
+- `.env.example` — flag `OBSERVABILITY`.
+- Test: `server/services/observability/observability.test.ts` — SLO budget/burn, decision record/query/explain, correlation propagation.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H2 (đợt sau):** **OpenTelemetry SDK thật** (OTLP→Tempo/Jaeger) wire vào HTTP pipeline; persist decision-trace vào hypertable (migration đánh số tránh trùng 0202); bật `METRICS_ENABLED` mặc định + burn-rate alert nối Prometheus; Loki/ClickHouse shipping.
+
+### ✅ F4 (P2) — Licensing hardening — 2026-07-05
+**Thứ tự chủ sở hữu:** F4 → F7 → F8 → F3. **Lưu ý:** F4 sửa hành vi enforcement THẬT (không chỉ module mới) — giữ *status* license trung thực, chỉ đổi *cưỡng chế*.
+**Đã làm:**
+- `server/license/licensePolicy.ts` — **"không bao giờ dừng sản xuất vì license"** (SYNAPSE §4.3): allowlist procedure **production-critical** (inspection/session/andon/safety/interlock/telemetry/alert/equipment/robot/field) LUÔN qua ở MỌI state; `locked` **degrade → readonly** cho cấu hình khi `LICENSE_NEVER_STOP_PRODUCTION` (mặc định TRUE). Pure `isProcedureAllowed`/`decideLicenseBatch`.
+- `server/license/license-middleware.ts` — refactor `licenseEnforcementMiddleware` dùng `decideLicenseBatch` (giữ nguyên 403 shape; thông điệp mới nêu rõ sản xuất-cốt-lõi vẫn chạy). **Thay hành vi "hết hạn = chặn mọi mutation / khoá cứng" (halt máy) → chỉ khoá cấu hình.**
+- `server/license/ed25519License.ts` — đường **Ed25519** sign/verify (song song RSA, dùng Node crypto) + **TPM-bound fingerprint** scaffold (kết hợp TPM-EK/CPU/MAC/disk; TPM-read cần agent, hoãn).
+- `server/license/deviceMetering.ts` — **metering per-connected-device** (floating license Line/Site); over-limit = **cảnh báo, KHÔNG chặn**.
+- `.env.example` — `LICENSE_NEVER_STOP_PRODUCTION` (default true).
+- Test: `server/license/licenseHardening.test.ts` — policy (critical luôn qua/ mọi state; locked→readonly; batch), Ed25519 roundtrip/tamper, fingerprint TPM/stable, metering.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của P2 (đợt sau):** phát hành license Ed25519 thật + rotate RSA→Ed25519; agent đọc TPM-EK; collector metering nối Robot/Equipment registry đẩy License Server; nút "grace banner" trên UI.
+
+### ✅ F7 (H5) — Schema registry + contracts — 2026-07-05
+**Phạm vi giao:** nền "contracts kỷ luật" tự-chứa. **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/contracts/schemaRegistry.ts` — **BACKWARD-compat gate**: `checkBackwardCompat` phát hiện breaking (xoá field / đổi type / thêm required / thu hẹp enum; thêm optional = an toàn) + `registerSchema` **từ chối** breaking (trừ `allowBreaking` = major mới …/v2). Chống "đổi schema UNS gây vỡ hàng loạt".
+- `server/services/contracts/apiSpec.ts` — **build OpenAPI 3.1 (REST /api/v1) + AsyncAPI 2.6 (UNS/Sparkplug channels)** từ registry khai báo; seed surface hiện có → spec công bố được cho Developer Portal + đối tác.
+- `server/services/contracts/reconciliation.ts` — **engine đối soát** (SDD §5.9.2): so internal↔external (MES/ERP/WMS) theo tolerance abs/rel → lệch = **phiếu điều tra**, không tự-sửa.
+- `server/routers/contractsRouter.ts` (READ-ONLY `openapi`/`asyncapi`/`schemas`/`checkCompat`/`reconcilePreview`) + đăng ký `contracts:`.
+- `.env.example` — flag `SCHEMA_REGISTRY`.
+- Test: `server/services/contracts/contracts.test.ts` — compat gate (additive/removal/type/required/enum), spec builders, reconciliation.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H5 (đợt sau):** wire gate vào CI (chạy trên PR chạm `contracts/`); auto-extract OpenAPI từ mọi route + AsyncAPI từ `topicBuilder` thật; cron đối soát ngày nối MES/ERP/WMS; Pact contract-test 2 phía ERP.
+
+### ✅ F8 (H3) — Durable orchestration primitives — 2026-07-05
+**Phạm vi giao:** 3 primitive §5.1/§5.3 còn thiếu, **additive** (KHÔNG đụng `foeEngine` production). **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/orchestration/dag.ts` — **recipe→DAG + topological check** (Kahn) + phát hiện cycle/missing-ref + `readySet` (nút đủ điều kiện chạy song song). Thay "tree" bằng DAG đúng đặc-tả.
+- `server/services/orchestration/eventSourcing.ts` — **durable execution**: `replayRun` (reducer từ event log) + `resumePlan` → **AUTO-continue sau crash** (resume task đang chạy + dispatch nút ready) thay vì `held` thủ công.
+- `server/services/orchestration/slaPolicy.ts` — **P0-P3 priority + aging chống đói + EDF + preemption** + **four-eyes** (uỷ quyền cho policy-engine F5: deny/require_approval → cần duyệt). Tích hợp chéo F5.
+- `server/routers/orchestrationGovRouter.ts` (READ-ONLY `validateDag`/`orderQueue`/`fourEyesCheck`) + đăng ký `orchestrationGov:`.
+- `.env.example` — flag `FOE_DURABLE`.
+- Test: `server/services/orchestration/durableOrchestration.test.ts` — DAG topo/cycle/readySet, replay+crash-resume, priority aging/EDF/preempt/four-eyes.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của H3 (đợt sau):** wire event-sourcing vào `foeEngine` (persist per-transition + replay-on-boot thay `held`); compiler sinh DAG thật; dispatcher dùng `orderQueue` + four-eyes gate; migration `decision_traces`/`run_events` (đánh số tránh trùng doc-32).
+
+### ✅ F3 (P4) — Out-of-process plugin sidecar — 2026-07-05
+**Phạm vi giao:** substrate giám sát plugin out-of-process, **không thêm dep gRPC nặng** (IPC = JSON-lines-over-stdio, pluggable → gRPC/unix-socket sau; logic giám sát protocol-agnostic). Spawner + scheduler **injected** → test tất định. **Non-breaking / advisory**, KHÔNG migration.
+**Đã làm:**
+- `server/services/plugins/sidecar/pluginLifecycle.ts` — máy trạng thái `install→discover→configure→validate→run→drain→upgrade→uninstall`; **cổng cứng: `run` chỉ tới được từ `validated`**.
+- `server/services/plugins/sidecar/pluginQuota.ts` — token-bucket rate-limit + resource budget (CPU/mem) + `withTimeout` (mọi call Hub→plugin có hạn) → "plugin hỏng không kéo sập platform".
+- `server/services/plugins/sidecar/pluginSupervisor.ts` — **watchdog**: crash → restart exponential-backoff (capped); quá ngưỡng trong cửa sổ → **circuit-break + incident** (không loop). `computeBackoffMs`/`decideRestart` pure; `PluginSupervisor` với spawner/scheduler injected.
+- `server/services/plugins/sidecar/pluginSignature.ts` — **ký Ed25519** cho artifact plugin (tái dùng F4); **unsigned bị từ chối ở production** (fail-closed, không spawn code chưa ký/giả mạo).
+- `server/routers/pluginRouter.ts` — thêm `sidecarCapabilities` (read-only).
+- `.env.example` — flag `PLUGIN_SIDECAR`.
+- Test: `server/services/plugins/sidecar/sidecar.test.ts` — validate-gate, quota/timeout, watchdog backoff+circuit-break (fake spawn), signature.
+**Gate:** tsc 0 · test xanh.
+**Còn lại của P4 (đợt sau):** wire gRPC/unix-socket thật + go-plugin handshake; sidecar bọc DLL hãng (FOCAS/robot SDK) expose Connector contract; cgroup/container quota thật; đăng ký supervisor vào bootstrap khi bật flag; conformance chaos (mất mạng/dữ liệu bẩn).
+
+---
+
+## 8. 🏁 KẾT LUẬN ĐỢT NỀN TẢNG (2026-07-05)
+
+**8/8 phase Đợt Nền tảng HOÀN TẤT** trên branch `synapse-foundation` (worktree `../avi-aoi-synapse`), mỗi phase tsc 0 + test xanh, **non-breaking / advisory / flag-OFF / không migration**, stage theo path tường minh:
+
+| Phase | Commit | Trụ SYNAPSE |
+|---|---|---|
+| F1 Edition & Collapsible Deploy | `02f82e4` | ADR-007 |
+| F2 Plugin Manifest + apiVersion gate | `096fd0a` | ADR-008 |
+| F5 Security (policy-as-code + WORM audit) | `7db91d7` | §5.11 |
+| F6 Observability (SLO/decision-trace/correlation) | `125f11c` | §5.12 |
+| F4 Licensing (never-stop-production + Ed25519/TPM) | `8156f0c` | §4.3 |
+| F7 Schema registry + OpenAPI/AsyncAPI + reconciliation | `abd341c` | §5.6/§8/§5.9 |
+| F8 Durable orchestration (DAG + event-sourcing + SLA) | `94b91e6` | §5.1/§5.3 |
+| F3 Out-of-process plugin sidecar | *(this commit)* | §6.4.3 |
+
+**7 router read-only mới:** `edition · plugin(+sidecarCapabilities) · security · observability · contracts · orchestrationGov`. Tất cả treo trên contracts, không mở control path mới, tôn trọng flag-OFF/HITL/audit.
+
+**Đợt SAU (thương mại/nâng cao — theo quyết định §5B):** P5 Tauri desktop · P6 dev-portal/marketplace · H4 traffic space-time + infra-coordinator · H6 twin drift + RL · C1 flag-flip staged · C2 hardware proof. Mỗi "Còn lại của …" trong §7 là backlog tích hợp sâu (wire primitive vào engine thật + migration đánh số tránh trùng doc-32).
+
+**Merge:** worktree `synapse-foundation` sẵn sàng review/PR khi phiên doc-32 ở main tree hoàn tất.
+
+---
+
+## 9. ĐỢT NỐI-VÀO-ENGINE THẬT (Integration wave I1–I6, 2026-07-05)
+
+Sau khi chủ sở hữu chọn **"nối primitive vào engine thật (foundation THỰC SỰ)"**, 6 tích hợp biến primitive advisory thành *đang chạy trong code production* — mỗi cái **flag-gated/additive**, tsc 0 + test xanh, commit riêng:
+
+| # | Tích hợp | Vào code thật | Commit | Cờ (mặc định OFF) |
+|---|---|---|---|---|
+| I1 | F6 decision-trace | `fleet/taskAllocator` — mỗi allocation ghi "vì sao device X" | `ccfd04d` | (trong FLEET_ORCH) |
+| I2 | F5 policy-as-code | `ot/commandDispatcher` write-gate (deny/four-eyes trước interlock) | `40d565f` | `SEC_PLATFORM` |
+| I3 | F1 edition ceiling | `license.getAllowedModules` bound theo edition | `8bd6bbf` | `EDITION_PROFILE` |
+| I4 | F5 hash-chain WORM | `controlAuditService` (advisory-lock, migration **0220**) | `434976f` | `SEC_PLATFORM` |
+| I5 | F8 durable exec | `foeEngine` auto-resume interrupted runs (vs `held` thủ công) | `b57c7b2` | `FOE_DURABLE` |
+| I6 | F7 reconciliation | cron cycle + provider registry (MES/ERP/WMS) + CI contract-gate | *(this)* | `RECONCILE_CRON` |
+
+**Nguyên tắc giữ vững:** mọi tích hợp mặc định TẮT → hành vi cũ y nguyên (mọi test production hiện có vẫn xanh: dispatcher 36, fleet 53, foe 27, controlAudit 2…). Chỉ 1 migration (0220, additive/nullable/idempotent, số 0220 tránh trùng doc-32 0202). Không mở control path mới; policy-gate chạy TRƯỚC interlock (governance→safety), không tự-khoá interlock action.
+
+**Còn lại (deep, đợt sau):** OTel OTLP export thật + persist decision-trace (bảng, migration); RunEvent persistence đầy đủ cho replay-from-events (I5 hiện tái dùng run_steps re-walk); provider MES/ERP/WMS thật cho reconciliation; wire hash-chain vào các audit writer khác; bật cờ staged (C1) + phần cứng (C2).
+
+**Tổng kết phiên:** **8 phase nền tảng (F1-F8) + 6 tích hợp (I1-I6) = 14 commit** trên `synapse-foundation`, ~110+ test SYNAPSE xanh, mọi test production hiện có không đổi.
+
+---
+
+## 10. ĐỢT HOÀN TẤT PHẦN CÒN LẠI (Remaining wave W1–W5, 2026-07-05)
+
+Theo "làm nốt phần còn lại" — mọi hạng mục **phần-mềm-làm-được** đã hoàn tất (flag-gated/additive, tsc 0 + test xanh, commit riêng); chỉ còn phần **phần cứng** (C2) và **hệ ngoài thật** (gRPC vendor-DLL, provider MES/ERP) là ngoài phạm vi.
+
+| # | Hạng mục | Nội dung | Commit | Cờ |
+|---|---|---|---|---|
+| H4 | Traffic space-time | interval reservation + time-expanded A* (wait-avoidance) + infra coordinator (elevator/door 3-step) | `e1e97ba` | `TRAFFIC_SPACETIME` |
+| H6 | Twin/AI nâng cao | twin↔reality drift detector + Monte-Carlo N≥30/CI (mulberry32) + RL advisor shadow→suggest→auto + circuit-breaker | `2ab53c2` | `TWIN_DRIFT`/`RL_ADVISOR` |
+| P6 | Developer Portal | serve OpenAPI/AsyncAPI + `synapse plugin new` scaffold + conformance checklist + sandbox validate + guide | `604ab7d` | `DEV_PORTAL` |
+| W4 | Persistence sâu | decision_traces (0221) via sink + orchestration_run_events (0222) + wire RUN_CREATED; query/replay API | `074f3f4` | (OBSERVABILITY/FOE_DURABLE) |
+| W5 | Đóng gói + runbook | Tauri machine-shell scaffold (`apps/machine-shell/`) + Local Agent spec + **doc 35 flag-flip runbook** | *(this)* | — |
+
+**Router read-only tổng cộng:** `edition · plugin · security · observability · contracts · orchestrationGov · trafficGov · twinGov · devPortal` (9). **Migration SYNAPSE:** 0220/0221/0222 (đánh số cao tránh 0202 của doc-32).
+
+**⛔ Ngoài phạm vi phần mềm (giữ nguyên là backlog):**
+- **C2 phần cứng**: Safety PLC SIL + UWB/LiDAR, FOCAS Fwlib32, GigE/GenICam, robot FAT, EtherCAT — cần thiết bị thật. Cổng phần mềm + hợp đồng sidecar + spec Local Agent đã SẴN SÀNG nhận.
+- **Hệ ngoài thật**: gRPC/unix-socket wire + sidecar bọc DLL hãng; provider MES/ERP/WMS thật cho reconciliation; OTel OTLP export tới Tempo/Jaeger (correlation backbone đã có, chỉ thiếu exporter dep). Đều là "cắm provider/exporter", không phải thiết kế lại.
+- **C1 kích hoạt**: doc 35 là runbook bật cờ staged — thực thi trên staging là bước vận hành của chủ sở hữu.
+
+**TỔNG KẾT TOÀN PHIÊN:** **F1-F8 (8) + I1-I6 (6) + H4/H6/P6/W4/W5 (5) = 19+ commit** trên `synapse-foundation`; SYNAPSE test-suite xanh toàn bộ; **0 regression** trên mọi test production hiện có; 3 migration additive. Worktree sẵn sàng PR khi phiên doc-32 (main tree) commit xong.
+
+---
+
+## 11. ĐỢT KIỂM ĐỊNH ĐỐI-KHÁNG & HOÀN TẤT PHẦN MỀM (Audit + completion wave, 2026-07-05)
+
+Sau "wire sâu vào engine thật" (D1–D4) + cockpit UI, chạy một **workflow kiểm định đối-kháng 14 agent** (5 chiều review: pure-logic · integration/regression · security · db-migration · frontend → **verify từng phát hiện** một cách đối-kháng + 2 agent completeness) trên toàn bộ 25 commit `e17d205..HEAD`. Kết quả: **6 phát hiện THẬT đã xác nhận** (mọi cái nằm trong primitive **flag-OFF mặc định** → 0 regression production hôm nay, nhưng là khiếm khuyết đúng/an-toàn của nền tảng) + danh sách phần-mềm-còn-lại đã phân loại trung thực. Đã **sửa cả 6** (kèm test hồi quy) và **hoàn tất 5 wave phần mềm** (B–F).
+
+### 11.1 Bổ sung công việc chưa ghi ở §10 (UI cockpit + deep-wire D1–D4)
+
+| Hạng mục | Nội dung | Commit |
+|---|---|---|
+| UI Cockpit | trang `/synapse-platform` 6-tab **read-only** (edition · plugins · security · observability · contracts · dev-portal) + route/nav/module-registry/i18n | `f5e27cd` |
+| D1 RunEvent | foeEngine append RUN_CREATED/COMPLETED/FAILED + TASK_* vào `run_events` (FOE_DURABLE) | `ed27476` |
+| D2 Space-time occupancy | trafficManager dùng `effectiveOccupancy` từ reservation table (TRAFFIC_SPACETIME) | `427d5db` |
+| D3 RL shadow | `rlShadowAllocation` trong allocator thật — **log-only**, không đổi phân bổ (RL_ADVISOR) | `fdaef6a` |
+| D4 CRUD content-hash | auditTrailService per-row hash tamper-evidence (SEC_PLATFORM) | `693383c` |
+
+### 11.2 Kiểm định đối-kháng — 6 phát hiện đã xác nhận & SỬA (Wave A `d64cf73`)
+
+| # | Mức | File | Lỗi (input→sai) | Sửa + test |
+|---|---|---|---|---|
+| 1 | **HIGH** | `traffic/spaceTimeAStar` | `earliestFreeDeparture` chỉ tiến +`buffer` (buffer>1) → `overlaps` (giãn 2 phía) vẫn báo xung đột → planner phát tuyến mà `reserve()` từ chối | tiến `+2·buffer+1` (buffer=0 giữ nguyên); test buffer=1500 |
+| 2 | MED | `orchestration/eventSourcing` | `resumePlan` vẫn trả `dispatch` forward khi trạng thái `compensating` → khởi động nhánh mới giữa saga-rollback | `dispatch=[]` khi compensating; test TASK_FAILED |
+| 3 | MED | `license/licensePolicy` | allowlist khớp **cả namespace** → `robot.create`/`setEnabled`, `inspectionProgram.approve/release`, `field.registerDiscovered` vượt license (mất đòn bẩy thương mại) | tách RUNTIME vs MIXED + loại verb config/authoring; test locked/no_license |
+| 4 | MED | `auditTrailService` (D4) | content-hash SHA256 **không khoá** → kẻ có quyền ghi DB ký lại nội dung sửa | HMAC-SHA256 (AUDIT_HASH_SECRET) + ghi rõ phạm vi thật (không thay trigger append-only / chain I4) |
+| 5 | LOW | `audit/controlAuditService` (I4) | verify chỉ nạp `hash IS NOT NULL` → strip hash **đuôi** ẩn được sửa đổi | nạp **mọi** row id-order, chặn null-hash sau khi chain đã bắt đầu (prefix legacy vẫn cho); test strip-tail |
+| 6 | MED | `orchestration/runEventStore` (D1) | `COALESCE(MAX(seq),0)+1` không nguyên tử → append đồng thời trùng `seq` → sai thứ tự replay | `pg_advisory_xact_lock(ns,runId)` + `UNIQUE(runId,seq)` (migration **0223**) |
+
+> 1 phát hiện phụ (`policyEngine` `eq` dùng `===`) được verify là **KHÔNG phải lỗi** — hành vi trung thành với config, flag-OFF; không sửa.
+
+### 11.3 Hoàn tất 5 wave phần mềm (B–F) — flag-gated/additive, tsc 0 + test xanh
+
+| Wave | Hạng mục | Nội dung | Commit | Cờ |
+|---|---|---|---|---|
+| **B** (H2) | OTel export | bridge correlation→span + decision→span; phụ thuộc `@opentelemetry/api` qua **dynamic-import no-op fallback** (bật khi operator cài SDK) — hoàn tất phần H2 hoãn | `76c22c7` | OBSERVABILITY |
+| **C** (I6) | Reconcile + specs | cron bootstrap (backgroundJobs) + **example REST provider** + endpoint công khai `/api/v1/openapi.json`·`asyncapi.json` (DEV_PORTAL) | `b5b3e42` | RECONCILE_CRON |
+| **D** (P4) | Plugin transport thật | JSON-lines-over-stdio codec + `nodeSpawner` (child_process) + sample sidecar + supervisor bootstrap; test có **round-trip tiến trình con thật** | `7ea1998` | PLUGIN_SIDECAR |
+| **E** (UX) | Cockpit tools | tab **"Công cụ"** 9 widget dry-run (route/DAG/four-eyes/policy/SLO/schema-compat/reconcile/drift/RL) gọi endpoint read-only sẵn có | `d8f8200` | — |
+| **F** (P1) | Deploy thật | Helm chart (site/site-ha) + K3s manifest (line/edge) + CI 2-profile smoke thay scaffold README; validated `helm lint`/kubeconform K8s 1.29 | `aeac109` | — |
+
+### 11.4 Cập nhật PHẠM VI — nhiều mục §10 "ngoài phạm vi" nay ĐÃ LÀM trong phần mềm
+
+- ✅ **Nay software-complete:** OTel correlation→span bridge (B) · JSON-lines stdio plugin transport (D) · example reconcile provider + cron (C) · public API-spec endpoints (C) · interactive cockpit tools (E) · Helm/K3s/CI deploy artifacts (F).
+- ⏸️ **Hoãn CÓ CHỦ ĐÍCH** (medium-risk, cần feed/kịch bản thật để kiểm chứng — không vội sửa cuối phiên vì rủi ro hồi quy > giá trị):
+  - **Event-sourced FOE replay THUẦN** từ `run_events` (I5 hiện re-walk `run_steps` — *đang chạy đúng*; thay bằng replay-from-events cần kịch bản crash thật để verify tính đúng).
+  - **SLO burn-rate → prom-client + alert rule** (cần Prometheus sống để kiểm chứng burn-rate).
+  - **Twin drift feed** nối bảng OEE/cycle-time thật (wiring dữ liệu; cần đối chiếu KPI sống).
+  - **Hợp nhất ~110 env-flag** vào module-registry (mechanical nhưng blast-radius rất lớn; rủi ro hồi quy cao — cần đợt riêng có bao phủ test).
+  - **RL train offline** trên DES/monteCarlo (cần harness train + validate; hiện shadow placeholder most-battery).
+  - **Join-wizard + mDNS bridge** (cần lib mDNS + surface mới).
+- ⛔ **Genuinely blocked (phần cứng / hệ ngoài thật):** C2 (Safety-PLC SIL, GigE/GenICam, FOCAS Fwlib32, robot FAT, EtherCAT, UWB/LiDAR) · sidecar bọc **DLL hãng thật** (transport đã có) · endpoint **MES/ERP/WMS khách thật** · TPM-EK native · **gRPC/unix-socket** transport (stdio đã có; gRPC là bước sau cùng seam) · **OTLP collector sống** để XEM trace · phát hành license Ed25519 production/PKI.
+
+### 11.5 Migration & tổng kết đợt 11
+
+Migration mới: **0223** (`UNIQUE(runId,seq)` cho run_events). Router read-only giữ nguyên (9 router gov). **TỔNG PHIÊN mở rộng:** F1-F8 (8) + I1-I6 (6) + H4/H6/P6/W4/W5 (5) + UI (1) + D1-D4 (4) + **Wave A audit-fix (1) + B–F (5)** ≈ **30 commit** trên `synapse-foundation`; **tsc 0**; SYNAPSE suite xanh (thêm test hồi quy Wave A + test B/C/D/E); **0 regression** production; **4 migration additive** (0220–0223). Phần cứng + hệ-ngoài-thật là backlog vận hành, không phải thiết kế lại.
+
+---
+*Tài liệu 33 · SYNAPSE alignment · phương pháp: 6 agent audit code-thật + kế thừa doc 16/18/21/22/24/27 · maturity §2 framework-level, trích dẫn file · ĐÃ DUYỆT §5B · thực thi §7 (foundation F1-F8) + §9 (integration I1-I6) + §10 (remaining H4/H6/P6/W4/W5) + §11 (kiểm định đối-kháng 14-agent + fix 6 + hoàn tất wave B-F) trong worktree `../avi-aoi-synapse` · runbook kích hoạt: doc 35.*

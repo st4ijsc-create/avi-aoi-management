@@ -1,0 +1,115 @@
+# =============================================================================
+# SYNAPSE — Line/edge APP deployment. doc 33 §11 / ADR-007.
+# Single-node K3s, EDITION=line, embedded infra. One replica (edge appliance). An init
+# container runs the schema migration (waits for Postgres → migrate-standalone → verify
+# core tables) before the app container starts. Probes hit the REAL GET /health on 3000.
+#
+# Image `synapse:1.0.0` is expected to be present in the node's containerd (pullPolicy
+# IfNotPresent) — build & import it first (see install-edge.sh / README). install-edge.sh
+# can substitute a different tag via $SYNAPSE_IMAGE.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synapse-app
+  namespace: synapse-edge
+  labels:
+    app.kubernetes.io/name: synapse
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: synapse
+    synapse.io/edition: line
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: synapse
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: synapse
+        app.kubernetes.io/component: server
+        app.kubernetes.io/part-of: synapse
+        synapse.io/edition: line
+    spec:
+      initContainers:
+        - name: migrate
+          image: synapse:1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+          # Keep the image's tini entrypoint; run migrate + core-table verify via sh.
+          args:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              echo "[migrate] waiting for database…"
+              until pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; do sleep 2; done
+              node scripts/migrate-standalone.mjs || echo "[migrate] legacy/idempotent files reported errors (expected) — verifying core schema…"
+              ok=$(psql "$DATABASE_URL" -tAc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.production_sessions') IS NOT NULL THEN 1 ELSE 0 END")
+              if [ "$ok" = "1" ]; then echo "[migrate] core schema OK"; else echo "[migrate] FATAL: core tables missing"; exit 1; fi
+      containers:
+        - name: server
+          image: synapse:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: ROLE
+              value: api
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+          ports:
+            - name: http
+              containerPort: 3000 # matches PORT=3000
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30 # up to ~5 min for first boot
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /app/uploads
+              subPath: uploads
+            - name: data
+              mountPath: /app/backups
+              subPath: backups
+      volumes:
+        - name: data
+          emptyDir: {}

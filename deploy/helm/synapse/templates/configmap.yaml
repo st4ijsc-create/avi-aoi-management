@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "synapse.fullname" . }}
+  labels:
+    {{- include "synapse.labels" . | nindent 4 }}
+data:
+  # doc 33 §11 / ADR-007 — edition + infra profile (server/_core/deploymentProfile.ts).
+  # EDITION_PROFILE=true makes the resolved profile authoritative (F1 flag).
+  EDITION: {{ .Values.edition.code | quote }}
+  INFRA_PROFILE: {{ .Values.edition.infraProfile | quote }}
+  EDITION_PROFILE: {{ .Values.edition.enforceProfile | quote }}
+  {{- range $k, $v := .Values.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

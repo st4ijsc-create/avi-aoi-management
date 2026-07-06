@@ -13,7 +13,7 @@
 // enum pg mới) — action/entityType là varchar thường. entityId là varchar để chứa
 // được cả id số (interlock rule, assignment, session) lẫn khóa chuỗi (crKey).
 // ════════════════════════════════════════════════════════════════════════════
-import { pgTable, serial, integer, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, jsonb, timestamp, bigint, index } from "drizzle-orm/pg-core";
 
 export const controlAuditLog = pgTable("control_audit_log", {
   id: serial("id").primaryKey(),
@@ -25,6 +25,11 @@ export const controlAuditLog = pgTable("control_audit_log", {
   afterJson: jsonb("afterJson"),
   reason: text("reason"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // doc 33 I4 (F5 §5.11.2) — hash-chain WORM (migration 0220). NULLABLE + additive: legacy rows
+  // stay null; when SEC_PLATFORM is on, each new row links to the previous → tamper-evident.
+  prevHash: text("prevHash"),
+  hash: text("hash"),
+  hashTs: bigint("hashTs", { mode: "number" }),
 }, (table) => [
   index("idx_control_audit_entity").on(table.entityType, table.entityId),
   index("idx_control_audit_actor").on(table.actorId),
