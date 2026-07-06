@@ -7,60 +7,67 @@
  * ──────────────────────────────────────────────────────────────────────────
  * ⚠️⚠️ THE WIRE FRAME BELOW IS A FABRICATED PLACEHOLDER — NOT A REAL PROTOCOL ⚠️⚠️
  *
- * Spec-verified 2026-07 against the supplied manuals. Findings:
+ * Spec-verified 2026-07 against the genuine Delta Electronics robot manual now
+ * supplied. Findings:
  *
- * 1) `Delta-Robot-Controller-User-Manual.pdf` is a **HIWIN RCD-series robot
- *    controller** HARDWARE/INSTALL/SAFETY manual (models RCD401/RCD403, doc
- *    C05UE101-1809). "Delta Robot" in the title is the parallel/**delta MECHANISM
- *    type** — the spec page lists "Articulated / Delta / SCARA Robot" as supported
- *    kinematics — NOT the vendor "Delta Electronics". Vendor is HIWIN Technologies.
- *      • OS = HRSS (HIWIN Robot System Software); Positioning = PTP/CP; 4 axes
- *        (Specifications, ch.1 "Standard Specifications", p.10).
- *      • Programming is done ON the controller via Teach Pendant TP02 — "program
- *        edit, program management and motion position teaching" (ch.4 "Teach
- *        Pendant", p.33). No offline/host command language is exposed.
- *      • The ONLY communication interface documented is physical: "Communication
- *        interface: Ethernet ×2, USB" (Specifications table, p.10) and "5 LAN
- *        connector (CN6) — Ethernet signal transmitting" (Installation §2.1, p.16).
- *      • The manual has 6 chapters (1 Specifications · 2 Installation · 3 External
- *        I/O · 4 Teach Pendant · 5 Universal Stand · 6 Maintenance). It documents
- *        **NO host command protocol**: no Modbus map, no function codes, no register
- *        table, no ASCII command grammar, no TCP command port, no checksum, no
- *        baud/serial parameters. Full-text verified.
+ * 1) `968851404-DELTA-IA-ROBOT-DRAStudio-RL-EN-20240920.pdf` IS the real Delta
+ *    Electronics **IA robot — DRAStudio Robot Language (DRL)** manual (Delta doc
+ *    968851404, 2024-09-20). DRL is a **Lua-based robot PROGRAMMING language that
+ *    runs ON the DRAS controller** (MovP/MovL/MArc motion, points, tool/base frames,
+ *    DI/DO, DMCnet field bus to Delta servos & external I/O boards). It is NOT a
+ *    host command wire-protocol.
  *
- *    => There is NO documented host API to implement. The previous
+ * 2) The manual DOES have a "Communication command" chapter (ch.12), but every
+ *    command in it executes INSIDE a DRL program on the controller and drives the
+ *    controller as MASTER / CLIENT or as a FREE-protocol server. There is NO fixed
+ *    vendor host-command telegram an external SCADA/host can send to read state or
+ *    command motion:
+ *      • 12.1 ReadModbus/WriteModbus/MultiRead/MultiWriteModbus (p12-2) read/write
+ *        the controller's OWN internal Modbus register memory (0x1000–0x1FFF not
+ *        retained on power-off, 0x3000–0x3FFF power-off-retained) — general-purpose
+ *        user registers, NOT a published robot status/position map.
+ *      • 12.2 RSmasterRead/Write (p12-6) — controller as RS-232/485 Modbus MASTER.
+ *      • 12.3 MBC (p12-8) — controller as Modbus MASTER: ConnectMBC(IP,Port,Group)
+ *        to a slave, default Port 502.
+ *      • 12.4 Socket free protocol (p12-14..12-19) — SocketClass (controller =
+ *        CLIENT) / SocketServer(port,…) (controller = server at a USER-chosen port,
+ *        e.g. 7000) with a USER-DEFINED delimiter/framing parsed by the DRL program.
+ *      • 12.5 MC Protocol (p12-20) — controller as MELSEC MC-protocol master to a PLC.
+ *      • 12.6 RS-232/485 serial free port (p12-28).
+ *    Full-text verified: no start-of-frame `@`, no RDSTS/RDPOS/SERVO/MOVL host verbs,
+ *    no XOR-checksum host telegram, no fixed vendor TCP command port.
+ *
+ *    => There is NO documented vendor host API to implement. The previous
  *    `@<seq>,<CMD>[,<arg>...]*<XX>\r\n` frame (start-of-frame `@`, echoed seq,
  *    verbs RDSTS/RDPOS/SERVO/MOVL/MOVJ/STOP, XOR checksum, default TCP port 5000)
- *    was INVENTED. It appears nowhere in any Delta/HIWIN document and MUST NOT be
- *    trusted on hardware. It is retained ONLY as a self-consistent dry-run mock so
- *    the RobotDriver contract stays exercised; every send is gated OFF.
- *
- * 2) `Delta-AS-Series-Users-Manual.pdf` IS a Delta Electronics device — the **AS
- *    Series (AS300) PLC** "Hardware and Operation Manual". Unlike the robot
- *    controller it is a real **Modbus TCP/RTU** device with a documented Function-
- *    Code set and device register map (Ethernet §2.2.1; Ethernet-link object §9.8).
- *    If a Delta AS300 PLC coordinates the robot cell, THAT is the real integration
- *    surface — reached via the existing OT Modbus path, NOT this ASCII mock.
+ *    was INVENTED. It appears nowhere in any Delta document and MUST NOT be trusted
+ *    on hardware. It is retained ONLY as a self-consistent dry-run mock so the
+ *    RobotDriver contract stays exercised; every send is gated OFF.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * HOW TO CONNECT FOR REAL (replace this mock; do NOT lift ROBOT_CONTROL_ENABLED
- * against this fabricated frame):
+ * HOW TO INTEGRATE A DELTA DRAS ROBOT FOR REAL (replace this mock; do NOT lift
+ * ROBOT_CONTROL_ENABLED against the fabricated frame). Both real paths require a
+ * site-specific DRL program on the controller — there is no plug-and-play telegram:
  *
- *   A) HIWIN RCD host control — obtain HIWIN's HRSS network/remote-command manual
- *      (this hardware manual does not cover it). HRSS exposes host motion/IO over
- *      the CN6 Ethernet link via HIWIN's own remote API (and, on configured units,
- *      a Modbus/TCP server). Transcribe the real verbs/registers there, then either
- *      keep TcpLineClient (if it is a documented ASCII channel) or route through the
- *      Modbus path below. Cite the exact HRSS manual pages when you do.
+ *   A) Internal Modbus register mailbox (recommended; reuses the existing OT stack)
+ *      — author a DRL program that mirrors robot status/current position into an
+ *      agreed block of the controller's internal Modbus registers (WriteModbus) and
+ *      reads command words the host writes (ReadModbus / WaitSignal on 0x1000–0x1FFF;
+ *      ch.12.1, p12-2). The HOST then reads/writes those registers as a Modbus
+ *      MASTER via the existing OT driver `server/services/ot/drivers/modbusDriver.ts`
+ *      (createModbusDriver → readTags/writeTags → readHoldingRegisters/
+ *      writeRegister/writeRegisters). Do NOT re-implement Modbus here. The register
+ *      block is a site convention (this manual publishes no fixed status/position
+ *      map), so it belongs in an OT tag map — not this file.
  *
- *   B) Delta AS300 PLC cell coordinator — use the existing OT Modbus driver
- *      `server/services/ot/drivers/modbusDriver.ts` (createModbusDriver →
- *      readTags/writeTags → readHoldingRegisters/writeRegister/writeRegisters) with
- *      the AS-series register map (Delta-AS-Series-Users-Manual.pdf). That is the
- *      correct home for register I/O — do NOT re-implement Modbus in this file.
+ *   B) Socket free-protocol server — author a DRL `SocketServer(port,…)` program
+ *      (ch.12.4.8, p12-17) that defines its own request/reply grammar; the host
+ *      connects over TCP speaking that exact grammar. Only then transcribe the real
+ *      verbs here (keeping TcpLineClient) and cite the DRL program that defines them.
  *
- * TODO(OT): pick path A or B once the real host-protocol manual/register map is
- *   available, then delete the fabricated frame functions below.
+ * TODO(OT): pick path A (OT Modbus tag map) or B (custom DRL socket grammar) once a
+ *   controller DRL program + register/command convention exists, then delete the
+ *   fabricated frame functions below.
  *
  * READ-MOSTLY: connect() sends a single RDSTS probe. getState() polls RDSTS+RDPOS.
  *   (All against the mock frame — validate before trusting.)
@@ -80,8 +87,10 @@ import type {
 import { TcpLineClient } from "./tcpLineClient";
 
 /**
- * FABRICATED default port for the mock ASCII channel — NOT a documented Delta/HIWIN
- * port (the RCD manual specifies no host command port; see header). Configurable.
+ * FABRICATED default port for the mock ASCII channel — NOT a documented Delta port.
+ * The DRAStudio DRL manual defines no fixed vendor host command port (ch.12 socket
+ * ports are user-chosen; the Modbus mailbox is reached via modbusDriver). See header.
+ * Configurable.
  */
 const DEFAULT_DELTA_PORT = 5000;
 
@@ -96,8 +105,9 @@ export interface DeltaReply {
 }
 
 // ── Pure framing / parsing for the FABRICATED mock frame (exported for unit
-//    tests only). None of this reflects a documented Delta/HIWIN protocol — see
-//    the header. Delete when the real host API (path A) or Modbus map (path B) lands.
+//    tests only). None of this reflects a documented Delta protocol — DRAStudio DRL
+//    exposes no fixed host telegram (see header). Delete when a real integration
+//    lands: path A (Modbus register mailbox via modbusDriver) or B (DRL SocketServer).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** XOR checksum of the mock frame body, two-digit upper-hex (FABRICATED — not real). */

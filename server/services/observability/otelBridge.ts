@@ -28,7 +28,16 @@ const STATUS_OK = 1;
 const STATUS_ERROR = 2;
 
 function observabilityEnabled(): boolean {
-  return process.env.OBSERVABILITY === "true" || process.env.OBSERVABILITY === "1";
+  // The correlation→span bridge lights up under EITHER flag: OBSERVABILITY (the F6 umbrella) OR
+  // OTEL_ENABLED (operator explicitly stood up the OTLP export). Either way the OTel API is a pure
+  // no-op unless an SDK is registered (see initOpenTelemetry in _core/observability.ts), so this is
+  // safe to leave permissive — it only stamps attributes on spans that already exist.
+  return (
+    process.env.OBSERVABILITY === "true" ||
+    process.env.OBSERVABILITY === "1" ||
+    process.env.OTEL_ENABLED === "true" ||
+    process.env.OTEL_ENABLED === "1"
+  );
 }
 
 /**

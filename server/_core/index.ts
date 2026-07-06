@@ -4684,6 +4684,21 @@ async function startServer() {
     console.error("[ReportArtifact] download route mount failed:", (err as any)?.message || err);
   }
 
+  // ============================================================
+  // doc 37 C1 (P2) — Observability health plane. Read-only, admin/supervisor-gated:
+  //   GET /api/observability/health  — OT store-forward buffer + connection supervisors
+  //                                     + SLO burn-rate rollup + decision-trace ring depth
+  //   GET /api/observability/slo      — SLO catalogue + latest status + burn-rate
+  //   GET /api/observability/metrics  — SLO + decision-trace signals in Prometheus text format
+  // Surfaces the honest health-getters that already existed but were never exposed over HTTP.
+  // ============================================================
+  try {
+    const { registerObservabilityRoutes } = await import("../routes/observabilityRoutes");
+    registerObservabilityRoutes(app);
+  } catch (err) {
+    console.error("[Observability] health route mount failed:", (err as any)?.message || err);
+  }
+
   // U1 (doc 21 §6) — Unified Event Backbone: (a) subscribe the ecosystem bridge so
   // the orphaned (safety.event, quality_gate.breach) + new (anomaly/workorder/task/
   // program) domain events fan out to webhooks + KB — OUTBOUND gated by

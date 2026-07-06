@@ -138,7 +138,7 @@ async function recordResult(
 
 // ── Zod schemas (the inbound contract) ───────────────────────────────────────
 
-const orderIntakeSchema = z.object({
+export const orderIntakeSchema = z.object({
   schemaVersion: z.string().min(1, "schemaVersion is required"),
   idempotencyKey: z.string().optional(),
   orderCode: z.string().min(1).max(100),
@@ -154,7 +154,7 @@ const orderIntakeSchema = z.object({
   notes: z.string().optional(),
 }).strip();
 
-const bomLineSchema = z.object({
+export const bomLineSchema = z.object({
   componentCode: z.string().min(1).max(100),
   componentName: z.string().max(255).optional(),
   qtyPer: z.union([z.number(), z.string()]),
@@ -165,7 +165,7 @@ const bomLineSchema = z.object({
   notes: z.string().optional(),
 });
 
-const bomIntakeSchema = z.object({
+export const bomIntakeSchema = z.object({
   schemaVersion: z.string().min(1, "schemaVersion is required"),
   idempotencyKey: z.string().optional(),
   productModelId: z.number().int().positive(),

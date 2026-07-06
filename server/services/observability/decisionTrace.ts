@@ -112,6 +112,16 @@ export function explainDecision(t: DecisionTrace): string {
   );
 }
 
+/** Current number of traces held in the in-memory ring (for a health endpoint / gauge). */
+export function decisionRingDepth(): number {
+  return ring.length;
+}
+
+/** Ring capacity + how many traces have been recorded since start (health card). */
+export function decisionRingInfo(): { depth: number; capacity: number; totalRecorded: number } {
+  return { depth: ring.length, capacity: RING_MAX, totalRecorded: nextId - 1 };
+}
+
 /** Test-only: clear the ring. */
 export function _clearDecisionTraces(): void {
   ring.length = 0;

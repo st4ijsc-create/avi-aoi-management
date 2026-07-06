@@ -1,12 +1,45 @@
 /**
  * Phase E1 — Unified Machine API: OpenAPI 3.0 document builder.
  *
- * Hand-authored spec describing every /api/v1 endpoint (paths, params, request /
- * response schemas), the bearer/X-API-Key auth scheme, and the scope vocabulary.
- * Served at GET /api/v1/openapi.json. Kept in sync with router.ts by hand.
+ * Describes every /api/v1 endpoint (paths, params, request / response schemas), the
+ * bearer/X-API-Key auth scheme, and the scope vocabulary. Served at GET /api/v1/openapi.json.
+ *
+ * doc 37 §7 (dev-portal / C3): the request-body component schemas that HAVE an authoritative
+ * Zod contract are now GENERATED from that Zod source (zod v4 `z.toJSONSchema`), not re-typed
+ * by hand — `InspectionIngest` ← machineDataContractV1, `WorkOrderIntake`/`BomIntake` ←
+ * erpIntake's Zod schemas. Generation is fail-safe: if a schema can't be converted the builder
+ * falls back to a hand-written stub, so the doc always renders. Paths/tags for the ERP intake
+ * (`/orders`, `/bom`), OAuth token (`/oauth/token`), twin-simulate (`/orchestration/simulate`)
+ * and edge-sync (`/edge/sync`) routes are covered so the published contract matches router.ts.
  */
+import { z } from "zod";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "./scopes";
 import { V1_WEBHOOK_EVENTS } from "./webhookBridge";
+import { orderIntakeSchema, bomIntakeSchema } from "./erpIntake";
+import { machineContractJsonSchema, LATEST_MACHINE_CONTRACT_VERSION } from "../../contracts/machineDataContract";
+
+/**
+ * Convert a Zod schema to a draft-7 JSON-Schema fragment (dropping the `$schema` header so it
+ * embeds cleanly under components/schemas). Fail-safe: returns null if conversion throws, so the
+ * caller can fall back to a hand-written schema and the whole document still builds.
+ */
+function zodToJson(schema: z.ZodTypeAny): Record<string, unknown> | null {
+  try {
+    const js = z.toJSONSchema(schema, { target: "draft-7" }) as Record<string, unknown>;
+    delete js.$schema;
+    return js;
+  } catch {
+    return null;
+  }
+}
+
+/** JSON-Schema derived from a raw JSON-Schema producer (machineDataContract), $schema stripped. */
+function stripSchemaHeader(js: unknown): Record<string, unknown> | null {
+  if (!js || typeof js !== "object") return null;
+  const out = { ...(js as Record<string, unknown>) };
+  delete out.$schema;
+  return out;
+}
 
 const envelopeOk = {
   type: "object",
@@ -50,9 +83,55 @@ function jsonErr() {
   return { "application/json": { schema: { $ref: "#/components/schemas/ApiError" } } };
 }
 
+// Hand-written fallbacks used only if the Zod → JSON-Schema conversion fails at runtime.
+const inspectionIngestFallback = {
+  type: "object",
+  required: ["serialNumber", "overallResult"],
+  properties: {
+    machineCode: { type: "string" },
+    serialNumber: { type: "string" },
+    productModel: { type: "string" },
+    overallResult: { type: "string", enum: ["OK", "NG", "NTF"] },
+    measurements: { type: "array", items: { type: "object", additionalProperties: true } },
+  },
+} as const;
+const workOrderIntakeFallback = {
+  type: "object",
+  required: ["schemaVersion", "orderCode", "companyCode", "factoryId", "workshopId", "lineId", "productModelId", "targetQuantity"],
+  properties: {
+    schemaVersion: { type: "string" },
+    idempotencyKey: { type: "string" },
+    orderCode: { type: "string" },
+    companyCode: { type: "string" },
+    factoryId: { type: "integer" },
+    workshopId: { type: "integer" },
+    lineId: { type: "integer" },
+    productModelId: { type: "integer" },
+    targetQuantity: { type: "integer" },
+  },
+} as const;
+const bomIntakeFallback = {
+  type: "object",
+  required: ["schemaVersion", "productModelId", "code"],
+  properties: {
+    schemaVersion: { type: "string" },
+    idempotencyKey: { type: "string" },
+    productModelId: { type: "integer" },
+    code: { type: "string" },
+    version: { type: "integer" },
+    lines: { type: "array", items: { type: "object", additionalProperties: true } },
+  },
+} as const;
+
 /** Build the OpenAPI 3.0 document for the Unified Machine API. */
 export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
   const scopeDoc = ALL_SCOPES.map((s) => `\`${s}\` — ${SCOPE_DESCRIPTIONS[s]}`).join("\n");
+
+  // Request-body schemas GENERATED from their authoritative Zod contracts (fail-safe fallbacks).
+  const inspectionIngestSchema =
+    stripSchemaHeader(machineContractJsonSchema(LATEST_MACHINE_CONTRACT_VERSION)) ?? inspectionIngestFallback;
+  const workOrderIntakeSchema = zodToJson(orderIntakeSchema) ?? workOrderIntakeFallback;
+  const bomIntakeSchemaJson = zodToJson(bomIntakeSchema) ?? bomIntakeFallback;
 
   return {
     openapi: "3.0.3",
@@ -80,7 +159,10 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
     tags: [
       { name: "Equipment", description: "List equipment, capabilities, telemetry, state, commands." },
       { name: "Ingest", description: "Inbound data from external machines/systems." },
-      { name: "Orchestration", description: "Workflow/run orchestration (stubs — arriving in E2)." },
+      { name: "ERP", description: "R0 — inbound ERP/MES intake: production orders & BOM master data (idempotent, versioned)." },
+      { name: "OAuth", description: "K0+ — OAuth2 client-credentials token for ERP/MES partners (alternative Bearer)." },
+      { name: "Orchestration", description: "Workflow/run orchestration + digital-twin simulate (FOE, E2/E3a)." },
+      { name: "Edge", description: "E4 — edge control runtime run/step result sync." },
       { name: "Fleet", description: "U4a — fleet orchestration state: tasks & zones (read)." },
       { name: "Safety", description: "U4a — ADVISORY safety events & zones (read; not safety-rated)." },
       { name: "Twin", description: "U4a — digital-twin scene graph & 3D model registry (read)." },
@@ -108,15 +190,31 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             idempotencyKey: { type: "string", description: "Client-supplied de-dup key (generated if omitted)." },
           },
         },
-        InspectionIngest: {
+        // GENERATED from machineDataContractV1 (server/contracts/machineDataContract.ts) via zod v4.
+        InspectionIngest: inspectionIngestSchema,
+        // GENERATED from erpIntake.ts orderIntakeSchema / bomIntakeSchema.
+        WorkOrderIntake: workOrderIntakeSchema,
+        BomIntake: bomIntakeSchemaJson,
+        OAuthTokenResponse: {
           type: "object",
-          required: ["serialNumber", "overallResult"],
+          required: ["access_token", "token_type", "expires_in"],
           properties: {
-            machineCode: { type: "string" },
-            serialNumber: { type: "string" },
-            productModel: { type: "string" },
-            overallResult: { type: "string", enum: ["OK", "NG", "NTF"] },
-            measurements: { type: "array", items: { type: "object", additionalProperties: true } },
+            access_token: { type: "string", description: "Short-lived signed JWT (HS256)." },
+            token_type: { type: "string", example: "Bearer" },
+            expires_in: { type: "integer", description: "TTL in seconds." },
+            scope: { type: "string", description: "Space-separated granted scopes." },
+          },
+        },
+        EdgeSyncRequest: {
+          type: "object",
+          required: ["runId"],
+          properties: {
+            edgeNodeCode: { type: "string" },
+            runId: { type: "integer" },
+            status: { type: "string", enum: ["running", "completed", "failed"] },
+            error: { type: "string", nullable: true },
+            currentStepId: { type: "string", nullable: true },
+            steps: { type: "array", items: { type: "object", additionalProperties: true } },
           },
         },
       },
@@ -190,6 +288,82 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           responses: { "200": { description: "Committed", content: jsonOk() }, "400": { description: "Bad request", content: jsonErr() }, ...errResponses() },
         },
       },
+      // ── R0 (doc 16 Khối 0) — inbound ERP/MES intake. Gated by ERP_INBOUND_ENABLED. ──
+      "/api/v1/orders": {
+        post: {
+          tags: ["ERP"],
+          summary: "Upsert a production order (idempotent, versioned)",
+          description:
+            "Requires scope `erp:write`. Idempotent: an `X-Idempotency-Key` header (or body `idempotencyKey`) is " +
+            "REQUIRED; a duplicate key replays the prior result. Accepts JSON or B2MML XML (ERP_B2MML_ENABLED). " +
+            "Emits `order.created` on a NEW order. Disabled → structured 503 `erp_inbound_disabled`.",
+          parameters: [{ name: "X-Idempotency-Key", in: "header", required: false, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/WorkOrderIntake" } }, "application/xml": { schema: { type: "string", description: "B2MML ProductionSchedule XML" } } } },
+          responses: {
+            "201": { description: "Created", content: jsonOk() },
+            "200": { description: "Updated / replayed", content: jsonOk() },
+            "400": { description: "Validation / idempotency error", content: jsonErr() },
+            "415": { description: "XML posted but B2MML disabled", content: jsonErr() },
+            "503": { description: "ERP inbound disabled (ERP_INBOUND_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
+        },
+      },
+      "/api/v1/bom": {
+        post: {
+          tags: ["ERP"],
+          summary: "Upsert a BOM definition + replace its lines (idempotent, versioned)",
+          description:
+            "Requires scope `erp:write`. Upsert by (productModelId, code, version); the posted `lines` fully " +
+            "re-state the BOM. `X-Idempotency-Key` required (replay on duplicate). Accepts JSON or B2MML XML. " +
+            "Disabled → structured 503 `erp_inbound_disabled`.",
+          parameters: [{ name: "X-Idempotency-Key", in: "header", required: false, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/BomIntake" } }, "application/xml": { schema: { type: "string", description: "B2MML BOMInformation XML" } } } },
+          responses: {
+            "201": { description: "Created", content: jsonOk() },
+            "200": { description: "Updated / replayed", content: jsonOk() },
+            "400": { description: "Validation / idempotency error", content: jsonErr() },
+            "415": { description: "XML posted but B2MML disabled", content: jsonErr() },
+            "503": { description: "ERP inbound disabled (ERP_INBOUND_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
+        },
+      },
+      // ── K0+ — OAuth2 client-credentials (ADDITIVE partner auth). Gated by ERP_OAUTH_ENABLED. ──
+      "/api/v1/oauth/token": {
+        post: {
+          tags: ["OAuth"],
+          summary: "Exchange client_id/client_secret for a short-lived Bearer token",
+          description:
+            "OAuth2 `client_credentials` grant. `application/x-www-form-urlencoded` body: " +
+            "`grant_type=client_credentials&client_id=…&client_secret=…[&scope=…]`. Returns a signed JWT " +
+            "accepted as an alternative Bearer on `/orders` and `/bom`. No API key required. Disabled → 503 `oauth_disabled`.",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/x-www-form-urlencoded": {
+                schema: {
+                  type: "object",
+                  required: ["grant_type", "client_id", "client_secret"],
+                  properties: {
+                    grant_type: { type: "string", enum: ["client_credentials"] },
+                    client_id: { type: "string" },
+                    client_secret: { type: "string" },
+                    scope: { type: "string", description: "Optional space-separated subset of the client's scopes." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Token issued", content: { "application/json": { schema: { $ref: "#/components/schemas/OAuthTokenResponse" } } } },
+            "400": { description: "Unsupported grant / missing params", content: jsonErr() },
+            "401": { description: "Invalid client credentials", content: jsonErr() },
+            "503": { description: "OAuth disabled (ERP_OAUTH_ENABLED)", content: jsonErr() },
+          },
+        },
+      },
       "/api/v1/orchestration/workflows": {
         post: {
           tags: ["Orchestration"],
@@ -204,6 +378,38 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Start a run (E2 — not implemented)",
           description: "Requires scope `orchestration:write`. Published now; returns 501 until E2.",
           responses: { "501": { description: "Not Implemented — coming in E2", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orchestration/simulate": {
+        post: {
+          tags: ["Orchestration"],
+          summary: "Digital-twin simulate a workflow WITHOUT dispatch (E3a)",
+          description:
+            "Requires scope `orchestration:read`. PURE + fail-safe, NOT flag-gated: predicts step order, " +
+            "duration and gates without touching any device. Body: `{ workflow | workflowRef, params?, " +
+            "assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }`.",
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "Simulation result", content: jsonOk() },
+            "400": { description: "Neither workflow nor workflowRef supplied", content: jsonErr() },
+            ...errResponses({ "404": { description: "workflowRef not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/edge/sync": {
+        post: {
+          tags: ["Edge"],
+          summary: "Sync an edge run/step result back to central (E4)",
+          description:
+            "Requires scope `edge:sync`. Idempotent reconcile (upsert on runId+stepId). Coordination only — " +
+            "safety stays on the PLC. Disabled → structured 503 `edge_disabled`.",
+          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/EdgeSyncRequest" } } } },
+          responses: {
+            "202": { description: "Accepted / reconciled", content: jsonOk() },
+            "400": { description: "Missing runId / sync failed", content: jsonErr() },
+            "503": { description: "Edge runtime disabled (EDGE_RUNTIME_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
         },
       },
       "/api/v1/orchestration/runs/{id}": {

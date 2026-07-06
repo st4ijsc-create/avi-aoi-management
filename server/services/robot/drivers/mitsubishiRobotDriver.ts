@@ -47,31 +47,49 @@
  *   command and returns it as dry-run INTENT (`sent:false`) without writing any
  *   byte and without ever sending CNTLON/SRVON. No ungated actuation.
  *
- * ⚠️ HONESTY CAVEAT — TELEGRAM FORMAT IS NOT IN THIS MANUAL (verify vs support-SW).
- *   The Ethernet Function Instruction Manual (BFP-A3379) documents the PORTS and
- *   three channels — data-link (MELFA-BASIC OPEN/PRINT/INPUT, §3.2 p3-5),
- *   real-time external control (MXT over UDP, §3.3 p3-13) and the SLMP server
- *   (CR800 only, §3.5 p3-34) — but the "controller communication function"
- *   (§3.1 p3-2) DELEGATES its telegram format to the personal-computer support-
- *   software manual (§3.1.4 p3-3: "Refer to the instruction manual enclosed with
- *   the personal computer support software"). So the `<robotNo>;<slotNo>;<CMD>`
- *   line format, the OPEN/CNTLON/SRVON/EXEC verbs, the STATE run/mode decode, the
- *   PPOSF name;value pose parse and the `Qok`/`Qe` reply framing below follow the
- *   community / RT-ToolBox R3 convention — they are NOT verified against a
- *   Mitsubishi-published byte spec. MELFA STATE has no plain e-stop field, so
- *   `estop` is honestly left undefined. Keep ROBOT_CONTROL_ENABLED=false until
- *   validated on a live controller (dry-run builds the command but sends nothing).
+ * ⚠️ HONESTY CAVEAT — THE TELEGRAM BELOW IS UNVERIFIED (NOT IN ANY PUBLISHED SPEC).
+ *   Re-verified 2026-07 across the THREE supplied Mitsubishi manuals — the
+ *   `<robotNo>;<slotNo>;<CMD>` line, the OPEN/CNTLON/SRVON/EXEC verbs, the STATE
+ *   run/mode decode, the PPOSF name;value pose parse and the `Qok`/`QeR` reply
+ *   framing appear in NONE of them:
+ *     • Ethernet Function Instruction Manual BFP-A3379-G — documents the PORTS and
+ *       channels (data-link OPEN/PRINT/INPUT §3.2; real-time external control MXT/UDP
+ *       §3.3; SLMP server §3.5) but its "controller communication function" (§3.1)
+ *       DELEGATES the telegram to the PC support-software manual (§3.1.4: "Refer to
+ *       the instruction manual enclosed with the personal computer support software"
+ *       — a proprietary "No-procedure" protocol, param COMDEV element = 0).
+ *     • MELFA-Works Instruction Manual BFP-A8525-J — CAD/simulation link only; no
+ *       command telegram.
+ *     • CR800 Controller "Detailed explanations of functions and operations" —
+ *       full-text searched: no `Qok`/`QeR`, no `CNTLON`, no `PPOSF`, no `<n>;<n>;`
+ *       command line (`SRVON` appears only as the MELFA-BASIC program instruction).
+ *   So the frame below follows the community / RT-ToolBox convention — it is NOT a
+ *   Mitsubishi-published byte spec. MELFA STATE has no plain e-stop field, so `estop`
+ *   is honestly left undefined. Keep ROBOT_CONTROL_ENABLED=false until validated on a
+ *   live controller (dry-run builds the command but sends nothing).
+ *
+ * ✅ PRIMARY DOCUMENTED PATH — SLMP SERVER (CR800; use this for real state, not the
+ *   unverified STATE/PPOSF decode above). The CR800 series supports the SLMP
+ *   communication SERVER function (BFP-A3379-G §3.5 "SLMP Connection", p3-34):
+ *     • Message format = MELSEC MC protocol, QnA-compatible **3E and 4E frame**
+ *       (binary or ASCII) — §3.5.3.1 "SLMP Specifications".
+ *     • Parameters §3.5.4 (p3-34): SLMPPORT default **45237** (range 1024–65535),
+ *       SLMPCP (server protocol TCP/UDP), SLMPNWNO (network no. 1–239), SLMPNDID
+ *       (station no. 1–120); communication procedure §3.5.5 (p3-35).
+ *     • Robot devices are exposed as a FIXED device map readable/writable over SLMP:
+ *       X/Y bit I/O, M internal relays, **D data registers (D0–D5119)**, SM/SD system
+ *       relays/registers — CR800 detailed-functions manual §6.8.1 "Device list"
+ *       (Tables 6-11 CR800-R / 6-12 CR800-D); "device ranges are fixed and cannot be
+ *       changed". A robot program maps live status/position into agreed D registers.
+ *   This is Mitsubishi-documented and matches an MC 3E/4E frame the codebase already
+ *   models (see the SLMP Reference Manual). TODO(OT): implement getState() over SLMP
+ *   (a small MC-3E client, no new dep — plain node:net) against a site D-register map,
+ *   and treat that as the source of truth; the TCP line channel below is a fallback.
  *
  * ⚠️ REAL-TIME MOTION uses a DIFFERENT documented channel: MXT (Move External)
  *   over UDP at the control cycle (~3.5 ms CR800 / ~7.1 ms CR750), a binary
  *   position-data packet — NOT this TCP line channel (§3.3.1/3.3.2 p3-15..3-20).
  *   This driver's TCP channel is for discrete supervisory commands only.
- *
- * ℹ️ VERIFIABLE STATE ALTERNATIVE (CR800): getState() could read robot devices via
- *   the built-in SLMP server (MC QnA-compatible 3E/4E frame) instead of the guessed
- *   STATE/PPOSF decode — params SLMPPORT (default 45237), SLMPCP (0=TCP,1=UDP),
- *   SLMPNWNO, SLMPNDID (§3.5.3-3.5.4 p3-34). This is a Mitsubishi-documented path;
- *   TODO if live state accuracy is required.
  * ──────────────────────────────────────────────────────────────────────────
  */
 import type {

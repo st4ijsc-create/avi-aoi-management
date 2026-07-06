@@ -30,3 +30,11 @@ seedBuiltinPlugins();
 
 export * from "./pluginRegistry";
 export { zodToConfigForm } from "./configForm";
+// Conformance / certification runner (doc 37 C3) — pure static suite + opt-in live sidecar probe.
+export {
+  runPluginConformance,
+  certifyPlugin,
+  probePluginSidecar,
+  type PluginConformanceReport,
+  type ConformanceCheck,
+} from "./pluginConformance";
