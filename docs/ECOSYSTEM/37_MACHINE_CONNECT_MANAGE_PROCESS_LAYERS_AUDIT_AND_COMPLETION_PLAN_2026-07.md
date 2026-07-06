@@ -306,7 +306,32 @@ Agent đã trích **bảng mã lỗi thật** (sẵn schema `{vendor, device_cla
 
 ---
 
-*Tài liệu 37 · audit 4 agent tầng máy + 4 agent manual-grounded (đọc code-thật + tài liệu hãng `D:/SOURCES/AI Local/Manual/`) · khung 15 năng lực tổng hợp doc 08/09/16/24/33/35 · mọi số liệu có file:line + trang manual trong báo cáo agent gốc.*
+## 8. ✅ KẾT QUẢ THỰC THI (2026-07-06)
+
+**Đợt A — code-fix manual-grounded (commit `ad4e2bb`, tsc+build green):**
+- Q10/M1 UR `sendScript` đọc ≥79 byte trước khi đóng socket (URScript §2 — nếu không script bị controller loại) · M2 default port 30002 · M3 transpiler `set_standard_digital_out` (bỏ deprecated).
+- Q8 Omron NJ/NX preset (EtherNet/IP, port 44818 — tái dùng ethernet-ip driver, không cần FINS).
+- M4 `otConnectorManifests` wire `defaultPort` per-connector vào JSON-Schema (auto-form nay có port điền sẵn).
+- Q6 fix migration `0172:108` compress_segmentby `adapterId`(không tồn tại)→`machineId,metric` (chặn vỡ khi Timescale cutover).
+- M6/M7 honesty: đánh dấu Delta robot driver **MOCK** (protocol hư cấu); document giới hạn `mcprotocol` 1E-frame-only (không phải 3E/4E SLMP iQ-R).
+
+**Đợt B — wiring + platformization (commit `1a65eb7`, tsc+build green, mig 0231 applied):**
+- Q7 manual-UX: `<ManualHelp>` (RAG page-cited popover) + `<JsonSchemaForm>` (auto-form) → nhúng DeviceAdapterManagement + AndonBoard "Tra mã". **122 mã lỗi hãng THẬT** nạp `alarm_taxonomy` (mig 0231): mitsubishi 55, delta 23, UR 18, fanuc 10, zmotion 9, omron 7 (thay 12 entry giả); `mapAlarm()` resolve offline.
+- P0-3: `moduleGate`/`moduleProcedure` server-side (cờ `LICENSE_MODULE_GATE_ENABLED` OFF, fail-safe allow-with-log), áp 5 router module — đóng lỗ hổng deep-link module chưa mua.
+- P0-4: `pluginDriverBridge` (sidecar↔OtDriver qua stdio RPC) + wire validate/signature-fail-closed/quota vào spawn path; đăng ký khi `PLUGIN_DRIVERS_ENABLED` ON (default OFF, 6 built-in nguyên vẹn); **write-gate KHÔNG bypass** (commandDispatcher vẫn là caller duy nhất) → đạt ADR-008 "thêm hãng = 1 plugin".
+
+**Còn lại — Đợt A1/A2 env (BƯỚC OPERATOR CÓ CHỦ ĐÍCH — cần app-smoke, tôi không flip âm thầm trên hệ đang chạy):**
+| # | Việc | Lệnh / cách | Rủi ro |
+|---|---|---|---|
+| A1a | Switch `DATABASE_URL`→avi_app (WORM/RLS có hiệu lực) | `ALTER ROLE avi_app WITH LOGIN PASSWORD '<secret>';` → sửa `.env` `DATABASE_URL=postgresql://avi_app:<secret>@localhost:5433/avi_aoi_db` → **restart app + smoke** (boot OK, ingest+CRUD chạy, thử UPDATE audit_logs bị chặn). **Đã PROVEN** avi_app đủ quyền business DML + append audit + chặn tamper. | Thấp (đã proof); revert 1 dòng .env |
+| A1b | Timescale cutover | Cài extension `timescaledb` (cần `shared_preload_libraries` + restart PG server) → `node scripts/migrate-standalone.mjs` re-apply 0172/0173 (bug 0172 đã fix) → set `RETENTION_OT_TELEMETRY_DAYS=0`. | Cần DB-admin server (khó trên Windows PG) — có thể hoãn; retention app-90d đang bảo vệ |
+| A2 | Bật cờ tầng-an-toàn (B2 scope) | Trên staging: `METRICS_ENABLED`, `OTEL_ENABLED`, `TWIN_LIVE_ENABLED`/`TWIN_STREAM_ENABLED`, `EQ_GOVERN_ENABLED` → smoke từng cờ theo runbook doc 19/23. **KHÔNG bật command-path** (OT/robot control) đợt này. | Vừa — cần smoke; advisory layers |
+
+> Tôi có thể thực hiện A1a (switch .env) + A2 (bật cờ) ngay nếu anh xác nhận app đang TẮT (hoặc chấp nhận restart+smoke) — nói "flip A1a/A2" là tôi làm. A1b Timescale cần anh cài extension ở tầng DB server.
+
+---
+
+*Tài liệu 37 · audit 4 agent tầng máy + 4 agent manual-grounded · §8 = kết quả thực thi Đợt A (`ad4e2bb`) + Đợt B (`1a65eb7`, mig 0231) · A1/A2 env = bước operator có chủ đích · khung 15 năng lực doc 08/09/16/24/33/35.*
 
 ---
 
