@@ -1031,21 +1031,84 @@ export async function generateFim(
 ): Promise<GgufGenerateResult> {
   const prefix = typeof options.prefix === "string" ? options.prefix : "";
   const suffix = typeof options.suffix === "string" ? options.suffix : "";
-
   // Resolve the model: explicit arg → FIM model → fast → default (fimModelBasename()).
   const effectiveId = modelId ?? fimModelBasename();
 
+  // Prefer TRUE native infill via node-llama-cpp's LlamaCompletion — it feeds the raw
+  // prefix/suffix through the model's own FIM tokens (no chat template), so a coder model
+  // like Qwen2.5-Coder returns clean inline code instead of a chat reply. Falls back to the
+  // chat-wrapped path below if the binding/model doesn't support infill or anything throws.
+  try {
+    return await generateFimNative(prefix, suffix, options, effectiveId);
+  } catch (e) {
+    console.warn("[aiGgufEngine] native FIM unavailable, using chat-wrap fallback:", (e as Error)?.message ?? e);
+    return generateFimChatFallback(prefix, suffix, options, effectiveId);
+  }
+}
+
+/** True native fill-in-middle via LlamaCompletion.generateInfillCompletion (no chat template). */
+async function generateFimNative(
+  prefix: string,
+  suffix: string,
+  options: GgufFimOptions,
+  effectiveId: string | undefined,
+): Promise<GgufGenerateResult> {
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, options.contextSize);
+  const startTime = Date.now();
+  const { LlamaCompletion } = await import("node-llama-cpp");
+  const stops = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
+  return withGgufSlot(async () => {
+    const sequence = loaded.context.getSequence();
+    const completion = new (LlamaCompletion as any)({ contextSequence: sequence });
+    try {
+      const genOpts: any = {
+        maxTokens: options.maxTokens ?? 128,
+        temperature: options.temperature ?? 0.1,
+        topP: options.topP ?? 0.9,
+        ...(options.topK != null ? { topK: options.topK } : {}),
+        ...(stops.length ? { customStopTriggers: stops } : {}),
+      };
+      // Use real infill when we have a suffix AND the loaded model advertises infill support;
+      // otherwise a plain raw completion of the prefix (still no chat template).
+      const text: string =
+        suffix && completion.infillSupported
+          ? await completion.generateInfillCompletion(prefix, suffix, genOpts)
+          : await completion.generateCompletion(prefix, genOpts);
+      const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime);
+      const tokensGenerated = loaded.model.tokenize(text || "").length;
+      const tokensPrompt = loaded.model.tokenize(prefix + suffix).length;
+      const tokensPerSecond = totalTimeMs > 0 ? (tokensGenerated / totalTimeMs) * 1000 : 0;
+      return {
+        text: text || "",
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: Number(tokensPerSecond.toFixed(1)),
+        modelId: resolvedId,
+      };
+    } finally {
+      try { completion.dispose?.(); } catch { /* best-effort */ }
+      sequence.dispose();
+      releaseModel(loaded);
+    }
+  });
+}
+
+/** Fallback: FIM-sentinel prompt (or prefix + suffix-as-context) routed through the chat path. */
+async function generateFimChatFallback(
+  prefix: string,
+  suffix: string,
+  options: GgufFimOptions,
+  effectiveId: string | undefined,
+): Promise<GgufGenerateResult> {
   const useFim = !!suffix && modelSupportsFim(effectiveId);
   const stop = [...(options.stopSequences ?? []), ...FIM_STOP].filter((s) => !!s);
-
   let systemPrompt: string | undefined;
   let prompt: string;
-
   if (useFim) {
-    // Prefix–Suffix–Middle template (the order most coder models are trained on).
     prompt = `${FIM_SENTINELS.prefix}${prefix}${FIM_SENTINELS.suffix}${suffix}${FIM_SENTINELS.middle}`;
   } else {
-    // Plain prefix completion; give the following code as context so the model stays consistent.
     systemPrompt = suffix
       ? "You are an inline code completion engine. Continue the code at the cursor so it fits the " +
         "code that FOLLOWS. Output ONLY the missing code, no explanation, no fences.\n\n" +
@@ -1054,7 +1117,6 @@ export async function generateFim(
         "missing code, no explanation, no fences.";
     prompt = prefix;
   }
-
   return generateText(
     {
       systemPrompt,

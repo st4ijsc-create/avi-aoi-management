@@ -562,6 +562,15 @@ export async function runRca(input: RunRcaInput): Promise<RcaResult> {
     return { ...degradeResult(input, lang, emptyEvidence(), "AI_RCA_COPILOT_DISABLED"), ok: false };
   }
   try {
+    // Load-order VRAM fix (doc 34 §P4): warm the deep RCA model BEFORE gatherEvidence pulls in
+    // the small embedder (GraphRAG/similar-incidents). node-llama-cpp fragments VRAM when the
+    // 30B loads AFTER a small model — warming it first avoids a cold-start OOM. Best-effort.
+    try {
+      const { warmModel } = await import("./aiGgufEngine");
+      const { route } = await import("./aiModelRouter");
+      await warmModel(route({ task: "rca", text: input.defectType ?? "rca" }).modelId);
+    } catch { /* best-effort warm; RCA degrades gracefully if the model is unavailable */ }
+
     const evidence = await gatherEvidence(input, lang);
     if (!hasMeaningfulEvidence(evidence)) {
       return degradeResult(input, lang, evidence, "INSUFFICIENT_EVIDENCE");
