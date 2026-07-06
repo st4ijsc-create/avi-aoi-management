@@ -1,55 +1,76 @@
 /**
- * doc 24 Tier-2 (Connectivity) — Delta robot driver — REAL (framework-level)
- * ASCII/TCP command client. Replaces the prior NotImplemented scaffold. Wired
- * end-to-end against the RobotDriver contract, following the exact pattern of the
- * FANUC RMI driver (server/services/robot/drivers/fanucDriver.ts): a node:net TCP
- * client (shared TcpLineClient), deterministic framing, a read-mostly connect(), a
- * status/pose getState(), and a gated runJob() that DRY-RUNS unless
- * ROBOT_CONTROL_ENABLED==='true'.
+ * doc 24 Tier-2 (Connectivity) — Delta robot driver — HONEST DRY-RUN MOCK.
+ * Wired end-to-end against the RobotDriver contract (same shape as the other
+ * drivers: shared TcpLineClient, read-mostly connect(), status/pose getState(),
+ * gated runJob() that DRY-RUNS unless ROBOT_CONTROL_ENABLED==='true').
  *
  * ──────────────────────────────────────────────────────────────────────────
- * DELTA WIRE PROTOCOL (REPRESENTATIVE "assumed shape" — clearly labelled)
- *   Delta Electronics industrial robots (DRV/DRA parallel-delta + SCARA) are
- *   commanded in the field over DMCNET (fieldbus), Modbus TCP, or a controller
- *   ASCII/TCP command channel. The exact ASCII command grammar is proprietary and
- *   not publicly pinned down, so — like the Techman TMSCT and the Koh-Young
- *   "assumed representative shape" — this driver implements a CLEAN, SELF-CONSISTENT
- *   ASCII/TCP line protocol modelled on common industrial ASCII framing. It is a
- *   faithful *shape* to be validated/replaced against the real controller, NOT a
- *   transcription of Delta's documented protocol. Constraint honoured: raw TCP via
- *   node:net, no Modbus/fieldbus dependency.
+ * ⚠️⚠️ THE WIRE FRAME BELOW IS A FABRICATED PLACEHOLDER — NOT A REAL PROTOCOL ⚠️⚠️
  *
- *   Frame (request and response), terminated by CRLF:
+ * Spec-verified 2026-07 against the supplied manuals. Findings:
  *
- *       @<seq>,<CMD>[,<arg>...]*<XX>\r\n
+ * 1) `Delta-Robot-Controller-User-Manual.pdf` is a **HIWIN RCD-series robot
+ *    controller** HARDWARE/INSTALL/SAFETY manual (models RCD401/RCD403, doc
+ *    C05UE101-1809). "Delta Robot" in the title is the parallel/**delta MECHANISM
+ *    type** — the spec page lists "Articulated / Delta / SCARA Robot" as supported
+ *    kinematics — NOT the vendor "Delta Electronics". Vendor is HIWIN Technologies.
+ *      • OS = HRSS (HIWIN Robot System Software); Positioning = PTP/CP; 4 axes
+ *        (Specifications, ch.1 "Standard Specifications", p.10).
+ *      • Programming is done ON the controller via Teach Pendant TP02 — "program
+ *        edit, program management and motion position teaching" (ch.4 "Teach
+ *        Pendant", p.33). No offline/host command language is exposed.
+ *      • The ONLY communication interface documented is physical: "Communication
+ *        interface: Ethernet ×2, USB" (Specifications table, p.10) and "5 LAN
+ *        connector (CN6) — Ethernet signal transmitting" (Installation §2.1, p.16).
+ *      • The manual has 6 chapters (1 Specifications · 2 Installation · 3 External
+ *        I/O · 4 Teach Pendant · 5 Universal Stand · 6 Maintenance). It documents
+ *        **NO host command protocol**: no Modbus map, no function codes, no register
+ *        table, no ASCII command grammar, no TCP command port, no checksum, no
+ *        baud/serial parameters. Full-text verified.
  *
- *     • `@`      start-of-frame
- *     • `<seq>`  monotonic transaction id (echoed in the reply)
- *     • `<CMD>`  verb: RDSTS (read status), RDPOS (read pose), SERVO (servo on/off),
- *                MOVL (linear), MOVJ (joint), STOP (halt)
- *     • `*<XX>`  XOR checksum of the body (everything between `@` and `*`), 2-hex
+ *    => There is NO documented host API to implement. The previous
+ *    `@<seq>,<CMD>[,<arg>...]*<XX>\r\n` frame (start-of-frame `@`, echoed seq,
+ *    verbs RDSTS/RDPOS/SERVO/MOVL/MOVJ/STOP, XOR checksum, default TCP port 5000)
+ *    was INVENTED. It appears nowhere in any Delta/HIWIN document and MUST NOT be
+ *    trusted on hardware. It is retained ONLY as a self-consistent dry-run mock so
+ *    the RobotDriver contract stays exercised; every send is gated OFF.
  *
- *   Reply body: `<seq>,<CMD>,<STATUS>[,<field>...]` where STATUS is `OK` or `ERR`
- *   (an ERR reply carries the error code as the first field). Requests are issued
- *   strictly sequentially, so replies match FIFO (shared TcpLineClient).
+ * 2) `Delta-AS-Series-Users-Manual.pdf` IS a Delta Electronics device — the **AS
+ *    Series (AS300) PLC** "Hardware and Operation Manual". Unlike the robot
+ *    controller it is a real **Modbus TCP/RTU** device with a documented Function-
+ *    Code set and device register map (Ethernet §2.2.1; Ethernet-link object §9.8).
+ *    If a Delta AS300 PLC coordinates the robot cell, THAT is the real integration
+ *    surface — reached via the existing OT Modbus path, NOT this ASCII mock.
  *
- * READ-MOSTLY: connect() sends a single RDSTS probe (read-only). It does NOT send
- *   SERVO,1 — energising servos is actuation-enabling and is deferred to the gated
- *   live-motion path. getState() polls RDSTS + RDPOS (read only).
+ * ──────────────────────────────────────────────────────────────────────────
+ * HOW TO CONNECT FOR REAL (replace this mock; do NOT lift ROBOT_CONTROL_ENABLED
+ * against this fabricated frame):
+ *
+ *   A) HIWIN RCD host control — obtain HIWIN's HRSS network/remote-command manual
+ *      (this hardware manual does not cover it). HRSS exposes host motion/IO over
+ *      the CN6 Ethernet link via HIWIN's own remote API (and, on configured units,
+ *      a Modbus/TCP server). Transcribe the real verbs/registers there, then either
+ *      keep TcpLineClient (if it is a documented ASCII channel) or route through the
+ *      Modbus path below. Cite the exact HRSS manual pages when you do.
+ *
+ *   B) Delta AS300 PLC cell coordinator — use the existing OT Modbus driver
+ *      `server/services/ot/drivers/modbusDriver.ts` (createModbusDriver →
+ *      readTags/writeTags → readHoldingRegisters/writeRegister/writeRegisters) with
+ *      the AS-series register map (Delta-AS-Series-Users-Manual.pdf). That is the
+ *      correct home for register I/O — do NOT re-implement Modbus in this file.
+ *
+ * TODO(OT): pick path A or B once the real host-protocol manual/register map is
+ *   available, then delete the fabricated frame functions below.
+ *
+ * READ-MOSTLY: connect() sends a single RDSTS probe. getState() polls RDSTS+RDPOS.
+ *   (All against the mock frame — validate before trusting.)
  *
  * ⚠️ MOTION STAYS GATED (defence-in-depth). runJob() is reached ONLY from
  *   robotCommandDispatcher (idempotency + HITL 2-eyes + mode gate). This driver
  *   ALSO self-guards: when ROBOT_CONTROL_ENABLED!=='true' it BUILDS the framed
  *   command and returns it as dry-run INTENT (`sent:false`) without writing any
- *   byte and without ever sending SERVO,1. No ungated actuation.
- *
- * ⚠️ HONESTY CAVEAT — VALIDATE FIELD/MODE MAPPING AGAINST REAL HARDWARE. The frame
- *   grammar, checksum, RDSTS field order (running/mode/error/estop), RDPOS axis
- *   order (X/Y/Z/C for a 4-DOF delta) and MOVL/MOVJ argument layout are a
- *   representative assumed shape, NOT Delta's published protocol. Verify and replace
- *   every verb/field against the real controller manual before trusting live motion.
- *   Keep ROBOT_CONTROL_ENABLED=false until validated (dry-run builds the command but
- *   sends nothing).
+ *   byte and without ever sending SERVO,1. Keep ROBOT_CONTROL_ENABLED=false — the
+ *   frame is unvalidated and fabricated.
  * ──────────────────────────────────────────────────────────────────────────
  */
 import type {
@@ -58,7 +79,10 @@ import type {
 } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
 
-/** Delta ASCII/TCP command-channel port (representative default; configurable). */
+/**
+ * FABRICATED default port for the mock ASCII channel — NOT a documented Delta/HIWIN
+ * port (the RCD manual specifies no host command port; see header). Configurable.
+ */
 const DEFAULT_DELTA_PORT = 5000;
 
 /** Parsed Delta reply. */
@@ -71,9 +95,12 @@ export interface DeltaReply {
   errorCode?: number;
 }
 
-// ── Pure framing / parsing (exported for wire-format unit tests) ─────────────
+// ── Pure framing / parsing for the FABRICATED mock frame (exported for unit
+//    tests only). None of this reflects a documented Delta/HIWIN protocol — see
+//    the header. Delete when the real host API (path A) or Modbus map (path B) lands.
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** XOR checksum of the frame body, two-digit upper-hex (representative). */
+/** XOR checksum of the mock frame body, two-digit upper-hex (FABRICATED — not real). */
 export function deltaChecksum(body: string): string {
   let x = 0;
   for (let i = 0; i < body.length; i++) x ^= body.charCodeAt(i);

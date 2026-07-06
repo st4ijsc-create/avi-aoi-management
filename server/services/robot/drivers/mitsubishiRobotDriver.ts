@@ -8,10 +8,13 @@
  * ROBOT_CONTROL_ENABLED==='true'.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * MELFA WIRE PROTOCOL (as implemented here — the "R3" character command channel)
- *   MELFA CR/RV-series controllers (CR750 / CR751 / CR800) expose an Ethernet
- *   command channel (the "R3" / data-link procedure interface) on a configurable
- *   TCP port (10001 by default in this driver). Each request is one ASCII line:
+ * MELFA WIRE PROTOCOL (as implemented here — the ASCII controller-command channel)
+ *   MELFA CR750 / CR751 / CR800 controllers expose Ethernet functions on TCP/UDP
+ *   ports configured via controller parameters CPRCE14–CPRCE19 (OPT11–OPT19),
+ *   factory default 10000–10009 (Ethernet Function Instruction Manual BFP-A3379,
+ *   §2.2 "Parameter list" p2-5; range 0–32767). This driver defaults to TCP 10001
+ *   (a valid documented port) for the controller-communication / support-software
+ *   command channel. Each request is one ASCII line:
  *
  *       <robotNo>;<slotNo>;<command>\r
  *
@@ -44,15 +47,31 @@
  *   command and returns it as dry-run INTENT (`sent:false`) without writing any
  *   byte and without ever sending CNTLON/SRVON. No ungated actuation.
  *
- * ⚠️ HONESTY CAVEAT — VALIDATE FIELD/MODE MAPPING AGAINST REAL HARDWARE. The
- *   STATE positional decode (run/mode/error), the PPOSF name;value pose parse, the
- *   `Qok`/`Qe` reply framing, and the EXEC motion-statement syntax are reasonable
- *   MELFA assumptions written WITHOUT a live controller. Real STATE returns a
- *   richer structure and joint-literal motion syntax varies by MELFA-BASIC version;
- *   MELFA STATE has no plain e-stop field, so `estop` is honestly left undefined.
- *   Verify verbs, field order, scaling and units against the controller's Ethernet
- *   function manual before trusting live motion. Keep ROBOT_CONTROL_ENABLED=false
- *   until validated (dry-run builds the command but sends nothing).
+ * ⚠️ HONESTY CAVEAT — TELEGRAM FORMAT IS NOT IN THIS MANUAL (verify vs support-SW).
+ *   The Ethernet Function Instruction Manual (BFP-A3379) documents the PORTS and
+ *   three channels — data-link (MELFA-BASIC OPEN/PRINT/INPUT, §3.2 p3-5),
+ *   real-time external control (MXT over UDP, §3.3 p3-13) and the SLMP server
+ *   (CR800 only, §3.5 p3-34) — but the "controller communication function"
+ *   (§3.1 p3-2) DELEGATES its telegram format to the personal-computer support-
+ *   software manual (§3.1.4 p3-3: "Refer to the instruction manual enclosed with
+ *   the personal computer support software"). So the `<robotNo>;<slotNo>;<CMD>`
+ *   line format, the OPEN/CNTLON/SRVON/EXEC verbs, the STATE run/mode decode, the
+ *   PPOSF name;value pose parse and the `Qok`/`Qe` reply framing below follow the
+ *   community / RT-ToolBox R3 convention — they are NOT verified against a
+ *   Mitsubishi-published byte spec. MELFA STATE has no plain e-stop field, so
+ *   `estop` is honestly left undefined. Keep ROBOT_CONTROL_ENABLED=false until
+ *   validated on a live controller (dry-run builds the command but sends nothing).
+ *
+ * ⚠️ REAL-TIME MOTION uses a DIFFERENT documented channel: MXT (Move External)
+ *   over UDP at the control cycle (~3.5 ms CR800 / ~7.1 ms CR750), a binary
+ *   position-data packet — NOT this TCP line channel (§3.3.1/3.3.2 p3-15..3-20).
+ *   This driver's TCP channel is for discrete supervisory commands only.
+ *
+ * ℹ️ VERIFIABLE STATE ALTERNATIVE (CR800): getState() could read robot devices via
+ *   the built-in SLMP server (MC QnA-compatible 3E/4E frame) instead of the guessed
+ *   STATE/PPOSF decode — params SLMPPORT (default 45237), SLMPCP (0=TCP,1=UDP),
+ *   SLMPNWNO, SLMPNDID (§3.5.3-3.5.4 p3-34). This is a Mitsubishi-documented path;
+ *   TODO if live state accuracy is required.
  * ──────────────────────────────────────────────────────────────────────────
  */
 import type {
@@ -61,7 +80,11 @@ import type {
 } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
 
-/** MELFA R3 command-channel TCP port (configurable via endpoint/options). */
+/**
+ * MELFA controller-communication TCP port. Configurable via endpoint/options.
+ * Default 10001 ∈ documented range 10000–10009 (Ethernet Function Instruction
+ * Manual BFP-A3379 §2.2 p2-5; params CPRCE14–19 / OPT11–19; full range 0–32767).
+ */
 const DEFAULT_MELFA_PORT = 10001;
 /** Default robot number / task slot in the `<robotNo>;<slotNo>;<cmd>` frame. */
 const DEFAULT_ROBOT_NO = 1;
@@ -106,7 +129,7 @@ export function parseMelfaResponse(line: string): MelfaReply {
   return { ok: true, payload: t };
 }
 
-/** Map an ASSUMED MELFA operation-mode code → mode string (verify vs manual). */
+/** Map a MELFA operation-mode code → mode string (R3 convention — unverified; see HONESTY CAVEAT). */
 export function decodeMelfaMode(code: number): string {
   switch (code) {
     case 0: return "auto";
@@ -117,9 +140,10 @@ export function decodeMelfaMode(code: number): string {
 }
 
 /**
- * Decode an ASSUMED STATE payload → run/mode/error. Real MELFA STATE returns a
- * richer structure; here the payload after `Qok` is split on `;` or `,` and read
- * positionally as `[runStatus, modeCode, errorNo]`. Edit for your controller.
+ * Decode a STATE payload → run/mode/error (R3 convention — unverified; see HONESTY
+ * CAVEAT). Real MELFA STATE returns a richer structure; here the payload after
+ * `Qok` is split on `;` or `,` and read positionally as `[runStatus, modeCode,
+ * errorNo]`. Edit for your controller, or prefer the SLMP-server read path (§3.5).
  */
 export function decodeMelfaState(payload: string): { running: boolean; mode: string; errorNo: number } {
   const fields = String(payload).split(/[;,]/).map((s) => s.trim());
@@ -130,7 +154,8 @@ export function decodeMelfaState(payload: string): { running: boolean; mode: str
 }
 
 /**
- * Decode a PPOSF/JPOSF payload → RobotPose. ASSUMED format: `name;value` pairs,
+ * Decode a PPOSF/JPOSF payload → RobotPose. R3-convention format (unverified; see
+ * HONESTY CAVEAT): `name;value` pairs,
  * e.g. `X;+100.00;Y;+200.00;Z;+300.00;A;+180.00;B;+0.00;C;+90.00`. Cartesian
  * (X/Y/Z present) maps to pose.cartesian (rx=A, ry=B, rz=C); otherwise J1..J6 map
  * to pose.joints. Returns undefined when neither is present.
@@ -161,7 +186,7 @@ export function decodeMelfaPosition(payload: string): RobotPose | undefined {
 
 /**
  * Translate a RobotJobSpec → a single MELFA-BASIC motion statement prefixed with
- * `EXEC` (ASSUMED syntax — verify against the MELFA-BASIC reference). Joint params
+ * `EXEC` (R3-convention syntax — unverified; see HONESTY CAVEAT). Joint params
  * → `EXECMOV J=(…)` (joint-interpolated to joint angles). Cartesian params →
  * `EXECMVS (x,y,z,a,b,c)(fl1,fl2)` (linear) or, when `interpolation==='joint'`,
  * `EXECMOV (…)`. Exported for unit testing; NEVER sends anything.

@@ -178,6 +178,69 @@ const OMRON_NJNX: AlarmMapping[] = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
+// Omron NJ/NX Controller EVENT CODES (8-hex) — extracted from the NJ/NX-series
+// Troubleshooting Manual (W503), section 3 "Error Descriptions and Corrections".
+// vendor='omron', machineType='PLC'. nativeCode uses Sysmac's "16#XXXXXXXX" form
+// (8-hex), distinct from the 4-hex FINS/CIP response codes above (no collision).
+//
+// ISA-18.2 severity ← W503 "Error attributes → Level":
+//   Major fault → critical | Partial fault → high | Minor fault → medium | Observation → low
+// Page numbers reference W503 (mig 0232 header lists them). Idempotent DB mirror = migration 0232.
+// ════════════════════════════════════════════════════════════════════════════
+const OMRON_NJNX_EVENTS: AlarmMapping[] = [
+  // ── Controller / hardware — PLC Function Module (Major fault → critical) ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#000E0000", standardCode: "HW_FAULT", severity: "critical", description: "Non-volatile Memory Life Exceeded (W503 p.3-96)", recommendedAction: "Thay CPU Unit; lưu/khôi phục project trước khi thay." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#00110000", standardCode: "HW_FAULT", severity: "critical", description: "CPU Unit Overheat — Operation Stopped (W503 p.3-97)", recommendedAction: "Kiểm tra quạt/thông gió tủ & nhiệt độ môi trường; để CPU nguội; cycle nguồn." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#00130000", standardCode: "HW_FAULT", severity: "critical", description: "Main Memory Check Error (W503 p.3-98)", recommendedAction: "Cycle nguồn; nếu lặp lại thay CPU Unit; kiểm tra nhiễu." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#04010000", standardCode: "HW_FAULT", severity: "critical", description: "I/O Bus Check Error (W503 p.3-120)", recommendedAction: "Kiểm tra/cắm lại I/O Connecting Cable & connector; chống nhiễu; thay Unit lỗi." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#60030000", standardCode: "HW_FAULT", severity: "critical", description: "I/O Refreshing Timeout Error (W503 p.3-134)", recommendedAction: "Kiểm tra tải chu kỳ & cấu hình I/O; giảm task load; cycle nguồn." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#40160000", standardCode: "HW_FAULT", severity: "critical", description: "Safe Mode (W503 p.3-151)", recommendedAction: "Kiểm tra nguyên nhân lỗi hệ thống trong log; sửa cấu hình/chương trình; cycle nguồn." },
+  // ── Configuration — PLC Function Module (Major fault → critical) ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#24010000", standardCode: "CONFIG_ERROR", severity: "critical", description: "Unsupported Unit Detected (W503 p.3-121)", recommendedAction: "Gỡ Unit/PSU không hỗ trợ; thay bằng model được CPU hỗ trợ." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#24050000", standardCode: "CONFIG_ERROR", severity: "critical", description: "Duplicate Unit Number (W503 p.3-123)", recommendedAction: "Đặt lại unit number duy nhất cho từng Special I/O / CPU Bus Unit." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#34010000", standardCode: "CONFIG_ERROR", severity: "critical", description: "I/O Setting Check Error (W503 p.3-124)", recommendedAction: "Đối chiếu cấu hình I/O trong Sysmac Studio với phần cứng thực; nạp lại." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#10250000", standardCode: "CONFIG_ERROR", severity: "critical", description: "Illegal User Program/Controller Configurations Mismatch (W503 p.3-141)", recommendedAction: "Truyền lại (download) chương trình & cấu hình từ Sysmac Studio; đối chiếu phiên bản." },
+  // ── EtherCAT Master Function Module ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#24200000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherCAT Slave Node Address Duplicated (W503 p.3-742)", recommendedAction: "Đặt node address duy nhất cho từng slave EtherCAT; đối chiếu ESI/cấu hình." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#34400000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherCAT Network Configuration Information Error (W503 p.3-743)", recommendedAction: "So khớp cấu hình mạng EtherCAT với slave thực; nạp lại network config." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#34410000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherCAT Communications Cycle Exceeded (W503 p.3-744)", recommendedAction: "Tăng chu kỳ PDO/giảm tải; kiểm tra số slave & băng thông; tối ưu task." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#34420000", standardCode: "CONFIG_ERROR", severity: "high", description: "EtherCAT Parameters Not Transferred (W503 p.3-735)", recommendedAction: "Truyền lại tham số slave; kiểm tra kết nối khi khởi động; cycle nguồn." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84210000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherCAT Network Configuration Error (W503 p.3-745)", recommendedAction: "Kiểm tra & sửa cấu hình mạng EtherCAT khớp với slave đang nối." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84280000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherCAT Slave Application Error (W503 p.3-752)", recommendedAction: "Đọc mã lỗi ứng dụng của slave; xử lý theo manual slave; reset lỗi." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84290000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherCAT Process Data Transmission Error (W503 p.3-753)", recommendedAction: "Kiểm tra cáp/nhiễu & topo EtherCAT; nối đất shield; thay cáp." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#842B0000", standardCode: "COMM_TIMEOUT", severity: "medium", description: "EtherCAT Process Data Reception Timeout (W503 p.3-754)", recommendedAction: "Kiểm tra slave mất kết nối/nguồn & cáp; kiểm tra chu kỳ giao tiếp." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#842C0000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherCAT Process Data Communications Error (W503 p.3-756)", recommendedAction: "Kiểm tra cáp/nhiễu & slave; nối đất shield; thay cáp/slave nếu lặp lại." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#842E0000", standardCode: "COMM_ERROR", severity: "high", description: "EtherCAT Frame Not Received (W503 p.3-738)", recommendedAction: "Kiểm tra đứt cáp/mất nguồn slave đầu chuỗi; đo link; thay cáp." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84310002", standardCode: "COMM_ERROR", severity: "medium", description: "EtherCAT Illegal Slave Disconnection Detected (W503 p.3-764)", recommendedAction: "Kiểm tra slave bị rớt/mất nguồn & cáp; nối lại đúng topo; reset." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84390000", standardCode: "COMM_ERROR", severity: "low", description: "EtherCAT Ring Disconnection Detected (W503 p.3-793)", recommendedAction: "Kiểm tra cáp vòng ring redundancy; nối lại đường dự phòng." },
+  // ── EtherNet/IP Function Module (CIP tag data link) ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#34290000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherNet/IP IP Address Setting Error (W503 p.3-685)", recommendedAction: "Sửa IP/subnet trong Sysmac Studio; tránh trùng dải; nạp lại." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#342A0000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherNet/IP DNS Setting Error (W503 p.3-686)", recommendedAction: "Kiểm tra địa chỉ DNS server cấu hình; sửa hoặc tắt DNS nếu không dùng." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#840A0000", standardCode: "CONFIG_ERROR", severity: "medium", description: "EtherNet/IP IP Address Duplication Error (W503 p.3-697)", recommendedAction: "Tìm & sửa thiết bị trùng IP trong mạng; đặt IP duy nhất." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84030000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherNet/IP DNS Server Connection Error (W503 p.3-689)", recommendedAction: "Kiểm tra kết nối tới DNS server & định tuyến; xác minh địa chỉ." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#840B0000", standardCode: "COMM_ERROR", severity: "medium", description: "EtherNet/IP BOOTP Server Connection Error (W503 p.3-698)", recommendedAction: "Kiểm tra BOOTP server & mạng; hoặc đặt IP tĩnh nếu không dùng BOOTP." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84060000", standardCode: "COMM_ERROR", severity: "low", description: "EtherNet/IP Link OFF Detected (W503 p.3-703)", recommendedAction: "Kiểm tra cáp/switch & cổng built-in EtherNet/IP; đo link; thay cáp." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84080000", standardCode: "CIP_ERROR", severity: "medium", description: "EtherNet/IP Tag Data Link Timeout (W503 p.3-693)", recommendedAction: "Kiểm tra target CIP connection & tải mạng; tăng RPI/timeout; xác minh tag." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#84090000", standardCode: "CIP_ERROR", severity: "medium", description: "EtherNet/IP Tag Data Link Connection Timeout (W503 p.3-694)", recommendedAction: "Kiểm tra target sẵn sàng & route CIP; xác minh tag list & Network Publish." },
+  // ── CIP / serial / socket comms — PLC Function Module (Observation → low) ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#54011C06", standardCode: "CIP_ERROR", severity: "low", description: "CIP Communications Data Size Exceeded (W503 p.3-284)", recommendedAction: "Giảm kích thước dữ liệu CIP mỗi request; chia nhỏ; kiểm tra class/instance." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#54010C08", standardCode: "COMM_ERROR", severity: "low", description: "Serial CRC Mismatch (W503 p.3-254)", recommendedAction: "Kiểm tra cáp/nhiễu serial & thông số truyền; nối đất shield." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#54010C0B", standardCode: "COMM_TIMEOUT", severity: "low", description: "Serial Communications Timeout (W503 p.3-255)", recommendedAction: "Kiểm tra thiết bị đầu kia & cáp; xác minh baud/parity; tăng timeout." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#54010C10", standardCode: "COMM_ERROR", severity: "low", description: "Exceptional Modbus Response (W503 p.3-257)", recommendedAction: "Kiểm tra function code & map thanh ghi Modbus; xác minh slave." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#54012406", standardCode: "COMM_ERROR", severity: "low", description: "FTP Server Connection Error (W503 p.3-299)", recommendedAction: "Kiểm tra FTP server đích & thông tin đăng nhập/route; nối lại." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#80110000", standardCode: "COMM_ERROR", severity: "low", description: "Packet Discarded (W503 p.3-227)", recommendedAction: "Kiểm tra tải mạng/nghẽn & bộ đệm; giảm lưu lượng; kiểm tra switch." },
+  // ── Motion Control Function Module ──
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#644C0000", standardCode: "MOTION_FAULT", severity: "low", description: "Following Error Warning (W503 p.3-549)", recommendedAction: "Theo dõi sai lệch bám; kiểm tra gain/tải trước khi thành lỗi following-error limit." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#64480000", standardCode: "MOTION_FAULT", severity: "medium", description: "Following Error Limit Exceeded (W503 p.3-527)", recommendedAction: "Kiểm tra kẹt cơ/tải & gain; tăng giới hạn hợp lý; kiểm tra encoder & phanh; error reset." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#64470000", standardCode: "MOTION_FAULT", severity: "medium", description: "In-position Check Time Exceeded (W503 p.3-526)", recommendedAction: "Kiểm tra gain/settling & dải in-position; tăng thời gian/nới dải; error reset." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#64410000", standardCode: "MOTION_FAULT", severity: "medium", description: "Target Position Negative Software Limit Exceeded (W503 p.3-645)", recommendedAction: "Kiểm tra lệnh vị trí đích trong dải software limit; sửa quỹ đạo; error reset." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#644B0000", standardCode: "MOTION_FAULT", severity: "medium", description: "Negative Limit Input Detected (W503 p.3-530)", recommendedAction: "Jog trục ra khỏi giới hạn; kiểm tra công tắc hành trình & hành trình cơ; error reset." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#64570000", standardCode: "MOTION_FAULT", severity: "medium", description: "Servo OFF Error (W503 p.3-531)", recommendedAction: "Kiểm tra điều kiện servo-off khi đang chạy; bật servo & reset; kiểm tra chuỗi enable." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#74210000", standardCode: "MOTION_FAULT", severity: "medium", description: "Servo Main Circuit Power OFF (W503 p.3-533)", recommendedAction: "Bật nguồn mạch chính servo drive trước khi servo-on; kiểm tra đấu nối nguồn." },
+  { vendor: "omron", machineType: "PLC", nativeCode: "16#74250000", standardCode: "MOTION_FAULT", severity: "medium", description: "Homing Direction Limit Input Detected (W503 p.3-535)", recommendedAction: "Kiểm tra hướng home & vị trí công tắc limit; sửa tham số homing; chạy lại home." },
+];
+
+// ════════════════════════════════════════════════════════════════════════════
 // Zmotion motion controllers — controller/firmware error codes.
 // vendor='zmotion', machineType='MOTION'.
 // ════════════════════════════════════════════════════════════════════════════
@@ -203,5 +266,6 @@ export const VENDOR_ALARM_MAPPINGS: AlarmMapping[] = [
   ...FANUC,
   ...DELTA_ASDA,
   ...OMRON_NJNX,
+  ...OMRON_NJNX_EVENTS,
   ...ZMOTION,
 ];

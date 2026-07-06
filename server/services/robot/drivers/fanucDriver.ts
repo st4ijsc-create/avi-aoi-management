@@ -1,47 +1,61 @@
 /**
- * Phase 3 / doc 24 C4 — FANUC robot driver — REAL (framework-level) RMI client.
+ * Phase 3 / doc 24 C4 — FANUC robot driver — REAL RMI client.
  *
- * Implements the FANUC **Robot Motion Interface (RMI)** — the R-30iB / R-30iB Plus
- * controller option that exposes a TCP socket speaking newline-terminated JSON
- * packets. This is the SECOND vendor (after Techman) wired end-to-end against the
- * RobotDriver contract; Mitsubishi (MELFA R3) + Delta (ASCII/TCP) are now real
- * drivers too (doc 24 Tier-2), leaving no NotImplemented robot vendor.
+ * Implements the FANUC **Remote Motion Interface (RMI)** — a controller option that
+ * exposes a TCP socket speaking CRLF-terminated JSON packets. This is the SECOND
+ * vendor (after Techman) wired end-to-end against the RobotDriver contract;
+ * Mitsubishi (MELFA R3) + Delta (ASCII/TCP) are now real drivers too (doc 24
+ * Tier-2), leaving no NotImplemented robot vendor.
+ *
+ * Wire format & command names below are VERIFIED against the FANUC manual
+ * "RMI Operators Manual", B-84184EN/03 (section/page refs cited inline as
+ * "[RMI §x.y.z p.N]", where p.N is the printed manual page number).
  *
  * ──────────────────────────────────────────────────────────────────────────
- * RMI WIRE PROTOCOL (as implemented here)
- *   • Transport: one TCP socket (default port 16001). Every packet is a single
- *     JSON object serialized to one line and terminated with CRLF ("\r\n"). The
- *     controller replies with one JSON line per request, echoing the packet's
- *     discriminator key. We frame on CR?LF and match responses to requests FIFO
- *     (requests are issued strictly sequentially — one await per send).
- *   • Packet categories (the top-level discriminator key):
- *       - "Communication" : FRC_Connect / FRC_Disconnect (session).
- *       - "Command"        : FRC_Initialize, FRC_Abort, FRC_GetStatus,
- *                            FRC_ReadPositionRegister, … (read + control verbs).
- *       - "Instruction"    : FRC_LinearMotion / FRC_JointMotion / … (MOTION; carry
- *                            a monotonic SequenceID). Sent ONLY on the gated path.
- *   • Handshake: FRC_Connect → (controller returns a MajorVersion/MinorVersion and
- *     optionally a dedicated motion PortNumber). We stay on the connect socket by
- *     default; `reconnectToMotionPort` re-opens on the returned PortNumber for
- *     controllers that require it.
+ * CONTROLLER PREREQUISITES  [RMI §1.2 p.1]
+ *   • Hardware: an **R-30iB Plus** controller.
+ *   • Software option: **Remote Motion Interface (R912)** loaded. (Not R632.)
+ *   • Comms: Ethernet. Recommended controller software ≥ RMI MajorVersion 7.
+ *   • Before FRC_Initialize the controller MUST be:  [RMI §2.3.1 p.9]
+ *       1. Teach pendant DISABLED and controller in **AUTO mode** (GetStatus
+ *          TPMode === 0 means TP disabled → RMI-usable),
+ *       2. Ready to run (no servo/other errors — GetStatus ServoReady === 1),
+ *       3. Selected TP program NOT RMI_MOVE (else ErrorID 7015/7004).
  *
- * READ-MOSTLY: connect() performs FRC_Connect + a FRC_GetStatus probe only. It does
- *   NOT send FRC_Initialize — Initialize enables RMI remote-motion mode (an
- *   actuation-enabling step), so it is deferred to the gated live-motion path.
- *   getState() polls FRC_GetStatus + FRC_ReadPositionRegister (read only).
+ * RMI WIRE PROTOCOL
+ *   • Every packet is a single JSON object on one line, terminated with CRLF
+ *     ("\r\n").  [RMI §2.2.1 p.6 — all packet tables end "} \r\n"]. The controller
+ *     replies with one JSON line per request; we frame on CR?LF and match FIFO
+ *     (requests issued strictly sequentially — one await per send).
+ *   • Packet categories (top-level discriminator key)  [RMI §2, §2.3, §2.4]:
+ *       - "Communication" : FRC_Connect / FRC_Disconnect (session lifecycle).
+ *       - "Command"        : FRC_Initialize, FRC_Abort, FRC_GetStatus,
+ *                            FRC_ReadCartesianPosition, … (immediate; not queued
+ *                            into the TP program).
+ *       - "Instruction"    : FRC_LinearMotion / FRC_JointMotionJRep / … (MOTION;
+ *                            appended to the RMI_MOVE TP program; carry a
+ *                            monotonically increasing SequenceID). Gated path only.
+ *   • TWO-SOCKET HANDSHAKE (mandatory)  [RMI §2.2.1 p.6]: the remote device opens
+ *     the well-known port **16001** and sends FRC_Connect. The reply carries
+ *     ErrorID, **PortNumber**, MajorVersion, MinorVersion. The controller then
+ *     AUTO-DISCONNECTS port 16001; ALL subsequent packets MUST use the returned
+ *     PortNumber. So we ALWAYS close the 16001 socket and re-open on PortNumber —
+ *     this is not optional. FRC_Connect is the ONLY packet ever sent on 16001.
+ *
+ * READ-MOSTLY: connect() performs the two-socket FRC_Connect handshake + a
+ *   FRC_GetStatus probe only. It does NOT send FRC_Initialize — Initialize creates
+ *   the running RMI_MOVE TP program (an actuation-enabling step), so it is deferred
+ *   to the gated live-motion path. getState() polls FRC_GetStatus +
+ *   FRC_ReadCartesianPosition (both read-only)  [RMI §2.3.7 p.14, §2.3.14 p.18].
  *
  * ⚠️ MOTION STAYS GATED (defence-in-depth). runJob() is reached ONLY from
  *   robotCommandDispatcher (idempotency + HITL 2-eyes + mode gate). This driver
  *   ALSO self-guards: when ROBOT_CONTROL_ENABLED!=='true' it BUILDS the RMI
  *   instruction packet and returns it as dry-run INTENT without opening/writing any
  *   motion packet and without ever sending FRC_Initialize. No ungated actuation.
- *
- * ⚠️ HONESTY CAVEAT — VALIDATE AGAINST REAL HARDWARE. The status/mode decode
- *   (TPMode / RMIMotionStatus → mode/busy) and the instruction field mapping are
- *   reasonable RMI assumptions written WITHOUT a live R-30iB. Verify field names,
- *   value encodings, UFrame/UTool numbers and speed units against the controller's
- *   RMI manual before trusting live motion. Keep ROBOT_CONTROL_ENABLED=false until
- *   validated (dry-run builds the packet but sends nothing).
+ *   On the enabled path it first runs a status pre-check (ServoReady/TPMode; abort
+ *   any already-running RMI) then FRC_Initialize, per the manual startup sequence
+ *   [RMI §2.3.1 p.9].
  * ──────────────────────────────────────────────────────────────────────────
  */
 import { createConnection } from "node:net";
@@ -50,12 +64,17 @@ import type {
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
 
-/** RMI TCP port on R-30iB / R-30iB Plus controllers (configurable via endpoint/options). */
+/**
+ * Well-known RMI "connect" port on R-30iB Plus controllers. FRC_Connect is sent
+ * here; the controller then returns the actual session PortNumber to reconnect on
+ * and drops this socket. [RMI §2.2.1 p.6]. Configurable via endpoint/options only
+ * to support routers/NAT — it is not the session port.
+ */
 const DEFAULT_RMI_PORT = 16001;
-/** Default group mask for FRC_Initialize (group 1). */
+/** Default group mask for FRC_Initialize — single group 1 (bit-field). [RMI §2.3.1 p.10] */
 const DEFAULT_GROUP_MASK = 1;
-/** Default position register read for the pose seam (PR[1]). */
-const DEFAULT_POSITION_REGISTER = 1;
+/** Motion group used on read/motion packets (single-group system). [RMI §2.3.14 p.18] */
+const DEFAULT_GROUP = 1;
 
 /** Cartesian pose registers as RMI reports them (X/Y/Z mm, W/P/R deg). */
 export interface FanucCartesian {
@@ -74,62 +93,92 @@ export function buildDisconnectPacket(): Record<string, unknown> {
   return { Communication: "FRC_Disconnect" };
 }
 
-/** Enable RMI remote-motion mode. ACTUATION-ENABLING — only sent on the gated path. */
+/**
+ * Create the running RMI_MOVE TP program (enables remote motion). ACTUATION-ENABLING
+ * — only sent on the gated path. GroupMask is an unsigned-byte bit-field; if omitted
+ * the controller defaults it to 1. [RMI §2.3.1 p.9-10]
+ */
 export function buildInitializePacket(groupMask: number = DEFAULT_GROUP_MASK): Record<string, unknown> {
   return { Command: "FRC_Initialize", GroupMask: groupMask };
 }
 
-/** Read controller/servo/program status. Read-only. */
+/** Read controller/servo/program status. Read-only, works right after FRC_Connect. [RMI §2.3.7 p.14] */
 export function buildGetStatusPacket(): Record<string, unknown> {
   return { Command: "FRC_GetStatus" };
 }
 
-/** Read a position register PR[n]. Read-only. */
-export function buildReadPositionRegisterPacket(registerNumber: number, group = 1): Record<string, unknown> {
-  return { Command: "FRC_ReadPositionRegister", Group: group, RegisterNumber: registerNumber };
+/**
+ * Read the CURRENT robot TCP Cartesian position (live; refreshed ~every 100 ms).
+ * Reply carries Configuration + Position{X,Y,Z,W,P,R,Ext…} in the active UFrame.
+ * This is the live pose seam for getState(). [RMI §2.3.14 p.18]
+ */
+export function buildReadCartesianPositionPacket(group = DEFAULT_GROUP): Record<string, unknown> {
+  return { Command: "FRC_ReadCartesianPosition", Group: group };
 }
 
-/** Stop/abort RMI motion (Command, not Instruction). */
+/**
+ * Read a STORED position register PR[n] (NOT the live robot pose — that is
+ * FRC_ReadCartesianPosition). Kept for register inspection/tests. [RMI §2.3.18 p.21]
+ */
+export function buildReadPositionRegisterPacket(registerNumber: number, group = DEFAULT_GROUP): Record<string, unknown> {
+  return { Command: "FRC_ReadPositionRegister", RegisterNumber: registerNumber, Group: group };
+}
+
+/**
+ * Abort the running RMI_MOVE TP program (Command, not Instruction). Only valid while
+ * RMI is running (RMIMotionStatus !== 0); the manual also requires an FRC_Abort (or
+ * FRC_Disconnect) to end every RMI session so other TP programs can run. [RMI §2.3.2 p.11]
+ */
 export function buildAbortPacket(): Record<string, unknown> {
   return { Command: "FRC_Abort" };
 }
 
 /**
- * Translate a RobotJobSpec → a single RMI MOTION instruction packet (ASSUMED
- * field mapping — verify against the RMI manual). Cartesian params (x,y,z,…) →
- * FRC_LinearMotion; joint params → FRC_JointMotion. Exported for unit testing the
- * exact packet shape. This function NEVER sends anything — it only builds intent.
+ * Translate a RobotJobSpec → a single RMI MOTION instruction packet, VERIFIED
+ * against the RMI manual. Field mapping:
+ *   • Cartesian params (x,y,z,…) → FRC_LinearMotion: Configuration + Position
+ *     {X,Y,Z,W,P,R}, SpeedType/Speed/TermType/TermValue. [RMI §2.4.7 p.28]
+ *   • Explicit joint angles → FRC_JointMotionJRep ("joint representation"): a
+ *     JointAngle{J1..J6} block and NO Configuration. [RMI §2.4.13 p.50]
+ * NOTE: FRC_JointMotion (§2.4.9) takes a Cartesian Position, not joint angles —
+ *   only the *JRep variant accepts JointAngle, which is why joint moves emit
+ *   FRC_JointMotionJRep here. SpeedType strings are the manual's exact spellings:
+ *   "mmSec"/"InchMin"/"Time"/"mSec" for linear [RMI §2.4.7 p.29]; "Percent"/"Time"/
+ *   "mSec" for joint [RMI §2.4.9 p.39]. TermType is "FINE"|"CNT"|"CR"; TermValue is
+ *   the CNT corner value 1-100 (ignored when FINE). [RMI §2.4.7 p.29]
+ * Exported for unit testing the exact packet shape. NEVER sends anything.
  */
 export function buildFanucInstruction(job: RobotJobSpec, sequenceId: number): Record<string, unknown> {
   const p = job.params ?? {};
+  const speed = Number(p.speed ?? 50);
+  const termType = typeof p.termType === "string" ? p.termType : "FINE";
+  const termValue = termType === "FINE" ? 0 : Number(p.termValue ?? 50);
+
+  // Joint move (FRC_JointMotionJRep): explicit joint angles, joint representation.
+  if (Array.isArray(p.joints) || job.jobType === "home") {
+    const raw = Array.isArray(p.joints) ? (p.joints as number[]) : [0, 0, 0, 0, 0, 0];
+    const j = [0, 1, 2, 3, 4, 5].map((i) => Number(raw[i] ?? 0));
+    return {
+      Instruction: "FRC_JointMotionJRep",
+      SequenceID: sequenceId,
+      JointAngle: { J1: j[0], J2: j[1], J3: j[2], J4: j[3], J5: j[4], J6: j[5] },
+      SpeedType: "Percent",
+      Speed: Number(p.velPct ?? (job.jobType === "home" ? 20 : speed)),
+      TermType: termType,
+      TermValue: termValue,
+    };
+  }
+
+  // Cartesian move (FRC_LinearMotion): Configuration + Position{X,Y,Z,W,P,R}.
   const uTool = Number(p.uToolNumber ?? 1);
   const uFrame = Number(p.uFrameNumber ?? 1);
   const speedType = typeof p.speedType === "string" ? p.speedType : "mmSec";
-  const speed = Number(p.speed ?? 50);
-  const termType = typeof p.termType === "string" ? p.termType : "FINE";
   const configuration = {
     UToolNumber: uTool,
     UFrameNumber: uFrame,
     Front: 1, Up: 1, Left: 1, Flip: 1, Turn4: 0, Turn5: 0, Turn6: 0,
     ...(typeof p.configuration === "object" && p.configuration ? (p.configuration as Record<string, unknown>) : {}),
   };
-
-  // Joint move (FRC_JointMotion): explicit joint angles in params.joints.
-  if (Array.isArray(p.joints) || job.jobType === "home") {
-    const raw = Array.isArray(p.joints) ? (p.joints as number[]) : [0, 0, 0, 0, 0, 0];
-    const j = [0, 1, 2, 3, 4, 5].map((i) => Number(raw[i] ?? 0));
-    return {
-      Instruction: "FRC_JointMotion",
-      SequenceID: sequenceId,
-      Configuration: configuration,
-      JointAngle: { J1: j[0], J2: j[1], J3: j[2], J4: j[3], J5: j[4], J6: j[5] },
-      SpeedType: "Percent",
-      Speed: Number(p.velPct ?? (job.jobType === "home" ? 20 : speed)),
-      TermType: termType,
-    };
-  }
-
-  // Cartesian move (FRC_LinearMotion): x,y,z (+ optional w,p,r) in params.
   const pos: FanucCartesian = {
     X: Number(p.x ?? 0), Y: Number(p.y ?? 0), Z: Number(p.z ?? 0),
     W: Number(p.w ?? p.rx ?? 0), P: Number(p.p ?? p.ry ?? 0), R: Number(p.r ?? p.rz ?? 0),
@@ -142,6 +191,7 @@ export function buildFanucInstruction(job: RobotJobSpec, sequenceId: number): Re
     SpeedType: speedType,
     Speed: speed,
     TermType: termType,
+    TermValue: termValue,
   };
 }
 
@@ -289,14 +339,14 @@ export class FanucRmiClient {
   }
 }
 
-/** Map an ASSUMED TPMode code → the human-readable mode string (verify vs RMI docs). */
-function decodeTpMode(code: number): string {
-  switch (code) {
-    case 0: return "auto";
-    case 1: return "t1";
-    case 2: return "t2";
-    default: return `mode${code}`;
-  }
+/**
+ * Map GetStatus.TPMode → a human-readable mode. TPMode is a BOOLEAN teach-pendant
+ * flag, not a 3-way T1/T2/AUTO selector: 0 = teach pendant DISABLED (controller in
+ * AUTO/remote — the only state in which RMI operates), 1 = teach pendant ENABLED
+ * (manual/teach). [RMI §2.3.7 p.14]
+ */
+function decodeTpMode(tpMode: number): string {
+  return tpMode === 0 ? "auto" : "manual";
 }
 
 export class FanucDriver implements RobotDriver {
@@ -310,10 +360,16 @@ export class FanucDriver implements RobotDriver {
 
   private host = "127.0.0.1";
   private port = DEFAULT_RMI_PORT;
+  private sessionPort = DEFAULT_RMI_PORT; // resolved from FRC_Connect PortNumber
   private timeoutMs = 5000;
   private groupMask = DEFAULT_GROUP_MASK;
-  private positionRegister = DEFAULT_POSITION_REGISTER;
-  private reconnectToMotionPort = false;
+  private group = DEFAULT_GROUP;
+  /**
+   * Escape hatch for lab/NAT setups where the returned PortNumber is not reachable
+   * and FRC_Connect + traffic must share one port. Default false: honour the manual
+   * two-socket flow (reconnect to the returned PortNumber). [RMI §2.2.1 p.6]
+   */
+  private skipPortReconnect = false;
   private version: { major?: number; minor?: number } = {};
   private seq = 1;
 
@@ -333,38 +389,45 @@ export class FanucDriver implements RobotDriver {
     const opts = cfg.options ?? {};
     this.timeoutMs = cfg.timeoutMs ?? 5000;
     this.groupMask = typeof opts.groupMask === "number" ? opts.groupMask : DEFAULT_GROUP_MASK;
-    this.positionRegister = typeof opts.positionRegister === "number" ? opts.positionRegister : DEFAULT_POSITION_REGISTER;
-    this.reconnectToMotionPort = opts.reconnectToMotionPort === true;
+    this.group = typeof opts.group === "number" ? opts.group : DEFAULT_GROUP;
+    this.skipPortReconnect = opts.skipPortReconnect === true;
 
+    // The endpoint/options port is the well-known CONNECT port (16001), not the
+    // session port — that is handed back by FRC_Connect. [RMI §2.2.1 p.6]
     const defaultPort = typeof opts.port === "number" ? opts.port : DEFAULT_RMI_PORT;
     const { host, port } = this.parseEndpoint(cfg.endpoint, defaultPort);
     this.host = host;
     this.port = port;
 
-    const client = new FanucRmiClient();
+    // Socket #1: connect port. FRC_Connect is the ONLY packet sent here.
+    const connectClient = new FanucRmiClient();
     try {
-      await client.open(this.host, this.port, this.timeoutMs);
-
-      // Session handshake.
-      const connectResp = await client.send(buildConnectPacket(), this.timeoutMs);
+      await connectClient.open(this.host, this.port, this.timeoutMs);
+      const connectResp = await connectClient.send(buildConnectPacket(), this.timeoutMs);
       this.assertOk(connectResp, "FRC_Connect");
       this.version = { major: Number(connectResp.MajorVersion), minor: Number(connectResp.MinorVersion) };
 
-      // Some controllers hand back a dedicated motion PortNumber; opt-in reconnect.
-      const motionPort = Number(connectResp.PortNumber);
-      if (this.reconnectToMotionPort && Number.isFinite(motionPort) && motionPort > 0 && motionPort !== this.port) {
-        client.close();
-        const client2 = new FanucRmiClient();
-        await client2.open(this.host, motionPort, this.timeoutMs);
-        this.port = motionPort;
-        this.client = client2;
+      // Socket #2: the controller returns PortNumber and auto-drops port 16001, so we
+      // MUST reconnect there for every subsequent packet. [RMI §2.2.1 p.6]
+      const sessionPort = Number(connectResp.PortNumber);
+      if (!this.skipPortReconnect && Number.isFinite(sessionPort) && sessionPort > 0) {
+        connectClient.close(); // controller has already dropped this socket
+        const sessionClient = new FanucRmiClient();
+        await sessionClient.open(this.host, sessionPort, this.timeoutMs);
+        this.sessionPort = sessionPort;
+        this.client = sessionClient;
       } else {
-        this.client = client;
+        // Escape hatch (skipPortReconnect) or a controller that returned no port.
+        this.sessionPort = this.port;
+        this.client = connectClient;
       }
 
-      // Read-only probe (does NOT enable motion). Confirms the controller answers.
+      // Read-only probe on the session socket (does NOT enable motion). Also seeds the
+      // instruction SequenceID from the controller when it tracks one. [RMI §2.3.7 p.14]
       const status = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
       this.assertOk(status, "FRC_GetStatus");
+      const nextSeq = Number(status.NextSequenceID);
+      if (Number.isFinite(nextSeq) && nextSeq > 0) this.seq = nextSeq;
 
       this.connected = true;
       this.connectedAt = new Date();
@@ -372,7 +435,7 @@ export class FanucDriver implements RobotDriver {
       this.lastError = undefined;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      try { client.close(); } catch { /* ignore */ }
+      try { connectClient.close(); } catch { /* ignore */ }
       try { this.client?.close(); } catch { /* ignore */ }
       this.client = null;
       this.connected = false;
@@ -409,22 +472,23 @@ export class FanucDriver implements RobotDriver {
       const status = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
       const errId = Number(status.ErrorID ?? 0);
       const tpMode = Number(status.TPMode ?? 0);
+      // RMIMotionStatus: 1 = RMI running, 0 = not running. [RMI §2.3.7 p.14]
       const motion = Number(status.RMIMotionStatus ?? 0);
-      const programStatus = Number(status.ProgramStatus ?? 0);
 
       let pose: RobotState["pose"];
       try {
-        const pr = await this.client.send(buildReadPositionRegisterPacket(this.positionRegister), this.timeoutMs);
-        pose = this.decodePose(pr);
+        // Live TCP pose (not a stored register). [RMI §2.3.14 p.18]
+        const cart = await this.client.send(buildReadCartesianPositionPacket(this.group), this.timeoutMs);
+        pose = this.decodePose(cart);
       } catch (err) {
-        // A position register read is best-effort; never fail the whole poll on it.
+        // A pose read is best-effort; never fail the whole poll on it.
         this.lastError = (err as Error)?.message || String(err);
       }
 
       this.lastOkAt = new Date();
       return {
         mode: decodeTpMode(tpMode),
-        busy: motion !== 0 || programStatus !== 0,
+        busy: motion === 1,
         // RMI GetStatus has no explicit e-stop flag → honest undefined (never fabricated).
         estop: undefined,
         pose,
@@ -438,7 +502,11 @@ export class FanucDriver implements RobotDriver {
     }
   }
 
-  /** Decode an FRC_ReadPositionRegister response → RobotPose (cartesian or joints). */
+  /**
+   * Decode an FRC_ReadCartesianPosition (or FRC_ReadPositionRegister) response →
+   * RobotPose. Both carry a Position{X,Y,Z,W,P,R} block; joint replies carry
+   * JointAngle{J1..}. [RMI §2.3.14 p.18 / §2.3.18 p.21]
+   */
   private decodePose(pr: Record<string, unknown>): RobotState["pose"] | undefined {
     const posn = pr.Position as Partial<FanucCartesian> | undefined;
     if (posn && typeof posn === "object") {
@@ -476,15 +544,17 @@ export class FanucDriver implements RobotDriver {
   /**
    * ⚠️ Reached ONLY via robotCommandDispatcher (HITL + idempotency + mode gate).
    * Self-guards (defence-in-depth): when ROBOT_CONTROL_ENABLED!=='true' we BUILD the
-   * RMI instruction packet and return it as dry-run INTENT — no FRC_Initialize, no
-   * write, no actuation. Only in the enabled branch do we send FRC_Initialize (which
-   * enables RMI remote motion) followed by the motion instruction.
+   * RMI instruction packet (FRC_LinearMotion for cartesian, FRC_JointMotionJRep for
+   * joint targets) and return it as dry-run INTENT — no FRC_Initialize, no write, no
+   * actuation. Only in the enabled branch do we run the manual startup sequence
+   * (FRC_GetStatus pre-check → abort any running RMI → FRC_Initialize creates the
+   * RMI_MOVE program) before sending the motion instruction. [RMI §2.3.1 p.9]
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
 
-    const sequenceId = this.seq++;
-    const packet = job.jobType === "abort"
+    let sequenceId = this.seq++;
+    let packet = job.jobType === "abort"
       ? buildAbortPacket()
       : buildFanucInstruction(job, sequenceId);
 
@@ -500,8 +570,29 @@ export class FanucDriver implements RobotDriver {
     try {
       // FRC_Abort is a Command that needs no Initialize; motion instructions do.
       if (job.jobType !== "abort") {
+        // Manual startup pre-check before creating the RMI_MOVE program. [RMI §2.3.1 p.9]
+        const st = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
+        this.assertOk(st, "FRC_GetStatus");
+        if (Number(st.ServoReady ?? 0) !== 1) {
+          return { ok: false, status: "failed", error: "FANUC RMI: servo not ready (ServoReady!=1)", detail: { sequenceId } };
+        }
+        if (Number(st.TPMode ?? 0) !== 0) {
+          // TPMode 0 = teach pendant disabled (AUTO/remote); 1 = TP enabled (manual). [RMI §2.3.7 p.14]
+          return { ok: false, status: "failed", error: "FANUC RMI: controller not in AUTO/remote (TPMode!=0)", detail: { sequenceId } };
+        }
+        // If RMI is already running, abort it first so FRC_Initialize can succeed. [RMI §2.3.1 p.9]
+        if (Number(st.RMIMotionStatus ?? 0) !== 0) {
+          await this.client.send(buildAbortPacket(), this.timeoutMs).catch(() => undefined);
+        }
         const init = await this.client.send(buildInitializePacket(this.groupMask), this.timeoutMs);
         this.assertOk(init, "FRC_Initialize");
+        // FRC_Initialize recreates RMI_MOVE; sequence IDs restart at 1 (or the
+        // controller's NextSequenceID). Rebuild the motion packet with the fresh,
+        // consecutive SequenceID the freshly-created program expects. [RMI §2.4 p.28]
+        const seedSeq = Number(init.NextSequenceID);
+        this.seq = Number.isFinite(seedSeq) && seedSeq > 0 ? seedSeq : 1;
+        sequenceId = this.seq++;
+        packet = buildFanucInstruction(job, sequenceId);
       }
       const resp = await this.client.send(packet, this.timeoutMs);
       const errId = Number(resp.ErrorID ?? 0);

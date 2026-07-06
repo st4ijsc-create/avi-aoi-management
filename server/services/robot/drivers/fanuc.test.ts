@@ -59,6 +59,14 @@ function defaultResponder(pkt: Record<string, unknown>): unknown {
       Position: { X: 100.5, Y: -20, Z: 300, W: 180, P: 0, R: 90 },
     };
   }
+  // RMI B-84184EN §2.3.14: getState() reads the LIVE TCP pose via FRC_ReadCartesianPosition.
+  if (pkt.Command === "FRC_ReadCartesianPosition") {
+    return {
+      Command: "FRC_ReadCartesianPosition", ErrorID: 0,
+      Configuration: { UToolNumber: 1, UFrameNumber: 1 },
+      Position: { X: 100.5, Y: -20, Z: 300, W: 180, P: 0, R: 90 },
+    };
+  }
   if (pkt.Command === "FRC_Initialize") return { Command: "FRC_Initialize", ErrorID: 0, GroupMask: 1 };
   if (pkt.Command === "FRC_Abort") return { Command: "FRC_Abort", ErrorID: 0 };
   if (typeof pkt.Instruction === "string") return { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID };
@@ -111,13 +119,15 @@ describe("FANUC RMI — pure builders + framing", () => {
     expect(pkt.Position).toMatchObject({ X: 10, Y: 20, Z: 30, W: 180 });
   });
 
-  it("buildFanucInstruction → FRC_JointMotion for joint params + home", async () => {
+  it("buildFanucInstruction → FRC_JointMotionJRep for joint params + home", async () => {
+    // RMI B-84184EN §2.4.13: joint-angle targets use FRC_JointMotionJRep (FRC_JointMotion
+    // takes a Cartesian Position, §2.4.9).
     const { buildFanucInstruction } = await import("./fanucDriver");
     const j = buildFanucInstruction({ jobType: "move", params: { joints: [1, 2, 3, 4, 5, 6] } }, 2);
-    expect(j.Instruction).toBe("FRC_JointMotion");
+    expect(j.Instruction).toBe("FRC_JointMotionJRep");
     expect(j.JointAngle).toMatchObject({ J1: 1, J6: 6 });
     const home = buildFanucInstruction({ jobType: "home" }, 1);
-    expect(home.Instruction).toBe("FRC_JointMotion");
+    expect(home.Instruction).toBe("FRC_JointMotionJRep");
   });
 });
 
@@ -180,7 +190,7 @@ describe("FanucDriver — session + read path", () => {
     });
     const s = await d.getState();
     expect(s.error).toMatch(/7/);
-    expect(s.mode).toBe("t1");              // TPMode 1
+    expect(s.mode).toBe("manual");          // RMI §2.3.7: TPMode is boolean (1 = TP enabled = manual)
     expect(s.busy).toBe(true);              // RMIMotionStatus 1
   });
 });
@@ -218,9 +228,9 @@ describe("FanucDriver — motion gate + fail-safe", () => {
     expect(res.detail?.sent).toBe(true);
     const types = sock.written.map((w) => JSON.parse(w.trim())).map((p) => p.Command ?? p.Instruction);
     expect(types).toContain("FRC_Initialize");
-    expect(types).toContain("FRC_JointMotion");
+    expect(types).toContain("FRC_JointMotionJRep");
     // Initialize is sent BEFORE the motion instruction.
-    expect(types.indexOf("FRC_Initialize")).toBeLessThan(types.indexOf("FRC_JointMotion"));
+    expect(types.indexOf("FRC_Initialize")).toBeLessThan(types.indexOf("FRC_JointMotionJRep"));
   });
 
   it("runJob live: instruction ErrorID != 0 → failed result (no throw)", async () => {

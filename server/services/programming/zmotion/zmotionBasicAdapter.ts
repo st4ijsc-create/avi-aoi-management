@@ -11,12 +11,16 @@
  *   • compile()  — produces a deterministic transferable token (checksum + op summary).
  *   • simulate() — a motion timeline from the parsed MOVE ops (pure; no device I/O).
  *
- * WHAT IS AN HONEST FRAMEWORK (needs real-HW validation):
- *   • ZmcLink — the ZMC Ethernet command/file-transfer client is a STRUCTURED SCAFFOLD.
- *     The exact ZMC frame/port/handshake must be validated against a real ZMC controller
- *     or the official ZAux/Zmcaux SDK. deploy()/upload() use it and are reached ONLY when
- *     programmingService opens the gate (DPC_DEPLOY_ENABLED + HITL sign-off). Without HW /
- *     an endpoint they return a clear, non-crashing result — never a fake success.
+ * WHAT IS AN HONEST FRAMEWORK (needs the FFI shim + real-HW validation):
+ *   • ZmcLink — deploys over the Zmotion **ZAux command channel** (zauxdll.dll), NOT
+ *     Modbus. The deploy sequence is now pinned to the REAL SDK signatures transcribed
+ *     from Zmcaux.cs (D:/SOURCES/AI Local/Manual/Zmotion/Zmotion DLL/Zmcaux.cs):
+ *         ZAux_OpenEth(ip, &handle) → ZAux_BasDown/ZarDown/ZpjDown(handle, file, run_mode)
+ *         → ZAux_Close(handle);   every call returns Int32, 0 = ERR_OK (success).
+ *     Because those are native __stdcall exports in zauxdll.dll, the actual call needs
+ *     an FFI binding (koffi / ffi-napi). That shim is NOT yet present, so deploy() fails
+ *     honestly with a precise TODO — never a fake success. deploy()/upload() are reached
+ *     ONLY when programmingService opens the gate (DPC_DEPLOY_ENABLED + HITL sign-off).
  *
  * SAFETY: this adapter authors MOTION/PROCESS logic only. E-stop / hardware limits / SIL
  * safety remain on the certified controller/PLC and are never authored or deployed here.
@@ -88,24 +92,99 @@ function lint(src: ProgramSource): ProgDiagnostic[] {
   return diags;
 }
 
+// ── ZAux (zauxdll.dll) deploy contract ───────────────────────────────────────
+
 /**
- * ZmcLink — STRUCTURED SCAFFOLD for the ZMC Ethernet link. The framing below is a
- * placeholder shape; the real ZMC protocol (port/handshake/checksum) MUST be validated
- * against hardware or the ZAux SDK before lifting dry-run. Fail-safe by construction.
+ * zauxdll return code. Every ZAux_* export returns Int32 where 0 = ERR_OK (success).
+ * A non-zero value is an error code — surface it and look it up in the Zmotion PC
+ * Programming Manual V2.1.4 return-code / error-code table. (Common non-zero cases:
+ * link/timeout, wrong controller ID, file/compile error, ROM write error.)
+ */
+const ZAUX_ERR_OK = 0;
+
+/**
+ * *Down run_mode, per Zmcaux.cs ("RAM-ROM  0-RAM  1-ROM"):
+ *   0 = RAM  → runs immediately, volatile (lost on power-cycle)   — use for staging.
+ *   1 = ROM  → compiled to controller flash, persists across reboot — use for production.
+ */
+export type ZmcRunMode = 0 | 1;
+
+/**
+ * The subset of zauxdll.dll needed to DEPLOY. A future FFI shim must implement this
+ * against the real DLL. Entry points transcribed EXACTLY from Zmcaux.cs
+ * (D:/SOURCES/AI Local/Manual/Zmotion/Zmotion DLL/Zmcaux.cs) — all __stdcall,
+ * CharSet.Ansi, returning Int32:
+ *   L131   ZAux_OpenEth(string ipaddr, out IntPtr phandle)
+ *   L184   ZAux_BasDown(IntPtr handle, string Filename, UInt32 run_mode)   // .bas → ZAR → download+run
+ *   L3411  ZAux_ZarDown(IntPtr handle, string Filename, UInt32 run_mode)   // precompiled .zar
+ *   L197   ZAux_ZpjDown(IntPtr h, string zpj, string zar, string pass, UInt32 uid, UInt32 run_mode) // project
+ *   L158   ZAux_Close(IntPtr handle)
+ * NOTE: ZAux_OpenEth takes ONLY the IP — the ZAux Ethernet port + handshake live
+ * INSIDE zauxdll.dll; it is NOT Modbus TCP 502 (that was the previous wrong label).
+ */
+export interface ZauxBinding {
+  openEth(ip: string): { code: number; handle: unknown };
+  basDown(handle: unknown, file: string, runMode: ZmcRunMode): number;
+  zarDown(handle: unknown, file: string, runMode: ZmcRunMode): number;
+  close(handle: unknown): number;
+}
+
+/**
+ * Optionally load the FFI shim that binds zauxdll.dll. Returns null until it exists,
+ * so deploy() fails honestly (never a fake success) on machines without it.
+ *
+ * TODO(FFI): add `server/services/programming/zmotion/zauxFfi.ts` exporting
+ *   `export function loadZauxBinding(dllPath: string): ZauxBinding`, implemented with
+ *   **koffi** (or ffi-napi / node-ffi-napi). koffi sketch:
+ *       const k = require("koffi");
+ *       const lib = k.load(dllPath);                                   // path to zauxdll.dll
+ *       const OpenEth = lib.func("__stdcall", "ZAux_OpenEth", "int", ["str", "void **"]);
+ *       const BasDown = lib.func("__stdcall", "ZAux_BasDown", "int", ["void *", "str", "uint32"]);
+ *       const ZarDown = lib.func("__stdcall", "ZAux_ZarDown", "int", ["void *", "str", "uint32"]);
+ *       const Close   = lib.func("__stdcall", "ZAux_Close",   "int", ["void *"]);
+ *       // marshal the out-handle (void**) via a koffi pointer holder; treat code===0 as OK.
+ *   Keep the require guarded/optional so NO hard dependency is added to the app bundle.
+ */
+async function loadZauxBinding(): Promise<((dllPath: string) => ZauxBinding) | null> {
+  try {
+    const spec = "./zauxFfi"; // variable specifier → not statically resolved by TS/bundler
+    const mod: Record<string, unknown> = await import(spec);
+    const fn = mod?.loadZauxBinding;
+    return typeof fn === "function" ? (fn as (dllPath: string) => ZauxBinding) : null;
+  } catch {
+    return null; // FFI shim / koffi not installed — deploy() stays an honest dry-run
+  }
+}
+
+/**
+ * ZmcLink — deploys to a Zmotion ZMC/VPLC controller over the ZAux command channel
+ * (zauxdll.dll), NOT Modbus. The real download runs the OpenEth → *Down → Close
+ * sequence via the FFI binding above; without that binding it fails honestly.
  */
 class ZmcLink {
   constructor(private readonly endpoint: string, private readonly timeoutMs = 4000) {}
 
-  /** Parse "host:port" (default ZMC command port 502 if unspecified). */
+  /**
+   * Parse "host[:probePort]". The optional :port is used ONLY for the courtesy TCP
+   * reachability probe below — ZAux_OpenEth needs just the IP (the ZAux protocol port
+   * is internal to zauxdll.dll), so `host` is what the real deploy uses.
+   */
   private hostPort(): { host: string; port: number } {
     const [host, port] = this.endpoint.split(":");
-    return { host: host || "127.0.0.1", port: Number(port) || 502 };
+    return { host: host || "127.0.0.1", port: Number(port) || 0 };
   }
 
-  /** Attempt a TCP connection (probe). Resolves false on any error/timeout. */
+  get host(): string { return this.hostPort().host; }
+
+  /**
+   * Best-effort TCP reachability probe (courtesy only — the authoritative check is
+   * ZAux_OpenEth inside the DLL). If no probe port was supplied we do NOT block:
+   * OpenEth becomes the real reachability test. Resolves false on error/timeout.
+   */
   async probe(): Promise<boolean> {
+    const { host, port } = this.hostPort();
+    if (!port) return true; // no courtesy port → defer to ZAux_OpenEth
     return new Promise((resolve) => {
-      const { host, port } = this.hostPort();
       let done = false;
       let sock: Socket;
       const finish = (ok: boolean) => {
@@ -122,6 +201,59 @@ class ZmcLink {
         finish(false);
       }
     });
+  }
+
+  /**
+   * REAL deploy sequence (contract): ZAux_OpenEth(ip) → [Bas|Zar]Down(handle, file,
+   * runMode) → ZAux_Close(handle). Every step must return ZAUX_ERR_OK(0); a non-zero
+   * code or a missing binding yields a clear failure — NEVER a fake success. `file`
+   * must be a real on-disk path (.zar → ZAux_ZarDown, otherwise ZAux_BasDown).
+   */
+  async deployFile(
+    file: string,
+    runMode: ZmcRunMode,
+  ): Promise<{ ok: boolean; code?: number; step?: string; error?: string }> {
+    const loader = await loadZauxBinding();
+    if (!loader) {
+      return {
+        ok: false,
+        error:
+          "zauxdll FFI binding not installed — add koffi + server/services/programming/zmotion/zauxFfi.ts (see ZauxBinding TODO) to enable real ZAux deploy.",
+      };
+    }
+    const dll = process.env.ZAUXDLL_PATH;
+    if (!dll) return { ok: false, error: "ZAUXDLL_PATH not set (absolute path to zauxdll.dll)." };
+
+    let zaux: ZauxBinding;
+    try {
+      zaux = loader(dll);
+    } catch (e) {
+      return { ok: false, error: `Failed to load zauxdll.dll from ${dll}: ${(e as Error).message}` };
+    }
+
+    // 1) Open the ZAux Ethernet link (IP only; port/handshake owned by the DLL).
+    const { code: openCode, handle } = zaux.openEth(this.host);
+    if (openCode !== ZAUX_ERR_OK) {
+      return { ok: false, code: openCode, step: "ZAux_OpenEth", error: `ZAux_OpenEth(${this.host}) failed: code ${openCode}` };
+    }
+    try {
+      // 2) Compile+download the program (.bas → BasDown auto-generates the ZAR).
+      const isZar = file.toLowerCase().endsWith(".zar");
+      const step = isZar ? "ZAux_ZarDown" : "ZAux_BasDown";
+      const code = isZar ? zaux.zarDown(handle, file, runMode) : zaux.basDown(handle, file, runMode);
+      if (code !== ZAUX_ERR_OK) {
+        return {
+          ok: false,
+          code,
+          step,
+          error: `${step} failed: code ${code} (see Zmotion PC Programming Manual V2.1.4 return-code table).`,
+        };
+      }
+      return { ok: true, code: ZAUX_ERR_OK, step };
+    } finally {
+      // 3) Always close the handle (best-effort).
+      try { zaux.close(handle); } catch { /* best-effort */ }
+    }
   }
 }
 
@@ -186,18 +318,22 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
     };
   }
 
-  async deploy(_build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
-    // Reached ONLY when the service opened the gate (flag + sign-off). Honest: without a
-    // reachable ZMC endpoint we report 'failed', never a fake 'deployed'.
+  async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    // Reached ONLY when the service opened the gate (DPC_DEPLOY_ENABLED + HITL sign-off).
+    // Honest by construction: any failure → status 'failed', never a fake 'deployed'.
     const endpoint = opts.endpoint;
     if (!endpoint) {
       return {
         ok: false,
         status: "failed",
         simulated: false,
-        error: "No ZMC endpoint — set the device endpoint and validate the ZMC link against real hardware.",
+        error: "No ZMC endpoint — set the device endpoint (host[:probePort]) before deploy.",
       };
     }
+
+    // Documented run_mode (Zmcaux.cs): production → ROM(1, persist), staging → RAM(0, volatile).
+    const runMode: ZmcRunMode = opts.stage === "production" ? 1 : 0;
+
     const link = new ZmcLink(endpoint);
     const reachable = await link.probe();
     if (!reachable) {
@@ -205,17 +341,45 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
         ok: false,
         status: "failed",
         simulated: false,
-        error: `ZMC endpoint ${endpoint} unreachable (or ZMC protocol unvalidated). Download path needs real-HW validation.`,
+        detail: { reachable },
+        error: `ZMC endpoint ${endpoint} unreachable.`,
       };
     }
-    // A reachable controller would receive the compiled program here. The actual frame/
-    // file-transfer is a HW-validation TODO — until then we DO NOT claim a real download.
+
+    // ZAux_BasDown/ZarDown need the program as a real file on disk. compile() currently
+    // emits a token (outputRef) + checksum, NOT a file, so resolve the on-disk path from
+    // build.meta.filePath. TODO(compile): have compile() persist the .bas (or .zar) and
+    // set build.meta.filePath so this deploy can hand it to ZAux_*Down.
+    const file = typeof build.meta?.filePath === "string" ? (build.meta.filePath as string) : undefined;
+    if (!file) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        detail: { reachable },
+        error:
+          "No compiled .bas/.zar file path on the build — compile() must persist the program to a file (build.meta.filePath) for ZAux_BasDown (TODO).",
+      };
+    }
+
+    // Real deploy: ZAux_OpenEth → BasDown/ZarDown → Close via the FFI binding. Fails
+    // honestly (with the FFI TODO) until server/services/programming/zmotion/zauxFfi.ts
+    // + koffi exist.
+    const res = await link.deployFile(file, runMode);
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        detail: { reachable, step: res.step, code: res.code },
+        error: res.error,
+      };
+    }
     return {
-      ok: false,
-      status: "failed",
+      ok: true,
+      status: "deployed",
       simulated: false,
-      detail: { reachable: true },
-      error: "ZMC reachable but the file-transfer frame is not yet HW-validated — refusing to claim a deploy.",
+      detail: { reachable, step: res.step, runMode, code: res.code },
     };
   }
 
