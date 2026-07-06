@@ -4589,6 +4589,8 @@
       "launcher": "应用",
       "launcherDesc": "在已购买的应用之间切换",
       "openLauncher": "打开应用网格",
+      "classicMenu": "经典菜单",
+      "launcherMenu": "应用菜单",
       "locked": "未激活",
       "upgrade": "升级",
       "overview": "概览",

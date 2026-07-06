@@ -4785,6 +4785,8 @@
       "launcher": "Apps",
       "launcherDesc": "Switch between your purchased apps",
       "openLauncher": "Open app grid",
+      "classicMenu": "Classic menu",
+      "launcherMenu": "App menu",
       "locked": "Not activated",
       "upgrade": "Upgrade",
       "overview": "Overview",

@@ -1,20 +1,21 @@
 /**
- * doc 36 W1 — App Launcher feature flag (default OFF).
+ * doc 36 — App Launcher is the DEFAULT menu; classic is opt-out.
  *
- * The launcher IA ships behind a flag so the legacy 9-group sidebar keeps working
- * untouched until the pilot flips it on. Resolution order:
- *   1. localStorage "APP_LAUNCHER_V2" ("true"/"false") — per-browser pilot override.
- *   2. import.meta.env.VITE_APP_LAUNCHER_V2 === "true" — build/env default.
- *   3. OFF.
+ * Prefer the reactive `useAppLauncherMode()` hook in components (so the in-app toggle
+ * updates live). This function is the same resolution for non-React callers:
+ *   1. localStorage "APP_LAUNCHER_V2" ("true"/"false") — the user's saved choice.
+ *   2. VITE_APP_LAUNCHER_V2 === "false" — deployment default = classic.
+ *   3. ON (default = App Launcher).
  */
 export function isAppLauncherEnabled(): boolean {
   try {
     const ls = localStorage.getItem("APP_LAUNCHER_V2");
-    if (ls != null) return ls === "true";
+    if (ls === "true") return true;
+    if (ls === "false") return false;
   } catch {
     /* storage unavailable */
   }
-  return import.meta.env.VITE_APP_LAUNCHER_V2 === "true";
+  return import.meta.env.VITE_APP_LAUNCHER_V2 === "false" ? false : true;
 }
 
 /**

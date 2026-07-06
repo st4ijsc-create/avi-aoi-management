@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
@@ -47,7 +47,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useNavMode } from "@/hooks/useNavMode";
-import { isAppLauncherEnabled } from "@/lib/appLauncherFlag";
+import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
 import { scopeGroupsToApp } from "@/lib/apps";
 import { BetaBanner } from "./BetaBadge";
@@ -180,8 +180,9 @@ function DashboardLayoutContent({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [megaOpen, setMegaOpen] = useState(false);
 
-  // doc 36 W1 — App Launcher (Phương án A), behind APP_LAUNCHER_V2 (default OFF).
-  const launcherOn = isAppLauncherEnabled();
+  // doc 36 — App Launcher (Phương án A) is the DEFAULT menu; users can switch to the
+  // classic 9-group sidebar via the user menu (persisted, reactive).
+  const { launcherOn, toggleLauncher } = useAppLauncherMode();
   const activeApp = useActiveApp(currentPath);
   const [launcherOpen, setLauncherOpen] = useState(false);
   useEffect(() => {
@@ -406,6 +407,21 @@ function DashboardLayoutContent({
                 >
                   <Monitor className="mr-2 h-4 w-4" />
                   <span>{t('session.title')}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* doc 36 — switch between the App Launcher (default) and the classic
+                    9-group sidebar. Persisted; existing users can fall back if needed. */}
+                <DropdownMenuItem onClick={toggleLauncher} className="cursor-pointer">
+                  {launcherOn ? (
+                    <PanelLeft className="mr-2 h-4 w-4" />
+                  ) : (
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                  )}
+                  <span>
+                    {launcherOn
+                      ? t("nav.app.classicMenu", "Menu cổ điển")
+                      : t("nav.app.launcherMenu", "Menu ứng dụng")}
+                  </span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
