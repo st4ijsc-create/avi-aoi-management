@@ -14,6 +14,8 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
+import { VENDOR_ALARM_MAPPINGS } from "./alarmTaxonomyVendorSeed";
+
 /** ISA-18.2 priority/severity bands. */
 export type AlarmSeverity = "critical" | "high" | "medium" | "low" | "diagnostic";
 
@@ -70,6 +72,10 @@ export const SEED_ALARM_MAPPINGS: AlarmMapping[] = [
   // ── Siemens (S7 PLC) ──
   { vendor: "siemens", machineType: "AUTOMATION", nativeCode: "SF-CPU", standardCode: "CPU_FAULT", severity: "critical", description: "CPU group/system fault (SF LED)", recommendedAction: "Read diagnostic buffer; clear faulting module; restart CPU." },
   { vendor: "siemens", machineType: "AUTOMATION", nativeCode: "BF-PN", standardCode: "COMMS_LOSS", severity: "high", description: "PROFINET bus fault", recommendedAction: "Check network cabling/device; re-establish PROFINET." },
+  // ── Đợt-B2 (doc 37 §6.4): ~150 REAL native codes from vendor manuals ──
+  // (Mitsubishi MR-J4, Universal Robots, Fanuc, Delta ASDA, Omron NJ/NX, Zmotion).
+  // Mirrored to the alarm_taxonomy table by migration 0231. See alarmTaxonomyVendorSeed.ts.
+  ...VENDOR_ALARM_MAPPINGS,
 ];
 
 /** Default fail-safe when no mapping is found. */

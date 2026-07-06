@@ -2,6 +2,8 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+// Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
+import { moduleGate } from "./moduleGate";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -127,6 +129,28 @@ export const protectedProcedure = t.procedure
   .use(requireUser)
   .use(auditMutationMiddleware)
   .use(tenantScopeMiddleware);
+
+/**
+ * Doc 37 P0-3 — SERVER-SIDE per-module license enforcement builder.
+ *
+ * `moduleProcedure('MOD_AI')` == `protectedProcedure.use(moduleGate('MOD_AI'))`:
+ * an authenticated procedure that ALSO refuses (FORBIDDEN) when the deployment's
+ * license does not include the given optional module. Gated by the
+ * LICENSE_MODULE_GATE_ENABLED flag (default OFF → pure pass-through), so wiring a
+ * router to it is safe to ship before the flag is flipped. Existing RBAC/permission
+ * `.use(...)` chains still compose on top. See server/_core/moduleGate.ts.
+ *
+ * `moduleGate` is a plain middleware fn (mirrors accessControl.requirePermission),
+ * so it can also be appended to admin/role procedures:
+ *   `adminProcedure.use(moduleGate('MOD_FEDERATION'))`.
+ */
+export function moduleProcedure(moduleCode: string) {
+  return protectedProcedure.use(moduleGate(moduleCode));
+}
+
+// Re-export so a router can gate admin/role procedures directly, e.g.
+// `adminProcedure.use(moduleGate('MOD_FEDERATION'))`.
+export { moduleGate };
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {

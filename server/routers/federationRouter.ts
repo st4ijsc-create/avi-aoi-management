@@ -22,8 +22,12 @@
 import { z } from "zod";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+// Doc 37 P0-3 — enforce the MOD_FEDERATION license at the SERVER (previously only
+// the F2 dashboard was client-gated). Flag LICENSE_MODULE_GATE_ENABLED, default OFF
+// → pass-through. Shadows `protectedProcedure` so no per-procedure edits are needed.
+const protectedProcedure = moduleProcedure("MOD_FEDERATION");
 import { sites, siteKpiRollup, siteSyncLog } from "../../drizzle/schema";
 import type { SiteDetailRow, SiteAlertRollup, RollupCategory } from "../../drizzle/schema";
 import { ROLLUP_CATEGORIES } from "../../drizzle/schema";

@@ -7,7 +7,10 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// Doc 37 P0-3 — gate the AI Copilot surface behind the MOD_AI license
+// (flag LICENSE_MODULE_GATE_ENABLED, default OFF → pass-through).
+const protectedProcedure = moduleProcedure("MOD_AI");
 import {
   confirmAction,
   cancelAction,

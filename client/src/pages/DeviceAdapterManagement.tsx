@@ -41,12 +41,38 @@ import {
 } from "@/components/ui/select";
 import { Plug, Plus, Pencil, Trash2, Tags as TagsIcon, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import ManualHelp from "@/components/ManualHelp";
+import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
 
 const PROTOCOLS = ["stub", "opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip"] as const;
 const DATA_TYPES = ["bool", "int", "float", "string", "json"] as const;
 
+// doc 37 B1: manifest-declared default ports (fallback when the connector manifest
+// catalogue is unavailable). Mirrors server/services/plugins/otConnectorManifests.ts.
+const PROTOCOL_DEFAULT_PORT: Record<string, number> = {
+  opcua: 4840, modbus: 502, s7: 102, "mitsubishi-mc": 5007, "ethernet-ip": 44818, "omron-njnx": 44818,
+};
+// Endpoint URI scheme per protocol (so host+port from the auto-form compose an endpoint).
+const ENDPOINT_SCHEME: Record<string, string> = {
+  opcua: "opc.tcp", modbus: "tcp", s7: "tcp", "mitsubishi-mc": "tcp",
+  "ethernet-ip": "tcp", "omron-njnx": "tcp", stub: "stub",
+};
+// Protocol → manual-KB vendor hint (soft pre-filter; unknown → widened search).
+const PROTOCOL_VENDOR_HINT: Record<string, string | undefined> = {
+  s7: "siemens", "mitsubishi-mc": "mitsubishi", "omron-njnx": "omron",
+};
+
 type Protocol = (typeof PROTOCOLS)[number];
 type DataType = (typeof DATA_TYPES)[number];
+
+/** Compose an endpoint string from the auto-form host/port (empty host → keep manual value). */
+function composeEndpoint(protocol: string, host: string, port: number | undefined): string {
+  if (protocol === "stub") return "stub://x";
+  const h = host.trim();
+  if (!h) return "";
+  const scheme = ENDPOINT_SCHEME[protocol] ?? "tcp";
+  return port ? `${scheme}://${h}:${port}` : `${scheme}://${h}`;
+}
 
 interface AdapterForm {
   id?: number;
@@ -88,9 +114,19 @@ export default function DeviceAdapterManagement() {
   const utils = trpc.useUtils();
   const adaptersQuery = trpc.deviceAdapter.list.useQuery();
 
+  // doc 37 B1: OT connector manifest catalogue → manifest-driven auto-form + default ports.
+  const connectorsQuery = trpc.plugin.listByKind.useQuery({ kind: "device-connector" });
+  const connectorManifests = (connectorsQuery.data ?? []) as Array<{
+    id: string; name: string; protocols?: string[]; configSchema?: Record<string, unknown> | null;
+  }>;
+  const manifestForProtocol = (p: string) =>
+    connectorManifests.find((m) => (m.protocols ?? []).includes(p));
+
   // ── Adapter dialog state ──
   const [adapterOpen, setAdapterOpen] = useState(false);
   const [adapterForm, setAdapterForm] = useState<AdapterForm>(emptyAdapter);
+  // Manifest auto-form values (host/port/…); host+port feed the endpoint string.
+  const [connectorConfig, setConnectorConfig] = useState<Record<string, unknown>>({});
 
   // ── Delete confirmation state ──
   const [adapterToDelete, setAdapterToDelete] = useState<{ id: number; code: string } | null>(null);
@@ -142,13 +178,49 @@ export default function DeviceAdapterManagement() {
     onError: (e) => toast.error(e.message),
   });
 
-  const openCreateAdapter = () => { setAdapterForm(emptyAdapter); setAdapterOpen(true); };
+  /** Seed the manifest auto-form (defaults + declared/fallback default port) for a protocol. */
+  const configForProtocol = (p: string): Record<string, unknown> => {
+    const schema = manifestForProtocol(p)?.configSchema ?? null;
+    const cfg = jsonSchemaDefaults(schema);
+    const declaredPort = (schema as any)?.properties?.port?.default;
+    const port = declaredPort ?? PROTOCOL_DEFAULT_PORT[p];
+    if (port != null) cfg.port = port;
+    return cfg;
+  };
+
+  const openCreateAdapter = () => {
+    setAdapterForm(emptyAdapter);
+    setConnectorConfig(configForProtocol(emptyAdapter.protocol));
+    setAdapterOpen(true);
+  };
   const openEditAdapter = (a: any) => {
     setAdapterForm({
       id: a.id, code: a.code, name: a.name, protocol: a.protocol, endpoint: a.endpoint,
       pollIntervalMs: a.pollIntervalMs, machineId: a.machineId != null ? String(a.machineId) : "", isEnabled: a.isEnabled,
     });
+    // Best-effort: seed defaults (endpoint is preserved — we never clobber a saved endpoint).
+    setConnectorConfig(configForProtocol(a.protocol));
     setAdapterOpen(true);
+  };
+
+  // Protocol change: reseed the auto-form + default port; only fill endpoint if still blank.
+  const handleProtocolChange = (p: Protocol) => {
+    const cfg = configForProtocol(p);
+    setConnectorConfig(cfg);
+    setAdapterForm((f) => {
+      const host = typeof cfg.host === "string" ? cfg.host : "";
+      const ep = composeEndpoint(p, host, Number(cfg.port) || undefined);
+      return { ...f, protocol: p, endpoint: f.endpoint.trim() ? f.endpoint : ep };
+    });
+  };
+
+  // Auto-form change: keep endpoint in sync from host+port (only once a host is present).
+  const handleConfigChange = (next: Record<string, unknown>) => {
+    setConnectorConfig(next);
+    const host = typeof next.host === "string" ? next.host : "";
+    const port = Number(next.port) || PROTOCOL_DEFAULT_PORT[adapterForm.protocol];
+    const ep = composeEndpoint(adapterForm.protocol, host, port);
+    if (ep) setAdapterForm((f) => ({ ...f, endpoint: ep }));
   };
 
   const submitAdapter = () => {
@@ -284,18 +356,49 @@ export default function DeviceAdapterManagement() {
               <Input value={adapterForm.name} onChange={(e) => setAdapterForm({ ...adapterForm, name: e.target.value })} />
             </div>
             <div>
-              <Label>{t("deviceAdapter.col.protocol", "Giao thức")}</Label>
-              <Select value={adapterForm.protocol} onValueChange={(v) => setAdapterForm({ ...adapterForm, protocol: v as Protocol })}>
+              <div className="flex items-center justify-between">
+                <Label>{t("deviceAdapter.col.protocol", "Giao thức")}</Label>
+                {/* doc 37 B1: page-cited manual help for the selected protocol. */}
+                <ManualHelp
+                  vendor={PROTOCOL_VENDOR_HINT[adapterForm.protocol] ?? adapterForm.protocol}
+                  query={`${adapterForm.protocol} default port register map connection settings`}
+                  buttonLabel={t("deviceAdapter.manualHelp", "Sổ tay")}
+                  size="sm"
+                  variant="ghost"
+                />
+              </div>
+              <Select value={adapterForm.protocol} onValueChange={(v) => handleProtocolChange(v as Protocol)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PROTOCOLS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* doc 37 B1: manifest-driven auto-form (host/port/…). host+port compose the endpoint. */}
+            {(() => {
+              const schema = manifestForProtocol(adapterForm.protocol)?.configSchema;
+              if (!schema) return null;
+              return (
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    {t("deviceAdapter.autoForm", "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới")}
+                  </p>
+                  <JsonSchemaForm schema={schema} value={connectorConfig} onChange={handleConfigChange} />
+                </div>
+              );
+            })()}
+
             <div>
               <Label>{t("deviceAdapter.col.endpoint", "Endpoint")}</Label>
               <Input value={adapterForm.endpoint} placeholder="opc.tcp://… / tcp://host:port / stub://x"
                 onChange={(e) => setAdapterForm({ ...adapterForm, endpoint: e.target.value })} />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {t("deviceAdapter.defaultPortHint", "Cổng mặc định {{protocol}}: {{port}}", {
+                  protocol: adapterForm.protocol,
+                  port: PROTOCOL_DEFAULT_PORT[adapterForm.protocol] ?? "—",
+                })}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

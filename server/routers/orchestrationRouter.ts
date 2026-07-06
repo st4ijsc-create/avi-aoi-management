@@ -18,9 +18,13 @@
 import { z } from "zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+// Doc 37 P0-3 — gate the Orchestration Studio surface behind MOD_ENGINEERING
+// (flag LICENSE_MODULE_GATE_ENABLED, default OFF → pass-through). Shadows
+// `protectedProcedure`; per-action RBAC + FOE_ENABLED guards are unchanged.
+const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,

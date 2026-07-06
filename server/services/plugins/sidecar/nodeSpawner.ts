@@ -49,3 +49,23 @@ export function spawnSidecarWithTransport(spec: SpawnSpec): { handle: ChildHandl
   const transport = new StdioTransport(cp.stdin!, cp.stdout!);
   return { handle, transport };
 }
+
+/**
+ * A supervisor-compatible spawner that ALSO wires a fresh JSON-lines transport on EVERY (re)spawn —
+ * doc 37 P0-4. Lets a caller run a sidecar under {@link PluginSupervisor} (crash → backoff restart +
+ * circuit-break) while still getting the request/response channel: each spawn (initial + every
+ * watchdog restart) invokes `onSpawn(transport, handle)` so the caller can re-point its RPC at the
+ * new process and re-issue its connect handshake. `transportOpts.timeoutMs` bounds each RPC frame.
+ */
+export function createSupervisedTransportSpawner(
+  onSpawn: (transport: StdioTransport, handle: ChildHandle) => void,
+  transportOpts: { timeoutMs?: number } = {},
+): Spawner {
+  return ({ command, args }) => {
+    const cp = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const handle = toHandle(cp);
+    const transport = new StdioTransport(cp.stdin!, cp.stdout!, transportOpts);
+    onSpawn(transport, handle);
+    return handle;
+  };
+}

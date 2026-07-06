@@ -21,9 +21,13 @@
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+// Doc 37 P0-3 — gate the fleet-orchestration (OT) surface behind MOD_OT_CONTROL
+// (flag LICENSE_MODULE_GATE_ENABLED, default OFF → pass-through). Shadows
+// `protectedProcedure`; per-action RBAC + FLEET_ORCH_ENABLED guards are unchanged.
+const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../drizzle/schema";
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";

@@ -11,6 +11,7 @@ import { createModbusDriver } from "./drivers/modbusDriver";
 import { createS7Driver } from "./drivers/s7Driver";
 import { createMitsubishiMcDriver } from "./drivers/mitsubishiMcDriver";
 import { createEthernetIpDriver } from "./drivers/ethernetIpDriver";
+import { pluginDriversEnabled, registerPluginDrivers } from "../plugins/pluginDriverBridge";
 
 registerDriver("stub", createStubDriver);
 registerDriver("opcua", createOpcuaDriver);
@@ -18,6 +19,23 @@ registerDriver("modbus", createModbusDriver);
 registerDriver("s7", createS7Driver);
 registerDriver("mitsubishi-mc", createMitsubishiMcDriver);
 registerDriver("ethernet-ip", createEthernetIpDriver);
+
+// ── doc 37 P0-4 — PLUGIN device-connector drivers ("thêm hãng = 1 plugin"). ──────
+// Flag OFF by default (PLUGIN_DRIVERS_ENABLED). When ON, each PLUGIN_DRIVERS manifest that
+// declares a sidecar command registers an OtDriver proxy bridging connect/readTags/writeTags to
+// an out-of-process sidecar (signature + lifecycle + quota enforced on the spawn path). When OFF
+// this block is a NO-OP and the 6 built-in drivers above are untouched. writeTags still flows ONLY
+// through commandDispatcher (write-gate) — the proxy adds no direct write path. A protocol already
+// served by a built-in is preserved (not overridden).
+if (pluginDriversEnabled()) {
+  try {
+    const { registered, skipped } = registerPluginDrivers();
+    if (registered.length > 0) console.log(`[OT] plugin drivers registered: ${registered.join(", ")}`);
+    for (const s of skipped) console.warn(`[OT] plugin driver skipped "${s.id}": ${s.reason}`);
+  } catch (err) {
+    console.warn("[OT] plugin driver registration failed (continuing):", (err as Error)?.message || err);
+  }
+}
 
 import { startOt as startOtManager } from "./otManager";
 import { restore as restoreStoreForwardWal, storeForwardEnabled } from "./storeForward";

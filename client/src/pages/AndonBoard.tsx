@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { PollFreshness } from "@/components/PollFreshness";
+import ManualHelp from "@/components/ManualHelp";
 import {
   parseAndonBoardParams,
   nextCycleIndex,
@@ -405,7 +406,8 @@ export default function AndonBoard() {
               {t("andonBoard.tickerEmpty", "Không có Andon đang mở — mọi line hoạt động bình thường")}
             </span>
           ) : (
-            <div className="andon-ticker-track flex items-center gap-[3vw] whitespace-nowrap pl-[2vw]">
+            // pause-on-hover so the "Tra mã" popover trigger holds still while open
+            <div className="andon-ticker-track flex items-center gap-[3vw] whitespace-nowrap pl-[2vw] hover:[animation-play-state:paused] focus-within:[animation-play-state:paused]">
               {(board?.andons ?? []).map((a) => (
                 <span key={a.id} className="inline-flex items-center gap-2 text-[clamp(0.75rem,1.1vw,1.4rem)] font-bold">
                   <span className={cn("size-[0.8vw] min-h-3 min-w-3 rounded-full animate-pulse", ANDON_STATE_DOT[a.state] ?? "bg-muted-foreground")} />
@@ -413,6 +415,17 @@ export default function AndonBoard() {
                   {a.machineCode && a.lineName && <span className="text-muted-foreground">· {a.machineCode}</span>}
                   <span>{a.title}</span>
                   <span className="text-muted-foreground">({agoLabel(new Date(a.raisedAt).getTime(), now.getTime())})</span>
+                  {/* doc 37 B1: page-cited manual lookup for the alarm cause/remedy. Andon events
+                      carry no vendor/nativeCode → broad search keyed off the event title + reason
+                      (the fallback path; mapAlarm needs vendor+nativeCode which this shape lacks). */}
+                  <ManualHelp
+                    query={`${a.title} ${a.reason ?? ""} alarm cause remedy`.trim()}
+                    buttonLabel={t("andonBoard.lookupCode", "Tra mã")}
+                    size="sm"
+                    variant="secondary"
+                    align="end"
+                    className="text-[clamp(0.6rem,0.8vw,1rem)]"
+                  />
                 </span>
               ))}
             </div>

@@ -19,9 +19,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, desc } from "drizzle-orm";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
+// Doc 37 P0-3 — gate every procedure in this OT-control router behind the
+// MOD_OT_CONTROL license (flag LICENSE_MODULE_GATE_ENABLED, default OFF → no-op).
+// Shadowing `protectedProcedure` keeps existing procedure definitions untouched;
+// RBAC via `.use(requirePermission(...))` still composes on top.
+const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { interlockRules, interlockEvents } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
