@@ -19,6 +19,8 @@ registerSecsGem("secsgem", createSkeletonSecsGem);
 export * from "./secsMessages";
 export * from "./hsmsClient";
 export * from "./gemModel";
+// doc 35 W2-C — structured honest health (mode: framework-only, liveIngest: false)
+export { getSecsGemHealth, type SecsGemHealth } from "./secsGemRegistry";
 // Full SECS-II item codec (all standard format codes) + the standard S1 messages
 // built on it. `encodeItem`/`decodeItem` are aliased to avoid colliding with the
 // legacy skeleton codec re-exported from ./secsMessages.

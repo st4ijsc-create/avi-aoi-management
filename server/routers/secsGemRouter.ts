@@ -24,7 +24,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
-import { isSecsGemEnabled, listSecsGemKeys, HsmsClient, HONESTY_CAVEAT } from "../services/secsgem";
+import { isSecsGemEnabled, listSecsGemKeys, HsmsClient, HONESTY_CAVEAT, getSecsGemHealth } from "../services/secsgem";
 import "../services/secsgem"; // side-effect: register the built-in "secsgem" connector
 
 export const secsGemRouter = router({
@@ -60,6 +60,7 @@ export const secsGemRouter = router({
           "Complete GEM state machine (control state, S2F33/F35/F37 report linking, spooling, timers T3–T8)",
           "Data-message correlation by System Bytes / retries / multi-block",
         ],
+        health: getSecsGemHealth(), // doc 35 W2-C — { mode: "framework-only", liveIngest: false, note }
         caveat: HONESTY_CAVEAT,
       };
     }),
