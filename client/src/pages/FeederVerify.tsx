@@ -1,17 +1,16 @@
 /**
- * Feeder Setup Verification — doc 35 W4-C.1 (wrong-part guard).
+ * Line Materials hub — doc 35 W4-C (Feeder-Verify / MSD / Stencil).
  *
- * Shop-floor page: pick a machine, scan a (slot + reel) before a run, and the
- * server resolves the EXPECTED component for that slot (from the loaded feeder
- * setup) and records a match/mismatch check. A setup-status panel shows whether
- * the setup is complete / has any mismatch so a run can be gated.
+ * Full-width tabbed page covering all "vật tư tại line" backends:
+ *   1. Feeder Verify — pick a machine, scan (slot + reel) before a run; the server
+ *      resolves the EXPECTED component for that slot and records a match/mismatch.
+ *      Enforcement (block run on mismatch) is gated server-side by
+ *      FEEDER_VERIFY_ENFORCED (default OFF); recording works regardless.
+ *   2. MSD Floor-Life — J-STD-020 floor-life clock (trpc.msd.*), advisory.
+ *   3. Stencil — cycle counter vs life-limit (trpc.stencil.*), advisory.
  *
- * Enforcement (block run on mismatch) is gated server-side by FEEDER_VERIFY_ENFORCED
- * (default OFF). Recording checks works regardless. This page is inert until the
- * feederVerify router is wired into the appRouter (see wiring note in the wave report).
- *
- * NAV WIRING: register a route (e.g. /feeder-verify) in App.tsx + a nav entry in
- * navigation.tsx — done by the wave-lead, not this file.
+ * NAV WIRING: route /feeder-verify + nav entry handled by the wave-lead (not this
+ * file). The nav LABEL should now read "Vật tư tại line (Feeder/MSD/Stencil)".
  */
 import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -23,10 +22,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ScanLine, CheckCircle2, XCircle, AlertTriangle, RefreshCw } from "lucide-react";
+import { ScanLine, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Thermometer, Layers } from "lucide-react";
+import MsdPanel from "@/components/materials/MsdPanel";
+import StencilPanel from "@/components/materials/StencilPanel";
 
-export default function FeederVerify() {
+/** Tab 1 — existing feeder-setup scan verification (behavior unchanged). */
+function FeederVerifyTab() {
   const [machineId, setMachineId] = useState<number | null>(null);
   const [slotCode, setSlotCode] = useState("");
   const [scannedReel, setScannedReel] = useState("");
@@ -69,15 +72,8 @@ export default function FeederVerify() {
   const status = setupStatus.data;
 
   return (
-    <DashboardLayout>
-      <PageContainer>
-        <PageHeader
-          title="Kiểm tra nạp Feeder"
-          description="Quét slot + reel trước khi chạy để chống nạp sai linh kiện (doc 35 W4-C)"
-          icon={<ScanLine className="h-6 w-6 text-primary" />}
-        />
-
-        <div className="grid gap-4 md:grid-cols-2">
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
           {/* Scan panel */}
           <Card>
             <CardHeader>
@@ -210,6 +206,45 @@ export default function FeederVerify() {
             </CardContent>
           </Card>
         )}
+    </>
+  );
+}
+
+export default function FeederVerify() {
+  const [tab, setTab] = useState("feeder");
+
+  return (
+    <DashboardLayout>
+      <PageContainer fluid>
+        <PageHeader
+          title="Vật tư tại line"
+          description="Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)"
+          icon={<ScanLine className="h-6 w-6 text-primary" />}
+        />
+
+        <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="feeder" className="gap-2">
+              <ScanLine className="h-4 w-4" /> Kiểm tra Feeder
+            </TabsTrigger>
+            <TabsTrigger value="msd" className="gap-2">
+              <Thermometer className="h-4 w-4" /> MSD Floor-Life
+            </TabsTrigger>
+            <TabsTrigger value="stencil" className="gap-2">
+              <Layers className="h-4 w-4" /> Khuôn in Stencil
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="feeder">
+            <FeederVerifyTab />
+          </TabsContent>
+          <TabsContent value="msd">
+            <MsdPanel />
+          </TabsContent>
+          <TabsContent value="stencil">
+            <StencilPanel />
+          </TabsContent>
+        </Tabs>
       </PageContainer>
     </DashboardLayout>
   );

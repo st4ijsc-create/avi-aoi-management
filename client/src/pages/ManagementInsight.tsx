@@ -174,7 +174,7 @@ export default function ManagementInsight() {
 
   return (
     <DashboardLayout>
-      <PageContainer>
+      <PageContainer fluid>
         <PageHeader
           icon={<Lightbulb className="h-6 w-6 text-primary" />}
           title={t("mgmtInsight.title", "Insight Quản lý")}

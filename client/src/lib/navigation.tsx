@@ -768,11 +768,21 @@ export const navGroups: NavGroup[] = [
       {
         // doc 35 W4-C — plain labels (i18n keys deferred to the i18n polish pass)
         href: "/feeder-verify",
-        label: "Kiểm tra Feeder (SMT)",
+        label: "Vật tư tại line (Feeder/MSD/Stencil)",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Quét xác minh khay linh kiện khớp BOM/chương trình — chống gắn nhầm part",
+        description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
+        section: "maintenance",
+      },
+      {
+        // doc 35 W4-E — routing master (ISA-95); plain label (i18n polish deferred)
+        href: "/routing-master",
+        label: "Định tuyến sản xuất (Routing)",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
+        requiredPermission: "production_orders",
+        permissionCategory: "production_orders",
         section: "maintenance",
       },
       {
@@ -948,7 +958,6 @@ export const navGroups: NavGroup[] = [
         section: "authoring",
         hint: "nav.hint.programmingCopilot",
         engineerOriented: true,
-        beta: true,
       },
       {
         // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
@@ -1196,6 +1205,16 @@ export const navGroups: NavGroup[] = [
         section: "targetsSettings",
       },
       {
+        // doc 35 W4-B — NCR/MRB; plain label (i18n polish deferred)
+        href: "/nonconformance",
+        label: "Báo cáo không phù hợp (NCR/MRB)",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "Nonconformance/MRB: mở → review → disposition (use-as-is/rework/scrap/return/RTV) → đóng, SoD",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+        section: "targetsSettings",
+      },
+      {
         href: "/oee-target-settings",
         label: "nav.oeeTargets",
         icon: <Target className="h-4 w-4" />,
@@ -1254,6 +1273,19 @@ export const navGroups: NavGroup[] = [
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.aiHubDesc",
         section: "aiWorkspace",
+      },
+      {
+        // doc 34 P3 — AI programming copilot ALSO surfaced under the AI group (its other home
+        // is Engineering ▸ Authoring). Users hunting for an "AI" copilot look here first.
+        href: "/programming-copilot",
+        label: "nav.programmingCopilot",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.programmingCopilotDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "aiWorkspace",
+        hint: "nav.hint.programmingCopilot",
+        engineerOriented: true,
       },
       {
         href: "/management-insight",
