@@ -340,9 +340,23 @@ Agent đã trích **bảng mã lỗi thật** (sẵn schema `{vendor, device_cla
 
 **Tài liệu vẫn cần cho ĐỦ spec (owner cân nhắc):** HIWIN HRSS network/remote-API manual (Delta/HIWIN robot host); MELFA support-software comm telegram (semicolon format) nếu dùng kênh TCP-command thay SLMP-server.
 
+**A1a/A2 env — ĐÃ FLIP (2026-07-06):**
+- **A1a**: `.env` DATABASE_URL → **avi_app** (least-privilege, dòng postgres cũ comment để revert). Verify: avi_app đọc mọi bảng mới + audit INSERT=true/UPDATE=false (WORM có hiệu lực), super=false. **App cần restart + smoke** (đang chạy vẫn dùng postgres tới restart). Password trong `.env` (nên rotate).
+- **A2**: bật `OTEL_ENABLED`+`TWIN_LIVE_ENABLED`+`TWIN_STREAM_ENABLED` (METRICS+EQ_GOVERN đã ON) — cần smoke.
+- **A1b Timescale**: vẫn cần cài extension DB-server (`shared_preload_libraries`+restart PG).
+
+**Đợt D-drivers re-verify (owner bổ sung Delta-DRL + MELFA-CR800/a3379/a8525) — commit `40a8527`, doc-only, dry-run giữ:**
+- Delta DRAStudio-RL = ngôn ngữ Lua on-controller, KHÔNG host-telegram → giữ MOCK, document 2 đường thật (Modbus register-mailbox / DRL SocketServer).
+- MELFA telegram R3 semicolon **vắng cả 3 manual** → SLMP-server thành đường CHÍNH (CR800 §3.5 port 45237, 3E/4E, D0-D5119).
+
+**Đợt C (platformization) — commit `40a8527`, tsc+build green:**
+- **C1 Observability**: sloAlerting (live evaluator + burn-rate→alert + Prometheus gauges) · OTLP-ready (TODO cài @opentelemetry SDK) · **3 route `/api/observability/{health,slo,metrics}`** lộ store-forward/supervisor/SLO/decision-ring qua HTTP.
+- **C3 Dev-portal**: OpenAPI sinh từ Zod + 5 route thiếu · plugin scaffold CLI `scripts/plugin-scaffold.mjs` + template sidecar (khớp B4 RPC) + certification (verified CERTIFIED) → time-to-first-plugin ≤1 ngày.
+- **HOÃN**: C2 (device X.509/mTLS/SPIFFE security-identity) + Tauri desktop-shell (hạng mục lớn hơn).
+
 ---
 
-*Tài liệu 37 · audit 4 agent tầng máy + 4 agent manual-grounded + 4 agent driver-spec-verify · §8 = thực thi Đợt A (`ad4e2bb`) + B (`1a65eb7`, mig 0231) + D-drivers (`fa03384`, mig 0232) · A1/A2 env = bước operator · khung 15 năng lực doc 08/09/16/24/33/35.*
+*Tài liệu 37 · audit 12 agent + thực thi Đợt A(`ad4e2bb`)/B(`1a65eb7`,mig0231)/D-drivers(`fa03384`+`40a8527`,mig0232)/C(`40a8527`) + A1a/A2 flipped · khung 15 năng lực doc 08/09/16/24/33/35.*
 
 ---
 
