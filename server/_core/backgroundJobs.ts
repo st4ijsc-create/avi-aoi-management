@@ -371,6 +371,37 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[Andon] SLA sweep start failed:", (err as any)?.message || err);
   }
 
+  // Doc 38 T-1 (P0 #3) — downtime auto-detection sweep. recordMachineActivity is
+  // fed from the heartbeat/inspection ingest choke-points (server/db/machine.ts,
+  // server/db/inspection.ts); this arms the periodic inactivity→downtime sweep.
+  // Opt in via DOWNTIME_DETECTION_ENABLED=true (WRITES downtime_events — default OFF).
+  // startDowntimeDetection self-guards (idempotent — no double-schedule).
+  try {
+    if (process.env.DOWNTIME_DETECTION_ENABLED === "true") {
+      const { startDowntimeDetection } = await import("../services/downtimeDetectionService");
+      startDowntimeDetection();
+    }
+  } catch (err) {
+    console.error("[DowntimeDetection] start failed:", (err as any)?.message || err);
+  }
+
+  // Doc 38 T-1 (P1) — SECS/GEM production bring-up. Opens an HSMS session per
+  // configured equipment (SECS_GEM_EQUIPMENT JSON) and arms attachGemAlarmDispatch
+  // so live S5F1 alarms reach the Andon path (EQ_INTEG_ENABLED). Honest no-op unless
+  // BOTH SECS_GEM_ENABLED and SECS_GEM_LIVE_ENABLED are true AND equipment is
+  // configured. Async connect — fire-and-forget so a slow/unreachable tool never
+  // blocks boot; startSecsGemBringup is idempotent + fail-safe per equipment.
+  try {
+    if (process.env.SECS_GEM_ENABLED === "true" && process.env.SECS_GEM_LIVE_ENABLED === "true") {
+      const { startSecsGemBringup } = await import("../services/secsgem/secsGemBringup");
+      startSecsGemBringup().catch((err) =>
+        console.error("[SecsGemBringup] start failed:", (err as any)?.message || err),
+      );
+    }
+  } catch (err) {
+    console.error("[SecsGemBringup] start failed:", (err as any)?.message || err);
+  }
+
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
 }
 
@@ -479,6 +510,13 @@ export function stopBackgroundSchedulers(): void {
   // here (or was started by the admin mutation, which owns its own lifecycle too).
   import("../mqttAlertScheduler")
     .then((m) => m.stopAlertScheduler())
+    .catch(() => {});
+  // Doc 38 T-1 (P0 #3 / P1) — idempotent no-ops when never started.
+  import("../services/downtimeDetectionService")
+    .then((m) => m.stopDowntimeDetection())
+    .catch(() => {});
+  import("../services/secsgem/secsGemBringup")
+    .then((m) => m.stopSecsGemBringup())
     .catch(() => {});
   started = false;
 }

@@ -15,8 +15,8 @@
  *     vào đúng slot (thả lên chip slot chỉ đích danh nhánh).
  *   • SẮP LẠI thứ tự anh-em: kéo cạnh `next` từ node này tới node anh-em kia (onConnect).
  *   • XOÁ node: nút thùng rác trên node hoặc phím Delete/Backspace.
- *   • Kéo node chỉ sắp xếp trực quan trong phiên (StudioStep không lưu toạ độ) —
- *     thêm/xoá/sắp lại sẽ tính lại layout deterministic.
+ *   • Kéo node LƯU toạ độ vào StudioStep.ui (T-2 doc 38) → vị trí sống sót qua
+ *     lưu/tải; node CHƯA có toạ độ dùng layout deterministic (thêm/xoá tính lại).
  *
  *   • node ← một StudioStep (đệ quy mọi cấp lồng). Hiện icon + nhãn + tóm tắt + id.
  *   • edge ← luồng điều khiển: `next` tuần tự giữa các anh-em; container
@@ -170,10 +170,15 @@ export function defToGraph(
     let prevId: string | null = null;
     for (const step of list) {
       const id = step.id || "?";
+      // T-2 (doc 38) — honour a PERSISTED coordinate (step.ui) so drag-and-drop positions
+      // survive save/load; fall back to the deterministic auto-layout when none is stored.
+      const pos = step.ui && Number.isFinite(step.ui.x) && Number.isFinite(step.ui.y)
+        ? { x: step.ui.x, y: step.ui.y }
+        : { x, y };
       nodes.push({
         id,
         type: "wfStep",
-        position: { x, y },
+        position: pos,
         data: { step, selected: selectedId === id, slotLabel, slots: childSlotsOf(step, t), t, onDelete },
         selected: selectedId === id,
       });
@@ -288,6 +293,8 @@ export interface WorkflowGraphCanvasProps {
   onAddChild: (parentId: string, slot: WfSlot, kind: StepKind) => void;
   /** U14 — sắp lại thứ tự: đưa `sourceId` xuống sau `targetId` (nối cạnh giữa 2 anh-em). */
   onReorderToSibling: (sourceId: string, targetId: string) => void;
+  /** T-2 (doc 38) — LƯU vị trí node sau khi kéo-thả (ghi vào step.ui trong StudioDef). */
+  onMoveNode: (id: string, pos: { x: number; y: number }) => void;
   t: TFunction;
 }
 
@@ -321,7 +328,7 @@ function GraphPalette({ onAdd, t }: { onAdd: (k: StepKind) => void; t: TFunction
 }
 
 function CanvasInner({
-  def, selectedId, onSelect, onDelete, onAddTopLevel, onAddChild, onReorderToSibling, t,
+  def, selectedId, onSelect, onDelete, onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
 }: WorkflowGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
@@ -337,6 +344,10 @@ function CanvasInner({
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { onSelect(node.id); }, [onSelect]);
   const onNodesDelete = useCallback((deleted: Node[]) => { for (const n of deleted) onDelete(n.id); }, [onDelete]);
+  // T-2 (doc 38) — kết thúc kéo → PERSIST toạ độ vào StudioDef (step.ui) qua write-back.
+  const onNodeDragStop = useCallback((_e: unknown, node: Node) => {
+    onMoveNode(node.id, { x: node.position.x, y: node.position.y });
+  }, [onMoveNode]);
 
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -394,6 +405,7 @@ function CanvasInner({
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
+          onNodeDragStop={onNodeDragStop}
           onNodesDelete={onNodesDelete}
           onConnect={onConnect}
           onDrop={onDrop}

@@ -1220,6 +1220,9 @@ export default function OrchestrationStudio() {
   // U14 — nối cạnh trên sơ đồ: sắp lại thứ tự anh-em (chỉ trong cùng danh sách).
   const handleReorderToSibling = (sourceId: string, targetId: string) =>
     mutate((d) => { reorderToSibling(d.steps, sourceId, targetId); });
+  // T-2 (doc 38) — kéo-thả node trên sơ đồ → lưu toạ độ vào step.ui (write-back vào AST).
+  const handleMoveNode = (id: string, pos: { x: number; y: number }) =>
+    mutate((d) => updateStep(d.steps, id, { ui: { x: pos.x, y: pos.y } }));
 
   const loadWorkflow = (row: { definitionJson?: unknown }) => {
     const json = row.definitionJson as StudioDef | undefined;
@@ -1528,6 +1531,7 @@ export default function OrchestrationStudio() {
                     onAddTopLevel={handleAddTopLevel}
                     onAddChild={handleAddChild}
                     onReorderToSibling={handleReorderToSibling}
+                    onMoveNode={handleMoveNode}
                     t={t}
                   />
                   <p className="text-[11px] text-muted-foreground">{t("studio.graphHintEdit", "Click a chip to add a step (or drag it onto a container to nest); drag a link between two siblings to reorder; use the trash icon or Delete to remove. Click a node to configure it in the inspector.")}</p>

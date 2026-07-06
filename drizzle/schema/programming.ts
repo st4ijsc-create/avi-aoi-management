@@ -25,6 +25,7 @@ import {
 import {
   programmingKindEnum,
   programArtifactStatusEnum,
+  programArtifactReviewStatusEnum,
   programBuildStatusEnum,
   programDeployStageEnum,
   programDeployStatusEnum,
@@ -67,6 +68,14 @@ export const programArtifacts = pgTable("program_artifacts", {
   content: text("content"),
   contentHash: varchar("contentHash", { length: 64 }),
   status: programArtifactStatusEnum("status").default("draft").notNull(),
+  // ── doc 38 T-2 — FOUR-EYES AT THE VERSION (additive; migration 0236). A version must
+  //    be 'approved' by a SECOND person (reviewedBy ≠ createdBy) before it can be
+  //    built/deployed. Enforcement is flag-gated (DPC_VERSION_REVIEW_ENABLED, default OFF).
+  reviewStatus: programArtifactReviewStatusEnum("reviewStatus").default("pending_review").notNull(),
+  /** The reviewer who approved/rejected this version (must differ from createdBy). */
+  reviewedBy: integer("reviewedBy"),
+  /** When the review decision was recorded. */
+  reviewedAt: timestamp("reviewedAt"),
   /** Last validate() diagnostics (errors/warnings). */
   diagnosticsJson: jsonb("diagnosticsJson").$type<Record<string, unknown>>(),
   createdBy: integer("createdBy"),
@@ -77,6 +86,7 @@ export const programArtifacts = pgTable("program_artifacts", {
 }, (table) => [
   index("idx_prog_artifacts_project").on(table.projectId),
   index("idx_prog_artifacts_status").on(table.status),
+  index("idx_prog_artifacts_review").on(table.reviewStatus),
   unique("uq_prog_artifact_version").on(table.projectId, table.branch, table.version),
 ]);
 

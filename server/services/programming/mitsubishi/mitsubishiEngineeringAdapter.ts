@@ -14,12 +14,12 @@
  *   • compile()  — builds a device→value parameter map (the transferable recipe).
  *   • simulate() — a param-write PREVIEW timeline (one step per assignment; no I/O).
  *
- * WHAT IS AN HONEST FRAMEWORK (needs the vendor toolchain / real HW):
- *   • deploy() — two real options exist downstream, neither faked here:
- *       (a) param/recipe PUSH routes each device write through the EXISTING
- *           commandDispatcher (HITL + OT_CONTROL_ENABLED dry-run) — wired in a later step;
- *       (b) full PROGRAM build/transfer requires GX Works headless/CLI (toolchain wrap).
- *     Until one is wired+validated, deploy returns a clear 'failed' — never a fake success.
+ * WHAT IS WIRED (T-2 doc 38), STILL HW-GATED:
+ *   • deploy() — (a) param/recipe PUSH routes each device write through the EXISTING OT
+ *     commandDispatcher (its own HITL + commissioning + OT_CONTROL_ENABLED gates). With the
+ *     mode gate off / adapter not commissioned it records 'simulated'; missing tag/adapter →
+ *     honest 'rejected'. Never a fake 'deployed'. (b) full PROGRAM transfer still requires a
+ *     GX Works headless/CLI wrap — that path is not claimed here.
  *
  * SAFETY: authors process PARAMETERS only. Ladder/safety logic stays in GX Works on the
  * certified PLC; native ladder authoring (open runtime only) is Phase D5.
@@ -135,16 +135,65 @@ export class MitsubishiEngineeringAdapter implements ProgrammingAdapter {
     };
   }
 
-  async deploy(_build: BuildResult, _opts: ProgDeployOpts): Promise<ProgDeployResult> {
-    // Honest: the real push path (commandDispatcher per-device HITL/dry-run, or GX Works
-    // headless transfer) is not yet wired+validated. Never claim a fake 'deployed'.
+  async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    // T-2 (doc 38) — ROUTE each recipe/device write through the EXISTING OT commandDispatcher
+    // (its own HITL re-verify → adapter/tag-writable → commissioning → OT_CONTROL_ENABLED mode
+    // gate → interlock). Reached ONLY after programmingService opened its gate (DPC_DEPLOY_
+    // ENABLED + HITL sign-off). With OT_CONTROL_ENABLED off / adapter not commissioned it is
+    // recorded 'simulated'; missing tag/adapter → an honest 'rejected' with the exact reason —
+    // never a fake 'deployed'. (Full PROGRAM transfer still needs a GX Works headless wrap.)
+    const adapterId = opts.deviceId;
+    if (!adapterId) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        error: "No OT adapterId (deviceId) bound to this project — cannot route the MELSEC param push.",
+      };
+    }
+    const paramMap = (build.meta?.paramMap as Record<string, string> | undefined) ?? {};
+    const writes = Object.entries(paramMap).map(([device, value]) => ({ tagKey: device, value }));
+    if (writes.length === 0) {
+      return { ok: false, status: "failed", simulated: false, error: "No device parameters to push (empty recipe)." };
+    }
+    // The dispatcher's HITL trigger requires a confirming user (four-eyes). Absent → honest reject.
+    if (opts.hitl.confirmedBy == null) {
+      return { ok: false, status: "rejected", simulated: true, error: "HITL sign-off (confirmedBy) required to push MELSEC parameters." };
+    }
+
+    const { dispatch } = await import("../../ot/commandDispatcher");
+    const res = await dispatch({
+      adapterId,
+      machineId: adapterId,
+      commandType: "recipe_param_push",
+      writes,
+      triggeredBy: {
+        kind: "hitl",
+        actionId: opts.hitl.actionId,
+        confirmedBy: opts.hitl.confirmedBy,
+        requestedBy: opts.hitl.requestedBy,
+      },
+      idempotencyKey: opts.idempotencyKey,
+    });
+
+    // Map DispatchResult → ProgDeployResult (honest, mirrors the dispatcher outcome).
+    if (res.simulated) {
+      return {
+        ok: true,
+        status: "simulated",
+        simulated: true,
+        detail: { via: "commandDispatcher", reason: res.reason ?? "OT_CONTROL_ENABLED off / not commissioned — dry-run.", writes: writes.length },
+      };
+    }
+    if (res.ok) {
+      return { ok: true, status: "deployed", simulated: false, detail: { via: "commandDispatcher", writes: writes.length } };
+    }
     return {
       ok: false,
-      status: "failed",
-      simulated: false,
-      error:
-        "Mitsubishi deploy needs a wired push path: route param writes through commandDispatcher " +
-        "(HITL + OT_CONTROL_ENABLED) or a GX Works headless transfer — validate against real HW first.",
+      status: res.status === "rejected" ? "rejected" : "failed",
+      simulated: res.status === "rejected",
+      detail: { via: "commandDispatcher", reason: res.reason },
+      error: res.reason ?? `MELSEC param push ${res.status}.`,
     };
   }
 }

@@ -34,7 +34,13 @@
  *    of defect, rolled up") — the dimension a management defect-analysis report
  *    wants.
  */
-import { getDb } from "./connection";
+// T-3 (doc 38 R-2a): these are ALL heavy read-only analytics rollups (defect
+// Pareto, per-product / per-week yield, workstation heatmap) — pure SELECT
+// aggregations with no writes. They route through getReadDb() so they run on
+// the read replica (env DATABASE_READ_URL) when one exists, and honest-degrade
+// to the primary pool when it does not. These reports TOLERATE replica lag
+// (ms–seconds staleness on a rollup window is acceptable), so this is safe.
+import { getReadDb } from "./connection";
 import { sql, eq, and, gte, lte, desc, SQL } from "drizzle-orm";
 import {
   productInspections,
@@ -212,7 +218,7 @@ export async function getDefectParetoByCategory(
 ): Promise<DimensionParetoResult> {
   const dimension = params.dimension ?? "category";
   const topN = params.topN ?? 10;
-  const db = await getDb();
+  const db = await getReadDb();
   if (!db) {
     console.error("[getDefectParetoByCategory] Database connection unavailable (DB_UNAVAILABLE)");
     return { dimension, items: [], totalDefects: 0, classifiedDefects: 0, unclassifiedDefects: 0, topN };
@@ -287,7 +293,7 @@ export interface ProductYieldRow {
  * output totals stay reconcilable with getDashboardStats.
  */
 export async function getYieldByProduct(params: ReportRollupFilters): Promise<ProductYieldRow[]> {
-  const db = await getDb();
+  const db = await getReadDb();
   if (!db) {
     console.error("[getYieldByProduct] Database connection unavailable (DB_UNAVAILABLE)");
     return [];
@@ -362,7 +368,7 @@ export interface WeeklyYieldRow {
  * (date_trunc('week', … AT TIME ZONE factory)). Ordered chronologically.
  */
 export async function getYieldTrendByWeek(params: ReportRollupFilters): Promise<WeeklyYieldRow[]> {
-  const db = await getDb();
+  const db = await getReadDb();
   if (!db) {
     console.error("[getYieldTrendByWeek] Database connection unavailable (DB_UNAVAILABLE)");
     return [];
@@ -441,7 +447,7 @@ export interface WorkstationHeatmapRow {
  * workstation link roll up into one honest "Chưa gán công trạm" row.
  */
 export async function getWorkstationHeatmap(params: ReportRollupFilters): Promise<WorkstationHeatmapRow[]> {
-  const db = await getDb();
+  const db = await getReadDb();
   if (!db) {
     console.error("[getWorkstationHeatmap] Database connection unavailable (DB_UNAVAILABLE)");
     return [];

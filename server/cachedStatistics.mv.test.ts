@@ -22,6 +22,9 @@ vi.mock("./db", () => ({}));
 vi.mock("./db/connection", () => ({
   getDb: mocks.getDb,
   getJobsDb: mocks.getDb,
+  // T-3 (doc 38): MV read path now routes through getReadDb (honest-degrades to
+  // primary). In this test the "replica" is the same mocked execute() as getDb.
+  getReadDb: mocks.getDb,
 }));
 vi.mock("./services/materializedViewRefreshService", () => ({
   MATVIEW_STATUS_FEATURE: "matview_refresh_qw",

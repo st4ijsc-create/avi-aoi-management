@@ -63,6 +63,18 @@ export async function createProductInspection(data: InsertProductInspection) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(productInspections).values(data).returning({ id: productInspections.id });
+
+  // Doc 38 T-1 (P0 #3) — an inspection submit is also machine "activity". Feed the
+  // downtime auto-detector so machines that report only via inspection (no separate
+  // heartbeat) still avoid false-positive downtime. Fire-and-forget + dynamic import
+  // (avoids a db⇄service require cycle); inert unless DOWNTIME_DETECTION_ENABLED.
+  if (typeof data.machineId === "number") {
+    const mid = data.machineId;
+    void import("../services/downtimeDetectionService")
+      .then((m) => m.recordMachineActivity(mid))
+      .catch(() => {});
+  }
+
   return result.id;
 }
 

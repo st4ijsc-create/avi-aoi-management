@@ -53,6 +53,13 @@ export interface StudioStep {
   id: string;
   type: StepKind;
   label?: string;
+  /**
+   * T-2 (doc 38) — persisted node-graph coordinate for the Orchestration Studio "Sơ đồ"
+   * view. Editor-only presentation (mirror IR block.ui): when present the canvas honours it
+   * instead of the deterministic auto-layout, so drag-and-drop positions survive save/load.
+   * `serializeStep` emits it so the server-side WorkflowDefinition round-trips the layout.
+   */
+  ui?: { x: number; y: number };
   // ── base (mọi loại) — mirror server BaseStep ──
   precondition?: Record<string, unknown>;
   onPreconditionFail?: OnPreconditionFail;
@@ -244,6 +251,9 @@ export function addChild(steps: StudioStep[], parentId: string, slot: "steps" | 
 function serializeStep(s: StudioStep): Record<string, unknown> {
   const out: Record<string, unknown> = { id: s.id, type: s.type };
   if (s.label) out.label = s.label;
+  // T-2 (doc 38) — persist the node-graph coordinate (editor-only presentation). Only emit
+  // when both axes are finite so a partial/NaN drag never pollutes the definition JSON.
+  if (s.ui && Number.isFinite(s.ui.x) && Number.isFinite(s.ui.y)) out.ui = { x: s.ui.x, y: s.ui.y };
   // ── base optional fields (mirror server BaseStep) — chỉ emit khi có giá trị ──
   if (s.precondition) out.precondition = s.precondition;
   if (s.onPreconditionFail) out.onPreconditionFail = s.onPreconditionFail;

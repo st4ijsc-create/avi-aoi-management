@@ -17,6 +17,14 @@
  *    broadcasts to other instances, whose L1 is cleared through the
  *    `onInvalidateBroadcast` hook registered below.
  *
+ * T-3 (doc 38 R-2b): with the read-replica scale-out, the SAME Redis L2 is the
+ * cross-replica shared cache for hot-stat / dashboard reads. cachedStatistics
+ * uses the two-tier getOrFetchAsync path, so when REDIS_URL is set every replica
+ * shares one hot-stat entry (compute once, serve everywhere) and an invalidation
+ * on ANY replica broadcasts over `cache:invalidate` to clear all others' L1.
+ * When REDIS_URL is absent each node keeps its own L1 (honest single-node
+ * degrade). The CACHE_REDIS_L2_ENABLED kill-switch (see hasL2) can force L1-only.
+ *
  * Backward compatibility: the original sync API (get/set/delete/
  * invalidateByPattern/invalidateStatistics/clear/getStats/generateKey)
  * keeps its exact signatures and L1 semantics — existing callers
@@ -94,7 +102,23 @@ export class TieredCacheService {
     }
   }
 
+  /**
+   * T-3 (doc 38 R-2b) — operator kill-switch for the Redis L2 tier.
+   * DEFAULT follows REDIS_URL presence (via l2.isConfigured()): L2 is active
+   * iff a Redis endpoint is configured. `CACHE_REDIS_L2_ENABLED` overrides:
+   *   • "false" / "0" → force L2 OFF even when REDIS_URL is set (kill-switch to
+   *     fall the whole facade back to the in-process L1 without editing config).
+   *   • "true" / "1" / absent → default behaviour (REDIS_URL-driven). We never
+   *     fabricate a Redis tier when none is configured — honest-degrade to L1.
+   * Read at call time so the switch can be flipped without a restart in tests.
+   */
+  private l2KillSwitched(): boolean {
+    const v = process.env.CACHE_REDIS_L2_ENABLED;
+    return v === 'false' || v === '0';
+  }
+
   private hasL2(): boolean {
+    if (this.l2KillSwitched()) return false;
     return !!this.l2 && this.l2.isConfigured();
   }
 

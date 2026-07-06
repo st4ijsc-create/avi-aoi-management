@@ -379,6 +379,14 @@ export const programArtifactStatusEnum = pgEnum("programartifactstatusenum", [
   "released",
   "archived",
 ]);
+// doc 38 T-2 — FOUR-EYES AT THE VERSION: review lifecycle of a program_artifacts row.
+// A version must be 'approved' by a SECOND person (reviewer ≠ author) before it can be
+// built/deployed. Enforcement is flag-gated (DPC_VERSION_REVIEW_ENABLED, default OFF).
+export const programArtifactReviewStatusEnum = pgEnum("programartifactreviewstatusenum", [
+  "pending_review",
+  "approved",
+  "rejected",
+]);
 // Outcome of a compile/build.
 export const programBuildStatusEnum = pgEnum("programbuildstatusenum", ["pending", "ok", "failed"]);
 // Which stage a deployment targets (staged deploy → verify → promote to production).

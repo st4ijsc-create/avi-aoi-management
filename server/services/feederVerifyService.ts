@@ -19,6 +19,8 @@ import { eq, and, desc, isNotNull } from "drizzle-orm";
 import {
   feederSetupVerifications,
   feederMaterials,
+  machines,
+  stations,
   type InsertFeederSetupVerification,
 } from "../../drizzle/schema";
 
@@ -253,6 +255,65 @@ export async function assertSetupOkForRun(machineId: number, productModelId?: nu
     reason: problem,
     status,
   };
+}
+
+export interface LineMachineGate {
+  machineId: number;
+  blocked: boolean;
+  reason: string | null;
+  status: SetupStatus;
+}
+
+export interface LineRunGateResult {
+  allowed: boolean;
+  blocked: boolean;
+  enforced: boolean;
+  reason: string | null;
+  /** Only feeder-bearing machines on the line (loadedSlotCount > 0) participate. */
+  machines: LineMachineGate[];
+}
+
+/**
+ * Doc 38 T-1 (P0 #4) — LINE-LEVEL run-gate for a production-run start. A production
+ * order runs on a LINE; this resolves every ACTIVE machine physically on the line
+ * (machine → station → line) and applies assertSetupOkForRun() to each. Only
+ * FEEDER-BEARING machines (a loaded feeder setup, loadedSlotCount > 0) participate —
+ * an AOI/AVI station with no feeders is N/A and never blocks a run.
+ *
+ * When FEEDER_VERIFY_ENFORCED is ON and any participating machine has an incomplete
+ * or mismatched setup, blocked=true (the caller refuses the run start, fail-closed).
+ * With the flag OFF it is ADVISORY — always allowed, still reports per-machine status.
+ * NEVER throws for a business reason; the caller decides how to surface a block.
+ */
+export async function assertLineSetupOkForRun(
+  lineId: number,
+  productModelId?: number | null,
+): Promise<LineRunGateResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const enforced = isFeederVerifyEnforced();
+
+  const rows = await db
+    .select({ id: machines.id })
+    .from(machines)
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .where(and(eq(stations.lineId, lineId), eq(machines.isActive, true)));
+
+  const participating: LineMachineGate[] = [];
+  for (const r of rows) {
+    const gate = await assertSetupOkForRun(r.id, productModelId);
+    if (gate.status.loadedSlotCount > 0) {
+      participating.push({ machineId: r.id, blocked: gate.blocked, reason: gate.reason, status: gate.status });
+    }
+  }
+
+  const blockers = participating.filter((m) => m.blocked);
+  const blocked = enforced && blockers.length > 0;
+  const reason = blocked
+    ? `feeder setup not run-ready on machine id(s) ${blockers.map((b) => b.machineId).join(", ")}: ${blockers[0].reason}`
+    : null;
+
+  return { allowed: !blocked, blocked, enforced, reason, machines: participating };
 }
 
 /**

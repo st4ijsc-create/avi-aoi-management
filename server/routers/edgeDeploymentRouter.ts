@@ -129,6 +129,14 @@ export const edgeDeploymentRouter = router({
     return getFleetOverview();
   }),
 
+  // Doc 38 T-1 (P1) — UNIFIED fleet-status view: edge_deployments + edge_nodes +
+  // device_adapters in one read-only overview (getFleetOverview only covers
+  // deployments). Read-only aggregation; admin-only like the rest of this router.
+  getUnifiedFleetStatus: adminProcedure.query(async () => {
+    const { getUnifiedFleetStatus } = await import("../services/fleetStatusService");
+    return getUnifiedFleetStatus();
+  }),
+
   // redeploy — re-package an existing deployment (e.g. after a failed/outdated
   // state) and re-notify the device.
   redeploy: adminProcedure

@@ -27,6 +27,7 @@ import {
 } from "../../../drizzle/schema";
 import {
   programmingRegistry,
+  type ProgrammingAdapter,
   type ProgrammingKind,
   type ProgramSource,
   type ProgSimScenario,
@@ -49,6 +50,14 @@ export function dpcStreamingEnabled(): boolean {
 export function dpcForceEnabled(): boolean {
   return process.env.DPC_ONLINE_FORCE_ENABLED === "true" || process.env.DPC_ONLINE_FORCE_ENABLED === "1";
 }
+/**
+ * doc 38 T-2 — FOUR-EYES AT THE VERSION. When on, an artifact version must be 'approved'
+ * (by a reviewer ≠ author) before it can be built or deployed. Default OFF so applying
+ * migration 0236 changes NO behaviour until an operator opts in (staged rollout).
+ */
+export function dpcVersionReviewEnabled(): boolean {
+  return process.env.DPC_VERSION_REVIEW_ENABLED === "true" || process.env.DPC_VERSION_REVIEW_ENABLED === "1";
+}
 
 async function db() {
   const d = await getDb();
@@ -58,6 +67,70 @@ async function db() {
 
 export function hashContent(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * doc 38 T-2 — VERIFY-AFTER-DOWNLOAD contract.
+ *
+ * A deploy is only ever recorded 'verified' when we READ THE PROGRAM BACK from the device
+ * and it matches — NEVER on the strength of a written audit row. This is the honest seam:
+ *   • verified:true  — read-back succeeded AND the hash matches → caller promotes to 'verified'.
+ *   • mismatch:true  — read-back succeeded BUT the hash differs → the download did not stick.
+ *   • verified:false, mismatch:false — no read-back was possible (device absent / dry-run /
+ *     adapter has no upload path). The caller keeps 'deployed' and records the reason; it must
+ *     NOT fabricate a 'verified'. `reason` is 'no-device/dry-run' for the HW-absent case.
+ */
+export interface VerifyResult {
+  verified: boolean;
+  mismatch: boolean;
+  method: "read-back-hash" | "none";
+  reason?: string;
+  expectedHash?: string;
+  actualHash?: string;
+}
+
+/**
+ * Read a program back from the device via the adapter's upload() path and compare its hash
+ * to the built version. Fail-honest: any missing capability / absent device / thrown error
+ * → verified:false with a precise reason (never a fake success). This is the ONLY thing that
+ * may promote a deployment to 'verified'.
+ */
+export async function verifyAfterDownload(
+  adapter: ProgrammingAdapter,
+  ctx: { expectedHash: string; deviceId?: number; endpoint?: string },
+): Promise<VerifyResult> {
+  // Adapter cannot read a program back (no upload path) → cannot verify. Honest, not faked.
+  if (!adapter.capabilities.canUpload || typeof adapter.upload !== "function") {
+    return {
+      verified: false,
+      mismatch: false,
+      method: "none",
+      reason: "no-device/dry-run: adapter has no read-back (upload) path — deploy recorded but not device-verified.",
+      expectedHash: ctx.expectedHash,
+    };
+  }
+  try {
+    const readBack = await adapter.upload({ deviceId: ctx.deviceId, endpoint: ctx.endpoint });
+    const actualHash = hashContent(readBack.content ?? "");
+    const verified = actualHash === ctx.expectedHash;
+    return {
+      verified,
+      mismatch: !verified,
+      method: "read-back-hash",
+      expectedHash: ctx.expectedHash,
+      actualHash,
+    };
+  } catch (e) {
+    // Device absent / read protocol not HW-validated (e.g. zmotion upload() throws) →
+    // honest verified:false, NOT a mismatch (we simply could not read it back).
+    return {
+      verified: false,
+      mismatch: false,
+      method: "none",
+      reason: `no-device/dry-run: read-back failed — ${(e as Error).message}`,
+      expectedHash: ctx.expectedHash,
+    };
+  }
 }
 
 /**
@@ -85,12 +158,57 @@ export async function validateArtifact(artifactId: number) {
 }
 
 /**
+ * doc 38 T-2 — FOUR-EYES AT THE VERSION. Record a review DECISION on an artifact version.
+ * SoD (segregation of duties): the reviewer must DIFFER from the author (createdBy) — the
+ * same two-person control the deploy path enforces, moved UP to the version. Always safe
+ * (no device I/O). Idempotent-friendly: re-approving an approved version is a no-op update.
+ *
+ * Enforcement of "must be approved before build/deploy" is flag-gated
+ * (DPC_VERSION_REVIEW_ENABLED); recording the decision itself is always allowed so an
+ * operator can pre-populate approvals before flipping the flag on.
+ */
+export async function reviewArtifact(
+  artifactId: number,
+  decision: "approved" | "rejected",
+  reviewer: DpcUser,
+) {
+  const d = await db();
+  const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
+  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+
+  // SoD — a version may NOT be self-approved: the reviewer must differ from the author.
+  // (createdBy may be null on legacy rows; only enforce when we know the author.)
+  if (art.createdBy != null && art.createdBy === reviewer.id) {
+    throw new Error(
+      "Segregation of duties — người duyệt phiên bản phải KHÁC tác giả (không được tự duyệt phiên bản của chính mình).",
+    );
+  }
+
+  const [row] = await d
+    .update(programArtifacts)
+    .set({ reviewStatus: decision, reviewedBy: reviewer.id, reviewedAt: new Date() })
+    .where(eq(programArtifacts.id, artifactId))
+    .returning();
+  return row;
+}
+
+/**
  * Compile an artifact → a program_builds row. Always safe (no device I/O).
+ *
+ * doc 38 T-2 — with DPC_VERSION_REVIEW_ENABLED on, a version that is not 'approved'
+ * (four-eyes) cannot be built. Off (default) → unchanged.
  */
 export async function buildArtifact(artifactId: number, user: DpcUser) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
   if (!art) throw new Error(`Artifact ${artifactId} not found`);
+
+  if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
+    throw new Error(
+      `Four-eyes — phiên bản #${artifactId} chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
+        "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi build/deploy.",
+    );
+  }
 
   const adapter = programmingRegistry.getAdapter(art.kind as ProgrammingKind);
   const src: ProgramSource = { kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" };
@@ -185,6 +303,31 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
   const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, art.projectId)).limit(1);
   // deviceId is bound at the PROJECT level (artifacts have none); the request may override.
   const projectDeviceId = proj?.deviceId ?? null;
+
+  // doc 38 T-2 — FOUR-EYES AT THE VERSION. With DPC_VERSION_REVIEW_ENABLED on, a version
+  // that was not 'approved' by a second person (reviewer ≠ author) can NOT be deployed —
+  // not even simulated. Recorded as an append-only 'rejected' audit row (like the other
+  // gates below), never a silent pass. Off (default) → unchanged.
+  if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
+    const [row] = await d
+      .insert(programDeployments)
+      .values({
+        buildId: req.buildId,
+        projectId: art.projectId,
+        deviceId: req.deviceId ?? projectDeviceId,
+        stage: req.stage,
+        status: "rejected",
+        simulated: true,
+        requestedBy: user.id,
+        idempotencyKey: req.idempotencyKey,
+        error:
+          `Four-eyes — phiên bản chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
+          "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi deploy.",
+      })
+      .returning();
+    publishDeployed(row);
+    return row;
+  }
 
   // A non-ok build can never be deployed (even simulated).
   if (!b.ok) {
@@ -283,6 +426,37 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
         deviceId: req.deviceId ?? projectDeviceId ?? undefined,
       },
     );
+
+    // doc 38 T-2 — VERIFY-AFTER-DOWNLOAD. A deploy is only 'verified' when we READ IT BACK
+    // from the device and the read-back matches — never on the strength of an audit row.
+    // On a successful download we read the program back (adapter.upload) and compare hashes.
+    //   • match          → promote status to 'verified'.
+    //   • mismatch       → the download did NOT stick → status 'failed' (honest).
+    //   • no read-back   → device absent / adapter can't upload → stays 'deployed' with
+    //                      verified:false + reason (NEVER faked as verified).
+    if (result.ok && result.status === "deployed") {
+      const verify = await verifyAfterDownload(adapter, {
+        expectedHash: art.contentHash ?? hashContent(art.content ?? ""),
+        deviceId: req.deviceId ?? projectDeviceId ?? undefined,
+        endpoint: (result.detail?.endpoint as string | undefined),
+      });
+      const detail = { ...(result.detail ?? {}), verify };
+      if (verify.verified) {
+        result = { ...result, status: "verified", detail };
+      } else if (verify.mismatch) {
+        result = {
+          ok: false,
+          status: "failed",
+          simulated: false,
+          detail,
+          error: `Verify-after-download MISMATCH — read-back hash differs (expected ${verify.expectedHash?.slice(0, 12)}…, got ${verify.actualHash?.slice(0, 12)}…). Program on device does NOT match the built version.`,
+        };
+      } else {
+        // Downloaded but NOT read-back-verified (device absent / read-back unsupported).
+        // Stay 'deployed' but record verified:false honestly — do NOT claim 'verified'.
+        result = { ...result, detail };
+      }
+    }
   } else {
     // Gate closed → SIMULATED. The adapter's hardware path is never invoked.
     result = {
@@ -353,6 +527,15 @@ function publishDeployed(row: typeof programDeployments.$inferSelect | undefined
 /**
  * Roll back a project/stage to the build of a prior successful deployment by recording
  * a NEW deployment (rolledBackFromId set). Honours the same gate as deployBuild.
+ *
+ * doc 38 T-2 — REAL-ROLLBACK CONTRACT (revert HW): a rollback is a forward RE-DEPLOY of the
+ * previous good build through deployBuild — so with DPC_DEPLOY_ENABLED on + sign-off it
+ * RE-DOWNLOADS the previous program to the device (a genuine hardware revert), passes the
+ * SAME simulation-gate + verify-after-download seam, and the device ends up running the prior
+ * version. With the gate OFF (default) or the device absent, the revert is recorded 'simulated'
+ * / unverified HONESTLY — the rollback is a stub that changed no hardware, never a fake revert.
+ * (A true point-in-time restore of controller state beyond program image is out of scope until
+ * per-vendor snapshot/restore is HW-validated.)
  */
 export async function rollbackDeployment(
   deploymentId: number,

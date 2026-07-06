@@ -74,6 +74,29 @@ export const productionOrderRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
+
+      // Doc 38 T-1 (P0 #4) — feeder-verify RUN-GATE. Transitioning an order to
+      // in_progress IS the production-run start; block it (fail-closed) when
+      // FEEDER_VERIFY_ENFORCED is ON and a feeder-bearing machine on the order's
+      // line has an unverified/mismatched setup (wrong-part guard). Advisory no-op
+      // when the flag is OFF. Read the order to resolve line + product when the
+      // caller only sent { id, status }.
+      if (data.status === "in_progress") {
+        const order = await db.getProductionOrderById(id);
+        const lineId = data.lineId ?? order?.lineId ?? null;
+        const productModelId = data.productModelId ?? order?.productModelId ?? null;
+        if (lineId != null) {
+          const { assertLineSetupOkForRun } = await import("../services/feederVerifyService");
+          const gate = await assertLineSetupOkForRun(lineId, productModelId);
+          if (gate.blocked) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Cannot start production run: ${gate.reason}`,
+            });
+          }
+        }
+      }
+
       await db.updateProductionOrder(id, data);
       return { success: true };
     }),

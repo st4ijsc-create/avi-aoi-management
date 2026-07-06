@@ -43,6 +43,7 @@ import {
 } from "../services/programming/programmingAdapter";
 import {
   validateArtifact,
+  reviewArtifact,
   buildArtifact,
   simulateBuild,
   deployBuild,
@@ -51,6 +52,7 @@ import {
   dpcDeployEnabled,
   dpcStreamingEnabled,
   dpcForceEnabled,
+  dpcVersionReviewEnabled,
   type DpcUser,
 } from "../services/programming/programmingService";
 import {
@@ -87,6 +89,8 @@ export const programmingRouter = router({
       deployEnabled: dpcDeployEnabled(),
       streamingEnabled: dpcStreamingEnabled(),
       forceEnabled: dpcForceEnabled(),
+      // doc 38 T-2 — four-eyes-at-version gate state (UI shows the review step when on).
+      versionReviewEnabled: dpcVersionReviewEnabled(),
       adapters: programmingRegistry.listAdapters(),
     })),
 
@@ -251,6 +255,18 @@ export const programmingRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ artifactId: z.number().int().positive() }))
     .mutation(async ({ input }) => validateArtifact(input.artifactId)),
+
+  /**
+   * doc 38 T-2 — FOUR-EYES AT THE VERSION. Record a review decision (approve/reject) on an
+   * artifact version. Gated to APPROVER authority (machine_control / canCreate — the same
+   * floor as listApprovers). SoD is enforced in the service: the reviewer (ctx.user) must
+   * differ from the author. Build/deploy of an unapproved version is blocked when
+   * DPC_VERSION_REVIEW_ENABLED is on (default OFF).
+   */
+  reviewArtifact: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ artifactId: z.number().int().positive(), decision: z.enum(["approved", "rejected"]) }))
+    .mutation(async ({ input, ctx }) => reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user))),
 
   // ── Builds ──
   listBuilds: protectedProcedure

@@ -12,12 +12,12 @@
  *   • compile()  — builds a portable job descriptor (steps + points) + checksum.
  *   • simulate() — a motion timeline (per-step duration; pick/place/grip dwell).
  *
- * WHAT IS AN HONEST FRAMEWORK (needs real HW):
- *   • deploy() — the real path sends the job to the TMflow Listen Node via the EXISTING
- *     robotCommandDispatcher (HITL + ROBOT_CONTROL_ENABLED dry-run). Until that program-
- *     download path is wired+validated against a real TM controller, deploy returns a
- *     clear 'failed' — never a fake success. Fanuc/MELFA/Delta job-lists reuse this shape
- *     once their drivers leave scaffold.
+ * WHAT IS WIRED (T-2 doc 38), STILL HW-GATED:
+ *   • deploy() — routes the job to the TMflow Listen Node THROUGH the EXISTING
+ *     robotCommandDispatcher (its own HITL + ROBOT_CONTROL_ENABLED + interlock gates). With
+ *     the mode gate off (default) or the robot absent it records 'simulated'/'rejected'
+ *     HONESTLY — never a fake success. The real TMSCT program-download verb still needs
+ *     validation on a live TM controller. Fanuc/MELFA/Delta reuse this shape.
  *
  * SAFETY: authors MOTION jobs only. Collision/safety zones + E-stop stay on the robot
  * controller; this never authors safety logic.
@@ -155,16 +155,64 @@ export class RobotTmAdapter implements ProgrammingAdapter {
     };
   }
 
-  async deploy(_build: BuildResult, _opts: ProgDeployOpts): Promise<ProgDeployResult> {
-    // Honest: the real download (TMSCT job push via robotCommandDispatcher, HITL +
-    // ROBOT_CONTROL_ENABLED) is not yet wired+validated. Never claim a fake 'deployed'.
+  async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    // T-2 (doc 38) — ROUTE the job-list download through the EXISTING robotCommandDispatcher
+    // (TMflow Listen-Node push). Reached ONLY after programmingService opened its gate
+    // (DPC_DEPLOY_ENABLED + HITL sign-off); the dispatcher then applies its OWN symmetric
+    // gates (idempotency → HITL re-verify → active/connected driver → ROBOT_CONTROL_ENABLED
+    // mode gate → interlock). With ROBOT_CONTROL_ENABLED off (default) or the robot absent it
+    // records 'simulated'/'rejected' HONESTLY — never a fake 'deployed'. HW validation of the
+    // real TMSCT program-download verb on a TM controller is the remaining owner step.
+    const robotId = opts.deviceId;
+    if (!robotId) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        error: "No robotId (deviceId) bound to this project — cannot route the TMflow job download.",
+      };
+    }
+
+    const { dispatchRobotJob } = await import("../../robot/robotCommandDispatcher");
+    const res = await dispatchRobotJob({
+      robotId,
+      // The compiled job-list is pushed as a 'custom' TMflow job (Listen-Node program download).
+      job: {
+        jobType: "custom",
+        params: {
+          op: "tmflow_program_download",
+          stage: opts.stage,
+          outputRef: build.outputRef,
+          checksum: build.meta?.checksum,
+          stepList: build.meta?.stepList,
+        },
+      },
+      triggerKind: "hitl",
+      actionId: opts.hitl.actionId,
+      requestedBy: opts.hitl.requestedBy,
+      confirmedBy: opts.hitl.confirmedBy,
+      idempotencyKey: opts.idempotencyKey,
+    });
+
+    // Map RobotDispatchResult → ProgDeployResult (honest, 1:1 with the dispatcher outcome).
+    if (res.status === "simulated") {
+      return {
+        ok: true,
+        status: "simulated",
+        simulated: true,
+        detail: { via: "robotCommandDispatcher", robotJobId: res.jobId, reason: "ROBOT_CONTROL_ENABLED off — dry-run (no robot write)." },
+      };
+    }
+    if (res.status === "done") {
+      return { ok: true, status: "deployed", simulated: false, detail: { via: "robotCommandDispatcher", robotJobId: res.jobId } };
+    }
+    // rejected (gate/no-device) → no write happened; failed → attempted but errored.
     return {
       ok: false,
-      status: "failed",
-      simulated: false,
-      error:
-        "Robot job download needs the TMflow Listen-Node push wired through robotCommandDispatcher " +
-        "(HITL + ROBOT_CONTROL_ENABLED) and validated on a real TM controller.",
+      status: res.status === "rejected" ? "rejected" : "failed",
+      simulated: res.status === "rejected",
+      detail: { via: "robotCommandDispatcher", robotJobId: res.jobId },
+      error: res.error ?? `Robot job download ${res.status}.`,
     };
   }
 }

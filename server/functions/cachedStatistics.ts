@@ -25,7 +25,13 @@ import {
   getMatviewRefreshIntervalMs,
   MATVIEW_STATUS_FEATURE,
 } from "../services/materializedViewRefreshService";
-import { getDb } from "../db/connection";
+// T-3 (doc 38 R-2a): the materialized-view read paths below (MV freshness
+// probe + hourly_yield_cache scans) are READ-ONLY dashboard reads that already
+// tolerate staleness (the MV itself is a periodic rollup), so they route to the
+// read replica via getReadDb() — honest-degrades to the primary when no
+// DATABASE_READ_URL is set. Replica lag here is immaterial next to the MV's own
+// refresh interval. NO write path uses getReadDb.
+import { getReadDb } from "../db/connection";
 import { productInspections } from "../../drizzle/schema";
 import {
   executeRows,
@@ -297,7 +303,7 @@ async function resolveMvLastRefreshMs(): Promise<number | null> {
   }
   let value: number | null = null;
   try {
-    const dbc = await getDb();
+    const dbc = await getReadDb();
     if (dbc) {
       const res = await dbc.execute(sql`
         SELECT "detail" FROM db_feature_status
@@ -350,7 +356,7 @@ export async function getHourlyYieldFromMV(filters: {
   const freshness = await getMvFreshness();
   if (!freshness) return null;
 
-  const dbc = await getDb();
+  const dbc = await getReadDb();
   if (!dbc) return null;
 
   const hoursBack = filters.hours || 24;
@@ -443,7 +449,7 @@ export async function getHourlyStatsViaMV(filters?: {
   });
   if (!mv) return null;
 
-  const dbc = await getDb();
+  const dbc = await getReadDb();
   if (!dbc) return null;
 
   const hoursBack = filters?.hours || 24;

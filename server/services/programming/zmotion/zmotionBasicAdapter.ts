@@ -28,6 +28,9 @@
  */
 import { createHash } from "node:crypto";
 import { connect, type Socket } from "node:net";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -130,27 +133,19 @@ export interface ZauxBinding {
 }
 
 /**
- * Optionally load the FFI shim that binds zauxdll.dll. Returns null until it exists,
- * so deploy() fails honestly (never a fake success) on machines without it.
- *
- * TODO(FFI): add `server/services/programming/zmotion/zauxFfi.ts` exporting
- *   `export function loadZauxBinding(dllPath: string): ZauxBinding`, implemented with
- *   **koffi** (or ffi-napi / node-ffi-napi). koffi sketch:
- *       const k = require("koffi");
- *       const lib = k.load(dllPath);                                   // path to zauxdll.dll
- *       const OpenEth = lib.func("__stdcall", "ZAux_OpenEth", "int", ["str", "void **"]);
- *       const BasDown = lib.func("__stdcall", "ZAux_BasDown", "int", ["void *", "str", "uint32"]);
- *       const ZarDown = lib.func("__stdcall", "ZAux_ZarDown", "int", ["void *", "str", "uint32"]);
- *       const Close   = lib.func("__stdcall", "ZAux_Close",   "int", ["void *"]);
- *       // marshal the out-handle (void**) via a koffi pointer holder; treat code===0 as OK.
- *   Keep the require guarded/optional so NO hard dependency is added to the app bundle.
+ * Optionally load the FFI shim that binds zauxdll.dll (server/services/programming/zmotion/
+ * zauxFfi.ts, T-2 doc 38). That shim imports **koffi** LAZILY via a variable specifier — no
+ * package.json dependency — so this returns a working loader ONLY when koffi is installed on the
+ * HW-wired host (owner: `npm i koffi` + set ZAUXDLL_PATH). Absent koffi/shim → the loader (or the
+ * binding it returns) throws, and deploy() degrades to an HONEST dry-run — never a fake success.
  */
-async function loadZauxBinding(): Promise<((dllPath: string) => ZauxBinding) | null> {
+type ZauxLoader = (dllPath: string) => ZauxBinding | Promise<ZauxBinding>;
+async function loadZauxBinding(): Promise<ZauxLoader | null> {
   try {
     const spec = "./zauxFfi"; // variable specifier → not statically resolved by TS/bundler
     const mod: Record<string, unknown> = await import(spec);
     const fn = mod?.loadZauxBinding;
-    return typeof fn === "function" ? (fn as (dllPath: string) => ZauxBinding) : null;
+    return typeof fn === "function" ? (fn as ZauxLoader) : null;
   } catch {
     return null; // FFI shim / koffi not installed — deploy() stays an honest dry-run
   }
@@ -226,7 +221,7 @@ class ZmcLink {
 
     let zaux: ZauxBinding;
     try {
-      zaux = loader(dll);
+      zaux = await loader(dll);
     } catch (e) {
       return { ok: false, error: `Failed to load zauxdll.dll from ${dll}: ${(e as Error).message}` };
     }
@@ -281,12 +276,29 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
     const parsed = parseBasic(src.content);
     const moves = parsed.filter((p) => p.op && MOTION_OPS.includes(p.op)).length;
     const checksum = createHash("sha256").update(src.content, "utf8").digest("hex").slice(0, 16);
+
+    // T-2 (doc 38) — PERSIST the program to a real on-disk .bas so a (gated) deploy can hand
+    // the file path to ZAux_BasDown. Written under ZMC_BUILD_DIR (or the OS temp dir). This is
+    // the ONLY device-facing artefact compile produces; deploy resolves it from meta.filePath.
+    // Best-effort: a write failure does NOT fail the build (deploy will report "no file path").
+    let filePath: string | undefined;
+    if (ok) {
+      try {
+        const dir = process.env.ZMC_BUILD_DIR || join(tmpdir(), "zmc-builds");
+        await mkdir(dir, { recursive: true });
+        filePath = join(dir, `${checksum}.bas`);
+        await writeFile(filePath, src.content, "utf8");
+      } catch {
+        filePath = undefined; // honest — deploy() surfaces the missing file path
+      }
+    }
+
     return {
       ok,
       diagnostics,
       outputRef: ok ? `zmc://build/${checksum}` : undefined,
       bytes: src.content.length,
-      meta: { moves, ops: parsed.length, checksum },
+      meta: { moves, ops: parsed.length, checksum, ...(filePath ? { filePath } : {}) },
     };
   }
 
@@ -321,13 +333,15 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
   async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
     // Reached ONLY when the service opened the gate (DPC_DEPLOY_ENABLED + HITL sign-off).
     // Honest by construction: any failure → status 'failed', never a fake 'deployed'.
-    const endpoint = opts.endpoint;
+    // Endpoint precedence: explicit opts.endpoint → ZMC_ENDPOINT env (owner sets the wired
+    // controller's host[:probePort] on the HW host). Absent → honest 'failed', no device write.
+    const endpoint = opts.endpoint || process.env.ZMC_ENDPOINT;
     if (!endpoint) {
       return {
         ok: false,
         status: "failed",
         simulated: false,
-        error: "No ZMC endpoint — set the device endpoint (host[:probePort]) before deploy.",
+        error: "No ZMC endpoint — set opts.endpoint or ZMC_ENDPOINT (host[:probePort]) before deploy.",
       };
     }
 
@@ -346,10 +360,9 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
       };
     }
 
-    // ZAux_BasDown/ZarDown need the program as a real file on disk. compile() currently
-    // emits a token (outputRef) + checksum, NOT a file, so resolve the on-disk path from
-    // build.meta.filePath. TODO(compile): have compile() persist the .bas (or .zar) and
-    // set build.meta.filePath so this deploy can hand it to ZAux_*Down.
+    // ZAux_BasDown/ZarDown need the program as a real file on disk. compile() persists the
+    // .bas under ZMC_BUILD_DIR and sets build.meta.filePath (T-2 doc 38); resolve it here.
+    // When the build carries no path (write failed, or a token-only build) fail honestly.
     const file = typeof build.meta?.filePath === "string" ? (build.meta.filePath as string) : undefined;
     if (!file) {
       return {
@@ -358,7 +371,7 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
         simulated: false,
         detail: { reachable },
         error:
-          "No compiled .bas/.zar file path on the build — compile() must persist the program to a file (build.meta.filePath) for ZAux_BasDown (TODO).",
+          "No compiled .bas/.zar file path on the build — compile() did not persist the program (build.meta.filePath missing).",
       };
     }
 
@@ -379,7 +392,9 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
       ok: true,
       status: "deployed",
       simulated: false,
-      detail: { reachable, step: res.step, runMode, code: res.code },
+      // `endpoint` is surfaced so programmingService.verifyAfterDownload can read the program
+      // back from the same controller for verify-after-download (T-2 doc 38).
+      detail: { reachable, step: res.step, runMode, code: res.code, endpoint },
     };
   }
 

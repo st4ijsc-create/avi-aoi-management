@@ -185,6 +185,19 @@ export async function createMachineHeartbeat(data: InsertMachineHeartbeat) {
   if (!db) return null;
 
   const [result] = await db.insert(machineHeartbeats).values(data).returning({ id: machineHeartbeats.id });
+
+  // Doc 38 T-1 (P0 #3) — feed the downtime auto-detector's activity map from the
+  // canonical heartbeat/telemetry ingest choke-point. Fire-and-forget + dynamic
+  // import (breaks the db⇄service require cycle); recordMachineActivity is a cheap
+  // in-memory Map.set that never touches the hot path and is inert unless
+  // DOWNTIME_DETECTION_ENABLED arms the sweep in backgroundJobs.
+  if (typeof data.machineId === "number") {
+    const mid = data.machineId;
+    void import("../services/downtimeDetectionService")
+      .then((m) => m.recordMachineActivity(mid))
+      .catch(() => {});
+  }
+
   return result.id;
 }
 
