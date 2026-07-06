@@ -218,6 +218,8 @@ export interface GenerateProgramResult {
   /** For review / explain. */
   explanation?: string;
   note?: string;
+  /** How many self-repair rounds ran (doc 34 P4c #1). 0 = valid first try or repair off. */
+  repairAttempts?: number;
 }
 
 /** ir-flow / iec61131-pou also COMPILE (safety-linter/transpile hard gate) before display. */
@@ -523,6 +525,45 @@ async function runValidation(
   }
 }
 
+// ── Self-repair (doc 34 P4c #1) ──────────────────────────────────────────────
+/** Self-repair loop ON by default (the whole point); set AI_CODEGEN_SELF_REPAIR=false to disable. */
+function repairEnabled(): boolean {
+  const v = process.env.AI_CODEGEN_SELF_REPAIR;
+  return v === undefined ? true : v === "true" || v === "1";
+}
+/** Max repair rounds (default 2, hard-capped at 4 to bound latency). */
+function repairMax(): number {
+  const n = Number(process.env.AI_CODEGEN_REPAIR_MAX);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 4) : 2;
+}
+/** Turn substrate diagnostics into a fix-it prompt: the failed code + the exact errors → corrected code. */
+function buildRepairPrompt(
+  outKind: string,
+  request: string,
+  code: string,
+  diagnostics: GenValidation["diagnostics"],
+  ragContext: string,
+): string {
+  const diagText = (diagnostics ?? [])
+    .slice(0, 8)
+    .map((d) => `- [${d.severity}] ${d.message}${d.line ? ` (line ${d.line})` : ""}`)
+    .join("\n");
+  return [
+    `The ${outKind} program below FAILED validation. Fix EVERY listed error and return ONLY the`,
+    `corrected, complete ${outKind} program in the same format (no explanation, no extra prose).`,
+    `Keep the original intent: ${request}`,
+    "",
+    "=== program ===",
+    code,
+    "",
+    "=== validation errors ===",
+    diagText || "(unspecified)",
+    ragContext ? `\n=== relevant manual context ===\n${ragContext}` : "",
+  ]
+    .filter((s) => s !== undefined)
+    .join("\n");
+}
+
 /**
  * Generate / complete / translate / review / explain a device program with the code-tier LLM,
  * grounded by golden few-shot + cited RAG, with EVERY generated program validated through the
@@ -618,13 +659,42 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   // the code is still returned with ok:false + diagnostics so the engineer sees what is wrong.
   // No deploy / upload / run — display only.
   const required = validateRequired();
-  const { validation, ran } = await runValidation(outKind, language, code);
+  let { validation, ran } = await runValidation(outKind, language, code);
+
+  // Doc 34 P4c (#1) — SELF-REPAIR LOOP. The substrate validator (already run above) becomes a
+  // feedback signal: while it reports errors, feed the diagnostics + failed code back to the model
+  // and ask for a fix, up to N rounds. Auto-corrects first-pass failures WITHOUT a bigger model.
+  // Structured kinds stay GBNF-constrained; safety refusal already happened up top; still DISPLAY-ONLY.
+  let repairAttempts = 0;
+  const maxRepair = repairEnabled() ? repairMax() : 0;
+  while (ran && !validation.ok && repairAttempts < maxRepair) {
+    repairAttempts++;
+    const repairUser = buildRepairPrompt(outKind, request, code, validation.diagnostics, answerContext);
+    let fixed = "";
+    if (jsonSchema) {
+      const j = await runStructuredCodeModel(system, repairUser, jsonSchema);
+      if (j != null) fixed = j;
+    }
+    if (!fixed) {
+      const out = await runCodeModel(system, repairUser);
+      if (out != null) fixed = extractCode(out);
+    }
+    if (!fixed) break; // model returned nothing — keep the previous attempt + its diagnostics
+    const re = await runValidation(outKind, language, fixed);
+    code = fixed;
+    validation = re.validation;
+    ran = re.ran;
+    if (validation.ok) break;
+  }
+
   const ok = required ? validation.ok : ran ? validation.ok : true;
   const note = !ran
     ? `No substrate validator for "${outKind}" — output is UNVALIDATED (Tier-B / text target). Verify against the vendor manual + simulate before any device use.`
     : validation.ok
-      ? undefined
-      : "Generated code FAILED substrate validation — review the diagnostics before use (not deployed).";
+      ? repairAttempts > 0
+        ? `Auto-repaired in ${repairAttempts} round(s) → passes substrate validation.`
+        : undefined
+      : `Generated code FAILED substrate validation${repairAttempts > 0 ? ` after ${repairAttempts} repair round(s)` : ""} — review the diagnostics before use (not deployed).`;
 
-  return { ok, refused: false, kind: outKind, code, validation, citations, note };
+  return { ok, refused: false, kind: outKind, code, validation, citations, note, repairAttempts };
 }

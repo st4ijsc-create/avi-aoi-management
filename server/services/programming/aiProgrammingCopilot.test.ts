@@ -183,6 +183,31 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(r.code).toContain("run := TRUE");
   });
 
+  it("SELF-REPAIR (doc 34 P4c): invalid first pass → diagnostics fed back → valid on repair (repairAttempts=1)", async () => {
+    vi.mocked(chatCompletion)
+      // 1st generation: missing END_VAR → the REAL adapter reports an unbalanced VAR/END_VAR error
+      .mockResolvedValueOnce(llm("```st\nVAR\n  run : BOOL;\n  run := TRUE;\n```"))
+      // repair round 1: corrected → valid
+      .mockResolvedValueOnce(llm("```st\nVAR\n  run : BOOL;\nEND_VAR\nrun := TRUE;\n```"));
+    const r = await generateProgram({ kind: "iec61131-st", request: "toggle a run bit" });
+    expect(r.repairAttempts).toBe(1); // exactly one repair round consumed
+    expect(r.validation!.ok).toBe(true); // now passes the substrate
+    expect(r.ok).toBe(true);
+    expect(r.note).toMatch(/repair/i); // note advertises the auto-repair
+    expect(chatCompletion).toHaveBeenCalledTimes(2); // initial + 1 repair
+  });
+
+  it("SELF-REPAIR bounded: still-invalid after AI_CODEGEN_REPAIR_MAX rounds → ok:false + diagnostics (no infinite loop)", async () => {
+    process.env.AI_CODEGEN_REPAIR_MAX = "2";
+    vi.mocked(chatCompletion).mockResolvedValue(llm("```st\nVAR\n  run : BOOL;\n  run := TRUE;\n```")); // always missing END_VAR
+    const r = await generateProgram({ kind: "iec61131-st", request: "toggle a run bit" });
+    expect(r.repairAttempts).toBe(2); // initial + 2 bounded repairs, then stop
+    expect(r.validation!.ok).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(chatCompletion).toHaveBeenCalledTimes(3); // 1 initial + 2 repairs
+    delete process.env.AI_CODEGEN_REPAIR_MAX;
+  });
+
   it("attaches RAG citations from searchProgrammingKb (grounded, not fabricated)", async () => {
     vi.mocked(searchProgrammingKb).mockResolvedValueOnce({
       query: "movel",
