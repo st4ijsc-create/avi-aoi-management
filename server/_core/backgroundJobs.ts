@@ -288,6 +288,16 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[PdmWorkOrder] init failed:", (err as any)?.message || err);
   }
 
+  // W4-A (doc 35 §W4.2) — preventive-maintenance auto-scheduler: scans due
+  // maintenance_schedules → generates PREVENTIVE work orders (trigger=SCHEDULE).
+  // Opt in via PM_SCHEDULE_GEN_ENABLED=true (WRITES work orders — default OFF).
+  try {
+    const { startPmScheduleService } = await import("../services/pmScheduleService");
+    startPmScheduleService();
+  } catch (err) {
+    console.error("[PmSchedule] init failed:", (err as any)?.message || err);
+  }
+
   // G3/G12 — DR verify-restore cadence. Opt in via DR_VERIFY_ENABLED=true.
   try {
     const { startDisasterRecoveryService } = await import("../services/disasterRecoveryService");
@@ -444,6 +454,9 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/pdmWorkOrderService")
     .then((m) => m.stopPdmWorkOrderService())
+    .catch(() => {});
+  import("../services/pmScheduleService")
+    .then((m) => m.stopPmScheduleService())
     .catch(() => {});
   import("../services/disasterRecoveryService")
     .then((m) => m.stopDisasterRecoveryService())

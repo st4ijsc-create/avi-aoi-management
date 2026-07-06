@@ -33,8 +33,9 @@
  *     componentInstallationService (not duplicated here).
  */
 import { getDb } from "../db/connection";
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
+import { HELD_WIP_STATUS, dispatchExcludedStatuses } from "./wipHoldPolicy"; // W4-B: quality-hold enforcement
 import {
   wipTracking,
   stationDwellTime,
@@ -223,8 +224,13 @@ async function updateMatchingOrder(
 /**
  * (b) Upsert the WIP unit for this serial. Status derives from the result:
  *   OK  -> in_process (unit keeps flowing)
- *   NG  -> on_hold    (needs disposition)
+ *   NG  -> hold       (needs disposition)
+ *   NTF -> hold
  *   else-> in_process
+ * W4-B FIX: previously wrote 'on_hold', which is NOT a wipstatusenum value, so
+ * the pgEnum rejected the insert and held serials were silently never recorded
+ * (the whole ingest body is try/caught). We now write the CANONICAL enum value
+ * 'hold' (HELD_WIP_STATUS) — no ALTER TYPE needed.
  * Genealogy: parentSerialNumber is preserved if already set (never overwritten
  * to null), so an upstream merge recorded elsewhere is not lost.
  */
@@ -236,7 +242,7 @@ async function upsertWipUnit(
   result: string,
   at: Date,
 ): Promise<void> {
-  const status = result === "NG" ? "on_hold" : result === "NTF" ? "on_hold" : "in_process";
+  const status = result === "NG" ? HELD_WIP_STATUS : result === "NTF" ? HELD_WIP_STATUS : "in_process";
 
   await database
     .insert(wipTracking)
@@ -339,11 +345,13 @@ async function updateLineBalance(
   const periodEnd = new Date(periodStart.getTime() + 60 * 60 * 1000);
   const cycleMs = cycleTimeSec != null ? Math.round(cycleTimeSec * 1000) : null;
 
-  // Live WIP count for the line (active units).
+  // Live WIP count for the line (active units). W4-B: when WIP_HOLD_ENFORCED is
+  // ON, held units drop out of the "live WIP" count too (they are parked for
+  // disposition, not flowing); default OFF preserves the prior count.
   const [{ c: wipCount } = { c: 0 }] = await database
     .select({ c: sql<number>`count(*)::int` })
     .from(wipTracking)
-    .where(and(eq(wipTracking.lineId, lineId), sql`${wipTracking.status} not in ('completed','scrapped')`));
+    .where(and(eq(wipTracking.lineId, lineId), notInArray(wipTracking.status, dispatchExcludedStatuses() as any)));
 
   const [existing] = await database
     .select()

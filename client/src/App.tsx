@@ -163,6 +163,7 @@ import MachineRegistration from "./pages/MachineRegistration";
 import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
 const AoiOnboardingWizard = React.lazy(() => import("./pages/AoiOnboardingWizard")); // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)
 const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardingWizard")); // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)
+const FeederVerify = React.lazy(() => import("./pages/FeederVerify")); // doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)
 import CorporateManagement from "./pages/CorporateManagement";
 import LicenseManagement from "./pages/LicenseManagement";
 import MqttNgRateThreshold from "./pages/MqttNgRateThreshold";
@@ -315,6 +316,7 @@ function Router() {
       <Route path="/robot/:id"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotCockpit /></AIPageWrapper></RouteGuard></Route>
       <Route path="/technician-copilot"><RouteGuard navHref="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
+      <Route path="/feeder-verify"><RouteGuard navHref="/feeder-verify"><AIPageWrapper><FeederVerify /></AIPageWrapper></RouteGuard></Route>
       <Route path="/alerts"><RouteGuard navHref="/alerts"><Alerts /></RouteGuard></Route>
       <Route path="/monitoring-setting"><RouteGuard requireRole={["admin"]}><MonitoringSettings /></RouteGuard></Route>
       {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}

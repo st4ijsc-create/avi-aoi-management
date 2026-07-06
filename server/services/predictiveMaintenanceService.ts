@@ -172,9 +172,29 @@ export async function computeReliabilityStats(
   const totalUnplannedMinutes = states.UD;
   const uptimeMinutes = states.equipmentUptime; // PT + SB + ET + UD
 
-  const mtbfHours = unplannedEvents > 0 ? uptimeMinutes / unplannedEvents / 60 : null;
-  const mttrHours = unplannedEvents > 0 ? totalUnplannedMinutes / unplannedEvents / 60 : null;
+  let mtbfHours = unplannedEvents > 0 ? uptimeMinutes / unplannedEvents / 60 : null;
+  let mttrHours = unplannedEvents > 0 ? totalUnplannedMinutes / unplannedEvents / 60 : null;
   const failuresPerDay = unplannedEvents / Math.max(1, windowHours / 24);
+
+  // ── W4-A (doc 35 §W4.2) — UNIFY MTTR/MTBF ──────────────────────────────────
+  // Historically this service derived MTTR/MTBF from downtimeEvents while the MES
+  // Control Tower derived them from COMPLETED maintenance_work_orders
+  // (pdmWorkOrderService.computeMttrMtbf) — the two UIs showed divergent numbers.
+  // The work-order source is authoritative (openedAt/repairStartedAt/closedAt are
+  // precise repair spans), so we DELEGATE these two fields to it when work orders
+  // exist for the window. Everything else (event counts / uptime / trend /
+  // frequency) still comes from the SEMI-E10 downtime view. Fail-safe: on any
+  // error we keep the event-derived numbers. Return shape is unchanged.
+  try {
+    const { computeMttrMtbf } = await import("./pdmWorkOrderService");
+    const wo = await computeMttrMtbf(machineId, from, to);
+    if (wo.failureCount > 0) {
+      if (wo.mtbfHours != null) mtbfHours = wo.mtbfHours;
+      if (wo.mttrMinutes != null) mttrHours = wo.mttrMinutes / 60;
+    }
+  } catch {
+    /* keep downtime-event-derived MTTR/MTBF as fallback */
+  }
 
   // Failure-frequency trend: compare first vs second half of window
   const mid = from.getTime() + (to.getTime() - from.getTime()) / 2;
@@ -196,6 +216,15 @@ export async function computeReliabilityStats(
     trend,
   };
 }
+
+/**
+ * W4-A (doc 35) — public alias. `getReliabilityStats` is the intent-revealing
+ * name for the unified reliability read; it delegates to computeReliabilityStats
+ * (whose MTTR/MTBF now come from the authoritative work-order source, so this and
+ * the MES Control Tower's reliability read agree). New call sites should prefer
+ * this name; computeReliabilityStats is kept for existing callers.
+ */
+export const getReliabilityStats = computeReliabilityStats;
 
 // ─── Pure risk computation (testable, no DB) ─────────────────────────────────
 

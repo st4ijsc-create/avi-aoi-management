@@ -766,6 +766,16 @@ export const navGroups: NavGroup[] = [
         section: "maintenance",
       },
       {
+        // doc 35 W4-C — plain labels (i18n keys deferred to the i18n polish pass)
+        href: "/feeder-verify",
+        label: "Kiểm tra Feeder (SMT)",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "Quét xác minh khay linh kiện khớp BOM/chương trình — chống gắn nhầm part",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "maintenance",
+      },
+      {
         href: "/alerts",
         label: "nav.alertsList",
         icon: <Bell className="h-4 w-4" />,

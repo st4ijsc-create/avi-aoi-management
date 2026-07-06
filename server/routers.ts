@@ -179,6 +179,10 @@ import { integrityRouter } from "./routers/integrityRouter"; // W3-A (doc 27 §2
 import { measurementCorrectionsRouter } from "./routers/measurementCorrectionsRouter"; // W7-B (doc 27 §9 V2): harvested operator-corrections analytics — per-machine false-call/agreement + daily trend (READ-ONLY; writes happen fail-open inside correctResult/confirmNTF)
 import { productPanelRouter } from "./routers/productPanelRouter"; // W8-B (doc 29 §2 / doc 27 M12b): PCB panel N-up master — panel defs + per-board offset/rotation/mirror/X-out (master data only)
 import { operatorBadgeRouter } from "./routers/operatorBadgeRouter"; // W8-B (doc 29 §3 / doc 27 M14): operator/badge master — badgeCode→users.id with validity windows (issue/revoke/re-issue)
+import { ncrRouter } from "./routers/ncrRouter"; // doc 35 W4-B — nonconformance reports (NCR/MRB)
+import { feederVerifyRouter } from "./routers/feederVerifyRouter"; // doc 35 W4-C — SMT feeder-setup scan verification
+import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-life clock (J-STD-020)
+import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -401,6 +405,10 @@ export const appRouter = router({
   predictiveMaintenance: predictiveMaintenanceRouter,
   mesControlTower: mesControlTowerRouter,
   maintenance: maintenanceRouter,
+  ncr: ncrRouter, // doc 35 W4-B
+  feederVerify: feederVerifyRouter, // doc 35 W4-C
+  msd: msdRouter, // doc 35 W4-C
+  stencil: stencilRouter, // doc 35 W4-C
   digitalTwin: digitalTwinRouter,
   realtimeReport: realtimeReportRouter,
   machineContract: machineContractRouter,

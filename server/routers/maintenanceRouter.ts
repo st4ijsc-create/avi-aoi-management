@@ -23,11 +23,13 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { maintenanceWorkOrders, machines } from "../../drizzle/schema";
+import { maintenanceWorkOrders, machines, sparePartsInventory } from "../../drizzle/schema";
+// W4-A (doc 35) — spare-parts consumption ledger lives in its own schema file.
+import { workOrderParts } from "../../drizzle/schema/maintenanceParts";
 
 const MODULE = "machine_monitoring";
 
@@ -229,5 +231,109 @@ export const maintenanceRouter = router({
         if (OPEN_STATUSES.has(r.status)) open += 1;
       }
       return { total: rows.length, open, byStatus };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // W4-A (doc 35 §W4.2) — spare-parts consumption on a work order.
+  // Closes the orphan: spare_parts_inventory had no consumption link. Recording
+  // parts used inserts a work_order_parts ledger row AND decrements on-hand stock
+  // atomically (single db.transaction). Below-reorder query surfaces restock need.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── record parts used on a WO (write) — atomic ledger insert + stock decrement ─
+  recordPartsUsed: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(z.object({
+      workOrderId: z.number().int().positive(),
+      sparePartId: z.number().int().positive().optional(),
+      partCode: z.string().min(1).max(64).optional(),
+      quantityUsed: z.number().int().min(1).max(1_000_000),
+      notes: z.string().max(2000).optional(),
+    }).refine((v) => v.sparePartId != null || v.partCode != null, {
+      message: "Provide sparePartId or partCode",
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Validate the work order exists (soft FK — validated here, not in DDL).
+      await getRow(input.workOrderId);
+
+      return await db.transaction(async (tx) => {
+        // Resolve the spare part by id or unique partCode, locking the row so a
+        // concurrent consumption cannot over-draw the same stock.
+        const [part] = await tx
+          .select()
+          .from(sparePartsInventory)
+          .where(input.sparePartId != null
+            ? eq(sparePartsInventory.id, input.sparePartId)
+            : eq(sparePartsInventory.partCode, input.partCode!))
+          .for("update")
+          .limit(1);
+        if (!part) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Spare part not found" });
+        }
+        if (part.quantityOnHand < input.quantityUsed) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Insufficient stock for ${part.partCode}: on hand ${part.quantityOnHand}, requested ${input.quantityUsed}`,
+          });
+        }
+
+        // Ledger row — unitCost is snapshotted from the inventory master.
+        const [row] = await tx
+          .insert(workOrderParts)
+          .values({
+            workOrderId: input.workOrderId,
+            sparePartId: part.id,
+            partCode: part.partCode,
+            quantityUsed: input.quantityUsed,
+            unitCost: part.unitCost ?? null,
+            consumedBy: ctx.user?.id ?? null,
+            notes: input.notes ?? null,
+          } as any)
+          .returning();
+
+        // Atomic decrement (clamped ≥ 0 defensively although validated above).
+        const [updated] = await tx
+          .update(sparePartsInventory)
+          .set({
+            quantityOnHand: sql`GREATEST(0, ${sparePartsInventory.quantityOnHand} - ${input.quantityUsed})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(sparePartsInventory.id, part.id))
+          .returning({ id: sparePartsInventory.id, quantityOnHand: sparePartsInventory.quantityOnHand, reorderLevel: sparePartsInventory.reorderLevel });
+
+        return {
+          part: row,
+          inventory: updated,
+          belowReorder: updated ? updated.quantityOnHand <= updated.reorderLevel : false,
+        };
+      });
+    }),
+
+  // ── parts consumed on a WO (read) ─────────────────────────────────────────────
+  listPartsForWorkOrder: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ workOrderId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return await db.select().from(workOrderParts)
+        .where(eq(workOrderParts.workOrderId, input.workOrderId))
+        .orderBy(desc(workOrderParts.consumedAt));
+    }),
+
+  // ── spare parts at/below reorder level (read) — restock worklist ──────────────
+  partsBelowReorder: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return await db.select().from(sparePartsInventory)
+        .where(lte(sparePartsInventory.quantityOnHand, sparePartsInventory.reorderLevel))
+        .orderBy(sparePartsInventory.quantityOnHand)
+        .limit(input?.limit ?? 200);
     }),
 });

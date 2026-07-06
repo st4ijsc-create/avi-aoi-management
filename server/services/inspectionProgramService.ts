@@ -50,6 +50,10 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { createAuditLog } from "../db/system";
 import { listReleaseGoldenRefs, type GoldenRefProvenance } from "../db/goldenSample";
+// W4-B (doc 35) — enforcement seams wired into the release path (both flag-OFF
+// by default, so release behaviour is unchanged until an operator opts in).
+import { assertFaiPassed } from "./faiGateService"; // FAI_GATE_ENABLED
+import { markRevalidationPending } from "./goldenRevalidationService"; // GOLDEN_REVALIDATION_REQUIRED
 import {
   inspectionProgramReleases,
   measurementPointDefs,
@@ -330,6 +334,14 @@ export async function releaseProgram(input: { releaseId: number; releasedBy: num
       throw new Error(`Chỉ bản đã duyệt mới được phát hành (trạng thái hiện tại: ${target.status}).`);
     }
 
+    // W4-B task 3 — FAI gate. When FAI_GATE_ENABLED is ON, a program cannot be
+    // RELEASED (i.e. accepted into production) for a product/machine until a
+    // passing FAI exists; the throw rolls back the release so the operator can
+    // act (run + pass FAI, then re-release). Flag OFF ⇒ pure no-op pass-through,
+    // so current release flows are unchanged. Release ≠ ingest, so this never
+    // hard-breaks the high-volume ingest path.
+    await assertFaiPassed(target.productModelId, target.machineId ?? null);
+
     // Row-lock ALL releases of this product → concurrent releasers serialize here.
     const locked = await tx
       .select()
@@ -365,6 +377,19 @@ export async function releaseProgram(input: { releaseId: number; releasedBy: num
   await auditSafe("inspection_program.release.release", result.released, input.releasedBy, {
     supersededReleaseId: result.previousId,
   });
+
+  // W4-B task 4 — golden-diff enforcement. A newly released program may no longer
+  // match the product's APPROVED goldens, so (when GOLDEN_REVALIDATION_REQUIRED is
+  // ON and the product has approved goldens) raise an advisory
+  // "golden-revalidation-pending" flag the readiness/release UI surfaces until a
+  // golden diff clears it. Fail-soft + flag-gated inside the service — never
+  // blocks or fails the already-committed release.
+  await markRevalidationPending({
+    productModelId: result.released.productModelId,
+    reason: `program release #${result.released.id} (v${result.released.version})`,
+    triggeredByReleaseId: result.released.id,
+  });
+
   return result.released;
 }
 

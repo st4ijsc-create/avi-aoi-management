@@ -58,3 +58,6 @@ export * from "./operatorBadge";
 export * from "./componentLibrary";
 export * from "./productOnboarding";
 export * from "./reportArtifact";
+export * from "./lineMaterials"; // doc 35 W4-C — feeder-verify + MSD floor-life + stencil cycle counter
+export * from "./maintenanceParts"; // doc 35 W4-A — work-order spare-parts consumption ledger
+export * from "./ncr"; // doc 35 W4-B — nonconformance reports + golden-revalidation flags
