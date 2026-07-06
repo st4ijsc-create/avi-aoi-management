@@ -183,6 +183,8 @@ import { ncrRouter } from "./routers/ncrRouter"; // doc 35 W4-B — nonconforman
 import { feederVerifyRouter } from "./routers/feederVerifyRouter"; // doc 35 W4-C — SMT feeder-setup scan verification
 import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-life clock (J-STD-020)
 import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
+import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
+import { routingRouter } from "./routers/routingRouter"; // doc 35 W4-E — ISA-95 routing master
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -409,6 +411,8 @@ export const appRouter = router({
   feederVerify: feederVerifyRouter, // doc 35 W4-C
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C
+  ecn: ecnRouter, // doc 35 W4-D
+  routing: routingRouter, // doc 35 W4-E
   digitalTwin: digitalTwinRouter,
   realtimeReport: realtimeReportRouter,
   machineContract: machineContractRouter,

@@ -18,8 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Shield, ShieldCheck, ShieldAlert, RefreshCw, FileCheck2 } from "lucide-react";
+import { Shield, ShieldCheck, ShieldAlert, RefreshCw, FileCheck2, ArrowRightLeft, StickyNote } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import ShiftHandoverDialog from "@/components/ShiftHandoverDialog";
 
 type SignOffTarget = { id: number; shiftDate: string | Date; operatorId: number };
 
@@ -28,9 +29,13 @@ export default function ProductionSessionSignOff() {
   const [signTarget, setSignTarget] = useState<SignOffTarget | null>(null);
   const [password, setPassword] = useState("");
   const [verifyId, setVerifyId] = useState<number | null>(null);
+  const [handoverOpen, setHandoverOpen] = useState(false);
 
   const closedQ = trpc.productionSession.list.useQuery({ status: "closed", limit: 100 });
   const signedQ = trpc.productionSession.list.useQuery({ status: "signed_off", limit: 100 });
+  const openQ = trpc.productionSession.list.useQuery({ status: "open", limit: 100 });
+  const pausedQ = trpc.productionSession.list.useQuery({ status: "paused", limit: 100 });
+  const liveSessions = [...(openQ.data ?? []), ...(pausedQ.data ?? [])];
   const verifyQ = trpc.productionSession.verifySignoff.useQuery(
     { id: verifyId ?? 0 },
     { enabled: !!verifyId },
@@ -82,16 +87,24 @@ export default function ProductionSessionSignOff() {
             "21 CFR Part 11 §11.70 — Chữ ký điện tử ràng buộc với bản ghi sản xuất, không thể tách rời.",
           )}
           actions={
-            <Button
-              variant="outline"
-              onClick={() => {
-                closedQ.refetch();
-                signedQ.refetch();
-              }}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t("common.refresh", "Làm mới")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setHandoverOpen(true)}>
+                <ArrowRightLeft className="h-4 w-4 mr-2" />
+                {t("handover.submit", "Bàn giao ca")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  closedQ.refetch();
+                  signedQ.refetch();
+                  openQ.refetch();
+                  pausedQ.refetch();
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t("common.refresh", "Làm mới")}
+              </Button>
+            </div>
           }
         />
 
@@ -107,6 +120,59 @@ export default function ProductionSessionSignOff() {
                 )}
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Live sessions + received handover notes (W4-E) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4" /> {t("handover.liveTitle", "Phiên đang mở & bàn giao")}
+            </CardTitle>
+            <CardDescription>
+              {t("handover.liveDesc", "{{count}} phiên đang mở/tạm dừng — ghi chú bàn giao hiển thị trên phiên nhận", {
+                count: liveSessions.length,
+              })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {liveSessions.length > 0 ? (
+              <div className="space-y-2">
+                {liveSessions.map((s: any) => (
+                  <div key={s.id} className="border rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">
+                          {t("sessionSignoff.sessionNumber", "Phiên #{{id}}", { id: s.id })}
+                          <span className="ml-2 font-mono text-xs text-muted-foreground">{s.sessionCode}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t("sessionSignoff.shift", "Ca")} {new Date(s.shiftDate).toLocaleDateString()} ·{" "}
+                          <Badge variant="outline">{s.status}</Badge>
+                          {s.handoverToSessionId && (
+                            <span className="ml-2">
+                              {t("handover.handedTo", "→ bàn giao cho phiên #{{id}}", { id: s.handoverToSessionId })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setHandoverOpen(true)}>
+                        <ArrowRightLeft className="h-4 w-4 mr-2" />
+                        {t("handover.submit", "Bàn giao ca")}
+                      </Button>
+                    </div>
+                    {s.handoverNotes && (
+                      <div className="mt-2 flex items-start gap-2 rounded-md bg-muted/50 p-2 text-sm">
+                        <StickyNote className="h-4 w-4 mt-0.5 shrink-0 text-info" />
+                        <span className="whitespace-pre-wrap">{s.handoverNotes}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("handover.noLive", "Không có phiên đang mở.")}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -275,6 +341,16 @@ export default function ProductionSessionSignOff() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Shift handover (W4-E) — first client caller of productionSession.handover */}
+        <ShiftHandoverDialog
+          open={handoverOpen}
+          onOpenChange={setHandoverOpen}
+          onDone={() => {
+            openQ.refetch();
+            pausedQ.refetch();
+          }}
+        />
       </PageContainer>
     </DashboardLayout>
   );

@@ -61,3 +61,5 @@ export * from "./reportArtifact";
 export * from "./lineMaterials"; // doc 35 W4-C — feeder-verify + MSD floor-life + stencil cycle counter
 export * from "./maintenanceParts"; // doc 35 W4-A — work-order spare-parts consumption ledger
 export * from "./ncr"; // doc 35 W4-B — nonconformance reports + golden-revalidation flags
+export * from "./ecn"; // doc 35 W4-D — engineering change control (ECN/ECO)
+export * from "./routing"; // doc 35 W4-E — ISA-95 routing master + steps

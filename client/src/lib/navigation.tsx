@@ -862,6 +862,17 @@ export const navGroups: NavGroup[] = [
         engineerOriented: true,
       },
       {
+        // doc 35 W4-D — plain labels (i18n keys deferred to the i18n polish pass)
+        href: "/engineering-changes",
+        label: "Thay đổi kỹ thuật (ECN)",
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
+        requiredPermission: "masterdata",
+        permissionCategory: "masterdata",
+        section: "authoring",
+        engineerOriented: true,
+      },
+      {
         href: "/recipes",
         label: "nav.recipes",
         icon: <FlaskConical className="h-4 w-4" />,

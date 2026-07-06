@@ -28,6 +28,7 @@ import { PageHeader, PageContainer } from "@/components/patterns";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
+import OperatorSessionControl from "@/components/OperatorSessionControl";
 import { AIActionInbox } from "@/components/AIActionInbox";
 import { FirstRunTour } from "@/components/FirstRunTour";
 import { trpc } from "@/lib/trpc";
@@ -104,6 +105,9 @@ export default function OperatorHome() {
 
         {/* Role-aware "Today" summary (zero-click) */}
         <TodayBriefing />
+
+        {/* Clock-in / start-stop production session (W4-E) */}
+        <OperatorSessionControl />
 
         {/* Big-button task grid */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">

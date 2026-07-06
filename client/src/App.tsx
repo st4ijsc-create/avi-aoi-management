@@ -110,6 +110,7 @@ const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
+const EngineeringChanges = React.lazy(() => import("./pages/EngineeringChanges")); // doc 35 W4-D: ECN/ECO change control (request→impact→approve→effectivity) + componentCode backfill
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
 const EngineeringHub = React.lazy(() => import("./pages/EngineeringHub")); // W6-26 (doc 25 T8): Engineering hub-and-spoke front door (task-grouped tiles + golden-thread)
@@ -337,6 +338,7 @@ function Router() {
       <Route path="/pdf-reports"><RouteGuard navHref="/pdf-reports"><PdfReports /></RouteGuard></Route>
       <Route path="/powerpoint-export"><RouteGuard navHref="/powerpoint-export"><PowerPointExport /></RouteGuard></Route>
       <Route path="/threshold-approvals"><RouteGuard navHref="/threshold-approvals"><ThresholdApprovalsPage /></RouteGuard></Route>
+      <Route path="/engineering-changes"><RouteGuard navHref="/engineering-changes"><AIPageWrapper><EngineeringChanges /></AIPageWrapper></RouteGuard></Route>
       <Route path="/oee-target-settings"><RouteGuard navHref="/oee-target-settings"><OEETargetSettings /></RouteGuard></Route>
       <Route path="/analytics-setting"><RouteGuard requireRole={["admin"]}><AnalyticsSettings /></RouteGuard></Route>
 
