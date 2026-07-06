@@ -60,9 +60,13 @@ import {
   Eye
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { useCanWrite } from "@/components/PermissionGate";
 
 export function MqttProfileManagementContent() {
   const { t } = useTranslation();
+  // W3-batch2 (doc 35 F3): gate write actions for read-only roles (route module = mqtt_monitoring).
+  const { canCreate, canEdit, canDelete } = useCanWrite("mqtt_monitoring");
+  const readOnlyTitle = t("common.viewOnlyHint", "Bạn chỉ có quyền xem");
   const [activeTab, setActiveTab] = useState("profiles");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProfile, setEditingProfile] = useState<any>(null);
@@ -420,11 +424,11 @@ export function MqttProfileManagementContent() {
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Export Assignments
               </Button>
-              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+              <Button variant="outline" onClick={() => setShowImportDialog(true)} disabled={!canCreate} title={!canCreate ? readOnlyTitle : undefined}>
                 <Upload className="h-4 w-4 mr-2" />
                 Import
               </Button>
-              <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
+              <Button onClick={() => { resetForm(); setShowCreateDialog(true); }} disabled={!canCreate} title={!canCreate ? readOnlyTitle : undefined}>
                 <Plus className="h-4 w-4 mr-2" />
                 {t('mqtt.profileMgmt.createProfile')}
               </Button>
@@ -602,20 +606,23 @@ export function MqttProfileManagementContent() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(profile)}>
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(profile)} disabled={!canEdit} title={!canEdit ? readOnlyTitle : undefined}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => duplicateProfile.mutate({ id: profile.id, newName: `${profile.name} (Copy)` })}
+                          disabled={!canCreate}
+                          title={!canCreate ? readOnlyTitle : undefined}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
-                          title={t('mqtt.profileMgmt.assignSingle')}
+                          disabled={!canEdit}
+                          title={!canEdit ? readOnlyTitle : t('mqtt.profileMgmt.assignSingle')}
                           onClick={() => {
                             setSelectedProfileForAssign(profile.id);
                             setShowAssignDialog(true);
@@ -623,10 +630,11 @@ export function MqttProfileManagementContent() {
                         >
                           <Link2 className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
-                          title={t('mqtt.profileMgmt.assignMultiple')}
+                          disabled={!canEdit}
+                          title={!canEdit ? readOnlyTitle : t('mqtt.profileMgmt.assignMultiple')}
                           onClick={() => {
                             setSelectedProfileForAssign(profile.id);
                             setShowBulkAssignDialog(true);
@@ -634,14 +642,16 @@ export function MqttProfileManagementContent() {
                         >
                           <Server className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          onClick={() => setDeleteProfileTarget(profile)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => setDeleteProfileTarget(profile)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <CardDescription>{profile.description}</CardDescription>
@@ -721,14 +731,16 @@ export function MqttProfileManagementContent() {
                         {new Date(assignment.assignedAt).toLocaleString("vi-VN")}
                       </td>
                       <td className="p-3">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          onClick={() => removeAssignment.mutate({ id: assignment.id })}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => removeAssignment.mutate({ id: assignment.id })}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1597,6 +1609,8 @@ export function MqttProfileManagementContent() {
                       onChange={(e) => updateAlertConfig.mutate({ connectionLostThreshold: parseInt(e.target.value) })}
                       min={1}
                       max={1440}
+                      disabled={!canEdit}
+                      title={!canEdit ? readOnlyTitle : undefined}
                     />
                     <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.connectionLostDesc')}</p>
                   </div>
@@ -1608,6 +1622,8 @@ export function MqttProfileManagementContent() {
                       onChange={(e) => updateAlertConfig.mutate({ reconnectFailedThreshold: parseInt(e.target.value) })}
                       min={1}
                       max={100}
+                      disabled={!canEdit}
+                      title={!canEdit ? readOnlyTitle : undefined}
                     />
                     <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.reconnectFailedDesc')}</p>
                   </div>
@@ -1619,6 +1635,8 @@ export function MqttProfileManagementContent() {
                       onChange={(e) => updateAlertConfig.mutate({ highReconnectRateThreshold: parseInt(e.target.value) })}
                       min={1}
                       max={1000}
+                      disabled={!canEdit}
+                      title={!canEdit ? readOnlyTitle : undefined}
                     />
                     <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.highReconnectRateDesc')}</p>
                   </div>
@@ -1630,6 +1648,8 @@ export function MqttProfileManagementContent() {
                       onChange={(e) => updateAlertConfig.mutate({ longDisconnectionThreshold: parseInt(e.target.value) })}
                       min={1}
                       max={1440}
+                      disabled={!canEdit}
+                      title={!canEdit ? readOnlyTitle : undefined}
                     />
                     <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.longDisconnectionDesc')}</p>
                   </div>
@@ -1639,6 +1659,7 @@ export function MqttProfileManagementContent() {
                     <Switch
                       checked={alertConfig?.enablePushNotification || false}
                       onCheckedChange={(checked) => updateAlertConfig.mutate({ enablePushNotification: checked })}
+                      disabled={!canEdit}
                     />
                     <Label>Push Notification</Label>
                   </div>
@@ -1646,6 +1667,7 @@ export function MqttProfileManagementContent() {
                     <Switch
                       checked={alertConfig?.enableEmailNotification || false}
                       onCheckedChange={(checked) => updateAlertConfig.mutate({ enableEmailNotification: checked })}
+                      disabled={!canEdit}
                     />
                     <Label>Email Notification</Label>
                   </div>
@@ -1689,19 +1711,23 @@ export function MqttProfileManagementContent() {
                         </div>
                         <div className="flex items-center gap-2">
                           {!alert.isAcknowledged && (
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => acknowledgeAlert.mutate({ alertId: alert.id })}
+                              disabled={!canEdit}
+                              title={!canEdit ? readOnlyTitle : undefined}
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               Acknowledge
                             </Button>
                           )}
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
                             onClick={() => resolveAlert.mutate({ alertId: alert.id })}
+                            disabled={!canEdit}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           >
                             <Check className="h-4 w-4 mr-1" />
                             Resolve

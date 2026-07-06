@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
+import { useCanWrite, ViewOnlyBadge } from "@/components/PermissionGate";
 
 const ALERT_TYPE_LABELS: Record<string, { label: string; icon: React.ReactNode; description: string }> = {
   yield_rate: { 
@@ -77,6 +78,10 @@ export default function Alerts() {
     notifyInApp: true,
     cooldownMinutes: 60,
   });
+
+  // W3-batch2 (doc 35 F3): gate write actions for read-only roles (route module = mqtt_alerts).
+  const { canCreate, canEdit, canDelete } = useCanWrite("mqtt_alerts");
+  const readOnlyTitle = t("common.viewOnlyHint", "Bạn chỉ có quyền xem");
 
   const utils = trpc.useUtils();
   const { data: alerts, isLoading } = trpc.alert.list.useQuery();
@@ -169,10 +174,11 @@ export default function Alerts() {
           icon={<Bell className="h-5 w-5 text-primary" />}
           title={t('alerts.title')}
           description={t('alerts.subtitle')}
+          badge={<ViewOnlyBadge module="mqtt_alerts" />}
           actions={
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="gap-2">
+                <Button className="gap-2" disabled={!canCreate} title={!canCreate ? readOnlyTitle : undefined}>
                   <Plus className="h-4 w-4" />
                   {t('alerts.createNew')}
                 </Button>
@@ -376,22 +382,27 @@ export default function Alerts() {
                           <Switch
                             checked={alert.isActive}
                             onCheckedChange={() => handleToggleActive(alert)}
+                            disabled={!canEdit}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           />
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => testMutation.mutate({ id: alert.id })}
-                            disabled={testMutation.isPending}
+                            disabled={!canEdit || testMutation.isPending}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           >
                             <Play className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteMutation.mutate({ id: alert.id })}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteMutation.mutate({ id: alert.id })}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -441,6 +452,8 @@ export default function Alerts() {
                             variant="outline"
                             size="sm"
                             onClick={() => acknowledgeMutation.mutate({ id: item.id })}
+                            disabled={!canEdit}
+                            title={!canEdit ? readOnlyTitle : undefined}
                           >
                             {t('alerts.acknowledge')}
                           </Button>
