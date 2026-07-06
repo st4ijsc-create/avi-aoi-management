@@ -104,7 +104,10 @@ export interface HsmsTestResult {
 
 const HONESTY_CAVEAT =
   "FRAMEWORK skeleton: HSMS Select/Linktest only. Full SECS-II codec + GEM state " +
-  "machine require validation against real equipment or a vetted SECS library.";
+  "machine require validation against real equipment or a vetted SECS library. " +
+  "NO live message-dispatch loop and NO alarm/data ingestion (no S6F11/CEID→DB, no " +
+  "S5 alarm capture): enabling SECS_GEM_ENABLED does NOT ingest data — it only permits " +
+  "on-demand connect/probe. Do not rely on this flag to populate telemetry or alarms.";
 
 let SYSTEM_BYTES = 1;
 function nextSystemBytes(): number {

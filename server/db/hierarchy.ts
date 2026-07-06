@@ -810,68 +810,77 @@ export async function getStationCascadeInfo(stationId: number) {
 export async function cascadeDeleteFactory(factoryId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const ws = await db.select({ id: workshops.id }).from(workshops)
-    .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)));
-  const wsIds = ws.map(w => w.id);
-  if (wsIds.length > 0) {
-    const ln = await db.select({ id: productionLines.id }).from(productionLines)
-      .where(and(inArray(productionLines.workshopId, wsIds), eq(productionLines.isActive, true)));
-    const lnIds = ln.map(l => l.id);
-    if (lnIds.length > 0) {
-      const st = await db.select({ id: stations.id }).from(stations)
-        .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
-      const stIds = st.map(s => s.id);
-      if (stIds.length > 0) {
-        await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
-        await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+  // W2.8: atomic cascade — a crash mid-cascade must not leave a half-deleted hierarchy.
+  await db.transaction(async (tx) => {
+    const ws = await tx.select({ id: workshops.id }).from(workshops)
+      .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)));
+    const wsIds = ws.map(w => w.id);
+    if (wsIds.length > 0) {
+      const ln = await tx.select({ id: productionLines.id }).from(productionLines)
+        .where(and(inArray(productionLines.workshopId, wsIds), eq(productionLines.isActive, true)));
+      const lnIds = ln.map(l => l.id);
+      if (lnIds.length > 0) {
+        const st = await tx.select({ id: stations.id }).from(stations)
+          .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+        const stIds = st.map(s => s.id);
+        if (stIds.length > 0) {
+          await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+          await tx.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+        }
+        await tx.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
       }
-      await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
+      await tx.update(workshops).set({ isActive: false }).where(inArray(workshops.id, wsIds));
     }
-    await db.update(workshops).set({ isActive: false }).where(inArray(workshops.id, wsIds));
-  }
-  await db.update(factories).set({ isActive: false }).where(eq(factories.id, factoryId));
+    await tx.update(factories).set({ isActive: false }).where(eq(factories.id, factoryId));
+  });
 }
 
 // Cascade soft-delete workshop and all children
 export async function cascadeDeleteWorkshop(workshopId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const ln = await db.select({ id: productionLines.id }).from(productionLines)
-    .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
-  const lnIds = ln.map(l => l.id);
-  if (lnIds.length > 0) {
-    const st = await db.select({ id: stations.id }).from(stations)
-      .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
-    const stIds = st.map(s => s.id);
-    if (stIds.length > 0) {
-      await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
-      await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+  await db.transaction(async (tx) => {
+    const ln = await tx.select({ id: productionLines.id }).from(productionLines)
+      .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
+    const lnIds = ln.map(l => l.id);
+    if (lnIds.length > 0) {
+      const st = await tx.select({ id: stations.id }).from(stations)
+        .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+      const stIds = st.map(s => s.id);
+      if (stIds.length > 0) {
+        await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+        await tx.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+      }
+      await tx.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
     }
-    await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
-  }
-  await db.update(workshops).set({ isActive: false }).where(eq(workshops.id, workshopId));
+    await tx.update(workshops).set({ isActive: false }).where(eq(workshops.id, workshopId));
+  });
 }
 
 // Cascade soft-delete line and all children
 export async function cascadeDeleteLine(lineId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const st = await db.select({ id: stations.id }).from(stations)
-    .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
-  const stIds = st.map(s => s.id);
-  if (stIds.length > 0) {
-    await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
-    await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
-  }
-  await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, lineId));
+  await db.transaction(async (tx) => {
+    const st = await tx.select({ id: stations.id }).from(stations)
+      .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
+    const stIds = st.map(s => s.id);
+    if (stIds.length > 0) {
+      await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+      await tx.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+    }
+    await tx.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, lineId));
+  });
 }
 
 // Cascade soft-delete station and all children
 export async function cascadeDeleteStation(stationId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
-  await db.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
+  await db.transaction(async (tx) => {
+    await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
+    await tx.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
+  });
 }
 
 // ============ LIST DELETED (INACTIVE) FUNCTIONS ============

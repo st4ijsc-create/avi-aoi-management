@@ -179,22 +179,25 @@ export const mqttClientManagementRouter = router({
     .input(createProfileSchema)
     .mutation(async ({ input, ctx }) => {
       const db = await requireDb();
-      
-      // If setting as default, unset other defaults
-      if (input.isDefault) {
-        await db.update(mqttClientProfiles)
-          .set({ isDefault: false })
-          .where(eq(mqttClientProfiles.isDefault, true));
-      }
-      
-      const [result] = await db.insert(mqttClientProfiles).values({
-        ...input,
-        subscribeTopics: input.subscribeTopics,
-        publishTopics: input.publishTopics,
-        createdBy: ctx.user.id,
-      }).returning({ id: mqttClientProfiles.id });
-      
-      return { id: result.id, success: true };
+
+      // W2-D: unset-other-defaults + insert are dependent writes → one transaction.
+      return db.transaction(async (tx) => {
+        // If setting as default, unset other defaults
+        if (input.isDefault) {
+          await tx.update(mqttClientProfiles)
+            .set({ isDefault: false })
+            .where(eq(mqttClientProfiles.isDefault, true));
+        }
+
+        const [result] = await tx.insert(mqttClientProfiles).values({
+          ...input,
+          subscribeTopics: input.subscribeTopics,
+          publishTopics: input.publishTopics,
+          createdBy: ctx.user.id,
+        }).returning({ id: mqttClientProfiles.id });
+
+        return { id: result.id, success: true };
+      });
     }),
 
   // Update profile
@@ -203,22 +206,25 @@ export const mqttClientManagementRouter = router({
     .mutation(async ({ input }) => {
       const db = await requireDb();
       const { id, ...data } = input;
-      
-      // If setting as default, unset other defaults
-      if (data.isDefault) {
-        await db.update(mqttClientProfiles)
-          .set({ isDefault: false })
-          .where(and(
-            eq(mqttClientProfiles.isDefault, true),
-            sql`${mqttClientProfiles.id} != ${id}`
-          ));
-      }
-      
-      await db.update(mqttClientProfiles)
-        .set(data)
-        .where(eq(mqttClientProfiles.id, id));
-      
-      return { success: true };
+
+      // W2-D: unset-other-defaults + update are dependent writes → one transaction.
+      return db.transaction(async (tx) => {
+        // If setting as default, unset other defaults
+        if (data.isDefault) {
+          await tx.update(mqttClientProfiles)
+            .set({ isDefault: false })
+            .where(and(
+              eq(mqttClientProfiles.isDefault, true),
+              sql`${mqttClientProfiles.id} != ${id}`
+            ));
+        }
+
+        await tx.update(mqttClientProfiles)
+          .set(data)
+          .where(eq(mqttClientProfiles.id, id));
+
+        return { success: true };
+      });
     }),
 
   // Delete profile
@@ -332,30 +338,35 @@ export const mqttClientManagementRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await requireDb();
-      
-      const results = [];
-      for (const target of input.targets) {
-        // Deactivate existing assignment
-        await db.update(mqttProfileAssignments)
-          .set({ isActive: false })
-          .where(and(
-            eq(mqttProfileAssignments.targetType, target.targetType),
-            eq(mqttProfileAssignments.targetId, target.targetId),
-            eq(mqttProfileAssignments.isActive, true)
-          ));
-        
-        // Create new assignment
-        const [result] = await db.insert(mqttProfileAssignments).values({
-          profileId: input.profileId,
-          targetType: target.targetType,
-          targetId: target.targetId,
-          overrideSettings: input.overrideSettings,
-          assignedBy: ctx.user.id,
-        }).returning({ id: mqttProfileAssignments.id });
-        
-        results.push({ targetType: target.targetType, targetId: target.targetId, assignmentId: result.id });
-      }
-      
+
+      // W2-D: each target does a dependent deactivate+insert; the whole bulk apply
+      // is atomic (a mid-batch failure must not leave a half-applied assignment set).
+      const results = await db.transaction(async (tx) => {
+        const out: Array<{ targetType: string; targetId: number; assignmentId: number }> = [];
+        for (const target of input.targets) {
+          // Deactivate existing assignment
+          await tx.update(mqttProfileAssignments)
+            .set({ isActive: false })
+            .where(and(
+              eq(mqttProfileAssignments.targetType, target.targetType),
+              eq(mqttProfileAssignments.targetId, target.targetId),
+              eq(mqttProfileAssignments.isActive, true)
+            ));
+
+          // Create new assignment
+          const [result] = await tx.insert(mqttProfileAssignments).values({
+            profileId: input.profileId,
+            targetType: target.targetType,
+            targetId: target.targetId,
+            overrideSettings: input.overrideSettings,
+            assignedBy: ctx.user.id,
+          }).returning({ id: mqttProfileAssignments.id });
+
+          out.push({ targetType: target.targetType, targetId: target.targetId, assignmentId: result.id });
+        }
+        return out;
+      });
+
       return { success: true, assignments: results };
     }),
 
@@ -927,29 +938,34 @@ export const mqttClientManagementRouter = router({
               eq(mqttProfileAssignments.isActive, true)
             ))
             .limit(1);
-          
-          if (existing) {
-            if (replaceExisting) {
+
+          if (existing && !replaceExisting) {
+            results.skipped++;
+            continue;
+          }
+
+          // W2-D: the deactivate(existing)+insert(new) pair for ONE target is atomic;
+          // the per-target try/catch is preserved so the batch keeps its
+          // partial-success semantics (a failed target doesn't abort the rest).
+          await db.transaction(async (tx) => {
+            if (existing) {
               // Deactivate existing assignment
-              await db.update(mqttProfileAssignments)
+              await tx.update(mqttProfileAssignments)
                 .set({ isActive: false })
                 .where(eq(mqttProfileAssignments.id, existing.id));
-            } else {
-              results.skipped++;
-              continue;
             }
-          }
-          
-          // Create new assignment
-          await db.insert(mqttProfileAssignments).values({
-            profileId,
-            targetType: target.targetType,
-            targetId: target.targetId,
-            overrideSettings: overrideSettings || null,
-            assignedBy: ctx.user?.id,
-            isActive: true,
+
+            // Create new assignment
+            await tx.insert(mqttProfileAssignments).values({
+              profileId,
+              targetType: target.targetType,
+              targetId: target.targetId,
+              overrideSettings: overrideSettings || null,
+              assignedBy: ctx.user?.id,
+              isActive: true,
+            });
           });
-          
+
           results.success++;
         } catch (error: any) {
           results.errors.push(`Failed to assign ${target.targetType} ${target.targetId}: ${error.message}`);
@@ -1317,19 +1333,24 @@ export const mqttClientManagementRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await requireDb();
-      
-      const [result] = await db.insert(mqttReconnectLogs).values(input).returning({ id: mqttReconnectLogs.id });
-      
-      // Update reconnect count in connection status
-      if (input.eventType === "attempt") {
-        const conditions = [eq(mqttConnectionStatus.profileId, input.profileId)];
-        if (input.assignmentId) conditions.push(eq(mqttConnectionStatus.assignmentId, input.assignmentId));
-        
-        await db.update(mqttConnectionStatus)
-          .set({ reconnectCount: sql`reconnectCount + 1` })
-          .where(and(...conditions));
-      }
-      
+
+      // W2-D: log insert + reconnect-counter bump are dependent → one transaction.
+      const result = await db.transaction(async (tx) => {
+        const [row] = await tx.insert(mqttReconnectLogs).values(input).returning({ id: mqttReconnectLogs.id });
+
+        // Update reconnect count in connection status
+        if (input.eventType === "attempt") {
+          const conditions = [eq(mqttConnectionStatus.profileId, input.profileId)];
+          if (input.assignmentId) conditions.push(eq(mqttConnectionStatus.assignmentId, input.assignmentId));
+
+          await tx.update(mqttConnectionStatus)
+            .set({ reconnectCount: sql`reconnectCount + 1` })
+            .where(and(...conditions));
+        }
+
+        return row;
+      });
+
       return { success: true, id: result.id };
     }),
 

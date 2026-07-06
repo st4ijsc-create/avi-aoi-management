@@ -58,3 +58,43 @@ export const createSkeletonSecsGem: SecsGemFactory = (hsms, gem) => ({
   hsms: new HsmsClient(hsms),
   gem: new GemModel(gem),
 });
+
+/**
+ * W2-C (doc 35 D7) — HONEST health/status surface for SECS/GEM.
+ *
+ * `SECS_GEM_ENABLED` can be true, but this module is a CONNECT/TEST framework with NO
+ * live message-dispatch loop and NO alarm/data ingestion (no S6F11/CEID→DB, no S5 alarm
+ * capture). This getter makes that explicit so operators are NOT misled that enabling the
+ * flag ingests data. It fakes no capability: `liveIngest` is hard-false and `mode` is
+ * "framework-only". Safe (no I/O) — mirror of storeForward.getStatus()/ot health getters.
+ */
+export interface SecsGemHealth {
+  /** Master flag state (SECS_GEM_ENABLED). */
+  enabled: boolean;
+  /** Always "framework-only" — a connect/probe skeleton, not a production driver. */
+  mode: "framework-only";
+  /**
+   * Hard-false: there is NO background loop consuming S6F11 events / S5 alarms into the
+   * DB. Enabling the flag permits on-demand connect/Select/Linktest/probe ONLY.
+   */
+  liveIngest: false;
+  /** Registered connectivity keys (no I/O). */
+  connectors: string[];
+  /** Human-readable note for operators / health dashboards. */
+  note: string;
+}
+
+/** Honest health snapshot for a SECS/GEM status endpoint / health card. No I/O. */
+export function getSecsGemHealth(): SecsGemHealth {
+  return {
+    enabled: isSecsGemEnabled(),
+    mode: "framework-only",
+    liveIngest: false,
+    connectors: listSecsGemKeys(),
+    note:
+      "Connect/test framework only — HSMS Select/Linktest + on-demand S1F1/S1F13/S1F17 " +
+      "probes. There is NO live alarm/data ingestion (no S6F11/CEID→DB, no S5 alarms). " +
+      "Enabling SECS_GEM_ENABLED does NOT populate telemetry or alarms; a real, validated " +
+      "SECS driver is required for production data collection.",
+  };
+}

@@ -185,6 +185,33 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
     return { ok: true, status: "simulated", jobId };
   }
 
+  // 4b) INTERLOCK GATE (doc 35 quy-trình-6) — fail-closed, ĐỒNG BỘ, TRƯỚC driver.runJob.
+  //     ĐỐI XỨNG với OT commandDispatcher (bước 5a-bis). Reachable ONLY khi
+  //     ROBOT_CONTROL_ENABLED==="true" (bước 4 đã trả 'simulated' nếu không) → chỉ gate
+  //     nhánh REAL-MOTION. Robot được định danh trong interlock rule qua targetMachineId
+  //     (quy ước xuyên suốt interlockEngine: robotId = rule.targetMachineId ?? rule.machineId),
+  //     nên map machineId=robotId. Robot không có OT-adapter/tag → adapterId sentinel (-1, không
+  //     serial thật nào khớp) + tagKeys rỗng, vì vậy CHỈ rule nhắm targetMachineId=robotId (action
+  //     chặn/dừng, enabled+approved) mới chặn. Rule đang vi phạm HOẶC lỗi đánh giá (failClosed) →
+  //     TỪ CHỐI, KHÔNG gọi driver.runJob.
+  {
+    const { evaluateInterlockGate } = await import("../interlock/interlockGate");
+    const gate = await evaluateInterlockGate({
+      adapterId: -1,
+      machineId: input.robotId,
+      tagKeys: [],
+    });
+    if (gate.blocked) {
+      const detail = gate.failClosed
+        ? "interlock evaluation error — fail-closed (no run)"
+        : `blocked by active interlock rule(s): ${gate.violations
+            .map((v) => `#${v.ruleId}(${v.action})`)
+            .join(", ")}`;
+      const jobId = await record(input, "rejected", { interlock: gate.violations }, `INTERLOCK_BLOCKED: ${detail}`);
+      return { ok: false, status: "rejected", jobId, error: "INTERLOCK_BLOCKED" };
+    }
+  }
+
   // 5) Real run under timeout.
   const timeoutMs = Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
   try {

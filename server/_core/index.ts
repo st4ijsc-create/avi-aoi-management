@@ -4644,6 +4644,10 @@ async function startServer() {
   try {
     const { createV1Router } = await import("../api/v1/router");
     const { installWebhookBridge } = await import("../api/v1/webhookBridge");
+    // W2-D (doc 35 W0.3a → W2): license (never-stop-production) + audit guard,
+    // mounted BEFORE the router so it wraps every /api/v1 route.
+    const { v1Guard } = await import("../api/v1/guard");
+    app.use("/api/v1", v1Guard());
     app.use("/api/v1", createV1Router());
     installWebhookBridge(); // outbound POST still gated by WEBHOOKS_ENABLED (default off)
     console.log("[ControlPlane] Unified Machine API mounted at /api/v1");

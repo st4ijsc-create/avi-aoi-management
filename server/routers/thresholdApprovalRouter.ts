@@ -92,15 +92,42 @@ async function decideApproval(
     .returning();
 
   if (apply) {
-    await db
-      .update(measurementPointDefs)
-      .set({
+    // W2-A / doc 35 D4 — route the limit write through updateMeasurementPointDef
+    // (NOT a raw update) so the change is snapshotted into
+    // measurement_point_versions (versioned + revertable), mirroring the
+    // sanctioned `revert` path below.
+    await updateMeasurementPointDef(
+      row.pointDefId,
+      {
         lowerLimit: row.proposedLsl as any,
         upperLimit: row.proposedUsl as any,
         ...(row.proposedNominal != null ? { nominalValue: row.proposedNominal as any } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(measurementPointDefs.id, row.pointDefId));
+      },
+      { changedBy: decidedBy, changeReason: `threshold_approval:${row.id}` },
+    );
+
+    // W2-A / doc 35 D4 — bump product_models.pointsConfigVersion so machines that
+    // pull via deltaSyncPoints (which only returns points when
+    // pointsConfigVersion > sinceVersion) actually receive the approved limit.
+    // Mirrors the CAD-import / centroid-import bump. Best-effort resolve of the
+    // owning product via the point-def's productModelId.
+    const [pd] = await db
+      .select({ productModelId: measurementPointDefs.productModelId })
+      .from(measurementPointDefs)
+      .where(eq(measurementPointDefs.id, row.pointDefId))
+      .limit(1);
+    if (pd?.productModelId != null) {
+      const [pm] = await db
+        .select({ v: productModels.pointsConfigVersion })
+        .from(productModels)
+        .where(eq(productModels.id, pd.productModelId))
+        .limit(1);
+      const next = (pm?.v ?? 1) + 1;
+      await db
+        .update(productModels)
+        .set({ pointsConfigVersion: next, updatedAt: new Date() } as any)
+        .where(eq(productModels.id, pd.productModelId));
+    }
   }
   return updated;
 }

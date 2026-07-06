@@ -37,6 +37,11 @@ import {
   assertValidPointDefId,
 } from "../services/measurementPointResolver";
 import type { PointDefCache } from "./_shared";
+// W2-A / doc 35 D2 — same server-side spec gate the canonical ingest applies
+// (machineApiRouters.processInspectionSubmission). The ZIP commit path does its
+// OWN measurement_results inserts and must not store a machine "OK" that its
+// point-def limits say is NG.
+import { evaluatePointResult, isPointLimitEvalEnabled } from "../services/pointResultEvaluator";
 
 // ============================================================
 // Image Cache Configuration
@@ -564,6 +569,25 @@ export const aoiPackageRouter = router({
               autoCreate: true,
             });
 
+          // W2-A / doc 35 D2 — spec gate. resolvePointDefId() warms the shared
+          // caches with the FULL point-def row (incl. limits/criteria), so after
+          // resolving the id we can read the def back to gate the stored result.
+          // Auto-provisioned defs carry no limits ⇒ pass-through (like canonical).
+          const pointLimitEvalOn = isPointLimitEvalEnabled();
+          const resolvePointDefRecord = (rawCode: string | undefined) => {
+            const normalized = (rawCode ?? "").trim();
+            if (!normalized) return null;
+            return (
+              mpResolverProductCache.get(normalized) ??
+              mpResolverMachineCache.get(normalized) ??
+              null
+            );
+          };
+          // Count points the spec gate downgraded OK→NG so the inspection's
+          // overallResult can be reconciled to NG after the inserts (mirrors the
+          // canonical serverDowngradeCount → reconcileInspectionOverallNG path).
+          let zipDowngradeCount = 0;
+
           // Insert package image records
           if (normalizedMeasurements.length > 0) {
             const imageRecords = normalizedMeasurements.map((point: any) => ({
@@ -695,14 +719,26 @@ export const aoiPackageRouter = router({
                         const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                         const pointDefId = await resolvePointDefId(pointCode);
                         assertValidPointDefId(pointDefId, `AOI commit extra record (pkg=${pkg.packageId}, point=${pointCode})`);
+                        // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
+                        const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
+                        let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
+                        let specGateRemark: string | undefined;
+                        if (gateDef) {
+                          const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
+                          effectiveResult = evalRes.result;
+                          if (evalRes.overridden) {
+                            zipDowngradeCount++;
+                            specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+                          }
+                        }
                         extraRecords.push({
                           inspectionId: linkedInspectionId!,
                           pointDefId,
                           measuredValue: isNumeric ? measuredStr : null,
                           measuredValueText: measuredStr,
-                          result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                          result: effectiveResult,
                           imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                          remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                          remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
                           createdAt: inspectionTime,
                         });
                       }
@@ -720,14 +756,26 @@ export const aoiPackageRouter = router({
                       const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                       const pointDefId = await resolvePointDefId(pointCode);
                       assertValidPointDefId(pointDefId, `AOI commit existing-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
+                      // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
+                      const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
+                      let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
+                      let specGateRemark: string | undefined;
+                      if (gateDef) {
+                        const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
+                        effectiveResult = evalRes.result;
+                        if (evalRes.overridden) {
+                          zipDowngradeCount++;
+                          specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+                        }
+                      }
                       measurementRecords.push({
                         inspectionId: linkedInspectionId!,
                         pointDefId,
                         measuredValue: isNumeric ? measuredStr : null,
                         measuredValueText: measuredStr,
-                        result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                        result: effectiveResult,
                         imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                        remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                        remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
                         createdAt: inspectionTime,
                       });
                     }
@@ -745,19 +793,43 @@ export const aoiPackageRouter = router({
                     const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                     const pointDefId = await resolvePointDefId(pointCode);
                     assertValidPointDefId(pointDefId, `AOI commit new-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
+                    // W2-A / doc 35 D2 — spec gate (same as canonical ingest).
+                    const gateDef = pointLimitEvalOn ? resolvePointDefRecord(pointCode) : null;
+                    let effectiveResult = (point.result || "NTF") as "OK" | "NG" | "NTF";
+                    let specGateRemark: string | undefined;
+                    if (gateDef) {
+                      const evalRes = evaluatePointResult(gateDef as any, { measuredValue: measuredVal as any }, effectiveResult);
+                      effectiveResult = evalRes.result;
+                      if (evalRes.overridden) {
+                        zipDowngradeCount++;
+                        specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+                      }
+                    }
                     measurementRecords.push({
                       inspectionId: linkedInspectionId!,
                       pointDefId,
                       measuredValue: isNumeric ? measuredStr : null,
                       measuredValueText: measuredStr,
-                      result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                      result: effectiveResult,
                       imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                      remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                      remark: specGateRemark ?? ((point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`),
                       createdAt: inspectionTime,
                     });
                   }
                   await database.insert(measurementResults).values(measurementRecords);
                 }
+              }
+            }
+
+            // W2-A / doc 35 D2 — if the spec gate downgraded any point OK→NG,
+            // promote the inspection overall to NG (idempotent; only flips an
+            // OK header). Mirrors the canonical reconcileInspectionOverallNG path.
+            if (zipDowngradeCount > 0 && linkedInspectionId) {
+              try {
+                await db.reconcileInspectionOverallNG(linkedInspectionId);
+                console.warn(`[AOI commit] spec-gate downgraded ${zipDowngradeCount} point(s) → inspection ${linkedInspectionId} overall promoted to NG`);
+              } catch (reconErr) {
+                console.error("[AOI commit] overall NG reconciliation failed (non-fatal):", reconErr);
               }
             }
           }

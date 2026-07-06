@@ -70,6 +70,18 @@ interface RetentionTarget {
 // (getNativeRetentionTables) skips it here automatically. On plain-PG installs
 // this service remains the ACTIVE retention path.
 // Canonical ot_telemetry uses event-time column `ts` (renamed from legacy `timestamp`).
+//
+// ── W2-C (doc 35 D3/B2) — ot_telemetry retention on plain Postgres ────────────
+// The current deployment has NO timescaledb extension on the main DB and the
+// secondary TSDB is disabled, so ot_telemetry grew UNBOUNDED (RETENTION_OT_
+// TELEMETRY_DAYS was 0 → the days<=0 guard in pruneTarget SKIPPED it). INTERIM
+// FIX: RETENTION_OT_TELEMETRY_DAYS=90 in .env activates this app-level batched
+// sweep (batch-delete + native-policy skip already present → no double-delete).
+// DURABLE FOLLOW-UP (requires DB-admin/psql, not doable here): install the
+// timescaledb extension, then re-apply migrations 0172/0173 to convert
+// ot_telemetry to a hypertable with add_retention_policy(); getNativeRetention
+// Tables() will then own it and this app-level path auto-skips (set the env back
+// to 0 at that point). Until then, the 90d app-level sweep is the ONLY guard.
 const TARGETS: RetentionTarget[] = [
   { table: "ot_telemetry",        column: "ts",        envKey: "RETENTION_OT_TELEMETRY_DAYS",       defaultDays: 90 },
   { table: "machine_heartbeats",  column: "timestamp", envKey: "RETENTION_MACHINE_HEARTBEATS_DAYS", defaultDays: 30 },

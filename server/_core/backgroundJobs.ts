@@ -40,6 +40,7 @@
 
 let started = false;
 let chargingSweepTimer: NodeJS.Timeout | null = null;
+let andonSlaSweepTimer: NodeJS.Timeout | null = null;
 
 export function backgroundSchedulersStarted(): boolean {
   return started;
@@ -311,6 +312,47 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[PluginSidecar] start failed:", (err as any)?.message || err);
   }
 
+  // Doc 35 quy-trình-7 — configured alert-escalation sweep. startAlertScheduler drives
+  // sweepEscalations() (the ONLY path that fires admin-configured alert_escalation_rules)
+  // + the connection/reconnect checks on its own interval. In production it was started
+  // ONLY from an admin mutation, so configured escalation rules never fired. Opt in via
+  // ALERT_ESCALATION_SWEEP_ENABLED=true. IDEMPOTENT: startAlertScheduler self-guards with
+  // isSchedulerRunning, so this boot start and the admin mutation never double-start.
+  try {
+    if (process.env.ALERT_ESCALATION_SWEEP_ENABLED === "true") {
+      const { startAlertScheduler } = await import("../mqttAlertScheduler");
+      startAlertScheduler();
+    }
+  } catch (err) {
+    console.error("[AlertEscalation] scheduler start failed:", (err as any)?.message || err);
+  }
+
+  // Doc 35 quy-trình-7 — Andon SLA-breach escalation sweep. Opt in via
+  // ANDON_SLA_ESCALATION_ENABLED=true. ADVISORY: sweepAndonSlaBreaches only bumps
+  // escalationLevel (+ emits/notifies) on open andons past their per-state SLA — it
+  // NEVER writes a device command. Unref'd + non-overlapping (mirrors the charging sweep).
+  try {
+    if (process.env.ANDON_SLA_ESCALATION_ENABLED === "true") {
+      const { sweepAndonSlaBreaches } = await import("../services/andon/andonService");
+      const intervalMs = Math.max(60_000, Number(process.env.ANDON_SLA_SWEEP_MS ?? 300_000));
+      let sweeping = false;
+      andonSlaSweepTimer = setInterval(async () => {
+        if (sweeping) return; // no overlap
+        sweeping = true;
+        try {
+          await sweepAndonSlaBreaches();
+        } catch (err) {
+          console.error("[Andon] SLA sweep failed:", (err as any)?.message || err);
+        } finally {
+          sweeping = false;
+        }
+      }, intervalMs);
+      if (typeof andonSlaSweepTimer.unref === "function") andonSlaSweepTimer.unref();
+    }
+  } catch (err) {
+    console.error("[Andon] SLA sweep start failed:", (err as any)?.message || err);
+  }
+
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
 }
 
@@ -323,6 +365,10 @@ export function stopBackgroundSchedulers(): void {
   if (chargingSweepTimer) {
     clearInterval(chargingSweepTimer);
     chargingSweepTimer = null;
+  }
+  if (andonSlaSweepTimer) {
+    clearInterval(andonSlaSweepTimer);
+    andonSlaSweepTimer = null;
   }
   import("../services/reportScheduler")
     .then((m) => {
@@ -407,6 +453,11 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/plugins/sidecar/pluginSidecarBootstrap")
     .then((m) => m.stopPluginSidecar())
+    .catch(() => {});
+  // Doc 35 quy-trình-7 — idempotent no-op when the alert scheduler was never started
+  // here (or was started by the admin mutation, which owns its own lifecycle too).
+  import("../mqttAlertScheduler")
+    .then((m) => m.stopAlertScheduler())
     .catch(() => {});
   started = false;
 }

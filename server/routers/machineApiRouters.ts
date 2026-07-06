@@ -4,7 +4,8 @@ import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { and as drizzleAnd, eq as drizzleEq } from "drizzle-orm";
 import * as db from "../db";
-import { productInspections } from "../../drizzle/schema";
+import { getDb } from "../db";
+import { productInspections, measurementResults as measurementResultsTable } from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
@@ -387,7 +388,7 @@ export async function processInspectionSubmission(
       }
 
       // Process measurements - support both pointId and pointCode
-      const measurementResults = [];
+      const measurementResults: (typeof measurementResultsTable.$inferInsert)[] = [];
       const productPointCache: PointDefCache = new Map();
       const machinePointCache: PointDefCache = new Map();
       const defectCatalogCache = new Map<string, number | null>();
@@ -571,23 +572,42 @@ export async function processInspectionSubmission(
         }
       }
 
-      if (measurementResults.length > 0) {
-        await db.createMeasurementResults(measurementResults);
-      }
-
-      // Doc 31 MP6 — if the server spec-gate downgraded ≥1 point to NG on a
+      // Doc 35 W2.8 (W2-A) — persist the measurement rows AND the spec-gate
+      // overall-NG promotion in ONE transaction so a crash mid-write can't leave
+      // a board whose per-point rows say NG under an OK header. The inspection
+      // header insert + external image uploads already ran above (image/object
+      // I/O must stay OUTSIDE the DB transaction), and the fire-and-forget
+      // post-ACK hooks below (embedding, quality-gate, WIP, inline AI) stay
+      // OUTSIDE too so they can never block/roll back ingest. Uses the repo's
+      // getDb()/db.transaction/tx.insert convention (see fleet/resourceManager).
+      //
+      // Doc 31 MP6 — when the server spec-gate downgraded ≥1 point to NG on a
       // machine-"OK" inspection, promote the board's overallResult to NG so
-      // yield/FPY stays consistent with the per-point verdicts. Best-effort;
-      // originalResult (the machine's original) is left intact for audit. NOTE:
-      // downstream realtime NG alerts below key off the machine's original
-      // overall (input.overallResult) — a server-downgraded board is reflected
-      // in stored data/analytics but does not retro-fire the live NG alert.
-      if (serverDowngradeCount > 0 && input.overallResult === "OK") {
-        try {
-          await db.reconcileInspectionOverallNG(inspectionId);
+      // yield/FPY stays consistent with the per-point verdicts. originalResult
+      // (the machine's original) is left intact for audit. NOTE: downstream
+      // realtime NG alerts below key off the machine's original overall
+      // (input.overallResult) — a server-downgraded board is reflected in stored
+      // data/analytics but does not retro-fire the live NG alert.
+      const promoteOverallToNg = serverDowngradeCount > 0 && input.overallResult === "OK";
+      if (measurementResults.length > 0 || promoteOverallToNg) {
+        const dbInstance = await getDb();
+        if (!dbInstance) throw new Error("Database not available");
+        await dbInstance.transaction(async (tx) => {
+          if (measurementResults.length > 0) {
+            await tx.insert(measurementResultsTable).values(measurementResults);
+          }
+          if (promoteOverallToNg) {
+            await tx
+              .update(productInspections)
+              .set({ overallResult: "NG", updatedAt: new Date() })
+              .where(drizzleAnd(
+                drizzleEq(productInspections.id, inspectionId),
+                drizzleEq(productInspections.overallResult, "OK"),
+              ));
+          }
+        });
+        if (promoteOverallToNg) {
           console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
-        } catch (reconErr) {
-          console.error("[submitInspection] overall NG reconciliation failed (non-fatal):", reconErr);
         }
       }
 
