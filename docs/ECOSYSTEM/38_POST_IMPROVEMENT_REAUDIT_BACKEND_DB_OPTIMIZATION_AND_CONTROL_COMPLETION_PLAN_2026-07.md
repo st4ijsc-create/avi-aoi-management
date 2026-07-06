@@ -251,4 +251,22 @@ Dispatch choke-point kép + ledger + interlock fail-closed + commissioning mặc
 
 ---
 
-*Doc 38 · audit 5 agent read-only (DB-perf/backend-scale/ingest-worker/mgmt-control/programming-control/RBAC) · kế thừa doc 33/35/37 · khung đánh giá chịu-tải + backend-thật + phân-quyền · migration tiếp 0234 · CHỜ DUYỆT §7.*
+---
+
+## 8. ✅ KẾT QUẢ THỰC THI (2026-07-07)
+
+Owner duyệt §7: thứ tự **P→Q→R→S→T→U** · Q **bật luôn** · 7 quick-win **staged** · Timescale **làm đợt này**.
+
+**Đợt P — Observability (commit `ee91675`, tsc+build green):** đóng P0-A "mù". `sloMetricsProvider.ts` mới — rolling-window HTTP tracker (prom-client-free, short=5m/long=1h) + `installSloMetricsProviders()` cấp feed THẬT cho SLO evaluator (latency good=duration≤threshold, availability good=non-5xx); honest `long.total===0→null`. metrics middleware feed cả prom histogram lẫn SLO tracker; startup gọi provider sau `startSloEvaluator`. Bật `OBSERVABILITY=true`+`METRICS_ENABLED=true` để hết-mù (query-monitor đã ON). Subsystem có thể override id cho per-dispatch/UNS/twin sau.
+
+**Đợt Q — Siết phân quyền (commit `20d2dcf`, tsc+build+vitest 83 green, ĐỔI HÀNH VI):** procedure mới `writeProcedure` (chặn viewer/user), `actuationProcedure`/`deployProcedure` (role-floor admin/supervisor/engineer + require2FA). Vá P0: NG-threshold CRUD any-user→qualityProcedure; `license.activate/*Offline` public→adminProcedure; deploy/actuation (orchestration/programming/machineRecipe/fleet)→actuationProcedure+module-gate+perm; `confirmedBy` bắt buộc schema cho production; permissionsRouter dùng canonical 2FA-guard; robot.list/get redact secret; 7 mutation protected-trần→writeProcedure. Module-gate toàn diện: `moduleAccessMap.ts` + gate Quality/Production/OT/Engineering router, `LICENSE_MODULE_GATE_ENABLED` default **ON** nhưng **no-brick fail-open** (chỉ enforce khi allowed_modules populate tường minh). **Owner phải biết:** user giữ bit `machine_control` lạc mất quyền deploy; account privileged chưa bật 2FA bị khóa các path này tới khi bật 2FA; license bootstrap headless (nếu có) cần route riêng.
+
+**Đợt R — Tối ưu DB/BE (commit `2a7febc`, tsc+build+vitest 268 green, mig 0234 applied):** R-1 HTTP timeout + body-limit 25mb (scope 200MB upload prefix) + nvidia-smi execFile-async + reportingMart→jobsDb + **mig 0234** `idx_results_pointdef_created` (bảng nóng nhất thiếu index thời gian, áp CONCURRENTLY). R-2a ingest/telemetry coalesce **opt-in cờ OFF** (byte-for-byte hiện tại): telemetryBus ring-buffer + OT per-tick + robot buffer+throttle registry + MQTT/UNS/sensor/socket coalesce. R-2b AOI-ZIP **transaction** + per-row-UPDATE→1 batch VALUES + point-def resolve 1 lần/board + image upload **semaphore 6-way** + `_core/cache.ts`→facade bounded cacheService (LRU cap+TTL+Redis-L2 optional). **HOÃN (cần dep/infra):** worker_threads/Piscina cho CPU-heavy pure-JS, aiJobQueue→BullMQ, read-replica `getReadDb()`.
+
+**Đợt S — Timescale cutover (chuẩn bị artifact; CHẶN thực thi — extension chưa cài):** probe xác nhận server **PG 17.6 thuần, KHÔNG có timescaledb** (`pg_available_extensions` chỉ pg_stat_statements). Cutover thật = việc owner (image `timescaledb-ha:pg17` + off-peak + backup — runbook `scripts/migrate-to-timescaledb.md` mục A-E). Đã thêm: **mig 0235** `hourly_yield_cagg` continuous-aggregate (guarded như 0172 — no-op khi thiếu extension, additive KHÔNG drop matview, policy refresh 1h/90d, cảnh báo tz UTC-vs-factory-local) + runbook **mục F** (áp CAgg + backfill + đổi read-path + giải pháp tạm thu-hẹp-window không-cần-Timescale). Phát hiện phụ: health `refresh_qw_caches` lỗi là **stale** (verify chạy OK); `fact_inspection_hourly`=0 dòng (cần `REPORTING_MART_ENABLED` bật cron trước khi làm nguồn dashboard P0-E).
+
+**Còn lại:** Đợt T (backend thật 2 tầng + 7 quick-win FLIP staged) · Đợt U (HW/FAT). Câu hỏi §7 còn mở: device-down-path build-vs-chờ-HW (T), thời điểm mua Safety-PLC (U), read-replica scale-out (R3 hoãn). Docs 34/36 (App-Launcher) để nguyên.
+
+---
+
+*Doc 38 · audit 5 agent read-only (DB-perf/backend-scale/ingest-worker/mgmt-control/programming-control/RBAC) · kế thừa doc 33/35/37 · thực thi P(`ee91675`)/Q(`20d2dcf`)/R(`2a7febc`,mig0234)/S(artifact,mig0235-guarded) · migration tiếp 0236.*

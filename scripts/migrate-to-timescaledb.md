@@ -119,3 +119,44 @@ không double-delete.
   UPDATE các dòng cũ khi verify/acknowledge); 4 bảng telemetry giữ compression như 0118.
 - Container TimescaleDB phụ ở cổng 5433 (energy/ot_telemetry qua TSDB_URL) giữ nguyên
   vai trò cho đến khi hợp nhất (đúng quyết định #1).
+
+## F. Continuous aggregate thay matview full-refresh (doc 38 Đợt S — P0-B)
+
+**Vấn đề:** `hourly_yield_cache` (0111/0174) là matview PostgreSQL thường, `REFRESH ...
+CONCURRENTLY` **quét TOÀN BỘ** `product_inspections` mỗi 5 phút — ở ~180M dòng/năm chi
+phí cố định tăng tuyến tính, cạnh tranh I/O ingest. TimescaleDB continuous aggregate
+refresh **tăng dần** (chỉ chunk đổi) → chi phí bám hoạt động gần đây, không theo kích thước bảng.
+
+**Điều kiện:** chạy SAU khi 0172 đã biến `product_inspections` thành hypertable (mục A/D).
+Migration `0235_hourly_yield_continuous_aggregate.sql` là **guarded** — thiếu extension/chưa-hypertable
+thì no-op + ghi `db_feature_status('cagg_hourly_yield','missing')`; đủ điều kiện thì tạo
+`hourly_yield_cagg` (WITH NO DATA) + policy refresh 1h/90 ngày. **KHÔNG drop matview cũ**
+(giữ làm nguồn đọc tới khi validate).
+
+```bash
+# 1) Áp 0235 standalone (CREATE MATERIALIZED VIEW ... continuous KHÔNG chạy trong transaction)
+psql "$DATABASE_URL" -f drizzle/0235_hourly_yield_continuous_aggregate.sql
+
+# 2) Backfill lần đầu (CAgg tạo ra rỗng)
+psql "$DATABASE_URL" -c "CALL refresh_continuous_aggregate('hourly_yield_cagg', NULL, NULL);"
+
+# 3) Xác minh
+psql "$DATABASE_URL" -c "SELECT view_name, materialization_hypertable_name FROM timescaledb_information.continuous_aggregates WHERE view_name='hourly_yield_cagg';"
+psql "$DATABASE_URL" -c "SELECT * FROM db_feature_status WHERE feature='cagg_hourly_yield';"
+```
+
+**CẢNH BÁO timezone trước khi đổi read-path:** matview bucket theo **giờ factory-local**
+(`to_factory_time()`), CAgg bucket theo **giờ UTC** (`time_bucket` trên cột naive-UTC). Với
+factory không ở UTC, biên giờ lệch bằng offset. Trước khi trỏ dashboard sang `hourly_yield_cagg`:
+so số 2 nguồn trên một cửa sổ, rồi chọn (a) re-bucket ở read-path, hoặc (b) đổi
+`inspectionTime`→timestamptz + `time_bucket('1 hour', ts, 'Asia/Ho_Chi_Minh')`. Math yield y hệt 0174.
+
+**Đổi read-path (follow-up code, chưa làm trong 0235):** `server/functions/cachedStatistics.ts`
+đọc `hourly_yield_cache` → thêm nhánh đọc `hourly_yield_cagg` khi `db_feature_status.cagg_hourly_yield='ok'`,
+fallback matview. Song song: cân nhắc dùng `fact_inspection_hourly` (reportingMart, đã incremental,
+có `factoryId`) làm nguồn cho dashboard đa-cấp factory/workshop/line (doc 38 P0-E) — bật
+`REPORTING_MART_ENABLED` để cron populate (hiện 0 dòng).
+
+**Giải pháp tạm KHÔNG cần Timescale (nếu hoãn cutover):** thu hẹp matview `hourly_yield_cache`
+về cửa sổ cuộn (vd `WHERE inspectionTime > now() - INTERVAL '90 days'`) để `REFRESH` chỉ quét
+gần đây thay vì toàn bảng — đổi nghĩa (mất bucket >90 ngày, dashboard chủ yếu xem gần đây).
