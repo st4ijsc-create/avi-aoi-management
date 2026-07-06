@@ -75,6 +75,7 @@ export {
 } from "./gemStateModel";
 export {
   isSecsGemEnabled,
+  isSecsGemLiveEnabled,
   registerSecsGem,
   createSecsGem,
   listSecsGemKeys,
@@ -82,6 +83,29 @@ export {
   type SecsGemConnector,
   type SecsGemFactory,
 } from "./secsGemRegistry";
+// doc 37 P0-6 — S5 (alarm) + S6 (event) message builders/parsers on the SECS-II
+// codec, and the live inbound message-dispatch wiring that binds an HSMS session's
+// UNSOLICITED S5F1 alarms to raiseFromGemAlarm (the E1 taxonomy → Andon path) and
+// S6F11 events to an optional sink. Flag chain: SECS_GEM_ENABLED +
+// SECS_GEM_LIVE_ENABLED (loop) + EQ_INTEG_ENABLED (Andon raise). Names are
+// s5s6-prefixed where they could collide with the S1/S2 factories.
+export {
+  s5f1 as secs2S5F1,
+  s5f2 as secs2S5F2,
+  s6f11 as secs2S6F11,
+  s6f12 as secs2S6F12,
+  parseS5F1,
+  parseS5F2,
+  parseS6F11,
+  parseS6F12,
+  ACKC5,
+  ACKC6,
+  type ParsedS5F1,
+  type ParsedS6F11,
+  type ParsedReport,
+  type LiveDispatchHandlers,
+} from "./s5s6Messages";
+export { attachGemAlarmDispatch, type GemAlarmDispatchOptions } from "./liveDispatch";
 // GEM300 message-stream layer (S2 equipment control + S7 process program/recipe),
 // built on the SECS-II codec. Exposed under a namespace to avoid name collisions
 // with the legacy skeleton codec's re-exported `encodeItem`/`decodeItem`. Flag:

@@ -50,6 +50,15 @@ import {
   type GemCommState,
   type GemControlState,
 } from "./gemStateModel";
+import {
+  parseS5F1,
+  parseS6F11,
+  s5f2,
+  s6f12,
+  ACKC5,
+  ACKC6,
+  type LiveDispatchHandlers,
+} from "./s5s6Messages";
 
 /**
  * Master flag (default OFF). Read inline (not imported from secsGemRegistry) to
@@ -58,6 +67,17 @@ import {
  */
 function isSecsGemEnabled(): boolean {
   return process.env.SECS_GEM_ENABLED === "true";
+}
+
+/**
+ * Live-dispatch sub-flag (default OFF). Gates the inbound message-dispatch loop
+ * (enableLiveDispatch) that decodes UNSOLICITED S5F1 alarms / S6F11 events and
+ * acks them. It is a strict superset gate on top of SECS_GEM_ENABLED: BOTH must
+ * be true for the loop to attach. Read inline (no import) to mirror the other
+ * flag helpers here and avoid a value-level import cycle.
+ */
+function isSecsGemLiveEnabled(): boolean {
+  return process.env.SECS_GEM_LIVE_ENABLED === "true";
 }
 
 /** HSMS connection states (SEMI E37). */
@@ -105,9 +125,12 @@ export interface HsmsTestResult {
 const HONESTY_CAVEAT =
   "FRAMEWORK skeleton: HSMS Select/Linktest only. Full SECS-II codec + GEM state " +
   "machine require validation against real equipment or a vetted SECS library. " +
-  "NO live message-dispatch loop and NO alarm/data ingestion (no S6F11/CEID→DB, no " +
-  "S5 alarm capture): enabling SECS_GEM_ENABLED does NOT ingest data — it only permits " +
-  "on-demand connect/probe. Do not rely on this flag to populate telemetry or alarms.";
+  "An OPTIONAL live message-dispatch loop (enableLiveDispatch — decodes UNSOLICITED " +
+  "S5F1 alarms + S6F11 events and acks S5F2/S6F12, MVP best-effort) exists but is " +
+  "OFF by default: it requires SECS_GEM_LIVE_ENABLED=true (on top of SECS_GEM_ENABLED). " +
+  "With the loop OFF there is NO alarm/data ingestion. Even with it ON, S5F1 alarms only " +
+  "reach the Andon path when EQ_INTEG_ENABLED=true (adapterAlarmBridge). Do not treat " +
+  "SECS_GEM_ENABLED alone as data/alarm ingestion.";
 
 let SYSTEM_BYTES = 1;
 function nextSystemBytes(): number {
@@ -264,6 +287,20 @@ export class HsmsClient {
   /** E30 comm+control state models (pure reducers behind an observable holder). */
   private readonly gemState: GemStateMachine;
 
+  // ── live inbound message-dispatch loop (flag-gated, OFF by default) ──────────
+  /** True once enableLiveDispatch() has attached the loop. */
+  private liveDispatchActive = false;
+  /** Number of in-flight waitFrame() control transactions (see connect()). */
+  private pendingWaits = 0;
+  /** Independent rolling buffer for the dispatch listener (own copy of the stream). */
+  private dispatchRx: Buffer = Buffer.alloc(0);
+  /** The dispatch 'data' listener (kept so it can be removed on disable/teardown). */
+  private dispatchOnData: ((d: Buffer) => void) | null = null;
+  /** The handlers the loop routes inbound S5F1/S6F11 into. */
+  private dispatchHandlers: LiveDispatchHandlers | null = null;
+  /** The disposer returned by enableLiveDispatch (idempotent re-arm). */
+  private liveDispatchDisposer: (() => void) | null = null;
+
   constructor(private readonly cfg: HsmsConfig) {
     this.gemState = new GemStateMachine(cfg.gemListeners);
   }
@@ -298,6 +335,12 @@ export class HsmsClient {
         this.socket = sock;
         this._state = "CONNECTED";
         sock.on("data", (d) => {
+          // When a live-dispatch loop owns the stream AND no control transaction
+          // is pending, leave this.rx empty: the dispatch listener has its OWN
+          // buffer (dispatchRx) that already received this same chunk, so unsolicited
+          // S5/S6 traffic cannot grow this.rx unbounded between control transactions.
+          // With the loop OFF (default) this guard is inert and behaviour is unchanged.
+          if (this.liveDispatchActive && this.pendingWaits === 0) return;
           this.rx = Buffer.concat([this.rx, d]);
         });
         sock.on("error", () => {
@@ -317,6 +360,9 @@ export class HsmsClient {
     return new Promise<ParsedHsmsFrame>((resolve, reject) => {
       const sock = this.socket;
       if (!sock) return reject(new Error("HSMS not connected"));
+      // Mark a control transaction in-flight so the base 'data' handler keeps
+      // buffering into this.rx even while a live-dispatch loop is attached.
+      this.pendingWaits++;
       const deadline = Date.now() + timeoutMs;
       const tryParse = () => {
         const { frames, rest } = parseHsmsFrames(this.rx);
@@ -335,7 +381,11 @@ export class HsmsClient {
       const onData = () => tryParse();
       const poll = setInterval(tryParse, 25);
       if (typeof (poll as NodeJS.Timeout).unref === "function") (poll as NodeJS.Timeout).unref();
+      let cleaned = false;
       const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        this.pendingWaits = Math.max(0, this.pendingWaits - 1);
         clearInterval(poll);
         sock.off("data", onData);
       };
@@ -495,6 +545,90 @@ export class HsmsClient {
     return this.gemState.controlState;
   }
 
+  /** Is the live inbound message-dispatch loop currently attached? */
+  get liveDispatch(): boolean {
+    return this.liveDispatchActive;
+  }
+
+  /**
+   * LIVE INBOUND MESSAGE-DISPATCH LOOP (doc 37 P0-6) — attach a passive listener
+   * that decodes UNSOLICITED equipment-initiated primaries and acknowledges them:
+   *   - S5F1 Alarm Report Send   → parseS5F1 → handlers.onAlarm → reply S5F2 (ACKC5)
+   *   - S6F11 Event Report Send  → parseS6F11 → handlers.onEvent → reply S6F12 (ACKC6)
+   * Any other inbound frame is ignored (MVP). The loop uses its OWN rolling buffer
+   * (dispatchRx) fed by a dedicated 'data' listener, so it never competes with the
+   * request/reply waitFrame() path for control replies (S1F2/F14/F18, S2F42, …).
+   *
+   * Flag-gated: requires BOTH SECS_GEM_ENABLED and SECS_GEM_LIVE_ENABLED — throws
+   * otherwise, so NO listener is attached with either flag OFF (the loop is a strict
+   * no-op when disabled). Intended to be called AFTER establishCommunications() on a
+   * real bring-up. Returns a disposer (idempotent). Handler exceptions are swallowed
+   * (fail-safe) and the protocol ack is still sent.
+   */
+  enableLiveDispatch(handlers: LiveDispatchHandlers): () => void {
+    if (!isSecsGemEnabled()) {
+      throw new Error("SECS/GEM framework is disabled (set SECS_GEM_ENABLED=true to enable).");
+    }
+    if (!isSecsGemLiveEnabled()) {
+      throw new Error("SECS/GEM live dispatch is disabled (set SECS_GEM_LIVE_ENABLED=true to enable).");
+    }
+    const sock = this.socket;
+    if (!sock) throw new Error("enableLiveDispatch() requires an open connection");
+    if (this.liveDispatchActive) return this.liveDispatchDisposer ?? (() => this.disableLiveDispatch());
+
+    this.dispatchHandlers = handlers;
+    this.liveDispatchActive = true;
+    const onData = (d: Buffer) => {
+      this.dispatchRx = Buffer.concat([this.dispatchRx, d]);
+      const { frames, rest } = parseHsmsFrames(this.dispatchRx);
+      this.dispatchRx = rest;
+      for (const f of frames) void this.routeInbound(f);
+    };
+    this.dispatchOnData = onData;
+    sock.on("data", onData);
+    const disposer = () => this.disableLiveDispatch();
+    this.liveDispatchDisposer = disposer;
+    return disposer;
+  }
+
+  /** Detach the live dispatch loop (idempotent). Called on separate()/destroy(). */
+  disableLiveDispatch(): void {
+    if (this.dispatchOnData && this.socket) this.socket.off("data", this.dispatchOnData);
+    this.dispatchOnData = null;
+    this.dispatchHandlers = null;
+    this.dispatchRx = Buffer.alloc(0);
+    this.liveDispatchActive = false;
+    this.liveDispatchDisposer = null;
+  }
+
+  /**
+   * Route ONE decoded inbound frame from the live-dispatch loop. Only DATA frames
+   * for S5F1 / S6F11 are handled; everything else is ignored. Fail-safe: never
+   * throws into the socket 'data' path, and always sends the protocol ack when the
+   * inbound primary requested a reply (W-bit).
+   */
+  private async routeInbound(frame: ParsedHsmsFrame): Promise<void> {
+    if (frame.sType !== SType.DATA) return;
+    const sf = frameStreamFunction(frame);
+    const sessionId = this.cfg.deviceId ?? 0;
+    try {
+      if (sf.stream === 5 && sf.function === 1) {
+        const body = decodeFrameBodySecs2(frame);
+        const alarm = body ? parseS5F1(body) : null;
+        if (alarm) await this.dispatchHandlers?.onAlarm?.(alarm);
+        if (sf.wbit) this.send(frameSecs2Message(sessionId, s5f2(ACKC5.ACCEPTED)));
+      } else if (sf.stream === 6 && sf.function === 11) {
+        const body = decodeFrameBodySecs2(frame);
+        const event = body ? parseS6F11(body) : null;
+        if (event) await this.dispatchHandlers?.onEvent?.(event);
+        if (sf.wbit) this.send(frameSecs2Message(sessionId, s6f12(ACKC6.ACCEPTED)));
+      }
+      // Other unsolicited primaries: ignored (MVP) — no ack fabricated.
+    } catch {
+      /* fail-safe — a handler/decode error must never crash the socket loop */
+    }
+  }
+
   /** Send Separate.req and close (no reply expected). Always fail-safe. */
   async separate(): Promise<void> {
     try {
@@ -508,12 +642,14 @@ export class HsmsClient {
     // Connection down → comms lost; the FSM falls back so a re-connect re-establishes.
     this.gemState.dispatchComm("DISABLE");
     this.gemState.dispatchControl("GO_OFFLINE");
+    this.disableLiveDispatch();
     this.socket?.destroy();
     this.socket = null;
   }
 
   /** Force-close without a Separate.req. */
   destroy(): void {
+    this.disableLiveDispatch();
     this.socket?.destroy();
     this.socket = null;
     this._state = "NOT_CONNECTED";

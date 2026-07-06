@@ -352,11 +352,16 @@ Agent đã trích **bảng mã lỗi thật** (sẵn schema `{vendor, device_cla
 **Đợt C (platformization) — commit `40a8527`, tsc+build green:**
 - **C1 Observability**: sloAlerting (live evaluator + burn-rate→alert + Prometheus gauges) · OTLP-ready (TODO cài @opentelemetry SDK) · **3 route `/api/observability/{health,slo,metrics}`** lộ store-forward/supervisor/SLO/decision-ring qua HTTP.
 - **C3 Dev-portal**: OpenAPI sinh từ Zod + 5 route thiếu · plugin scaffold CLI `scripts/plugin-scaffold.mjs` + template sidecar (khớp B4 RPC) + certification (verified CERTIFIED) → time-to-first-plugin ≤1 ngày.
-- **HOÃN**: C2 (device X.509/mTLS/SPIFFE security-identity) + Tauri desktop-shell (hạng mục lớn hơn).
+- **HOÃN (nay đã LÀM, xem dưới)**: C2 (device X.509/mTLS/SPIFFE security-identity) · Tauri desktop-shell vẫn HOÃN (cần toolchain riêng).
+
+**Phần code còn lại — ĐÃ HOÀN THÀNH (2026-07-06, mig 0233, tsc+build+231 test green, cờ OFF):**
+- **C2 — Device X.509 PKI + Service (SPIFFE-lite) identity** (đóng năng-lực-14 security, ~55%→bổ sung 2 trụ định danh còn thiếu): 9 file mới `server/services/security/{x509Mint,internalCa,deviceIdentityService,serviceIdentityService,requireServiceIdentity,securityIdentityRouter}.ts` + `drizzle/schema/security.ts` + **mig 0233** (`device_certificates`/`service_identities`/`security_ca_metadata`, applied + GRANT avi_app). Đúc X.509 v3 Ed25519 **bằng `node:crypto` thuần** (hand-roll ASN.1 DER, đã de-risk: `X509Certificate.verify(caPub)`/`checkIssued` pass — KHÔNG cần openssl/node-forge/dep mới). issue/verify/rotate(90d)/revoke device-cert; CA private-key resolve ENV→keystore→generate-once, DB chỉ lưu CA **public**; SPIFFE-lite JWT-SVID (EdDSA, `spiffe://<trust-domain>/service/<name>`) + middleware seam `requireServiceIdentity`. Router `securityIdentity` (adminProcedure) **đã wire vào `routers.ts`**. Cờ `DEVICE_PKI_ENABLED`/`SERVICE_MTLS_ENABLED` default OFF (OFF: verify soft-allow, middleware pass-through; ON+crypto-fail: hard-deny; ON+transient: allow-with-log).
+- **GEM live message-dispatch loop** (đóng **P0-6** "GEM alarm không loop"): `server/services/secsgem/{s5s6Messages,liveDispatch}.ts` mới + sửa `hsmsClient.ts`/`secsGemRegistry.ts`/`index.ts`. Loop inbound độc lập (`dispatchRx` buffer riêng, không đua với request/reply) route **S5F1 alarm→`raiseFromGemAlarm`** (dead-seam nay CÓ caller runtime → E5 taxonomy→Andon) + ack S5F2, **S6F11 event→sink** + ack S6F12. Chuỗi cờ 3 tầng: `SECS_GEM_ENABLED`+`SECS_GEM_LIVE_ENABLED`(loop)+`EQ_INTEG_ENABLED`(raise) — tất cả OFF thì decode/ack-only, không giả success. Health honest (`mode: framework-only|live-dispatch`, `liveIngest` = cả 3 cờ ON).
+- **Node-graph programming** (năng-lực-7): **PHÁT HIỆN ĐÃ HOÀN THIỆN SẴN từ doc 24** — `@xyflow/react@12` là dep thật; `IrGraphCanvas`/`WorkflowGraphCanvas`/`PouCanvas` là canvas node-graph THẬT (draggable node + SVG edge + MiniMap), **đã wire vào IrEditor (graph = view mặc định) + OrchestrationStudio**. Claim §1.3/§3 "vẫn nested-tree, KHÔNG node-graph" là **STALE/SAI** — sửa lại: capability-7 = ĐÃ ĐẠT. Không cần code (0 file đổi). Polish tùy chọn còn lại: OrchestrationStudio chưa lưu toạ-độ node (StudioStep thiếu field `ui`).
 
 ---
 
-*Tài liệu 37 · audit 12 agent + thực thi Đợt A(`ad4e2bb`)/B(`1a65eb7`,mig0231)/D-drivers(`fa03384`+`40a8527`,mig0232)/C(`40a8527`) + A1a/A2 flipped · khung 15 năng lực doc 08/09/16/24/33/35.*
+*Tài liệu 37 · audit 12 agent + thực thi Đợt A(`ad4e2bb`)/B(`1a65eb7`,mig0231)/D-drivers(`fa03384`+`40a8527`,mig0232)/C(`40a8527`) + C2/GEM(mig0233) + A1a/A2 flipped · khung 15 năng lực doc 08/09/16/24/33/35.*
 
 ---
 
