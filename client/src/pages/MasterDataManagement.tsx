@@ -8,6 +8,7 @@
  * user holds the matching grant; the whole page requires canView.
  */
 import { useState } from "react";
+import { useSearch, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -42,10 +43,27 @@ type Field = {
   options?: { value: string; label: string }[]; // for type "select"
 };
 
+const MASTER_DATA_TABS = [
+  "suppliers", "materials", "materialClasses", "customers", "skills",
+  "certifications", "tools", "uom", "calendar", "inventory",
+] as const;
+
 export default function MasterDataManagement() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("masterdata", "canView");
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  // doc 36 W2 — deep-linkable tabs from the app menu (was uncontrolled defaultValue).
+  const initialTab = (() => {
+    const q = new URLSearchParams(search).get("tab");
+    return q && (MASTER_DATA_TABS as readonly string[]).includes(q) ? q : "suppliers";
+  })();
+  const [tab, setTab] = useState(initialTab);
+  const handleTabChange = (v: string) => {
+    setTab(v);
+    setLocation(`/master-data?tab=${v}`, { replace: true });
+  };
 
   if (!canView) {
     return (
@@ -72,7 +90,7 @@ export default function MasterDataManagement() {
           badge={<ViewOnlyBadge module="masterdata" />}
           actions={<Badge variant="outline">MES/MOM</Badge>}
         />
-        <Tabs defaultValue="suppliers">
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList>
             <TabsTrigger value="suppliers">{t("masterData.tabs.suppliers")}</TabsTrigger>
             <TabsTrigger value="materials">{t("masterData.tabs.materials")}</TabsTrigger>

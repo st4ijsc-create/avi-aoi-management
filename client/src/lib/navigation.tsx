@@ -401,6 +401,8 @@ export const navGroups: NavGroup[] = [
     description: "nav.qualityGroupDesc",
     defaultOpen: false,
     permissionCategory: "history",
+    // doc 36 W2 — "bóc" Quality Cockpit's in-page tabs out as deep-link menu entries.
+    sections: [{ key: "cockpit", label: "nav.section.cockpit" }],
     items: [
       {
         // P3-W2: flagship Quality Cockpit — default QUALITY landing. SPC / Pareto /
@@ -473,6 +475,52 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "history_view",
         permissionCategory: "history",
         tier: "advanced",
+      },
+      // doc 36 W2 — Quality Cockpit deep-link views (labels reuse the cockpit's own tab keys).
+      {
+        href: "/quality-cockpit?tab=spc",
+        label: "qualityCockpit.tabs.spc",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+        section: "cockpit",
+      },
+      {
+        href: "/quality-cockpit?tab=pareto",
+        label: "qualityCockpit.tabs.pareto",
+        icon: <BarChart3 className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+        section: "cockpit",
+      },
+      {
+        href: "/quality-cockpit?tab=heatmap",
+        label: "qualityCockpit.tabs.heatmap",
+        icon: <Map className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "analytics_defect_heatmap",
+        permissionCategory: "analytics",
+        section: "cockpit",
+      },
+      {
+        href: "/quality-cockpit?tab=gates",
+        label: "qualityCockpit.tabs.gates",
+        icon: <LayoutTemplate className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "analytics_spc",
+        permissionCategory: "analytics",
+        section: "cockpit",
+      },
+      {
+        href: "/quality-cockpit?tab=annotation",
+        label: "qualityCockpit.tabs.annotation",
+        icon: <Brush className="h-4 w-4" />,
+        description: "nav.qualityCockpitDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+        section: "cockpit",
       },
     ],
   },
@@ -1625,6 +1673,57 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "settings",
         section: "masterData",
       },
+      // doc 36 W2 — "bóc" Master Data's in-page tabs out as deep-links (labels reuse tab keys).
+      {
+        href: "/master-data?tab=suppliers",
+        label: "masterData.tabs.suppliers",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+        tier: "advanced",
+      },
+      {
+        href: "/master-data?tab=materials",
+        label: "masterData.tabs.materials",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+        tier: "advanced",
+      },
+      {
+        href: "/master-data?tab=customers",
+        label: "masterData.tabs.customers",
+        icon: <Users className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+        tier: "advanced",
+      },
+      {
+        href: "/master-data?tab=tools",
+        label: "masterData.tabs.tools",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+        tier: "advanced",
+      },
+      {
+        href: "/master-data?tab=inventory",
+        label: "masterData.tabs.inventory",
+        icon: <Warehouse className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+        tier: "advanced",
+      },
       // W8-A (doc 27 M12a / doc 29 §1): component package/footprint library.
       {
         href: "/component-library",
@@ -1709,6 +1808,59 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
         section: "factoryConfig",
+      },
+      // doc 36 follow-up — "bóc" DataSettings' infrastructure tabs (factory hierarchy +
+      // shift/stage) out as deep-links (tab-only surfaces with no standalone route).
+      // Labels reuse the hub's own sidebar keys. Advanced-tier so Simple mode stays clean.
+      {
+        href: "/datasettings?tab=factories",
+        label: "settings.sidebar.factory",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+        tier: "advanced",
+      },
+      {
+        href: "/datasettings?tab=lines",
+        label: "settings.sidebar.line",
+        icon: <Factory className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+        tier: "advanced",
+      },
+      {
+        href: "/datasettings?tab=stations",
+        label: "settings.sidebar.inspectionStation",
+        icon: <MonitorCheck className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+        tier: "advanced",
+      },
+      {
+        href: "/datasettings?tab=shifts",
+        label: "settings.sidebar.shift",
+        icon: <Clock className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+        tier: "advanced",
+      },
+      {
+        href: "/datasettings?tab=stages",
+        label: "settings.sidebar.stage",
+        icon: <Layers className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+        tier: "advanced",
       },
       {
         href: "/corporate-management",
@@ -1878,12 +2030,21 @@ export function getGroupByHref(href: string): NavGroup | undefined {
  * `/report-builder`. The root href `/` only matches the exact root path.
  */
 export function isNavItemActive(itemHref: string, currentPath: string): boolean {
-  const item = (itemHref || "").split("?")[0];
-  const current = (currentPath || "").split("?")[0];
-  if (item === current) return true;
-  // Root ("/") must be exact — never a prefix of every route.
-  if (item === "/") return false;
-  return current.startsWith(item + "/");
+  const [item, itemQuery = ""] = (itemHref || "").split("?");
+  const [current, currentQuery = ""] = (currentPath || "").split("?");
+  // Path must match first (exact, or a child path — never a bare prefix like /report vs
+  // /report-builder). Root ("/") must be exact.
+  const pathMatches =
+    item === current || (item !== "/" && current.startsWith(item + "/"));
+  if (!pathMatches) return false;
+  // doc 36 W2/follow-up — a nav item that PINS a `?tab=` (the "bóc hub" deep-links, e.g.
+  // /quality-cockpit?tab=spc) is active ONLY when the current tab matches, so sibling
+  // tab entries don't all light up together. Items without a tab keep path-only matching.
+  const itemTab = new URLSearchParams(itemQuery).get("tab");
+  if (itemTab != null) {
+    return new URLSearchParams(currentQuery).get("tab") === itemTab;
+  }
+  return true;
 }
 
 /** Look up a nav item by its href (ignoring any query string). */

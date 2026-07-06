@@ -76,10 +76,15 @@ const SEED_MODULES: SystemModule[] = [
     description: "Đăng nhập, phân quyền, quản lý phiên, 2FA, hồ sơ cá nhân",
     version: "1.0.0",
     isCore: true,
-    routes: ["/login", "/setup", "/setup-admin", "/profile", "/change-password"],
+    routes: [
+      "/login", "/setup", "/setup-admin", "/profile", "/change-password",
+      // doc 36 — personal ("Me") read-open self-pages belong to the always-on CORE_AUTH app.
+      "/inbox", "/today", "/operator", "/maintenance-home", "/supervisor-home",
+      "/viewer-home", "/request-role", "/about-system",
+    ],
     permissionCategories: [],
     features: [],
-    navGroupId: undefined,
+    navGroupId: "me",
   },
   {
     code: "CORE_DASHBOARD",
@@ -87,7 +92,11 @@ const SEED_MODULES: SystemModule[] = [
     description: "Bảng điều khiển chính, drill-down analysis, custom dashboard, templates, marketplace",
     version: "1.0.0",
     isCore: true,
-    routes: ["/", "/dashboard", "/drill-down", "/custom-dashboard", "/dashboard-templates", "/template-marketplace", "/dashboard-marketplace"],
+    routes: [
+      "/", "/dashboard", "/drill-down", "/command-center", "/ops-console", "/andon",
+      "/predictive-alerts", "/dashboard-center",
+      "/custom-dashboard", "/dashboard-templates", "/template-marketplace", "/dashboard-marketplace",
+    ],
     permissionCategories: ["dashboard"],
     features: [
       { code: "DASHBOARD_VIEW", name: "Xem Dashboard", featureType: "boolean", defaultValue: "true" },
@@ -95,7 +104,7 @@ const SEED_MODULES: SystemModule[] = [
       { code: "DASHBOARD_DRILLDOWN", name: "Drill-Down Chi tiết", featureType: "boolean", defaultValue: "true" },
       { code: "DASHBOARD_TEMPLATES", name: "Mẫu Dashboard", featureType: "boolean", defaultValue: "true" },
     ],
-    navGroupId: "dashboard",
+    navGroupId: "overview",
   },
   {
     code: "CORE_SETTINGS",
@@ -124,7 +133,16 @@ const SEED_MODULES: SystemModule[] = [
     description: "Quản trị hệ thống, quản lý user, role, audit, license, backup, sessions, user assignments",
     version: "1.0.0",
     isCore: true,
-    routes: ["/admin", "/users", "/role-builder", "/enhanced-audit", "/audit-logs", "/api-docs", "/user-guide", "/license", "/backup-restore", "/sessions", "/user-assignments", "/synapse-platform"],
+    routes: [
+      "/admin", "/admin-home", "/users", "/role-builder",
+      "/enhanced-audit", "/audit-logs", "/command-audit",
+      "/api-docs", "/api-keys", "/user-guide", "/license",
+      "/backup-restore", "/sessions", "/user-assignments",
+      "/admin-setting", "/import-export", "/synapse-platform",
+      // doc 36 W3 — the modules marketplace is the UPSELL target; keep it core so a
+      // license-blocked user can always reach it to upgrade (never a lock-out trap).
+      "/modules",
+    ],
     permissionCategories: ["admin"],
     features: [
       { code: "ADMIN_USERS", name: "QL Người dùng", featureType: "boolean", defaultValue: "true" },
@@ -161,11 +179,16 @@ const SEED_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/machine-status", "/machine-registration",
+      // doc 36 — full "Giám sát máy" app surface. Absorbs alerts (D3: MOD_ALERTS folded here).
+      "/device-monitor", "/machine-status", "/machine-registration",
+      "/machine-onboarding", "/aoi-onboarding",
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",
-      "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate",
-      "/oee-dashboard", "/machine-health",
-      "/workstation-management",
+      "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate", "/mqtt-alerts",
+      "/oee-dashboard", "/machine-health", "/factory-live-map", "/field-devices",
+      "/device-adapters", "/uns-mapping", "/hot-folders", "/edge-nodes",
+      "/system-health", "/digital-twin-center",
+      "/technician-copilot", "/work-orders",
+      "/alerts", "/monitoring-setting",
     ],
     permissionCategories: ["machine_monitoring", "mqtt", "analytics"],
     features: [
@@ -188,15 +211,15 @@ const SEED_MODULES: SystemModule[] = [
       { code: "ANALYTICS_MACHINE_HEALTH", name: "Sức khỏe Máy", featureType: "boolean", defaultValue: "true" },
       { code: "ANALYTICS_WORKSTATION", name: "Analytics Trạm Làm việc", featureType: "boolean", defaultValue: "true" },
     ],
-    navGroupId: "monitoring",
+    navGroupId: "devices",
   },
   {
     code: "MOD_ALERTS",
-    name: "Alert Management",
-    description: "Cảnh báo, quy tắc cảnh báo MQTT, cảnh báo dự đoán, mục tiêu OEE",
+    name: "Alert Management (deprecated)",
+    description: "DEPRECATED (doc 36 D3): gộp vào MOD_MONITORING (alerts/mqtt-alerts) + MOD_ANALYTICS (oee-target-settings). Giữ đăng ký để tương thích license cũ; không sở hữu route nào.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/alerts", "/mqtt-alerts", "/predictive-alerts", "/oee-target-settings"],
+    routes: [],
     permissionCategories: ["mqtt", "analytics"],
     features: [
       { code: "MQTT_ALERTS", name: "Cảnh báo MQTT", featureType: "boolean", defaultValue: "true" },
@@ -211,7 +234,15 @@ const SEED_MODULES: SystemModule[] = [
     description: "Lệnh sản xuất, lịch sử kiểm tra, AOI packages, lịch trình xuất dữ liệu, quản lý quy trình",
     version: "1.0.0",
     isCore: false,
-    routes: ["/production-orders", "/history", "/aoi-packages", "/history-export-scheduling", "/production-scheduling", "/inspection", "/process-management"],
+    routes: [
+      // doc 36 — full "Sản xuất (MES)" app. Absorbs MES/twin/trace + feeder/routing (from devices) + product-comparison (from analytics) + bom (from OT).
+      "/production-dashboard", "/mes-control-tower", "/wip-dashboard",
+      "/traceability", "/digital-twin",
+      "/history", "/inspection", "/aoi-packages", "/product-comparison",
+      "/production-orders", "/production-scheduling", "/production-signoff",
+      "/history-export-scheduling", "/bom-management",
+      "/routing-master", "/feeder-verify",
+    ],
     permissionCategories: ["production", "history", "reports"],
     features: [
       // Production
@@ -244,14 +275,15 @@ const SEED_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/reports", "/scheduled-reports", "/category-analytics",
-      "/spc-analysis", "/spc-advanced", "/correlation-analysis",
-      "/quality-gates", "/pareto-analysis", "/quality-gate-templates",
-      "/annotation-statistics", "/annotation-comparison",
-      "/defect-heatmap", "/defect-prediction", "/root-cause-analysis",
-      "/pdf-reports", "/data-comparison", "/report-builder",
-      "/powerpoint-export", "/enhanced-scheduled-reports",
-      "/product-comparison", "/test-annotation",
+      // doc 36 D1 — quality routes (spc/pareto/gates/annotation/heatmap/prediction/root-cause/
+      // nonconformance/threshold-approvals) MOVED to MOD_QUALITY. product-comparison → MOD_PRODUCTION.
+      // engineering-changes (ECN) → MOD_ENGINEERING. This app = reporting + cross-analysis + energy.
+      "/reports", "/scheduled-reports", "/enhanced-scheduled-reports",
+      "/report-builder", "/category-analytics", "/correlation-analysis",
+      "/data-comparison", "/realtime-report",
+      "/energy-analytics", "/carbon-dashboard",
+      "/pdf-reports", "/powerpoint-export",
+      "/oee-target-settings", "/analytics-setting",
       // NOTE: AI routes (/ai-performance, /ai-batch-jobs, /ai-ab-testing,
       // /ai-monitoring, /model-versions, ...) đã chuyển sang module MOD_AI.
     ],
@@ -285,7 +317,12 @@ const SEED_MODULES: SystemModule[] = [
     description: "Quản lý sản phẩm, product mapping, factory layout, cài đặt dữ liệu, import/export, thiết bị, điểm đo, workstation",
     version: "1.0.0",
     isCore: false,
-    routes: ["/products", "/product-mapping", "/layout", "/datasettings", "/import-export"],
+    routes: [
+      // doc 36 — master-data surface of the "Quản trị & Cấu hình" app (D5). import-export → CORE_ADMIN.
+      "/master-data", "/operator-badges", "/component-library",
+      "/products", "/product-onboarding", "/product-mapping",
+      "/layout", "/workstation-management", "/process-management", "/datasettings",
+    ],
     permissionCategories: ["settings"],
     features: [
       { code: "SETTINGS_PRODUCTS", name: "QL Sản phẩm", featureType: "boolean", defaultValue: "true" },
@@ -307,10 +344,11 @@ const SEED_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/ai-hub", "/ai-chat", "/ai-quality-gate", "/ai-active-learning",
+      "/ai-hub", "/ai-chat", "/management-insight", "/ai-brain",
+      "/ai-quality-gate", "/ai-active-learning",
       "/ai-image-search", "/ai-reports", "/ai-time-series", "/ai-data-processing",
       "/ai-performance", "/ai-batch-jobs", "/ai-ab-testing", "/ai-monitoring",
-      "/ai-models", "/model-versions", "/ai-settings",
+      "/ai-models", "/model-versions", "/ai-settings", "/robot-model-health",
       "/ai-inspection-analytics", "/ai-advanced-vision-lab",
       "/ai-gguf-models", "/ai-local-kb", "/mask-annotation",
       // doc 22 P3 — AI cockpits that previously escaped the registry (license bypass).
@@ -337,7 +375,7 @@ const SEED_MODULES: SystemModule[] = [
       { code: "MAX_AI_MODELS", name: "Giới hạn Model AI", featureType: "limit", defaultValue: "999" },
       { code: "MAX_AI_BATCH_JOBS", name: "Giới hạn Batch Job", featureType: "limit", defaultValue: "100" },
     ],
-    navGroupId: "ai-analytics",
+    navGroupId: "ai",
   },
   {
     code: "MOD_OT_CONTROL",
@@ -346,12 +384,13 @@ const SEED_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      "/andon", "/device-adapters", "/recipes", "/interlock-rules", "/command-audit", "/bom-management",
-      // doc 22 P3 — automation/OT-control cockpits that previously escaped the registry
-      // (isRouteAllowed returned true because they belonged to no module → license bypass).
-      // Grouped under OT-control (fleet/safety/engineering/orchestration/twin-cell/rf-test).
-      "/fleet-orchestration", "/safety-workforce", "/engineering",
-      "/orchestration-studio", "/rf-test-cell", "/cell-twin",
+      // doc 36 D2 — authoring/programming (engineering/recipes/ir/pou/copilot/orchestration) SPLIT
+      // to MOD_ENGINEERING. This module keeps the DEVICE-CONTROL / safety / fleet / twin-cell surface.
+      // (andon→CORE_DASHBOARD, device-adapters→MOD_MONITORING, command-audit→CORE_ADMIN, bom→MOD_PRODUCTION.)
+      "/interlock-rules", "/fleet-orchestration", "/safety-workforce",
+      "/equipment-standards", "/equipment-integration",
+      "/factory-floor-editor", "/control-plane", "/robot-control",
+      "/rf-test-cell", "/cell-twin",
     ],
     permissionCategories: ["machine_control", "andon", "interlock", "mes_bom"],
     features: [
@@ -371,7 +410,7 @@ const SEED_MODULES: SystemModule[] = [
       { code: "OT_DEVICE_WRITE", name: "Cho phép ghi lệnh thiết bị (nhạy cảm)", featureType: "boolean", defaultValue: "false" },
       { code: "MAX_DEVICE_ADAPTERS", name: "Giới hạn Device Adapter", featureType: "limit", defaultValue: "500" },
     ],
-    navGroupId: "ot-control",
+    navGroupId: "engineering",
   },
   {
     code: "MOD_FEDERATION",
@@ -379,7 +418,8 @@ const SEED_MODULES: SystemModule[] = [
     description: "Đăng ký & tổng hợp nhiều site (đa nhà máy): sites registry, enrollment, probe read-only; cross-site roll-up dashboard (F1+). Core CHỈ đọc — không điều khiển site.",
     version: "1.0.0",
     isCore: false,
-    routes: ["/sites", "/federation-dashboard", "/modules"],
+    // doc 36 W3 — /modules moved to CORE_ADMIN (always-reachable upsell page).
+    routes: ["/sites", "/federation-dashboard"],
     permissionCategories: ["admin"],
     features: [
       { code: "FEDERATION_SITES", name: "Sites Registry & Enrollment", featureType: "boolean", defaultValue: "true" },
@@ -388,6 +428,61 @@ const SEED_MODULES: SystemModule[] = [
       { code: "MAX_FEDERATION_SITES", name: "Giới hạn số Site", featureType: "limit", defaultValue: "100" },
     ],
     navGroupId: "admin",
+  },
+  {
+    // doc 36 D1 — Quality split out of MOD_ANALYTICS so it is sellable on its own
+    // (khách chỉ cần QC không phải mua cả Analytics).
+    code: "MOD_QUALITY",
+    name: "Quality Management",
+    description: "Kiểm soát chất lượng: Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation), golden-sample, defect catalog, repair station, NCR/MRB, threshold approvals, RCA lỗi, dự đoán lỗi",
+    version: "1.0.0",
+    isCore: false,
+    routes: [
+      "/quality-cockpit", "/quality-home", "/quality-gate-templates",
+      "/quality-gates", "/spc-analysis", "/spc-advanced", "/pareto-analysis",
+      "/annotation-statistics", "/annotation-comparison",
+      "/golden-samples", "/defect-catalog", "/measurement-point-health",
+      "/repair-station", "/defect-heatmap", "/defect-prediction",
+      "/root-cause-analysis", "/nonconformance", "/threshold-approvals",
+    ],
+    permissionCategories: ["history", "analytics", "annotations"],
+    features: [
+      { code: "QUALITY_COCKPIT", name: "Quality Cockpit", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_SPC", name: "Phân tích SPC", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_DEFECT_HEATMAP", name: "Heatmap Lỗi", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_DEFECT_PREDICTION", name: "Dự đoán Lỗi", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_ROOT_CAUSE", name: "Phân tích Nguyên nhân gốc", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_GOLDEN_SAMPLE", name: "Golden Sample", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_REPAIR_STATION", name: "Trạm Sửa chữa", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_NCR_MRB", name: "NCR / MRB", featureType: "boolean", defaultValue: "true" },
+      { code: "QUALITY_ANNOTATION", name: "Annotation", featureType: "boolean", defaultValue: "true" },
+    ],
+    navGroupId: "quality",
+  },
+  {
+    // doc 36 D2 — Engineering/Programming split out of MOD_OT_CONTROL so the
+    // authoring surface (lập trình) can be sold apart from sensitive OT device-control.
+    code: "MOD_ENGINEERING",
+    name: "Engineering & Programming",
+    description: "Lập trình & tác giả tự động hóa: Engineering Workspace, IR Editor, IEC-61131 POU Studio, Recipe, Orchestration Studio, AI Programming Copilot, Engineering Change (ECN)",
+    version: "1.0.0",
+    isCore: false,
+    routes: [
+      "/engineering-home", "/engineering", "/engineering-changes", "/recipes",
+      "/ir-editor", "/pou-studio", "/programming-copilot",
+      "/orchestration-studio",
+    ],
+    permissionCategories: ["machine_control", "machine_monitoring", "masterdata"],
+    features: [
+      { code: "ENG_WORKSPACE", name: "Engineering Workspace", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_IR_EDITOR", name: "IR Editor", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_POU_STUDIO", name: "POU Studio (IEC-61131)", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_RECIPES", name: "Recipe Management", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_ORCHESTRATION_STUDIO", name: "Orchestration Studio", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_PROGRAMMING_COPILOT", name: "AI Programming Copilot", featureType: "boolean", defaultValue: "true" },
+      { code: "ENG_CHANGE_ECN", name: "Engineering Change (ECN)", featureType: "boolean", defaultValue: "true" },
+    ],
+    navGroupId: "engineering",
   },
 ];
 
@@ -452,7 +547,10 @@ export const ALL_MODULE_CODES = SYSTEM_MODULES.map(m => m.code);
  * Tra cứu module theo route path (đọc live từ registry → thấy cả module đăng ký thêm).
  */
 export function getModuleByRoute(routePath: string): SystemModule | undefined {
-  return listModules().find(m => m.routes.includes(routePath));
+  // doc 36 — tolerate query strings so deep-link hrefs (e.g. "/quality-cockpit?tab=spc")
+  // resolve to their owning module for license gating + app resolution.
+  const path = (routePath || "").split("?")[0];
+  return listModules().find(m => m.routes.includes(path));
 }
 
 /**

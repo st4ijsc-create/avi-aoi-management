@@ -24,6 +24,8 @@ import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
 import { MegaMenuOverlay } from "./MegaMenuOverlay";
+import { AppLauncherButton } from "./AppLauncherButton";
+import { AppLauncherOverlay } from "./AppLauncherOverlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { AIActionInboxLauncher } from "./AIActionInbox";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -31,7 +33,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { SiteSwitcher } from "./SiteSwitcher";
 import { SiteHealthDot } from "./SiteHealthDot";
 import { CSSProperties, Fragment, ReactNode, useEffect, useMemo, useState } from "react";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
@@ -45,6 +47,9 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useNavMode } from "@/hooks/useNavMode";
+import { isAppLauncherEnabled } from "@/lib/appLauncherFlag";
+import { useActiveApp } from "@/hooks/useActiveApp";
+import { scopeGroupsToApp } from "@/lib/apps";
 import { BetaBanner } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
@@ -158,8 +163,15 @@ function DashboardLayoutContent({
   const { user, logout } = useAuth();
   const { t } = useTranslation();
   const [location, setLocation] = useLocation();
+  const search = useSearch();
   const { toggleSidebar, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+
+  // doc 36 follow-up — the nav needs the LIVE path WITH ?search so `?tab=` deep-links
+  // highlight correctly (wouter's useLocation drops the query). Pages rarely pass a
+  // currentPath with a query, so fall back to location+search.
+  const navActivePath =
+    currentPath ?? `${location}${search ? `?${search}` : ""}`;
 
   // Sprint 2c — global SPC violation toasts (works on every authenticated page)
   useSpcAlertToast();
@@ -167,6 +179,11 @@ function DashboardLayoutContent({
   // Command palette (⌘/Ctrl+K) — M3 · Quick Browse mega-menu (⌘/Ctrl+\) — M4
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [megaOpen, setMegaOpen] = useState(false);
+
+  // doc 36 W1 — App Launcher (Phương án A), behind APP_LAUNCHER_V2 (default OFF).
+  const launcherOn = isAppLauncherEnabled();
+  const activeApp = useActiveApp(currentPath);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -210,7 +227,7 @@ function DashboardLayoutContent({
   const { hasPermission, hasAnyCategoryPermission } = usePermissions();
 
   // License module gating - filter groups by allowed modules
-  const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed } = useLicenseModules();
+  const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed, allowedModules } = useLicenseModules();
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
@@ -229,6 +246,21 @@ function DashboardLayoutContent({
   // Only offer the Advanced toggle when the user actually has advanced surface to reveal.
   const showModeToggle = hasAdvancedContent(accessibleGroups);
   const visibleGroups = filterNavGroupsByMode(accessibleGroups, navMode);
+
+  // doc 36 W1 — in launcher mode the SIDEBAR shows only the active app's items (items follow
+  // their owning module's app, reorganising across the old groups). Search (⌘K) still spans
+  // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
+  const sidebarGroups = launcherOn ? scopeGroupsToApp(visibleGroups, activeApp.appId) : visibleGroups;
+  const searchGroups = launcherOn ? accessibleGroups : visibleGroups;
+
+  const openApp = (href: string) => {
+    setLocation(href);
+    setLauncherOpen(false);
+    if (isMobile) setOpenMobile(false);
+  };
+
+  // In launcher mode the sidebar header names the current APP (not the product).
+  const headerTitle = launcherOn ? t(activeApp.labelKey) : title;
 
   return (
     <>
@@ -249,7 +281,7 @@ function DashboardLayoutContent({
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
                   <span className="font-semibold tracking-tight truncate text-sidebar-foreground">
-                    {title}
+                    {headerTitle}
                   </span>
                 </Link>
               </div>
@@ -263,7 +295,7 @@ function DashboardLayoutContent({
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
                   <span className="font-semibold tracking-tight truncate text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-                    {title}
+                    {headerTitle}
                   </span>
                 </Link>
                 <button
@@ -289,15 +321,15 @@ function DashboardLayoutContent({
             {isMobile ? (
               // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
               <MobileDrillNav
-                groups={visibleGroups}
-                currentPath={currentPath || location}
+                groups={sidebarGroups}
+                currentPath={navActivePath}
                 onNavigate={handleNavigate}
               />
             ) : (
               // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
               <CascadingNav
-                groups={visibleGroups}
-                currentPath={currentPath || location}
+                groups={sidebarGroups}
+                currentPath={navActivePath}
                 onNavigate={handleNavigate}
               />
             )}
@@ -399,6 +431,14 @@ function DashboardLayoutContent({
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
           <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
+          {/* doc 36 — App Launcher trigger (top-shell): waffle + current app name. */}
+          {launcherOn && (
+            <AppLauncherButton
+              activeApp={activeApp}
+              onOpen={() => setLauncherOpen(true)}
+              className="shrink-0"
+            />
+          )}
           <div className="hidden sm:block shrink-0">
             <SiteSwitcher variant="header" />
           </div>
@@ -468,16 +508,20 @@ function DashboardLayoutContent({
       {isMobile && (
         <BottomNav
           groups={visibleGroups}
-          currentPath={currentPath || location}
+          currentPath={navActivePath}
           onNavigate={handleNavigate}
-          onOpenMenu={() => setOpenMobile(true)}
+          // doc 36 W4 — on mobile the "Menu" action opens the App Launcher (switch app)
+          // when the launcher is enabled; otherwise the legacy full drawer.
+          onOpenMenu={launcherOn ? () => setLauncherOpen(true) : () => setOpenMobile(true)}
           role={user?.role}
+          // doc 36 W4 follow-up — in launcher mode the bar shows the ACTIVE APP's top items.
+          items={launcherOn ? sidebarGroups.flatMap(g => g.items) : undefined}
         />
       )}
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
-        groups={visibleGroups}
+        groups={searchGroups}
         onNavigate={href => {
           setLocation(href);
           setPaletteOpen(false);
@@ -492,6 +536,17 @@ function DashboardLayoutContent({
           setMegaOpen(false);
         }}
       />
+      {/* doc 36 — App Launcher grid overlay (Phương án A). Opened from the top-shell waffle. */}
+      {launcherOn && (
+        <AppLauncherOverlay
+          open={launcherOpen}
+          onOpenChange={setLauncherOpen}
+          allowedModules={allowedModules}
+          activeAppId={activeApp.appId}
+          onSelectApp={app => openApp(app.landingHref)}
+          onUpgrade={() => openApp("/modules")}
+        />
+      )}
       {/* C3a — AILocalChatBubble moved to App root (mounted once globally).
           Removed from here to avoid a duplicate bubble on pages using this layout. */}
     </>

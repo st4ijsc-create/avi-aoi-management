@@ -72,8 +72,10 @@ export const EDITIONS: Readonly<Record<EditionCode, EditionDescriptor>> = {
       "MOD_MONITORING",
       "MOD_DATA_MANAGEMENT",
       "MOD_PRODUCTION",
+      "MOD_QUALITY",
       "MOD_ALERTS",
       "MOD_AI",
+      "MOD_ENGINEERING",
       "MOD_OT_CONTROL",
     ],
     quotaCeilings: {
@@ -96,9 +98,11 @@ export const EDITIONS: Readonly<Record<EditionCode, EditionDescriptor>> = {
       "MOD_MONITORING",
       "MOD_DATA_MANAGEMENT",
       "MOD_PRODUCTION",
+      "MOD_QUALITY",
       "MOD_ALERTS",
       "MOD_ANALYTICS",
       "MOD_AI",
+      "MOD_ENGINEERING",
       "MOD_OT_CONTROL",
     ],
     quotaCeilings: {

@@ -22,11 +22,13 @@
 import { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert, Lock } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { hasAccessToItem } from "@/lib/navigation";
 import { landingPathForRole } from "@/lib/roleLanding";
+import { useLicenseModules } from "@/hooks/useLicenseModules";
+import { isLicenseEnforcementEnabled } from "@/lib/appLauncherFlag";
 import { Button } from "@/components/ui/button";
 
 export interface RouteGuardProps {
@@ -50,9 +52,14 @@ export function RouteGuard({
   navHref,
 }: RouteGuardProps) {
   const { t } = useTranslation();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { user, loading: authLoading } = useAuth();
   const { hasPermission, loading: permsLoading, isAdmin } = usePermissions();
+  // doc 36 W3 — tenant-level license gate (independent of role). Flag-gated + only once
+  // the license query has settled, so we never flash an upsell during load.
+  const { isRouteAllowed: isLicenseRouteAllowed, isLoading: licenseLoading } = useLicenseModules();
+  const licenseBlocked =
+    isLicenseEnforcementEnabled() && !licenseLoading && !isLicenseRouteAllowed(location);
 
   const role = user?.role ?? undefined;
 
@@ -61,6 +68,36 @@ export function RouteGuard({
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // 1b. License gate (tenant-level): the company hasn't purchased this module → upsell.
+  //     Applies regardless of role (license is what the COMPANY bought, not who you are).
+  //     The marketplace (/modules) is a CORE route so this is never a lock-out trap.
+  if (licenseBlocked) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+          <Lock className="h-9 w-9" />
+        </div>
+        <h1 className="text-2xl font-bold text-foreground">
+          {t("routeGuard.licenseTitle", "Tính năng chưa được kích hoạt")}
+        </h1>
+        <p className="max-w-md text-muted-foreground">
+          {t(
+            "routeGuard.licenseMessage",
+            "Ứng dụng này chưa có trong gói bản quyền của bạn. Liên hệ để nâng cấp hoặc dùng thử.",
+          )}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={() => navigate("/modules")}>
+            {t("nav.app.upgrade", "Nâng cấp")}
+          </Button>
+          <Button variant="outline" onClick={() => navigate(landingPathForRole(role))}>
+            {t("routeGuard.backToHome", "Về trang chính")}
+          </Button>
+        </div>
       </div>
     );
   }

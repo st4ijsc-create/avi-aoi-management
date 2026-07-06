@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
@@ -230,6 +230,15 @@ export default function QualityCockpit() {
   })();
   const [scope, setScope] = useState<CockpitScope>(() => getDefaultDateRange());
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [, setLocation] = useLocation();
+
+  // doc 36 W2 — write the active tab back to the URL so cockpit views are deep-linkable
+  // from the app menu (and the browser's active-route highlight matches). Replace (no
+  // history spam).
+  const handleTabChange = (v: string) => {
+    setActiveTab(v);
+    setLocation(`/quality-cockpit?tab=${v}`, { replace: true });
+  };
 
   const heatmapScope = useMemo(
     () => ({
@@ -273,7 +282,7 @@ export default function QualityCockpit() {
           }}
         />
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
           <TabsList>
             <TabsTrigger value="spc" className="gap-2">
               <Activity className="h-4 w-4" />

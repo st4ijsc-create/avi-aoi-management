@@ -1,7 +1,7 @@
 import { Menu } from "lucide-react";
-import { useMemo } from "react";
+import { ReactNode, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { NavGroup, isNavItemActive } from "@/lib/navigation";
+import { NavGroup, NavItem, isNavItemActive } from "@/lib/navigation";
 import { landingPathForRole } from "@/lib/roleLanding";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,19 @@ interface BottomNavProps {
   onOpenMenu: () => void;
   /** Authenticated user's role — drives which 4 destinations lead the bar. */
   role?: string | null;
+  /**
+   * doc 36 W4 follow-up — App-Launcher mode: when provided, the bar shows the ACTIVE
+   * APP's top items (not global group landings), and "Menu" opens the launcher (switch app).
+   */
+  items?: NavItem[];
+}
+
+interface BarDestination {
+  key: string;
+  icon: ReactNode;
+  label: string;
+  href?: string;
+  isActive: boolean;
 }
 
 const MAX_DESTINATIONS = 4;
@@ -77,12 +90,30 @@ function orderGroupsForRole(groups: NavGroup[], role?: string | null): NavGroup[
   return ordered;
 }
 
-export function BottomNav({ groups, currentPath, onNavigate, onOpenMenu, role }: BottomNavProps) {
+export function BottomNav({ groups, currentPath, onNavigate, onOpenMenu, role, items }: BottomNavProps) {
   const { t } = useTranslation();
-  const destinations = useMemo(
-    () => orderGroupsForRole(groups, role).slice(0, MAX_DESTINATIONS),
-    [groups, role],
-  );
+  const destinations = useMemo<BarDestination[]>(() => {
+    // App-Launcher mode: the active app's top items are the destinations.
+    if (items && items.length > 0) {
+      return items.slice(0, MAX_DESTINATIONS).map((item) => ({
+        key: item.href,
+        icon: item.icon,
+        label: t(item.label),
+        href: item.href,
+        isActive: isNavItemActive(item.href, currentPath),
+      }));
+    }
+    // Legacy mode: 4 group landings by role priority.
+    return orderGroupsForRole(groups, role)
+      .slice(0, MAX_DESTINATIONS)
+      .map((group) => ({
+        key: group.id,
+        icon: group.icon,
+        label: t(group.label),
+        href: group.items[0]?.href,
+        isActive: group.items.some((item) => isNavItemActive(item.href, currentPath)),
+      }));
+  }, [items, groups, role, currentPath, t]);
 
   return (
     <nav
@@ -90,35 +121,31 @@ export function BottomNav({ groups, currentPath, onNavigate, onOpenMenu, role }:
       aria-label={t("nav.quickBrowse")}
       className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-backdrop-filter:backdrop-blur md:hidden"
     >
-      {destinations.map(group => {
-        const href = group.items[0]?.href;
-        const isActive = group.items.some(item => isNavItemActive(item.href, currentPath));
-        return (
-          <button
-            key={group.id}
-            type="button"
-            onClick={() => href && onNavigate(href)}
-            aria-label={t(group.label)}
-            aria-current={isActive ? "page" : undefined}
+      {destinations.map(dest => (
+        <button
+          key={dest.key}
+          type="button"
+          onClick={() => dest.href && onNavigate(dest.href)}
+          aria-label={dest.label}
+          aria-current={dest.isActive ? "page" : undefined}
+          className={cn(
+            "flex flex-1 flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            dest.isActive ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          <span
             className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              isActive ? "text-primary" : "text-muted-foreground",
+              "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+              dest.isActive ? "bg-sidebar-accent text-primary" : "text-muted-foreground",
             )}
           >
-            <span
-              className={cn(
-                "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
-                isActive ? "bg-sidebar-accent text-primary" : "text-muted-foreground",
-              )}
-            >
-              {group.icon}
-            </span>
-            <span className="line-clamp-1 max-w-full px-1 text-[11px] leading-none">
-              {t(group.label)}
-            </span>
-          </button>
-        );
-      })}
+            {dest.icon}
+          </span>
+          <span className="line-clamp-1 max-w-full px-1 text-[11px] leading-none">
+            {dest.label}
+          </span>
+        </button>
+      ))}
       <button
         type="button"
         onClick={onOpenMenu}

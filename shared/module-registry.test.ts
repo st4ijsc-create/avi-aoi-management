@@ -38,7 +38,8 @@ describe("U4b — module registry (parity)", () => {
     const mon = getModuleByCode("MOD_MONITORING");
     expect(mon?.code).toBe("MOD_MONITORING");
     expect(getModuleByRoute("/machine-status")?.code).toBe("MOD_MONITORING");
-    expect(getModuleByNavGroup("monitoring")?.code).toBe("MOD_MONITORING");
+    // doc 36 — navGroupId aligned to the real nav group.id (was "monitoring").
+    expect(getModuleByNavGroup("devices")?.code).toBe("MOD_MONITORING");
     // core route is always allowed regardless of license
     expect(isRouteAllowed("/login", [])).toBe(true);
     // optional route gated by module code
@@ -47,12 +48,24 @@ describe("U4b — module registry (parity)", () => {
   });
 
   it("doc 22 P3 — previously-unregistered automation routes now resolve to a module (license-gated)", () => {
-    // OT-control cockpits.
-    for (const r of ["/fleet-orchestration", "/safety-workforce", "/engineering", "/orchestration-studio", "/rf-test-cell", "/cell-twin"]) {
+    // OT-control cockpits (device control / safety / fleet / twin-cell).
+    for (const r of ["/fleet-orchestration", "/safety-workforce", "/interlock-rules", "/rf-test-cell", "/cell-twin", "/control-plane", "/robot-control"]) {
       expect(getModuleByRoute(r)?.code).toBe("MOD_OT_CONTROL");
       // No longer bypasses licensing: denied without the module, allowed with it.
       expect(isRouteAllowed(r, [])).toBe(false);
       expect(isRouteAllowed(r, ["MOD_OT_CONTROL"])).toBe(true);
+    }
+    // doc 36 D2 — authoring/programming split into MOD_ENGINEERING (sold apart from OT control).
+    for (const r of ["/engineering", "/orchestration-studio", "/ir-editor", "/pou-studio", "/programming-copilot", "/recipes"]) {
+      expect(getModuleByRoute(r)?.code).toBe("MOD_ENGINEERING");
+      expect(isRouteAllowed(r, [])).toBe(false);
+      expect(isRouteAllowed(r, ["MOD_ENGINEERING"])).toBe(true);
+    }
+    // doc 36 D1 — quality split into MOD_QUALITY (sold apart from Analytics).
+    for (const r of ["/quality-cockpit", "/spc-analysis", "/defect-heatmap", "/root-cause-analysis", "/nonconformance"]) {
+      expect(getModuleByRoute(r)?.code).toBe("MOD_QUALITY");
+      expect(isRouteAllowed(r, [])).toBe(false);
+      expect(isRouteAllowed(r, ["MOD_QUALITY"])).toBe(true);
     }
     // AI cockpits.
     for (const r of ["/anomaly-banks", "/causal-graph"]) {

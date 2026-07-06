@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, MetricCard, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
@@ -69,9 +69,23 @@ function useNames() {
   }, [lookup.data]);
 }
 
+const MES_TABS = ["wip", "balance", "trace", "orders", "sessions", "maintenance"] as const;
+
 export default function MESControlTower() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState("wip");
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  // doc 36 W2 — deep-linkable tabs: honour inbound `?tab=` and write it back on change
+  // so MES cockpit views are reachable directly from the app menu.
+  const initialTab = (() => {
+    const q = new URLSearchParams(search).get("tab");
+    return q && (MES_TABS as readonly string[]).includes(q) ? q : "wip";
+  })();
+  const [tab, setTab] = useState(initialTab);
+  const handleTabChange = (v: string) => {
+    setTab(v);
+    setLocation(`/mes-control-tower?tab=${v}`, { replace: true });
+  };
   const names = useNames();
 
   const wipSummary = trpc.mesControlTower.wipSummary.useQuery(undefined, { refetchInterval: 30_000 });
@@ -128,7 +142,7 @@ export default function MESControlTower() {
           />
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="wip">{t("mesControlTower.tabWip", "WIP")}</TabsTrigger>
             <TabsTrigger value="balance">{t("mesControlTower.tabBalance", "Cân bằng chuyền")}</TabsTrigger>
