@@ -47,7 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Box, Factory, Cpu, Bot, Activity, AlertTriangle, ListChecks, RefreshCw, Info,
   Radio, History, Play, Pause, RotateCcw, Wifi, WifiOff, Eye, Tag, Boxes, Layers,
-  ExternalLink,
+  ExternalLink, Download, Loader2,
 } from "lucide-react";
 
 // ── Typesafe shapes inferred from the twin router output ──────────────────────
@@ -590,6 +590,39 @@ export default function DigitalTwinCenter() {
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
   }, [playing, mode, replay, replayTimes.length]);
 
+  // ── USD (USDA) export (T3 twin.usdExport — read-only interchange) ──
+  // Emit the current factory scene-graph as an ASCII-USD stage (materials on,
+  // physics opt-in via the toggle) and download it as a .usda file. No writes,
+  // no device path — pure export.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [includePhysics, setIncludePhysics] = useState(false);
+  const exportUsd = async () => {
+    if (activeFactoryId == null) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await utils.twin.usdExport.fetch({
+        factoryId: activeFactoryId,
+        includeMaterials: true,
+        includePhysics,
+      });
+      const blob = new Blob([res.usda], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `factory-${activeFactoryId}-twin.usda`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setExportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ── KPIs from the scene graph ──
   const kpi = useMemo(() => {
     let running = 0, idle = 0, down = 0, alarms = 0, tasks = 0, robots = 0;
@@ -639,8 +672,24 @@ export default function DigitalTwinCenter() {
             <Button size="sm" variant="outline" onClick={() => sceneQ.refetch()}>
               <RefreshCw className={`h-4 w-4 mr-1 ${sceneQ.isFetching ? "animate-spin" : ""}`} /> {t("twin.refresh", "Refresh")}
             </Button>
+            {/* T3 — export the scene-graph as an ASCII-USD stage (Omniverse/Isaac interchange). */}
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <Switch checked={includePhysics} onCheckedChange={setIncludePhysics} />
+              {t("twin.usdPhysics", "USD physics")}
+            </label>
+            <Button size="sm" variant="outline" onClick={exportUsd} disabled={exporting || activeFactoryId == null}>
+              {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
+              {t("twin.exportUsd", "Export USD")}
+            </Button>
           </div>
         </div>
+
+        {/* USD export error (read-only interchange — never blocks the scene) */}
+        {exportError && (
+          <Banner tone="amber" icon={<Info className="h-4 w-4 mt-0.5 shrink-0" />}>
+            {t("twin.usdError", "USD export failed")}: {exportError}
+          </Banner>
+        )}
 
         {/* U7 cross-links to the differentiated 2D what-if twin + panorama. */}
         <RelatedViews

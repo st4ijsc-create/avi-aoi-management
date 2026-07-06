@@ -11321,6 +11321,116 @@
     "offline": "Ngoại tuyến",
     "openCockpit": "Mở buồng lái"
   },
+  "instrumentCal": {
+    "title": "Hiệu chuẩn & tình trạng thiết bị đo",
+    "subtitle": "Chứng chỉ hiệu chuẩn, hồ sơ MSA và tình trạng RAG phù-hợp-sử-dụng cho mọi thiết bị đo. Chọn một dòng để xem chi tiết.",
+    "type": "Loại",
+    "status": "Tình trạng",
+    "calValidUntil": "Hiệu chuẩn hiệu lực đến",
+    "msaValidUntil": "MSA hiệu lực đến",
+    "noInstruments": "Chưa khai báo thiết bị đo nào",
+    "certHistory": "Lịch sử chứng chỉ hiệu chuẩn",
+    "noCerts": "Chưa có chứng chỉ hiệu chuẩn",
+    "msaRecords": "Hồ sơ MSA",
+    "noMsa": "Chưa có hồ sơ MSA",
+    "health": {
+      "ok": "OK",
+      "calDueSoon": "Sắp đến hạn HC",
+      "calExpired": "HC hết hạn",
+      "msaMissing": "Thiếu MSA",
+      "msaExpired": "MSA hết hạn",
+      "inactive": "Ngưng dùng",
+      "unknown": "Chưa rõ"
+    },
+    "result": {
+      "pass": "Đạt",
+      "conditional": "Có điều kiện",
+      "fail": "Không đạt"
+    },
+    "msa": {
+      "method": "Phương pháp",
+      "grrPct": "GRR %",
+      "verdict": "Kết luận"
+    },
+    "reminder": {
+      "title": "Cần chú ý hiệu chuẩn",
+      "calExpired": "{{count}} thiết bị hết hạn HC",
+      "calDueSoon": "{{count}} đến hạn trong 14 ngày",
+      "msaGap": "{{count}} thiếu/hết hạn MSA"
+    },
+    "form": {
+      "addCert": "Thêm chứng chỉ",
+      "title": "Chứng chỉ hiệu chuẩn mới",
+      "subtitle": "Ghi nhận lần hiệu chuẩn. Cập nhật ngày đến hạn kế tiếp khi Đạt/Có điều kiện.",
+      "certNumber": "Số chứng chỉ",
+      "performedAt": "Ngày thực hiện",
+      "validUntil": "Hiệu lực đến",
+      "result": "Kết quả",
+      "traceability": "Truy nguyên",
+      "performedByOrg": "Phòng/đơn vị hiệu chuẩn",
+      "certPdfUrl": "URL PDF chứng chỉ",
+      "notes": "Ghi chú",
+      "created": "Đã ghi nhận chứng chỉ hiệu chuẩn",
+      "missingRequired": "Cần số chứng chỉ và ngày hết hiệu lực"
+    }
+  },
+  "msaAdvanced": {
+    "title": "MSA nâng cao — Gauge R&R (ANOVA)",
+    "subtitle": "Dán các quan sát người đo/chi tiết/lần đo/giá trị để tính các thành phần phương sai AIAG (EV, AV, PV, GRR, NDC).",
+    "observations": "Quan sát (CSV: người đo,chi tiết,lần,giá trị)",
+    "formatHint": "Mỗi dòng một phép đo. Cần ≥2 người đo, ≥2 chi tiết, ≥2 lần/ô (đồng đều).",
+    "tolerance": "Dung sai (cho %P/T)",
+    "run": "Tính Gauge R&R",
+    "results": "Kết quả",
+    "grrPct": "GRR %",
+    "evPct": "EV % (lặp lại)",
+    "avPct": "AV % (tái lập)",
+    "pvPct": "PV % (giữa chi tiết)",
+    "ptRatio": "% P/T",
+    "gradeHint": "AIAG: GRR ≤ 10% tốt · 10–30% chấp nhận · > 30% kém · yêu cầu NDC ≥ 5.",
+    "insufficient": "Không đủ dữ liệu — kiểm tra người đo/chi tiết/lần đo.",
+    "needRows": "Cần ít nhất 4 dòng quan sát hợp lệ"
+  },
+  "spcAlerts": {
+    "title": "Cảnh báo mất kiểm soát SPC",
+    "subtitle": "Vi phạm quy tắc Western-Electric / Nelson / EWMA trên luồng điểm đo.",
+    "showAll": "Xem tất cả",
+    "showUnacked": "Chỉ chưa xác nhận",
+    "none": "Không có cảnh báo SPC — mọi điểm trong kiểm soát",
+    "rule": "Quy tắc",
+    "severity": "Mức độ",
+    "point": "Điểm",
+    "window": "Cửa sổ",
+    "detectedAt": "Phát hiện",
+    "ack": "Xác nhận",
+    "ackedShort": "Đã XN",
+    "acked": "Đã xác nhận cảnh báo"
+  },
+  "mpDefectStats": {
+    "title": "Điểm đo lỗi nhiều nhất (30 ngày)",
+    "subtitle": "Số NG và tỷ lệ lỗi theo từng điểm cho model sản phẩm đã chọn.",
+    "selectProduct": "Chọn sản phẩm ở bộ chọn phạm vi để xem thống kê lỗi",
+    "none": "Không có dữ liệu lỗi cho sản phẩm này trong 30 ngày qua",
+    "point": "Điểm",
+    "ngCount": "NG",
+    "total": "Tổng",
+    "defectRate": "Tỷ lệ lỗi",
+    "topDefects": "Lỗi hàng đầu"
+  },
+  "ipcAcceptance": {
+    "title": "Hồ sơ chấp nhận IPC-A-610",
+    "subtitle": "Kết luận chấp nhận / chỉ báo quá trình / loại bỏ theo từng cấp, suy ra từ danh mục lỗi.",
+    "class": "Cấp IPC",
+    "searchPlaceholder": "Lọc theo mã, tên hoặc nhóm…",
+    "total": "Tổng",
+    "acceptCount": "Chấp nhận",
+    "processCount": "Chỉ báo quá trình",
+    "rejectCount": "Loại bỏ",
+    "none": "Không có lỗi khớp cấp/bộ lọc này",
+    "category": "Nhóm",
+    "verdict": "Kết luận",
+    "reference": "Tham chiếu IPC"
+  },
   "qualityCockpit": {
     "title": "Buồng lái chất lượng",
     "subtitle": "Một không gian chất lượng — SPC, Pareto, heatmap lỗi, cổng và chú thích trong cùng phạm vi",
@@ -11329,7 +11439,11 @@
       "pareto": "Pareto",
       "heatmap": "Heatmap",
       "gates": "Cổng",
-      "annotation": "Chú thích"
+      "annotation": "Chú thích",
+      "alerts": "Cảnh báo SPC",
+      "calibration": "Hiệu chuẩn",
+      "msa": "Gauge R&R",
+      "ipc": "IPC-A-610"
     },
     "gates": {
       "realtimeStatus": "Trạng thái cổng thời gian thực",

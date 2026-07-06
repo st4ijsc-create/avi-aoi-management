@@ -51,6 +51,7 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { ModelSelect, DatasetSelect } from '@/components/ai/ModelSelect';
 import { ReliabilityDiagram } from '@/components/ReliabilityDiagram';
+import AnalysisHubSection from '@/components/analytics/AnalysisHubSection';
 import {
   BarChart,
   Bar,
@@ -211,6 +212,7 @@ export default function AIPerformanceDashboard() {
             <TabsTrigger value="evaluation">{t('aiEval.beforeAfterTab', 'Eval (Before/After)')}</TabsTrigger>
             <TabsTrigger value="canary">{t('canary.tab', 'A/B Canary')}</TabsTrigger>
             <TabsTrigger value="calibration">{t('calibration.tab', 'Calibration')}</TabsTrigger>
+            <TabsTrigger value="analysisHub">{t('analysisHub.tab', 'Analysis Hub')}</TabsTrigger>
             <TabsTrigger value="batches">{t('reports.trainingBatches')}</TabsTrigger>
             <TabsTrigger value="suggestions">{t('reports.suggestionsHistory')}</TabsTrigger>
           </TabsList>
@@ -434,6 +436,11 @@ export default function AIPerformanceDashboard() {
           {/* Confidence Calibration Tab (B2) */}
           <TabsContent value="calibration">
             <CalibrationSection />
+          </TabsContent>
+
+          {/* AI Analysis Hub Tab (doc 35 F1 — aiAnalysisHub.*) */}
+          <TabsContent value="analysisHub">
+            <AnalysisHubSection />
           </TabsContent>
 
           {/* Training Batches Tab */}

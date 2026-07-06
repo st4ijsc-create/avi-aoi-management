@@ -11321,6 +11321,116 @@
     "offline": "Offline",
     "openCockpit": "Open cockpit"
   },
+  "instrumentCal": {
+    "title": "Instrument calibration & health",
+    "subtitle": "Calibration certificates, MSA records and RAG fitness-for-use for every measurement instrument. Select a row for detail.",
+    "type": "Type",
+    "status": "Health",
+    "calValidUntil": "Cal valid until",
+    "msaValidUntil": "MSA valid until",
+    "noInstruments": "No measurement instruments defined",
+    "certHistory": "Calibration certificate history",
+    "noCerts": "No calibration certificates on record",
+    "msaRecords": "MSA records",
+    "noMsa": "No MSA records on record",
+    "health": {
+      "ok": "OK",
+      "calDueSoon": "Cal due soon",
+      "calExpired": "Cal expired",
+      "msaMissing": "MSA missing",
+      "msaExpired": "MSA expired",
+      "inactive": "Inactive",
+      "unknown": "Unknown"
+    },
+    "result": {
+      "pass": "Pass",
+      "conditional": "Conditional",
+      "fail": "Fail"
+    },
+    "msa": {
+      "method": "Method",
+      "grrPct": "GRR %",
+      "verdict": "Verdict"
+    },
+    "reminder": {
+      "title": "Calibration attention required",
+      "calExpired": "{{count}} calibration expired",
+      "calDueSoon": "{{count}} due within 14 days",
+      "msaGap": "{{count}} MSA missing/expired"
+    },
+    "form": {
+      "addCert": "Add certificate",
+      "title": "New calibration certificate",
+      "subtitle": "Record a calibration event. Updates the instrument's next-due date on pass/conditional.",
+      "certNumber": "Certificate number",
+      "performedAt": "Performed at",
+      "validUntil": "Valid until",
+      "result": "Result",
+      "traceability": "Traceability",
+      "performedByOrg": "Calibration lab / org",
+      "certPdfUrl": "Certificate PDF URL",
+      "notes": "Notes",
+      "created": "Calibration certificate recorded",
+      "missingRequired": "Certificate number and valid-until date are required"
+    }
+  },
+  "msaAdvanced": {
+    "title": "Advanced MSA — Gauge R&R (ANOVA)",
+    "subtitle": "Paste operator/part/trial/value observations to compute AIAG variance components (EV, AV, PV, GRR, NDC).",
+    "observations": "Observations (CSV: operator,part,trial,value)",
+    "formatHint": "One row per measurement. Needs ≥2 operators, ≥2 parts, ≥2 trials per cell (uniform).",
+    "tolerance": "Tolerance (for %P/T)",
+    "run": "Compute Gauge R&R",
+    "results": "Results",
+    "grrPct": "GRR %",
+    "evPct": "EV % (repeatability)",
+    "avPct": "AV % (reproducibility)",
+    "pvPct": "PV % (part-to-part)",
+    "ptRatio": "% P/T",
+    "gradeHint": "AIAG: GRR ≤ 10% good · 10–30% acceptable · > 30% poor · NDC ≥ 5 required.",
+    "insufficient": "Insufficient data — check operators/parts/trials.",
+    "needRows": "Need at least 4 valid observation rows"
+  },
+  "spcAlerts": {
+    "title": "SPC out-of-control alerts",
+    "subtitle": "Western-Electric / Nelson / EWMA rule violations on measurement-point streams.",
+    "showAll": "Show all",
+    "showUnacked": "Unacked only",
+    "none": "No SPC alerts — all points within control",
+    "rule": "Rule",
+    "severity": "Severity",
+    "point": "Point",
+    "window": "Window",
+    "detectedAt": "Detected",
+    "ack": "Acknowledge",
+    "ackedShort": "Acked",
+    "acked": "Alert acknowledged"
+  },
+  "mpDefectStats": {
+    "title": "Top defect measurement points (30d)",
+    "subtitle": "Per-point NG counts and defect rate for the scoped product model.",
+    "selectProduct": "Select a product in the scope selector to view defect stats",
+    "none": "No defect data for this product in the last 30 days",
+    "point": "Point",
+    "ngCount": "NG",
+    "total": "Total",
+    "defectRate": "Defect rate",
+    "topDefects": "Top defects"
+  },
+  "ipcAcceptance": {
+    "title": "IPC-A-610 acceptance profile",
+    "subtitle": "Per-class accept / process-indicator / reject verdicts resolved from the defect catalog.",
+    "class": "IPC class",
+    "searchPlaceholder": "Filter by code, name or category…",
+    "total": "Total",
+    "acceptCount": "Accept",
+    "processCount": "Process indicator",
+    "rejectCount": "Reject",
+    "none": "No defects match this class / filter",
+    "category": "Category",
+    "verdict": "Verdict",
+    "reference": "IPC reference"
+  },
   "qualityCockpit": {
     "title": "Quality Cockpit",
     "subtitle": "One quality workspace — SPC, Pareto, defect heatmap, gates and annotation in a shared scope",
@@ -11329,7 +11439,11 @@
       "pareto": "Pareto",
       "heatmap": "Heatmap",
       "gates": "Gates",
-      "annotation": "Annotation"
+      "annotation": "Annotation",
+      "alerts": "SPC Alerts",
+      "calibration": "Calibration",
+      "msa": "Gauge R&R",
+      "ipc": "IPC-A-610"
     },
     "gates": {
       "realtimeStatus": "Realtime gate status",

@@ -21,6 +21,10 @@ import {
   ShieldCheck,
   PenTool,
   Radio,
+  Gauge,
+  FlaskConical,
+  BellRing,
+  ClipboardCheck,
 } from "lucide-react";
 
 import { SPCAnalysisContent } from "./SPCAnalysis";
@@ -28,6 +32,11 @@ import { ParetoAnalysisContent } from "./ParetoAnalysis";
 import { QualityGatesContent } from "./QualityGates";
 import { AnnotationComparisonPageContent } from "./AnnotationComparisonPage";
 import { ProductDefectHeatmap } from "@/components/ProductDefectHeatmap";
+// Doc 35 F1/F4 (W3-B) — surface orphaned quality/MSA/SPC/calibration backends.
+import { InstrumentCalibrationPanel } from "@/components/quality/InstrumentCalibrationPanel";
+import { MsaGaugeRRPanel } from "@/components/quality/MsaGaugeRRPanel";
+import { SpcAlertsPanel } from "@/components/quality/SpcAlertsPanel";
+import { IpcAcceptancePanel } from "@/components/quality/IpcAcceptancePanel";
 // Doc 27 gap A9 (W5-A): paired false-call ↔ escape tuning-tradeoff KPI.
 import { FalseCallEscapePanel } from "@/components/FalseCallEscapePanel";
 // Doc 27 gap V2 (W7-B): "Máy hay báo giả" — per-machine agreement/false-call
@@ -204,7 +213,10 @@ function RealtimeGateStatus() {
 }
 
 // Valid cockpit tab ids (also the deep-link `?tab=` targets the redirects use).
-const VALID_TABS = ["spc", "pareto", "heatmap", "gates", "annotation"] as const;
+const VALID_TABS = [
+  "spc", "pareto", "heatmap", "gates", "annotation",
+  "alerts", "calibration", "msa", "ipc",
+] as const;
 
 export default function QualityCockpit() {
   const { t } = useTranslation();
@@ -283,6 +295,22 @@ export default function QualityCockpit() {
               <PenTool className="h-4 w-4" />
               {t("qualityCockpit.tabs.annotation")}
             </TabsTrigger>
+            <TabsTrigger value="alerts" className="gap-2">
+              <BellRing className="h-4 w-4" />
+              {t("qualityCockpit.tabs.alerts")}
+            </TabsTrigger>
+            <TabsTrigger value="calibration" className="gap-2">
+              <Gauge className="h-4 w-4" />
+              {t("qualityCockpit.tabs.calibration")}
+            </TabsTrigger>
+            <TabsTrigger value="msa" className="gap-2">
+              <FlaskConical className="h-4 w-4" />
+              {t("qualityCockpit.tabs.msa")}
+            </TabsTrigger>
+            <TabsTrigger value="ipc" className="gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              {t("qualityCockpit.tabs.ipc")}
+            </TabsTrigger>
           </TabsList>
 
           {/* SPC chart + capability (embed canonical SPC engine UI) */}
@@ -309,6 +337,32 @@ export default function QualityCockpit() {
           {/* Annotation — single canvas comparison tool */}
           <TabsContent value="annotation">
             <AnnotationComparisonPageContent />
+          </TabsContent>
+
+          {/* SPC OOC alerts (mp_spc_alerts) + top defect measurement points */}
+          <TabsContent value="alerts">
+            <SpcAlertsPanel
+              scope={{
+                productModelId: scope.productModelId,
+                startDate: scope.startDate,
+                endDate: scope.endDate,
+              }}
+            />
+          </TabsContent>
+
+          {/* Instrument calibration certificates + MSA records + RAG health */}
+          <TabsContent value="calibration">
+            <InstrumentCalibrationPanel />
+          </TabsContent>
+
+          {/* Advanced MSA / Gauge R&R (ANOVA) calculator */}
+          <TabsContent value="msa">
+            <MsaGaugeRRPanel />
+          </TabsContent>
+
+          {/* IPC-A-610 per-class acceptance profile */}
+          <TabsContent value="ipc">
+            <IpcAcceptancePanel />
           </TabsContent>
         </Tabs>
       </div>

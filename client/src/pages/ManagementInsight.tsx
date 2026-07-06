@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import ReportAggregatorsPanel from "@/components/analytics/ReportAggregatorsPanel";
 import {
   Lightbulb,
   Send,
@@ -400,6 +401,9 @@ export default function ManagementInsight() {
             )}
           </CardContent>
         </Card>
+
+        {/* (d) Report aggregators — defect Pareto / yield-by-product / weekly-trend + recent artifacts (doc 32 R1/R2) */}
+        <ReportAggregatorsPanel />
 
         {/* (c) Active AI insights / alerts */}
         <Card>

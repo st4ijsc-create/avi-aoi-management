@@ -332,6 +332,17 @@ export const navGroups: NavGroup[] = [
         section: "inspection",
       },
       {
+        // W3-A (doc 35 F2): surface orphan /product-comparison — cross-model
+        // measurement-point diff tool. Gated history_view like its inspection siblings.
+        href: "/product-comparison",
+        label: "products.comparison",
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "products.comparisonDescription",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+        section: "inspection",
+      },
+      {
         href: "/production-orders",
         label: "nav.productionOrdersPage",
         icon: <ClipboardList className="h-4 w-4" />,
@@ -607,6 +618,40 @@ export const navGroups: NavGroup[] = [
         description: "nav.mqttClientsDesc",
         requiredRole: 'admin',
         requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
+        section: "telemetry",
+      },
+      {
+        // W3-A (doc 35 F2): surface orphan /mqtt-topics — live MQTT topic/message
+        // browser. View gated on mqtt_monitoring (matches its route).
+        href: "/mqtt-topics",
+        label: "nav.mqttTopics",
+        icon: <MessageSquare className="h-4 w-4" />,
+        description: "nav.mqttTopicsDesc",
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
+        section: "telemetry",
+      },
+      {
+        // W3-A (doc 35 F2): surface orphan /mqtt-profiles — MQTT connection-profile
+        // admin. Admin + mqtt_monitoring (matches its route, mirrors /mqtt-clients).
+        href: "/mqtt-profiles",
+        label: "nav.mqttProfiles",
+        icon: <Server className="h-4 w-4" />,
+        description: "nav.mqttProfilesDesc",
+        requiredRole: 'admin',
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
+        section: "telemetry",
+      },
+      {
+        // W3-A (doc 35 F2): surface orphan /mqtt-ng-rate — per-point NG-rate alert
+        // threshold config. Gated mqtt_alerts (matches its route).
+        href: "/mqtt-ng-rate",
+        label: "nav.mqttNgRate",
+        icon: <Target className="h-4 w-4" />,
+        description: "nav.mqttNgRateDesc",
+        requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
         section: "telemetry",
       },
@@ -1059,6 +1104,28 @@ export const navGroups: NavGroup[] = [
         icon: <Activity className="h-4 w-4" />,
         description: "nav.realtimeReportDesc",
         requiredPermission: "analytics_oee",
+        permissionCategory: "analytics",
+        section: "analysis",
+      },
+      {
+        // W3-A (doc 35 F2): surface orphan /defect-prediction — AI defect-trend
+        // forecast. Gated analytics_advanced (matches its route), like correlation/comparison.
+        href: "/defect-prediction",
+        label: "nav.defectPrediction",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.defectPredictionDesc",
+        requiredPermission: "analytics_advanced",
+        permissionCategory: "analytics",
+        section: "analysis",
+      },
+      {
+        // W3-A (doc 35 F2): surface orphan /root-cause-analysis — defect RCA workspace.
+        // Gated analytics_root_cause (matches its route, same as the causal-graph editor).
+        href: "/root-cause-analysis",
+        label: "nav.rootCauseAnalysis",
+        icon: <Search className="h-4 w-4" />,
+        description: "nav.rootCauseAnalysisDesc",
+        requiredPermission: "analytics_root_cause",
         permissionCategory: "analytics",
         section: "analysis",
       },
