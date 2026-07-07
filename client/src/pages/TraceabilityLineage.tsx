@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, StatusBadge as PatternStatusBadge, type BadgeVariant } from "@/components/patterns";
@@ -54,6 +55,49 @@ export default function TraceabilityLineage() {
     if (mode === "serial") setSerialQuery(serialInput.trim());
     else setLotQuery(lotInput.trim());
   };
+
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+
+  // Deep-link support: an inbound `/traceability?serial=...` (or `?lot=...`)
+  // seeds and runs the lookup so links from other pages (e.g. an inspection)
+  // land on a live genealogy instead of an empty form. Purely navigational —
+  // it prefills the existing search state; the queries/computation are unchanged.
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const s = params.get("serial");
+    const l = params.get("lot");
+    if (s) {
+      setMode("serial");
+      setSerialInput(s);
+      setSerialQuery(s);
+    } else if (l) {
+      setMode("lot");
+      setLotInput(l);
+      setLotQuery(l);
+    }
+  }, [search]);
+
+  // Navigate to another serial's genealogy in-place (climb the parent chain or
+  // drill into a serial listed in a lot). Routes through the URL so the effect
+  // above re-seeds the search — keeps the address bar shareable/back-navigable.
+  const goToSerial = (sn: string) =>
+    setLocation(`/traceability?serial=${encodeURIComponent(sn)}`);
+
+  // A serial rendered as a subtle, keyboard-focusable link instead of dead text.
+  const renderSerialLink = (value?: string | null) =>
+    value ? (
+      <button
+        type="button"
+        onClick={() => goToSerial(value)}
+        title={t("trace.viewSerialGenealogy", "View this serial's genealogy")}
+        className="font-mono text-xs text-primary hover:underline focus-visible:underline focus-visible:outline-none"
+      >
+        {value}
+      </button>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
 
   const sData = bySerial.data;
   const lData = byLot.data;
@@ -155,8 +199,8 @@ export default function TraceabilityLineage() {
                       <TableBody>
                         {(sData.wip ?? []).map((w: any) => (
                           <TableRow key={w.id}>
-                            <TableCell className="font-mono text-xs">{w.serialNumber ?? "—"}</TableCell>
-                            <TableCell className="font-mono text-xs">{w.parentSerialNumber ?? "—"}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.serialNumber)}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.parentSerialNumber)}</TableCell>
                             <TableCell>{w.lotNumber ?? "—"}</TableCell>
                             <TableCell>{w.productCode ?? "—"}</TableCell>
                             <TableCell><StatusBadge value={w.status} /></TableCell>
@@ -260,7 +304,7 @@ export default function TraceabilityLineage() {
                         )}
                         {(lData.wip ?? []).map((w: any) => (
                           <TableRow key={w.id}>
-                            <TableCell className="font-mono text-xs">{w.serialNumber ?? "—"}</TableCell>
+                            <TableCell className="font-mono text-xs">{renderSerialLink(w.serialNumber)}</TableCell>
                             <TableCell>{w.productCode ?? "—"}</TableCell>
                             <TableCell><StatusBadge value={w.status} /></TableCell>
                             <TableCell className="text-xs">{w.enteredAt ? new Date(w.enteredAt).toLocaleString() : "—"}</TableCell>

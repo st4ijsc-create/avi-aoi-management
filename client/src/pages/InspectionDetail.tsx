@@ -32,7 +32,9 @@ import {
   List,
   X,
   ArrowLeftRight,
-  Layers
+  Layers,
+  ClipboardX,
+  GitMerge
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -428,7 +430,18 @@ export default function InspectionDetail() {
             ) : undefined
           }
           actions={
-            inspection.overallResult === "NG" && inspection.originalResult === "NG" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Quick "Raise NCR" hand-off. The NCR page does not yet accept an
+                  inbound prefill query param, so this lands on the list to raise
+                  one manually — passing ?inspectionId / ?serial to prefill would
+                  be a nice follow-up (see NonconformanceReports). */}
+              <Link href="/nonconformance">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <ClipboardX className="h-4 w-4" />
+                  {t('inspection.raiseNcr', 'Raise NCR')}
+                </Button>
+              </Link>
+              {inspection.overallResult === "NG" && inspection.originalResult === "NG" ? (
               <Dialog open={ntfDialogOpen} onOpenChange={setNtfDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
@@ -469,7 +482,8 @@ export default function InspectionDetail() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-            ) : undefined
+              ) : null}
+            </div>
           }
         />
 
@@ -483,7 +497,18 @@ export default function InspectionDetail() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                 <div>
                   <p className="text-sm text-muted-foreground">Serial Number</p>
-                  <p className="font-semibold text-foreground">{inspection.serialNumber}</p>
+                  {inspection.serialNumber ? (
+                    <Link
+                      href={`/traceability?serial=${encodeURIComponent(inspection.serialNumber)}`}
+                      className="font-semibold text-primary hover:underline focus-visible:underline focus-visible:outline-none inline-flex items-center gap-1"
+                      title={t('inspection.viewGenealogy', "View this serial's genealogy")}
+                    >
+                      <GitMerge className="h-3.5 w-3.5" />
+                      {inspection.serialNumber}
+                    </Link>
+                  ) : (
+                    <p className="font-semibold text-foreground">-</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{t('inspection.result')}</p>
@@ -533,7 +558,17 @@ export default function InspectionDetail() {
             <CardContent className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">{t('inspection.machineName')}</p>
-                <p className="font-semibold text-foreground">{machine?.name || "-"}</p>
+                {inspection.machineId ? (
+                  <Link
+                    href={`/machine/${inspection.machineId}`}
+                    className="font-semibold text-primary hover:underline focus-visible:underline focus-visible:outline-none"
+                    title={t('inspection.viewMachine', 'Open machine cockpit')}
+                  >
+                    {machine?.name || t('inspection.viewMachine', 'Open machine cockpit')}
+                  </Link>
+                ) : (
+                  <p className="font-semibold text-foreground">{machine?.name || "-"}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">{t('inspection.machineCode')}</p>
