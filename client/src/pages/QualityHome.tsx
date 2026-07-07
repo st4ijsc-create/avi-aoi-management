@@ -90,6 +90,7 @@ function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () 
           disabled={ackDisabled}
           onClick={onAck}
           title="Đã xem / Acknowledge"
+          aria-label="Đã xem / Acknowledge"
         >
           <CheckCheck className="size-4 text-success" />
         </Button>

@@ -507,14 +507,14 @@ export function SPCAnalysisContent() {
 
                   <ResponsiveContainer width="100%" height={240}>
                     <ComposedChart data={histogramData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="label" tick={chartAxisTick} />
+                      <YAxis tick={chartAxisTick} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                       <Bar dataKey="count" fillOpacity={0.75} isAnimationActive={false}>
-                        {histogramData.map((b: any, i: number) => <Cell key={i} fill={b.outOfSpec ? '#ef4444' : '#3b82f6'} />)}
+                        {histogramData.map((b: any, i: number) => <Cell key={i} fill={b.outOfSpec ? 'var(--destructive)' : chartColor(0)} />)}
                       </Bar>
-                      <Line type="monotone" dataKey="normal" stroke="#f97316" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="normal" stroke={chartColor(1)} strokeWidth={2} dot={false} isAnimationActive={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                   <p className="text-xs text-muted-foreground mt-1">{t('spc.histogramNormalOverlay')}</p>
@@ -577,15 +577,15 @@ export function SPCAnalysisContent() {
                 <CardContent>
                   <ResponsiveContainer width="100%" height={260}>
                     <ComposedChart data={paretoData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="code" tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar yAxisId="left" dataKey="ngCount" fill="#3b82f6" isAnimationActive={false}>
-                        {paretoData.map((_, i) => <Cell key={i} fill={i < 3 ? '#ef4444' : '#3b82f6'} />)}
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="code" tick={chartAxisTick} />
+                      <YAxis yAxisId="left" tick={chartAxisTick} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={chartAxisTick} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
+                      <Bar yAxisId="left" dataKey="ngCount" fill={chartColor(0)} isAnimationActive={false}>
+                        {paretoData.map((_, i) => <Cell key={i} fill={i < 3 ? 'var(--destructive)' : chartColor(0)} />)}
                       </Bar>
-                      <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke={chartColor(1)} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -601,14 +601,14 @@ export function SPCAnalysisContent() {
               {cpkTrendData?.data?.length ? (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={[...cpkTrendData.data].reverse().map((d, i) => ({ i: i + 1, cpk: d.cpk ?? 0, ppk: d.ppk ?? 0 }))}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="i" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip /><Legend />
-                    <ReferenceLine y={1.33} stroke="#22c55e" strokeDasharray="4 2" />
-                    <ReferenceLine y={1.0} stroke="#ef4444" strokeDasharray="4 2" />
-                    <Bar dataKey="cpk" fill="#3b82f6" isAnimationActive={false} />
-                    <Bar dataKey="ppk" fill="#8b5cf6" isAnimationActive={false} />
+                    <CartesianGrid {...chartGridProps} />
+                    <XAxis dataKey="i" tick={chartAxisTick} />
+                    <YAxis tick={chartAxisTick} />
+                    <Tooltip contentStyle={chartTooltipStyle} /><Legend />
+                    <ReferenceLine y={1.33} stroke="var(--success)" strokeDasharray="4 2" />
+                    <ReferenceLine y={1.0} stroke="var(--destructive)" strokeDasharray="4 2" />
+                    <Bar dataKey="cpk" fill={chartColor(0)} isAnimationActive={false} />
+                    <Bar dataKey="ppk" fill={chartColor(2)} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : <p className="text-sm text-muted-foreground py-4">{t('spc.noTrendData')}</p>}

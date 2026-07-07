@@ -641,6 +641,7 @@
     "avgExecutionTime": "Avg Execution Time",
     "avgTime": "Avg Time",
     "clearHistory": "Clear History",
+    "clearHistoryTitle": "Clear query history?",
     "configUpdateError": "Error updating configuration",
     "configUpdatedSuccess": "Configuration updated successfully",
     "confirmClearHistory": "Are you sure you want to clear query history?",
