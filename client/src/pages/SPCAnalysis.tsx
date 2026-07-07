@@ -13,7 +13,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AdvancedSection } from "@/components/AdvancedSection";
-import { PageHeader } from "@/components/patterns";
+import {
+  PageHeader, chartColor, chartGridProps, chartAxisTick, chartTooltipStyle,
+} from "@/components/patterns";
 import {
   ComposedChart, Line, Scatter, Bar, BarChart, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer, Legend, Cell,
@@ -400,46 +402,59 @@ export function SPCAnalysisContent() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ComposedChart data={primaryChartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="index" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
-                      <Tooltip />
-                      {zones && (
-                        <>
-                          <ReferenceArea y1={zones.c1Bot} y2={zones.c1Top} fill="#22c55e" fillOpacity={0.08} />
-                          <ReferenceArea y1={zones.c1Top} y2={zones.b2Top} fill="#eab308" fillOpacity={0.07} />
-                          <ReferenceArea y1={zones.b2Bot} y2={zones.c1Bot} fill="#eab308" fillOpacity={0.07} />
-                          <ReferenceArea y1={zones.b2Top} y2={zones.a3Top} fill="#ef4444" fillOpacity={0.06} />
-                          <ReferenceArea y1={zones.a3Bot} y2={zones.b2Bot} fill="#ef4444" fillOpacity={0.06} />
-                        </>
-                      )}
-                      <ReferenceLine y={chart?.primary.limits.UCL} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'UCL', fontSize: 10, position: 'right' }} />
-                      <ReferenceLine y={chart?.primary.limits.CL} stroke="#3b82f6" label={{ value: 'CL', fontSize: 10, position: 'right' }} />
-                      <ReferenceLine y={chart?.primary.limits.LCL} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'LCL', fontSize: 10, position: 'right' }} />
-                      <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={1.5} dot={{ r: 2 }} isAnimationActive={false} />
-                      <Scatter dataKey="ooc" fill="#ef4444" shape="circle" isAnimationActive={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  {!chart || primaryChartData.length === 0 ? (
+                    <div className="h-[240px] flex flex-col items-center justify-center text-center text-muted-foreground">
+                      <Activity className="h-8 w-8 mb-2 opacity-40" />
+                      <p className="text-sm">{t('spc.noDataInRange')}</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* X̄ / Individuals chart: measurement series with CL/UCL/LCL
+                          control limits and Nelson-zone bands (A/B/C). Out-of-control
+                          points (the `ooc` flag already computed server-side) are
+                          overplotted as a destructive-coloured Scatter. */}
+                      <ResponsiveContainer width="100%" height={240}>
+                        <ComposedChart data={primaryChartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis dataKey="index" tick={chartAxisTick} />
+                          <YAxis tick={chartAxisTick} domain={['auto', 'auto']} />
+                          <Tooltip contentStyle={chartTooltipStyle} />
+                          {zones && (
+                            <>
+                              <ReferenceArea y1={zones.c1Bot} y2={zones.c1Top} fill="var(--success)" fillOpacity={0.1} />
+                              <ReferenceArea y1={zones.c1Top} y2={zones.b2Top} fill="var(--warning)" fillOpacity={0.1} />
+                              <ReferenceArea y1={zones.b2Bot} y2={zones.c1Bot} fill="var(--warning)" fillOpacity={0.1} />
+                              <ReferenceArea y1={zones.b2Top} y2={zones.a3Top} fill="var(--destructive)" fillOpacity={0.08} />
+                              <ReferenceArea y1={zones.a3Bot} y2={zones.b2Bot} fill="var(--destructive)" fillOpacity={0.08} />
+                            </>
+                          )}
+                          <ReferenceLine y={chart.primary.limits.UCL} stroke="var(--destructive)" strokeDasharray="4 2" label={{ value: 'UCL', fontSize: 10, position: 'right', fill: 'var(--muted-foreground)' }} />
+                          <ReferenceLine y={chart.primary.limits.CL} stroke={chartColor(1)} label={{ value: 'CL', fontSize: 10, position: 'right', fill: 'var(--muted-foreground)' }} />
+                          <ReferenceLine y={chart.primary.limits.LCL} stroke="var(--destructive)" strokeDasharray="4 2" label={{ value: 'LCL', fontSize: 10, position: 'right', fill: 'var(--muted-foreground)' }} />
+                          <Line type="monotone" dataKey="value" stroke={chartColor(0)} strokeWidth={1.5} dot={{ r: 2 }} isAnimationActive={false} />
+                          <Scatter dataKey="ooc" fill="var(--destructive)" shape="circle" isAnimationActive={false} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
 
-                  {/* Secondary (R / S / MR) chart */}
-                  <ResponsiveContainer width="100%" height={140}>
-                    <ComposedChart data={secondaryChartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="index" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
-                      <Tooltip />
-                      <ReferenceLine y={chart?.secondary.limits.UCL} stroke="#ef4444" strokeDasharray="4 2" />
-                      <ReferenceLine y={chart?.secondary.limits.CL} stroke="#3b82f6" />
-                      <ReferenceLine y={chart?.secondary.limits.LCL} stroke="#ef4444" strokeDasharray="4 2" />
-                      <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={1.5} dot={{ r: 2 }} isAnimationActive={false} />
-                      <Scatter dataKey="ooc" fill="#ef4444" shape="circle" isAnimationActive={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {chart?.secondary.label === 'range' ? t('spc.rChart') : chart?.secondary.label === 'stddev' ? t('spc.sChart') : t('spc.mrChart')}
-                  </p>
+                      {/* Secondary (R / S / MR) chart */}
+                      <ResponsiveContainer width="100%" height={140}>
+                        <ComposedChart data={secondaryChartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                          <CartesianGrid {...chartGridProps} />
+                          <XAxis dataKey="index" tick={chartAxisTick} />
+                          <YAxis tick={chartAxisTick} domain={['auto', 'auto']} />
+                          <Tooltip contentStyle={chartTooltipStyle} />
+                          <ReferenceLine y={chart.secondary.limits.UCL} stroke="var(--destructive)" strokeDasharray="4 2" />
+                          <ReferenceLine y={chart.secondary.limits.CL} stroke={chartColor(1)} />
+                          <ReferenceLine y={chart.secondary.limits.LCL} stroke="var(--destructive)" strokeDasharray="4 2" />
+                          <Line type="monotone" dataKey="value" stroke={chartColor(4)} strokeWidth={1.5} dot={{ r: 2 }} isAnimationActive={false} />
+                          <Scatter dataKey="ooc" fill="var(--destructive)" shape="circle" isAnimationActive={false} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {chart.secondary.label === 'range' ? t('spc.rChart') : chart.secondary.label === 'stddev' ? t('spc.sChart') : t('spc.mrChart')}
+                      </p>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 

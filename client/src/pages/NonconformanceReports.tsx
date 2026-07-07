@@ -24,8 +24,9 @@
  *
  * SAFETY: pure quality-record lifecycle — never writes a value to a machine.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -113,6 +114,27 @@ export default function NonconformanceReports() {
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<Ncr | null>(null);
+
+  // Inbound hand-off (e.g. from InspectionDetail "Raise NCR"): ?serial=…&inspectionId=…
+  // Prefill + auto-open the create dialog once on mount; guard so it does not
+  // reopen after the user closes it, and clear the prefill when they do.
+  const search = useSearch();
+  const [prefill, setPrefill] = useState<
+    { serialNumber?: string; linkedInspectionId?: number } | undefined
+  >(undefined);
+  const handledPrefill = useRef(false);
+  useEffect(() => {
+    if (handledPrefill.current) return;
+    const params = new URLSearchParams(search);
+    const serial = params.get("serial")?.trim();
+    const inspRaw = params.get("inspectionId")?.trim();
+    const linkedInspectionId = inspRaw && /^\d+$/.test(inspRaw) ? Number(inspRaw) : undefined;
+    if (serial || linkedInspectionId != null) {
+      handledPrefill.current = true;
+      setPrefill({ serialNumber: serial || undefined, linkedInspectionId });
+      setCreateOpen(true);
+    }
+  }, [search]);
 
   const utils = trpc.useUtils();
   const productsQ = trpc.productModel.list.useQuery({ limit: 100 }, { enabled: canView });
@@ -267,7 +289,9 @@ export default function NonconformanceReports() {
       {createOpen && (
         <CreateDialog
           products={products}
-          onClose={() => setCreateOpen(false)}
+          initialSerial={prefill?.serialNumber}
+          initialInspectionId={prefill?.linkedInspectionId}
+          onClose={() => { setCreateOpen(false); setPrefill(undefined); }}
           onSubmit={(v) => createM.mutate(v as any)}
           pending={createM.isPending}
         />
@@ -290,9 +314,11 @@ export default function NonconformanceReports() {
 }
 
 function CreateDialog({
-  products, onClose, onSubmit, pending,
+  products, initialSerial, initialInspectionId, onClose, onSubmit, pending,
 }: {
   products: Array<{ id: number; code: string; name?: string | null }>;
+  initialSerial?: string;
+  initialInspectionId?: number;
   onClose: () => void;
   onSubmit: (v: Record<string, any>) => void;
   pending: boolean;
@@ -301,9 +327,11 @@ function CreateDialog({
   const [source, setSource] = useState<NcrSource>("inspection");
   const [ncrKey, setNcrKey] = useState("");
   const [productModelId, setProductModelId] = useState<string>("");
-  const [serialNumber, setSerialNumber] = useState("");
+  const [serialNumber, setSerialNumber] = useState(initialSerial ?? "");
   const [lotNumber, setLotNumber] = useState("");
-  const [linkedInspectionId, setLinkedInspectionId] = useState("");
+  const [linkedInspectionId, setLinkedInspectionId] = useState(
+    initialInspectionId != null ? String(initialInspectionId) : "",
+  );
   const [defectSummary, setDefectSummary] = useState("");
   const [reason, setReason] = useState("");
 

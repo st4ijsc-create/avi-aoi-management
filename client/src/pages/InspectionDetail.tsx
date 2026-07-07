@@ -431,11 +431,12 @@ export default function InspectionDetail() {
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              {/* Quick "Raise NCR" hand-off. The NCR page does not yet accept an
-                  inbound prefill query param, so this lands on the list to raise
-                  one manually — passing ?inspectionId / ?serial to prefill would
-                  be a nice follow-up (see NonconformanceReports). */}
-              <Link href="/nonconformance">
+              {/* Quick "Raise NCR" hand-off. The NCR page reads ?serial / ?inspectionId
+                  on mount to auto-open + prefill the create dialog (both map to the
+                  createNcr serialNumber / linkedInspectionId inputs). */}
+              <Link
+                href={`/nonconformance?serial=${encodeURIComponent(inspection.serialNumber)}&inspectionId=${inspectionId}`}
+              >
                 <Button variant="outline" size="sm" className="gap-2">
                   <ClipboardX className="h-4 w-4" />
                   {t('inspection.raiseNcr', 'Raise NCR')}

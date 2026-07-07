@@ -9,8 +9,26 @@
  * RBAC: module 'mes_bom'. Create/edit/delete buttons are hidden unless the user
  * holds the matching grant; the whole page requires canView.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  Position,
+  MarkerType,
+  useReactFlow,
+  useNodesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type NodeTypes,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -26,7 +44,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Boxes, Plus, Trash2, GitMerge, AlertTriangle } from "lucide-react";
+import { Boxes, Plus, Trash2, GitMerge, AlertTriangle, Cpu, CircuitBoard } from "lucide-react";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { EntityCombobox, type EntityOption } from "@/components/EntityCombobox";
 import { toast } from "sonner";
@@ -298,6 +316,193 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Genealogy tree canvas (@xyflow/react) — RENDERS the forward trace as a real
+// parent→child GENEALOGY TREE instead of a flat table: the scanned board serial
+// is the ROOT (the assembly), each installed component is a CHILD leaf, edges
+// point board → component (composition / "consumed by"). This is a genuine
+// parent/child relationship — every installation row shares the same board
+// serial (the query input) as its parent — so it is honest to render as a tree,
+// not fabricated hierarchy.
+//
+// The canvas DERIVES nodes+edges from the SAME `bom.traceForward` data the flat
+// table below uses (via `forwardToGraph`), holding no query/graph state of its
+// own. Idiom (imports, CSS import, node/edge typing, Background/Controls,
+// fit-view, semantic tokens only — light/dark safe, no raw hex) mirrors
+// CausalGraphEditorPage / WorkflowGraphCanvas. The flat table stays as the
+// keyboard-accessible fallback + per-row detail view.
+// ════════════════════════════════════════════════════════════════════════════
+
+// One installation row (subset of componentInstallations we render). Typed so we
+// avoid `any` in the tree code.
+interface TraceComponent {
+  id: number;
+  componentCode: string;
+  componentSerial?: string | null;
+  supplierLotId?: number | null;
+  refDesignator?: string | null;
+  genealogyHash?: string | null;
+  qty?: string | number | null;
+}
+
+// Top-down layered layout: board root on top, component children in a grid below.
+const TRACE_X0 = 24;
+const TRACE_Y0 = 24;
+const TRACE_COL_W = 240;
+const TRACE_ROW_H = 152;
+const TRACE_MAX_COLS = 5;
+
+type TGNodeData = {
+  kind: "board" | "component";
+  serial?: string;
+  count?: number;
+  comp?: TraceComponent;
+  t: TFunction;
+};
+
+/** Forward-trace data → react-flow nodes + edges. PURE (no side effects, no fetch). */
+function forwardToGraph(
+  serial: string,
+  comps: TraceComponent[],
+  t: TFunction,
+): { nodes: Node<TGNodeData>[]; edges: Edge[] } {
+  const cols = Math.min(Math.max(comps.length, 1), TRACE_MAX_COLS);
+  const rootX = TRACE_X0 + ((cols - 1) * TRACE_COL_W) / 2;
+
+  const nodes: Node<TGNodeData>[] = [
+    {
+      id: "board",
+      type: "traceNode",
+      position: { x: rootX, y: TRACE_Y0 },
+      data: { kind: "board", serial, count: comps.length, t },
+    },
+  ];
+  const edges: Edge[] = [];
+
+  comps.forEach((c, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const id = `comp-${c.id}`;
+    nodes.push({
+      id,
+      type: "traceNode",
+      position: { x: TRACE_X0 + col * TRACE_COL_W, y: TRACE_Y0 + TRACE_ROW_H + row * TRACE_ROW_H },
+      data: { kind: "component", comp: c, t },
+    });
+    edges.push({
+      id: `board->${id}`,
+      source: "board",
+      target: id,
+      type: "smoothstep",
+      style: { stroke: "var(--primary)", strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: "var(--primary)" },
+    });
+  });
+
+  return { nodes, edges };
+}
+
+/** Typed node — board root (assembly) or component leaf. Semantic tokens only. */
+function TraceNode({ data }: NodeProps<Node<TGNodeData>>) {
+  const { t } = data;
+
+  if (data.kind === "board") {
+    return (
+      <div className="w-[200px] rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-card-foreground shadow-sm">
+        <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-border !bg-primary" />
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/10 text-primary">
+            <CircuitBoard className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("bom.genealogyBoard", "Bảng mạch (assembly)")}
+            </div>
+            <div className="truncate font-mono text-xs font-medium">{data.serial}</div>
+          </div>
+        </div>
+        <div className="mt-1.5 border-t border-dashed border-border/70 pt-1.5 text-[10px] text-muted-foreground">
+          {t("bom.genealogyComponentCount", "{{count}} linh kiện đã lắp", { count: data.count ?? 0 })}
+        </div>
+      </div>
+    );
+  }
+
+  const c = data.comp;
+  return (
+    <div className="w-[210px] rounded-md border border-border bg-card px-2.5 py-2 text-card-foreground shadow-sm transition-colors hover:border-primary/50">
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-border !bg-muted-foreground" />
+      <div className="flex items-start gap-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+          <Cpu className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">{c?.componentCode}</div>
+          <div className="truncate font-mono text-[9px] text-muted-foreground">
+            {c?.componentSerial ?? t("bom.genealogyNoSerial", "không có serial")}
+          </div>
+        </div>
+      </div>
+      <div className="mt-1.5 space-y-0.5 border-t border-dashed border-border/70 pt-1.5 text-[10px] text-muted-foreground">
+        <div className="flex justify-between gap-2">
+          <span>{t("bom.supplierLot", "Lô NCC")}</span>
+          <span className="font-mono">{c?.supplierLotId ?? "—"}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span>{t("bom.refDes", "Ref")}</span>
+          <span className="truncate font-mono">{c?.refDesignator ?? "—"}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span>{t("bom.hash", "Hash")}</span>
+          <span className="font-mono">{c?.genealogyHash ? c.genealogyHash.slice(0, 12) : "∅"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TRACE_NODE_TYPES: NodeTypes = { traceNode: TraceNode };
+
+function TraceGenealogyInner({ serial, comps, t }: { serial: string; comps: TraceComponent[]; t: TFunction }) {
+  const rf = useReactFlow();
+  const { nodes: builtNodes, edges } = useMemo(() => forwardToGraph(serial, comps, t), [serial, comps, t]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(builtNodes);
+  useEffect(() => { setNodes(builtNodes); }, [builtNodes, setNodes]);
+
+  return (
+    <div
+      className="h-[420px] w-full overflow-hidden rounded-md border border-border bg-muted/20"
+      role="application"
+      aria-label={t("bom.genealogyCanvasAria", "Cây phả hệ linh kiện: bảng mạch gốc và các linh kiện đã lắp, cạnh có hướng từ bảng mạch tới linh kiện")}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={TRACE_NODE_TYPES}
+        onNodesChange={onNodesChange}
+        onInit={() => rf.fitView({ padding: 0.2, duration: 200 })}
+        fitView
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.2}
+        maxZoom={2}
+        nodesConnectable={false}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="!bg-transparent" />
+        <Controls className="!border-border" />
+      </ReactFlow>
+    </div>
+  );
+}
+
+/** Genealogy-tree view of the forward trace (wrapped for useReactFlow). */
+function TraceGenealogyCanvas(props: { serial: string; comps: TraceComponent[]; t: TFunction }) {
+  return (
+    <ReactFlowProvider>
+      <TraceGenealogyInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
 // ─── Trace (forward serial → components, reverse lot/component → serials) ─────
 function TracePanel() {
   const { t } = useTranslation();
@@ -315,10 +520,15 @@ function TracePanel() {
         <CardHeader><CardTitle><GitMerge className="inline h-4 w-4 mr-1" /> {t("bom.forwardTitle")}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder={t("bom.serialBoard")} />
-          <Table>
+          {/* Genealogy TREE — primary view, derived from the SAME traceForward data */}
+          {serial.length > 0 && (forward.data?.components?.length ?? 0) > 0 && (
+            <TraceGenealogyCanvas serial={serial} comps={forward.data!.components as TraceComponent[]} t={t} />
+          )}
+          {/* Flat table — keyboard-accessible fallback + per-row detail */}
+          <Table aria-label={t("bom.forwardTitle")}>
             <TableHeader><TableRow><TableHead>{t("bom.componentCodeShort")}</TableHead><TableHead>{t("bom.componentSerial")}</TableHead><TableHead>{t("bom.supplierLot")}</TableHead><TableHead>{t("bom.hash")}</TableHead></TableRow></TableHeader>
             <TableBody>
-              {(forward.data?.components ?? []).map((c: any) => (
+              {(forward.data?.components ?? []).map((c: TraceComponent) => (
                 <TableRow key={c.id}>
                   <TableCell>{c.componentCode}</TableCell>
                   <TableCell>{c.componentSerial ?? "-"}</TableCell>
