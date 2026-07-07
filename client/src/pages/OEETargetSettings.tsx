@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/_core/hooks/useAuth';
+import { usePermissions } from '@/_core/hooks/usePermissions';
 import { trpc } from '@/lib/trpc';
 import DashboardLayout from '@/components/DashboardLayout';
 import { navItems } from '@/lib/navigation';
@@ -23,8 +24,13 @@ import { toast } from 'sonner';
 
 export default function OEETargetSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { loading: authLoading } = useAuth();
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const permissionsLoading = authLoading || permsLoading;
+  // OEE targets are scoped to factory/line/machine assets, so gate on the same
+  // module the sibling factory production-settings pages use. Admins bypass this
+  // check inside usePermissions().hasPermission, preserving their full access.
+  const canEditTargets = hasPermission('settings_factory', 'canEdit');
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
@@ -101,6 +107,41 @@ export default function OEETargetSettings() {
       return;
     }
 
+    const {
+      targetOEE,
+      targetAvailability,
+      targetPerformance,
+      targetQuality,
+      alertThreshold,
+      criticalThreshold,
+    } = formData;
+
+    // All percentages must be finite and within 0–100 bounds.
+    const boundedFields = [
+      targetOEE,
+      targetAvailability,
+      targetPerformance,
+      targetQuality,
+      alertThreshold,
+      criticalThreshold,
+    ];
+    if (boundedFields.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+      toast.error(t('oee.thresholdBoundsError', 'All values must be between 0 and 100.'));
+      return;
+    }
+
+    // Status logic depends on critical <= alert <= target ordering; an inverted
+    // set silently breaks getStatusBadge, so block submit on any violation.
+    if (!(criticalThreshold <= alertThreshold && alertThreshold <= targetOEE)) {
+      toast.error(
+        t(
+          'oee.thresholdOrderError',
+          'Critical threshold must be ≤ alert threshold, and alert threshold must be ≤ target OEE.',
+        ),
+      );
+      return;
+    }
+
     const targetData = {
       machineId: selectedMachineId || undefined,
       lineId: selectedLineId || undefined,
@@ -171,12 +212,23 @@ export default function OEETargetSettings() {
     }
   };
 
-  if (!isAdmin) {
+  // Preserve the loading state so we never flash "denied" before permissions resolve.
+  if (permissionsLoading) {
+    return (
+      <DashboardLayout title={t('oee.targetSettings')} navItems={navItems} currentPath="/oee-target-settings">
+        <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+          <p className="text-muted-foreground">{t('common.loading', 'Loading…')}</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canEditTargets) {
     return (
       <DashboardLayout title={t('oee.targetSettings')} navItems={navItems} currentPath="/oee-target-settings">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
           <Shield className="h-16 w-16 text-muted-foreground/50" />
-          <p className="text-xl font-medium text-foreground">{t('settings.adminOnlyAccess')}</p>
+          <p className="text-xl font-medium text-foreground">{t('settings.noEditAccess', 'You do not have permission to edit these settings.')}</p>
           <p className="text-muted-foreground">{t('settings.contactAdmin')}</p>
         </div>
       </DashboardLayout>

@@ -328,7 +328,7 @@ function Router() {
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
       <Route path="/feeder-verify"><RouteGuard navHref="/feeder-verify"><AIPageWrapper><FeederVerify /></AIPageWrapper></RouteGuard></Route>
       <Route path="/alerts"><RouteGuard navHref="/alerts"><Alerts /></RouteGuard></Route>
-      <Route path="/monitoring-setting"><RouteGuard requireRole={["admin"]}><MonitoringSettings /></RouteGuard></Route>
+      <Route path="/monitoring-setting"><RouteGuard requirePermission="admin_system"><MonitoringSettings /></RouteGuard></Route>
       {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}
       <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
 
@@ -388,7 +388,7 @@ function Router() {
       <Route path="/admin-home"><RouteGuard requireRole={["admin"]}><AdminHome /></RouteGuard></Route>
       <Route path="/users"><RouteGuard navHref="/users"><Users /></RouteGuard></Route>
       <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
-      <Route path="/audit-logs"><RouteGuard requireRole={["admin"]}><AuditLogs /></RouteGuard></Route>
+      <Route path="/audit-logs"><RouteGuard requirePermission="admin_system"><AuditLogs /></RouteGuard></Route>
       {/* P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page. */}
       <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
       <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>

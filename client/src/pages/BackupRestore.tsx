@@ -25,7 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import {
   Download,
   Upload,
@@ -90,9 +90,9 @@ const BACKUP_CATEGORIES = [
 
 export function BackupRestorePageContent() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
+
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [backupName, setBackupName] = useState("");
   const [backupDescription, setBackupDescription] = useState("");
@@ -229,7 +229,15 @@ export function BackupRestorePageContent() {
     }
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+        <div className="flex items-center justify-center h-[60vh]">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+    );
+  }
+
+  if (!canView) {
     return (
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="p-8 text-center">

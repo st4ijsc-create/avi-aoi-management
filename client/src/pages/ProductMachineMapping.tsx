@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,8 +26,6 @@ import { useSearch } from "wouter";
 
 export default function ProductMachineMapping() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
 
   const [selectedMachineId, setSelectedMachineId] = useState<string>("");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
@@ -108,7 +105,7 @@ export default function ProductMachineMapping() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <PermissionGate module="settings_product_mapping" action="canCreate">
             <DialogTrigger asChild>
-              <Button className="gap-2" disabled={!isAdmin}>
+              <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 {t('products.addNewMapping')}
               </Button>
@@ -221,7 +218,7 @@ export default function ProductMachineMapping() {
                                   id: mapping.id,
                                   isActive: !mapping.isActive
                                 } as any)}
-                                disabled={!isAdmin}
+                               
                               >
                                 {mapping.isActive ? (
                                   <CheckCircle2 className="h-4 w-4 text-success" />
@@ -237,7 +234,7 @@ export default function ProductMachineMapping() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8 text-destructive hover:text-destructive"
-                                    disabled={!isAdmin}
+                                   
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -278,7 +275,7 @@ export default function ProductMachineMapping() {
                           setSelectedMachineId(String(machine.id));
                           setDialogOpen(true);
                         }}
-                        disabled={!isAdmin}
+                       
                       >
                         <Link className="h-4 w-4" />
                         {t('products.assignProduct')}

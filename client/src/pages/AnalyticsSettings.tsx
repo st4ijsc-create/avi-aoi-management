@@ -1,4 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -25,6 +25,7 @@ import {
   ChevronRight,
   Settings,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 
 import { useState, useEffect } from "react";
@@ -47,8 +48,8 @@ import { PowerPointExportContent } from "@/pages/PowerPointExport";
 
 export default function AnalyticsSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("settings_view", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -78,7 +79,17 @@ export default function AnalyticsSettings() {
     setCollapsedCategories((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("analyticsSettings.title")} navItems={navItems} currentPath="/analytics-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">

@@ -1,4 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
@@ -57,8 +57,8 @@ import { BackupRestorePageContent } from "@/pages/BackupRestore";
 
 export default function AdminSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -98,7 +98,17 @@ export default function AdminSettings() {
     onError: (error) => toast.error(error.message),
   });
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("adminSettings.title")} navItems={navItems} currentPath="/admin-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">

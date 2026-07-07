@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   PageHeader, PageContainer, MetricCard, StatusBadge, SectionCard, EmptyState,
@@ -532,9 +531,8 @@ export function AuditLogContent() {
  */
 export default function AuditLogs() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const { hasPermission } = usePermissions();
-  const isAdmin = (user as any)?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
 
   // The command-audit tab reads trpc.commandLog.* which requires machine_control/canView.
   // This page is admin-gated (admins always pass), but to avoid a hard FORBIDDEN for any
@@ -549,7 +547,17 @@ export default function AuditLogs() {
     : requestedTab === "enhanced" ? "enhanced"
     : "activity";
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
+        <PageContainer>
+          <Skeleton className="h-64 w-full" />
+        </PageContainer>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
         <PageContainer>

@@ -1,4 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Settings,
   Radio,
+  Loader2,
 } from "lucide-react";
 
 import { useState, useEffect } from "react";
@@ -38,8 +39,8 @@ import ManualMachineMapping from "@/components/ManualMachineMapping";
 
 export default function MonitoringSettings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -74,7 +75,17 @@ export default function MonitoringSettings() {
     setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
   };
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("monitoringSettings.title")} navItems={navItems} currentPath="/monitoring-setting">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">

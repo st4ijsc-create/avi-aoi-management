@@ -1,4 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
@@ -64,8 +64,8 @@ type AlertSetting = {
 
 export default function Settings() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission, loading: permsLoading } = usePermissions();
+  const canView = hasPermission("settings_view", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -175,7 +175,17 @@ export default function Settings() {
     onError: (err) => toast.error(err.message),
   });
 
-  if (!isAdmin) {
+  if (permsLoading) {
+    return (
+      <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canView) {
     return (
       <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
