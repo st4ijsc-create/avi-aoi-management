@@ -125,36 +125,13 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const closeAll = useCallback(() => {
-    setActiveModuleId(null);
-    setHoverCategoryKey(null);
-  }, []);
-
-  // Click-outside (pointerdown) closes Level-2 & Level-3.
-  useEffect(() => {
-    if (!activeModuleId) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (containerRef.current?.contains(target as Node)) return;
-      if (target?.closest?.("[data-cascading-panel]")) return;
-      closeAll();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [activeModuleId, closeAll]);
-
-  // Esc closes panels.
-  useEffect(() => {
-    if (!activeModuleId) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeAll();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [activeModuleId, closeAll]);
+  // NOTE: the inline accordion is PART of the persistent left sidebar — it is NOT a
+  // transient popup. It must stay exactly as the user left it while they work in the
+  // page (clicking an in-page tab, a button, or anywhere in the content must NOT
+  // collapse it). So there is deliberately no click-outside / Esc "closeAll" here —
+  // a module opens/closes only via its own header (handleModuleClick), and a category
+  // only via its own row (handleToggleCategory). The collapsed icon-rail flyout has
+  // its own dismissal logic in CollapsedRail (that one IS a transient flyout).
 
   const handleModuleClick = useCallback((groupId: string) => {
     setHoverCategoryKey(null);
@@ -218,7 +195,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                 their own in-page tabs) are direct links; the rest stay grouped as
                 categories that expand their pages inline on click. */}
             {isOpen && (
-              <div className="mt-0.5 space-y-0.5 pl-3">
+              <div className="mt-0.5 space-y-0.5 pl-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out">
                 {l2.map(entry => {
                   // Hub page → direct link at Level 2 (no Level-3).
                   if (entry.kind === "link") {
@@ -262,7 +239,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                       </button>
                       {/* Inline-expanded pages (all pointers) — real links, Tab-reachable. */}
                       {isCatOpen && (
-                        <div className="mt-0.5 space-y-0.5 pl-3">
+                        <div className="mt-0.5 space-y-0.5 pl-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out">
                           {entry.items.map(item => (
                             <ItemRow
                               key={item.href}

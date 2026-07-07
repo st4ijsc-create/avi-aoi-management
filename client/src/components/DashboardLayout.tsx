@@ -425,21 +425,21 @@ function DashboardLayoutContent({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
-                  onClick={() => window.location.href = "/profile"}
+                  onClick={() => handleNavigate("/profile")}
                   className="cursor-pointer"
                 >
                   <User className="mr-2 h-4 w-4" />
                   <span>{t('auth.personalInfo')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => window.location.href = "/change-password"}
+                  onClick={() => handleNavigate("/change-password")}
                   className="cursor-pointer"
                 >
                   <Key className="mr-2 h-4 w-4" />
                   <span>{t('auth.changePassword')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => window.location.href = "/sessions"}
+                  onClick={() => handleNavigate("/sessions")}
                   className="cursor-pointer"
                 >
                   <Monitor className="mr-2 h-4 w-4" />
