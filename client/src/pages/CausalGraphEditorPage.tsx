@@ -10,8 +10,28 @@
  * RBAC: analytics_root_cause (view/edit/delete). Write controls hide without
  * permission.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  MarkerType,
+  useReactFlow,
+  useNodesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type NodeTypes,
+  type NodeMouseHandler,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -34,7 +54,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Network, Plus, Pencil, Trash2, Workflow } from "lucide-react";
+import {
+  Network, Plus, Pencil, Trash2, Workflow,
+  Cpu, AlertTriangle, Search, Wrench,
+} from "lucide-react";
 import { toast } from "sonner";
 
 type NodeType = "machine" | "defect" | "cause" | "action";
@@ -54,6 +77,217 @@ const EDGE_TYPES: EdgeType[] = [
   "cause_resolved_by",
   "cause_prevented_by",
 ];
+
+// ════════════════════════════════════════════════════════════════════════════
+// Node-graph canvas (@xyflow/react) — RENDERS the causal graph as a directed
+// node-link diagram, the page's primary visualization alongside the existing
+// grouped-node cards + edge table (which stay as the accessible fallback).
+//
+// The canvas DERIVES its nodes+edges from the SAME `causalGraph.getGraph` data
+// the cards/table use (via `causalToGraph`), so it never holds its own graph
+// state. Idiom (imports, CSS import, node/edge typing, Background/Controls/
+// MiniMap, fit-view) mirrors WorkflowGraphCanvas / IrGraphCanvas. Semantic
+// tokens only — light/dark safe, no raw hex.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Layered layout: one column per node type (machine → defect → cause → action,
+// the natural causal flow), nodes stacked vertically within their column.
+const COL_W = 280;
+const ROW_H = 96;
+const X0 = 40;
+const Y0 = 40;
+
+// Per-type icon + semantic tone (no hex — primary/destructive/warning/success).
+const NODE_TONE: Record<NodeType, { icon: typeof Cpu; cls: string }> = {
+  machine: { icon: Cpu, cls: "bg-primary/10 text-primary" },
+  defect: { icon: AlertTriangle, cls: "bg-destructive/10 text-destructive" },
+  cause: { icon: Search, cls: "bg-warning/10 text-warning" },
+  action: { icon: Wrench, cls: "bg-success/10 text-success" },
+};
+
+type CNodeData = {
+  node: GNode;
+  canEdit: boolean;
+  canDelete: boolean;
+  onEdit: (n: GNode) => void;
+  onDelete: (n: GNode) => void;
+  t: TFunction;
+};
+
+type CausalBuilt = { nodes: Node<CNodeData>[]; edges: Edge[] };
+
+/** Causal graph data → react-flow nodes + edges. PURE. */
+function causalToGraph(
+  nodes: GNode[],
+  edges: GEdge[],
+  selectedId: string | null,
+  canEdit: boolean,
+  canDelete: boolean,
+  onEdit: (n: GNode) => void,
+  onDelete: (n: GNode) => void,
+  t: TFunction,
+): CausalBuilt {
+  const perType: Record<NodeType, number> = { machine: 0, defect: 0, cause: 0, action: 0 };
+  const rfNodes: Node<CNodeData>[] = nodes.map((n) => {
+    const col = NODE_TYPES.indexOf(n.type);
+    const row = perType[n.type]++;
+    return {
+      id: n.id,
+      type: "causalNode",
+      position: { x: X0 + Math.max(col, 0) * COL_W, y: Y0 + row * ROW_H },
+      data: { node: n, canEdit, canDelete, onEdit, onDelete, t },
+      selected: selectedId === n.id,
+    };
+  });
+
+  const known = new Set(nodes.map((n) => n.id));
+  const rfEdges: Edge[] = edges
+    .filter((e) => known.has(e.from) && known.has(e.to))
+    .map((e, i) => {
+      const w = typeof e.weight === "number" ? Math.min(Math.max(e.weight, 0), 1) : 0.5;
+      return {
+        id: `${e.from}|${e.to}|${e.type}|${i}`,
+        source: e.from,
+        target: e.to,
+        type: "smoothstep",
+        // Edge thickness reflects causal strength (weight).
+        style: { stroke: "var(--primary)", strokeWidth: 1 + w * 3 },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: "var(--primary)" },
+        label: typeof e.weight === "number" ? e.weight.toFixed(2) : undefined,
+        labelStyle: { fill: "var(--muted-foreground)", fontSize: 10 },
+        labelBgStyle: { fill: "var(--card)" },
+        labelBgPadding: [3, 1] as [number, number],
+        data: { kind: e.type },
+      };
+    });
+
+  return { nodes: rfNodes, edges: rfEdges };
+}
+
+/** Typed node component — icon + label + id, with edit/delete actions (permission-gated). */
+function CausalNode({ data }: NodeProps<Node<CNodeData>>) {
+  const { node, canEdit, canDelete, onEdit, onDelete, t } = data;
+  const tone = NODE_TONE[node.type];
+  const Icon = tone.icon;
+  return (
+    <div className="relative w-[210px] rounded-md border border-border bg-card px-2.5 py-2 text-card-foreground shadow-sm transition-colors hover:border-primary/50">
+      <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-border !bg-muted-foreground" />
+      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-border !bg-primary" />
+
+      <div className="flex items-start gap-2">
+        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${tone.cls}`}>
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">{node.label}</div>
+          <div className="truncate font-mono text-[9px] text-muted-foreground">{node.id}</div>
+        </div>
+      </div>
+
+      <div className="mt-1.5 flex items-center justify-between border-t border-dashed border-border/70 pt-1.5">
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t(`causalGraph.nodeType.${node.type}`, node.type)}
+        </span>
+        {(canEdit || canDelete) && (
+          <div className="flex items-center gap-1">
+            {canEdit && (
+              <button
+                type="button"
+                className="nodrag rounded p-0.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                aria-label={t("common.edit", "Sửa")}
+                onClick={(e) => { e.stopPropagation(); onEdit(node); }}
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                className="nodrag rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                aria-label={t("common.delete", "Xoá")}
+                onClick={(e) => { e.stopPropagation(); onDelete(node); }}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const CAUSAL_NODE_TYPES: NodeTypes = { causalNode: CausalNode };
+
+interface CausalGraphCanvasProps {
+  nodes: GNode[];
+  edges: GEdge[];
+  selectedId: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  onSelect: (id: string) => void;
+  onEdit: (n: GNode) => void;
+  onDelete: (n: GNode) => void;
+  t: TFunction;
+}
+
+function CausalCanvasInner({
+  nodes: gNodes, edges: gEdges, selectedId, canEdit, canDelete, onSelect, onEdit, onDelete, t,
+}: CausalGraphCanvasProps) {
+  const rf = useReactFlow();
+
+  const { nodes: builtNodes, edges } = useMemo(
+    () => causalToGraph(gNodes, gEdges, selectedId, canEdit, canDelete, onEdit, onDelete, t),
+    [gNodes, gEdges, selectedId, canEdit, canDelete, onEdit, onDelete, t],
+  );
+
+  // Local node state for smooth dragging; re-sync from data whenever it changes.
+  const [nodes, setNodes, onNodesChange] = useNodesState(builtNodes);
+  useEffect(() => { setNodes(builtNodes); }, [builtNodes, setNodes]);
+
+  const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { onSelect(node.id); }, [onSelect]);
+
+  return (
+    <div
+      className="h-[520px] w-full overflow-hidden rounded-md border border-border bg-muted/20"
+      role="application"
+      aria-label={t("causalGraph.canvasAria", "Sơ đồ nhân quả: máy, lỗi, nguyên nhân và hành động cùng các quan hệ có hướng")}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={CAUSAL_NODE_TYPES}
+        onNodesChange={onNodesChange}
+        onNodeClick={onNodeClick}
+        onInit={() => rf.fitView({ padding: 0.2, duration: 200 })}
+        fitView
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.2}
+        maxZoom={2}
+        nodesConnectable={false}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="!bg-transparent" />
+        <MiniMap
+          pannable
+          zoomable
+          className="!bg-card !border-border"
+          nodeColor={() => "var(--primary)"}
+          maskColor="color-mix(in oklch, var(--background) 70%, transparent)"
+        />
+        <Controls className="!border-border" />
+      </ReactFlow>
+    </div>
+  );
+}
+
+/** Node-graph view of the causal graph (wrapped in ReactFlowProvider for useReactFlow). */
+function CausalGraphCanvas(props: CausalGraphCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <CausalCanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
 
 export function CausalGraphEditorPageContent() {
   const { t } = useTranslation();
@@ -153,6 +387,10 @@ export function CausalGraphEditorPageContent() {
     }
   };
 
+  // Canvas selection (highlights the picked node; the cards/table stay as the
+  // keyboard-accessible fallback for the same data).
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
   const nodeLabel = (id: string) => nodeById.get(id)?.label ?? id;
 
   if (!canView) {
@@ -166,6 +404,36 @@ export function CausalGraphEditorPageContent() {
         title={t("causalGraph.title", "Trình chỉnh sửa đồ thị nhân quả")}
         description={t("causalGraph.desc", "Quản lý đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc")}
       />
+
+      {/* Node-link diagram — primary visualization of the SAME graph data */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Network className="h-5 w-5" />
+            {t("causalGraph.diagram", "Sơ đồ nhân quả")}
+            <Badge variant="secondary">{nodes.length} · {edges.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {nodes.length === 0 ? (
+            <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+              {t("causalGraph.noNodes", "Chưa có node")}
+            </div>
+          ) : (
+            <CausalGraphCanvas
+              nodes={nodes}
+              edges={edges}
+              selectedId={selectedNodeId}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onSelect={setSelectedNodeId}
+              onEdit={openEditNode}
+              onDelete={setDeleteNode}
+              t={t}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       {/* Nodes grouped by type */}
       <div className="grid gap-4 md:grid-cols-2">

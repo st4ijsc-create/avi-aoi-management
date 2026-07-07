@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer } from "@/components/patterns";
+import {
+  PageHeader,
+  PageContainer,
+  ThemedLineChart,
+  type ChartSeries,
+} from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +34,21 @@ import { toast } from "sonner";
 
 type AnalysisType = "analyze" | "forecast" | "anomaly" | "decompose" | "changepoints";
 
+/** A single result row as returned by `aiTimeSeries.analyzeMetric`. */
+interface ResultPoint {
+  timestamp?: string | number;
+  time?: string | number;
+  value?: number;
+  predicted?: number;
+  lower?: number;
+  upper?: number;
+  isAnomaly?: boolean;
+}
+
+/** Compact numeric formatter for axis ticks / tooltips (light + dark safe). */
+const formatMetric = (v: number): string =>
+  v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
 export default function AITimeSeriesPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<AnalysisType>("analyze");
@@ -48,6 +68,41 @@ export default function AITimeSeriesPage() {
 
   const renderResult = (data: any) => {
     if (!data) return null;
+
+    // ── Chart model: map the SAME result rows into chart series ───────────────
+    const rawPoints: ResultPoint[] = Array.isArray(data.dataPoints) ? data.dataPoints : [];
+    const hasPredicted = rawPoints.some((p) => typeof p.predicted === "number");
+    const hasBounds = rawPoints.some(
+      (p) => typeof p.lower === "number" && typeof p.upper === "number",
+    );
+    const anomalyPoints = rawPoints.filter((p) => p.isAnomaly === true);
+
+    const chartData: Array<Record<string, number | string | null>> = rawPoints.map((p) => ({
+      x: String(p.timestamp ?? p.time ?? ""),
+      value: typeof p.value === "number" ? p.value : null,
+      predicted: typeof p.predicted === "number" ? p.predicted : null,
+      lower: typeof p.lower === "number" ? p.lower : null,
+      upper: typeof p.upper === "number" ? p.upper : null,
+    }));
+
+    const chartSeries: ChartSeries[] = [
+      { key: "value", name: t("ts.actual", "Thực tế") },
+    ];
+    if (hasPredicted) {
+      chartSeries.push({
+        key: "predicted",
+        name:
+          activeTab === "forecast"
+            ? t("ts.forecast", "Dự báo")
+            : t("ts.predicted", "Dự đoán"),
+      });
+    }
+    if (hasBounds) {
+      // Best-effort confidence band rendered as its two boundary lines (muted).
+      chartSeries.push({ key: "upper", name: t("ts.upperBound", "Cận trên"), color: "var(--muted-foreground)" });
+      chartSeries.push({ key: "lower", name: t("ts.lowerBound", "Cận dưới"), color: "var(--muted-foreground)" });
+    }
+
     return (
       <div className="space-y-4">
         {/* Summary text */}
@@ -57,7 +112,40 @@ export default function AITimeSeriesPage() {
           </div>
         )}
 
-        {/* Data points as table rows */}
+        {/* PRIMARY view: time-series chart (actual vs predicted, + bounds) */}
+        {rawPoints.length > 0 && (
+          <div className="rounded-lg border p-3 space-y-2">
+            <h3 className="text-sm font-medium flex items-center gap-1.5">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              {t("ts.chartTitle", "Biểu đồ chuỗi thời gian")}
+            </h3>
+            <ThemedLineChart
+              data={chartData}
+              xKey="x"
+              series={chartSeries}
+              height={320}
+              yTickFormatter={formatMetric}
+              emptyText={t("ts.noChartData", "Không có dữ liệu để vẽ biểu đồ")}
+              aria-label={t("ts.chartTitle", "Biểu đồ chuỗi thời gian")}
+            />
+            {/* Anomaly / change-point points marked as a note below the chart */}
+            {anomalyPoints.length > 0 && (
+              <p className="text-xs text-destructive flex items-start gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  {t("ts.anomalyMarks", "Điểm bất thường")} ({anomalyPoints.length}):{" "}
+                  <span className="font-mono">
+                    {anomalyPoints
+                      .map((p) => String(p.timestamp ?? p.time ?? ""))
+                      .join(", ")}
+                  </span>
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* DETAIL view: data points as table rows */}
         {data.dataPoints && Array.isArray(data.dataPoints) && data.dataPoints.length > 0 && (
           <div className="border rounded-lg overflow-hidden">
             <table className="w-full text-sm">

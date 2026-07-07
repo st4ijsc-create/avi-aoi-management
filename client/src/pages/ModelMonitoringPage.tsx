@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
-import { PageHeader, PageContainer, MetricCard, EmptyState } from '@/components/patterns';
+import { PageHeader, PageContainer, MetricCard, EmptyState, ThemedLineChart } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
 import { navItems } from '@/lib/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,6 +38,20 @@ import { cn } from '@/lib/utils';
 
 type HealthStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
 type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+/** One point of the model-performance trend (a monitoring window snapshot). */
+interface TrendSnapshot {
+  accuracy?: number | string | null;
+  periodEnd?: string | Date | null;
+}
+
+/** A single {time, accuracy%} row consumed by the trend chart. */
+interface TrendPoint {
+  time: string;
+  accuracy: number;
+  // index signature so the row type satisfies ThemedLineChart's Record<string, unknown>[]
+  [key: string]: unknown;
+}
 
 const HEALTH_CONFIG: Record<HealthStatus, {
   label: string;
@@ -334,24 +348,19 @@ export default function ModelMonitoringPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    {health.trend.slice(-10).map((snap: any, i: number) => {
-                      const acc = snap.accuracy ?? 0;
-                      return (
-                        <div key={i} className="flex items-center gap-3">
-                          <span className="text-xs text-muted-foreground w-24 shrink-0">
-                            {snap.periodEnd
-                              ? format(new Date(snap.periodEnd), 'dd MMM HH:mm')
-                              : `#${i + 1}`}
-                          </span>
-                          <Progress value={acc * 100} className="flex-1 h-2" />
-                          <span className="text-xs font-mono w-14 text-right">
-                            {(acc * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ThemedLineChart
+                    data={(health.trend as TrendSnapshot[]).slice(-10).map((snap, i): TrendPoint => ({
+                      time: snap.periodEnd
+                        ? format(new Date(snap.periodEnd), 'dd MMM HH:mm')
+                        : `#${i + 1}`,
+                      accuracy: Number(snap.accuracy ?? 0) * 100,
+                    }))}
+                    xKey="time"
+                    series={[{ key: 'accuracy', name: t('modelMonitoring.accuracyLatest') }]}
+                    height={280}
+                    yTickFormatter={(v) => `${v.toFixed(0)}%`}
+                    aria-label={t('modelMonitoring.performanceTrend', { count: health.trend.length })}
+                  />
                 </CardContent>
               </Card>
             )}
