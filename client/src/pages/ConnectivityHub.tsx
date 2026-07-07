@@ -11,7 +11,7 @@
  *   - ngrate    → mqtt_alerts        (was requirePermission mqtt_alerts)
  * everything else is covered by the hub route guard (mqtt_monitoring).
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -79,6 +79,14 @@ export default function ConnectivityHub() {
     setActiveTab(v);
     setLocation(`/connectivity?tab=${v}`, { replace: true });
   };
+
+  // doc 40 fix — react to ?tab= changes AFTER mount (e.g. a sidebar deep-link to a tab
+  // while already on the hub). Without this the URL/header changed but the tab didn't.
+  useEffect(() => {
+    const tab = new URLSearchParams(search).get("tab");
+    if (tab && validValues.includes(tab) && tab !== activeTab) setActiveTab(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   // Guard against a tab that was hidden after a permission change (e.g. profiles/ngrate).
   const current = validValues.includes(activeTab) ? activeTab : validValues[0] ?? "overview";

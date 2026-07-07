@@ -7,7 +7,7 @@
  * RBAC: module 'masterdata'. Create/edit/delete actions are hidden unless the
  * user holds the matching grant; the whole page requires canView.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -64,6 +64,15 @@ export default function MasterDataManagement() {
     setTab(v);
     setLocation(`/master-data?tab=${v}`, { replace: true });
   };
+  // React to ?tab= changes while already mounted (e.g. sidebar deep-links).
+  // Only switch to a KNOWN tab; ignore unknown/invalid params so the page never blanks.
+  useEffect(() => {
+    const q = new URLSearchParams(search).get("tab");
+    if (q && (MASTER_DATA_TABS as readonly string[]).includes(q) && q !== tab) {
+      setTab(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   if (!canView) {
     return (

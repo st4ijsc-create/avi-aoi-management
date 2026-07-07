@@ -22,7 +22,7 @@ import { EnhancedAuditLogsContent } from "@/pages/EnhancedAuditLogs";
 import { CommandAuditLogContent } from "@/pages/CommandAuditLog";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearch } from "wouter";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { 
@@ -541,11 +541,20 @@ export default function AuditLogs() {
 
   // Honour ?tab=command / ?tab=enhanced (used by the /command-audit and /enhanced-audit redirects).
   const search = useSearch();
-  const requestedTab = new URLSearchParams(search).get("tab");
-  const defaultTab =
-    requestedTab === "command" && canViewCommand ? "command"
-    : requestedTab === "enhanced" ? "enhanced"
-    : "activity";
+  const deriveTab = () => {
+    const requestedTab = new URLSearchParams(search).get("tab");
+    return requestedTab === "command" && canViewCommand ? "command"
+      : requestedTab === "enhanced" ? "enhanced"
+      : "activity";
+  };
+  const [activeTab, setActiveTab] = useState<string>(deriveTab);
+  // React to ?tab= changes while already mounted (e.g. sidebar deep-links).
+  // deriveTab only ever yields a KNOWN tab, so an invalid param falls back to "activity".
+  useEffect(() => {
+    const next = deriveTab();
+    if (next !== activeTab) setActiveTab(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   if (permsLoading) {
     return (
@@ -580,7 +589,7 @@ export default function AuditLogs() {
           description={t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}
         />
 
-        <Tabs defaultValue={defaultTab}>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="activity" className="gap-2">
               <Activity className="h-4 w-4" />

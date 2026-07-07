@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NavGroup, NavItem, buildModuleL2, isNavItemActive } from "@/lib/navigation";
+import { NavGroup, NavItem, L2Entry, buildModuleL2, isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useIsCoarsePointer } from "@/hooks/useMobile";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -68,8 +68,21 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // Open the current route's module by default (on mount / remount); when the scope is
   // a single module, open that instead (covers routes whose href isn't matched here).
   const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath ?? soleModuleId);
+  // The Level-2 category (section) that OWNS the current route. The category the user
+  // is in must stay OPEN across navigation (this nav remounts per page), while OTHER
+  // categories collapse (single-open accordion).
+  const categoryForPath = useMemo(() => {
+    const g = groups.find(gr => gr.id === moduleForPath);
+    if (!g) return null;
+    const entry = buildModuleL2(g).find(
+      (e): e is Extract<L2Entry, { kind: "category" }> =>
+        e.kind === "category" && e.items.some(i => isNavItemActive(i.href, currentPath)),
+    );
+    return entry?.key ?? null;
+  }, [groups, moduleForPath, currentPath]);
   // The currently expanded category (its pages show inline below it). One at a time.
-  const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
+  // Initialised to the active route's category so navigating keeps the used one open.
+  const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(categoryForPath);
 
   // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
   // when navigating within the same module. So when the route moves to a page in
@@ -94,6 +107,16 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     }
     prevSoleModuleId.current = soleModuleId;
   }, [soleModuleId]);
+  // Keep the OPEN category following the route: when navigation lands on a page in a
+  // different category, open that category (others collapse — single-open). Fires only
+  // when the active category CHANGES, so a manual collapse on the current page is kept.
+  const prevCategoryForPath = useRef(categoryForPath);
+  useEffect(() => {
+    if (categoryForPath && categoryForPath !== prevCategoryForPath.current) {
+      setHoverCategoryKey(categoryForPath);
+    }
+    prevCategoryForPath.current = categoryForPath;
+  }, [categoryForPath]);
   // Touch devices (tablets/phones in landscape that still show the rail): switch
   // Level-2→3 from hover to tap and expand items INLINE in the Level-2 panel
   // (single-column drill) instead of opening a separate Level-3 side flyout — this
@@ -146,9 +169,9 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   const handleNavigate = useCallback(
     (href: string) => {
       onNavigate(href);
-      // Collapse the expanded category on navigate — keep the module (Level-2)
-      // expanded (the new route belongs to it, so moduleForPath keeps it active).
-      setHoverCategoryKey(null);
+      // Do NOT collapse the category on navigate — the category the user is in stays
+      // OPEN (the categoryForPath effect keeps the active category open after the
+      // per-page remount; other categories collapse because it's single-open).
     },
     [onNavigate],
   );
