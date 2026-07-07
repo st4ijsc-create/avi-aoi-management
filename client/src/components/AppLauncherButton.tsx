@@ -28,9 +28,11 @@ export function AppLauncherButton({ activeApp, onOpen, className }: AppLauncherB
     >
       <LayoutGrid className="h-4 w-4 shrink-0 text-muted-foreground" />
       {activeApp && ActiveIcon && (
-        <span className="hidden min-w-0 items-center gap-1.5 md:flex">
+        // doc 39 menu-audit M2 (P1-2): the active-app ICON always shows (so mobile users
+        // still know which app they're in); only the NAME label collapses on small screens.
+        <span className="flex min-w-0 items-center gap-1.5">
           <ActiveIcon className="h-4 w-4 shrink-0 text-primary" />
-          <span className="truncate font-medium text-foreground">{t(activeApp.labelKey)}</span>
+          <span className="hidden truncate font-medium text-foreground md:inline">{t(activeApp.labelKey)}</span>
         </span>
       )}
     </button>

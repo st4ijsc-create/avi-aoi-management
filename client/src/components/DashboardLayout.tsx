@@ -23,7 +23,6 @@ import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, L
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
-import { MegaMenuOverlay } from "./MegaMenuOverlay";
 import { AppLauncherButton } from "./AppLauncherButton";
 import { AppLauncherOverlay } from "./AppLauncherOverlay";
 import { NotificationCenter } from "./NotificationCenter";
@@ -208,9 +207,10 @@ function DashboardLayoutContent({
   // Sprint 2c — global SPC violation toasts (works on every authenticated page)
   useSpcAlertToast();
 
-  // Command palette (⌘/Ctrl+K) — M3 · Quick Browse mega-menu (⌘/Ctrl+\) — M4
+  // Command palette (⌘/Ctrl+K) — the single omni-search across all apps.
+  // (doc 39 menu-audit M2: the hidden ⌘\ Mega Menu was removed — it was undiscoverable,
+  //  duplicated the sidebar + palette, and had a ?tab= active-state bug.)
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [megaOpen, setMegaOpen] = useState(false);
 
   // doc 36 — App Launcher (Phương án A) is the DEFAULT menu; users can switch to the
   // classic 9-group sidebar via the user menu (persisted, reactive).
@@ -223,9 +223,6 @@ function DashboardLayoutContent({
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen(o => !o);
-      } else if (e.key === "\\") {
-        e.preventDefault();
-        setMegaOpen(o => !o);
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -581,15 +578,6 @@ function DashboardLayoutContent({
         onNavigate={href => {
           setLocation(href);
           setPaletteOpen(false);
-        }}
-      />
-      <MegaMenuOverlay
-        open={megaOpen}
-        onOpenChange={setMegaOpen}
-        groups={visibleGroups}
-        onNavigate={href => {
-          setLocation(href);
-          setMegaOpen(false);
         }}
       />
       {/* doc 36 — App Launcher grid overlay (Phương án A). Opened from the top-shell waffle. */}

@@ -61,8 +61,14 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     () => groups.find(g => g.items.some(i => isNavItemActive(i.href, currentPath)))?.id ?? null,
     [groups, currentPath],
   );
-  // Open the current route's module by default (on mount / remount).
-  const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath);
+  // App-Launcher mode: the sidebar is scoped to ONE app, which usually resolves to a
+  // single nav group. When the scoped `groups` collapses to exactly one module, that
+  // module IS the app — auto-open it so its categories/pages are visible immediately
+  // (otherwise the app shows just one collapsed Level-1 header the user must click).
+  const soleModuleId = groups.length === 1 ? groups[0].id : null;
+  // Open the current route's module by default (on mount / remount); when the scope is
+  // a single module, open that instead (covers routes whose href isn't matched here).
+  const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath ?? soleModuleId);
   const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
 
   // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
@@ -76,6 +82,18 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     }
     prevPathModule.current = moduleForPath;
   }, [moduleForPath]);
+  // App-Launcher app-switch: when the scoped `groups` changes to a SINGLE module
+  // (switching to a one-module app), auto-open it — this reacts to scope changes, not
+  // just first mount. Fires only when the sole module CHANGES, so a manual collapse
+  // within the same single-module scope is respected (activeModuleId stays null until
+  // the scope changes again). Multi-group scopes (soleModuleId === null) are untouched.
+  const prevSoleModuleId = useRef(soleModuleId);
+  useEffect(() => {
+    if (soleModuleId && soleModuleId !== prevSoleModuleId.current) {
+      setActiveModuleId(soleModuleId);
+    }
+    prevSoleModuleId.current = soleModuleId;
+  }, [soleModuleId]);
   // Touch devices (tablets/phones in landscape that still show the rail): switch
   // Level-2→3 from hover to tap and expand items INLINE in the Level-2 panel
   // (single-column drill) instead of opening a separate Level-3 side flyout — this

@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Search, Star, StarOff } from "lucide-react";
+import { useLocation, useSearch } from "wouter";
+import { Search, Star, StarOff, Check } from "lucide-react";
 import {
   CommandDialog,
   CommandInput,
@@ -10,7 +11,7 @@ import {
   CommandItem,
   CommandSeparator,
 } from "@/components/ui/command";
-import { NavGroup, NavItem } from "@/lib/navigation";
+import { NavGroup, NavItem, isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 const RECENT_KEY = "nav-recent";
@@ -75,6 +76,11 @@ type FlatItem = {
 
 export function CommandPalette({ open, onOpenChange, groups, onNavigate }: CommandPaletteProps) {
   const { t } = useTranslation();
+  // Current location WITH query (mirrors DashboardLayout's `navActivePath`), so the
+  // active row honours pinned `?tab=` deep-links exactly like the sidebar.
+  const [loc] = useLocation();
+  const searchStr = useSearch();
+  const activePath = searchStr ? `${loc}?${searchStr}` : loc;
   const [search, setSearch] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
@@ -165,20 +171,31 @@ export function CommandPalette({ open, onOpenChange, groups, onNavigate }: Comma
     );
   };
 
-  const renderRow = (f: FlatItem) => (
-    <CommandItem
-      key={f.item.href}
-      // `value` is what cmdk fuzzy-matches against — include label + hint.
-      value={`${t(f.item.label)} ${f.hint} ${f.item.href}`}
-      onSelect={() => handleNavigate(f.item.href)}
-      className="gap-2"
-    >
-      <span className="shrink-0 text-muted-foreground">{f.item.icon}</span>
-      <span className="truncate">{t(f.item.label)}</span>
-      <span className="ml-2 truncate text-xs text-muted-foreground">{f.hint}</span>
-      {renderStar(f.item.href)}
-    </CommandItem>
-  );
+  const renderRow = (f: FlatItem) => {
+    const active = isNavItemActive(f.item.href, activePath);
+    return (
+      <CommandItem
+        key={f.item.href}
+        // `value` is what cmdk fuzzy-matches against — include label + hint.
+        value={`${t(f.item.label)} ${f.hint} ${f.item.href}`}
+        onSelect={() => handleNavigate(f.item.href)}
+        aria-current={active ? "page" : undefined}
+        className="gap-2"
+      >
+        <span className={cn("shrink-0 text-muted-foreground", active && "text-primary")}>
+          {f.item.icon}
+        </span>
+        <span className={cn("truncate", active && "font-medium text-primary")}>
+          {t(f.item.label)}
+        </span>
+        <span className="ml-2 truncate text-xs text-muted-foreground">{f.hint}</span>
+        {active && (
+          <Check className="ml-auto h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+        )}
+        {renderStar(f.item.href)}
+      </CommandItem>
+    );
+  };
 
   return (
     <CommandDialog
