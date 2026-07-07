@@ -11,6 +11,15 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { FilterBar, type FilterDef } from "@/components/FilterBar";
 import { FormScaffold, TextField, SelectField } from "@/components/FormScaffold";
+// ── Wave 2 (shared UI kit) primitives — showcased below ──────────────────────
+import {
+  MachineSelect,
+  ScopeFilterBar,
+  RadialGauge,
+  Sparkline,
+  ConnectionChip,
+  ThemedLineChart,
+} from "@/components/patterns";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -251,6 +260,9 @@ export default function ComponentsShowcase() {
         <div className="space-y-12">
           {/* Wave 1 foundation primitives (DataTable / AsyncBoundary / FilterBar / FormScaffold) */}
           <Wave1PrimitivesShowcase />
+
+          {/* Wave 2 shared UI kit (EntityPicker / ScopeFilterBar / gauges / charts) */}
+          <Wave2KitShowcase />
 
           {/* Text Colors Section */}
           <section className="space-y-4">
@@ -1596,6 +1608,92 @@ function Wave1PrimitivesShowcase() {
               </div>
             )}
           </FormScaffold>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 2 (shared UI kit) — EntityPicker, ScopeFilterBar, gauges/sparkline/chip,
+// and themed charts. These retire raw-ID inputs and per-page chart/hex drift.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEMO_TREND = [
+  { month: "Jan", ng: 42, yield: 96.1 },
+  { month: "Feb", ng: 38, yield: 96.8 },
+  { month: "Mar", ng: 51, yield: 95.2 },
+  { month: "Apr", ng: 29, yield: 97.4 },
+  { month: "May", ng: 33, yield: 97.0 },
+  { month: "Jun", ng: 22, yield: 98.1 },
+];
+
+function Wave2KitShowcase() {
+  const [machineId, setMachineId] = useState<string | number | null>(null);
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h3 className="text-2xl font-semibold">Shared UI kit (Wave 2)</h3>
+        <p className="text-sm text-muted-foreground">
+          Pickers &amp; visual primitives that replace raw numeric-ID inputs and per-page chart/badge reinvention.
+        </p>
+      </div>
+
+      {/* EntityPicker + ScopeFilterBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">EntityPicker &amp; ScopeFilterBar</CardTitle>
+          <CardDescription>Searchable pickers over real endpoints (no more typing DB IDs). Scope bar persists to the URL.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-1">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">MachineSelect</p>
+            <MachineSelect value={machineId} onChange={setMachineId} aria-label="Machine" />
+            <p className="text-xs text-muted-foreground">Selected id: {machineId ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">ScopeFilterBar</p>
+            <ScopeFilterBar show={["line", "machine", "dateRange"]} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Gauges / Sparkline / ConnectionChip */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">RadialGauge · Sparkline · ConnectionChip</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-8">
+          <RadialGauge value={92} unit="%" label="OEE" tone="auto" />
+          <RadialGauge value={41} unit="%" label="Health" tone="auto" />
+          <div className="space-y-2">
+            <Sparkline data={[42, 38, 51, 29, 33, 22]} tone="good" showArea showEndDot />
+            <p className="text-xs text-muted-foreground">NG trend</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <ConnectionChip state="connected" pulse />
+            <ConnectionChip state="connecting" pulse />
+            <ConnectionChip state="disconnected" />
+            <ConnectionChip state="error" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ThemedCharts */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">ThemedCharts</CardTitle>
+          <CardDescription>recharts wrapped with the design-system palette — correct in light &amp; dark, zero hex passed in.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemedLineChart
+            data={DEMO_TREND}
+            xKey="month"
+            series={[{ key: "yield", name: "Yield %" }, { key: "ng", name: "NG count" }]}
+            height={260}
+            aria-label="Yield and NG trend"
+          />
         </CardContent>
       </Card>
     </section>

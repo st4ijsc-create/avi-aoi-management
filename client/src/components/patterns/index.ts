@@ -46,3 +46,39 @@ export {
   chartAxisTick,
   chartAxisProps,
 } from "./chartTokens";
+
+// ── doc 39 Wave 2 — shared UI kit & pickers ──────────────────────────────────
+// EntityPicker: searchable combobox over real tRPC list endpoints — replaces raw
+// numeric-ID / free-text-code inputs everywhere. Presets wire the endpoints.
+export {
+  EntityPicker,
+  MachineSelect,
+  LineSelect,
+  FactorySelect,
+  WorkshopSelect,
+  ProductModelSelect,
+  WorkstationSelect,
+  UserSelect,
+} from "./EntityPicker";
+export type { EntityOption, EntityPickerProps, EntitySelectProps } from "./EntityPicker";
+
+// ScopeFilterBar: canonical product/line/machine/factory/date scope bar (URL-synced).
+export { ScopeFilterBar, useScope } from "./ScopeFilterBar";
+export type { ScopeValues, ScopeControl, ScopeFilterBarProps } from "./ScopeFilterBar";
+
+// Themed recharts wrappers — pass data + series, get on-brand light/dark charts.
+export {
+  ThemedLineChart,
+  ThemedAreaChart,
+  ThemedBarChart,
+  ThemedPieChart,
+} from "./ThemedCharts";
+export type { ChartSeries, BaseChartProps, ThemedPieChartProps } from "./ThemedCharts";
+
+// Visual micro-primitives (extracted from per-page reinventions).
+export { RadialGauge } from "./RadialGauge";
+export type { RadialGaugeProps } from "./RadialGauge";
+export { Sparkline } from "./Sparkline";
+export type { SparklineProps, SparkPoint } from "./Sparkline";
+export { ConnectionChip } from "./ConnectionChip";
+export type { ConnectionChipProps, ConnectionState } from "./ConnectionChip";
