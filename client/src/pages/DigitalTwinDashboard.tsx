@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, LineSelect } from "@/components/patterns";
 import {
   Boxes,
   Activity,
@@ -396,11 +396,11 @@ export default function DigitalTwinDashboard() {
                 <div className="flex items-end gap-2 pt-2">
                   <div className="space-y-1">
                     <Label className="text-xs">{t("digitalTwin.station", "Trạm")} / Line ID</Label>
-                    <Input
-                      type="number"
-                      min={1}
+                    <LineSelect
                       value={lineId}
-                      onChange={(e) => setLineId(Math.max(1, Number(e.target.value) || 1))}
+                      onChange={(v) => setLineId(v == null ? 1 : Number(v))}
+                      clearable={false}
+                      aria-label={`${t("digitalTwin.station", "Trạm")} / Line ID`}
                       className="w-28"
                     />
                   </div>

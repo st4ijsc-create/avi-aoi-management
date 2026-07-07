@@ -21,11 +21,11 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
+import { ProductModelSelect, MachineSelect } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -78,14 +78,14 @@ export default function AnomalyBankPage() {
   const admin = isAdmin === true;
 
   const utils = trpc.useUtils();
-  const [productModelId, setProductModelId] = useState<string>("");
-  const [machineId, setMachineId] = useState<string>("");
+  const [productModelId, setProductModelId] = useState<number | null>(null);
+  const [machineId, setMachineId] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Profile | null>(null);
 
   const statsQ = trpc.aiAnomaly.stats.useQuery(
     {
-      productModelId: productModelId ? Number(productModelId) : null,
-      machineId: machineId ? Number(machineId) : null,
+      productModelId: productModelId ?? null,
+      machineId: machineId ?? null,
     },
     { enabled: canView },
   );
@@ -119,8 +119,8 @@ export default function AnomalyBankPage() {
 
   const buildGlobal = () => {
     rebuildM.mutate({
-      machineId: machineId ? Number(machineId) : null,
-      productModelId: productModelId ? Number(productModelId) : null,
+      machineId: machineId ?? null,
+      productModelId: productModelId ?? null,
       okOnly: true,
     });
   };
@@ -162,13 +162,15 @@ export default function AnomalyBankPage() {
         <div className="flex gap-3 flex-wrap items-end">
           <div className="grid gap-1">
             <Label>{t("anomalyBanks.machineId")}</Label>
-            <Input type="number" className="w-40" value={machineId}
-              onChange={(e) => setMachineId(e.target.value)} placeholder={t("anomalyBanks.optional")} />
+            <MachineSelect value={machineId}
+              onChange={(v) => setMachineId(v == null ? null : Number(v))}
+              aria-label={t("anomalyBanks.machineId")} clearable />
           </div>
           <div className="grid gap-1">
             <Label>{t("anomalyBanks.productModelId")}</Label>
-            <Input type="number" className="w-40" value={productModelId}
-              onChange={(e) => setProductModelId(e.target.value)} placeholder={t("anomalyBanks.optional")} />
+            <ProductModelSelect value={productModelId}
+              onChange={(v) => setProductModelId(v == null ? null : Number(v))}
+              aria-label={t("anomalyBanks.productModelId")} clearable />
           </div>
           <Button variant="outline" onClick={() => statsQ.refetch()}>
             <RefreshCw className="h-4 w-4 mr-1" /> {t("anomalyBanks.refresh")}

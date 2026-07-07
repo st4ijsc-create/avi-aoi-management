@@ -16,6 +16,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { ProductModelSelect, MachineSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -86,9 +87,9 @@ export default function BomManagement() {
 // ─── BOM definitions + line items ───────────────────────────────────────────
 function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boolean }) {
   const { t } = useTranslation();
-  const [productModelId, setProductModelId] = useState("");
+  const [productModelId, setProductModelId] = useState<number | null>(null);
   const [selectedBomId, setSelectedBomId] = useState<number | null>(null);
-  const pid = Number(productModelId);
+  const pid = productModelId ?? 0;
   const utils = trpc.useUtils();
 
   const list = trpc.bom.listDefinitions.useQuery(
@@ -131,7 +132,7 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
           <div className="flex items-end gap-2">
             <div>
               <Label>{t("bom.productModelId")}</Label>
-              <Input value={productModelId} onChange={(e) => setProductModelId(e.target.value)} className="w-40" placeholder={t("bom.productModelIdPlaceholder")} />
+              <ProductModelSelect value={productModelId} onChange={(v) => setProductModelId(v == null ? null : Number(v))} aria-label={t("bom.productModelId")} placeholder={t("bom.productModelIdPlaceholder")} clearable className="w-56" />
             </div>
             {canCreate && (
               <>
@@ -228,8 +229,8 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
 // ─── Feeder panel (assign/load + reorder badge) ─────────────────────────────
 function FeederPanel({ canCreate }: { canCreate: boolean }) {
   const { t } = useTranslation();
-  const [machineId, setMachineId] = useState("");
-  const mid = Number(machineId);
+  const [machineId, setMachineId] = useState<number | null>(null);
+  const mid = machineId ?? 0;
   const feeders = trpc.bom.listFeeders.useQuery({ machineId: mid }, { enabled: mid > 0 });
   const materialOptions = useMaterialOptions();
   const [f, setF] = useState<{ componentCode: string; materialId: number | null; slotCode: string; qtyOnFeeder: string; reorderLevel: string }>(
@@ -245,7 +246,7 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
       <CardHeader><CardTitle>{t("bom.feederByMachine")}</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-end gap-2 flex-wrap">
-          <div><Label>{t("bom.machineId")}</Label><Input value={machineId} onChange={(e) => setMachineId(e.target.value)} className="w-32" /></div>
+          <div><Label>{t("bom.machineId")}</Label><MachineSelect value={machineId} onChange={(v) => setMachineId(v == null ? null : Number(v))} aria-label={t("bom.machineId")} clearable className="w-56" /></div>
           {canCreate && (
             <>
               <div>

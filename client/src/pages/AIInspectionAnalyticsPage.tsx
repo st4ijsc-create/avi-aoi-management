@@ -19,7 +19,7 @@ import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer, chartColor } from "@/components/patterns";
+import { PageHeader, PageContainer, chartColor, MachineSelect } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,7 +115,7 @@ export default function AIInspectionAnalyticsPage() {
   const [endDate, setEndDate] = useState(savedRange?.end || defaultRange.end);
 
   // State: Filters
-  const [machineId, setMachineId] = useState<string>("");
+  const [machineId, setMachineId] = useState<number | null>(null);
   const [productModel, setProductModel] = useState("");
 
   // State: Active Tab (with localStorage persistence)
@@ -144,7 +144,7 @@ export default function AIInspectionAnalyticsPage() {
     () => ({
       startDate,
       endDate,
-      ...(machineId ? { machineId: Number(machineId) } : {}),
+      ...(machineId != null ? { machineId } : {}),
       ...(productModel ? { productModel } : {}),
     }),
     [startDate, endDate, machineId, productModel]
@@ -275,10 +275,12 @@ export default function AIInspectionAnalyticsPage() {
               <label className="text-xs font-medium text-muted-foreground block mb-1">
                 {t("aiAnalytics.machineId", "Machine ID")}
               </label>
-              <Input
-                placeholder="e.g., AOI-001"
+              <MachineSelect
                 value={machineId}
-                onChange={(e) => setMachineId(e.target.value)}
+                onChange={(v) => setMachineId(v == null ? null : Number(v))}
+                aria-label={t("aiAnalytics.machineId", "Machine ID")}
+                placeholder={t("aiAnalytics.machineId", "Machine ID")}
+                clearable
               />
             </div>
             <div className="flex-1 min-w-40">

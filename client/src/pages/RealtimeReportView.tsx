@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   PageHeader,
+  MachineSelect,
   chartColor,
   chartTooltipStyle,
   chartGridProps,
@@ -11,7 +12,6 @@ import {
 } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +31,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { Activity, Download, Search, Leaf } from "lucide-react";
+import { Activity, Download, Leaf } from "lucide-react";
 
 type ComplianceView =
   | "CFR21_PART11"
@@ -67,7 +67,6 @@ function exportCsv(filename: string, columns: { key: string; label: string }[], 
 
 export default function RealtimeReportView() {
   const { t } = useTranslation();
-  const [machineInput, setMachineInput] = useState("");
   const [machineId, setMachineId] = useState<number | null>(null);
   const [hours, setHours] = useState(168);
   const [view, setView] = useState<ComplianceView>("CFR21_PART11");
@@ -91,11 +90,6 @@ export default function RealtimeReportView() {
       })),
     [healthSeries.data],
   );
-
-  const submit = () => {
-    const n = parseInt(machineInput.trim(), 10);
-    setMachineId(Number.isFinite(n) && n > 0 ? n : null);
-  };
 
   const enpiRows = enpiSummary.data ?? [];
 
@@ -127,12 +121,13 @@ export default function RealtimeReportView() {
           <CardContent className="flex flex-wrap items-end gap-3 pt-6">
             <div className="w-40">
               <Label htmlFor="machine" className="text-xs">{t("rtReport.machineId", "Mã máy (ID)")}</Label>
-              <Input
+              <MachineSelect
                 id="machine"
-                placeholder="123"
-                value={machineInput}
-                onChange={(e) => setMachineInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
+                value={machineId}
+                onChange={(v) => setMachineId(v == null || Number(v) <= 0 ? null : Number(v))}
+                aria-label={t("rtReport.machineId", "Mã máy (ID)")}
+                placeholder={t("rtReport.machineId", "Mã máy (ID)")}
+                clearable
               />
             </div>
             <div className="w-40">
@@ -162,10 +157,6 @@ export default function RealtimeReportView() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={submit}>
-              <Search className="h-4 w-4 mr-1" />
-              {t("rtReport.apply", "Áp dụng")}
-            </Button>
           </CardContent>
         </Card>
 
