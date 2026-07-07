@@ -76,7 +76,7 @@ function parseSample(s: string): number | boolean | string {
   return s;
 }
 
-export default function UnsMappingDesigner() {
+export function UnsMappingDesignerContent() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission("machine_control", "canCreate");
@@ -193,7 +193,6 @@ export default function UnsMappingDesigner() {
   };
 
   return (
-    <DashboardLayout title="UNS Mapping" navItems={navItems} currentPath="/uns-mapping">
     <PageContainer>
       <PageHeader
         icon={<Share2 className="h-6 w-6" />}
@@ -462,6 +461,13 @@ export default function UnsMappingDesigner() {
         </AlertDialogContent>
       </AlertDialog>
     </PageContainer>
+  );
+}
+
+export default function UnsMappingDesigner() {
+  return (
+    <DashboardLayout title="UNS Mapping" navItems={navItems} currentPath="/uns-mapping">
+      <UnsMappingDesignerContent />
     </DashboardLayout>
   );
 }

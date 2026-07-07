@@ -91,7 +91,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
-export default function MqttBulletin() {
+export function MqttBulletinContent() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -448,8 +448,7 @@ export default function MqttBulletin() {
   };
 
   return (
-    <DashboardLayout>
-      <PageContainer>
+    <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<Newspaper className="h-6 w-6" />}
@@ -1668,7 +1667,14 @@ export default function MqttBulletin() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </PageContainer>
+    </PageContainer>
+  );
+}
+
+export default function MqttBulletin() {
+  return (
+    <DashboardLayout>
+      <MqttBulletinContent />
     </DashboardLayout>
   );
 }

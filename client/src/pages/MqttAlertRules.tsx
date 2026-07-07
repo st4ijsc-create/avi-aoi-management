@@ -40,7 +40,7 @@ const COMPARISON_OPERATORS = [
   { value: 'EQ', label: '=' },
 ];
 
-export default function MqttAlertRules() {
+export function MqttAlertRulesContent() {
   const { t } = useTranslation();
   const RULE_TYPES = RULE_TYPE_KEYS.map(rt => ({ ...rt, label: t(rt.labelKey), description: t(rt.descKey) }));
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -193,8 +193,7 @@ export default function MqttAlertRules() {
   };
 
   return (
-    <DashboardLayout>
-      <PageContainer>
+    <PageContainer>
         {/* Header */}
         <PageHeader
           icon={<AlertTriangle className="h-5 w-5 text-warning" />}
@@ -609,7 +608,14 @@ export default function MqttAlertRules() {
             <EscalationRulesSection />
           </TabsContent>
         </Tabs>
-      </PageContainer>
+    </PageContainer>
+  );
+}
+
+export default function MqttAlertRules() {
+  return (
+    <DashboardLayout>
+      <MqttAlertRulesContent />
     </DashboardLayout>
   );
 }

@@ -41,11 +41,9 @@ import SessionManagement from "./pages/SessionManagement";
 import ProductionSessionSignOff from "./pages/ProductionSessionSignOff";
 import { ProductComparison } from "./pages/ProductComparison";
 import Setup from "./pages/Setup";
-import MqttDashboard from "./pages/MqttDashboard";
-import MqttAlertRules from "./pages/MqttAlertRules";
-import MqttClientManagement from "./pages/MqttClientManagement";
-import MqttProfileManagement from "./pages/MqttProfileManagement";
-import MqttTopicsMessages from "./pages/MqttTopicsMessages";
+// doc 39 Wave 4 — the 9 MQTT/UNS pages are consolidated into one lazy Connectivity
+// hub (their bodies are imported as *Content there). Legacy routes redirect in.
+const ConnectivityHub = React.lazy(() => import("./pages/ConnectivityHub"));
 import SystemConfiguration from "./pages/SystemConfiguration";
 import ImportExport from "./pages/ImportExport";
 import UserAssignments from "./pages/UserAssignments";
@@ -57,7 +55,6 @@ import UserGuide from "./pages/UserGuide";
 import AboutSystem from "./pages/AboutSystem";
 import BackupRestore from "./pages/BackupRestore";
 import OEEDashboard from "./pages/OEEDashboard";
-import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
 import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
 import MESControlTower from "./pages/MESControlTower";
@@ -105,7 +102,6 @@ const MaintenanceHome = React.lazy(() => import("./pages/MaintenanceHome")); // 
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
-const UnsMappingDesigner = React.lazy(() => import("./pages/UnsMappingDesigner")); // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (CONFIG + live preview)
 const SystemHealth = React.lazy(() => import("./pages/SystemHealth")); // Tier-1b (doc 24): OT store-and-forward + connection HA supervisors + DINOv2 model health + commissioning + twin export
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
@@ -158,7 +154,6 @@ const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)
 import AOIPackages from "./pages/AOIPackages";
-import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
 import RoleBuilder from "./pages/RoleBuilder";
 import PdfReports from "./pages/PdfReports";
@@ -174,7 +169,6 @@ const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardi
 const FeederVerify = React.lazy(() => import("./pages/FeederVerify")); // doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)
 import CorporateManagement from "./pages/CorporateManagement";
 import LicenseManagement from "./pages/LicenseManagement";
-import MqttNgRateThreshold from "./pages/MqttNgRateThreshold";
 import MonitoringSettings from "./pages/MonitoringSettings";
 import AnalyticsSettings from "./pages/AnalyticsSettings";
 import AdminSettings from "./pages/AdminSettings";
@@ -303,20 +297,23 @@ function Router() {
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
       <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
       <Route path="/field-devices"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><FieldDevices /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/mqtt-dashboard"><RouteGuard navHref="/mqtt-dashboard"><MqttDashboard /></RouteGuard></Route>
-      <Route path="/mqtt-bulletin"><RouteGuard navHref="/mqtt-bulletin"><MqttBulletin /></RouteGuard></Route>
-      <Route path="/mqtt-replay"><RouteGuard navHref="/mqtt-replay"><MQTTReplay /></RouteGuard></Route>
-      <Route path="/mqtt-clients"><RouteGuard navHref="/mqtt-clients"><MqttClientManagement /></RouteGuard></Route>
-      <Route path="/mqtt-alerts"><RouteGuard navHref="/mqtt-alerts"><MqttAlertRules /></RouteGuard></Route>
-      <Route path="/mqtt-profiles"><RouteGuard requireRole={["admin"]} requirePermission="mqtt_monitoring"><MqttProfileManagement /></RouteGuard></Route>
-      <Route path="/mqtt-topics"><RouteGuard requirePermission="mqtt_monitoring"><MqttTopicsMessages /></RouteGuard></Route>
-      <Route path="/mqtt-ng-rate"><RouteGuard requirePermission="mqtt_alerts"><MqttNgRateThreshold /></RouteGuard></Route>
+      {/* doc 39 Wave 4 — Connectivity hub consolidates the 9 MQTT/UNS surfaces into one
+          tabbed page; legacy routes deep-link into their tab (deep-links preserved). */}
+      <Route path="/connectivity"><RouteGuard requirePermission="mqtt_monitoring"><AIPageWrapper><ConnectivityHub /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/mqtt-dashboard"><Redirect to="/connectivity?tab=overview" /></Route>
+      <Route path="/mqtt-bulletin"><Redirect to="/connectivity?tab=bulletin" /></Route>
+      <Route path="/mqtt-replay"><Redirect to="/connectivity?tab=replay" /></Route>
+      <Route path="/mqtt-clients"><Redirect to="/connectivity?tab=clients" /></Route>
+      <Route path="/mqtt-alerts"><Redirect to="/connectivity?tab=alerts" /></Route>
+      <Route path="/mqtt-profiles"><Redirect to="/connectivity?tab=profiles" /></Route>
+      <Route path="/mqtt-topics"><Redirect to="/connectivity?tab=topics" /></Route>
+      <Route path="/mqtt-ng-rate"><Redirect to="/connectivity?tab=ngrate" /></Route>
       <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
       <Route path="/aoi-onboarding"><RouteGuard navHref="/aoi-onboarding"><AIPageWrapper><AoiOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/product-onboarding"><RouteGuard navHref="/product-onboarding"><AIPageWrapper><ProductOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
-      <Route path="/uns-mapping"><RouteGuard navHref="/uns-mapping"><UnsMappingDesigner /></RouteGuard></Route>
+      <Route path="/uns-mapping"><Redirect to="/connectivity?tab=uns" /></Route>
       <Route path="/system-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/hot-folders"><RouteGuard navHref="/hot-folders"><AIPageWrapper><HotFolderConfigPage /></AIPageWrapper></RouteGuard></Route>

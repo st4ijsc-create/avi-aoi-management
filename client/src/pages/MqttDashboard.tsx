@@ -42,7 +42,7 @@ import {
 } from "recharts";
 import { useTranslation } from 'react-i18next';
 
-export default function MqttDashboard() {
+export function MqttDashboardContent() {
   const { t } = useTranslation();
   const [trendDays, setTrendDays] = useState(7);
   
@@ -269,7 +269,7 @@ export default function MqttDashboard() {
   ].filter(d => d.value > 0) : [];
 
   return (
-    <DashboardLayout>
+    <>
       <PageContainer fluid className="space-y-3 sm:space-y-4 mobile-safe-bottom">
         {/* Header */}
         <PageHeader
@@ -963,6 +963,14 @@ export default function MqttDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+export default function MqttDashboard() {
+  return (
+    <DashboardLayout>
+      <MqttDashboardContent />
     </DashboardLayout>
   );
 }
