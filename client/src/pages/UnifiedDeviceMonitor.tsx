@@ -148,7 +148,7 @@ function SourceIcon({ source }: { source: SourceKind }) {
   return <Cpu className="h-4 w-4 text-violet-500" />;
 }
 
-export default function UnifiedDeviceMonitor() {
+export function UnifiedDeviceMonitorContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -330,7 +330,7 @@ export default function UnifiedDeviceMonitor() {
   };
 
   return (
-    <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
+    <>
       <PageContainer fluid>
         {/* Header */}
         <PageHeader
@@ -535,6 +535,15 @@ export default function UnifiedDeviceMonitor() {
       </PageContainer>
 
       <DeviceOnboardingWizard open={wizardOpen} onOpenChange={setWizardOpen} onChanged={refetchAll} />
+    </>
+  );
+}
+
+export default function UnifiedDeviceMonitor() {
+  const { t } = useTranslation();
+  return (
+    <DashboardLayout title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")} navItems={navItems} currentPath="/device-monitor">
+      <UnifiedDeviceMonitorContent />
     </DashboardLayout>
   );
 }

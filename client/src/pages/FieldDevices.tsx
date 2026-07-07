@@ -99,7 +99,7 @@ function relativeTime(value: string | Date | null | undefined, t: (k: string, d:
   return `${d}${t("field.dayAgo", "d ago")}`;
 }
 
-export default function FieldDevices() {
+export function FieldDevicesContent() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
@@ -193,22 +193,19 @@ export default function FieldDevices() {
 
   if (!canView) {
     return (
-      <DashboardLayout>
-        <div className="p-6">
-          <Card>
-            <CardContent className="py-10 text-center text-muted-foreground">
-              <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
-              {t("field.noPermission", "You do not have permission to view field devices.")}
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardLayout>
+      <div className="p-6">
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
+            {t("field.noPermission", "You do not have permission to view field devices.")}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="flex flex-col gap-4 p-4 md:p-6">
+    <div className="flex flex-col gap-4 p-4 md:p-6">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
           icon={<Radio className="h-6 w-6" />}
@@ -513,6 +510,13 @@ export default function FieldDevices() {
           </TabsContent>
         </Tabs>
       </div>
+  );
+}
+
+export default function FieldDevices() {
+  return (
+    <DashboardLayout>
+      <FieldDevicesContent />
     </DashboardLayout>
   );
 }

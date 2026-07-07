@@ -186,7 +186,7 @@ function FactorCard({
   );
 }
 
-export default function MachineHealthMonitoring() {
+export function MachineHealthMonitoringContent() {
   const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month">("week");
@@ -343,7 +343,6 @@ export default function MachineHealthMonitoring() {
   };
 
   return (
-    <DashboardLayout>
       <PageContainer>
         {/* Header */}
         <PageHeader
@@ -819,6 +818,13 @@ export default function MachineHealthMonitoring() {
           </TabsContent>
         </Tabs>
       </PageContainer>
+  );
+}
+
+export default function MachineHealthMonitoring() {
+  return (
+    <DashboardLayout>
+      <MachineHealthMonitoringContent />
     </DashboardLayout>
   );
 }

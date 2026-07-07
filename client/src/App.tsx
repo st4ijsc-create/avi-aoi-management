@@ -56,7 +56,6 @@ import AboutSystem from "./pages/AboutSystem";
 import BackupRestore from "./pages/BackupRestore";
 import OEEDashboard from "./pages/OEEDashboard";
 import OEETargetSettings from "./pages/OEETargetSettings";
-import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
 import MESControlTower from "./pages/MESControlTower";
 import WipLineBalance from "./pages/WipLineBalance";
 import TraceabilityLineage from "./pages/TraceabilityLineage";
@@ -140,7 +139,9 @@ const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")
 const SynapsePlatformPage = React.lazy(() => import("./pages/SynapsePlatformPage")); // doc 33: read-only SYNAPSE platform cockpit
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage")); // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run
-const UnifiedDeviceMonitor = React.lazy(() => import("./pages/UnifiedDeviceMonitor")); // P3-W2 (doc 12 §8): flagship unified device monitor — default DEVICES & OT landing
+// doc 39 Wave 4 — device-monitoring surfaces (fleet list / health-OEE / field devices)
+// consolidated into one lazy Device hub; legacy routes redirect into their tab.
+const DeviceHub = React.lazy(() => import("./pages/DeviceHub"));
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
 const FleetOrchestration = React.lazy(() => import("./pages/FleetOrchestration")); // G1 (doc 16 §7 Khối 2): fleet task allocation + zone traffic (read-mostly; mutations gated by FLEET_ORCH_ENABLED)
 const ControlPlane = React.lazy(() => import("./pages/ControlPlane")); // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only projections)
@@ -148,7 +149,6 @@ const SafetyWorkforce = React.lazy(() => import("./pages/SafetyWorkforce")); // 
 const RobotModelHealth = React.lazy(() => import("./pages/RobotModelHealth")); // I2 (doc 16 §9 Khối 4): advisory robot-behaviour anomaly + AI model rollback audit (read-mostly; mutations gated by AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
 const EquipmentStandards = React.lazy(() => import("./pages/EquipmentStandards")); // E1 (doc 16 §10 Khối 5): device-type hierarchy + ISA-18.2 alarm taxonomy + Equipment Standards Board (governance metadata only; mutations gated by EQ_GOVERN_ENABLED)
 const EquipmentIntegration = React.lazy(() => import("./pages/EquipmentIntegration")); // I1 (doc 16 §6 Khối 1B): FOCAS/Euromap integration frameworks (read-only) + recipe versioning genealogy (mutations gated by EQ_INTEG_ENABLED)
-const FieldDevices = React.lazy(() => import("./pages/FieldDevices")); // X1 (doc 16 §5 Khối 1): Field & device abstraction — UDM state/liveness board + hot-plug discovery (mutations gated by FIELD_V2_ENABLED)
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
@@ -290,13 +290,15 @@ function Router() {
 
       {/* ── DEVICES & OT ─────────────────────────────────────────────────── */}
       {/* P3-W2: unified Device Monitor is the default device landing. */}
-      <Route path="/device-monitor"><RouteGuard navHref="/device-monitor"><AIPageWrapper><UnifiedDeviceMonitor /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 39 Wave 4 — Device hub consolidates fleet list + health/OEE + field devices
+          into one tabbed page; /machine-health & /field-devices deep-link into their tab. */}
+      <Route path="/device-monitor"><RouteGuard navHref="/device-monitor"><AIPageWrapper><DeviceHub /></AIPageWrapper></RouteGuard></Route>
       {/* P3-W2 consolidation: legacy machine-status grid → unified Device Monitor. */}
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
-      <Route path="/machine-health"><RouteGuard navHref="/machine-health"><MachineHealthMonitoring /></RouteGuard></Route>
+      <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
       <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/field-devices"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><FieldDevices /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/field-devices"><Redirect to="/device-monitor?tab=field" /></Route>
       {/* doc 39 Wave 4 — Connectivity hub consolidates the 9 MQTT/UNS surfaces into one
           tabbed page; legacy routes deep-link into their tab (deep-links preserved). */}
       <Route path="/connectivity"><RouteGuard requirePermission="mqtt_monitoring"><AIPageWrapper><ConnectivityHub /></AIPageWrapper></RouteGuard></Route>
