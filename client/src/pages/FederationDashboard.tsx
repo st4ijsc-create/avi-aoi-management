@@ -888,6 +888,7 @@ export default function FederationDashboard() {
             icon={<Network className="h-4 w-4 text-primary" />}
             title={t("federation.siteGrid", "Per-site KPIs")}
           >
+              <div className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1014,6 +1015,7 @@ export default function FederationDashboard() {
                   })}
                 </TableBody>
               </Table>
+              </div>
           </SectionCard>
         )}
 

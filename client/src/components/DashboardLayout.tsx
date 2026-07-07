@@ -297,6 +297,14 @@ function DashboardLayoutContent({
 
   return (
     <>
+      {/* doc 39 Wave 6 (a11y) — skip-to-content link: first focusable element, visually
+          hidden until focused, jumps keyboard users past the nav straight to the page. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t("nav.skipToContent", "Skip to content")}
+      </a>
       <div className="relative" data-app-chrome="sidebar">
         <Sidebar
           // ICON rail: collapsing shrinks the rail to icons only. CascadingNav renders an
@@ -545,7 +553,7 @@ function DashboardLayoutContent({
         <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
-        <main className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto", isMobile && "pb-20")}>
+        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto focus:outline-none", isMobile && "pb-20")}>
           {/* doc 22 P4 — one-line "Beta / needs setup" banner on framework/flag-gated
               routes so first-time users don't expect live data. Driven by the nav flag. */}
           {isBetaRoute(currentPath || location) && <BetaBanner />}

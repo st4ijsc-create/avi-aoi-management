@@ -252,6 +252,7 @@ export default function WipLineBalance() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -285,6 +286,7 @@ export default function WipLineBalance() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
 
@@ -296,6 +298,7 @@ export default function WipLineBalance() {
               <CardDescription>{t("wipDashboard.lineBalanceDesc", "24 chu kỳ gần nhất")}</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="w-full overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -323,6 +326,7 @@ export default function WipLineBalance() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         )}

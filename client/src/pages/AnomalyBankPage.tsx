@@ -185,6 +185,7 @@ export default function AnomalyBankPage() {
 
         <Card>
           <CardContent className="p-0">
+            <div className="w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -253,6 +254,7 @@ export default function AnomalyBankPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       </PageContainer>
