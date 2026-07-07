@@ -32,7 +32,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { SiteSwitcher } from "./SiteSwitcher";
 import { SiteHealthDot } from "./SiteHealthDot";
-import { CSSProperties, Fragment, ReactNode, useEffect, useMemo, useState } from "react";
+import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
@@ -64,7 +64,22 @@ type DashboardLayoutProps = {
   title?: string;
   navItems?: NavItem[];
   currentPath?: string;
+  /**
+   * doc 39 Wave 1b — when true, THIS instance is the single persistent shell hoisted
+   * above the router (rendered by App under the APP_SHELL_PERSISTENT flag). It renders
+   * the full chrome ONCE and marks the subtree via InShellContext so every page's own
+   * <DashboardLayout> collapses to a passthrough (no remount of the sidebar on nav).
+   */
+  asShell?: boolean;
 };
+
+/**
+ * doc 39 Wave 1b — true inside the persistent app-shell. When a page renders its own
+ * <DashboardLayout> while this is true, that layout becomes a passthrough (renders just
+ * its children) so the chrome isn't duplicated/remounted. Default false = legacy behavior
+ * (every page owns its layout), so nothing changes until the shell is hoisted.
+ */
+export const InShellContext = createContext<boolean>(false);
 
 // R4: desktop nav is an inline-accordion sidebar — modules expand their categories
 // straight down (only the Level-3 page menu floats). A comfortable fixed width holds
@@ -76,9 +91,18 @@ export default function DashboardLayout({
   title = "AVI/AOI Management",
   navItems = [],
   currentPath,
+  asShell = false,
 }: DashboardLayoutProps) {
   const { loading, user } = useAuth();
   const { t } = useTranslation();
+
+  // doc 39 Wave 1b — passthrough: if we're already inside the persistent shell and this
+  // is NOT that shell (i.e. a page rendered its own <DashboardLayout>), render only the
+  // page content. The hoisted shell owns the chrome + the loading/auth guards below.
+  const inShell = useContext(InShellContext);
+  if (inShell && !asShell) {
+    return <>{children}</>;
+  }
 
   // Persist the desktop rail's expanded/collapsed state ACROSS navigations. Each page
   // renders its own DashboardLayout, so the SidebarProvider remounts on every navigation;
@@ -122,7 +146,7 @@ export default function DashboardLayout({
     );
   }
 
-  return (
+  const shell = (
     <SidebarProvider
       open={sidebarOpen}
       onOpenChange={(o) => {
@@ -144,6 +168,14 @@ export default function DashboardLayout({
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
+  );
+
+  // doc 39 Wave 1b — when this is the hoisted shell, mark the whole subtree so every
+  // page's own <DashboardLayout> becomes a passthrough (see the guard at the top).
+  return asShell ? (
+    <InShellContext.Provider value={true}>{shell}</InShellContext.Provider>
+  ) : (
+    shell
   );
 }
 

@@ -36,3 +36,44 @@ export function isLicenseEnforcementEnabled(): boolean {
   }
   return import.meta.env.VITE_LICENSE_ROUTE_GUARD === "true";
 }
+
+/**
+ * doc 39 Wave 1b — persistent app-shell hoist (default OFF).
+ *
+ * When ON, ONE DashboardLayout is hoisted above the router so the sidebar/header/nav
+ * chrome no longer remounts on every navigation (each page's own <DashboardLayout>
+ * becomes a lightweight passthrough via InShellContext). OFF (default) = every page
+ * mounts its own DashboardLayout, byte-for-byte as before — so this is safe to ship
+ * dark and flip on only after a live smoke test (esp. chromeless routes + kiosk).
+ * Resolution: localStorage "APP_SHELL_PERSISTENT" → VITE_APP_SHELL_PERSISTENT → OFF.
+ */
+export function isPersistentShellEnabled(): boolean {
+  try {
+    const ls = localStorage.getItem("APP_SHELL_PERSISTENT");
+    if (ls != null) return ls === "true";
+  } catch {
+    /* storage unavailable */
+  }
+  return import.meta.env.VITE_APP_SHELL_PERSISTENT === "true";
+}
+
+/**
+ * Routes that render their own full-screen / bare content WITHOUT DashboardLayout
+ * (login, setup, TV/kiosk boards, full-screen inbox, the DS showcase, 404). The
+ * persistent shell must NOT wrap these — doing so would render sidebar chrome around
+ * a TV board or the login screen. Keep in sync with the pages that don't import
+ * DashboardLayout (AndonBoard/InboxPage/ComponentShowcase/Login/Setup/NotFound).
+ */
+const CHROMELESS_SHELL_ROUTES = new Set<string>([
+  "/login",
+  "/setup",
+  "/andon",
+  "/inbox",
+  "/component-showcase",
+  "/404",
+]);
+
+export function isChromelessShellRoute(pathname: string): boolean {
+  const path = (pathname || "").split("?")[0];
+  return CHROMELESS_SHELL_ROUTES.has(path);
+}

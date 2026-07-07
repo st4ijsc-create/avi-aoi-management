@@ -12,6 +12,8 @@ import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
+import DashboardLayout from "./components/DashboardLayout";
+import { isPersistentShellEnabled, isChromelessShellRoute } from "./lib/appLauncherFlag";
 import { useKioskMode } from "./hooks/useKioskMode";
 import Home from "./pages/Home";
 // Wave 1 (foundation): code-split the heaviest eager page monoliths (2.7k–7.2k LOC)
@@ -189,6 +191,23 @@ function AIPageWrapper({ children }: { children: React.ReactNode }) {
       </Suspense>
     </ErrorBoundary>
   );
+}
+
+/**
+ * doc 39 Wave 1b — the persistent app-shell hoist (flag-gated, default OFF).
+ *
+ * OFF (default): passthrough — every page keeps mounting its own <DashboardLayout>,
+ * byte-for-byte the legacy behavior. ON (APP_SHELL_PERSISTENT): ONE <DashboardLayout asShell>
+ * is hoisted here so the sidebar/header/nav no longer remount on navigation; each page's
+ * own <DashboardLayout> collapses to a passthrough via InShellContext. Chromeless routes
+ * (login/setup/andon/inbox/showcase/404) render bare so the shell never wraps a TV board
+ * or the login screen.
+ */
+function AppShell({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  if (!isPersistentShellEnabled()) return <>{children}</>;
+  if (isChromelessShellRoute(location)) return <>{children}</>;
+  return <DashboardLayout asShell>{children}</DashboardLayout>;
 }
 
 function RedirectToAdminHome() {
@@ -467,10 +486,15 @@ function App() {
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
                   code-split page (including bare `component={}` routes like /api-docs)
                   has a fallback while its chunk loads. Per-page AIPageWrapper boundaries
-                  still take precedence where present. */}
-              <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-                <Router />
-              </Suspense>
+                  still take precedence where present.
+                  Wave 1b: AppShell (flag-gated, default OFF) optionally hoists ONE
+                  persistent DashboardLayout ABOVE the Suspense so the chrome stays put
+                  and only the page content area shows the fallback during lazy loads. */}
+              <AppShell>
+                <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+                  <Router />
+                </Suspense>
+              </AppShell>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
                   lazy AI pages. The bubble hides itself when not logged in. */}
