@@ -4785,6 +4785,10 @@
     "app": {
       "launcher": "Ứng dụng",
       "launcherDesc": "Chuyển đổi giữa các ứng dụng đã mua",
+      "allApps": "Tất cả ứng dụng",
+      "openApp": "Mở ứng dụng",
+      "noPages": "Ứng dụng này chưa có trang nào",
+      "previewHint": "Di chuột lên ứng dụng để xem trước các trang",
       "openLauncher": "Mở lưới ứng dụng",
       "classicMenu": "Menu cổ điển",
       "launcherMenu": "Menu ứng dụng",

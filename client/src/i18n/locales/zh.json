@@ -4589,6 +4589,10 @@
     "app": {
       "launcher": "应用",
       "launcherDesc": "在已购买的应用之间切换",
+      "allApps": "所有应用",
+      "openApp": "打开应用",
+      "noPages": "此应用暂无页面",
+      "previewHint": "将鼠标悬停在应用上以预览其页面",
       "openLauncher": "打开应用网格",
       "classicMenu": "经典菜单",
       "launcherMenu": "应用菜单",

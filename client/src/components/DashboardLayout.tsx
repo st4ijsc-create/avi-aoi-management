@@ -23,7 +23,7 @@ import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, L
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
-import { AppLauncherButton } from "./AppLauncherButton";
+import { AppLauncherDropdown } from "./AppLauncherDropdown";
 import { AppLauncherOverlay } from "./AppLauncherOverlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { AIActionInboxLauncher } from "./AIActionInbox";
@@ -484,11 +484,21 @@ function DashboardLayoutContent({
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
           <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
-          {/* doc 36 — App Launcher trigger (top-shell): waffle + current app name. */}
+          {/* doc 40 — App Launcher trigger (top-shell): waffle opens a two-column DROPDOWN
+              (app list + that app's pages) so a cross-app jump is 2 clicks with no landing
+              detour. Mobile falls back to the full-screen overlay. "All apps ⊞" inside the
+              dropdown still opens the overlay (first-run / full catalog). */}
           {launcherOn && (
-            <AppLauncherButton
+            <AppLauncherDropdown
               activeApp={activeApp}
-              onOpen={() => setLauncherOpen(true)}
+              allowedModules={allowedModules}
+              visibleGroups={visibleGroups}
+              currentPath={navActivePath}
+              onNavigate={handleNavigate}
+              onSelectApp={app => openApp(app.landingHref)}
+              onUpgrade={() => openApp("/modules")}
+              onOpenAllApps={() => setLauncherOpen(true)}
+              isMobile={isMobile}
               className="shrink-0"
             />
           )}

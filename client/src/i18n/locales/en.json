@@ -4806,6 +4806,10 @@
     "app": {
       "launcher": "Apps",
       "launcherDesc": "Switch between your purchased apps",
+      "allApps": "All apps",
+      "openApp": "Open app",
+      "noPages": "No pages available in this app",
+      "previewHint": "Hover an app to preview its pages",
       "openLauncher": "Open app grid",
       "classicMenu": "Classic menu",
       "launcherMenu": "App menu",

@@ -70,6 +70,9 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // a single module, open that instead (covers routes whose href isn't matched here).
   const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath ?? soleModuleId);
   const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
+  // Bumped when a keyboard user asks to step INTO the open flyout. The panel focuses
+  // its first item on each new value; mount alone (hover) never steals focus.
+  const [enterPanelSeq, setEnterPanelSeq] = useState(0);
 
   // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
   // when navigating within the same module. So when the route moves to a page in
@@ -103,6 +106,12 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   const containerRef = useRef<HTMLDivElement>(null);
   const categoryRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirror of the open category so returnFocusToCategory can stay a stable callback
+  // (the panel's native keydown listener depends on it — no per-render re-subscribe).
+  const hoverCategoryKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    hoverCategoryKeyRef.current = hoverCategoryKey;
+  }, [hoverCategoryKey]);
 
   const activeGroup = groups.find(g => g.id === activeModuleId) ?? null;
 
@@ -191,6 +200,25 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     [cancelClose],
   );
 
+  // Keyboard: open the flyout AND step focus into its first item. Called for
+  // Enter/Space/ArrowRight/ArrowDown on a focused category button (fine pointer).
+  const enterCategoryPanel = useCallback(
+    (key: string) => {
+      openCategory(key);
+      setEnterPanelSeq(n => n + 1);
+    },
+    [openCategory],
+  );
+
+  // Escape / ArrowLeft inside the flyout: close it and return focus to the category
+  // button (still mounted — the module stays open). Stable so the panel's native
+  // keydown listener never re-subscribes.
+  const returnFocusToCategory = useCallback(() => {
+    const key = hoverCategoryKeyRef.current;
+    setHoverCategoryKey(null);
+    if (key) categoryRowRefs.current[key]?.focus();
+  }, []);
+
   // Collapsed icon rail (after all hooks, so the hook order is stable).
   if (collapsed && !coarse) {
     return <CollapsedRail groups={groups} currentPath={currentPath} onNavigate={onNavigate} />;
@@ -267,6 +295,23 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                         onMouseEnter={coarse ? undefined : () => openCategory(entry.key)}
                         onMouseLeave={coarse ? undefined : scheduleCategoryClose}
                         onFocus={coarse ? undefined : () => openCategory(entry.key)}
+                        onKeyDown={
+                          coarse
+                            ? undefined
+                            : e => {
+                                // Open the flyout and move focus into its first page.
+                                // (Coarse pointers expand inline — natively tabbable.)
+                                if (
+                                  e.key === "ArrowRight" ||
+                                  e.key === "ArrowDown" ||
+                                  e.key === "Enter" ||
+                                  e.key === " "
+                                ) {
+                                  e.preventDefault();
+                                  enterCategoryPanel(entry.key);
+                                }
+                              }
+                        }
                         onClick={() =>
                           coarse ? handleToggleCategory(entry.key) : openCategory(entry.key)
                         }
@@ -315,6 +360,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
       {/* Level 3 — items flyout (fine pointer only; touch expands inline above). */}
       {!coarse && activeGroup && hoverCategoryKey && (
         <Level3Panel
+          key={hoverCategoryKey}
           anchorEl={categoryRowRefs.current[hoverCategoryKey] ?? null}
           group={activeGroup}
           categoryKey={hoverCategoryKey}
@@ -322,6 +368,8 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
           onNavigate={handleNavigate}
           onEnter={cancelClose}
           onLeave={scheduleCategoryClose}
+          focusFirstSignal={enterPanelSeq}
+          onReturnFocus={returnFocusToCategory}
         />
       )}
     </div>
@@ -382,6 +430,13 @@ interface Level3PanelProps {
   onNavigate: (href: string) => void;
   onEnter: () => void;
   onLeave: () => void;
+  /** Bumped by the category button when a keyboard user asks to enter the flyout
+   *  (Enter/Space/ArrowRight/ArrowDown). Each new value moves focus to the first
+   *  item — mount alone (hover-open) does NOT steal focus. */
+  focusFirstSignal: number;
+  /** Escape / ArrowLeft inside the flyout: close it and return focus to the
+   *  category button (handled by the parent, which still owns that ref). */
+  onReturnFocus: () => void;
 }
 
 function Level3Panel({
@@ -392,16 +447,92 @@ function Level3Panel({
   onNavigate,
   onEnter,
   onLeave,
+  focusFirstSignal,
+  onReturnFocus,
 }: Level3PanelProps) {
   const { t } = useTranslation();
   const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
   const entry = buildModuleL2(group).find(e => e.kind === "category" && e.key === categoryKey);
-  if (!pos || !entry || entry.kind !== "category") return null;
+  const isCategory = !!entry && entry.kind === "category";
+  const items = isCategory ? entry.items : [];
+  const count = items.length;
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Roving focus: exactly one item carries tabIndex=0. `activeIndexRef` mirrors the
+  // state so the (stable) native keydown listener can read it without re-subscribing.
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
+
+  const focusItem = useCallback(
+    (i: number) => {
+      if (count === 0) return;
+      const idx = ((i % count) + count) % count; // wrap both directions
+      activeIndexRef.current = idx;
+      setActiveIndex(idx);
+      itemRefs.current[idx]?.focus();
+    },
+    [count],
+  );
+
+  // Move focus to the first item when the category button requests entry via keyboard.
+  // Guarded so a plain hover-open mount does not yank focus away from the page.
+  const lastSignal = useRef(focusFirstSignal);
+  useEffect(() => {
+    if (focusFirstSignal !== lastSignal.current) {
+      lastSignal.current = focusFirstSignal;
+      focusItem(0);
+    }
+  }, [focusFirstSignal, focusItem]);
+
+  // WAI-ARIA menu roving-focus keys. Attached natively (not via React onKeyDown) so
+  // `stopPropagation` on Escape runs BEFORE the document-level Esc handler — which
+  // would otherwise collapse the whole module instead of just this flyout.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          e.stopPropagation();
+          focusItem(activeIndexRef.current + 1);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          e.stopPropagation();
+          focusItem(activeIndexRef.current - 1);
+          break;
+        case "Home":
+          e.preventDefault();
+          e.stopPropagation();
+          focusItem(0);
+          break;
+        case "End":
+          e.preventDefault();
+          e.stopPropagation();
+          focusItem(count - 1);
+          break;
+        case "Escape":
+        case "ArrowLeft":
+          e.preventDefault();
+          e.stopPropagation();
+          onReturnFocus();
+          break;
+        // Enter / Space fall through to the item button's native activation → onNavigate.
+      }
+    };
+    el.addEventListener("keydown", onKeyDown);
+    return () => el.removeEventListener("keydown", onKeyDown);
+  }, [count, focusItem, onReturnFocus]);
+
+  if (!pos || !isCategory) return null;
 
   // Portal to <body> so the fixed panel escapes the sidebar's stacking context and
   // renders above page content (otherwise page cards can paint over it).
   return createPortal(
     <div
+      ref={panelRef}
       data-cascading-panel
       role="menu"
       aria-label={t(entry.label)}
@@ -409,14 +540,21 @@ function Level3Panel({
       style={{ left: pos.left, top: pos.top, width: PANEL_WIDTH }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
+      // Cancel any pending hover-close the instant keyboard focus enters the flyout,
+      // so roving through items never races the close timer shut.
+      onFocus={onEnter}
     >
       <div className="space-y-0.5">
-        {entry.items.map(item => (
+        {items.map((item, i) => (
           <ItemRow
             key={item.href}
             item={item}
             isActive={isNavItemActive(item.href, currentPath)}
             onNavigate={onNavigate}
+            tabIndex={i === activeIndex ? 0 : -1}
+            buttonRef={el => {
+              itemRefs.current[i] = el;
+            }}
           />
         ))}
       </div>
@@ -569,9 +707,14 @@ interface ItemRowProps {
   /** `pill` → Material 3 expanded-rail styling (used for flat items in Level 2).
    *  Default (Level 3) keeps the original rounded-lg row, unchanged. */
   variant?: "default" | "pill";
+  /** Roving-focus tabIndex for WAI-ARIA menu items (Level-3 flyout): the active
+   *  item is `0`, the rest `-1`. Omitted elsewhere → native default (focusable). */
+  tabIndex?: number;
+  /** Ref callback so a parent menu can `.focus()` this row during roving nav. */
+  buttonRef?: (el: HTMLButtonElement | null) => void;
 }
 
-function ItemRow({ item, isActive, onNavigate, variant = "default" }: ItemRowProps) {
+function ItemRow({ item, isActive, onNavigate, variant = "default", tabIndex, buttonRef }: ItemRowProps) {
   const { t } = useTranslation();
   // Plain-language tooltip for jargon items (FOE, UNS, PackML, …). Shown as a
   // native title and, for jargon rows, a muted subtitle under the label.
@@ -580,6 +723,8 @@ function ItemRow({ item, isActive, onNavigate, variant = "default" }: ItemRowPro
     <button
       type="button"
       role="menuitem"
+      ref={buttonRef}
+      tabIndex={tabIndex}
       onClick={() => onNavigate(item.href)}
       title={hint}
       className={cn(
