@@ -28,7 +28,7 @@ interface Row extends MachineNode {
   factory: { id: number; name: string; code: string };
 }
 
-export default function FactoryLiveMap3D() {
+export function FactoryLiveMap3DContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   // Poll hygiene (doc 27 B12): pause the 5s poll when the tab is hidden,
@@ -62,7 +62,7 @@ export default function FactoryLiveMap3D() {
   }, [machines]);
 
   return (
-    <DashboardLayout>
+    <>
       <PageContainer fluid className="space-y-4">
         <PageHeader
           icon={<Factory className="h-6 w-6" />}
@@ -163,6 +163,14 @@ export default function FactoryLiveMap3D() {
           </Card>
         </div>
       </PageContainer>
+    </>
+  );
+}
+
+export default function FactoryLiveMap3D() {
+  return (
+    <DashboardLayout>
+      <FactoryLiveMap3DContent />
     </DashboardLayout>
   );
 }

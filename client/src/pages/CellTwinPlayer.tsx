@@ -197,7 +197,7 @@ interface WorkflowRow {
   name: string;
 }
 
-export default function CellTwinPlayer() {
+export function CellTwinPlayerContent() {
   const { t } = useTranslation();
   // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
   const [location] = useLocation();
@@ -457,8 +457,7 @@ export default function CellTwinPlayer() {
   const noWorkflows = !workflowsQ.isLoading && workflows.length === 0;
 
   return (
-    <DashboardLayout>
-      <PageContainer fluid className="space-y-4">
+    <PageContainer fluid className="space-y-4">
         <PageHeader
           breadcrumbs={crumbs}
           icon={<Workflow className="h-6 w-6" />}
@@ -748,7 +747,14 @@ export default function CellTwinPlayer() {
             </div>
           </div>
         )}
-      </PageContainer>
+    </PageContainer>
+  );
+}
+
+export default function CellTwinPlayer() {
+  return (
+    <DashboardLayout>
+      <CellTwinPlayerContent />
     </DashboardLayout>
   );
 }

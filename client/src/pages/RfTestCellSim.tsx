@@ -278,7 +278,7 @@ function measureDut(idx: number, variant: "PASS" | "FAIL"): RfMetric[] {
 
 const MAX_HISTORY = 500; // giới hạn bản ghi giữ trong phiên
 
-export default function RfTestCellSim() {
+export function RfTestCellSimContent() {
   const { t } = useTranslation();
   // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
   const [location] = useLocation();
@@ -429,8 +429,7 @@ export default function RfTestCellSim() {
   const failingMetric = measurement.find((m) => !m.pass);
 
   return (
-    <DashboardLayout>
-      <PageContainer fluid className="space-y-4">
+    <PageContainer fluid className="space-y-4">
         <PageHeader
           breadcrumbs={crumbs}
           icon={<Radio className="h-6 w-6" />}
@@ -738,7 +737,14 @@ export default function RfTestCellSim() {
             </Card>
           </div>
         )}
-      </PageContainer>
+    </PageContainer>
+  );
+}
+
+export default function RfTestCellSim() {
+  return (
+    <DashboardLayout>
+      <RfTestCellSimContent />
     </DashboardLayout>
   );
 }

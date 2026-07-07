@@ -388,7 +388,7 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function DigitalTwinCenter() {
+export function DigitalTwinCenterContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
 
@@ -641,7 +641,7 @@ export default function DigitalTwinCenter() {
   const hovered = devices.find((d) => d.id === hoverId) ?? null;
 
   return (
-    <DashboardLayout>
+    <>
       <div className="space-y-4 p-1">
         {/* ── PageHeader ── */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -892,6 +892,14 @@ export default function DigitalTwinCenter() {
           </Card>
         </div>
       </div>
+    </>
+  );
+}
+
+export default function DigitalTwinCenter() {
+  return (
+    <DashboardLayout>
+      <DigitalTwinCenterContent />
     </DashboardLayout>
   );
 }

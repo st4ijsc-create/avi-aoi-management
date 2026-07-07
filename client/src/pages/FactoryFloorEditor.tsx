@@ -56,7 +56,7 @@ function isPlaced(m: Row): boolean { const px = num(m.layoutPositionX), py = num
 function toVB(p: Pt) { return { vx: PAD + p.x * INNER_W, vy: PAD + p.y * INNER_H }; }
 function centroid(pts: Pt[]): Pt { if (!pts.length) return { x: 0.5, y: 0.5 }; const s = pts.reduce((a, p) => ({ x: a.x + p.x, y: a.y + p.y }), { x: 0, y: 0 }); return { x: s.x / pts.length, y: s.y / pts.length }; }
 
-export default function FactoryFloorEditor() {
+export function FactoryFloorEditorContent() {
   const { t } = useTranslation();
   const [location, setLocation] = useLocation();
   // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
@@ -311,7 +311,6 @@ export default function FactoryFloorEditor() {
   const hasMeters = wM > 0 && dM > 0;
 
   return (
-    <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
           breadcrumbs={crumbs}
@@ -592,6 +591,13 @@ export default function FactoryFloorEditor() {
           </CardContent>
         </Card>
       </PageContainer>
+  );
+}
+
+export default function FactoryFloorEditor() {
+  return (
+    <DashboardLayout>
+      <FactoryFloorEditorContent />
     </DashboardLayout>
   );
 }

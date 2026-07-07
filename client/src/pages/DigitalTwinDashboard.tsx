@@ -42,7 +42,7 @@ function healthBadge(score?: number | null) {
   return <Badge variant={variant as any}>{score}</Badge>;
 }
 
-export default function DigitalTwinDashboard() {
+export function DigitalTwinDashboardContent() {
   const { t } = useTranslation();
 
   // --- Twin state (trạng thái máy + health + màu) ---
@@ -119,7 +119,7 @@ export default function DigitalTwinDashboard() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="space-y-6 p-4 md:p-6">
         <PageHeader
           icon={<Boxes className="h-6 w-6" />}
@@ -532,6 +532,14 @@ export default function DigitalTwinDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+    </>
+  );
+}
+
+export default function DigitalTwinDashboard() {
+  return (
+    <DashboardLayout>
+      <DigitalTwinDashboardContent />
     </DashboardLayout>
   );
 }

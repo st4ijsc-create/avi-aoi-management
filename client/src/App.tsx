@@ -59,7 +59,6 @@ import OEETargetSettings from "./pages/OEETargetSettings";
 import MESControlTower from "./pages/MESControlTower";
 import WipLineBalance from "./pages/WipLineBalance";
 import TraceabilityLineage from "./pages/TraceabilityLineage";
-import DigitalTwinDashboard from "./pages/DigitalTwinDashboard";
 import RealtimeReportView from "./pages/RealtimeReportView";
 import CarbonDashboard from "./pages/CarbonDashboard";
 import DrillDownDashboard from "./pages/DrillDownDashboard";
@@ -124,11 +123,9 @@ const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Do
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
 const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U12: request a higher role
-const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim")); // Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)
-const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); // L4 plant view: 3D factory floor, machines coloured by live status, drill-down
-const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
-const CellTwinPlayer = React.lazy(() => import("./pages/CellTwinPlayer")); // Generic data-driven realtime twin playback for ANY orchestration workflow
-const DigitalTwinCenter = React.lazy(() => import("./pages/DigitalTwinCenter")); // T1 (doc 16 Khối 7): 3D Digital Twin Center — scene-graph + glTF + live deltas + replay (TWIN_LIVE_ENABLED)
+// doc 39 Wave 4 — the 6 twin/3D surfaces are consolidated into one lazy Digital Twin
+// hub (their bodies are imported as *Content there). Legacy routes redirect in.
+const TwinHub = React.lazy(() => import("./pages/TwinHub"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const MachineCockpit = React.lazy(() => import("./pages/MachineCockpit")); // U3 (doc 21 §6 G-4): /machine/:id unified per-machine cockpit (tabbed: overview/health/oee/alarms/recipes/programs/genealogy/3d/actions)
 const RobotCockpit = React.lazy(() => import("./pages/RobotCockpit")); // U3 (doc 21 §6 G-4/G-5): /robot/:id unified per-robot cockpit (LIVE robot:telemetry; tabbed overview/joints/jobs/tasks/programs/safety/anomalies/alarms/3d/teach/actions)
@@ -251,7 +248,9 @@ function Router() {
       <Route path="/mes-control-tower"><RouteGuard navHref="/mes-control-tower"><MESControlTower /></RouteGuard></Route>
       <Route path="/wip-dashboard"><RouteGuard navHref="/wip-dashboard"><WipLineBalance /></RouteGuard></Route>
       <Route path="/traceability"><RouteGuard navHref="/traceability"><TraceabilityLineage /></RouteGuard></Route>
-      <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><DigitalTwinDashboard /></RouteGuard></Route>
+      {/* doc 39 Wave 4 — Digital Twin hub consolidates the 6 twin/3D surfaces into one
+          tabbed page; the legacy routes deep-link into their tab. */}
+      <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><AIPageWrapper><TwinHub /></AIPageWrapper></RouteGuard></Route>
       <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
       <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
       <Route path="/aoi-packages"><RouteGuard navHref="/aoi-packages"><AOIPackages /></RouteGuard></Route>
@@ -297,7 +296,7 @@ function Router() {
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
-      <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/factory-live-map"><Redirect to="/digital-twin?tab=map" /></Route>
       <Route path="/field-devices"><Redirect to="/device-monitor?tab=field" /></Route>
       {/* doc 39 Wave 4 — Connectivity hub consolidates the 9 MQTT/UNS surfaces into one
           tabbed page; legacy routes deep-link into their tab (deep-links preserved). */}
@@ -334,10 +333,10 @@ function Router() {
       <Route path="/ir-editor"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/pou-studio"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/programming-copilot"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/digital-twin-center"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><DigitalTwinCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/factory-floor-editor"><Redirect to="/digital-twin?tab=floor" /></Route>
+      <Route path="/rf-test-cell"><Redirect to="/digital-twin?tab=rf" /></Route>
+      <Route path="/cell-twin"><Redirect to="/digital-twin?tab=cell" /></Route>
+      <Route path="/digital-twin-center"><Redirect to="/digital-twin?tab=center" /></Route>
       <Route path="/command-center"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       {/* U3 (doc 21 §6 G-4/G-5): per-asset cockpits — reached by drill (no top-nav entry). */}
       <Route path="/machine/:id"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><MachineCockpit /></AIPageWrapper></RouteGuard></Route>
