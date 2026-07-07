@@ -4802,6 +4802,7 @@
     }
   },
   "nav": {
+    "connectivity": "Connectivity (MQTT/UNS)",
     "app": {
       "launcher": "Apps",
       "launcherDesc": "Switch between your purchased apps",

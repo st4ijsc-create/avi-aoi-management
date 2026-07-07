@@ -4585,6 +4585,7 @@
     }
   },
   "nav": {
+    "connectivity": "连接 (MQTT/UNS)",
     "app": {
       "launcher": "应用",
       "launcherDesc": "在已购买的应用之间切换",

@@ -43,8 +43,6 @@
   Archive,
   Store,
   Timer,
-  Play,
-  Heart,
   Tags,
   GitCompare,
   GitMerge,
@@ -57,7 +55,6 @@
   MessageSquare,
   LayoutDashboard,
   Camera,
-  Newspaper,
   Presentation,
   ClipboardCheck,
   ScrollText,
@@ -578,15 +575,8 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "monitoring",
       },
-      {
-        href: "/machine-health",
-        label: "nav.machineHealth",
-        icon: <Heart className="h-4 w-4" />,
-        description: "nav.machineHealthDesc",
-        requiredPermission: "analytics_machine_health",
-        permissionCategory: "analytics",
-        section: "monitoring",
-      },
+      // doc 36 follow-up — /machine-health REMOVED: it redirects into /device-monitor
+      // (Health tab); the hub row above is the single entry point.
       {
         href: "/oee-dashboard",
         label: "nav.oeeDashboard",
@@ -596,43 +586,9 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
         section: "monitoring",
       },
-      {
-        href: "/factory-live-map",
-        label: "nav.factoryLiveMap",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.factoryLiveMapDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-        section: "monitoring",
-      },
-      {
-        // Automation Orchestration (Khối 1) — Field & Device Abstraction: UDM state +
-        // heartbeat liveness board + hot-plug discovery (read-only; mutations gated by
-        // FIELD_V2_ENABLED). View on machine_monitoring.
-        href: "/field-devices",
-        label: "nav.fieldDevices",
-        icon: <Radio className="h-4 w-4" />,
-        description: "nav.fieldDevicesDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-        section: "monitoring",
-        hint: "nav.hint.fieldDevices",
-        engineerOriented: true,
-      },
-      {
-        // Automation Orchestration (Khối 7) — live 3D digital twin + replay.
-        // Monitoring (view-only) gated on machine_monitoring.
-        href: "/digital-twin-center",
-        label: "nav.digitalTwinCenter",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.digitalTwinCenterDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-        section: "monitoring",
-        hint: "nav.hint.digitalTwinCenter",
-        engineerOriented: true,
-        beta: true,
-      },
+      // doc 36 follow-up — /factory-live-map + /digital-twin-center REMOVED: both
+      // redirect into the canonical /digital-twin hub (Production group). /field-devices
+      // REMOVED: redirects into /device-monitor (Field tab). Tabs reachable in the hubs.
       {
         // Tier-1b (doc 24): read-only system health — OT store-and-forward buffer +
         // connection HA supervisors + DINOv2 model tier (+ commissioning ledger &
@@ -646,10 +602,16 @@ export const navGroups: NavGroup[] = [
         section: "monitoring",
         engineerOriented: true,
       },
-      // — MQTT / telemetry —
+      // — Connectivity (MQTT / UNS telemetry) —
+      // doc 36 follow-up — the 9 legacy MQTT/UNS rows (/mqtt-dashboard, /mqtt-bulletin,
+      // /mqtt-replay, /mqtt-clients, /mqtt-topics, /mqtt-profiles, /mqtt-ng-rate,
+      // /uns-mapping, /mqtt-alerts) now all <Redirect> into the unified /connectivity
+      // hub. Consolidated to ONE hub row + ≤4 ?tab= deep-links (mirrors the Quality
+      // Cockpit pattern); the legacy routes are ABSENT from the menu. Overview /
+      // bulletin / replay / profiles / ng-rate stay reachable as tabs inside the hub.
       {
-        href: "/mqtt-dashboard",
-        label: "nav.mqttDashboard",
+        href: "/connectivity",
+        label: "nav.connectivity",
         icon: <Radio className="h-4 w-4" />,
         description: "nav.mqttDashboardDesc",
         requiredPermission: "mqtt_monitoring",
@@ -657,41 +619,16 @@ export const navGroups: NavGroup[] = [
         section: "telemetry",
       },
       {
-        href: "/mqtt-bulletin",
-        label: "nav.mqttBulletin",
-        icon: <Newspaper className="h-4 w-4" />,
-        description: "nav.mqttBulletinDesc",
-        requiredPermission: "mqtt_bulletin",
-        permissionCategory: "mqtt",
-        section: "telemetry",
-        hint: "nav.hint.mqttBulletin",
-        engineerOriented: true,
-      },
-      {
-        href: "/mqtt-replay",
-        label: "nav.mqttReplay",
-        icon: <Play className="h-4 w-4" />,
-        description: "nav.mqttReplayDesc",
-        requiredPermission: "mqtt_monitoring",
-        permissionCategory: "mqtt",
-        section: "telemetry",
-        hint: "nav.hint.mqttReplay",
-        engineerOriented: true,
-      },
-      {
-        href: "/mqtt-clients",
+        href: "/connectivity?tab=clients",
         label: "nav.mqttClients",
         icon: <Wifi className="h-4 w-4" />,
         description: "nav.mqttClientsDesc",
-        requiredRole: 'admin',
         requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
         section: "telemetry",
       },
       {
-        // W3-A (doc 35 F2): surface orphan /mqtt-topics — live MQTT topic/message
-        // browser. View gated on mqtt_monitoring (matches its route).
-        href: "/mqtt-topics",
+        href: "/connectivity?tab=topics",
         label: "nav.mqttTopics",
         icon: <MessageSquare className="h-4 w-4" />,
         description: "nav.mqttTopicsDesc",
@@ -700,25 +637,20 @@ export const navGroups: NavGroup[] = [
         section: "telemetry",
       },
       {
-        // W3-A (doc 35 F2): surface orphan /mqtt-profiles — MQTT connection-profile
-        // admin. Admin + mqtt_monitoring (matches its route, mirrors /mqtt-clients).
-        href: "/mqtt-profiles",
-        label: "nav.mqttProfiles",
-        icon: <Server className="h-4 w-4" />,
-        description: "nav.mqttProfilesDesc",
-        requiredRole: 'admin',
-        requiredPermission: "mqtt_monitoring",
+        href: "/connectivity?tab=alerts",
+        label: "nav.alertRules",
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "nav.alertRulesDesc",
+        requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
         section: "telemetry",
       },
       {
-        // W3-A (doc 35 F2): surface orphan /mqtt-ng-rate — per-point NG-rate alert
-        // threshold config. Gated mqtt_alerts (matches its route).
-        href: "/mqtt-ng-rate",
-        label: "nav.mqttNgRate",
-        icon: <Target className="h-4 w-4" />,
-        description: "nav.mqttNgRateDesc",
-        requiredPermission: "mqtt_alerts",
+        href: "/connectivity?tab=uns",
+        label: "nav.unsMapping",
+        icon: <Share2 className="h-4 w-4" />,
+        description: "nav.unsMappingDesc",
+        requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
         section: "telemetry",
       },
@@ -761,16 +693,8 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_control",
         section: "onboarding",
       },
-      {
-        // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (CONFIG + preview)
-        href: "/uns-mapping",
-        label: "nav.unsMapping",
-        icon: <Share2 className="h-4 w-4" />,
-        description: "nav.unsMappingDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-        section: "onboarding",
-      },
+      // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab);
+      // now surfaced as the "/connectivity?tab=uns" deep-link in the telemetry section.
       {
         // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)
         href: "/hot-folders",
@@ -861,15 +785,9 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "mqtt",
         section: "maintenance",
       },
-      {
-        href: "/mqtt-alerts",
-        label: "nav.alertRules",
-        icon: <AlertTriangle className="h-4 w-4" />,
-        description: "nav.alertRulesDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-        section: "maintenance",
-      },
+      // doc 36 follow-up — /mqtt-alerts (Alert Rules) REMOVED: redirects into
+      // /connectivity (Alerts tab); surfaced as "/connectivity?tab=alerts" in telemetry.
+      // (/alerts — the read-only alerts LIST — stays; it is not part of the hub.)
       {
         // doc 36 follow-up — /monitoring-setting bóc ra: 6/7 tab (đăng ký máy, MQTT clients/
         // topics/replay/profiles/ng-rate) đã là item route ở menu trái; chỉ tab nội bộ
@@ -1085,44 +1003,10 @@ export const navGroups: NavGroup[] = [
         engineerOriented: true,
         beta: true,
       },
-      {
-        href: "/factory-floor-editor",
-        label: "nav.factoryFloorEditor",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.factoryFloorEditorDesc",
-        // View-open like its sibling /factory-live-map: a machine_monitoring user
-        // can OPEN the floor editor; editing/saving positions stays gated to
-        // machine_control inside the page (<PermissionGate action="canEdit"> +
-        // ViewOnlyBadge). Previously this required machine_control to even view,
-        // which blocked monitoring users from reaching the page at all.
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-        section: "twin",
-      },
-      {
-        href: "/rf-test-cell",
-        label: "nav.rfTestCell",
-        icon: <Radio className="h-4 w-4" />,
-        description: "nav.rfTestCellDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-        section: "twin",
-        hint: "nav.hint.rfTestCell",
-        engineerOriented: true,
-        beta: true,
-      },
-      {
-        href: "/cell-twin",
-        label: "nav.cellTwin",
-        icon: <Workflow className="h-4 w-4" />,
-        description: "nav.cellTwinDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-        section: "twin",
-        hint: "nav.hint.cellTwin",
-        engineerOriented: true,
-        beta: true,
-      },
+      // doc 36 follow-up — /factory-floor-editor, /rf-test-cell and /cell-twin REMOVED:
+      // all redirect into the canonical /digital-twin hub (Production group), which is
+      // the single Twin entry point. Their views are reachable as tabs inside that hub.
+      // (The "twin" section is now empty and is auto-skipped by groupItemsBySection.)
     ],
   },
 
@@ -2266,7 +2150,8 @@ export function groupItemsBySection(
  */
 export const HUB_ROUTES = new Set<string>([
   "/monitoring-setting", // Devices — vertical sub-menu (registration / devices / MQTT clients / topics / replay / profiles / NG-rate)
-  "/analytics-setting",  // Analytics — settings sub-menu
+  // doc 36 follow-up — "/analytics-setting" REMOVED: that route now redirects → /reports
+  // (App.tsx) and has no menu item, so it is not a hub target anymore.
   "/settings",           // Admin — general settings sub-menu
   "/admin-setting",      // Admin — admin settings sub-menu
   "/datasettings",       // Admin — data settings sub-menu

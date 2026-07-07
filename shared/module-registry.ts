@@ -180,6 +180,10 @@ const SEED_MODULES: SystemModule[] = [
     isCore: false,
     routes: [
       // doc 36 — full "Giám sát máy" app surface. Absorbs alerts (D3: MOD_ALERTS folded here).
+      // doc 39 Wave 4 — /connectivity is the MQTT/UNS hub (the /mqtt-* + /uns-mapping routes
+      // below now redirect into its tabs). It MUST be owned here so the hub nav row resolves
+      // to the Devices app under scopeGroupsToApp (otherwise it's silently dropped).
+      "/connectivity",
       "/device-monitor", "/machine-status", "/machine-registration",
       "/machine-onboarding", "/aoi-onboarding",
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",

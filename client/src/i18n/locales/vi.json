@@ -4781,6 +4781,7 @@
     }
   },
   "nav": {
+    "connectivity": "Kết nối (MQTT/UNS)",
     "app": {
       "launcher": "Ứng dụng",
       "launcherDesc": "Chuyển đổi giữa các ứng dụng đã mua",
