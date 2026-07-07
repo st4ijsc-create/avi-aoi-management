@@ -31,6 +31,9 @@ import {
   Plug,
   Boxes,
   Radio,
+  Network,
+  Gauge,
+  ScrollText,
   LayoutDashboard,
   GitMerge,
   Lock,
@@ -67,6 +70,17 @@ const GROUPS: HubGroup[] = [
     tiles: [
       { icon: Workflow, navKey: "orchestrationStudio", href: "/orchestration-studio" },
       { icon: Bot, navKey: "fleetOrchestration", href: "/fleet-orchestration" },
+    ],
+  },
+  {
+    // Product-audit fix — surface the run-time HALF of the domain (control/ops/audit)
+    // so the hub's "author → deploy → operate → audit" loop is actually reachable.
+    sectionKey: "operationsControl",
+    tiles: [
+      { icon: Network, navKey: "controlPlane", href: "/control-plane" },
+      { icon: Bot, navKey: "robotControl", href: "/robot-control" },
+      { icon: Gauge, navKey: "opsConsole", href: "/ops-console" },
+      { icon: ScrollText, navKey: "commandAudit", href: "/audit-logs?tab=command" },
     ],
   },
   {

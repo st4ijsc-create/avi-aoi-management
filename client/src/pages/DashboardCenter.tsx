@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
@@ -11,7 +10,6 @@ import EmbeddedDashboardTemplates from "@/components/EmbeddedDashboardTemplates"
 import EmbeddedDashboardMarketplace from "@/components/EmbeddedDashboardMarketplace";
 
 import {
-  Shield,
   LayoutDashboard,
   FileText,
   ShoppingBag,
@@ -24,8 +22,6 @@ import { useLocation, useSearch } from "wouter";
 
 export default function DashboardCenter() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
 
   const search = useSearch();
   const [, setLocation] = useLocation();
@@ -49,18 +45,11 @@ export default function DashboardCenter() {
     }
   }, [search]);
 
-  if (!isAdmin) {
-    return (
-      <DashboardLayout title={t("dashboardCenter.title")} navItems={navItems} currentPath="/dashboard-center">
-        <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-          <Shield className="h-16 w-16 text-muted-foreground/50" />
-          <p className="text-xl font-medium text-foreground">{t("settings.adminOnlyAccess")}</p>
-          <p className="text-muted-foreground">{t("settings.contactAdmin")}</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
+  // doc 39 Wave 4: the standalone Custom Dashboard / Templates / Marketplace routes
+  // all redirect INTO this hub, and each embedded surface enforces its own write
+  // RBAC — so gating the whole hub on role==='admin' created a split-brain where a
+  // redirected non-admin hit an "admin only" wall. The hub is now open to any role
+  // that can reach the route (RouteGuard governs entry); write actions stay gated.
   const sidebarButton = (tab: string, icon: React.ReactNode, label: string) => (
     <button
       key={tab}

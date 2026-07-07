@@ -1,8 +1,11 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
+import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PageHeader, MetricCard, chartColor, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +18,9 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   Activity,
-  Calendar
+  Calendar,
+  Globe,
+  ArrowRight
 } from "lucide-react";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
@@ -39,6 +44,11 @@ import {
 
 export default function CorporateDashboard() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const { hasPermission } = usePermissions();
+  // Cross-link to the federation roll-up is only surfaced to users who can enter
+  // it (same gate as the /federation-dashboard RouteGuard: admin / admin_system).
+  const canViewFederation = hasPermission("admin_system", "canView");
   const [selectedPeriod, setSelectedPeriod] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -209,6 +219,18 @@ export default function CorporateDashboard() {
           description={t('corporate.dashboardDescription')}
           actions={
             <>
+              {canViewFederation && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setLocation("/federation-dashboard")}
+                  title={t('nav.federationDashboardDesc', 'Roll-up view across multiple connected sites/plants (preview)')}
+                >
+                  <Globe className="h-4 w-4" />
+                  {t('nav.federationDashboard', 'Federation Dashboard')}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
               <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
                 <SelectTrigger className="w-[150px]">
                   <Calendar className="h-4 w-4 mr-2" />

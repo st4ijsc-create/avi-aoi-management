@@ -4641,6 +4641,7 @@
       "factoryConfig": "工厂配置",
       "authoring": "编写与编程",
       "orchestration": "编排",
+      "operationsControl": "运行与控制",
       "safety": "安全",
       "standardsIntegration": "标准与集成",
       "twin": "孪生与仿真"

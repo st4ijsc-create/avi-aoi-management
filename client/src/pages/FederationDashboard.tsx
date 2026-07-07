@@ -14,6 +14,7 @@
  */
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,8 @@ import {
   Bell,
   Cpu,
   Factory,
+  Building2,
+  ArrowRight,
 } from "lucide-react";
 
 type FederationOutputs = inferRouterOutputs<AppRouter>["federation"];
@@ -530,6 +533,7 @@ function CategoryGrid({ data }: { data: CategoryRollupOutput | undefined }) {
 
 export default function FederationDashboard() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const [corporateFilter, setCorporateFilter] = useState<string>("__all__");
   // U5 — drill (site row → factory/station/device tree) + category tab.
   const [drillSiteCode, setDrillSiteCode] = useState<string | null>(null);
@@ -713,6 +717,28 @@ export default function FederationDashboard() {
           )}
           actions={
             <>
+              {/* Cross-links back to the corporate roll-up world (org hierarchy) and
+                  the F0 site registry — same admin/admin_system gate as this page. */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLocation("/corporate-dashboard")}
+                title={t("nav.corporateDashboardDesc", "Multi-factory corporate roll-up")}
+              >
+                <Building2 className="h-4 w-4 mr-2" />
+                {t("nav.corporateDashboard", "Corporate Dashboard")}
+                <ArrowRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLocation("/sites")}
+                title={t("nav.sitesDesc", "Site registry")}
+              >
+                <Network className="h-4 w-4 mr-2" />
+                {t("nav.sites", "Sites Federation")}
+                <ArrowRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
               {/* U5 — honest LIVE (aggregator emitting site:update) vs POLLING (30s) */}
               {hasLive ? (
                 <Badge
