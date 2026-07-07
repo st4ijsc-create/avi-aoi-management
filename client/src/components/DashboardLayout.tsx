@@ -23,7 +23,7 @@ import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, L
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
-import { AppLauncherDropdown } from "./AppLauncherDropdown";
+import { AppLauncherButton } from "./AppLauncherButton";
 import { AppLauncherOverlay } from "./AppLauncherOverlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { AIActionInboxLauncher } from "./AIActionInbox";
@@ -489,16 +489,12 @@ function DashboardLayoutContent({
               detour. Mobile falls back to the full-screen overlay. "All apps ⊞" inside the
               dropdown still opens the overlay (first-run / full catalog). */}
           {launcherOn && (
-            <AppLauncherDropdown
+            // doc 40 fix — the waffle opens the full-screen app grid (app-SWITCHER).
+            // The reverted two-column dropdown was replacing the LEFT sidebar's role;
+            // the left menu is the primary within-app nav (see CascadingNav inline expand).
+            <AppLauncherButton
               activeApp={activeApp}
-              allowedModules={allowedModules}
-              visibleGroups={visibleGroups}
-              currentPath={navActivePath}
-              onNavigate={handleNavigate}
-              onSelectApp={app => openApp(app.landingHref)}
-              onUpgrade={() => openApp("/modules")}
-              onOpenAllApps={() => setLauncherOpen(true)}
-              isMobile={isMobile}
+              onOpen={() => setLauncherOpen(true)}
               className="shrink-0"
             />
           )}

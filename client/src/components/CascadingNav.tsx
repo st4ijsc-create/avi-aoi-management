@@ -16,24 +16,23 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { BetaBadge } from "./BetaBadge";
 
 /**
- * R4 — Inline-accordion navigation with a floating Level-3 page menu.
+ * R4 — Inline-accordion navigation (click-to-expand at every level, all pointers).
  *
  * Level 1: module rows in the sidebar (icon + label + chevron). Click a module →
  *   its categories drop straight down inline below it (accordion), like a classic
  *   expanding sidebar.
  * Level 2: category rows rendered INLINE under the open module. Orphan / flat
  *   (section-less) modules drop their pages directly as item rows (no Level 3).
- * Level 3: the pages of a category. Fine pointer → a floating menu anchored beside
- *   the hovered category row (keeps Level 2 compact). Touch (coarse) → the pages
- *   expand inline under the tapped category instead (single-column drill).
+ * Level 3: the pages of a category. Click a category → its pages expand INLINE
+ *   right below it (single-column drill), for every pointer type. No hover flyout —
+ *   the expanded pages are real links, reachable by Tab.
  *
- * Triggers: L1→L2 = click (toggle accordion). L2→L3 = hover (fine, ~120ms close-
- * delay so the cursor can reach the floating menu) / tap (touch, inline). Esc +
- * click-outside + navigation close all.
+ * Triggers: L1→L2 = click (toggle accordion). L2→L3 = click (toggle inline expand).
+ * Esc + click-outside + navigation close all.
  *
  * The `groups` prop is ALREADY role/permission/license-filtered — never re-filter
- * here. The Level-3 floating menu uses fixed positioning (with horizontal flip/clamp)
- * so it is never clipped by the sidebar overflow or the viewport edge.
+ * here. (The collapsed icon rail still uses a fixed-positioned hover flyout — see
+ * CollapsedRail below — which is intentional and unaffected by this component.)
  */
 
 const CLOSE_DELAY_MS = 120;
@@ -69,10 +68,8 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // Open the current route's module by default (on mount / remount); when the scope is
   // a single module, open that instead (covers routes whose href isn't matched here).
   const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath ?? soleModuleId);
+  // The currently expanded category (its pages show inline below it). One at a time.
   const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
-  // Bumped when a keyboard user asks to step INTO the open flyout. The panel focuses
-  // its first item on each new value; mount alone (hover) never steals focus.
-  const [enterPanelSeq, setEnterPanelSeq] = useState(0);
 
   // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
   // when navigating within the same module. So when the route moves to a page in
@@ -104,16 +101,6 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   const coarse = useIsCoarsePointer();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const categoryRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Mirror of the open category so returnFocusToCategory can stay a stable callback
-  // (the panel's native keydown listener depends on it — no per-render re-subscribe).
-  const hoverCategoryKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    hoverCategoryKeyRef.current = hoverCategoryKey;
-  }, [hoverCategoryKey]);
-
-  const activeGroup = groups.find(g => g.id === activeModuleId) ?? null;
 
   const closeAll = useCallback(() => {
     setActiveModuleId(null);
@@ -146,78 +133,25 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [activeModuleId, closeAll]);
 
-  // Clear any pending close timer on unmount.
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    [],
-  );
-
-  const cancelClose = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }, []);
-
-  const scheduleCategoryClose = useCallback(() => {
-    cancelClose();
-    closeTimer.current = setTimeout(() => setHoverCategoryKey(null), CLOSE_DELAY_MS);
-  }, [cancelClose]);
-
   const handleModuleClick = useCallback((groupId: string) => {
     setHoverCategoryKey(null);
     setActiveModuleId(prev => (prev === groupId ? null : groupId));
   }, []);
 
-  // Touch: tapping a category toggles its inline expansion (tap again collapses).
-  const handleToggleCategory = useCallback(
-    (key: string) => {
-      cancelClose();
-      setHoverCategoryKey(prev => (prev === key ? null : key));
-    },
-    [cancelClose],
-  );
+  // Click a category to toggle its inline page list (click again collapses).
+  const handleToggleCategory = useCallback((key: string) => {
+    setHoverCategoryKey(prev => (prev === key ? null : key));
+  }, []);
 
   const handleNavigate = useCallback(
     (href: string) => {
       onNavigate(href);
-      // Close ONLY the Level-3 flyout — keep the module (Level-2) expanded so it
-      // does not collapse when you pick a Level-3 page. The module stays open
-      // because the new route belongs to it (moduleForPath keeps it active).
-      cancelClose();
+      // Collapse the expanded category on navigate — keep the module (Level-2)
+      // expanded (the new route belongs to it, so moduleForPath keeps it active).
       setHoverCategoryKey(null);
     },
-    [onNavigate, cancelClose],
+    [onNavigate],
   );
-
-  const openCategory = useCallback(
-    (key: string) => {
-      cancelClose();
-      setHoverCategoryKey(key);
-    },
-    [cancelClose],
-  );
-
-  // Keyboard: open the flyout AND step focus into its first item. Called for
-  // Enter/Space/ArrowRight/ArrowDown on a focused category button (fine pointer).
-  const enterCategoryPanel = useCallback(
-    (key: string) => {
-      openCategory(key);
-      setEnterPanelSeq(n => n + 1);
-    },
-    [openCategory],
-  );
-
-  // Escape / ArrowLeft inside the flyout: close it and return focus to the category
-  // button (still mounted — the module stays open). Stable so the panel's native
-  // keydown listener never re-subscribes.
-  const returnFocusToCategory = useCallback(() => {
-    const key = hoverCategoryKeyRef.current;
-    setHoverCategoryKey(null);
-    if (key) categoryRowRefs.current[key]?.focus();
-  }, []);
 
   // Collapsed icon rail (after all hooks, so the hook order is stable).
   if (collapsed && !coarse) {
@@ -259,62 +193,31 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
 
             {/* Level 2 — drops straight down inline under the module. Hub pages (with
                 their own in-page tabs) are direct links; the rest stay grouped as
-                categories that open a Level-3 menu. */}
+                categories that expand their pages inline on click. */}
             {isOpen && (
               <div className="mt-0.5 space-y-0.5 pl-3">
                 {l2.map(entry => {
                   // Hub page → direct link at Level 2 (no Level-3).
                   if (entry.kind === "link") {
                     return (
-                      <div
+                      <ItemRow
                         key={entry.item.href}
-                        onMouseEnter={coarse ? undefined : scheduleCategoryClose}
-                      >
-                        <ItemRow
-                          item={entry.item}
-                          isActive={isNavItemActive(entry.item.href, currentPath)}
-                          onNavigate={handleNavigate}
-                          variant="pill"
-                        />
-                      </div>
+                        item={entry.item}
+                        isActive={isNavItemActive(entry.item.href, currentPath)}
+                        onNavigate={handleNavigate}
+                        variant="pill"
+                      />
                     );
                   }
-                  // Category → opens the Level-3 floating menu on hover (fine pointer)
-                  // or expands its items inline on tap (touch).
+                  // Category → click toggles its pages inline right below it (all pointers).
                   const categoryHasActive = entry.items.some(i => isNavItemActive(i.href, currentPath));
                   const isCatOpen = hoverCategoryKey === entry.key;
                   return (
                     <div key={entry.key}>
                       <button
-                        ref={el => {
-                          categoryRowRefs.current[entry.key] = el;
-                        }}
                         type="button"
-                        aria-haspopup="menu"
                         aria-expanded={isCatOpen}
-                        onMouseEnter={coarse ? undefined : () => openCategory(entry.key)}
-                        onMouseLeave={coarse ? undefined : scheduleCategoryClose}
-                        onFocus={coarse ? undefined : () => openCategory(entry.key)}
-                        onKeyDown={
-                          coarse
-                            ? undefined
-                            : e => {
-                                // Open the flyout and move focus into its first page.
-                                // (Coarse pointers expand inline — natively tabbable.)
-                                if (
-                                  e.key === "ArrowRight" ||
-                                  e.key === "ArrowDown" ||
-                                  e.key === "Enter" ||
-                                  e.key === " "
-                                ) {
-                                  e.preventDefault();
-                                  enterCategoryPanel(entry.key);
-                                }
-                              }
-                        }
-                        onClick={() =>
-                          coarse ? handleToggleCategory(entry.key) : openCategory(entry.key)
-                        }
+                        onClick={() => handleToggleCategory(entry.key)}
                         className={cn(
                           "flex w-full items-center gap-3 rounded-full px-3 text-sm transition-colors",
                           coarse ? "py-3" : "py-2",
@@ -330,12 +233,12 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                         <ChevronRight
                           className={cn(
                             "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                            coarse && isCatOpen && "rotate-90",
+                            isCatOpen && "rotate-90",
                           )}
                         />
                       </button>
-                      {/* Touch: inline-expanded items (replaces the Level-3 side flyout). */}
-                      {coarse && isCatOpen && (
+                      {/* Inline-expanded pages (all pointers) — real links, Tab-reachable. */}
+                      {isCatOpen && (
                         <div className="mt-0.5 space-y-0.5 pl-3">
                           {entry.items.map(item => (
                             <ItemRow
@@ -356,22 +259,6 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
           </div>
         );
       })}
-
-      {/* Level 3 — items flyout (fine pointer only; touch expands inline above). */}
-      {!coarse && activeGroup && hoverCategoryKey && (
-        <Level3Panel
-          key={hoverCategoryKey}
-          anchorEl={categoryRowRefs.current[hoverCategoryKey] ?? null}
-          group={activeGroup}
-          categoryKey={hoverCategoryKey}
-          currentPath={currentPath}
-          onNavigate={handleNavigate}
-          onEnter={cancelClose}
-          onLeave={scheduleCategoryClose}
-          focusFirstSignal={enterPanelSeq}
-          onReturnFocus={returnFocusToCategory}
-        />
-      )}
     </div>
   );
 }
@@ -420,148 +307,6 @@ function useAnchoredPosition(anchorEl: HTMLElement | null, panelWidth: number) {
 
 const panelClass =
   "fixed z-[60] max-h-[80vh] overflow-y-auto rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg";
-
-// ── Level 3 — items flyout ──────────────────────────────────────────────────
-interface Level3PanelProps {
-  anchorEl: HTMLElement | null;
-  group: NavGroup;
-  categoryKey: string;
-  currentPath: string;
-  onNavigate: (href: string) => void;
-  onEnter: () => void;
-  onLeave: () => void;
-  /** Bumped by the category button when a keyboard user asks to enter the flyout
-   *  (Enter/Space/ArrowRight/ArrowDown). Each new value moves focus to the first
-   *  item — mount alone (hover-open) does NOT steal focus. */
-  focusFirstSignal: number;
-  /** Escape / ArrowLeft inside the flyout: close it and return focus to the
-   *  category button (handled by the parent, which still owns that ref). */
-  onReturnFocus: () => void;
-}
-
-function Level3Panel({
-  anchorEl,
-  group,
-  categoryKey,
-  currentPath,
-  onNavigate,
-  onEnter,
-  onLeave,
-  focusFirstSignal,
-  onReturnFocus,
-}: Level3PanelProps) {
-  const { t } = useTranslation();
-  const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
-  const entry = buildModuleL2(group).find(e => e.kind === "category" && e.key === categoryKey);
-  const isCategory = !!entry && entry.kind === "category";
-  const items = isCategory ? entry.items : [];
-  const count = items.length;
-
-  const panelRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  // Roving focus: exactly one item carries tabIndex=0. `activeIndexRef` mirrors the
-  // state so the (stable) native keydown listener can read it without re-subscribing.
-  const [activeIndex, setActiveIndex] = useState(0);
-  const activeIndexRef = useRef(0);
-
-  const focusItem = useCallback(
-    (i: number) => {
-      if (count === 0) return;
-      const idx = ((i % count) + count) % count; // wrap both directions
-      activeIndexRef.current = idx;
-      setActiveIndex(idx);
-      itemRefs.current[idx]?.focus();
-    },
-    [count],
-  );
-
-  // Move focus to the first item when the category button requests entry via keyboard.
-  // Guarded so a plain hover-open mount does not yank focus away from the page.
-  const lastSignal = useRef(focusFirstSignal);
-  useEffect(() => {
-    if (focusFirstSignal !== lastSignal.current) {
-      lastSignal.current = focusFirstSignal;
-      focusItem(0);
-    }
-  }, [focusFirstSignal, focusItem]);
-
-  // WAI-ARIA menu roving-focus keys. Attached natively (not via React onKeyDown) so
-  // `stopPropagation` on Escape runs BEFORE the document-level Esc handler — which
-  // would otherwise collapse the whole module instead of just this flyout.
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          e.stopPropagation();
-          focusItem(activeIndexRef.current + 1);
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          e.stopPropagation();
-          focusItem(activeIndexRef.current - 1);
-          break;
-        case "Home":
-          e.preventDefault();
-          e.stopPropagation();
-          focusItem(0);
-          break;
-        case "End":
-          e.preventDefault();
-          e.stopPropagation();
-          focusItem(count - 1);
-          break;
-        case "Escape":
-        case "ArrowLeft":
-          e.preventDefault();
-          e.stopPropagation();
-          onReturnFocus();
-          break;
-        // Enter / Space fall through to the item button's native activation → onNavigate.
-      }
-    };
-    el.addEventListener("keydown", onKeyDown);
-    return () => el.removeEventListener("keydown", onKeyDown);
-  }, [count, focusItem, onReturnFocus]);
-
-  if (!pos || !isCategory) return null;
-
-  // Portal to <body> so the fixed panel escapes the sidebar's stacking context and
-  // renders above page content (otherwise page cards can paint over it).
-  return createPortal(
-    <div
-      ref={panelRef}
-      data-cascading-panel
-      role="menu"
-      aria-label={t(entry.label)}
-      className={panelClass}
-      style={{ left: pos.left, top: pos.top, width: PANEL_WIDTH }}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      // Cancel any pending hover-close the instant keyboard focus enters the flyout,
-      // so roving through items never races the close timer shut.
-      onFocus={onEnter}
-    >
-      <div className="space-y-0.5">
-        {items.map((item, i) => (
-          <ItemRow
-            key={item.href}
-            item={item}
-            isActive={isNavItemActive(item.href, currentPath)}
-            onNavigate={onNavigate}
-            tabIndex={i === activeIndex ? 0 : -1}
-            buttonRef={el => {
-              itemRefs.current[i] = el;
-            }}
-          />
-        ))}
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
 // ── Collapsed icon rail (module icons + hover flyout) ───────────────────────
 /**
