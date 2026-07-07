@@ -527,21 +527,21 @@ export function MqttDashboardContent() {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={trend || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis 
-                        dataKey="date" 
-                        stroke="#888"
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis
+                        dataKey="date"
+                        tick={chartAxisTick}
                         tickFormatter={(value) => new Date(value).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
                       />
-                      <YAxis stroke="#888" />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                      <YAxis tick={chartAxisTick} />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
                         labelFormatter={(value) => new Date(value).toLocaleDateString('vi-VN')}
                       />
                       <Legend />
-                      <Bar dataKey="delivered" name={t('mqtt.dashboard.delivered')} fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="failed" name={t('mqtt.dashboard.failed')} fill="#ef4444" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ngAlerts" name="NG Alerts" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="delivered" name={t('mqtt.dashboard.delivered')} fill={chartColor(0)} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="failed" name={t('mqtt.dashboard.failed')} fill={chartColor(2)} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ngAlerts" name="NG Alerts" fill={chartColor(3)} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -581,7 +581,7 @@ export function MqttDashboardContent() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }} />
+                      <Tooltip contentStyle={chartTooltipStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}

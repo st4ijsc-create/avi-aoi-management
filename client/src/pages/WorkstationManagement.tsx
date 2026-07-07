@@ -51,12 +51,12 @@ type Workstation = {
 };
 
 const PROCESS_TYPES = [
-  { value: "SMT", label: "SMT", color: "bg-blue-500" },
-  { value: "DIP", label: "DIP", color: "bg-green-500" },
-  { value: "ASSEMBLY", label: "machines.assembly", color: "bg-yellow-500" },
-  { value: "TESTING", label: "machines.testing", color: "bg-purple-500" },
-  { value: "PACKAGING", label: "machines.packaging", color: "bg-orange-500" },
-  { value: "OTHER", label: "machines.other", color: "bg-gray-500" },
+  { value: "SMT", label: "SMT", color: "bg-primary/15 text-primary border border-primary/30" },
+  { value: "DIP", label: "DIP", color: "bg-success/15 text-success border border-success/30" },
+  { value: "ASSEMBLY", label: "machines.assembly", color: "bg-warning/15 text-warning border border-warning/30" },
+  { value: "TESTING", label: "machines.testing", color: "bg-info/15 text-info border border-info/30" },
+  { value: "PACKAGING", label: "machines.packaging", color: "bg-accent text-accent-foreground border border-border" },
+  { value: "OTHER", label: "machines.other", color: "bg-muted text-muted-foreground border border-border" },
 ];
 
 export default function WorkstationManagement() {
@@ -393,7 +393,7 @@ export default function WorkstationManagement() {
                         <TableCell className="font-mono">{ws.code}</TableCell>
                         <TableCell className="font-medium">{ws.name}</TableCell>
                         <TableCell>
-                          <Badge className={`${processInfo.color} text-white`}>
+                          <Badge variant="outline" className={processInfo.color}>
                             {processInfo.label.startsWith('machines.') ? t(processInfo.label) : processInfo.label}
                           </Badge>
                         </TableCell>

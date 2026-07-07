@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PageHeader } from "@/components/patterns";
+import { PageHeader, chartColor } from "@/components/patterns";
 import {
   BarChart3,
   RefreshCw,
@@ -45,12 +45,6 @@ function getDefaultDateRange() {
     endDate: end.toISOString().split("T")[0],
   };
 }
-
-const COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4",
-  "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e", "#14b8a6",
-  "#a855f7", "#64748b", "#d946ef", "#0ea5e9", "#84cc16",
-];
 
 export default function ParetoAnalysis() {
   return (
@@ -407,7 +401,7 @@ function ParetoTabContent({
     count: item.count,
     percentage: item.percentage,
     cumulative: item.cumulativePercentage,
-    fill: COLORS[index % COLORS.length],
+    fill: chartColor(index),
   }));
 
   return (
@@ -486,10 +480,10 @@ function ParetoTabContent({
                 }}
               />
               <Legend />
-              <ReferenceLine yAxisId="right" y={80} stroke="#ef4444" strokeDasharray="5 5" label="80%" />
+              <ReferenceLine yAxisId="right" y={80} stroke="var(--destructive)" strokeDasharray="5 5" label="80%" />
               <Bar yAxisId="left" dataKey="count" name={t("pareto.count", "Số lượng")} radius={[4, 4, 0, 0]}>
                 {chartData.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.cumulative <= 80 ? "#ef4444" : "#94a3b8"} />
+                  <Cell key={`cell-${index}`} fill={entry.cumulative <= 80 ? "var(--destructive)" : "var(--muted-foreground)"} />
                 ))}
               </Bar>
               <Line
@@ -497,9 +491,9 @@ function ParetoTabContent({
                 type="monotone"
                 dataKey="cumulative"
                 name={t("pareto.cumulative", "% Tích lũy")}
-                stroke="#f97316"
+                stroke={chartColor(1)}
                 strokeWidth={2}
-                dot={{ fill: "#f97316", r: 4 }}
+                dot={{ fill: chartColor(1), r: 4 }}
               />
             </ComposedChart>
           </ResponsiveContainer>
