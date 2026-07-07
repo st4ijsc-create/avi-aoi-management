@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { EmptyState } from "@/components/EmptyState";
@@ -63,6 +64,8 @@ export default function Users() {
   const { user: currentUser } = useAuth();
   const { hasPermission, loading: permsLoading } = usePermissions();
   const canView = hasPermission("admin_users", "canView");
+  // Same gate the single-row edit action uses; drives the bulk bar + selection UI.
+  const canEdit = hasPermission("admin_users", "canEdit");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -105,7 +108,14 @@ export default function Users() {
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserType | null>(null);
-  
+
+  // Bulk multi-select (mirrors ThresholdApprovalsPage): a Set of user ids picked
+  // from the current filtered view, plus a role to apply and a pending confirm.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkRole, setBulkRole] = useState<"user" | "admin">("user");
+  const [bulkConfirm, setBulkConfirm] = useState<"activate" | "deactivate" | "setRole" | null>(null);
+  const [isBulkRunning, setIsBulkRunning] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: users, refetch: refetchUsers, isLoading } = trpc.user.list.useQuery();
@@ -156,6 +166,12 @@ export default function Users() {
       toast.error(error.message || t('users.deleteError'));
     },
   });
+
+  // Bulk hooks reuse the SAME endpoints as the single-row actions (user.update /
+  // user.updateRole) but without onSuccess/onError so looping them doesn't emit
+  // one toast per id — we tally results ourselves and toast a single summary.
+  const bulkUpdateMutation = trpc.user.update.useMutation();
+  const bulkUpdateRoleMutation = trpc.user.updateRole.useMutation();
 
   const resetCreateForm = () => {
     setCreateForm({
@@ -288,6 +304,67 @@ export default function Users() {
     return matchesSearch && matchesRole && matchesStatus;
   }) || [];
 
+  // ---- Bulk selection over the CURRENT filtered view ----
+  const filteredUserIds: number[] = filteredUsers.map((u: { id: number }) => u.id);
+  const allSelected = filteredUserIds.length > 0 && filteredUserIds.every((id) => selected.has(id));
+  const someSelected = filteredUserIds.some((id) => selected.has(id));
+  const headerChecked: boolean | "indeterminate" = allSelected ? true : someSelected ? "indeterminate" : false;
+  const selectedCount = filteredUserIds.filter((id) => selected.has(id)).length;
+
+  const toggleAll = (checked: boolean) =>
+    setSelected(checked ? new Set(filteredUserIds) : new Set());
+  const toggleOne = (id: number, checked: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  // Run a bulk action by calling the existing single mutation per selected id.
+  // Deactivate + role-change skip the current admin's own id (server rejects it
+  // too); activate is harmless on self so it's kept. We tally ok/failed/skipped.
+  const runBulk = async (action: "activate" | "deactivate" | "setRole") => {
+    const ids = filteredUserIds.filter((id) => selected.has(id));
+    const skipSelf = action !== "activate";
+    const targetIds = skipSelf ? ids.filter((id) => id !== currentUser?.id) : ids;
+    const skippedSelf = ids.length - targetIds.length;
+
+    setIsBulkRunning(true);
+    try {
+      const results = await Promise.all(
+        targetIds.map(async (id) => {
+          try {
+            if (action === "setRole") {
+              await bulkUpdateRoleMutation.mutateAsync({ userId: id, role: bulkRole });
+            } else {
+              await bulkUpdateMutation.mutateAsync({ id, isActive: action === "activate" });
+            }
+            return true;
+          } catch {
+            return false;
+          }
+        }),
+      );
+      const updated = results.filter(Boolean).length;
+      const failed = results.length - updated;
+      toast.success(
+        t("users.bulkSummary", "Updated {{updated}}, failed {{failed}}{{skipped}}", {
+          updated,
+          failed,
+          skipped: skippedSelf > 0
+            ? t("users.bulkSkippedSelf", " (skipped yourself)")
+            : "",
+        }),
+      );
+      refetchUsers();
+      clearSelection();
+    } finally {
+      setIsBulkRunning(false);
+      setBulkConfirm(null);
+    }
+  };
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString("vi-VN", {
       year: "numeric",
@@ -415,6 +492,65 @@ export default function Users() {
               </Select>
             </div>
 
+            {/* Bulk action bar — same gate as the single-row edit action */}
+            {canEdit && selectedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mb-4 rounded-md border bg-muted/40 p-3">
+                <span className="text-sm font-medium mr-1">
+                  {t("users.bulkSelected", "{{count}} selected", { count: selectedCount })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBulkRunning}
+                  aria-label={t("users.bulkActivate", "Activate selected")}
+                  onClick={() => setBulkConfirm("activate")}
+                >
+                  <UserCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t("users.bulkActivate", "Activate selected")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:text-destructive/80"
+                  disabled={isBulkRunning}
+                  aria-label={t("users.bulkDeactivate", "Deactivate selected")}
+                  onClick={() => setBulkConfirm("deactivate")}
+                >
+                  <UserX className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t("users.bulkDeactivate", "Deactivate selected")}
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={bulkRole} onValueChange={(v) => setBulkRole(v as "user" | "admin")}>
+                    <SelectTrigger className="w-32" aria-label={t("users.bulkRoleSelect", "Role to apply")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">{t("users.roleUser", "User")}</SelectItem>
+                      <SelectItem value="admin">{t("users.roleAdmin", "Admin")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isBulkRunning}
+                    aria-label={t("users.bulkSetRoleApply", "Apply role to selected")}
+                    onClick={() => setBulkConfirm("setRole")}
+                  >
+                    {isBulkRunning && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+                    {t("users.bulkSetRole", "Set role")}
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={isBulkRunning}
+                  onClick={clearSelection}
+                >
+                  {t("users.bulkClear", "Clear")}
+                </Button>
+              </div>
+            )}
+
             {/* Table */}
             {isLoading ? (
               <div className="space-y-3">
@@ -433,6 +569,16 @@ export default function Users() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {canEdit && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={headerChecked}
+                            disabled={filteredUserIds.length === 0}
+                            onCheckedChange={(v) => toggleAll(v === true)}
+                            aria-label={t("users.selectAll", "Select all users in view")}
+                          />
+                        </TableHead>
+                      )}
                       <TableHead>{t('users.user')}</TableHead>
                       <TableHead>Username</TableHead>
                       <TableHead>{t('users.department')}</TableHead>
@@ -445,6 +591,15 @@ export default function Users() {
                   <TableBody>
                     {filteredUsers.map((user: any) => (
                       <TableRow key={user.id}>
+                        {canEdit && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(user.id)}
+                              onCheckedChange={(v) => toggleOne(user.id, v === true)}
+                              aria-label={t("users.selectRow", "Select {{name}}", { name: user.name || user.username || `#${user.id}` })}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-linear-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-semibold">
@@ -824,6 +979,38 @@ export default function Users() {
               onClick={confirmDelete}
             >
               {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Action Confirmation Dialog */}
+      <AlertDialog open={bulkConfirm !== null} onOpenChange={(o) => { if (!o && !isBulkRunning) setBulkConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkConfirm === "activate" && t("users.bulkConfirmActivateTitle", "Activate selected users?")}
+              {bulkConfirm === "deactivate" && t("users.bulkConfirmDeactivateTitle", "Deactivate selected users?")}
+              {bulkConfirm === "setRole" && t("users.bulkConfirmSetRoleTitle", "Change role for selected users?")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkConfirm === "activate" &&
+                t("users.bulkConfirmActivateDesc", "This will activate {{count}} user(s).", { count: selectedCount })}
+              {bulkConfirm === "deactivate" &&
+                t("users.bulkConfirmDeactivateDesc", "This will deactivate {{count}} user(s). Your own account is skipped.", { count: selectedCount })}
+              {bulkConfirm === "setRole" &&
+                t("users.bulkConfirmSetRoleDesc", "This will set the role of {{count}} user(s) to {{role}}. Your own account is skipped.", { count: selectedCount, role: bulkRole })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkRunning}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className={bulkConfirm === "deactivate" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+              disabled={isBulkRunning}
+              onClick={(e) => { e.preventDefault(); if (bulkConfirm) void runBulk(bulkConfirm); }}
+            >
+              {isBulkRunning && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+              {t('common.confirm', 'Confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

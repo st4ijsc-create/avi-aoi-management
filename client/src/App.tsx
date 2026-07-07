@@ -148,6 +148,7 @@ const EquipmentStandards = React.lazy(() => import("./pages/EquipmentStandards")
 const EquipmentIntegration = React.lazy(() => import("./pages/EquipmentIntegration")); // I1 (doc 16 §6 Khối 1B): FOCAS/Euromap integration frameworks (read-only) + recipe versioning genealogy (mutations gated by EQ_INTEG_ENABLED)
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
+const ApprovalsInbox = React.lazy(() => import("./pages/ApprovalsInbox")); // doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)
 import AOIPackages from "./pages/AOIPackages";
@@ -439,6 +440,9 @@ function Router() {
       {/* ── ME (self) — read-open to every authenticated role ─────────────── */}
       {/* P3-W2: full-screen Action Inbox + Today Briefing surfaces (read-open). */}
       <Route path="/inbox"><AIPageWrapper><InboxPage /></AIPageWrapper></Route>
+      {/* doc 39 W6 — unified HITL pending-approvals inbox (read-open; the page self-gates
+          each section's actions with the same SoD/permission rules as the domain page). */}
+      <Route path="/approvals-inbox"><AIPageWrapper><ApprovalsInbox /></AIPageWrapper></Route>
       <Route path="/today"><AIPageWrapper><TodayPage /></AIPageWrapper></Route>
       <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
       <Route path="/maintenance-home"><AIPageWrapper><MaintenanceHome /></AIPageWrapper></Route>
