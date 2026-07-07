@@ -19,9 +19,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { 
   LayoutTemplate, 
-  Plus, 
-  Trash2, 
-  Eye, 
+  Plus,
+  Trash2,
   Copy,
   BarChart3,
   PieChart,
@@ -341,15 +340,6 @@ export default function DashboardTemplates() {
                       <span>{template.widgets.length} widgets</span>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => toast.info(t('dashboard.applyTemplateHint', { name: template.name }))}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        {t('dashboard.preview')}
-                      </Button>
                       <Button
                         size="sm"
                         className="flex-1"

@@ -680,6 +680,26 @@ export const mqttClientRouter = router({
       return getMachineHealthScore(input.machineId);
     }),
 
+  // Batched counterpart of getMachineHealth: returns the SAME real, in-memory
+  // health scores the Details tab reads (getMachineHealthScore is a synchronous
+  // Map lookup, so mapping it over the machine list is cheap). Machines with no
+  // calculated score yet are returned with healthScore: null so the fleet view
+  // can render an honest "—" instead of fabricating a value from OEE.
+  getAllMachineHealth: protectedProcedure.query(async () => {
+    const { getMachineHealthScore } = await import('../_core/socket');
+    const machines = await db.getMachines();
+    return machines.map((m) => {
+      const health = getMachineHealthScore(m.id);
+      return {
+        machineId: m.id,
+        machineCode: m.code,
+        healthScore: health ? health.score : null,
+        factors: health ? health.factors : null,
+        lastUpdated: health ? health.lastUpdated : null,
+      };
+    });
+  }),
+
   getMachineHealthHistory: protectedProcedure
     .input(z.object({
       machineId: z.number(),

@@ -10,15 +10,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { 
-  Download, 
-  Upload, 
-  Archive, 
-  History, 
+import {
+  Download,
+  Upload,
+  Archive,
   Settings,
   Building2,
   Factory,
@@ -28,9 +39,6 @@ import {
   Users,
   Calendar,
   FileJson,
-  CheckCircle2,
-  XCircle,
-  Clock,
   RefreshCw
 } from "lucide-react";
 
@@ -80,17 +88,6 @@ const BACKUP_CATEGORIES = [
   },
 ];
 
-interface BackupHistory {
-  id: number;
-  name: string;
-  description: string;
-  categories: string[];
-  createdAt: Date;
-  createdBy: string;
-  size: string;
-  status: "success" | "failed" | "pending";
-}
-
 export function BackupRestorePageContent() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -103,36 +100,13 @@ export function BackupRestorePageContent() {
   const [isImporting, setIsImporting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importData, setImportData] = useState("");
+  const [overwrite, setOverwrite] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     categories: string[];
     recordCounts: Record<string, number>;
     createdAt: string;
     version: string;
   } | null>(null);
-
-  // Mock backup history - in real implementation, this would come from API
-  const [backupHistory] = useState<BackupHistory[]>([
-    {
-      id: 1,
-      name: "Full System Backup",
-      description: t('backup.mockFullSystemDesc'),
-      categories: ["corporate", "products", "processes", "alerts", "users", "reports"],
-      createdAt: new Date(Date.now() - 86400000),
-      createdBy: "admin",
-      size: "2.5 MB",
-      status: "success",
-    },
-    {
-      id: 2,
-      name: "Products Only",
-      description: t('backup.mockProductsOnlyDesc'),
-      categories: ["products"],
-      createdAt: new Date(Date.now() - 172800000),
-      createdBy: "admin",
-      size: "512 KB",
-      status: "success",
-    },
-  ]);
 
   const toggleCategory = (categoryId: string) => {
     setSelectedCategories(prev => 
@@ -230,6 +204,7 @@ export function BackupRestorePageContent() {
       setImportDialogOpen(false);
       setImportData("");
       setImportPreview(null);
+      setOverwrite(false);
     },
     onError: (error) => {
       toast.error(t('backup.restoreError') + error.message);
@@ -247,7 +222,7 @@ export function BackupRestorePageContent() {
       importConfigMutation.mutate({
         data: parsed.data,
         categories: parsed.categories,
-        overwrite: false,
+        overwrite,
       });
     } catch {
       toast.error(t('backup.invalidBackupData'));
@@ -286,10 +261,6 @@ export function BackupRestorePageContent() {
             <TabsTrigger value="restore" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
               {t('backup.tabRestore')}
-            </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center gap-2">
-              <History className="h-4 w-4" />
-              {t('backup.tabHistory')}
             </TabsTrigger>
           </TabsList>
 
@@ -473,83 +444,72 @@ export function BackupRestorePageContent() {
                           </div>
                         </div>
 
+                        {/* Overwrite toggle — wired to the restore payload */}
+                        <div className="flex items-start justify-between gap-4 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+                          <div className="space-y-1">
+                            <Label htmlFor="overwrite" className="flex items-center gap-2 text-destructive">
+                              <AlertTriangle className="h-4 w-4" />
+                              {t('backup.overwriteLabel')}
+                            </Label>
+                            <p className="text-xs text-muted-foreground">
+                              {t('backup.overwriteHint')}
+                            </p>
+                          </div>
+                          <Switch
+                            id="overwrite"
+                            checked={overwrite}
+                            onCheckedChange={setOverwrite}
+                          />
+                        </div>
+
                         <div className="flex justify-end pt-4">
-                          <Button 
-                            onClick={handleImport}
-                            disabled={importConfigMutation.isPending}
-                          >
-                            {importConfigMutation.isPending ? (
-                              <>
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                {t('backup.restoring')}
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="h-4 w-4 mr-2" />
-                                {t('backup.restore')}
-                              </>
-                            )}
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button disabled={importConfigMutation.isPending}>
+                                {importConfigMutation.isPending ? (
+                                  <>
+                                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                    {t('backup.restoring')}
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="h-4 w-4 mr-2" />
+                                    {t('backup.restore')}
+                                  </>
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle className="flex items-center gap-2">
+                                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                                  {t('backup.confirmRestoreTitle')}
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {overwrite
+                                    ? t('backup.confirmRestoreOverwriteBody', {
+                                        categories: importPreview.categories.join(", "),
+                                      })
+                                    : t('backup.confirmRestoreMergeBody', {
+                                        categories: importPreview.categories.join(", "),
+                                      })}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t('backup.cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={handleImport}
+                                  className={overwrite ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+                                >
+                                  {t('backup.confirmRestoreAction')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </CardContent>
                     </Card>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* History Tab */}
-          <TabsContent value="history" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="h-5 w-5" />
-                  {t('backup.historyTitle')}
-                </CardTitle>
-                <CardDescription>
-                  {t('backup.historyDescription')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {backupHistory.map((backup) => (
-                    <Card key={backup.id} className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{backup.name}</span>
-                            {backup.status === "success" && (
-                              <CheckCircle2 className="h-4 w-4 text-success" />
-                            )}
-                            {backup.status === "failed" && (
-                              <XCircle className="h-4 w-4 text-destructive" />
-                            )}
-                            {backup.status === "pending" && (
-                              <Clock className="h-4 w-4 text-warning" />
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{backup.description}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {backup.categories.map((cat) => (
-                              <Badge key={cat} variant="outline" className="text-xs">
-                                {cat}
-                              </Badge>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>{t('backup.by')}: {backup.createdBy}</span>
-                            <span>{t('backup.size')}: {backup.size}</span>
-                            <span>{backup.createdAt.toLocaleString("vi-VN")}</span>
-                          </div>
-                        </div>
-                        <Button variant="outline" size="sm">
-                          <Download className="h-4 w-4 mr-1" />
-                          {t('backup.download')}
-                        </Button>
-                      </div>
-                    </Card>
-                  ))}
                 </div>
               </CardContent>
             </Card>

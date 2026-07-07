@@ -209,15 +209,13 @@ export default function CorporateLayout() {
         stats,
         machineCount: cap?.machineCount ?? 0,
         activeMachineCount: cap?.activeMachineCount ?? 0,
+        // No per-workshop rollup exists on the server (only factory-level
+        // stats are real). Do NOT fabricate per-workshop numbers by evenly
+        // splitting the factory total — leave stats undefined so the UI
+        // renders an honest "no data" placeholder instead.
         workshops: factoryWorkshops.map(ws => ({
           ...ws,
-          stats: {
-            total: factoryWorkshops.length > 0 ? Math.floor(stats.total / factoryWorkshops.length) : 0,
-            ok: factoryWorkshops.length > 0 ? Math.floor(stats.ok / factoryWorkshops.length) : 0,
-            ng: factoryWorkshops.length > 0 ? Math.floor(stats.ng / factoryWorkshops.length) : 0,
-            ntf: factoryWorkshops.length > 0 ? Math.floor(stats.ntf / factoryWorkshops.length) : 0,
-            yieldRate: stats.yieldRate,
-          }
+          stats: undefined,
         }))
       } as FactoryData & { machineCount: number; activeMachineCount: number };
     });
@@ -1155,9 +1153,17 @@ export default function CorporateLayout() {
                               <Warehouse className="h-4 w-4 text-info" />
                               <span className="font-medium text-sm group-hover:text-primary transition-colors">{ws.name}</span>
                             </div>
-                            <Badge variant={(ws.stats?.yieldRate ?? 0) >= 95 ? "default" : "secondary"}>
-                              {(ws.stats?.yieldRate ?? 0).toFixed(1)}%
-                            </Badge>
+                            {ws.stats
+                              ? (
+                                <Badge variant={ws.stats.yieldRate >= 95 ? "default" : "secondary"}>
+                                  {ws.stats.yieldRate.toFixed(1)}%
+                                </Badge>
+                              )
+                              : (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  {t('corporate.noWorkshopData', 'No data')}
+                                </Badge>
+                              )}
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">{ws.code}</p>
                         </div>

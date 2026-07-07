@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import {
@@ -29,7 +29,6 @@ import {
   TrendingUp,
   TrendingDown,
   Target,
-  Activity,
   BarChart3,
   PieChart,
   RefreshCw,
@@ -39,7 +38,6 @@ import {
   AlertTriangle,
   Clock,
   Database,
-  Zap,
   Award,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -81,43 +79,15 @@ export default function AIPerformanceDashboard() {
     limit: 20,
   });
 
-  // Calculate confusion matrix data
-  const confusionMatrix = useMemo(() => {
-    if (!dashboardStats || !dashboardStats.recentFeedback) return null;
-
-    // Calculate from recentFeedback
-    const feedback = dashboardStats.recentFeedback;
-    const correct = feedback.filter((f: any) => f.feedbackType === 'CORRECT').length;
-    const incorrect = feedback.filter((f: any) => f.feedbackType === 'INCORRECT').length;
-
-    // For binary classification: Predicted vs Actual
-    return {
-      truePositive: Math.round(correct * 0.6) || 1,
-      falsePositive: Math.round(incorrect * 0.4) || 1,
-      trueNegative: Math.round(correct * 0.4) || 1,
-      falseNegative: Math.round(incorrect * 0.6) || 1,
-    };
-  }, [dashboardStats]);
-
-  // Calculate metrics
-  const metrics = useMemo(() => {
-    if (!confusionMatrix) return null;
-
-    const { truePositive, falsePositive, trueNegative, falseNegative } = confusionMatrix;
-    const total = truePositive + falsePositive + trueNegative + falseNegative;
-
-    const precision = truePositive / (truePositive + falsePositive) || 0;
-    const recall = truePositive / (truePositive + falseNegative) || 0;
-    const f1Score = 2 * (precision * recall) / (precision + recall) || 0;
-    const accuracy = (truePositive + trueNegative) / total || 0;
-
-    return {
-      precision: precision * 100,
-      recall: recall * 100,
-      f1Score: f1Score * 100,
-      accuracy: accuracy * 100,
-    };
-  }, [confusionMatrix]);
+  // Accuracy is the only classification KPI backed by real data: the backend
+  // (aiFeedback.getDashboardStats) computes it as CORRECT / total-feedback over
+  // the ai_feedback table. Precision / Recall / F1 / a confusion matrix require
+  // labeled per-class ground-truth outcomes (predicted vs actual class), which
+  // this system does not capture — ai_feedback only records a subjective
+  // CORRECT/INCORRECT/PARTIAL/UNSURE verdict per suggestion. We therefore refuse
+  // to synthesize those metrics and surface an honest empty state instead.
+  const hasAccuracy = !!dashboardStats && dashboardStats.accuracy > 0;
+  const accuracyPct = dashboardStats?.accuracy ?? 0;
 
   const getStatusBadge = (status: string) => (
     <StatusBadge
@@ -172,36 +142,40 @@ export default function AIPerformanceDashboard() {
           }
         />
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Key Metrics — only Accuracy is backed by real labeled feedback.
+            Precision / Recall / F1 need a ground-truth confusion matrix that
+            this system does not capture, so we show an honest notice instead of
+            fabricated numbers. */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard
             icon={<Target className="h-5 w-5" />}
             label={t('reports.accuracy', 'Accuracy')}
-            value={statsLoading ? '…' : `${(metrics?.accuracy || 0).toFixed(1)}%`}
-            tone={(metrics?.accuracy || 0) >= 80 ? 'success' : 'warning'}
-            delta={(metrics?.accuracy || 0) >= 80 ? t('reports.targetMet') : t('reports.needsImprovement')}
+            value={statsLoading ? '…' : hasAccuracy ? `${accuracyPct.toFixed(1)}%` : t('common.notAvailable', 'N/A')}
+            tone={!hasAccuracy ? 'default' : accuracyPct >= 80 ? 'success' : 'warning'}
+            delta={
+              !hasAccuracy
+                ? t('reports.noFeedbackYet', 'No reviewed feedback yet')
+                : accuracyPct >= 80
+                  ? t('reports.targetMet')
+                  : t('reports.needsImprovement')
+            }
           />
 
-          <MetricCard
-            icon={<Zap className="h-5 w-5" />}
-            label={t('reports.precision', 'Precision')}
-            value={statsLoading ? '…' : `${(metrics?.precision || 0).toFixed(1)}%`}
-            delta={t('reports.precisionDesc')}
-          />
-
-          <MetricCard
-            icon={<Activity className="h-5 w-5" />}
-            label={t('reports.recall', 'Recall')}
-            value={statsLoading ? '…' : `${(metrics?.recall || 0).toFixed(1)}%`}
-            delta={t('reports.recallDesc')}
-          />
-
-          <MetricCard
-            icon={<Award className="h-5 w-5" />}
-            label={t('reports.f1Score', 'F1 Score')}
-            value={statsLoading ? '…' : `${(metrics?.f1Score || 0).toFixed(1)}%`}
-            delta={t('reports.f1ScoreDesc')}
-          />
+          <Card className="md:col-span-3">
+            <CardContent className="h-full p-0">
+              <EmptyState
+                variant="no-analytics"
+                icon={Award}
+                compact
+                title={t('reports.classMetricsUnavailable', 'Precision / Recall / F1 unavailable')}
+                description={t(
+                  'reports.classMetricsUnavailableDesc',
+                  'These metrics require labeled ground-truth outcomes (predicted vs actual class per sample). Feedback here records only a correct/incorrect verdict, so they cannot be computed without fabricating numbers.',
+                )}
+                className="h-full"
+              />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Main Content */}
@@ -347,78 +321,24 @@ export default function AIPerformanceDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {confusionMatrix ? (
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="grid grid-cols-3 gap-2 max-w-md">
-                      {/* Header row */}
-                      <div className="p-4" />
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.predictedPositive')}
-                      </div>
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.predictedNegative')}
-                      </div>
-                      
-                      {/* Actual Positive row */}
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.actualPositive')}
-                      </div>
-                      <div className="p-8 text-center bg-success/20 rounded-lg border-2 border-success">
-                        <div className="text-3xl font-bold text-success">{confusionMatrix.truePositive}</div>
-                        <div className="text-sm text-muted-foreground">{t('reports.truePositive', 'True Positive')}</div>
-                      </div>
-                      <div className="p-8 text-center bg-destructive/20 rounded-lg border-2 border-destructive">
-                        <div className="text-3xl font-bold text-destructive">{confusionMatrix.falseNegative}</div>
-                        <div className="text-sm text-muted-foreground">{t('reports.falseNegative', 'False Negative')}</div>
-                      </div>
-
-                      {/* Actual Negative row */}
-                      <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        {t('reports.actualNegative')}
-                      </div>
-                      <div className="p-8 text-center bg-destructive/20 rounded-lg border-2 border-destructive">
-                        <div className="text-3xl font-bold text-destructive">{confusionMatrix.falsePositive}</div>
-                        <div className="text-sm text-muted-foreground">{t('reports.falsePositive', 'False Positive')}</div>
-                      </div>
-                      <div className="p-8 text-center bg-success/20 rounded-lg border-2 border-success">
-                        <div className="text-3xl font-bold text-success">{confusionMatrix.trueNegative}</div>
-                        <div className="text-sm text-muted-foreground">{t('reports.trueNegative', 'True Negative')}</div>
-                      </div>
-                    </div>
-
-                    {/* Metrics explanation */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl mt-8">
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.accuracy.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">{t('reports.accuracy', 'Accuracy')}</div>
-                        <div className="text-xs text-muted-foreground mt-1">(TP+TN)/(Total)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.precision.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">{t('reports.precision', 'Precision')}</div>
-                        <div className="text-xs text-muted-foreground mt-1">TP/(TP+FP)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.recall.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">{t('reports.recall', 'Recall')}</div>
-                        <div className="text-xs text-muted-foreground mt-1">TP/(TP+FN)</div>
-                      </div>
-                      <div className="p-4 rounded-lg border text-center">
-                        <div className="text-lg font-bold">{metrics?.f1Score.toFixed(1)}%</div>
-                        <div className="text-xs text-muted-foreground">{t('reports.f1Score', 'F1 Score')}</div>
-                        <div className="text-xs text-muted-foreground mt-1">2*(P*R)/(P+R)</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyState
-                    variant="no-analytics"
-                    icon={Brain}
-                    title={t('reports.needMoreFeedback')}
-                    description={t('reports.needMoreFeedbackDesc', 'Provide more feedback on suggestions to build the confusion matrix.')}
-                    className="h-75"
-                  />
-                )}
+                {/* A confusion matrix (and the precision/recall/F1 derived from
+                    it) requires labeled ground-truth outcomes — the actual class
+                    of each sample compared against the model's predicted class.
+                    The ai_feedback store only records a subjective
+                    correct/incorrect/partial verdict per suggestion, not a
+                    predicted-vs-actual class pair, so a real matrix cannot be
+                    built. We show an honest empty state rather than fabricate
+                    cells. */}
+                <EmptyState
+                  variant="no-analytics"
+                  icon={Brain}
+                  title={t('reports.confusionMatrixUnavailable', 'Confusion matrix not available')}
+                  description={t(
+                    'reports.confusionMatrixUnavailableDesc',
+                    'Building a confusion matrix needs labeled ground-truth outcomes (the actual class vs the predicted class for each sample). This system captures only a correct/incorrect feedback verdict, so a true matrix and its precision/recall/F1 cannot be computed yet.',
+                  )}
+                  className="h-75"
+                />
               </CardContent>
             </Card>
           </TabsContent>

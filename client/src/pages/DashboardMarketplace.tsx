@@ -15,7 +15,7 @@ import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
-  Search, Download, Star, Eye, Upload, Grid3X3, LayoutDashboard,
+  Search, Download, Star, Upload, Grid3X3, LayoutDashboard,
   TrendingUp, Users, Clock, CheckCircle, Filter, Heart, Share2,
   BarChart3, PieChart, Activity, Gauge, Table2, Bell
 } from 'lucide-react';
@@ -165,14 +165,33 @@ export function DashboardMarketplaceContent() {
     applyMutation.mutate({ id: template.id });
   };
 
+  // Persist the shared template via the real backend mutation. Success is shown
+  // ONLY in onSuccess so we never claim a share that did not happen (e.g. a
+  // non-admin will receive a genuine authorization error instead).
+  const publishMutation = trpc.dashboardWidget.createSharedTemplate.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.getSharedTemplates.invalidate();
+      toast.success(t('dashboard.templateSubmittedForReview'));
+      setShowPublishDialog(false);
+      setPublishForm({ name: '', description: '', category: 'custom' });
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
   const handlePublish = () => {
     if (!publishForm.name.trim()) {
       toast.error(t('dashboard.pleaseEnterTemplateName'));
       return;
     }
-    toast.success(t('dashboard.templateSubmittedForReview'));
-    setShowPublishDialog(false);
-    setPublishForm({ name: '', description: '', category: 'custom' });
+    publishMutation.mutate({
+      name: publishForm.name.trim(),
+      description: publishForm.description.trim() || undefined,
+      widgets: [],
+      layout: [],
+      isPublic: true,
+    });
   };
 
   const renderStars = (rating: number | null) => {
@@ -437,10 +456,6 @@ export function DashboardMarketplaceContent() {
                   <Button variant="outline" onClick={() => setSelectedTemplate(null)}>
                     {t('common.close')}
                   </Button>
-                  <Button variant="outline">
-                    <Eye className="h-4 w-4 mr-2" />
-                    {t('dashboard.preview')}
-                  </Button>
                   <Button onClick={() => handleDownload(selectedTemplate)}>
                     <Download className="h-4 w-4 mr-2" />
                     {t('dashboard.download')}
@@ -505,7 +520,7 @@ export function DashboardMarketplaceContent() {
               <Button variant="outline" onClick={() => setShowPublishDialog(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button onClick={handlePublish}>
+              <Button onClick={handlePublish} disabled={publishMutation.isPending}>
                 <Share2 className="h-4 w-4 mr-2" />
                 {t('dashboard.submitForReview')}
               </Button>

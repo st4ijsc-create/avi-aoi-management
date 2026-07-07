@@ -194,6 +194,11 @@ export default function MachineHealthMonitoring() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  // REAL per-machine health scores (same source the Details tab reads). Used to
+  // drive the fleet overview so it agrees with the detail view. Machines without
+  // a calculated score come back as null → rendered as an honest "—".
+  const { data: allMachineHealth, refetch: refetchAllHealth } =
+    trpc.mqttClient.getAllMachineHealth.useQuery();
 
   // C3a — publish the currently-selected machine to the AI copilot so questions
   // like "OEE máy này?" resolve to this machine's code without typing it.
@@ -266,9 +271,14 @@ export default function MachineHealthMonitoring() {
     }));
   }, [machineHealth]);
 
-  // Machine comparison data
+  // Machine comparison data. healthScore is the REAL score from getAllMachineHealth
+  // (identical to the Details tab), joined by machineId — never an OEE-derived
+  // invention. Machines with no calculated score yet are null → rendered as "—".
   const machineComparisonData = useMemo(() => {
     if (!allOEE) return [];
+    const healthById = new Map<number, number | null>(
+      (allMachineHealth ?? []).map((h) => [h.machineId, h.healthScore]),
+    );
     return allOEE.map(oee => ({
       name: oee.machineCode,
       machineId: oee.machineId,
@@ -276,13 +286,26 @@ export default function MachineHealthMonitoring() {
       availability: oee.availability,
       performance: oee.performance,
       quality: oee.quality,
-      // Estimate health score from OEE
-      healthScore: Math.round(oee.oee * 0.8 + oee.availability * 0.1 + oee.quality * 0.1),
+      healthScore: (healthById.get(oee.machineId) ?? null) as number | null,
     }));
-  }, [allOEE]);
+  }, [allOEE, allMachineHealth]);
 
-  // Get health status color (semantic theme tokens, dark/light aware)
-  const getHealthColor = (score: number) => {
+  // Machines that actually have a real health score (for counts / averages that
+  // must exclude the "—" machines rather than treat a missing score as 0).
+  const scoredMachines = useMemo(
+    () => machineComparisonData.filter(
+      (m): m is typeof m & { healthScore: number } => m.healthScore != null,
+    ),
+    [machineComparisonData],
+  );
+  const avgHealthLabel = scoredMachines.length > 0
+    ? `${(scoredMachines.reduce((sum, m) => sum + m.healthScore, 0) / scoredMachines.length).toFixed(0)}%`
+    : '—';
+
+  // Get health status color (semantic theme tokens, dark/light aware).
+  // A null (unknown) score renders in the neutral muted tone, not red.
+  const getHealthColor = (score: number | null) => {
+    if (score == null) return "var(--muted-foreground)";
     if (score >= 80) return "var(--success)";
     if (score >= 40) return "var(--warning)";
     return "var(--destructive)";
@@ -298,7 +321,7 @@ export default function MachineHealthMonitoring() {
     const headers = [t('machines.machine'), 'Health Score', 'OEE (%)', 'Availability (%)', 'Performance (%)', 'Quality (%)'];
     const rows = machineComparisonData.map(m => [
       m.name,
-      m.healthScore,
+      m.healthScore ?? '—',
       m.oee.toFixed(2),
       m.availability.toFixed(2),
       m.performance.toFixed(2),
@@ -333,7 +356,7 @@ export default function MachineHealthMonitoring() {
                 <Download className="h-4 w-4 mr-2" />
                 {t('machines.exportReport')}
               </Button>
-              <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); }}>
+              <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); refetchAllHealth(); }}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {t('machines.refresh')}
               </Button>
@@ -395,27 +418,25 @@ export default function MachineHealthMonitoring() {
               <MetricCard
                 icon={<CheckCircle2 className="h-5 w-5" />}
                 label={t('machines.healthyMachines')}
-                value={machineComparisonData.filter(m => m.healthScore >= 80).length}
+                value={machineComparisonData.filter(m => m.healthScore != null && m.healthScore >= 80).length}
                 tone="success"
               />
               <MetricCard
                 icon={<AlertTriangle className="h-5 w-5" />}
                 label={t('machines.needAttention')}
-                value={machineComparisonData.filter(m => m.healthScore >= 60 && m.healthScore < 80).length}
+                value={machineComparisonData.filter(m => m.healthScore != null && m.healthScore >= 60 && m.healthScore < 80).length}
                 tone="warning"
               />
               <MetricCard
                 icon={<XCircle className="h-5 w-5" />}
                 label={t('machines.needMaintenance')}
-                value={machineComparisonData.filter(m => m.healthScore < 60).length}
+                value={machineComparisonData.filter(m => m.healthScore != null && m.healthScore < 60).length}
                 tone="danger"
               />
               <MetricCard
                 icon={<Activity className="h-5 w-5" />}
                 label={t('machines.avgHealth', 'Average health')}
-                value={`${machineComparisonData.length > 0
-                  ? (machineComparisonData.reduce((sum, m) => sum + m.healthScore, 0) / machineComparisonData.length).toFixed(0)
-                  : 0}%`}
+                value={avgHealthLabel}
                 tone="info"
               />
             </div>
@@ -435,7 +456,7 @@ export default function MachineHealthMonitoring() {
                       <YAxis domain={[0, 100]} {...chartAxisProps} />
                       <Tooltip
                         contentStyle={chartTooltipStyle}
-                        formatter={(value: number) => [`${value.toFixed(1)}%`, 'Health Score']}
+                        formatter={(value) => [value == null ? '—' : `${Number(value).toFixed(1)}%`, 'Health Score']}
                       />
                       <Bar dataKey="healthScore" name="Health Score">
                         {machineComparisonData.map((entry, index) => (
@@ -475,24 +496,32 @@ export default function MachineHealthMonitoring() {
                       >
                         <TableCell className="font-medium">{machine.name}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Progress value={machine.healthScore} className="w-20 h-2" />
-                            <span className="font-medium" style={{ color: getHealthColor(machine.healthScore) }}>
-                              {machine.healthScore}%
-                            </span>
-                          </div>
+                          {machine.healthScore != null ? (
+                            <div className="flex items-center gap-2">
+                              <Progress value={machine.healthScore} className="w-20 h-2" />
+                              <span className="font-medium" style={{ color: getHealthColor(machine.healthScore) }}>
+                                {machine.healthScore}%
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>{machine.oee.toFixed(1)}%</TableCell>
                         <TableCell>{machine.availability.toFixed(1)}%</TableCell>
                         <TableCell>{machine.performance.toFixed(1)}%</TableCell>
                         <TableCell>{machine.quality.toFixed(1)}%</TableCell>
                         <TableCell>
-                          <HealthStatusBadge 
-                            status={
-                              machine.healthScore >= 80 ? 'healthy' :
-                              machine.healthScore >= 60 ? 'warning' : 'critical'
-                            } 
-                          />
+                          {machine.healthScore != null ? (
+                            <HealthStatusBadge
+                              status={
+                                machine.healthScore >= 80 ? 'healthy' :
+                                machine.healthScore >= 60 ? 'warning' : 'critical'
+                              }
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -726,7 +755,7 @@ export default function MachineHealthMonitoring() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {machineComparisonData
+                  {scoredMachines
                     .filter(m => m.healthScore < 80)
                     .sort((a, b) => a.healthScore - b.healthScore)
                     .map((machine) => (
@@ -778,7 +807,7 @@ export default function MachineHealthMonitoring() {
                         </div>
                       </div>
                     ))}
-                  {machineComparisonData.filter(m => m.healthScore < 80).length === 0 && (
+                  {scoredMachines.filter(m => m.healthScore < 80).length === 0 && (
                     <div className="text-center py-8">
                       <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
                       <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>

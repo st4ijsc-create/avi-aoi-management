@@ -10,8 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Play, 
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MACHINE_TYPES } from "@/constants/machineTypes";
+import {
+  Play,
   Pause, 
   SkipForward, 
   SkipBack, 
@@ -57,6 +59,13 @@ export function MQTTReplayContent() {
   const [selectedMessage, setSelectedMessage] = useState<MqttMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Register-discovered-machine dialog state (wired to machine.create)
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [regCode, setRegCode] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regType, setRegType] = useState<(typeof MACHINE_TYPES)[number]>("AUTOMATION");
+  const [regStationId, setRegStationId] = useState<number | undefined>(undefined);
+
   // Queries
   const { data: messageHistory, refetch: refetchHistory } = trpc.mqttClient.messageHistory.useQuery({
     topic: filterTopic || undefined,
@@ -65,6 +74,39 @@ export function MQTTReplayContent() {
   });
   const { data: discoveredMachines, refetch: refetchDiscovered } = trpc.mqttClient.discoveredMachines.useQuery();
   const { data: machines } = trpc.machine.list.useQuery();
+  const { data: stations } = trpc.station.list.useQuery();
+  const utils = trpc.useUtils();
+
+  // Create a real machine record from a discovered MQTT device.
+  const registerMachineMutation = trpc.machine.create.useMutation({
+    onSuccess: () => {
+      toast.success(t('mqtt.replayPage.registerSuccess', { code: regCode, defaultValue: 'Machine {{code}} registered' }));
+      setRegisterOpen(false);
+      utils.machine.list.invalidate();
+      refetchDiscovered();
+    },
+    onError: (err) => {
+      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: err.message });
+    },
+  });
+
+  const handleOpenRegister = (machine: DiscoveredMachine) => {
+    setRegCode(machine.machineCode);
+    setRegName(machine.machineCode);
+    setRegType("AUTOMATION");
+    setRegStationId(stations && stations.length > 0 ? stations[0].id : undefined);
+    setRegisterOpen(true);
+  };
+
+  const handleRegisterSubmit = () => {
+    if (!regStationId || !regCode.trim() || !regName.trim()) return;
+    registerMachineMutation.mutate({
+      stationId: regStationId,
+      code: regCode.trim(),
+      name: regName.trim(),
+      machineType: regType,
+    });
+  };
 
   // Socket.io connection for live messages
   useEffect(() => {
@@ -454,7 +496,12 @@ export function MQTTReplayContent() {
                             </div>
                           </div>
                           {!isRegistered && (
-                            <Button size="sm" className="w-full mt-3" variant="outline">
+                            <Button
+                              size="sm"
+                              className="w-full mt-3"
+                              variant="outline"
+                              onClick={() => handleOpenRegister(machine)}
+                            >
                               <Plus className="h-4 w-4 mr-2" />
                               {t('mqtt.replayPage.registerMachine')}
                             </Button>
@@ -477,6 +524,82 @@ export function MQTTReplayContent() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Register discovered machine — calls machine.create (admin). Success
+            toast fires ONLY on a real mutation success. */}
+        <Dialog open={registerOpen} onOpenChange={setRegisterOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('mqtt.replayPage.registerDialogTitle', 'Register Machine')}</DialogTitle>
+              <DialogDescription>
+                {t('mqtt.replayPage.registerDialogDesc', 'Create a machine record from this discovered MQTT device.')}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>{t('mqtt.replayPage.registerCodeLabel', 'Machine code')}</Label>
+                <Input value={regCode} onChange={(e) => setRegCode(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerNameLabel', 'Machine name')}</Label>
+                <Input value={regName} onChange={(e) => setRegName(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerTypeLabel', 'Machine type')}</Label>
+                <Select value={regType} onValueChange={(v) => setRegType(v as (typeof MACHINE_TYPES)[number])}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MACHINE_TYPES.map((mt) => (
+                      <SelectItem key={mt} value={mt}>{mt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('mqtt.replayPage.registerStationLabel', 'Station')}</Label>
+                <Select
+                  value={regStationId ? String(regStationId) : ''}
+                  onValueChange={(v) => setRegStationId(Number(v))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={t('mqtt.replayPage.registerStationPlaceholder', 'Select a station')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stations?.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.code ? `${s.code} — ${s.name}` : s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {(!stations || stations.length === 0) && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('mqtt.replayPage.registerNoStations', 'No stations configured — create a station first.')}
+                  </p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRegisterOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onClick={handleRegisterSubmit}
+                disabled={
+                  registerMachineMutation.isPending ||
+                  !regStationId ||
+                  !regCode.trim() ||
+                  !regName.trim()
+                }
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {t('mqtt.replayPage.registerConfirm', 'Register')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageContainer>
     </>
   );

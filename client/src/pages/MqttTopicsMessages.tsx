@@ -564,12 +564,14 @@ export function MqttTopicsMessagesContent() {
               <Button variant="outline" onClick={() => setIsReplayOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button onClick={() => {
-                toast.info(t('mqtt.topicsMessages.replayInDev'));
-                setIsReplayOpen(false);
-              }}>
+              {/* Honest state: no server-side MQTT republish endpoint exists yet,
+                  so this control is disabled rather than faking a resend. */}
+              <Button
+                disabled
+                title={t('mqtt.topicsMessages.resendUnavailableHint', 'Message resend is not available yet')}
+              >
                 <Send className="w-4 h-4 mr-2" />
-                {t('mqtt.topicsMessages.resend')}
+                {t('mqtt.topicsMessages.resendUnavailable', 'Resend (not available yet)')}
               </Button>
             </DialogFooter>
           </DialogContent>

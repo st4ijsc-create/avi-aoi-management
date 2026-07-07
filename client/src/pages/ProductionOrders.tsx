@@ -180,6 +180,7 @@ export default function ProductionOrders() {
       lineId: lineId || undefined,
       productModelId: productModelId || undefined,
       targetQuantity: parseInt(targetQuantity),
+      status: selectedOrder.status,
       priority: parseInt(priority),
       notes: notes || undefined,
     });
