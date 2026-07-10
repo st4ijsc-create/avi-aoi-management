@@ -9,37 +9,42 @@
  * Defaults distilled from the de-facto page shell (`space-y-6 p-4 md:p-6`):
  *   • responsive padding  → `px-4 md:px-6` + `py-4 md:py-6`
  *   • vertical rhythm     → `space-y-6`
- *   • centered column     → `mx-auto w-full max-w-7xl`
+ *   • FULL-WIDTH column   → content fills the layout (no centered max-width cap)
  *
- * Full-bleed pages (maps, 3D twin, dense monitor tables) opt out with `fluid`
- * (a.k.a. `wide`), which drops the max-width so the content fills the layout.
+ * doc 41 — full-width is now the DEFAULT: dashboards/tables were being capped at
+ * `max-w-7xl` and centered, leaving large empty gutters on wide monitors. Pages that
+ * genuinely want a narrow reading column (long forms, single-column text) opt IN with
+ * `narrow`. `fluid`/`wide` are kept as no-ops for back-compat (already full-width).
  * `className` is appended last so callers can still override anything.
- *
- * ADDITIVE & opt-in — existing pages are untouched until F3 adopts this.
  */
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export interface PageContainerProps extends React.HTMLAttributes<HTMLDivElement> {
-  /** Drop the centered max-width so the content spans the full layout width.
-   *  Use for maps / 3D twins / wide monitor tables. */
+  /** @deprecated full-width is now the default — kept for back-compat (no-op). */
   fluid?: boolean;
-  /** Alias of `fluid` — either enables full-width. */
+  /** @deprecated alias of `fluid` (no-op). */
   wide?: boolean;
+  /** Opt IN to a centered, capped reading column (`mx-auto max-w-7xl`) — for long
+   *  forms / single-column text pages that read better narrow. */
+  narrow?: boolean;
 }
 
 export function PageContainer({
   fluid = false,
   wide = false,
+  narrow = false,
   className,
   ...props
 }: PageContainerProps) {
-  const fullWidth = fluid || wide;
+  // Full-width by default; `narrow` opts into the centered column. `fluid`/`wide`
+  // stay full-width (they always did), so they can never force a narrow column.
+  const centered = narrow && !fluid && !wide;
   return (
     <div
       className={cn(
         "w-full space-y-6 px-4 py-4 md:px-6 md:py-6",
-        fullWidth ? "" : "mx-auto max-w-7xl",
+        centered ? "mx-auto max-w-7xl" : "",
         className,
       )}
       {...props}
