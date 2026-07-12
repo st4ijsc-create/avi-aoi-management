@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNAPSE EDGE NODE — GitOps config-as-code (doc 44 W7-1 / gap G1.14).
+#
+# Declarative identity + scope for ONE edge gateway (one per line/cell). Managed in
+# Git, mounted into the container at EDGE_GATEWAY_CONFIG_FILE (see
+# deploy/edge/docker-compose.edge.yml). Read on boot by
+# server/services/edge/edgeGatewayRuntime.ts → loadEdgeConfig().
+#
+# PRECEDENCE: environment variables WIN over this file (so a per-line compose/env
+# override always holds). Omit a field to fall back to env / defaults.
+#
+# SCOPE: this file carries IDENTITY + SCOPE + (optionally) a pointer to the
+# declarative TAG MAPPINGS directory. The adapter CONNECTION config
+# (endpoint/credentials) stays in the DB Asset Registry (SYNAPSE Tầng-1 §6) — this
+# file never carries secrets. Version it, review it in a PR, deploy it via GitOps.
+# ─────────────────────────────────────────────────────────────────────────────
+
+node:
+  # Stable code — the identity this gateway registers/heartbeats as (edge_nodes.code).
+  code: edge-line1
+  name: "Edge Gateway — Line 1"
+  # ISA-95 scope (advisory; used for registry filtering + fleet visibility).
+  factoryCode: HANOI
+  lineCodes:
+    - LINE1
+  version: "1.0.0"
+
+# OPTIONAL: apply declarative tag mappings (mappingAsCode, W2-B3) on boot so the
+# running config matches Git. Point at a directory of *.mapping.yaml contracts.
+#   applyMappings: false  → dry-run (diff only, logs the changeCount) — SAFE default.
+#   applyMappings: true   → import for real (upsert device_tags + uns_tag_mappings).
+# The adapter must already exist in the DB (import never creates adapters).
+mappingsDir: /app/config/mappings
+applyMappings: false

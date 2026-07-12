@@ -433,3 +433,429 @@ export function _reset(): void {
     throw new Error("[StoreForward] insert fn not wired (call setInsertFn)");
   };
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// W7-1 (doc 44 gap G1.14) — EDGE-AUTONOMY store-and-forward for UNS PUBLISHES.
+//
+// The telemetry buffer above catches DB-down (the SERVER-CENTRAL path). The EDGE
+// GATEWAY additionally has to survive CENTRAL-UNS-BROKER-down: when the edge node
+// cannot reach the central UNS broker (SYNAPSE Tầng-1 §5.1 "store-and-forward &
+// QoS" / §17.2), the telemetry it would PUBLISH northbound must be BUFFERED (≥24h)
+// and REPLAYED IN ORDER on reconnect — never log-and-dropped (the ingest.ts:190-192
+// gap the audit flagged).
+//
+// This EXTENDS storeForward with a SECOND, self-contained buffer built on a generic
+// `DurableBuffer<T>` that mirrors the proven telemetry-buffer idioms (in-memory FIFO
+// = source of truth, optional JSONL file mirror, injected transport, bounded by
+// max-entries + max-age, idempotent by natural key, ordered replay, honest metrics).
+// The DB buffer above is left BYTE-FOR-BYTE untouched (own module-level state), so
+// the server-central path cannot regress.
+//
+// INVARIANT the injected publish fn MUST honour (same contract as the DB insert fn):
+// it is ALL-OR-NOTHING per batch — it returns `items.length` when the whole batch was
+// handed to the transport, or `0` when the transport is unavailable (so the batch is
+// left buffered for the next attempt). It NEVER returns a partial count, so batch
+// removal after a confirmed send can never drop an un-sent tail.
+// ════════════════════════════════════════════════════════════════════════════════
+
+/** Snapshot of a durable buffer's state + honest metrics (health endpoint / UI). */
+export interface DurableBufferStatus {
+  enabled: boolean;
+  /** Rows currently buffered (not yet replayed). */
+  bufferedCount: number;
+  maxEntries: number;
+  maxAgeMs: number;
+  walFile: string;
+  buffered: number;
+  backfilled: number;
+  deduped: number;
+  droppedOverflow: number;
+  droppedAge: number;
+  lastBackfillAt: string | null;
+  lastBufferedAt: string | null;
+}
+
+/** Static config for a generic durable buffer (all env reads are call-time). */
+interface DurableBufferConfig<T> {
+  name: string;
+  /** Flag gate — read at call time so a no-op is truly zero-work when off. */
+  enabled: () => boolean;
+  file: () => string;
+  maxEntries: () => number;
+  maxAgeMs: () => number;
+  drainBatch: () => number;
+  /** Natural idempotency key for one item (dedupe on enqueue + crash-replay guard). */
+  keyOf: (item: T) => string;
+  /** Item → JSON-safe object for the WAL file. */
+  toWire: (item: T) => Record<string, unknown>;
+  /** JSON-safe object (from the WAL file) → item, or null to skip a corrupt line. */
+  fromWire: (wire: Record<string, unknown>) => T | null;
+}
+
+interface GenericWalEntry<T> {
+  key: string;
+  enqueuedAt: number;
+  item: T;
+}
+
+/**
+ * A durable, bounded, idempotent, order-preserving buffer with an optional JSONL
+ * file mirror and an injected transport. A generalization of the telemetry buffer
+ * above (which is intentionally NOT refactored onto this, to keep the server-central
+ * DB path byte-for-byte). Every method is fault-isolated; enqueue/replay are no-ops
+ * when the configured flag is off.
+ */
+class DurableBuffer<T> {
+  private readonly queue: GenericWalEntry<T>[] = [];
+  private readonly queuedKeys = new Set<string>();
+  private readonly appliedKeys = new Set<string>();
+  private readonly appliedOrder: string[] = [];
+  private static readonly APPLIED_LEDGER_MAX = 200_000;
+  private fileDirty = false;
+  private draining = false;
+  private publishFn: (items: T[]) => Promise<number> = async () => {
+    throw new Error(`[${this.cfg.name}] publish fn not wired (call setPublishFn)`);
+  };
+  private readonly metrics = {
+    buffered: 0,
+    backfilled: 0,
+    deduped: 0,
+    droppedOverflow: 0,
+    droppedAge: 0,
+    lastBackfillAt: null as string | null,
+    lastBufferedAt: null as string | null,
+  };
+
+  constructor(private readonly cfg: DurableBufferConfig<T>) {}
+
+  setPublishFn(fn: (items: T[]) => Promise<number>): void {
+    this.publishFn = fn;
+  }
+
+  count(): number {
+    return this.queue.length;
+  }
+
+  private markApplied(key: string): void {
+    if (this.appliedKeys.has(key)) return;
+    this.appliedKeys.add(key);
+    this.appliedOrder.push(key);
+    if (this.appliedOrder.length > DurableBuffer.APPLIED_LEDGER_MAX) {
+      const evict = this.appliedOrder.splice(0, this.appliedOrder.length - DurableBuffer.APPLIED_LEDGER_MAX);
+      for (const k of evict) this.appliedKeys.delete(k);
+    }
+  }
+
+  private entryToLine(e: GenericWalEntry<T>): string {
+    return JSON.stringify({ key: e.key, enqueuedAt: e.enqueuedAt, item: this.cfg.toWire(e.item) });
+  }
+
+  private async flushFile(): Promise<void> {
+    if (!this.fileDirty) return;
+    this.fileDirty = false;
+    const file = this.cfg.file();
+    try {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      const lines = this.queue.map((e) => this.entryToLine(e)).join("\n");
+      await fs.writeFile(file, lines.length ? lines + "\n" : "", "utf8");
+    } catch (err) {
+      this.fileDirty = true; // retry next flush; the in-memory queue is the truth
+      console.warn(`[${this.cfg.name}] WAL file flush failed:`, (err as Error)?.message || err);
+    }
+  }
+
+  async restore(): Promise<number> {
+    const file = this.cfg.file();
+    let raw: string;
+    try {
+      raw = await fs.readFile(file, "utf8");
+    } catch {
+      return this.queue.length;
+    }
+    for (const line of raw.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; item?: Record<string, unknown> };
+        if (!parsed.item) continue;
+        const item = this.cfg.fromWire(parsed.item);
+        if (item == null) continue;
+        const key = typeof parsed.key === "string" ? parsed.key : this.cfg.keyOf(item);
+        if (this.queuedKeys.has(key) || this.appliedKeys.has(key)) continue;
+        this.queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), item });
+        this.queuedKeys.add(key);
+      } catch {
+        /* skip a corrupt line */
+      }
+    }
+    return this.queue.length;
+  }
+
+  private evictAged(): void {
+    const cutoff = Date.now() - this.cfg.maxAgeMs();
+    let dropped = 0;
+    while (this.queue.length > 0 && this.queue[0].enqueuedAt < cutoff) {
+      const e = this.queue.shift()!;
+      this.queuedKeys.delete(e.key);
+      dropped += 1;
+    }
+    if (dropped > 0) {
+      this.metrics.droppedAge += dropped;
+      this.fileDirty = true;
+      console.warn(`[${this.cfg.name}] dropped ${dropped} row(s) past max age (total aged-drop=${this.metrics.droppedAge})`);
+    }
+  }
+
+  private evictOverflow(): void {
+    const cap = this.cfg.maxEntries();
+    let dropped = 0;
+    while (this.queue.length > cap) {
+      const e = this.queue.shift()!;
+      this.queuedKeys.delete(e.key);
+      dropped += 1;
+    }
+    if (dropped > 0) {
+      this.metrics.droppedOverflow += dropped;
+      this.fileDirty = true;
+      console.warn(`[${this.cfg.name}] BUFFER OVERFLOW — dropped ${dropped} oldest row(s) (cap=${cap}, total overflow-drop=${this.metrics.droppedOverflow})`);
+    }
+  }
+
+  private removeFront(n: number): void {
+    const removed = this.queue.splice(0, n);
+    for (const e of removed) this.queuedKeys.delete(e.key);
+    if (removed.length > 0) this.fileDirty = true;
+  }
+
+  async buffer(items: T[]): Promise<number> {
+    if (!this.cfg.enabled() || !items || items.length === 0) return 0;
+    this.evictAged();
+    let added = 0;
+    for (const item of items) {
+      const key = this.cfg.keyOf(item);
+      if (this.queuedKeys.has(key) || this.appliedKeys.has(key)) continue;
+      this.queue.push({ key, enqueuedAt: Date.now(), item });
+      this.queuedKeys.add(key);
+      added += 1;
+    }
+    if (added > 0) {
+      this.metrics.buffered += added;
+      this.metrics.lastBufferedAt = new Date().toISOString();
+      this.fileDirty = true;
+    }
+    this.evictOverflow();
+    await this.flushFile();
+    if (added > 0) {
+      console.warn(`[${this.cfg.name}] buffered ${added} row(s) (central unreachable); queue=${this.queue.length}`);
+    }
+    return added;
+  }
+
+  async backfill(): Promise<{ enabled: boolean; drained: number; deduped: number; remaining: number }> {
+    if (!this.cfg.enabled()) return { enabled: false, drained: 0, deduped: 0, remaining: this.queue.length };
+    if (this.draining) return { enabled: true, drained: 0, deduped: 0, remaining: this.queue.length };
+    this.draining = true;
+    this.evictAged();
+    let drained = 0;
+    let deduped = 0;
+    try {
+      const batchSize = this.cfg.drainBatch();
+      while (this.queue.length > 0) {
+        const batch = this.queue.slice(0, batchSize);
+        const fresh: GenericWalEntry<T>[] = [];
+        let batchDeduped = 0;
+        for (const e of batch) {
+          if (this.appliedKeys.has(e.key)) batchDeduped += 1;
+          else fresh.push(e);
+        }
+        if (fresh.length === 0) {
+          this.removeFront(batch.length);
+          deduped += batchDeduped;
+          continue;
+        }
+        let sent = 0;
+        try {
+          sent = await this.publishFn(fresh.map((e) => e.item));
+        } catch (err) {
+          console.warn(`[${this.cfg.name}] backfill publish failed; leaving buffered:`, (err as Error)?.message || err);
+          break;
+        }
+        if (sent <= 0) break; // transport still down → retry later, do NOT drop
+        for (const e of fresh) this.markApplied(e.key);
+        this.removeFront(batch.length);
+        drained += fresh.length;
+        deduped += batchDeduped;
+      }
+    } finally {
+      this.draining = false;
+    }
+    if (drained > 0) {
+      this.metrics.backfilled += drained;
+      this.metrics.lastBackfillAt = new Date().toISOString();
+    }
+    if (deduped > 0) this.metrics.deduped += deduped;
+    if (drained > 0 || deduped > 0) {
+      this.fileDirty = true;
+      await this.flushFile();
+      console.log(`[${this.cfg.name}] backfilled ${drained} row(s) (${deduped} deduped); queue=${this.queue.length}`);
+    }
+    return { enabled: true, drained, deduped, remaining: this.queue.length };
+  }
+
+  status(): DurableBufferStatus {
+    return {
+      enabled: this.cfg.enabled(),
+      bufferedCount: this.queue.length,
+      maxEntries: this.cfg.maxEntries(),
+      maxAgeMs: this.cfg.maxAgeMs(),
+      walFile: this.cfg.file(),
+      ...this.metrics,
+    };
+  }
+
+  reset(): void {
+    this.queue.length = 0;
+    this.queuedKeys.clear();
+    this.appliedKeys.clear();
+    this.appliedOrder.length = 0;
+    this.metrics.buffered = 0;
+    this.metrics.backfilled = 0;
+    this.metrics.deduped = 0;
+    this.metrics.droppedOverflow = 0;
+    this.metrics.droppedAge = 0;
+    this.metrics.lastBackfillAt = null;
+    this.metrics.lastBufferedAt = null;
+    this.fileDirty = false;
+    this.draining = false;
+    this.publishFn = async () => {
+      throw new Error(`[${this.cfg.name}] publish fn not wired (call setPublishFn)`);
+    };
+  }
+}
+
+// ── UNS-publish store-and-forward instance ───────────────────────────────────────
+
+/**
+ * One buffered northbound UNS publish (self-contained — carries everything the
+ * replay needs WITHOUT the live adapter object, so a WAL restored on a fresh boot
+ * replays correctly). Values are JS primitives; the WAL round-trips them as JSON.
+ */
+export interface PendingUnsSample {
+  /** Sparkplug device id = adapter code. */
+  deviceId: string;
+  adapterId: number;
+  machineId: number | null;
+  tagKey: string;
+  value: number | string | boolean | null;
+  quality: string;
+  /** Source timestamp (ms since epoch) — part of the natural key. */
+  tsMs: number;
+  /** Pre-computed Sparkplug metric type (so replay needs no tag lookup). */
+  sparkplugType: string;
+  /** Legacy normalized topic (used on the non-Sparkplug JSON path). */
+  topic: string;
+}
+
+/**
+ * Edge-autonomy UNS buffering is engaged in EDGE-GATEWAY mode (EDGE_GATEWAY_MODE),
+ * or when explicitly opted in (EDGE_UNS_STORE_FORWARD_ENABLED — tests / advanced
+ * central topologies). Read at call time. Default OFF ⇒ every UNS-buffer entry
+ * point is a no-op and the server-central ingest path is unchanged.
+ */
+export function unsStoreForwardEnabled(): boolean {
+  return (
+    process.env.EDGE_GATEWAY_MODE === "true" ||
+    process.env.EDGE_GATEWAY_MODE === "1" ||
+    process.env.EDGE_UNS_STORE_FORWARD_ENABLED === "true" ||
+    process.env.EDGE_UNS_STORE_FORWARD_ENABLED === "1"
+  );
+}
+
+function unsWalFile(): string {
+  const p = process.env.EDGE_UNS_STORE_FORWARD_FILE?.trim();
+  return path.resolve(p && p.length > 0 ? p : "./data/edge-uns-store-forward.jsonl");
+}
+function unsMaxEntries(): number {
+  const n = parseInt(process.env.EDGE_UNS_STORE_FORWARD_MAX || "500000", 10);
+  return Number.isFinite(n) && n > 0 ? n : 500000;
+}
+function unsMaxAgeMs(): number {
+  const n = parseInt(process.env.EDGE_UNS_STORE_FORWARD_MAX_AGE_MS || String(24 * 60 * 60 * 1000), 10);
+  return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000;
+}
+function unsDrainBatch(): number {
+  const n = parseInt(process.env.EDGE_UNS_STORE_FORWARD_DRAIN_BATCH || "500", 10);
+  return Number.isFinite(n) && n > 0 ? n : 500;
+}
+
+/** Natural idempotency key for a pending UNS sample: (deviceId, tag, ts). */
+export function unsNaturalKey(s: PendingUnsSample): string {
+  return `${s.deviceId}|${s.tagKey}|${s.tsMs}`;
+}
+
+const unsBuffer = new DurableBuffer<PendingUnsSample>({
+  name: "EdgeUnsStoreForward",
+  enabled: unsStoreForwardEnabled,
+  file: unsWalFile,
+  maxEntries: unsMaxEntries,
+  maxAgeMs: unsMaxAgeMs,
+  drainBatch: unsDrainBatch,
+  keyOf: unsNaturalKey,
+  toWire: (s) => ({ ...s }),
+  fromWire: (w) => {
+    if (typeof w.deviceId !== "string" || typeof w.tagKey !== "string") return null;
+    const value = w.value;
+    return {
+      deviceId: String(w.deviceId),
+      adapterId: Number(w.adapterId) || 0,
+      machineId: w.machineId == null ? null : Number(w.machineId),
+      tagKey: String(w.tagKey),
+      value:
+        typeof value === "number" || typeof value === "string" || typeof value === "boolean" || value === null
+          ? (value as PendingUnsSample["value"])
+          : null,
+      quality: String(w.quality ?? "good"),
+      tsMs: Number(w.tsMs) || Date.now(),
+      sparkplugType: String(w.sparkplugType ?? "String"),
+      topic: String(w.topic ?? ""),
+    };
+  },
+});
+
+/**
+ * Wire the transport the UNS backfill replays through (the edge gateway injects the
+ * real UNS publisher). MUST be all-or-nothing per batch (returns items.length or 0).
+ */
+export function setUnsPublishFn(fn: (items: PendingUnsSample[]) => Promise<number>): void {
+  unsBuffer.setPublishFn(fn);
+}
+
+/** Buffer UNS samples that could not be published (central unreachable). No-op when off. */
+export function bufferUnsSamples(items: PendingUnsSample[]): Promise<number> {
+  return unsBuffer.buffer(items);
+}
+
+/** Replay buffered UNS samples IN ORDER via the injected publisher. No-op when off. */
+export function backfillUns(): Promise<{ enabled: boolean; drained: number; deduped: number; remaining: number }> {
+  return unsBuffer.backfill();
+}
+
+/** Rows currently buffered for UNS replay (fast getter). */
+export function unsBufferedCount(): number {
+  return unsBuffer.count();
+}
+
+/** Snapshot of the UNS buffer state + honest metrics (health endpoint / UI). */
+export function getUnsStatus(): DurableBufferStatus {
+  return unsBuffer.status();
+}
+
+/** Restore the UNS buffer from its WAL file mirror (call on edge-gateway start). */
+export function restoreUns(): Promise<number> {
+  return unsBuffer.restore();
+}
+
+/** Clear ALL UNS buffer + ledger + metric state (tests / maintenance). */
+export function _resetUnsStoreForward(): void {
+  unsBuffer.reset();
+}

@@ -11,11 +11,26 @@
 #
 # ⚠️ An toàn: đây là hồ sơ triển khai; entitlement thật vẫn do LICENSE quyết định (edition
 #    machine chỉ BOUND module/quota — xem shared/editions.ts). Không mở control path mới.
+#
+# HARDENING (doc 44 W7-2 §9) — box OEM chạy 24/7 trên IPC đĩa nhỏ:
+#   • Xoay log json-file (max 10m×3) trên MỌI service → log KHÔNG ăn hết đĩa (nguyên nhân
+#     chết máy phổ biến nhất của deploy nhúng dài ngày). Áp qua anchor &machine-logging.
+#   • restart: unless-stopped khắp nơi (đã có) → tự dậy sau mất điện.
+#   • R-3 (rebrand wire) + Join Wizard tắt mặc định — knob nằm ở khối env `app` (comment sẵn).
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Xoay log dùng chung (DRY) — tránh log vô hạn trên IPC.
+x-machine-logging: &machine-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: timescale/timescaledb-ha:pg17 # timescaledb + pgvector (cùng image Site)
     restart: unless-stopped
+    logging: *machine-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aoi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aoi}
@@ -34,6 +49,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *machine-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
@@ -69,6 +85,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *machine-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +108,16 @@ services:
       REDIS_URL: redis://redis:6379
       # Embedded broker: KHÔNG set UNS_BROKER_URL → Aedes in-process. Time-series degrade
       # về DB chính: KHÔNG set TSDB_URL (dual-DB tự fallback về main — honest degrade).
+
+      # ── doc 44 §11 R-3 — rebrand wire MQTT avi/ → synapse/ (TẮT mặc định = topic cũ y hệt).
+      #    Bật dual-publish khi bắt đầu di chuyển client; tắt topic cũ SAU khi mọi máy chuyển.
+      # MQTT_TOPIC_DUAL_PUBLISH: "true"     # phát THÊM synapse/... (giữ avi/... 100%)
+      # MQTT_TOPIC_LEGACY_DISABLE: "true"   # SAU grace: chỉ synapse/... (client đã chuyển hết)
+      #
+      # ── doc 44 §9 — Join Wizard: bắc cầu UNS máy này → Site broker (không cài lại). TẮT mặc định.
+      # JOIN_WIZARD_ENABLED: "true"
+      # JOIN_SITE_BROKER_URL: mqtt://site-emqx:1883   # broker Site đích (bridge cục bộ → site)
+      # JOIN_STATIC_PEERS: "10.0.0.6:1883:machine-b"  # peer thủ công khi site cấm multicast/mDNS
 
       LOCAL_STORAGE_DIR: /app/uploads
       LICENSE_FILE_PATH: /app/license.lic

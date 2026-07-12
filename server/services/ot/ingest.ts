@@ -106,6 +106,22 @@ export async function ingestSamples(adapter: RuntimeAdapter, samples: OtSample[]
  */
 async function republishSampleToUns(adapter: RuntimeAdapter, sample: OtSample): Promise<void> {
   if (process.env.OT_INGEST_TO_UNS === "true") {
+    // W7-1 (doc 44 G1.14) — EDGE AUTONOMY: at the edge the UNS broker IS the
+    // northbound "central". When it is unreachable, DO NOT log-and-drop (the old
+    // behaviour below) — BUFFER the sample to the edge store-and-forward (≥24h) for
+    // ordered idempotent replay on reconnect. Zero-cost no-op when EDGE_GATEWAY_MODE
+    // is unset: the server-central path is byte-for-byte unchanged.
+    if (process.env.EDGE_GATEWAY_MODE === "true" || process.env.EDGE_GATEWAY_MODE === "1") {
+      try {
+        const edge = await import("../edge/edgeGatewayRuntime");
+        if (!(await edge.centralReachable())) {
+          await edge.bufferUnsSample(adapter, sample);
+          return; // buffered — do NOT attempt a publish that would silently no-op/drop
+        }
+      } catch (err) {
+        console.error("[OT] edge UNS reachability check failed:", (err as Error)?.message || err);
+      }
+    }
     try {
       const { isUnsBridgeEnabled } = await import("../unsBridge");
       if (isUnsBridgeEnabled()) {
@@ -188,6 +204,16 @@ async function republishSampleToUns(adapter: RuntimeAdapter, sample: OtSample): 
         }
       }
     } catch (err) {
+      // W7-1 (doc 44 G1.14) — at the edge a publish fault BUFFERS (no silent drop);
+      // the central all-in-one keeps the historical log-and-continue behaviour.
+      if (process.env.EDGE_GATEWAY_MODE === "true" || process.env.EDGE_GATEWAY_MODE === "1") {
+        try {
+          const edge = await import("../edge/edgeGatewayRuntime");
+          await edge.bufferUnsSample(adapter, sample);
+        } catch {
+          /* buffering itself failed — fall through to the honest log below */
+        }
+      }
       console.error("[OT] UNS publish failed:", (err as Error)?.message || err);
     }
   }

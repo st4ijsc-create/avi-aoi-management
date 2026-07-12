@@ -7,6 +7,13 @@
  * - avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/weekly - Weekly summary
  * - avi/client/{clientId}/commands - Commands to specific client
  * - avi/system/broadcast - System-wide broadcasts
+ *
+ * doc 44 §11 R-3 — the `avi/` wire namespace is being rebranded to `synapse/`. Rather than a
+ * breaking flip, every publish goes through dualAedesPublish / dualExternalPublish which, when
+ * MQTT_TOPIC_DUAL_PUBLISH is on, ALSO emit the `synapse/…` twin (keeping `avi/…` until the
+ * owner sets MQTT_TOPIC_LEGACY_DISABLE after all field clients migrate). Inbound topics are
+ * canonicalised synapse/→avi/ (dual-subscribe). Both flags default OFF = legacy-only. See
+ * ./mqtt/topicRebrand.ts and docs/REBRAND_R3.md.
  */
 
 import Aedes from 'aedes';
@@ -18,6 +25,18 @@ import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
 // G2.6 (doc 44 W2-B2) — contract validation at the machine-inbound seam. Gated by
 // CONTRACT_VALIDATE_INGEST_MODE (default "off" → validateInboundMqtt returns immediately).
 import { validateInboundMqtt } from './contracts/ingestValidation';
+// doc 44 §11 R-3 — MQTT topic rebrand avi/ ↔ synapse/ via dual-publish + dual-subscribe.
+// PURE helper; all behaviour is gated by MQTT_TOPIC_DUAL_PUBLISH / MQTT_TOPIC_LEGACY_DISABLE
+// (both default OFF → publish avi/ only, byte-identical to pre-R-3).
+import {
+  LEGACY_TOPIC_ROOT,
+  SYNAPSE_TOPIC_ROOT,
+  dualPublish,
+  canonicalizeInboundTopic,
+  planPublishTopics,
+  resolveServerClientId,
+  toSynapseExternalPrefix,
+} from './mqtt/topicRebrand';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
@@ -416,7 +435,10 @@ const EXTERNAL_MQTT_PORT = parseInt(process.env.EXTERNAL_MQTT_PORT || '1883');
 const EXTERNAL_MQTT_USERNAME = process.env.EXTERNAL_MQTT_USERNAME || '';
 const EXTERNAL_MQTT_PASSWORD = process.env.EXTERNAL_MQTT_PASSWORD || '';
 const EXTERNAL_MQTT_TOPIC_PREFIX = process.env.EXTERNAL_MQTT_TOPIC_PREFIX || 'avi-aoi';
-const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' || 
+// doc 44 §11 R-3 — synapse form of the external prefix (avi-aoi → synapse) for dual-publish
+// to the cloud broker. A custom, non-brand prefix maps to itself → external mirror no-ops.
+const EXTERNAL_MQTT_TOPIC_PREFIX_SYNAPSE = toSynapseExternalPrefix(EXTERNAL_MQTT_TOPIC_PREFIX);
+const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' ||
   EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || 
   EXTERNAL_MQTT_BROKER.startsWith('wss://');
 
@@ -649,7 +671,10 @@ function initExternalMqttClient() {
   console.log(`[MQTT External] Connecting to ${brokerUrl}...`);
 
   const options: mqtt.IClientOptions = {
-    clientId: `avi-aoi-server-${Date.now()}`,
+    // doc 44 §11 R-3 — clientId brand flips avi-aoi-server → synapse-server only at the
+    // FINAL cutover (MQTT_TOPIC_LEGACY_DISABLE); stays legacy through the dual-publish grace
+    // window so a broker ACL that admits `avi-aoi-server*` is not self-broken mid-rollout.
+    clientId: `${resolveServerClientId(process.env)}-${Date.now()}`,
     clean: true,
     reconnectPeriod: 5000,
     connectTimeout: 30000,
@@ -676,6 +701,73 @@ function initExternalMqttClient() {
 
   externalMqttClient.on('reconnect', () => {
     console.log('[MQTT External] Reconnecting...');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 44 §11 R-3 — dual-publish wrappers (thin; the PURE topic plan lives in
+// mqtt/topicRebrand). Both flags OFF (default) → a single publish on the legacy
+// topic, byte-identical to pre-R-3. Exported so the broker can be injected in tests.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Publish a packet on the LOCAL Aedes broker under BOTH the legacy `avi/` root and the
+ * `synapse/` root, per the R-3 rollout flags. The PRIMARY topic keeps the caller's `cb`
+ * (so promise-resolve / logging semantics are unchanged); a mirror publish logs its own
+ * error only. A non-`avi/` topic (or flags OFF) → exactly one publish, as before.
+ */
+export function dualAedesPublish(
+  broker: Pick<Aedes, 'publish'>,
+  packet: { topic: string } & Record<string, unknown>,
+  cb?: (err?: Error) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  dualPublish(
+    packet,
+    (p, isPrimary) => {
+      broker.publish(
+        p as any,
+        (isPrimary
+          ? cb
+          : (err?: Error) => {
+              if (err) console.error(`[MQTT] dual-publish mirror error on ${p.topic}:`, err);
+            }) as any,
+      );
+    },
+    { fromRoot: LEGACY_TOPIC_ROOT, toRoot: SYNAPSE_TOPIC_ROOT, env },
+  );
+}
+
+/**
+ * Publish to the EXTERNAL cloud broker under BOTH the legacy prefix (`avi-aoi/…`) and the
+ * synapse prefix (`synapse/…`), per the R-3 flags. Same primary/mirror callback split.
+ */
+export function dualExternalPublish(
+  client: Pick<MqttClient, 'publish'>,
+  topic: string,
+  message: string | Buffer,
+  opts: mqtt.IClientPublishOptions,
+  cb?: mqtt.PacketCallback,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  // External topics arrive in TWO shapes: prefixed (`avi-aoi/…`, built from the summary/NG/bulletin
+  // external patterns) and RAW `avi/…` (publishToExternalMqtt callers e.g. points-config/model-update).
+  // Rebrand whichever brand root actually applies so BOTH get a synapse/ twin.
+  let topics = planPublishTopics(topic, EXTERNAL_MQTT_TOPIC_PREFIX, EXTERNAL_MQTT_TOPIC_PREFIX_SYNAPSE, env);
+  if (topics.length === 1 && topics[0] === topic) {
+    topics = planPublishTopics(topic, LEGACY_TOPIC_ROOT, SYNAPSE_TOPIC_ROOT, env);
+  }
+  topics.forEach((t, i) => {
+    client.publish(
+      t,
+      message,
+      opts,
+      i === 0
+        ? cb
+        : (err) => {
+            if (err) console.error(`[MQTT External] dual-publish mirror error on ${t}:`, err);
+          },
+    );
   });
 }
 
@@ -914,8 +1006,13 @@ function setupEventHandlers() {
     processAedesPublish(packet.topic, packet.payload);
 
     try {
-      // Handle DEVICE_INFO messages: avi/client/{deviceId}/info
-      const deviceInfoMatch = packet.topic.match(/^avi\/client\/([^/]+)\/info$/);
+      // doc 44 §11 R-3 — DUAL-SUBSCRIBE: canonicalise `synapse/…` inbound back to `avi/…` so
+      // a migrated device that now publishes on synapse/ is still understood. Always-on and
+      // safe (a device only publishes synapse/ after it migrated). `avi/…` is unchanged.
+      const inboundTopic = canonicalizeInboundTopic(packet.topic);
+
+      // Handle DEVICE_INFO messages: avi/client/{deviceId}/info (or synapse/client/…/info)
+      const deviceInfoMatch = inboundTopic.match(/^avi\/client\/([^/]+)\/info$/);
       if (deviceInfoMatch) {
         const payload = JSON.parse(packet.payload.toString());
         if (payload.type === 'DEVICE_INFO') {
@@ -962,8 +1059,8 @@ function setupEventHandlers() {
         return;
       }
 
-      // Handle CONFIGURE_ACK messages: avi/client/{deviceId}/ack
-      const ackMatch = packet.topic.match(/^avi\/client\/([^/]+)\/ack$/);
+      // Handle CONFIGURE_ACK messages: avi/client/{deviceId}/ack (or synapse/client/…/ack)
+      const ackMatch = inboundTopic.match(/^avi\/client\/([^/]+)\/ack$/);
       if (ackMatch) {
         const payload = JSON.parse(packet.payload.toString());
         if (payload.type === 'CONFIGURE_ACK') {
@@ -1033,7 +1130,7 @@ export async function sendConfigureCommand(deviceId: string, command: {
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error sending configure to ${deviceId}:`, err);
         reject(err);
@@ -1091,7 +1188,7 @@ export async function sendSoftwareUpdateCommand(deviceId: string, command: 'CHEC
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error sending SOFTWARE_UPDATE to ${deviceId}:`, err);
         reject(err);
@@ -1146,7 +1243,7 @@ export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>
       retain: false,
     };
 
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] Error publishing factory alert update:`, err);
         reject(err);
@@ -1191,7 +1288,7 @@ export async function publishLocalMqtt(
       qos: (options?.qos ?? 1) as 0 | 1 | 2,
       retain: options?.retain ?? false,
     };
-    aedes!.publish(packet as any, (err) => {
+    dualAedesPublish(aedes!, packet, (err) => {
       if (err) {
         console.error(`[MQTT] publishLocalMqtt error on ${topic}:`, err);
         resolve(false);
@@ -1376,7 +1473,7 @@ export async function publishNGAlert(data: {
     {
       const message = JSON.stringify(payload);
       const retainFlag = ngAlertConfig?.retain ?? true;
-      aedes.publish({
+      dualAedesPublish(aedes!, {
         topic,
         payload: Buffer.from(message),
         qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2,
@@ -1410,7 +1507,7 @@ export async function publishNGAlert(data: {
         .replace('{factoryId}', String(factory.id))
         .replace('{workshopId}', String(workshop.id))
         .replace('{stationId}', String(stationId));
-      externalMqttClient.publish(externalTopic, message, { qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2 }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2 }, (error) => {
         if (error) {
           console.error('[MQTT External] Publish error:', error);
         } else {
@@ -1497,7 +1594,7 @@ export async function publishSummary(
 
     // Publish message
     const message = JSON.stringify(payload);
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(message),
       qos: 1,
@@ -1525,7 +1622,7 @@ export async function publishSummary(
     // Also publish to external MQTT broker if enabled
     if (externalMqttClient && externalMqttClient.connected) {
       const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/summary/${summaryPath}`;
-      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: 1, retain: true }, (error) => {
         if (error) {
           console.error('[MQTT External] Publish error:', error);
         } else {
@@ -1600,7 +1697,7 @@ export async function publishBulletin(
 
     // Publish message
     const message = JSON.stringify(payload);
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(message),
       qos: 1,
@@ -1628,7 +1725,7 @@ export async function publishBulletin(
     // Also publish to external MQTT broker if enabled
     if (options.sendToExternal && externalMqttClient && externalMqttClient.connected) {
       const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/bulletin/periodic`;
-      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+      dualExternalPublish(externalMqttClient, externalTopic, message, { qos: 1, retain: true }, (error) => {
         if (error) {
           console.error('[MQTT External] Bulletin publish error:', error);
         } else {
@@ -1696,7 +1793,7 @@ export async function sendClientCommand(
     const topic = `avi/client/${client[0].clientId}/commands`;
     const payload = JSON.stringify({ command, data, timestamp: new Date().toISOString() });
 
-    aedes.publish({
+    dualAedesPublish(aedes!, {
       topic,
       payload: Buffer.from(payload),
       qos: 2, // Exactly once for commands
@@ -1872,7 +1969,7 @@ export function publishToExternalMqtt(topic: string, payload: string): boolean {
     return false;
   }
   
-  externalMqttClient.publish(topic, payload, { qos: 1 }, (error) => {
+  dualExternalPublish(externalMqttClient, topic, payload, { qos: 1 }, (error) => {
     if (error) {
       console.error('[MQTT External] Publish error:', error);
     } else {
@@ -1921,7 +2018,7 @@ export function publishPointsConfigChanged(productModelCode: string, version: nu
     timestamp: new Date().toISOString(),
   });
 
-  aedes.publish({
+  dualAedesPublish(aedes!, {
     topic,
     payload: Buffer.from(payload),
     qos: 1 as 0 | 1 | 2,
@@ -1966,7 +2063,7 @@ export function publishModelUpdate(
     timestamp: new Date().toISOString(),
   });
 
-  aedes.publish({
+  dualAedesPublish(aedes!, {
     topic,
     payload: Buffer.from(payload),
     qos: 1 as 0 | 1 | 2,
