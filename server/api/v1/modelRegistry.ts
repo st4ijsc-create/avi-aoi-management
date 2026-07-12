@@ -99,6 +99,7 @@ export function registerModelRegistryRoutes(r: Router): void {
               modelId: modelVersions.modelId,
               version: modelVersions.version,
               status: modelVersions.status,
+              stage: modelVersions.stage, // W5-A4 (G4.24) — MLOps lifecycle stage
               accuracy: modelVersions.accuracy,
               createdAt: modelVersions.createdAt,
             })
@@ -121,7 +122,9 @@ export function registerModelRegistryRoutes(r: Router): void {
         versions: (byModel.get(m.id) ?? []).map((v) => ({
           id: v.id,
           version: v.version,
-          stage: v.status, // UPLOADING/VALIDATING/READY/ACTIVE/INACTIVE/FAILED/ARCHIVED
+          // W5-A4 (G4.24): real MLOps stage (staging|shadow|canary|production|retired);
+          // fallback to registry status for legacy versions that predate staging.
+          stage: v.stage ?? v.status,
           accuracy: v.accuracy != null ? Number(v.accuracy) : null,
           createdAt: v.createdAt,
         })),

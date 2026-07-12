@@ -427,6 +427,18 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[TwinFidelity] start failed:", (err as any)?.message || err);
   }
 
+  // Doc 44 W5-A2 (G4.20) — Parameter closed-loop verify sweep: sau verify_after so
+  // metrics_before (Cpk/NG-rate máy) vs hiện tại → improved|degraded|neutral; degraded
+  // → Andon (routeAlert) kèm old_value. Opt in via PARAM_VERIFY_ENABLED=true (WRITES
+  // parameter_change_log verdicts — default OFF). Interval PARAM_VERIFY_INTERVAL_MS
+  // (default 1h, floor 5m). startParamVerifySweep self-gates cờ + idempotent + unref'd.
+  try {
+    const { startParamVerifySweep } = await import("../services/ai/parameterGuardrailService");
+    startParamVerifySweep();
+  } catch (err) {
+    console.error("[ParamVerify] start failed:", (err as any)?.message || err);
+  }
+
   // Doc 44 W3-B3 (G3.8 + G3.9) — QT workflow templates + QT-3 material watcher.
   //   • registerQtTemplates: đăng ký 4 template QT-1..4 (as-code) vào kho workflow FOE,
   //     idempotent theo hash nội dung. No-op trừ khi QT_TEMPLATES_ENABLED (default OFF;
@@ -620,6 +632,10 @@ export function stopBackgroundSchedulers(): void {
   // Doc 40 MON-F1 — idempotent no-op when presence sweep was never started.
   import("../services/machinePresenceService")
     .then((m) => m.stopMachinePresence())
+    .catch(() => {});
+  // Doc 44 W5-A2 (G4.20) — idempotent no-op when the verify sweep was never started.
+  import("../services/ai/parameterGuardrailService")
+    .then((m) => m.stopParamVerifySweep())
     .catch(() => {});
   import("../services/secsgem/secsGemBringup")
     .then((m) => m.stopSecsGemBringup())

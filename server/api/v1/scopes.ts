@@ -54,6 +54,8 @@ export const API_SCOPES = {
   // W3-A3 (doc 44 G3.6/G3.7) — order lifecycle (LDS-L3 §13.1 Orchestration API).
   ORDERS_READ: "orders:read",
   ORDERS_WRITE: "orders:write",
+  // W5-A3 (doc 44 G4.30) — SYNAPSE Tầng-4 Advice API (READ/compute-only).
+  ADVICE_READ: "advice:read",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -99,6 +101,8 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
     "Read production-order lifecycle: list/detail/transitions/trace (W3-A3; gated by ORDER_LIFECYCLE_ENABLED).",
   "orders:write":
     "Order lifecycle commands: allocate/hold/resume/cancel — policy-gated, transactional audit (W3-A3; gated by ORDER_LIFECYCLE_ENABLED).",
+  "advice:read":
+    "SYNAPSE Tầng-4 Advice API (READ/compute-only): POST /predict/{task}, POST /recommend, GET /recommendations — advisory, no side-effect (W5-A3 G4.30).",
 };
 
 /**

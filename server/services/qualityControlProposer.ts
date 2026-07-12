@@ -42,6 +42,7 @@
  */
 
 import type { Tool, ToolLang } from "./aiLocalTools/toolRegistry";
+import type { AdviceContract, AdviceGuardrail } from "./aiCopilotActions";
 
 // ─── Flag ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,8 @@ export interface ControlProposal {
   riskLevel: RiskLevel;
   provenance: ControlProvenance;
   rationale: string;
+  /** G4.29 — advice contract carried into the HITL row (requires[]/confidence/explain). */
+  contract?: AdviceContract;
 }
 
 // ─── Deterministic SPI printer-offset computation (PURE) ────────────────────────
@@ -241,6 +244,25 @@ export function isGatedNgOrAnomaly(decision: string, source?: string): boolean {
  *   • spi_printer_offset — only when an SPI trend is supplied AND the computed
  *     correction escapes the deadband (i.e. a real, non-noise drift to correct).
  */
+/**
+ * G4.29 — the safety contract every quality→control proposal carries. The confirm
+ * MUST pass Policy AND is a human decision (spec §12.1 requires[]); confidence +
+ * explanation come from the existing verdict provenance/rationale. `guardrail` is
+ * optional (attached for the numeric SPI correction).
+ */
+function qualityAdviceContract(
+  provenance: ControlProvenance,
+  rationale: string,
+  guardrail?: AdviceGuardrail,
+): AdviceContract {
+  return {
+    requires: ["policy_permit", "human_approval"],
+    ...(provenance.confidence != null ? { confidence: provenance.confidence } : {}),
+    explain: [rationale],
+    ...(guardrail ? { guardrail } : {}),
+  };
+}
+
 export function buildControlProposals(input: BuildProposalsInput): ControlProposal[] {
   const { verdict, machineId } = input;
   const source = verdict.source ?? "quality_gate";
@@ -265,6 +287,11 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
   // (1) reject_divert — remove the failed unit from the line.
   {
     const unitRef = input.inspectionId != null ? String(input.inspectionId) : undefined;
+    const rationale =
+      `Quality gate flagged ${verdict.decision}` +
+      (verdict.topLabel ? ` ("${verdict.topLabel}")` : "") +
+      ` at ${(provenance.confidence != null ? (provenance.confidence * 100).toFixed(1) + "%" : "n/a")} confidence` +
+      ` — propose diverting the failed unit off the line (requires your confirmation).`;
     proposals.push({
       kind: "reject_divert",
       tool: "reject_divert",
@@ -277,11 +304,8 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
       // Removing a bad part is inherently defensive, but it IS a physical divert.
       riskLevel: "medium",
       provenance,
-      rationale:
-        `Quality gate flagged ${verdict.decision}` +
-        (verdict.topLabel ? ` ("${verdict.topLabel}")` : "") +
-        ` at ${(provenance.confidence != null ? (provenance.confidence * 100).toFixed(1) + "%" : "n/a")} confidence` +
-        ` — propose diverting the failed unit off the line (requires your confirmation).`,
+      rationale,
+      contract: qualityAdviceContract(provenance, rationale),
     });
   }
 
@@ -289,6 +313,12 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
   if (input.spiTrend && input.spiTrend.length > 0) {
     const offset = computeSpiPrinterOffset(input.spiTrend, input.spiOpts);
     if (offset.samplesUsed > 0 && !offset.withinDeadband) {
+      const rationale =
+        `SPI trend over ${offset.samplesUsed} sample(s) shows a mean deposit drift of ` +
+        `(${offset.meanOffsetXUm}, ${offset.meanOffsetYUm}) µm` +
+        (offset.meanVolumePct != null ? `, mean volume ${offset.meanVolumePct}%` : "") +
+        ` — propose a damped stencil-printer correction of (${offset.offsetXUm}, ${offset.offsetYUm}) µm ` +
+        `(gain ${offset.gain}, clamped ±${offset.maxStepUm} µm). Requires your confirmation.`;
       proposals.push({
         kind: "spi_printer_offset",
         tool: "spi_printer_offset",
@@ -301,12 +331,15 @@ export function buildControlProposals(input: BuildProposalsInput): ControlPropos
         computedValue: { offsetXUm: offset.offsetXUm, offsetYUm: offset.offsetYUm },
         riskLevel: "medium",
         provenance,
-        rationale:
-          `SPI trend over ${offset.samplesUsed} sample(s) shows a mean deposit drift of ` +
-          `(${offset.meanOffsetXUm}, ${offset.meanOffsetYUm}) µm` +
-          (offset.meanVolumePct != null ? `, mean volume ${offset.meanVolumePct}%` : "") +
-          ` — propose a damped stencil-printer correction of (${offset.offsetXUm}, ${offset.offsetYUm}) µm ` +
-          `(gain ${offset.gain}, clamped ±${offset.maxStepUm} µm). Requires your confirmation.`,
+        rationale,
+        // The correction is already clamped to ±maxStepUm — the guardrail makes that
+        // safe band a DATA contract the confirm re-checks (defense in depth, on X).
+        contract: qualityAdviceContract(provenance, rationale, {
+          min: -offset.maxStepUm,
+          max: offset.maxStepUm,
+          unit: "µm",
+          key: "offsetXUm",
+        }),
       });
     }
   }
@@ -329,6 +362,7 @@ export interface ProposeControlDeps {
     tool: Tool<any, any>,
     args: Record<string, unknown>,
     ctx: { user: CopilotTargetUser; lang: ToolLang },
+    contract?: AdviceContract,
   ) => Promise<{ ok: boolean; pendingAction?: { actionId?: string } | null; denied?: boolean; reason?: string }>;
   /** Resolve the users who should receive a proposal (hold the tool's RBAC in the factory). */
   findTargets?: (
@@ -407,7 +441,8 @@ export async function proposeControlFromVerdict(
       if (actionIds.length >= cap) break;
       try {
         // HITL: PROPOSE ONLY. Never confirm/execute. RBAC gate #1 is inside propose.
-        const res = await propose(tool, proposal.args, { user, lang });
+        // The advice contract (requires[]/guardrail/confidence/explain) rides along.
+        const res = await propose(tool, proposal.args, { user, lang }, proposal.contract);
         if (res.ok && res.pendingAction?.actionId) actionIds.push(res.pendingAction.actionId);
         else if (res.ok) actionIds.push("(created)"); // propose ok but id shape differs (test doubles)
       } catch (err) {
@@ -480,8 +515,12 @@ export async function proposeControlForInspection(
 
 async function defaultPropose() {
   const { proposeAction } = await import("./aiCopilotActions");
-  return (tool: Tool<any, any>, args: Record<string, unknown>, ctx: { user: CopilotTargetUser; lang: ToolLang }) =>
-    proposeAction(tool, args, ctx as any) as any;
+  return (
+    tool: Tool<any, any>,
+    args: Record<string, unknown>,
+    ctx: { user: CopilotTargetUser; lang: ToolLang },
+    contract?: AdviceContract,
+  ) => proposeAction(tool, args, ctx as any, contract) as any;
 }
 
 async function defaultGetTool() {

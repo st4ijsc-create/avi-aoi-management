@@ -27,6 +27,7 @@
  */
 
 import { eventBus, type DomainEvent } from "../_core/eventBus";
+import type { AdviceContract } from "./aiCopilotActions";
 
 // ─── Flags / tunables ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,8 @@ export interface ProposalDraft {
   args: Record<string, unknown>;
   /** Short rationale (causal-graph derived when available). */
   rationale: string;
+  /** G4.29 — advice contract (guardrail + requires[] + explain) carried into the HITL row. */
+  contract?: AdviceContract;
 }
 
 export interface DecideResult {
@@ -128,6 +131,13 @@ export function decideNgBurst(
       tool: "adjust_ng_threshold",
       args: { thresholdId: threshold.id, warningThreshold: proposed },
       rationale,
+      // G4.29 — the tightened warning is bounded to [0, current] (a strictly-tighter
+      // NG-rate %), the confirm must pass Policy, and the rationale is the explanation.
+      contract: {
+        requires: ["policy_permit"],
+        guardrail: { min: 0, max: current, unit: "%", key: "warningThreshold" },
+        explain: [rationale],
+      },
     },
     reason: "OK",
   };
@@ -325,11 +335,13 @@ export async function runForTrigger(
   for (const u of targets) {
     if (proposedTo.length >= cap) break;
     try {
-      // HITL: PROPOSE ONLY. Never confirm/execute.
-      const res = await proposeAction(tool, decision.draft.args, {
-        user: { id: u.id, role: u.role, name: u.name ?? null },
-        lang: "vi",
-      });
+      // HITL: PROPOSE ONLY. Never confirm/execute. Contract carried into the row.
+      const res = await proposeAction(
+        tool,
+        decision.draft.args,
+        { user: { id: u.id, role: u.role, name: u.name ?? null }, lang: "vi" },
+        decision.draft.contract,
+      );
       if (res.ok) proposedTo.push(u.id);
     } catch (err) {
       console.error("[aiAutoProposer] proposeAction failed:", (err as Error)?.message ?? err);
@@ -684,11 +696,13 @@ async function proposeDraftToResponsibleUsers(
   let proposed = 0;
   for (const u of targets) {
     try {
-      // HITL: PROPOSE ONLY. Never confirm/execute.
-      const res = await proposeAction(tool, draft.args, {
-        user: { id: u.id, role: u.role, name: u.name ?? null },
-        lang: "vi",
-      });
+      // HITL: PROPOSE ONLY. Never confirm/execute. Contract (when present) → row.
+      const res = await proposeAction(
+        tool,
+        draft.args,
+        { user: { id: u.id, role: u.role, name: u.name ?? null }, lang: "vi" },
+        draft.contract,
+      );
       if (res.ok) proposed++;
     } catch (err) {
       console.error("[aiAutoProposer] proposeAction failed:", (err as Error)?.message ?? err);

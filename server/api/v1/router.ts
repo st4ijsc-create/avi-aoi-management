@@ -35,6 +35,7 @@ import { registerTimeseriesRoutes } from "./timeseries";
 import { registerEventRoutes } from "./events";
 import { registerMetricRoutes } from "./metricsApi";
 import { registerGenealogyRoutes } from "./genealogyApi";
+import { registerAdviceRoutes } from "./advice";
 import { registerPolicyRoutes } from "./policy";
 import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
@@ -569,6 +570,9 @@ export function createV1Router(): Router {
   registerPolicyRoutes(r);
   registerLineRoutes(r);
   registerOrdersLifecycleRoutes(r);
+  // W5-A3 (doc 44 G4.30) — SYNAPSE Tầng-4 Advice API: POST /predict/{task},
+  // POST /recommend, GET /recommendations. Scope advice:read; advisory-only.
+  registerAdviceRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

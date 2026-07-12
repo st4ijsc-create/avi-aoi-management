@@ -88,6 +88,14 @@ import {
   type LabeledEmbedding,
 } from "./embeddingHeadTrainer";
 import { computeMetrics, buildConfusionMatrix, normalizeLabel } from "../aiMetrics";
+import {
+  getFeatures,
+  recordInference,
+  prepareImageEmbeddingVector,
+  isFeatureStoreEnabled,
+  IMAGE_EMBEDDING_ENTITY,
+  IMAGE_EMBEDDING_FEATURE,
+} from "./featureStore";
 
 export const HEAD_KIND = "embedding_logreg_head" as const;
 export const HEAD_MODEL_FORMAT = "CUSTOM" as const;
@@ -209,11 +217,25 @@ export async function collectHeadTrainingPairs(
     for (const [code, n] of codeCounts) if (n > best) { best = n; modelCode = code; }
   }
 
+  // G4.23: when the feature store is ON, resolve each vector through its group-(a)
+  // definition — the SAME contract the serve path uses (anti train/serve skew) —
+  // seeded with the already-loaded row so there is no re-query. OFF ⇒ the exact
+  // original inline parse (byte-compatible dataset).
+  const useStore = isFeatureStoreEnabled();
   const pairs: LabeledEmbedding[] = [];
   for (const r of rows) {
     const label = (r.imageUrl ? humanByUrl.get(r.imageUrl) : undefined) ?? r.label ?? "";
     if (!label) continue;
-    const vector = parseVectorLiteral(r.embedding);
+    let vector: number[];
+    if (useStore) {
+      const feats = await getFeatures(IMAGE_EMBEDDING_ENTITY, String(r.id), [IMAGE_EMBEDDING_FEATURE], {
+        seed: { embedding: r.embedding, embeddingDim: r.embeddingDim, modelCode: r.modelCode, label: r.label },
+      });
+      const f = feats[IMAGE_EMBEDDING_FEATURE] as { embedding?: number[] } | undefined;
+      vector = Array.isArray(f?.embedding) ? (f!.embedding as number[]) : parseVectorLiteral(r.embedding);
+    } else {
+      vector = parseVectorLiteral(r.embedding);
+    }
     if (vector.length === 0) continue;
     pairs.push({ id: r.id, label, embedding: vector });
   }
@@ -578,7 +600,9 @@ export async function runEmbeddingHeadInference(
   let source: EmbeddingSource;
   try {
     const emb = await embedImageForHead(imageBuffer, model.productModelId ?? undefined);
-    embedding = emb.embedding;
+    // G4.23: funnel the serving vector through the SAME group-(a) contract the train
+    // path uses (identity on already-normalized vectors — anti train/serve skew).
+    embedding = isFeatureStoreEnabled() ? prepareImageEmbeddingVector(emb.embedding) : emb.embedding;
     source = emb.source;
   } catch (err) {
     return degradedResult(`embedding extraction failed: ${(err as Error)?.message}`, "none");
@@ -624,6 +648,22 @@ export async function runEmbeddingHeadInference(
       },
     },
   }).catch(() => {});
+
+  // G4.23: bounded, sampled inference-audit row (active-learning + shadow-gate signal).
+  if (isFeatureStoreEnabled()) {
+    recordInference({
+      modelName: model.code,
+      modelVersion: model.currentVersion,
+      entityType: options?.inspectionId != null ? "inspection" : "image",
+      entityId:
+        options?.inspectionId != null ? String(options.inspectionId) : options?.inputReference ?? null,
+      input: { embeddingSource: source, embeddingDim: embedding.length },
+      output: { topLabel: prediction.label, predictions },
+      confidence: prediction.confidence,
+      latencyMs: processingTimeMs,
+      flaggedForReview: prediction.route === "review",
+    }).catch(() => {});
+  }
 
   // Route low-confidence predictions to human review, re-using active learning.
   if (prediction.route === "review") {

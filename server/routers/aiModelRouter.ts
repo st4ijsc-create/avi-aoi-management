@@ -15,6 +15,7 @@ import {
   evictSessionCache,
   getLoadedModels,
 } from "../services/aiInferenceEngine";
+import { promoteStage, listStages } from "../services/ai/modelStagePipeline";
 
 export const aiModelRouter = router({
   // ─── Model CRUD ──────────────────────────────────────────
@@ -215,6 +216,44 @@ export const aiModelRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getActiveModelForProduct(input.productModelId, input.modelType);
+    }),
+
+  // ─── Model Stage Pipeline (G4.24/G4.25) ─────────────────
+  // Registry view: each version's stage + append-only stage_history + ModelCard bits.
+  listStages: protectedProcedure
+    .input(z.object({ modelId: z.number() }))
+    .query(async ({ input }) => {
+      return listStages(input.modelId);
+    }),
+
+  // Promote a version through the mandatory MLOps gates. adminProcedure + optional
+  // second `approver` (required by the canary→production two-person rule). A gate
+  // violation surfaces as PRECONDITION_FAILED carrying the machine code.
+  promoteStage: adminProcedure
+    .input(z.object({
+      versionId: z.number(),
+      toStage: z.enum(["staging", "shadow", "canary", "production", "retired"]),
+      approver: z.number().optional(),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await promoteStage(input.versionId, input.toStage, {
+        actor: ctx.user.id,
+        approver: input.approver,
+        reason: input.reason,
+      });
+      if (!result.ok) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `[${result.code}] ${result.reason}`,
+        });
+      }
+      // A production promotion changes the served model → evict its inference cache.
+      if (input.toStage === "production") {
+        const v = await db.getModelVersionById(input.versionId);
+        if (v) evictSessionCache(v.modelId);
+      }
+      return result;
     }),
 
   // ─── Health Check ───────────────────────────────────────

@@ -1,5 +1,5 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -643,6 +643,17 @@ export const modelVersions = pgTable("model_versions", {
   datasetId: integer("datasetId"),                 // training_datasets.id used to train
   baselineVersionId: integer("baselineVersionId"), // version compared against for the gate
   evalReport: json("evalReport"),                  // full before/after CompareReport
+  // ── W5-A4 G4.24 (doc 44, migration 0262; additive, nullable) — Model Registry STAGE ──
+  // MLOps lifecycle stage (SYNAPSE LDS-L4 §11.1). null = legacy version (no stage).
+  // Projection is explicit: status=ACTIVE ⇔ stage='production' (see aiModelService).
+  stage: text("stage").$type<ModelStage>(),
+  // Append-only stage-transition ledger — every promoteStage/activate appends here.
+  stageHistory: jsonb("stage_history").$type<ModelStageHistoryEntry[]>(),
+  // When the version entered its CURRENT stage — measures the shadow ≥ N-hour gate.
+  stageEnteredAt: timestamp("stage_entered_at"),
+  // ── ModelCard §12.2 (additive, nullable) ──
+  owner: varchar("owner", { length: 255 }),        // ModelCard.owner (owning team)
+  trainedOn: text("trained_on"),                   // ModelCard.trained_on (training data window)
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
@@ -650,6 +661,20 @@ export const modelVersions = pgTable("model_versions", {
   index("idx_model_versions_version").on(table.modelId, table.version),
   index("idx_model_versions_status").on(table.status),
 ]);
+
+/** MLOps lifecycle stage (SYNAPSE LDS-L4 §11.1 + Model Registry §3.2). */
+export type ModelStage = "staging" | "shadow" | "canary" | "production" | "retired";
+
+/** One append-only entry in model_versions.stage_history. */
+export interface ModelStageHistoryEntry {
+  from: ModelStage | null;
+  to: ModelStage;
+  at: string;               // ISO timestamp
+  actor?: number | null;    // user id that performed the transition
+  approver?: number | null; // second approver (canary→production 2-person rule)
+  via: string;              // "promote" | "activate" | "rollback" | "manual"
+  reason?: string;
+}
 
 export type ModelVersion = typeof modelVersions.$inferSelect;
 export type InsertModelVersion = typeof modelVersions.$inferInsert;

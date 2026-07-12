@@ -50,6 +50,11 @@ import {
   type NgRecommendation,
   type PointRecommendation,
 } from "./aiThresholdAdvisor";
+// doc 44 W5-A2 (G4.19) — twin-first: an AI proposal touching a machine whose engineer
+// marked a sensitive param as requiring twin validation gets a twinValidation flag
+// (passed|untrusted|skipped). This ANNOTATES the proposal — hard blocking stays the
+// Policy/HITL (A3) contract, not this advisory producer (SYNAPSE §16 step 2).
+import { evaluateTwinValidation, type TwinValidationStatus } from "./ai/parameterGuardrailService";
 
 // ─── Config (env, safe defaults) ──────────────────────────────────────────────
 
@@ -249,6 +254,18 @@ async function proposeNgTune(scope: NgTuneScope, rec: NgRecommendation): Promise
   const targets = await findResponsibleUsers(factoryCode, tool.requiredPermission, MAX_PER_RUN);
   if (targets.length === 0) return 0;
 
+  // G4.19 twin-first — evaluate the machine's twin trust for the record. The NG
+  // proposal rides strict tool args (no free-form payload) so the verdict is surfaced
+  // in the log rather than the args; hard blocking remains the Policy/HITL contract.
+  try {
+    const twinValidation = await evaluateTwinValidation(scope.machineId ?? undefined);
+    if (twinValidation && twinValidation !== "passed") {
+      console.warn(`[aiThresholdTuneScheduler] ng#${scope.ngThresholdId} twin-first: ${twinValidation} (twin not trusted for auto decisions)`);
+    }
+  } catch {
+    /* twin-first is advisory — never block the proposal */
+  }
+
   const args: Record<string, unknown> = {
     thresholdId: scope.ngThresholdId,
     warningThreshold: rec.recommended.warning,
@@ -369,6 +386,15 @@ async function requestPointTune(scope: PointTuneScope, rec: PointRecommendation)
     // V20 — attach recent NG thumbnails + persisted VLM descriptions (fail-open).
     const recentNg = await collectNgEvidence(scope.pointDefId);
 
+    // G4.19 twin-first — annotate whether the machine's twin is trusted enough for
+    // this auto-tune proposal (only when an engineer flagged a param requires it).
+    let twinValidation: TwinValidationStatus | undefined;
+    try {
+      twinValidation = await evaluateTwinValidation(scope.machineId ?? undefined);
+    } catch {
+      /* twin-first is advisory — never block the proposal */
+    }
+
     await db.insert(thresholdApprovals).values({
       pointDefId: scope.pointDefId,
       // System-generated proposal; requestedBy 0 stays as the no-human sentinel —
@@ -383,6 +409,8 @@ async function requestPointTune(scope: PointTuneScope, rec: PointRecommendation)
         projectedCpk: rec.recommended.projectedCpk,
         sampleSize: rec.sampleSize,
         basis: rec.basis,
+        // G4.19 — twin-first verdict (undefined when not required → key omitted).
+        ...(twinValidation ? { twinValidation } : {}),
         // V20 — additive image-evidence payload (approval UI renders thumbnails).
         evidence: recentNg.length > 0 ? { recentNg } : undefined,
       } as any,

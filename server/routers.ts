@@ -197,6 +197,7 @@ import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11
 import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
 import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
 import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
+import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -425,6 +426,7 @@ export const appRouter = router({
   ncr: ncrRouter, // doc 35 W4-B
   feederVerify: feederVerifyRouter, // doc 35 W4-C
   lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
+  parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
   orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C
