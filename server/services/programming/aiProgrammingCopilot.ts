@@ -400,7 +400,18 @@ async function runCodeModel(system: string, user: string): Promise<string | null
       modelId,
     );
     const raw = res?.text ?? "";
-    return stripThinking(raw).answer ?? raw;
+    const answer = stripThinking(raw).answer ?? raw;
+    // FE-W0.3 (doc 46 §2.3) — reject a degenerate loop ("cell cell cell…") so the
+    // copilot degrades to its honest "no suggestion (fail-safe)" path rather than
+    // returning garbage code. Salvaging a head is unsafe for CODE, so unsalvageable
+    // OR salvaged-but-truncated → treat as no output (null).
+    const { guardGeneratedText } = await import("../ai/generationGuard");
+    const g = guardGeneratedText(answer);
+    if (g.degraded) {
+      console.warn(`[aiProgrammingCopilot] degenerate code output rejected (${g.reason}) — degrading to no-suggestion.`);
+      return null;
+    }
+    return g.text;
   } catch (e) {
     console.warn("[aiProgrammingCopilot] code model call failed (degrading):", (e as Error)?.message ?? e);
     return null;

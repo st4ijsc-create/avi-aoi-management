@@ -73,11 +73,30 @@ export interface ExecutiveSummaryStructured {
   generatedBy: "gguf" | "offline";
   model?: string;
   generatedAt: string;
+  /**
+   * FE-W0.3 (doc 46 §2.3) — set when the generation guard rejected/truncated a
+   * degenerate LLM output (e.g. "cell cell cell…" loop). When true the narrative
+   * fell back to the honest offline/rule-based summary instead of showing garbage.
+   */
+  degraded?: boolean;
+  degradedReason?: string;
 }
 
 // ─── Period windows ────────────────────────────────────────────
 
 const SHIFT_HOURS = Number(process.env.EXEC_REPORT_SHIFT_HOURS || "8");
+
+// FE-W0.3 (doc 46 §2.3) — anti-degenerate-loop decode params for the exec-summary
+// narrative. An executive summary is SHORT, so cap tokens hard and use a stronger
+// repeat penalty than the engine default (1.1) to discourage token loops.
+const EXEC_REPORT_MAX_TOKENS = (() => {
+  const n = Number(process.env.EXEC_REPORT_MAX_TOKENS || "800");
+  return Number.isFinite(n) && n > 0 ? n : 800;
+})();
+const EXEC_REPORT_REPEAT_PENALTY = (() => {
+  const n = Number(process.env.EXEC_REPORT_REPEAT_PENALTY || "1.3");
+  return Number.isFinite(n) && n >= 1 ? n : 1.3;
+})();
 
 /** Khoảng thời gian [start,end] cho kỳ, kết thúc tại `now` (mặc định hiện tại). */
 export function periodWindow(period: ReportPeriod, now: Date = new Date()): { start: Date; end: Date } {
@@ -382,6 +401,8 @@ export async function generateExecutiveSummary(
 
   let generatedBy: "gguf" | "offline" = "offline";
   let model: string | undefined;
+  let degraded = false;
+  let degradedReason: string | undefined;
   let parsed = offlineSummary(kpis);
 
   try {
@@ -389,16 +410,35 @@ export async function generateExecutiveSummary(
     const { route } = await import("./aiModelRouter");
     const decision = route({ task: "report", requiredQuality: "high" });
     const { generateNarrative } = await import("./aiProviderRouter");
+    // FE-W0.3 (doc 46 §2.3) — anti-degenerate-loop decode: cap tokens for an exec
+    // summary (it should be SHORT), and use a stronger repeat penalty than the
+    // engine default (1.1) which still let the "cell cell…" loop through.
+    const maxTokens = Math.min(decision.maxTokens, EXEC_REPORT_MAX_TOKENS);
     const result = await generateNarrative({
       systemPrompt: buildSystemPrompt(lang),
       prompt: buildUserPrompt(kpis),
-      maxTokens: decision.maxTokens,
+      maxTokens,
       temperature: decision.temperature,
       language: lang,
+      repeatPenalty: EXEC_REPORT_REPEAT_PENALTY,
       cacheKey: `exec-report:${period}:${kpis.window.start}:${lang}`,
     });
-    if (result.text && result.text.trim().length > 0) {
-      const fromLlm = parseLlmText(result.text);
+    // FE-W0.3 (doc 46 §2.3) — GUARDRAIL: reject/salvage degenerate output BEFORE
+    // parsing so a "cell cell cell…" loop never reaches management. Unsalvageable
+    // → keep the honest offline summary + flag degraded; a clean head → parse it.
+    const { guardGeneratedText } = await import("./ai/generationGuard");
+    const guard = guardGeneratedText(result.text);
+    const usable = guard.text.trim();
+    if (guard.degraded) {
+      degraded = true;
+      degradedReason = guard.reason;
+      console.warn(
+        `[aiExecutiveReport] degenerate LLM narrative rejected (${guard.reason}) — ` +
+          `${usable ? "using salvaged head" : "falling back to offline summary"}.`,
+      );
+    }
+    if (usable.length > 0) {
+      const fromLlm = parseLlmText(usable);
       // Chỉ thay phần nào LLM thực sự cung cấp; còn lại giữ offline để không rỗng.
       parsed = {
         headline: fromLlm.headline || parsed.headline,
@@ -409,6 +449,7 @@ export async function generateExecutiveSummary(
       generatedBy = result.provider === "gguf" ? "gguf" : "offline";
       model = result.model;
     }
+    // else: usable empty (degenerate garbage or no output) → offline summary stays.
   } catch (err) {
     console.error("[aiExecutiveReport] LLM narrative failed, using offline summary:", (err as any)?.message || err);
   }
@@ -426,6 +467,7 @@ export async function generateExecutiveSummary(
     generatedBy,
     model,
     generatedAt: new Date().toISOString(),
+    ...(degraded ? { degraded, degradedReason } : {}),
   };
 }
 

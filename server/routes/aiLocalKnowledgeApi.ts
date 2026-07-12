@@ -438,6 +438,9 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       let finalProvider: "ollama" | "extractive" | "tool" = "extractive";
       let cached = false;
       let structured: Record<string, unknown> | undefined;
+      // FE-W0.3 (doc 46 §2.3) — degenerate-loop signal forwarded to the client.
+      let degraded = false;
+      let degradedReason: string | undefined;
 
       for await (const evt of streamAnswer(effectiveQuestion, topK, history, userRole, context, execCtx)) {
         if (closed) return;
@@ -481,6 +484,9 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
             finalProvider = evt.provider;
             cached = evt.cached;
             structured = evt.structured as any;
+            // FE-W0.3 (doc 46 §2.3) — carry the degenerate-loop flag through.
+            degraded = evt.degraded ?? false;
+            degradedReason = evt.degradedReason;
             break;
         }
       }
@@ -493,6 +499,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           followUpSuggestions,
           answer: finalAnswer,
           structured,
+          // FE-W0.3 (doc 46 §2.3) — tell the client to replace streamed garbage with `answer`.
+          ...(degraded ? { degraded: true, degradedReason } : {}),
         });
       }
     } catch (error: any) {

@@ -630,6 +630,15 @@ export function AILocalChatBubble() {
                     cached: payload.cached ?? metaResult.cached,
                   };
                 }
+                // FE-W0.3 (doc 46 §2.3) — degenerate-loop rejected: replace the
+                // streamed garbage with the clean fallback `answer` from the backend.
+                if ((payload as any).degraded === true && typeof (payload as any).answer === "string") {
+                  accumulatedContent = (payload as any).answer;
+                  const clean = accumulatedContent;
+                  setMessages((prev) =>
+                    prev.map((m) => (m.id === assistantMsgId ? { ...m, content: clean } : m)),
+                  );
+                }
                 break;
               } else if (payload.type === "error") {
                 throw new Error(payload.error ?? "Stream error");

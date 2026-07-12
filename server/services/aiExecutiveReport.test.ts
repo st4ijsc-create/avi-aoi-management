@@ -156,6 +156,44 @@ describe("generateExecutiveSummary", () => {
     expect(s.recommendations.length).toBeGreaterThan(0);
   });
 
+  // FE-W0.3 (doc 46 §2.3) — degenerate-loop guardrail on the exec-summary path.
+  it("rejects a degenerate 'cell cell cell…' narrative and falls back to the honest offline summary", async () => {
+    generateNarrative.mockResolvedValue({
+      text: Array(1000).fill("cell").join(" "), // the observed degenerate loop
+      provider: "gguf",
+      model: "qwen3-30b",
+    });
+
+    const s = await generateExecutiveSummary("day", "vi");
+
+    // The garbage must NOT reach the summary — offline rule-based text fills every section.
+    expect(s.generatedBy).toBe("offline");
+    expect((s as any).degraded).toBe(true);
+    expect((s as any).degradedReason).toMatch(/word_repeat|ngram|length|ratio/);
+    expect(s.headline.length).toBeGreaterThan(0);
+    expect(s.highlights.length).toBeGreaterThan(0);
+    // No "cell" wall anywhere in the rendered summary.
+    expect(s.headline).not.toMatch(/cell cell cell/i);
+    expect(JSON.stringify(s.highlights)).not.toMatch(/cell cell cell/i);
+  });
+
+  it("keeps a clean LLM narrative unchanged (not flagged degraded)", async () => {
+    generateNarrative.mockResolvedValue({
+      text:
+        "Headline: Sản lượng ổn định, FPY 95%.\n" +
+        "Điểm nổi bật:\n- Throughput tốt\n- Lỗi giảm\n" +
+        "Rủi ro:\n- Máy M-001 rủi ro cao\n" +
+        "Khuyến nghị:\n- Bảo trì sớm\n",
+      provider: "gguf",
+      model: "qwen3-30b",
+    });
+
+    const s = await generateExecutiveSummary("day", "vi");
+    expect(s.generatedBy).toBe("gguf");
+    expect((s as any).degraded).toBeFalsy();
+    expect(s.highlights).toContain("Throughput tốt");
+  });
+
   it("runExecutiveReportNow persists and returns an insight id", async () => {
     generateNarrative.mockResolvedValue({ text: "Headline: ok", provider: "gguf", model: "m" });
     const { summary, insightId } = await runExecutiveReportNow("day", "vi");

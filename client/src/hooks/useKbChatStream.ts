@@ -332,9 +332,18 @@ export function useKbChatStream() {
                 followUpSuggestions = payload.followUpSuggestions;
                 provider = payload.provider;
                 cached = payload.cached;
-                // Some providers send the full answer only on `done` (extractive).
-                if (!accumulated && typeof (payload as any).answer === "string") {
-                  accumulated = (payload as any).answer;
+                const doneAnswer = (payload as any).answer;
+                // FE-W0.3 (doc 46 §2.3) — the backend flagged the streamed LLM
+                // output as a degenerate loop ("cell cell cell…") and sent a clean
+                // fallback in `answer`. REPLACE the accumulated garbage tokens so the
+                // user (and the saved message) never see the loop.
+                if ((payload as any).degraded === true && typeof doneAnswer === "string") {
+                  accumulated = doneAnswer;
+                  setStreamingText(accumulated);
+                  callbacks?.onText?.(accumulated);
+                } else if (!accumulated && typeof doneAnswer === "string") {
+                  // Some providers send the full answer only on `done` (extractive).
+                  accumulated = doneAnswer;
                   setStreamingText(accumulated);
                   callbacks?.onText?.(accumulated);
                 }

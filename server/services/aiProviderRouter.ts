@@ -30,6 +30,14 @@ export interface NarrativeRequest {
   language?: "en" | "vi";
   cacheKey?: string;
   cacheTtlMs?: number;
+  // FE-W0.3 (doc 46 §2.3) — optional anti-degenerate-loop decode params. All
+  // OPTIONAL so existing callers are unaffected; the GGUF engine keeps its own
+  // defaults (repeatPenalty 1.1) when these are absent. exec-summary/chat pass a
+  // stronger repeatPenalty + stop sequences to reduce the odds of a "cell cell…" loop.
+  repeatPenalty?: number;
+  topP?: number;
+  topK?: number;
+  stopSequences?: string[];
 }
 
 export interface NarrativeResult {
@@ -145,6 +153,11 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       maxTokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       language: req.language,
+      // FE-W0.3 (doc 46 §2.3) — forward optional anti-loop decode params when supplied.
+      ...(req.repeatPenalty != null ? { repeatPenalty: req.repeatPenalty } : {}),
+      ...(req.topP != null ? { topP: req.topP } : {}),
+      ...(req.topK != null ? { topK: req.topK } : {}),
+      ...(req.stopSequences ? { stopSequences: req.stopSequences } : {}),
     });
     const result: NarrativeResult = {
       text: r.text,

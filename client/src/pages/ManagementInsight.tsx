@@ -334,6 +334,17 @@ export default function ManagementInsight() {
                   )}
                 </div>
 
+                {/* FE-W0.3 (doc 46 §2.3) — honest note when the AI narrative was
+                    rejected as a degenerate loop and this is the rule-based fallback. */}
+                {summary?.degraded && (
+                  <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                    {t(
+                      "mgmtInsight.exec.degraded",
+                      "Tóm tắt AI tạm không đạt chất lượng — đang hiển thị bản tóm tắt theo quy tắc từ KPI thực.",
+                    )}
+                  </div>
+                )}
+
                 {/* Headline */}
                 {summary?.headline && (
                   <div className="rounded-md bg-muted/40 p-3 text-sm font-medium leading-relaxed whitespace-pre-wrap">

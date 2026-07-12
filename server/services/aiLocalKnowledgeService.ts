@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
+// FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
+import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
 
 export type KbIntent =
   | "how_to"
@@ -308,6 +310,17 @@ const CONTEXT_CHUNK_CHAR_CAP = Number(process.env.KB_QA_CTX_CAP ?? 1200);
 // num_predict — cap LLM output length. 800 was overkill; most useful answers
 // fit in 400-500 tokens. Lower = faster TTLT (time-to-last-token).
 const LLM_NUM_PREDICT = Number(process.env.KB_QA_NUM_PREDICT ?? 512);
+
+// FE-W0.3 (doc 46 §2.3) — anti-degenerate-loop decode + streaming-guard cadence.
+// Stronger repeat penalty than the engine default (1.1) to discourage token loops;
+// the incremental stream guard re-checks every STEP chars once past MIN chars so a
+// "cell cell cell…" loop is caught within a few tokens instead of thousands.
+const KB_QA_REPEAT_PENALTY = (() => {
+  const n = Number(process.env.KB_QA_REPEAT_PENALTY ?? 1.2);
+  return Number.isFinite(n) && n >= 1 ? n : 1.2;
+})();
+const STREAM_GUARD_MIN_CHARS = Number(process.env.KB_QA_STREAM_GUARD_MIN ?? 160);
+const STREAM_GUARD_STEP_CHARS = Number(process.env.KB_QA_STREAM_GUARD_STEP ?? 160);
 
 // Lever 8.D — per-intent token budget. Tool-summarised and general questions
 // rarely need >220 tokens; how_to/architecture deserve room for full
@@ -1012,6 +1025,24 @@ function formatHistoryBlock(history: ConversationMessage[]): string {
     .join("\n");
 }
 
+/**
+ * FE-W0.3 (doc 46 §2.3) — run the degenerate-loop guard over a completed LLM
+ * answer. Returns the clean text (or a salvaged head) or NULL when the output is
+ * unsalvageable garbage — NULL makes the caller fall back to the extractive/tool
+ * answer instead of showing "cell cell cell…". Never throws.
+ */
+function guardKbAnswer(raw: string | null | undefined): string | null {
+  const g = guardGeneratedText(raw);
+  if (g.degraded) {
+    console.warn(
+      `[aiLocalKnowledge] degenerate LLM answer rejected (${g.reason}) — ` +
+        `${g.text ? "using salvaged head" : "falling back to extractive/tool"}.`,
+    );
+  }
+  const t = g.text.trim();
+  return t.length > 0 ? t : null;
+}
+
 async function generateWithOllama(
   question: string,
   retrieve: KbRetrieveResult,
@@ -1069,8 +1100,10 @@ async function generateWithOllama(
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
+          repeatPenalty: KB_QA_REPEAT_PENALTY,
         });
-        return result.text?.trim() || null;
+        // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
+        return guardKbAnswer(result.text);
       }
       // GGUF not available — fall through to Ollama path.
     } catch (err) {
@@ -1105,7 +1138,8 @@ async function generateWithOllama(
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { response?: string };
-    return json.response?.trim() || null;
+    // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
+    return guardKbAnswer(json.response);
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") {
       console.warn(`[aiLocalKnowledge] Ollama generate aborted after ${LLM_TIMEOUT_MS}ms — falling back to extractive`);
@@ -1175,6 +1209,7 @@ export async function* generateWithOllamaStream(
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
+          repeatPenalty: KB_QA_REPEAT_PENALTY,
         })) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
@@ -1769,6 +1804,13 @@ export type StreamEvent =
       followUpSuggestions: string[];
       answer: string;
       structured?: KbStructuredResponse;
+      /**
+       * FE-W0.3 (doc 46 §2.3) — true when the streamed LLM output was rejected as
+       * a degenerate loop and `answer` carries a clean fallback INSTEAD. The client
+       * must REPLACE the accumulated streamed tokens with `answer` when this is set.
+       */
+      degraded?: boolean;
+      degradedReason?: string;
     };
 
 export async function* streamAnswer(
@@ -1889,6 +1931,10 @@ export async function* streamAnswer(
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let accumulated = "";
+  // FE-W0.3 (doc 46 §2.3) — set when the streamed output degenerated into a loop;
+  // the streamed garbage is discarded and a clean fallback is sent on `done`.
+  let streamDegraded = false;
+  let streamDegradedReason: string | undefined;
 
   const shouldUseLlm = !!toolResult || retrieve.confidence >= 0.30;
 
@@ -1901,13 +1947,38 @@ export async function* streamAnswer(
         userLevel,
         toolResult?.textSummary,
       );
+      // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
+      // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK
+      // the moment it loops so we emit a handful of repeated tokens instead of
+      // thousands. The client resets to the clean `answer` on the degraded `done`.
+      let nextCheckAt = STREAM_GUARD_MIN_CHARS;
       for await (const piece of iter) {
         if (!piece) continue;
         accumulated += piece;
         yield { type: "token", token: piece };
+        if (accumulated.length >= nextCheckAt) {
+          nextCheckAt = accumulated.length + STREAM_GUARD_STEP_CHARS;
+          if (isDegenerateStream(accumulated)) {
+            streamDegraded = true;
+            streamDegradedReason = "stream_loop";
+            break;
+          }
+        }
       }
-      if (accumulated.trim()) {
-        provider = "ollama";
+      if (streamDegraded) {
+        // Discard the looped output; the fallback block below produces a clean answer.
+        console.warn("[aiLocalKnowledge] degenerate stream detected — discarding looped output, sending clean fallback.");
+        accumulated = "";
+      } else if (accumulated.trim()) {
+        // Final full-output guard (catches a loop that only crossed threshold at the tail).
+        const g = guardGeneratedText(accumulated);
+        if (g.degraded) {
+          streamDegraded = true;
+          streamDegradedReason = g.reason;
+          accumulated = g.text.trim(); // salvaged head or "" → fallback block runs
+          console.warn(`[aiLocalKnowledge] degenerate stream (final guard: ${g.reason}) — ${accumulated ? "using salvaged head" : "clean fallback"}.`);
+        }
+        if (accumulated.trim()) provider = "ollama";
       }
     } catch {
       // fall through to extractive/tool fallback below
@@ -1943,7 +2014,8 @@ export async function* streamAnswer(
   );
 
   // Backfill the answer cache so the next identical question is instant.
-  if (history.length === 0 && !toolResult && provider !== "extractive") {
+  // FE-W0.3 (doc 46 §2.3) — NEVER cache a degraded/salvaged answer.
+  if (history.length === 0 && !toolResult && provider !== "extractive" && !streamDegraded) {
     const cacheValue: KbAnswerResult = {
       ...retrieve,
       answer: accumulated,
@@ -1967,6 +2039,9 @@ export async function* streamAnswer(
     followUpSuggestions,
     answer: accumulated,
     structured: extractStructuredResponse(accumulated),
+    // FE-W0.3 (doc 46 §2.3) — signal the client to REPLACE the streamed tokens
+    // with `answer` when the LLM output was rejected as a degenerate loop.
+    ...(streamDegraded ? { degraded: true, degradedReason: streamDegradedReason } : {}),
   };
 }
 

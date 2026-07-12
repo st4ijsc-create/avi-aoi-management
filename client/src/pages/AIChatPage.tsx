@@ -753,9 +753,8 @@ export default function AIChatPage() {
             </div>
           )}
           {selectedConvId ? (
-            <>
-              {/* Messages */}
-              <ScrollArea className="flex-1 p-4">
+            /* Messages */
+            <ScrollArea className="flex-1 p-4">
                 <div className="max-w-3xl mx-auto space-y-4">
                   {messages.length === 0 && !optimisticUserMsg && !effIsStreaming && (
                     <div className="py-10">
@@ -884,91 +883,6 @@ export default function AIChatPage() {
                   <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
-
-              {/* Input */}
-              <div className="border-t p-4">
-                <div className="max-w-3xl mx-auto space-y-2">
-                  {/* P3/D8 (doc 34) — attached-image preview chip (remove with ×). */}
-                  {attachedImage && (
-                    <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1.5">
-                      <img
-                        src={attachedImage.dataUrl}
-                        alt={t("aiChat.imageAttached", "Đã đính kèm ảnh")}
-                        className="h-10 w-10 rounded object-cover border shrink-0"
-                      />
-                      <span className="flex-1 min-w-0 truncate text-xs text-muted-foreground">
-                        {attachedImage.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedImage(null)}
-                        className="rounded-full p-0.5 hover:bg-background shrink-0"
-                        aria-label={t("aiChat.removeImage", "Bỏ ảnh")}
-                        title={t("aiChat.removeImage", "Bỏ ảnh")}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    {/* Hidden file input driving the attach-image button. */}
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept={ACCEPTED_CHAT_IMAGE_TYPES.join(",")}
-                      className="hidden"
-                      onChange={(e) => {
-                        void pickImage(e.target.files?.[0]);
-                        e.target.value = "";
-                      }}
-                    />
-                    {/* P3/D8 (doc 34) — attach an image (ladder/HMI/wiring/datasheet/error screen). */}
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={isBusy}
-                      title={t("aiChat.attachImage", "Đính kèm ảnh (sơ đồ, HMI, màn hình lỗi…)")}
-                      aria-label={t("aiChat.attachImage", "Đính kèm ảnh")}
-                    >
-                      <ImagePlus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder={t("aiChat.placeholder", "Nhập câu hỏi của bạn...")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      onPaste={(e) => {
-                        // P3/D8 (doc 34) — paste an image straight from the clipboard.
-                        const f = extractImageFromClipboard(e.clipboardData?.items);
-                        if (f) {
-                          e.preventDefault();
-                          void pickImage(f);
-                        }
-                      }}
-                      disabled={isBusy}
-                    />
-                    {effIsStreaming ? (
-                      <Button variant="destructive" onClick={effStopStream}>
-                        <StopCircle className="h-4 w-4" />
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={() => handleSend()}
-                        disabled={(!inputMessage.trim() && !attachedImage) || isBusy}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
           ) : (
             /* Empty state — welcome + discoverability (suggested prompts + guided cards) */
             <ScrollArea className="flex-1">
@@ -1034,6 +948,94 @@ export default function AIChatPage() {
               </div>
             </ScrollArea>
           )}
+
+          {/* Input — B7 (doc 46 §2.3): ALWAYS render the textbox + send button,
+              even before a conversation exists (handleSend lazily creates one) and
+              regardless of AI model availability. Previously the input only mounted
+              when a conversation was selected, so a fresh /ai-chat showed suggested
+              prompts but NO way to type — the reported "missing input box" bug. */}
+          <div className="border-t p-4">
+            <div className="max-w-3xl mx-auto space-y-2">
+              {/* P3/D8 (doc 34) — attached-image preview chip (remove with ×). */}
+              {attachedImage && (
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-2 py-1.5">
+                  <img
+                    src={attachedImage.dataUrl}
+                    alt={t("aiChat.imageAttached", "Đã đính kèm ảnh")}
+                    className="h-10 w-10 rounded object-cover border shrink-0"
+                  />
+                  <span className="flex-1 min-w-0 truncate text-xs text-muted-foreground">
+                    {attachedImage.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedImage(null)}
+                    className="rounded-full p-0.5 hover:bg-background shrink-0"
+                    aria-label={t("aiChat.removeImage", "Bỏ ảnh")}
+                    title={t("aiChat.removeImage", "Bỏ ảnh")}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                {/* Hidden file input driving the attach-image button. */}
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept={ACCEPTED_CHAT_IMAGE_TYPES.join(",")}
+                  className="hidden"
+                  onChange={(e) => {
+                    void pickImage(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                {/* P3/D8 (doc 34) — attach an image (ladder/HMI/wiring/datasheet/error screen). */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isBusy}
+                  title={t("aiChat.attachImage", "Đính kèm ảnh (sơ đồ, HMI, màn hình lỗi…)")}
+                  aria-label={t("aiChat.attachImage", "Đính kèm ảnh")}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                </Button>
+                <Input
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  placeholder={t("aiChat.placeholder", "Nhập câu hỏi của bạn...")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    // P3/D8 (doc 34) — paste an image straight from the clipboard.
+                    const f = extractImageFromClipboard(e.clipboardData?.items);
+                    if (f) {
+                      e.preventDefault();
+                      void pickImage(f);
+                    }
+                  }}
+                  disabled={isBusy}
+                />
+                {effIsStreaming ? (
+                  <Button variant="destructive" onClick={effStopStream}>
+                    <StopCircle className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleSend()}
+                    disabled={(!inputMessage.trim() && !attachedImage) || isBusy}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </DashboardLayout>

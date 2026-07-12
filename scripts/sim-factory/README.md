@@ -57,6 +57,51 @@ npm run sim:factory
   15 device_adapters+tags/commissioning/1 interlock rule. In tally `inserted/skipped`.
 - Chạy lại an toàn (ON CONFLICT / existence-check).
 
+## 2b) Seed tầng SẢN XUẤT / CHẤT LƯỢNG cho dashboard quản lý (doc 46 FE-W0.2, D2)
+
+`seed.mjs` **cố ý KHÔNG** bịa inspection/OEE (chờ ingest thật) → mọi dashboard quản lý
+(OEE / yield / throughput / plan / SPC / genealogy) trống. Khi **chưa có phần cứng** mà
+cần **số THẬT hiển thị để đánh giá UX**, dùng `seed-production.mjs` — bơm tầng sản xuất/
+chất lượng mô phỏng, **mọi bản ghi gắn nhãn "SIM"** và **đảo ngược được**.
+
+```bash
+npm run sim:production -- --days 14                 # mặc định 14 ngày × 24 unit/ca/line
+npm run sim:production -- --days 30 --units-per-shift 40
+npm run sim:production -- --purge                   # XOÁ SẠCH toàn bộ dữ liệu SIM
+# hoặc: node scripts/sim-factory/seed-production.mjs --days 14
+```
+
+> ⚠ **Ghi vào DB THẬT** (`.env` DATABASE_URL, KHÔNG phải `.env.sim`). Đây là hành động
+> CHỦ ĐÍCH đã DUYỆT (doc 46 D2): dữ liệu rõ nhãn SIM + đảo ngược 100%. Script in banner
+> cảnh báo khi DB không chứa `sim`. **Idempotent**: mỗi lần chạy PURGE dữ-liệu-SIM cũ rồi
+> tái sinh → chạy lại KHÔNG nhân đôi.
+
+**Sinh (đọc topology THẬT từ DB — không tạo hierarchy):** product_models `SIM-*` (2 sản
+phẩm + điểm đo có giới hạn cho SPC/Cpk) · product_inspections + measurement_results (yield
+~98%, NG ~2%, NTF ~1%, giá trị đo quanh nominal±sigma) · daily_statistics + machine_status_logs
++ oee_metrics (A/P/Q/OEE ~91/92/98/84% — **nhất quán** để `oeeService` tính LIVE ra cùng số)
+· downtime_events (top-5) · production_orders (plan-vs-actual) · fact_inspection_hourly
+(so ca) · genealogy_chain (hash-chain, `verifyChain` = OK) + component_installations +
+supplier_lots + process_results (traceability 2 chiều).
+
+**Nhãn "SIM" (phân biệt & xoá):**
+
+| Bảng | Cách nhận diện SIM |
+|---|---|
+| product_inspections | `serialNumber LIKE 'SIM-%'` + `notes."source"="SIM"` |
+| measurement_results | theo `inspectionId` của inspection SIM |
+| oee_metrics | `calculatedBy = 'SIM'` |
+| downtime_events | `detailedReason LIKE '%[SIM]%'` |
+| production_orders | `orderCode LIKE 'SIM-PO-%'` |
+| genealogy_chain / component_installations / process_results | `serialNumber LIKE 'SIM-%'` |
+| supplier_lots | `supplierLotNumber LIKE 'SIM-%'` |
+| machine_status_logs | `ipAddress = 'SIM'` |
+| daily_statistics / fact_inspection_hourly | scope theo nhà máy `SIM-FAC` |
+| product_models | `code LIKE 'SIM-%'` (**CONFIG — KHÔNG bị `--purge`**, như topology) |
+
+`--purge` xoá tất cả bảng trên (trừ product_models config) theo đúng nhãn → **KHÔNG chạm**
+dữ liệu THẬT hay dữ liệu `seed.mjs`/scenario (vd oee_metrics `calculatedBy='SEED'` được giữ).
+
 ## 3) Chạy server với profile `.env.sim` (BẬT MỌI THỨ)
 
 ```bash
