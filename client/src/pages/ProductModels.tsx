@@ -2414,15 +2414,19 @@ export default function ProductModels() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Product List — thu gọn còn 1/4 (danh sách sản phẩm ít cần rộng) */}
         <Card className="lg:col-span-1">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <div>
+          {/* doc 46 B3 — flex-wrap + min-w-0 so the action buttons wrap below the
+              title instead of overflowing this narrow (lg:col-span-1) column at
+              ≤1600px; previously the "Add" CTA spilled past the card edge and was
+              painted over by the adjacent col-span-3 detail card (unclickable). */}
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
                 <ViewOnlyBadge module="settings_products" />
               </div>
               <CardDescription>{t("products.selectToManage")}</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
             {/* Doc 31 UX1 (WD-1) — start the guided product setup wizard (the route
                 is itself permission-guarded, so no extra write-action gate here). */}
             <Button

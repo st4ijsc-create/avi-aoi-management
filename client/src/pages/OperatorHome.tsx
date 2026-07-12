@@ -20,7 +20,7 @@
  * DashboardLayout. Not role-locked (each underlying action enforces its own RBAC).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -31,8 +31,25 @@ import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
 import OperatorSessionControl from "@/components/OperatorSessionControl";
 import { AIActionInbox } from "@/components/AIActionInbox";
-import { FirstRunTour } from "@/components/FirstRunTour";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -46,8 +63,13 @@ import {
   Package,
   Building2,
   Loader2,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
+
+// localStorage key: the operator welcome/onboarding modal shows exactly ONCE
+// (dismissal persists here) so it never re-covers the first-tap controls (B15).
+const WELCOME_DISMISSED_KEY = "synapse.operator.welcomeDismissed";
 
 // ─── A single large tile (≥96px, big icon + label, high contrast) ──────────────
 
@@ -93,6 +115,10 @@ export default function OperatorHome() {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const [inboxOpen, setInboxOpen] = useState(false);
+  // B14 — confirm gate before the maintenance Andon fires (no accidental spam).
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+  // B15 — one-time welcome/onboarding modal.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
 
   // ── Kiosk mode (?kiosk=1) — bigger tiles + pinned emergency row ──────────────
   const isKiosk = useMemo(() => {
@@ -100,6 +126,24 @@ export default function OperatorHome() {
     const p = new URLSearchParams(window.location.search);
     return p.get("kiosk") === "1" || p.get("kiosk") === "true";
   }, []);
+
+  // ── B15: welcome modal shows ONCE (kiosk skips it entirely) ──────────────────
+  useEffect(() => {
+    if (isKiosk) return;
+    try {
+      if (window.localStorage.getItem(WELCOME_DISMISSED_KEY) !== "1") setWelcomeOpen(true);
+    } catch {
+      /* localStorage blocked → never block the controls behind onboarding */
+    }
+  }, [isKiosk]);
+  const dismissWelcome = () => {
+    try {
+      window.localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
+    } catch {
+      /* best-effort persistence */
+    }
+    setWelcomeOpen(false);
+  };
 
   // Pending action count for the "Việc cần xử lý" tile badge (best-effort).
   const countQuery = trpc.aiInbox.count.useQuery(undefined, {
@@ -174,7 +218,7 @@ export default function OperatorHome() {
       />
       <button
         type="button"
-        onClick={handleCallMaintenance}
+        onClick={() => setConfirmMaintenance(true)}
         disabled={callMaintenance.isPending}
         className={cn(
           "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/60 bg-amber-500/10 p-4 text-amber-600 shadow-sm dark:text-amber-400",
@@ -291,7 +335,7 @@ export default function OperatorHome() {
               icon={Wrench}
               label={t("operator.callMaintenance", "Gọi bảo trì")}
               accent="border-amber-500/40 text-amber-600 dark:text-amber-400"
-              onClick={handleCallMaintenance}
+              onClick={() => setConfirmMaintenance(true)}
             />
           )}
 
@@ -319,8 +363,69 @@ export default function OperatorHome() {
       {/* Controlled inbox dialog (1-tap approve) */}
       <AIActionInbox open={inboxOpen} onOpenChange={setInboxOpen} />
 
-      {/* First-run coach — shown once per user on their landing (skip in kiosk) */}
-      {!isKiosk && <FirstRunTour />}
+      {/* B14 — confirm before raising the maintenance Andon (no misclick spam) */}
+      <AlertDialog open={confirmMaintenance} onOpenChange={setConfirmMaintenance}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("operator.confirmMaintenanceTitle", "Gọi đội bảo trì?")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "operator.confirmMaintenanceBody",
+                "Thao tác này báo cho đội bảo trì ngay. Chỉ gọi khi thực sự cần hỗ trợ.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCallMaintenance}
+              className="bg-amber-600 text-white hover:bg-amber-700 focus-visible:ring-amber-500/40"
+            >
+              {t("operator.confirmMaintenanceConfirm", "Gọi bảo trì")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* B15 — one-time welcome coach: shows ONCE (persisted), never re-covers controls */}
+      <Dialog open={welcomeOpen} onOpenChange={(o) => (o ? setWelcomeOpen(true) : dismissWelcome())}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              {t("tour.title", "Chào mừng bạn!")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("tour.subtitle", "Đây là vài chỗ để bắt đầu nhanh nhất cho công việc của bạn.")}
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-2 py-2">
+            {[
+              { icon: ScanLine, label: t("operator.scanMachine", "Quét máy") },
+              { icon: AlertTriangle, label: t("operator.reportIssue", "Báo sự cố") },
+              { icon: Inbox, label: t("operator.actionInbox", "Việc cần xử lý") },
+              { icon: MessageSquare, label: t("operator.askAI", "Hỏi AI") },
+            ].map((tip) => {
+              const Icon = tip.icon;
+              return (
+                <li key={tip.label} className="flex items-center gap-3 rounded-lg border p-2">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="text-sm font-medium text-foreground">{tip.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <DialogFooter>
+            <Button onClick={dismissWelcome} className="w-full sm:w-auto">
+              {t("tour.start", "Bắt đầu")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

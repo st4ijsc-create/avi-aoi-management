@@ -580,7 +580,14 @@
     "reportIssue": "Báo sự cố",
     "lineStatus": "Trạng thái dây chuyền",
     "askAI": "Hỏi AI",
-    "actionInbox": "Việc cần xử lý"
+    "actionInbox": "Việc cần xử lý",
+    "callMaintenance": "Gọi bảo trì",
+    "confirmMaintenanceTitle": "Gọi đội bảo trì?",
+    "confirmMaintenanceBody": "Thao tác này báo cho đội bảo trì ngay. Chỉ gọi khi thực sự cần hỗ trợ.",
+    "confirmMaintenanceConfirm": "Gọi bảo trì",
+    "maintenanceCalled": "Đã gọi bảo trì — đội bảo trì sẽ được báo",
+    "maintenanceCallError": "Không gọi được bảo trì",
+    "maintenanceCallTitle": "Yêu cầu bảo trì từ vận hành"
   },
   "quality": {
     "title": "Không gian chất lượng",
@@ -634,7 +641,13 @@
     "backToDashboard": "Về Dashboard",
     "loadError": "Không tải được dữ liệu — sẽ tự thử lại",
     "noMachines": "Không có máy nào khớp bộ lọc",
-    "tickerEmpty": "Không có Andon đang mở — mọi line hoạt động bình thường"
+    "tickerEmpty": "Không có Andon đang mở — mọi line hoạt động bình thường",
+    "unacked": "Chưa xác nhận",
+    "ack": "Xác nhận",
+    "acked": "Đã xác nhận",
+    "ackHint": "Xác nhận đã tiếp nhận Andon này",
+    "ackNoPerm": "Bạn không có quyền xác nhận Andon",
+    "ackDone": "Đã xác nhận Andon"
   },
   "aiInbox": {
     "title": "Việc cần xử lý",
@@ -1765,7 +1778,8 @@
     "choose": "Chọn mẫu"
   },
   "offline": {
-    "banner": "Mất kết nối — thao tác quét/báo cáo sẽ không gửi được cho tới khi có mạng lại."
+    "banner": "Mất kết nối — thao tác quét/báo cáo sẽ không gửi được cho tới khi có mạng lại.",
+    "dataAsOf": "Dữ liệu tính đến {{time}}"
   },
   "permExpiry": {
     "one": "Quyền \"{{module}}\" sẽ hết hạn sau {{days}} ngày — liên hệ quản trị để gia hạn.",
@@ -5047,6 +5061,7 @@
       "current": "Đang mở",
       "locked": "Chưa kích hoạt",
       "upgrade": "Nâng cấp",
+      "noAccess": "Bạn không có quyền truy cập ứng dụng này",
       "overview": "Tổng quan",
       "overviewDesc": "Bảng điều khiển & phòng chỉ huy vận hành",
       "production": "Sản xuất (MES)",
@@ -5103,6 +5118,7 @@
       "masterData": "Dữ liệu gốc",
       "factoryConfig": "Cấu hình nhà máy"
     },
+    "skipToContent": "Bỏ qua tới nội dung",
     "searchPlaceholder": "Tìm trang, lệnh…",
     "searchEmpty": "Không có kết quả",
     "recent": "Gần đây",

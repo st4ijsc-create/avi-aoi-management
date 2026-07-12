@@ -140,6 +140,16 @@ const yieldBarBg: Record<string, string> = {
   none: "bg-muted",
 };
 
+/* doc 46 B8 — a station is "low yield" ONLY when it has real inspection data.
+   A 0% first-pass-yield derived from ZERO inspections is NO DATA, not a genuine
+   low-yield alarm — flagging those produced ~36 phantom "low yield" stations.
+   Requires a has-data guard (totalInspections > 0) AND real low yield, mirroring
+   the filterStationRows() predicate so the KPI count, the low-yield filter chip
+   and the export all agree. */
+function isLowYieldStation(r: { totalInspections?: number; firstPassYield?: number }): boolean {
+  return (r.totalInspections ?? 0) > 0 && (r.firstPassYield ?? 0) < 70;
+}
+
 /* F4a (doc 23): tag tints now use the SEMANTIC theme tokens (primary/info/
    destructive/warning/success) instead of literal palette classes, so the
    categories stay visually distinct AND flip correctly between light/dark. */
@@ -331,7 +341,8 @@ export default function ProductionDashboard() {
     const totalInsp = stationData.reduce((s, r) => s + r.totalInspections, 0);
     const avgFPY = totalInsp > 0 ? (totalOK / totalInsp) * 100 : 0;
     const avgRetests = stationData.reduce((s, r) => s + r.retestRate, 0) / stationData.length;
-    const lowYieldStations = stationData.filter((r) => r.firstPassYield < 70).length;
+    // doc 46 B8 — exclude no-data (0 inspections) stations from the low-yield alarm.
+    const lowYieldStations = stationData.filter(isLowYieldStation).length;
     return {
       totalStations: stationData.length,
       totalOutput,
@@ -353,7 +364,7 @@ export default function ProductionDashboard() {
       cur.inspSum += r.totalInspections;
       cur.output += r.output;
       cur.stations += 1;
-      if (r.firstPassYield < 70) cur.lowYield += 1;
+      if (isLowYieldStation(r)) cur.lowYield += 1; // doc 46 B8 — has-data guard
       map.set(f.id, cur);
     }
     return Array.from(map.values()).map((x) => ({

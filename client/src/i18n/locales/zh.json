@@ -580,7 +580,14 @@
     "reportIssue": "报告异常",
     "lineStatus": "产线状态",
     "askAI": "询问 AI",
-    "actionInbox": "待办收件箱"
+    "actionInbox": "待办收件箱",
+    "callMaintenance": "呼叫维护",
+    "confirmMaintenanceTitle": "呼叫维护团队？",
+    "confirmMaintenanceBody": "此操作将立即通知维护团队。请仅在确实需要帮助时呼叫。",
+    "confirmMaintenanceConfirm": "呼叫维护",
+    "maintenanceCalled": "已呼叫维护——将通知维护团队",
+    "maintenanceCallError": "无法呼叫维护",
+    "maintenanceCallTitle": "来自产线的维护请求"
   },
   "quality": {
     "title": "质量工作区",
@@ -634,7 +641,13 @@
     "backToDashboard": "返回仪表板",
     "loadError": "数据加载失败 — 将自动重试",
     "noMachines": "没有符合筛选条件的设备",
-    "tickerEmpty": "没有未关闭的安灯 — 所有产线运行正常"
+    "tickerEmpty": "没有未关闭的安灯 — 所有产线运行正常",
+    "unacked": "未确认",
+    "ack": "确认",
+    "acked": "已确认",
+    "ackHint": "确认已接收此安灯",
+    "ackNoPerm": "您没有确认安灯的权限",
+    "ackDone": "安灯已确认"
   },
   "aiInbox": {
     "title": "待办收件箱",
@@ -1765,7 +1778,8 @@
     "choose": "选择模板"
   },
   "offline": {
-    "banner": "已离线——扫描/上报在恢复连接前将无法发送。"
+    "banner": "已离线——扫描/上报在恢复连接前将无法发送。",
+    "dataAsOf": "数据截至 {{time}}"
   },
   "permExpiry": {
     "one": "你的“{{module}}”权限将在 {{days}} 天后过期——请联系管理员续期。",
@@ -4851,6 +4865,7 @@
       "current": "使用中",
       "locked": "未激活",
       "upgrade": "升级",
+      "noAccess": "您无权访问此应用",
       "overview": "概览",
       "overviewDesc": "仪表盘与运营作战室",
       "production": "生产 (MES)",
@@ -4907,6 +4922,7 @@
       "standardsIntegration": "标准与集成",
       "twin": "孪生与仿真"
     },
+    "skipToContent": "跳到主要内容",
     "searchPlaceholder": "搜索页面、命令…",
     "searchEmpty": "无结果",
     "recent": "最近",

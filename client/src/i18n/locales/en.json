@@ -580,7 +580,14 @@
     "reportIssue": "Report issue",
     "lineStatus": "Line status",
     "askAI": "Ask AI",
-    "actionInbox": "Action inbox"
+    "actionInbox": "Action inbox",
+    "callMaintenance": "Call maintenance",
+    "confirmMaintenanceTitle": "Call the maintenance team?",
+    "confirmMaintenanceBody": "This immediately notifies the maintenance team. Only call when you really need help.",
+    "confirmMaintenanceConfirm": "Call maintenance",
+    "maintenanceCalled": "Maintenance called — the team will be notified",
+    "maintenanceCallError": "Could not call maintenance",
+    "maintenanceCallTitle": "Maintenance request from the line"
   },
   "quality": {
     "title": "Quality workspace",
@@ -634,7 +641,13 @@
     "backToDashboard": "Back to Dashboard",
     "loadError": "Failed to load data — retrying automatically",
     "noMachines": "No machines match the filter",
-    "tickerEmpty": "No open andons — all lines running normally"
+    "tickerEmpty": "No open andons — all lines running normally",
+    "unacked": "Unacknowledged",
+    "ack": "Acknowledge",
+    "acked": "Acknowledged",
+    "ackHint": "Acknowledge that this Andon has been received",
+    "ackNoPerm": "You do not have permission to acknowledge Andons",
+    "ackDone": "Andon acknowledged"
   },
   "aiInbox": {
     "title": "Action Inbox",
@@ -1773,7 +1786,8 @@
     "choose": "Choose a template"
   },
   "offline": {
-    "banner": "Offline — scans/reports won't be sent until the connection is back."
+    "banner": "Offline — scans/reports won't be sent until the connection is back.",
+    "dataAsOf": "Data as of {{time}}"
   },
   "permExpiry": {
     "one": "Your \"{{module}}\" permission expires in {{days}} day(s) — contact an admin to renew.",
@@ -5068,6 +5082,7 @@
       "current": "Active",
       "locked": "Not activated",
       "upgrade": "Upgrade",
+      "noAccess": "You do not have access to this app",
       "overview": "Overview",
       "overviewDesc": "Dashboards & operations war-room",
       "production": "Production (MES)",
@@ -5124,6 +5139,7 @@
       "masterData": "Master Data",
       "factoryConfig": "Factory Config"
     },
+    "skipToContent": "Skip to content",
     "searchPlaceholder": "Search pages, commands…",
     "searchEmpty": "No results",
     "recent": "Recent",

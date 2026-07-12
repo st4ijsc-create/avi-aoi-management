@@ -21,11 +21,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Megaphone, MonitorOff, Settings } from "lucide-react";
+import { toast } from "sonner";
+import { AlertTriangle, Check, Loader2, Megaphone, MonitorOff, Settings } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PollFreshness } from "@/components/PollFreshness";
 import ManualHelp from "@/components/ManualHelp";
 import {
@@ -112,6 +114,24 @@ export default function AndonBoard() {
       void utils.dashboard.getAndonBoard.invalidate();
     }, 1500);
   }, [utils]);
+
+  // ── B6: operator acknowledge (andon/canEdit — operators have it per RBAC) ────
+  const { hasPermission } = usePermissions();
+  const canAck = hasPermission("andon", "canEdit");
+  const [ackingId, setAckingId] = useState<number | null>(null);
+  const ackAndon = trpc.andon.acknowledge.useMutation({
+    onSuccess: () => {
+      toast.success(t("andonBoard.ackDone", "Đã xác nhận Andon"));
+      void utils.dashboard.getAndonBoard.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+    onSettled: () => setAckingId(null),
+  });
+  const handleAck = (id: number) => {
+    if (!canAck || ackingId != null) return;
+    setAckingId(id);
+    ackAndon.mutate({ id });
+  };
 
   // ── Socket: online set + event-driven refresh ────────────────────────────
   const [socketConnected, setSocketConnected] = useState(false);
@@ -203,6 +223,11 @@ export default function AndonBoard() {
   const drilled = viewIndex !== 0;
 
   const kpis = board?.kpis;
+  // B6: the "Andon đang mở" tile and its sub now read from the SAME active-andon
+  // stream the ticker/tiles render (andon_events) instead of the unrelated
+  // alert_history table — so "4 open / 0 alerts" can no longer contradict.
+  // `raised` = active but not yet acknowledged by anyone.
+  const unackedAndons = (board?.andons ?? []).filter((a) => a.status === "raised").length;
   const connState: "live" | "poll" | "offline" = boardQuery.isError
     ? "offline"
     : socketConnected
@@ -249,7 +274,7 @@ export default function AndonBoard() {
           <KpiTile
             label={t("andonBoard.activeAndons", "Andon đang mở")}
             value={kpis ? String(kpis.activeAndons) : "—"}
-            sub={`${t("andonBoard.openAlerts", "Cảnh báo")}: ${kpis ? kpis.openAlerts : "—"}`}
+            sub={`${t("andonBoard.unacked", "Chưa xác nhận")}: ${board ? unackedAndons : "—"}`}
             tone={kpis && kpis.activeAndons > 0 ? "crit" : "good"}
           />
         </div>
@@ -426,6 +451,32 @@ export default function AndonBoard() {
                     align="end"
                     className="text-[clamp(0.6rem,0.8vw,1rem)]"
                   />
+                  {/* B6: acknowledge — hover pauses the ticker so this stays clickable */}
+                  {a.status === "raised" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleAck(a.id)}
+                      disabled={!canAck || ackingId != null}
+                      title={
+                        canAck
+                          ? t("andonBoard.ackHint", "Xác nhận đã tiếp nhận Andon này")
+                          : t("andonBoard.ackNoPerm", "Bạn không có quyền xác nhận Andon")
+                      }
+                      className="inline-flex items-center gap-1 rounded-md border border-current px-2 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-bold uppercase transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {ackingId === a.id ? (
+                        <Loader2 className="size-[0.9vw] min-h-3 min-w-3 animate-spin" aria-hidden />
+                      ) : (
+                        <Check className="size-[0.9vw] min-h-3 min-w-3" aria-hidden />
+                      )}
+                      {t("andonBoard.ack", "Xác nhận")}
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[clamp(0.6rem,0.8vw,1rem)] font-semibold text-success">
+                      <Check className="size-[0.9vw] min-h-3 min-w-3" aria-hidden />
+                      {t("andonBoard.acked", "Đã xác nhận")}
+                    </span>
+                  )}
                 </span>
               ))}
             </div>

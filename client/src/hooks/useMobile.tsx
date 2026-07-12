@@ -49,7 +49,11 @@ export function useIsCoarsePointer() {
 }
 
 export function useIsTablet() {
-  const [isTablet, setIsTablet] = React.useState<boolean>(false);
+  const [isTablet, setIsTablet] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const w = window.innerWidth;
+    return w >= MOBILE_BREAKPOINT && w < TABLET_BREAKPOINT;
+  });
 
   React.useEffect(() => {
     const mql = window.matchMedia(

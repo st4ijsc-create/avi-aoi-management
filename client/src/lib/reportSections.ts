@@ -139,7 +139,9 @@ export function computeFactoryAggregate(stationData: any[]): FactoryAggRow[] {
     cur.inspSum += r.totalInspections || 0;
     cur.output += r.output || 0;
     cur.stations += 1;
-    if (r.firstPassYield < 70) cur.lowYield += 1;
+    // FE-W1 B8 (doc 46) — a 0% FPY with no inspections = "no data", not low yield.
+    // Guard on sample size so the export tally matches filterStationRows / the on-screen KPI.
+    if (r.totalInspections > 0 && r.firstPassYield < 70) cur.lowYield += 1;
     map.set(f.id, cur);
   }
   return Array.from(map.values())

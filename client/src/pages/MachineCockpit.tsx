@@ -70,10 +70,29 @@ type GatedAction = MachineDetail["gatedActions"][number];
 // SMALL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-const fmtPct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v)}%`);
+/** Clamp a percentage to a sane [0,100] for DISPLAY (defensive vs. bad / re-multiplied inputs). */
+const clampPct = (n: number) => Math.max(0, Math.min(100, n));
+const fmtPct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(clampPct(v))}%`);
 const fmtNum = (v: number | null | undefined, digits = 0) =>
   v == null ? "—" : Number(v).toFixed(digits);
 const fmtHours = (v: number | null | undefined) => (v == null ? "—" : `${Number(v).toFixed(1)} h`);
+
+/**
+ * Render a telemetry descriptor / tag readably — NEVER "[object Object]".
+ * Capability telemetry tags are TelemetryDescriptor objects ({ key, label, ... }),
+ * so extract the human field; tolerate legacy string tags and null.
+ */
+function telemetryTagLabel(tag: unknown): string {
+  if (tag == null) return "—";
+  if (typeof tag === "string") return tag;
+  if (typeof tag === "object") {
+    const o = tag as { label?: unknown; key?: unknown; name?: unknown };
+    const v = o.label ?? o.key ?? o.name;
+    if (typeof v === "string" && v.trim().length > 0) return v;
+    return JSON.stringify(tag);
+  }
+  return String(tag);
+}
 
 function relTime(ts: number | null | undefined, now: number): string {
   if (ts == null) return "—";
@@ -139,7 +158,7 @@ function RadialGauge({
       </svg>
       <div className="-mt-[74px] mb-[40px] text-center">
         <div className="text-xl font-bold tabular-nums" style={{ color: value == null ? undefined : color }}>
-          {value == null ? "—" : `${Math.round(value)}%`}
+          {value == null ? "—" : `${Math.round(pct)}%`}
         </div>
       </div>
       <div className="text-sm font-medium">{label}</div>
@@ -839,8 +858,8 @@ export default function MachineCockpit() {
                 <MetricCard
                   icon={<HeartPulse className="h-4 w-4" />}
                   label={t("cockpit.kpiRisk", "Failure risk")}
-                  value={d.health.available ? fmtPct(d.health.value?.failureRisk != null ? d.health.value.failureRisk * 100 : null) : "—"}
-                  tone={d.health.value?.failureRisk != null && d.health.value.failureRisk > 0.6 ? "error" : "default"}
+                  value={d.health.available ? fmtPct(d.health.value?.failureRisk ?? null) : "—"}
+                  tone={d.health.value?.failureRisk != null && d.health.value.failureRisk > 60 ? "error" : "default"}
                 />
                 <MetricCard
                   icon={<AlertTriangle className="h-4 w-4" />}
@@ -891,9 +910,9 @@ export default function MachineCockpit() {
                         <div className="pt-1">
                           <div className="mb-1 text-xs text-muted-foreground">{t("cockpit.telemetryTags", "Telemetry tags")} ({d.resolvedCapability.value.telemetryTags.length})</div>
                           <div className="flex flex-wrap gap-1">
-                            {d.resolvedCapability.value.telemetryTags.slice(0, 12).map((tag) => (
-                              <Badge key={String((tag as { name?: string })?.name ?? JSON.stringify(tag))} variant="outline" className="text-[10px]">
-                                {String((tag as { name?: string })?.name ?? tag)}
+                            {d.resolvedCapability.value.telemetryTags.slice(0, 12).map((tag, i) => (
+                              <Badge key={`${telemetryTagLabel(tag)}-${i}`} variant="outline" className="text-[10px]">
+                                {telemetryTagLabel(tag)}
                               </Badge>
                             ))}
                           </div>
@@ -930,9 +949,9 @@ export default function MachineCockpit() {
                   <div className="space-y-6">
                     <div className="flex flex-wrap items-center justify-around gap-6">
                       <RadialGauge
-                        value={d.health.value.failureRisk != null ? d.health.value.failureRisk * 100 : null}
+                        value={d.health.value.failureRisk}
                         label={t("cockpit.failureRisk", "Failure risk")}
-                        color={d.health.value.failureRisk != null && d.health.value.failureRisk > 0.6 ? "#ef4444" : "#f59e0b"}
+                        color={d.health.value.failureRisk != null && d.health.value.failureRisk > 60 ? "#ef4444" : "#f59e0b"}
                         sub={d.health.value.maintenanceUrgency ?? undefined}
                       />
                       <div className="grid grid-cols-2 gap-x-8 gap-y-3">

@@ -18,7 +18,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
-import { useIsMobile } from "@/hooks/useMobile";
+import { useIsMobile, useIsTablet } from "@/hooks/useMobile";
 import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
@@ -108,9 +108,25 @@ export default function DashboardLayout({
   // shadcn only seeds from `defaultOpen` (never reads its cookie back), which reset the
   // rail to expanded on each page change. We control `open` from localStorage instead so
   // a collapsed rail stays collapsed when you switch pages.
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+  const [desktopOpen, setDesktopOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("sidebar_open") !== "false"; } catch { return true; }
   });
+
+  // B10 (doc 46 FE-W1) — on the tablet band (768–1023px) the full 264px rail would
+  // overflow the viewport and clip page content, so the rail auto-collapses to the icon
+  // rail there. Tablet collapse is ephemeral state (default collapsed) that never clobbers
+  // the persisted DESKTOP preference — resizing back to ≥1024px restores what you last set.
+  const isTablet = useIsTablet();
+  const [tabletOpen, setTabletOpen] = useState<boolean>(false);
+  const sidebarOpen = isTablet ? tabletOpen : desktopOpen;
+  const handleSidebarOpenChange = (o: boolean) => {
+    if (isTablet) {
+      setTabletOpen(o);
+    } else {
+      setDesktopOpen(o);
+      try { localStorage.setItem("sidebar_open", String(o)); } catch { /* storage unavailable */ }
+    }
+  };
 
   if (loading) {
     return <DashboardLayoutSkeleton />
@@ -148,10 +164,7 @@ export default function DashboardLayout({
   const shell = (
     <SidebarProvider
       open={sidebarOpen}
-      onOpenChange={(o) => {
-        setSidebarOpen(o);
-        try { localStorage.setItem("sidebar_open", String(o)); } catch { /* storage unavailable */ }
-      }}
+      onOpenChange={handleSidebarOpenChange}
       style={
         {
           // R1: desktop nav is a fixed-width icon rail.

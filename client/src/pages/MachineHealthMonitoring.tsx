@@ -66,6 +66,12 @@ interface HealthScore {
   lastUpdated: Date;
 }
 
+/** Clamp a percentage to a sane [0,100] for DISPLAY (defensive vs. bad inputs). */
+const clampPct = (n: number) => Math.max(0, Math.min(100, n));
+/** Honest percent label: "—" when missing, else a clamped integer percent. */
+const pctLabel = (v: number | null | undefined) =>
+  v == null ? "—" : `${Math.round(clampPct(v))}%`;
+
 // Health Status Badge
 function HealthStatusBadge({ status }: { status: 'healthy' | 'warning' | 'critical' }) {
   const { t } = useTranslation();
@@ -199,6 +205,17 @@ export function MachineHealthMonitoringContent() {
   // a calculated score come back as null → rendered as an honest "—".
   const { data: allMachineHealth, refetch: refetchAllHealth } =
     trpc.mqttClient.getAllMachineHealth.useQuery();
+  // DB-backed predictive-maintenance risk per machine (computeFailureRisk over
+  // heartbeat / anomaly / reliability history). Used as a REAL fallback fleet-health
+  // source when the in-memory calculated score (getAllMachineHealth) is null — health
+  // index = 100 - failureRisk, only for machines with actual data points. This keeps the
+  // fleet overview non-zero from real telemetry instead of an empty in-memory map, while
+  // still preferring an explicitly-calculated score when one exists.
+  const { data: rulForecast, refetch: refetchRul } =
+    trpc.predictiveMaintenance.listRulForecast.useQuery(
+      { limit: 200 },
+      { staleTime: 60_000 },
+    );
 
   // C3a — publish the currently-selected machine to the AI copilot so questions
   // like "OEE máy này?" resolve to this machine's code without typing it.
@@ -279,6 +296,14 @@ export function MachineHealthMonitoringContent() {
     const healthById = new Map<number, number | null>(
       (allMachineHealth ?? []).map((h) => [h.machineId, h.healthScore]),
     );
+    // Fallback health index derived from real PdM risk (100 - failureRisk), only for
+    // machines that actually have data points (dataPoints > 0) — never fabricated.
+    const riskHealthById = new Map<number, number | null>(
+      (rulForecast ?? []).map((r) => [
+        r.machineId,
+        r.dataPoints > 0 ? clampPct(100 - r.failureRisk) : null,
+      ]),
+    );
     return allOEE.map(oee => ({
       name: oee.machineCode,
       machineId: oee.machineId,
@@ -286,9 +311,13 @@ export function MachineHealthMonitoringContent() {
       availability: oee.availability,
       performance: oee.performance,
       quality: oee.quality,
-      healthScore: (healthById.get(oee.machineId) ?? null) as number | null,
+      // Prefer an explicitly-calculated in-memory score; else fall back to the
+      // DB-backed PdM-risk-derived health index; else honest "—" (null).
+      healthScore: (healthById.get(oee.machineId)
+        ?? riskHealthById.get(oee.machineId)
+        ?? null) as number | null,
     }));
-  }, [allOEE, allMachineHealth]);
+  }, [allOEE, allMachineHealth, rulForecast]);
 
   // Machines that actually have a real health score (for counts / averages that
   // must exclude the "—" machines rather than treat a missing score as 0).
@@ -355,7 +384,7 @@ export function MachineHealthMonitoringContent() {
                 <Download className="h-4 w-4 mr-2" />
                 {t('machines.exportReport')}
               </Button>
-              <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); refetchAllHealth(); }}>
+              <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); refetchAllHealth(); refetchRul(); }}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {t('machines.refresh')}
               </Button>
@@ -563,11 +592,11 @@ export function MachineHealthMonitoringContent() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
-                        <p className="text-2xl font-bold text-destructive">{pmRisk?.failureRisk ?? 0}%</p>
+                        <p className="text-2xl font-bold text-destructive">{pctLabel(pmRisk?.failureRisk)}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.confidence')}</p>
-                        <p className="text-2xl font-bold">{pmRisk?.confidenceScore ?? 0}%</p>
+                        <p className="text-2xl font-bold">{pctLabel(pmRisk?.confidenceScore)}</p>
                       </div>
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.mtbf')}</p>

@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -89,9 +89,11 @@ export default function WorkOrdersPage() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
-  const canCreate = hasPermission("machine_monitoring", "canCreate");
   const canEdit = hasPermission("machine_monitoring", "canEdit");
-  const canDelete = hasPermission("machine_monitoring", "canDelete");
+  // doc 46 B5 — create/assign/close/delete affordances are now ALWAYS rendered and
+  // gated via <PermissionGate mode="disable"> (disabled-with-reason) rather than
+  // hidden, so the page matches MaintenanceHome's "Create, assign, close" promise
+  // instead of looking view-only for users who lack the machine_monitoring grant.
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [machineFilter, setMachineFilter] = useState<string>("");
@@ -169,11 +171,11 @@ export default function WorkOrdersPage() {
                   <Badge variant="default">{t("workOrders.openCount")}: {summary.open}</Badge>
                 </span>
               )}
-              {canCreate && (
+              <PermissionGate module="machine_monitoring" action="canCreate" mode="disable">
                 <Button onClick={() => setCreateOpen(true)} size="sm">
                   <Plus className="h-4 w-4 mr-1" /> {t("workOrders.create")}
                 </Button>
-              )}
+              </PermissionGate>
             </>
           }
         />
@@ -248,16 +250,18 @@ export default function WorkOrdersPage() {
                     <TableCell className="text-xs">{ageLabel(r.openedAt, r.closedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        {canEdit && (
+                        {/* Edit opens the detail dialog — the assign / status / CLOSE
+                            surface. Disabled-with-reason when the user can't edit. */}
+                        <PermissionGate module="machine_monitoring" action="canEdit" mode="disable">
                           <Button size="sm" variant="ghost" aria-label={t("common.edit", "Edit")} onClick={() => setDetail(r)}>
                             <Pencil aria-hidden="true" className="h-4 w-4" />
                           </Button>
-                        )}
-                        {canDelete && (
+                        </PermissionGate>
+                        <PermissionGate module="machine_monitoring" action="canDelete" mode="disable">
                           <Button size="sm" variant="ghost" aria-label={t("common.delete", "Delete")} onClick={() => setConfirmDelete(r)}>
                             <Trash2 aria-hidden="true" className="h-4 w-4 text-destructive" />
                           </Button>
-                        )}
+                        </PermissionGate>
                       </div>
                     </TableCell>
                   </TableRow>

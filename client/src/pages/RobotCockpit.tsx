@@ -86,6 +86,23 @@ interface RobotTelemetryEvent {
 
 const fmtNum = (v: number | null | undefined, digits = 0) => (v == null ? "—" : Number(v).toFixed(digits));
 
+/**
+ * Render a telemetry descriptor / tag readably — NEVER "[object Object]".
+ * Capability telemetry tags are TelemetryDescriptor objects ({ key, label, ... }),
+ * so extract the human field; tolerate legacy string tags and null.
+ */
+function telemetryTagLabel(tag: unknown): string {
+  if (tag == null) return "—";
+  if (typeof tag === "string") return tag;
+  if (typeof tag === "object") {
+    const o = tag as { label?: unknown; key?: unknown; name?: unknown };
+    const v = o.label ?? o.key ?? o.name;
+    if (typeof v === "string" && v.trim().length > 0) return v;
+    return JSON.stringify(tag);
+  }
+  return String(tag);
+}
+
 function relTime(ts: number | null | undefined, now: number): string {
   if (ts == null) return "—";
   const s = Math.max(0, Math.round((now - ts) / 1000));
@@ -562,9 +579,9 @@ export default function RobotCockpit() {
                       <div className="pt-1">
                         <div className="mb-1 text-xs text-muted-foreground">{t("cockpit.telemetryTags", "Telemetry tags")}</div>
                         <div className="flex flex-wrap gap-1">
-                          {d.capability.value.telemetryTags.slice(0, 10).map((tag) => (
-                            <Badge key={String((tag as { name?: string })?.name ?? JSON.stringify(tag))} variant="outline" className="text-[10px]">
-                              {String((tag as { name?: string })?.name ?? tag)}
+                          {d.capability.value.telemetryTags.slice(0, 10).map((tag, i) => (
+                            <Badge key={`${telemetryTagLabel(tag)}-${i}`} variant="outline" className="text-[10px]">
+                              {telemetryTagLabel(tag)}
                             </Badge>
                           ))}
                         </div>
