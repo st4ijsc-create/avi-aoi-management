@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { establishSession, LoginError, verifyCredentials } from "./_core/authService";
 import { systemRouter } from "./_core/systemRouter";
-import { isManusOAuthEnabled, listEnabledExternalProviders } from "./_core/oauthProviders";
+import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
 import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
@@ -147,6 +147,7 @@ import { programmingRouter } from "./routers/programmingRouter"; // Doc 09 / D0:
 import { irRouter } from "./routers/irRouter"; // Doc 16 §11.1 / D1: IR programming layer (motion/IO block AST + semantic safety linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED; flows through the EXISTING programming gate)
 import { apiKeyRouter } from "./routers/apiKeyRouter"; // Control plane: scoped API-key admin CRUD (create-show-once + sha256 hash reuse)
 import { erpAdminRouter } from "./routers/erpAdminRouter"; // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth clients (create-show-once) + outbox status/dead-letter retry (ERP_OAUTH_ENABLED for client mutations)
+import { enterpriseIntegrationRouter } from "./routers/enterpriseIntegrationRouter"; // W6-5 (doc 44 G5.24): WMS/PLM/CMMS connector admin — sync status/id-map (read) + manual sync/reconciliation (adminProcedure); WMS/PLM/CMMS_INTEGRATION_ENABLED default OFF
 import { ecosystemAdminRouter } from "./routers/ecosystemAdminRouter"; // U6-c (doc 21 §6 / G-12): admin-only READ — soft-ref integrity report (asset↔task↔program↔genealogy orphans)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
@@ -199,6 +200,9 @@ import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-
 import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
 import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
 import { ntfClassifierRouter } from "./routers/ntfClassifierRouter"; // doc 44 W5-B1 (G4.12): trained NTF/false-call classifier lifecycle (train/eval-gate/activate) + serve method
+import { doraRouter } from "./routers/doraRouter"; // doc 44 W6-4 (G5.20): DORA metrics (deploy-freq/lead-time/change-fail/MTTR) — read + admin record (DORA_ENABLED OFF)
+import { sopRouter } from "./routers/sopRouter"; // doc 44 W6-1 (G5.14): e-SOP CRUD + execution (start/confirm-step/finish) — LDS-L5 §6.2
+import { alarmKpiRouter } from "./routers/alarmKpiRouter"; // doc 44 W6-1 (G5.11 đo): READ-ONLY ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -215,10 +219,7 @@ export const appRouter = router({
         message: existingAdmins.length === 0 ? 'Cần tạo tài khoản admin đầu tiên' : 'Hệ thống đã được cài đặt'
       };
     }),
-    oauthProviders: publicProcedure.query(() => ({
-      manus: isManusOAuthEnabled(),
-      providers: listEnabledExternalProviders(),
-    })),
+    oauthProviders: publicProcedure.query(() => listEnabledSsoMethods()),
     logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -429,6 +430,8 @@ export const appRouter = router({
   lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
   parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
   ntfClassifier: ntfClassifierRouter, // doc 44 W5-B1 — trained NTF/false-call classifier (G4.12)
+  sop: sopRouter, // doc 44 W6-1 — e-SOP CRUD + execution (LDS-L5 §6.2, G5.14)
+  alarmKpi: alarmKpiRouter, // doc 44 W6-1 — ISA-18.2 alarm KPI dashboard aggregation (G5.11 đo)
   orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C
@@ -459,6 +462,7 @@ export const appRouter = router({
   ir: irRouter, // D1 (doc 16 §11.1 / Khối 6): IR programming layer (linter + URScript/ROS2 transpilers; DPC_IR_V2_ENABLED)
   apiKey: apiKeyRouter,
   erpAdmin: erpAdminRouter, // K0+ (doc 16 Khối 0): ERP gateway admin — OAuth2 clients + outbox ops
+  enterpriseIntegration: enterpriseIntegrationRouter, // W6-5 (doc 44 G5.24): WMS/PLM/CMMS connectors + enterprise reconciliation (admin)
   ecosystemAdmin: ecosystemAdminRouter, // U6-c (doc 21 §6 / G-12): soft-ref integrity report (READ-ONLY, admin)
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
@@ -562,6 +566,7 @@ export const appRouter = router({
   security: securityRouter, // doc 33 F5 (SYNAPSE §5.11): READ-ONLY policy-as-code governance
   securityIdentity: securityIdentityRouter, // doc 37 C2: device X.509 PKI + service (SPIFFE-lite) identity (admin; enforcement flags OFF)
   observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
+  dora: doraRouter, // doc 44 W6-4 (G5.20): DORA metrics — deploy-freq/lead-time/change-fail/MTTR (read) + admin record (DORA_ENABLED OFF)
   contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
   orchestrationGov: orchestrationGovRouter, // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG + priority/SLA + four-eyes
   trafficGov: trafficGovRouter, // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview

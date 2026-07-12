@@ -12,6 +12,7 @@ import { createHmac } from "node:crypto";
 import * as db from "../db";
 import { canonicalize } from "./security/auditChain"; // doc 33 D4 (F5 §5.11.2)
 import { secPlatformEnabled } from "./security/policyGate";
+import { getSecretSync } from "./security/secretManager"; // doc 44 G5.23
 
 // ─── Content-hash integrity (doc 33 D4, hardened §11) ────────────────────────
 // The high-frequency CRUD audit gets a per-row KEYED content hash (HMAC-SHA256), tamper-evident
@@ -26,9 +27,16 @@ import { secPlatformEnabled } from "./security/policyGate";
 // (AUDIT_HASH_SECRET, else SESSION_SECRET) prevents an attacker from RE-SIGNING altered content;
 // set AUDIT_HASH_SECRET in production for real tamper-evidence.
 
-/** Stable secret for the CRUD-audit HMAC. MUST be constant across restarts so old rows still verify. */
+/**
+ * Stable secret for the CRUD-audit HMAC. MUST be constant across restarts so old rows still verify.
+ *
+ * doc 44 G5.23 — resolved through the secret manager (OpenBao/Vault) with an honest env fallback.
+ * When SECRET_MANAGER_ENABLED is OFF (default) this is exactly the prior env behaviour (bit-compat).
+ * When ON, the operator MUST store the SAME value in Vault (the constancy requirement extends to the
+ * Vault-backed value) or previously-hashed rows will no longer verify.
+ */
 function auditHashKey(): string {
-  return process.env.AUDIT_HASH_SECRET || process.env.SESSION_SECRET || "synapse-crud-audit-v1";
+  return getSecretSync("AUDIT_HASH_SECRET") || getSecretSync("SESSION_SECRET") || "synapse-crud-audit-v1";
 }
 
 /** Stored `details` without the integrity fields (so the hash is over stable content). */

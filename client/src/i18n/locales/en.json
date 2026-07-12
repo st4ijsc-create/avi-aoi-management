@@ -361,7 +361,12 @@
     "linkCoverage": "{{linked}}/{{total}} materials linked to a package"
   },
   "masterDataAudit": {
-    "op": { "create": "Create", "update": "Update", "delete": "Delete", "other": "Other" },
+    "op": {
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "other": "Other"
+    },
     "title": "Master data audit log",
     "subtitle": "Who changed what, when — master data change history (read-only).",
     "error": "Failed to load audit log",
@@ -8659,7 +8664,11 @@
       "mapping": "Map this product to the inspection machine(s) that will run it.",
       "review": "Review readiness and finish."
     },
-    "status": { "todo": "To do", "done": "Done", "skipped": "Skipped" },
+    "status": {
+      "todo": "To do",
+      "done": "Done",
+      "skipped": "Skipped"
+    },
     "step1": {
       "chooseExisting": "Configure an existing product",
       "createNew": "Create a new product",
@@ -8679,13 +8688,19 @@
       "created": "Product created",
       "codeNameRequired": "Code and name are required"
     },
-    "points": { "open": "Open point editor", "count": "{{count}} measurement points defined" },
+    "points": {
+      "open": "Open point editor",
+      "count": "{{count}} measurement points defined"
+    },
     "thresholds": {
       "open": "Open point editor (limits)",
       "summary": "{{withLimits}}/{{total}} points have LSL/USL ({{pct}}%)",
       "hint": "Set limits per point in the editor, or use the AI Threshold advisor to propose them for approval."
     },
-    "mapping": { "open": "Open machine mapping", "count": "{{count}} machine mapping(s) for this product" },
+    "mapping": {
+      "open": "Open machine mapping",
+      "count": "{{count}} machine mapping(s) for this product"
+    },
     "review": {
       "progress": "Setup completeness",
       "requiredSummary": "{{done}} of {{total}} required steps complete",
@@ -14868,6 +14883,149 @@
       "draft": "Draft — awaiting approval",
       "approved": "Approved",
       "retired": "Retired"
+    }
+  },
+  "sop": {
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "retired": "Retired"
+    },
+    "view": {
+      "title": "Standard Operating Procedure (e-SOP)",
+      "subtitle": "Step-by-step guidance by product/station; confirm mandatory checklist steps to proceed.",
+      "context": "Context",
+      "product": "Product",
+      "station": "Station",
+      "stationPh": "Select station…",
+      "noSop": "No e-SOP for this context",
+      "noSopDesc": "Pick a different product/station, or ask an engineer to activate a matching SOP.",
+      "started": "SOP started",
+      "start": "Start",
+      "finish": "Finish",
+      "progress": "Confirmed {{done}}/{{req}} mandatory steps",
+      "stepOf": "Step {{n}}/{{total}}",
+      "noSteps": "SOP has no steps yet",
+      "noStepsDesc": "Ask an engineer to add steps to this SOP.",
+      "currentStep": "Step {{n}}",
+      "stepMedia": "Illustration for step {{n}}",
+      "confirmRequired": "This step must be confirmed before you can continue",
+      "scanLabel": "Scan/enter the required value",
+      "scanPh": "Scan jig/material code…",
+      "confirmed": "Confirmed",
+      "confirm": "Confirm step",
+      "prev": "Previous",
+      "next": "Next",
+      "confirmToAdvance": "Confirm the step to continue",
+      "allSteps": "All steps",
+      "mustConfirm": "required",
+      "stepConfirmed": "Step confirmed",
+      "finishIncomplete": "There are mandatory steps not yet confirmed",
+      "finished": "SOP completed",
+      "confirmErr": {
+        "INPUT_MISMATCH": "Scanned value does not match the requirement",
+        "INPUT_REQUIRED": "This step requires a scan/entry",
+        "NO_SUCH_STEP": "Step does not exist",
+        "NOT_FOUND": "Execution not found",
+        "NOT_IN_PROGRESS": "Execution already ended"
+      }
+    },
+    "mgmt": {
+      "title": "e-SOP Management",
+      "subtitle": "Author standard operating procedures: steps, mandatory checklist, versions, activation.",
+      "new": "New SOP",
+      "edit": "Edit SOP",
+      "empty": "No SOPs yet",
+      "emptyDesc": "Create the first SOP to guide operators step by step.",
+      "listTitle": "SOP list",
+      "col": {
+        "code": "Code",
+        "title": "Title",
+        "version": "Version",
+        "steps": "Steps",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "activate": "Activate",
+      "retire": "Retire",
+      "clone": "Create new version",
+      "delete": "Delete (draft)",
+      "created": "SOP created",
+      "updated": "SOP updated",
+      "statusChanged": "Status changed",
+      "cloned": "New version created (draft)",
+      "deleted": "Draft SOP deleted",
+      "needCodeTitle": "Enter SOP code and title",
+      "entityLabel": "SOP",
+      "delErr": {
+        "NOT_FOUND": "Not found",
+        "NOT_DRAFT": "Only drafts can be deleted",
+        "HAS_EXECUTIONS": "Has executions, cannot delete"
+      },
+      "field": {
+        "code": "SOP code",
+        "title": "Title",
+        "description": "Description",
+        "product": "Product (optional)",
+        "station": "Station (optional)",
+        "stationPh": "Select station…",
+        "steps": "Steps"
+      },
+      "addStep": "Add step",
+      "removeStep": "Remove step",
+      "stepText": "Step content…",
+      "requiresConfirm": "Requires confirmation",
+      "expectedInput": "Expected value (scan jig/material)",
+      "mediaRef": "Image/video path (optional)"
+    }
+  },
+  "alarmKpi": {
+    "title": "Alarm KPI (ISA-18.2)",
+    "subtitle": "Measure alarm-system performance per ISA-18.2: rate/hour/operator, alarm flood, standing alarms, bad actors and priority distribution.",
+    "windowHours": "Last {{h}} hours",
+    "breach": {
+      "title": "ISA-18.2 threshold exceeded",
+      "rate": "Alarm rate exceeds {{max}}/hour/operator",
+      "flood": "There is an alarm-flood period (>10 alarms / 10 min)",
+      "standing": "Too many standing alarms (≥5)",
+      "distribution": "High-priority alarm share far exceeds the 5% target"
+    },
+    "kpi": {
+      "total": "Total alarms",
+      "ratePerOp": "Alarms/hr/operator",
+      "ratePerOpHint": "Target ≤6, ceiling ≤12 (ISA-18.2)",
+      "ratePerHour": "Alarms/hr",
+      "floodPeak": "10-min peak",
+      "floodHint": "Max alarms in any 10-minute window (flood when >10)",
+      "standing": "Standing alarms",
+      "standingHint": "Unresolved > {{h}}h (target <5)",
+      "operators": "Operators"
+    },
+    "dist": {
+      "title": "Priority distribution",
+      "desc": "ISA-18.2 target: ~80% low · 15% medium · 5% high",
+      "target": "target {{target}}%"
+    },
+    "priority": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "sourceCounts": "Sources: {{andon}} Andon · {{pred}} AI alerts",
+    "standing": {
+      "title": "Longest-standing alarms",
+      "desc": "Unresolved for over {{h}} hours",
+      "none": "No standing alarms — good.",
+      "age": "{{h}}h"
+    },
+    "badActors": {
+      "title": "Top alarm bad actors",
+      "desc": "A few sources usually cause most alarms — fix at the root",
+      "none": "No alarms in the window."
+    },
+    "empty": {
+      "title": "No alarm data",
+      "desc": "No Andon/AI alerts recorded in the selected window."
     }
   }
 }

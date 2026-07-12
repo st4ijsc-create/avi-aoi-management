@@ -361,7 +361,12 @@
     "linkCoverage": "{{linked}}/{{total}} 条物料已关联封装"
   },
   "masterDataAudit": {
-    "op": { "create": "创建", "update": "更新", "delete": "删除", "other": "其他" },
+    "op": {
+      "create": "创建",
+      "update": "更新",
+      "delete": "删除",
+      "other": "其他"
+    },
     "title": "主数据审计日志",
     "subtitle": "谁在何时更改了什么 — 主数据变更历史（只读）。",
     "error": "无法加载审计日志",
@@ -14886,5 +14891,148 @@
   },
   "diff": {
     "identical": "两个版本完全相同"
+  },
+  "sop": {
+    "status": {
+      "draft": "草稿",
+      "active": "生效",
+      "retired": "停用"
+    },
+    "view": {
+      "title": "标准作业程序 (e-SOP)",
+      "subtitle": "按产品/工位分步指导；确认必检步骤后方可继续。",
+      "context": "上下文",
+      "product": "产品",
+      "station": "工位",
+      "stationPh": "选择工位…",
+      "noSop": "该上下文没有 e-SOP",
+      "noSopDesc": "请选择其他产品/工位，或请工程师激活匹配的 SOP。",
+      "started": "已开始 SOP",
+      "start": "开始",
+      "finish": "完成",
+      "progress": "已确认 {{done}}/{{req}} 个必检步骤",
+      "stepOf": "步骤 {{n}}/{{total}}",
+      "noSteps": "SOP 尚无步骤",
+      "noStepsDesc": "请工程师为该 SOP 添加步骤。",
+      "currentStep": "步骤 {{n}}",
+      "stepMedia": "步骤 {{n}} 图示",
+      "confirmRequired": "此步骤必须确认后方可继续",
+      "scanLabel": "扫描/输入所需值",
+      "scanPh": "扫描治具/物料编码…",
+      "confirmed": "已确认",
+      "confirm": "确认步骤",
+      "prev": "上一步",
+      "next": "下一步",
+      "confirmToAdvance": "确认该步骤以继续",
+      "allSteps": "全部步骤",
+      "mustConfirm": "必检",
+      "stepConfirmed": "步骤已确认",
+      "finishIncomplete": "仍有必检步骤未确认",
+      "finished": "SOP 已完成",
+      "confirmErr": {
+        "INPUT_MISMATCH": "扫描值与要求不符",
+        "INPUT_REQUIRED": "该步骤需要扫描/输入",
+        "NO_SUCH_STEP": "步骤不存在",
+        "NOT_FOUND": "未找到执行记录",
+        "NOT_IN_PROGRESS": "执行已结束"
+      }
+    },
+    "mgmt": {
+      "title": "e-SOP 管理",
+      "subtitle": "编写标准作业程序：步骤、必检清单、版本、激活。",
+      "new": "新建 SOP",
+      "edit": "编辑 SOP",
+      "empty": "暂无 SOP",
+      "emptyDesc": "创建第一个 SOP，为操作员提供分步指导。",
+      "listTitle": "SOP 列表",
+      "col": {
+        "code": "编码",
+        "title": "标题",
+        "version": "版本",
+        "steps": "步骤数",
+        "status": "状态",
+        "actions": "操作"
+      },
+      "activate": "激活",
+      "retire": "停用",
+      "clone": "创建新版本",
+      "delete": "删除（草稿）",
+      "created": "已创建 SOP",
+      "updated": "已更新 SOP",
+      "statusChanged": "已更改状态",
+      "cloned": "已创建新版本（草稿）",
+      "deleted": "已删除草稿 SOP",
+      "needCodeTitle": "请输入 SOP 编码和标题",
+      "entityLabel": "SOP",
+      "delErr": {
+        "NOT_FOUND": "未找到",
+        "NOT_DRAFT": "仅可删除草稿",
+        "HAS_EXECUTIONS": "已有执行记录，无法删除"
+      },
+      "field": {
+        "code": "SOP 编码",
+        "title": "标题",
+        "description": "描述",
+        "product": "产品（可选）",
+        "station": "工位（可选）",
+        "stationPh": "选择工位…",
+        "steps": "步骤"
+      },
+      "addStep": "添加步骤",
+      "removeStep": "删除步骤",
+      "stepText": "步骤内容…",
+      "requiresConfirm": "需要确认",
+      "expectedInput": "期望值（扫描治具/物料）",
+      "mediaRef": "图片/视频路径（可选）"
+    }
+  },
+  "alarmKpi": {
+    "title": "报警 KPI (ISA-18.2)",
+    "subtitle": "按 ISA-18.2 衡量报警系统性能：每小时每操作员频率、报警泛滥、滞留报警、主要来源及优先级分布。",
+    "windowHours": "过去 {{h}} 小时",
+    "breach": {
+      "title": "超出 ISA-18.2 阈值",
+      "rate": "报警频率超过 {{max}}/小时/操作员",
+      "flood": "存在报警泛滥时段（10 分钟内 >10 条）",
+      "standing": "滞留报警过多（≥5）",
+      "distribution": "高优先级报警占比远超 5% 目标"
+    },
+    "kpi": {
+      "total": "报警总数",
+      "ratePerOp": "报警/小时/操作员",
+      "ratePerOpHint": "目标 ≤6，上限 ≤12 (ISA-18.2)",
+      "ratePerHour": "报警/小时",
+      "floodPeak": "10 分钟峰值",
+      "floodHint": "任一 10 分钟窗口内的最大报警数（>10 即泛滥）",
+      "standing": "滞留报警",
+      "standingHint": "未处理 > {{h}}小时（目标 <5）",
+      "operators": "操作员"
+    },
+    "dist": {
+      "title": "优先级分布",
+      "desc": "ISA-18.2 目标：约 80% 低 · 15% 中 · 5% 高",
+      "target": "目标 {{target}}%"
+    },
+    "priority": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "sourceCounts": "来源：{{andon}} 安灯 · {{pred}} AI 预警",
+    "standing": {
+      "title": "滞留最久的报警",
+      "desc": "未处理超过 {{h}} 小时",
+      "none": "无滞留报警 — 良好。",
+      "age": "{{h}}小时"
+    },
+    "badActors": {
+      "title": "报警主要来源 (bad actors)",
+      "desc": "少数来源通常造成大部分报警 — 优先根治",
+      "none": "窗口内暂无报警。"
+    },
+    "empty": {
+      "title": "暂无报警数据",
+      "desc": "所选窗口内未记录任何安灯/AI 预警。"
+    }
   }
 }

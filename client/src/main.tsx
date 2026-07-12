@@ -54,6 +54,20 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+// Doc 44 G5.17 — phát x-correlation-id cho mỗi batch tRPC (1 "tick" thao tác người
+// dùng). Server đọc header này vào AsyncLocalStorage → mọi log/lệnh/genealogy phía
+// server mang cùng correlation_id → trace "nút bấm → lệnh → máy". Fallback an toàn khi
+// crypto.randomUUID không có (http LAN, secure-context off).
+function newCorrelationId(): string {
+  try {
+    const c = globalThis.crypto;
+    if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 // Doc 44 G5.3 — httpBatchLink thay httpLink: N query cùng tick (dashboard nhiều
 // widget) gộp thành 1 HTTP request thay vì N request rời. Server dùng
 // createExpressMiddleware mặc định (không tắt batching) nên an toàn; batching
@@ -64,6 +78,9 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers() {
+        return { "x-correlation-id": newCorrelationId() };
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),

@@ -191,6 +191,23 @@ export async function establishSession(
   const cookieOptions = getSessionCookieOptions(req);
   res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
+  // doc 44 G5.18 — anomalous-login detection (additive; ANOMALOUS_LOGIN_ENABLED,
+  // default OFF → immediate no-op, zero added cost / bit-compat). Run BEFORE the
+  // success audit row is written so the history baseline excludes THIS login (so a
+  // new IP still reads as "new"). Best-effort: never throws / never blocks login.
+  try {
+    const { checkLoginAnomaly } = await import("../services/security/anomalousLoginDetector");
+    await checkLoginAnomaly({
+      userId: user.id,
+      username: user.name ?? user.openId,
+      ip: audit.ipAddress,
+      userAgent: audit.userAgent,
+      at: Date.now(),
+    });
+  } catch {
+    /* anomalous-login detection must never block or break login */
+  }
+
   await recordAudit("success", user, user.name ?? user.openId, audit, {
     method: opts.method ?? "password",
   });

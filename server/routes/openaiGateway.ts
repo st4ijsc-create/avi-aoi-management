@@ -32,6 +32,7 @@ import express, {
   type Express,
 } from "express";
 import { timingSafeEqual } from "node:crypto";
+import { requireServiceIdentity } from "../services/security/requireServiceIdentity";
 import {
   chatCompletion,
   chatCompletionStream,
@@ -210,6 +211,13 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   // Own body parser so the gateway works regardless of global config / in tests.
   // express.json is idempotent (skips when a body was already parsed upstream).
   router.use(express.json({ limit: process.env.OPENAI_GATEWAY_BODY_LIMIT || "20mb" }));
+
+  // doc 44 G5.22 (SERVICE_MTLS) — sample service-to-service identity seam. This is a
+  // genuine internal-consumer surface (in-app copilot + engineer tooling call it).
+  // Pass-through when SERVICE_MTLS_ENABLED is OFF (default → bit-compat); when ON,
+  // callers must present a valid SPIFFE-lite JWT-SVID (Authorization: SVID <token>
+  // or x-svid) verified against the internal CA. Additive + non-breaking.
+  router.use(requireServiceIdentity({ audience: "openai-gateway" }));
 
   // Bearer auth on every endpoint. Fail-closed: no key configured ⇒ reject all.
   router.use((req: Request, res: Response, next) => {

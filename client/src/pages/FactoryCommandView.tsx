@@ -35,6 +35,9 @@ import {
 
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket } from "@/lib/socketManager";
+import { severityMeta } from "@/lib/severityCanonical";
+// doc 44 G5.12 — nguồn canonical DUY NHẤT map trạng thái→màu (token oklch, KHÔNG hex).
+import { canonicalDotClass, canonicalBadgeClass } from "@/lib/canonicalStatusColor";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 
 import DashboardLayout from "@/components/DashboardLayout";
@@ -96,6 +99,10 @@ interface CommandIssue {
   severity: IssueSeverity;
   label: string;
   ageMinutes: number;
+  /** doc 44 W6-2 (G5.11) — impact score 0..100 (present when IMPACT_ALERT_ENABLED). */
+  impact?: number;
+  /** doc 44 W6-2 (G5.11) — raw issues folded into this one (dedup); 1 when none. */
+  count?: number;
 }
 
 interface OverviewResponse {
@@ -125,16 +132,15 @@ interface MachineDetailSummary {
   telemetryTags?: TelemetryTag[];
 }
 
-// ── Bảng màu trạng thái (theme-aware qua token) ─────────────────────────────
-const STATUS_META: Record<
-  MachineStatus,
-  { labelVi: string; dot: string; badge: string }
-> = {
-  running: { labelVi: "Đang chạy", dot: "bg-emerald-500", badge: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" },
-  idle: { labelVi: "Chờ", dot: "bg-amber-500", badge: "border-amber-500/40 text-amber-600 dark:text-amber-400" },
-  down: { labelVi: "Lỗi/Dừng", dot: "bg-red-500", badge: "border-red-500/40 text-red-600 dark:text-red-400" },
-  maintenance: { labelVi: "Bảo trì", dot: "bg-sky-500", badge: "border-sky-500/40 text-sky-600 dark:text-sky-400" },
-  offline: { labelVi: "Mất kết nối", dot: "bg-muted-foreground/50", badge: "border-muted-foreground/30 text-muted-foreground" },
+// ── Bảng màu trạng thái (doc 44 G5.12: dot/badge từ nguồn canonical, token oklch) ──
+// ISA-101: idle/offline = trung tính (xám); running=success; down=danger;
+// maintenance=info. Chỉ label giữ tại chỗ; MÀU đi qua canonicalStatusColor.
+const STATUS_META: Record<MachineStatus, { labelVi: string; dot: string; badge: string }> = {
+  running: { labelVi: "Đang chạy", dot: canonicalDotClass("running"), badge: canonicalBadgeClass("running") },
+  idle: { labelVi: "Chờ", dot: canonicalDotClass("idle"), badge: canonicalBadgeClass("idle") },
+  down: { labelVi: "Lỗi/Dừng", dot: canonicalDotClass("down"), badge: canonicalBadgeClass("down") },
+  maintenance: { labelVi: "Bảo trì", dot: canonicalDotClass("maintenance"), badge: canonicalBadgeClass("maintenance") },
+  offline: { labelVi: "Mất kết nối", dot: canonicalDotClass("offline"), badge: canonicalBadgeClass("offline") },
 };
 
 const SEVERITY_RANK: Record<IssueSeverity, number> = { critical: 0, warning: 1, info: 2 };
@@ -162,13 +168,14 @@ function StatChip({
   value: string;
   tone?: "default" | "good" | "warn" | "bad";
 }) {
+  // doc 44 G5.12 — dùng semantic token (success/warning/destructive), KHÔNG hex.
   const toneCls =
     tone === "good"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-success"
       : tone === "warn"
-        ? "text-amber-600 dark:text-amber-400"
+        ? "text-warning"
         : tone === "bad"
-          ? "text-red-600 dark:text-red-400"
+          ? "text-destructive"
           : "text-foreground";
   return (
     <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5 min-w-[7.5rem]">
@@ -318,15 +325,21 @@ export default function FactoryCommandView() {
     [machines, onlyIssues, issueMachineIds],
   );
 
-  // Issue đã sắp xếp: severity ↑ rồi tuổi ↓ (nặng + lâu lên đầu).
-  const sortedIssues = useMemo(
-    () =>
-      [...issues].sort((a, b) => {
-        const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-        return s !== 0 ? s : b.ageMinutes - a.ageMinutes;
-      }),
-    [issues],
-  );
+  // Issue đã sắp xếp. doc 44 W6-2 (G5.11): khi server trả impact (cờ ON) → tôn
+  // trọng thứ tự theo TÁC ĐỘNG (impact ↓, tuổi ↓); ngược lại giữ sort cũ
+  // severity ↑ → tuổi ↓ (nặng + lâu lên đầu).
+  const sortedIssues = useMemo(() => {
+    const hasImpact = issues.some((i) => i.impact != null);
+    return [...issues].sort((a, b) => {
+      if (hasImpact) {
+        const im = (b.impact ?? 0) - (a.impact ?? 0);
+        if (im !== 0) return im;
+        return b.ageMinutes - a.ageMinutes;
+      }
+      const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+      return s !== 0 ? s : b.ageMinutes - a.ageMinutes;
+    });
+  }, [issues]);
 
   // ── KPI (dữ liệu thật từ overview) ──
   const kpi = useMemo(() => {
@@ -497,7 +510,7 @@ export default function FactoryCommandView() {
           <aside className="hidden lg:flex w-80 shrink-0 flex-col rounded-xl border bg-card">
             <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <AlertTriangle className="h-4 w-4 text-warning" />
                 <h2 className="text-sm font-semibold">
                   {t("factoryCommand.openIssues", "Vấn đề đang mở")}
                 </h2>
@@ -539,12 +552,8 @@ export default function FactoryCommandView() {
                 <ul className="flex flex-col gap-1.5 p-1">
                   {sortedIssues.map((iss) => {
                     const Icon = ISSUE_ICON[iss.kind];
-                    const sevCls =
-                      iss.severity === "critical"
-                        ? "border-l-red-500"
-                        : iss.severity === "warning"
-                          ? "border-l-amber-500"
-                          : "border-l-sky-500";
+                    // doc 44 G5.15 — màu viền theo 1 thang severity canonical.
+                    const sevCls = severityMeta(iss.severity).borderLeft;
                     return (
                       <li key={iss.id}>
                         <button
@@ -559,8 +568,25 @@ export default function FactoryCommandView() {
                           <div className="flex items-center gap-2">
                             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="font-mono text-xs text-muted-foreground">{iss.machineCode}</span>
-                            <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-                              {formatAge(iss.ageMinutes)}
+                            {/* doc 44 G5.11 — dedup: N cảnh báo cùng máy+loại → 1 dòng + số đếm. */}
+                            {iss.count != null && iss.count > 1 && (
+                              <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums" title={t("factoryCommand.mergedCount", "Đã gộp {{count}} cảnh báo cùng loại", { count: iss.count })}>
+                                ×{iss.count}
+                              </Badge>
+                            )}
+                            <span className="ml-auto flex items-center gap-1.5">
+                              {/* doc 44 G5.11 — điểm tác động (khi cờ impact bật). */}
+                              {iss.impact != null && (
+                                <span
+                                  className="text-[10px] font-semibold tabular-nums text-muted-foreground"
+                                  title={t("factoryCommand.impactScore", "Điểm tác động (0–100)")}
+                                >
+                                  {t("factoryCommand.impactLabel", "TĐ")} {iss.impact}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground tabular-nums">
+                                {formatAge(iss.ageMinutes)}
+                              </span>
                             </span>
                           </div>
                           <div className="mt-0.5 line-clamp-2 text-sm">{iss.label}</div>
@@ -638,7 +664,7 @@ export default function FactoryCommandView() {
                       <ul className="space-y-1">
                         {detail.alarms.map((a) => (
                           <li key={a.id} className="flex items-center gap-2 text-sm">
-                            <Radio className="h-3.5 w-3.5 text-red-500" />
+                            <Radio className="h-3.5 w-3.5 text-destructive" />
                             {a.label}
                           </li>
                         ))}
@@ -710,7 +736,7 @@ export default function FactoryCommandView() {
                       const Icon = ISSUE_ICON[iss.kind];
                       return (
                         <div key={iss.id} className="flex items-start gap-2 rounded-lg border p-3">
-                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                           <div className="min-w-0">
                             <div className="text-sm">{iss.label}</div>
                             <div className="text-[11px] text-muted-foreground">

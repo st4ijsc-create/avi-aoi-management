@@ -322,8 +322,12 @@ export default function MasterDataAudit() {
                   data={data.items as AuditItem[]}
                   getRowId={(r) => r.id}
                   columns={columns}
-                  pageSize={25}
                   initialSort={{ columnId: "createdAt", dir: "desc" }}
+                  /* doc 44 G5.21 — audit log fetches up to 300 rows; window them
+                     (opt-in, replaces paging) instead of rendering all at once. */
+                  virtualized
+                  virtualMaxHeight={560}
+                  rowHeight={48}
                 />
               )}
             </QueryBoundary>

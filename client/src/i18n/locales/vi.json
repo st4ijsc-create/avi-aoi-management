@@ -361,7 +361,12 @@
     "linkCoverage": "{{linked}}/{{total}} vật liệu đã gán package"
   },
   "masterDataAudit": {
-    "op": { "create": "Tạo", "update": "Cập nhật", "delete": "Xoá", "other": "Khác" },
+    "op": {
+      "create": "Tạo",
+      "update": "Cập nhật",
+      "delete": "Xoá",
+      "other": "Khác"
+    },
     "title": "Nhật ký kiểm toán dữ liệu",
     "subtitle": "Ai đổi gì, khi nào — lịch sử thay đổi dữ liệu chủ (chỉ đọc).",
     "error": "Không tải được nhật ký kiểm toán",
@@ -8638,7 +8643,11 @@
       "mapping": "Ánh xạ sản phẩm này tới (các) máy kiểm tra sẽ chạy nó.",
       "review": "Rà soát mức độ sẵn sàng và hoàn tất."
     },
-    "status": { "todo": "Chưa làm", "done": "Xong", "skipped": "Đã bỏ qua" },
+    "status": {
+      "todo": "Chưa làm",
+      "done": "Xong",
+      "skipped": "Đã bỏ qua"
+    },
     "step1": {
       "chooseExisting": "Cấu hình sản phẩm có sẵn",
       "createNew": "Tạo sản phẩm mới",
@@ -8658,13 +8667,19 @@
       "created": "Đã tạo sản phẩm",
       "codeNameRequired": "Bắt buộc có mã và tên"
     },
-    "points": { "open": "Mở trình chỉnh sửa điểm", "count": "Đã định nghĩa {{count}} điểm đo" },
+    "points": {
+      "open": "Mở trình chỉnh sửa điểm",
+      "count": "Đã định nghĩa {{count}} điểm đo"
+    },
     "thresholds": {
       "open": "Mở trình chỉnh sửa điểm (giới hạn)",
       "summary": "{{withLimits}}/{{total}} điểm có LSL/USL ({{pct}}%)",
       "hint": "Đặt giới hạn cho từng điểm trong trình chỉnh sửa, hoặc dùng AI Threshold advisor để đề xuất chờ duyệt."
     },
-    "mapping": { "open": "Mở ánh xạ máy", "count": "{{count}} ánh xạ máy cho sản phẩm này" },
+    "mapping": {
+      "open": "Mở ánh xạ máy",
+      "count": "{{count}} ánh xạ máy cho sản phẩm này"
+    },
     "review": {
       "progress": "Mức độ hoàn thiện",
       "requiredSummary": "Hoàn thành {{done}}/{{total}} bước bắt buộc",
@@ -14847,6 +14862,149 @@
       "draft": "Nháp — chờ duyệt",
       "approved": "Đã duyệt",
       "retired": "Đã thu hồi"
+    }
+  },
+  "sop": {
+    "status": {
+      "draft": "Nháp",
+      "active": "Hiệu lực",
+      "retired": "Ngừng"
+    },
+    "view": {
+      "title": "Quy trình thao tác (e-SOP)",
+      "subtitle": "Hướng dẫn từng bước theo sản phẩm/trạm; xác nhận checklist bắt buộc mới cho tiếp.",
+      "context": "Ngữ cảnh",
+      "product": "Sản phẩm",
+      "station": "Trạm",
+      "stationPh": "Chọn trạm…",
+      "noSop": "Không có e-SOP cho ngữ cảnh này",
+      "noSopDesc": "Chọn sản phẩm/trạm khác, hoặc yêu cầu kỹ sư kích hoạt một SOP phù hợp.",
+      "started": "Đã bắt đầu SOP",
+      "start": "Bắt đầu",
+      "finish": "Hoàn tất",
+      "progress": "Đã xác nhận {{done}}/{{req}} bước bắt buộc",
+      "stepOf": "Bước {{n}}/{{total}}",
+      "noSteps": "SOP chưa có bước nào",
+      "noStepsDesc": "Yêu cầu kỹ sư bổ sung các bước cho SOP này.",
+      "currentStep": "Bước {{n}}",
+      "stepMedia": "Minh hoạ bước {{n}}",
+      "confirmRequired": "Bước này bắt buộc xác nhận mới cho tiếp",
+      "scanLabel": "Quét/nhập giá trị yêu cầu",
+      "scanPh": "Quét mã jig/vật tư…",
+      "confirmed": "Đã xác nhận",
+      "confirm": "Xác nhận bước",
+      "prev": "Trước",
+      "next": "Tiếp",
+      "confirmToAdvance": "Xác nhận bước để tiếp tục",
+      "allSteps": "Toàn bộ bước",
+      "mustConfirm": "bắt buộc",
+      "stepConfirmed": "Đã xác nhận bước",
+      "finishIncomplete": "Còn bước bắt buộc chưa xác nhận",
+      "finished": "Đã hoàn tất SOP",
+      "confirmErr": {
+        "INPUT_MISMATCH": "Giá trị quét không khớp yêu cầu",
+        "INPUT_REQUIRED": "Bước này cần quét/nhập giá trị",
+        "NO_SUCH_STEP": "Bước không tồn tại",
+        "NOT_FOUND": "Không tìm thấy phiên",
+        "NOT_IN_PROGRESS": "Phiên đã kết thúc"
+      }
+    },
+    "mgmt": {
+      "title": "Quản trị e-SOP",
+      "subtitle": "Soạn quy trình thao tác chuẩn: bước, checklist bắt buộc, phiên bản, kích hoạt.",
+      "new": "SOP mới",
+      "edit": "Sửa SOP",
+      "empty": "Chưa có SOP nào",
+      "emptyDesc": "Tạo SOP đầu tiên để hướng dẫn thao tác từng bước cho vận hành viên.",
+      "listTitle": "Danh sách SOP",
+      "col": {
+        "code": "Mã",
+        "title": "Tiêu đề",
+        "version": "Phiên bản",
+        "steps": "Số bước",
+        "status": "Trạng thái",
+        "actions": "Thao tác"
+      },
+      "activate": "Kích hoạt",
+      "retire": "Ngừng hiệu lực",
+      "clone": "Tạo phiên bản mới",
+      "delete": "Xoá (nháp)",
+      "created": "Đã tạo SOP",
+      "updated": "Đã cập nhật SOP",
+      "statusChanged": "Đã đổi trạng thái",
+      "cloned": "Đã tạo phiên bản mới (nháp)",
+      "deleted": "Đã xoá SOP nháp",
+      "needCodeTitle": "Nhập mã và tiêu đề SOP",
+      "entityLabel": "SOP",
+      "delErr": {
+        "NOT_FOUND": "Không tìm thấy",
+        "NOT_DRAFT": "Chỉ xoá được bản nháp",
+        "HAS_EXECUTIONS": "Đã có phiên thực thi, không xoá được"
+      },
+      "field": {
+        "code": "Mã SOP",
+        "title": "Tiêu đề",
+        "description": "Mô tả",
+        "product": "Sản phẩm (tuỳ chọn)",
+        "station": "Trạm (tuỳ chọn)",
+        "stationPh": "Chọn trạm…",
+        "steps": "Các bước"
+      },
+      "addStep": "Thêm bước",
+      "removeStep": "Xoá bước",
+      "stepText": "Nội dung bước…",
+      "requiresConfirm": "Bắt buộc xác nhận",
+      "expectedInput": "Giá trị mong đợi (scan jig/vật tư)",
+      "mediaRef": "Đường dẫn ảnh/video (tuỳ chọn)"
+    }
+  },
+  "alarmKpi": {
+    "title": "KPI Cảnh báo (ISA-18.2)",
+    "subtitle": "Đo lường hiệu năng hệ cảnh báo theo ISA-18.2: tần suất/giờ/operator, ngập báo động (flood), báo động tồn đọng, thủ phạm chính và phân bố ưu tiên.",
+    "windowHours": "{{h}} giờ qua",
+    "breach": {
+      "title": "Vượt ngưỡng ISA-18.2",
+      "rate": "Tần suất báo động vượt {{max}}/giờ/operator",
+      "flood": "Có giai đoạn ngập báo động (>10 alarm / 10 phút)",
+      "standing": "Quá nhiều báo động tồn đọng (≥5)",
+      "distribution": "Tỉ lệ báo động mức cao vượt xa mục tiêu 5%"
+    },
+    "kpi": {
+      "total": "Tổng báo động",
+      "ratePerOp": "Alarm/giờ/operator",
+      "ratePerOpHint": "Mục tiêu ≤6, trần ≤12 (ISA-18.2)",
+      "ratePerHour": "Alarm/giờ",
+      "floodPeak": "Đỉnh 10 phút",
+      "floodHint": "Số alarm lớn nhất trong 1 cửa sổ 10 phút (flood khi >10)",
+      "standing": "Báo động tồn đọng",
+      "standingHint": "Chưa xử lý > {{h}}h (mục tiêu <5)",
+      "operators": "Operator"
+    },
+    "dist": {
+      "title": "Phân bố ưu tiên",
+      "desc": "Mục tiêu ISA-18.2: ~80% thấp · 15% trung bình · 5% cao",
+      "target": "mục tiêu {{target}}%"
+    },
+    "priority": {
+      "low": "Thấp",
+      "medium": "Trung bình",
+      "high": "Cao"
+    },
+    "sourceCounts": "Nguồn: {{andon}} Andon · {{pred}} cảnh báo AI",
+    "standing": {
+      "title": "Báo động tồn đọng lâu nhất",
+      "desc": "Chưa xử lý quá {{h}} giờ",
+      "none": "Không có báo động tồn đọng — tốt.",
+      "age": "{{h}}h"
+    },
+    "badActors": {
+      "title": "Top thủ phạm báo động (bad actors)",
+      "desc": "Ít nguồn thường gây phần lớn báo động — ưu tiên xử lý gốc",
+      "none": "Chưa có báo động trong cửa sổ."
+    },
+    "empty": {
+      "title": "Chưa có dữ liệu cảnh báo",
+      "desc": "Chưa ghi nhận Andon/cảnh báo AI nào trong cửa sổ đã chọn."
     }
   }
 }

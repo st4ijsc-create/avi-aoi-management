@@ -35,6 +35,8 @@ import {
 } from "../../drizzle/schema";
 import { getAllMachinesOEELive } from "./oeeService";
 import { executeRows } from "../utils/kpi";
+// doc 44 W6-2 (G5.11) — impact-based priority + dedup (PURE, flag-gated).
+import { prioritizeIssues, type IssueImpactContext } from "./factoryCommandPriority";
 // doc 44 W2-A4 (G2.14/G2.15): governed metric provenance — the OEE numbers on
 // this screen come from the ONE semantic-layer definition (contracts/metrics/
 // oee.yaml → oeeService, the canonical implementation this service already
@@ -79,6 +81,16 @@ export interface CommandIssue {
   severity: "critical" | "warning" | "info";
   label: string;
   ageMinutes: number;
+  /**
+   * doc 44 W6-2 (G5.11) — ADDITIVE. Impact score 0..100 (f(severity, production
+   * loss, OEE, kind, age)); present only when IMPACT_ALERT_ENABLED is on.
+   */
+  impact?: number;
+  /**
+   * doc 44 W6-2 (G5.11) — ADDITIVE. How many raw issues on the same machine+kind
+   * were folded into this one (dedup). 1 (or omitted) when nothing was merged.
+   */
+  count?: number;
 }
 
 export interface FactoryCommandOverview {
@@ -135,8 +147,6 @@ function ageMinutesFrom(ts: Date | string | number | null | undefined, now: numb
   if (Number.isNaN(ms)) return 0;
   return Math.max(0, Math.round((now - ms) / 60000));
 }
-
-const SEVERITY_RANK: Record<CommandIssue["severity"], number> = { critical: 0, warning: 1, info: 2 };
 
 // PdM: coi là rủi ro cao khi failureRisk ≥ 70 HOẶC urgency ∈ {HIGH, CRITICAL}.
 const PDM_RISK_THRESHOLD = 70;
@@ -395,17 +405,31 @@ export async function getFactoryCommandOverview(params?: {
     });
   }
 
-  // Sắp xếp: severity trước, rồi tuổi giảm dần (cũ/nặng lên trên).
-  issues.sort((a, b) => {
-    const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-    if (s !== 0) return s;
-    return b.ageMinutes - a.ageMinutes;
-  });
+  // ── Ưu tiên theo TÁC ĐỘNG + gộp (doc 44 W6-2 / G5.11) ────────────────────
+  // Bối cảnh máy cho điểm tác động: trạng thái + OEE + line có đang sản xuất.
+  // "Line đang sản xuất" = có ÍT NHẤT một máy cùng line đang running.
+  const lineProducing = new Map<number, boolean>();
+  for (const n of nodes) {
+    if (n.status === "running") lineProducing.set(n.lineId, true);
+  }
+  const nodeById = new Map<number, CommandMachineNode>(nodes.map((n) => [n.id, n]));
+  const getIssueContext = (issue: CommandIssue): IssueImpactContext | null => {
+    const n = nodeById.get(issue.machineId);
+    if (!n) return null;
+    return {
+      machineStatus: n.status,
+      oeePercent: n.oeePercent,
+      lineProducing: lineProducing.get(n.lineId) ?? false,
+    };
+  };
+  // Flag OFF → sort cũ (severity → tuổi), không dedup/không impact (parity).
+  // Flag ON  → stamp impact + gộp fingerprint + sort theo tác động.
+  const finalIssues = prioritizeIssues(issues, getIssueContext);
 
   return {
     factories: factoryRows,
     machines: nodes,
-    issues,
+    issues: finalIssues,
     // doc 44 W2-A4 — additive provenance for the OEE KPI (fail-safe null).
     oeeDefinitionVersion: getMetricDefinitionVersion("OEE"),
   };

@@ -19,6 +19,8 @@ import * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Tone } from "./tokens";
+// doc 44 G5.12 — nguồn canonical DUY NHẤT ánh xạ trạng thái→màu (PackML/máy/tuyến).
+import { canonicalBadgeTone } from "@/lib/canonicalStatusColor";
 
 const TONE_CLASS: Record<Exclude<Tone, "accent">, string> = {
   default: "", // falls through to Badge variant="outline"
@@ -50,7 +52,10 @@ function inferTone(status: string): Exclude<Tone, "accent"> {
   for (const [kw, tone] of Object.entries(KEYWORD_TONE)) {
     if (s.includes(kw)) return tone;
   }
-  return "default";
+  // doc 44 G5.12 — fallback vào nguồn canonical cho các trạng thái PackML/máy/tuyến
+  // KHÔNG có trong keyword map (EXECUTE/HELD/PRODUCING/CHANGEOVER…). Trả 'default'
+  // khi canonical cũng không nhận ra → không đổi hành vi cũ cho nhãn lạ.
+  return canonicalBadgeTone(status);
 }
 
 /** shadcn <Badge> variants — used by the SOLID render path (W4). */

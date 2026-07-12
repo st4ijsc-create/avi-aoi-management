@@ -1,4 +1,5 @@
 import { ENV } from "./env";
+import { isSamlEnabled } from "./samlProvider";
 
 export type ExternalOAuthProvider = "google" | "microsoft" | "github";
 
@@ -101,4 +102,22 @@ export function listEnabledExternalProviders(): ExternalOAuthProvider[] {
 
 export function isManusOAuthEnabled() {
   return Boolean(ENV.oAuthServerUrl && ENV.oAuthPortalUrl);
+}
+
+/**
+ * doc 44 W6-4 (G5.19) — one canonical description of every enabled SSO method,
+ * surfaced to the login UI (tRPC auth.oauthProviders + REST /api/oauth/providers).
+ * SAML rides alongside the OAuth `providers` list without being an OAuth code-flow
+ * provider (its initiate/callback live at /api/saml/login + /api/saml/acs).
+ */
+export function listEnabledSsoMethods(): {
+  manus: boolean;
+  providers: ExternalOAuthProvider[];
+  saml: boolean;
+} {
+  return {
+    manus: isManusOAuthEnabled(),
+    providers: listEnabledExternalProviders(),
+    saml: isSamlEnabled(),
+  };
 }

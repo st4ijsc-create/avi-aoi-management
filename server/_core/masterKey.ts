@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { getSecretSync } from "../services/security/secretManager";
 
 /**
  * Master API key validation (security hardening — Phase 0 WS0.2).
@@ -27,9 +28,19 @@ function warnOnce(message: string): void {
   }
 }
 
+/**
+ * doc 44 G5.23 — resolve MASTER_API_KEY through the secret manager (OpenBao/Vault)
+ * with an honest env fallback. When SECRET_MANAGER_ENABLED is OFF (default) this is
+ * exactly `process.env.MASTER_API_KEY` (bit-compat); when ON + warmed it returns the
+ * Vault-backed value. Sync (getSecretSync never touches the network).
+ */
+function resolveMasterKey(): string {
+  return (getSecretSync("MASTER_API_KEY") ?? "").trim();
+}
+
 /** True when MASTER_API_KEY is configured to a non-default, usable value. */
 export function isMasterKeyConfigured(): boolean {
-  const configured = (process.env.MASTER_API_KEY ?? "").trim();
+  const configured = resolveMasterKey();
   return !INSECURE_DEFAULTS.has(configured);
 }
 
@@ -38,7 +49,7 @@ export function isMasterKeyConfigured(): boolean {
  * Returns false (auth disabled) in production when the env is unset/default.
  */
 export function isValidMasterKey(provided: string | undefined | null): boolean {
-  const configured = (process.env.MASTER_API_KEY ?? "").trim();
+  const configured = resolveMasterKey();
   const isProd = process.env.NODE_ENV === "production";
 
   if (INSECURE_DEFAULTS.has(configured)) {

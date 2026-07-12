@@ -79,6 +79,15 @@ export function startReconciliationScheduler(): void {
   if (cronTimer) return;
   if (!reconcileCronEnabled()) return; // default OFF — the cycle stays callable on demand
   registerExampleReconcileProviders(registerReconcileProvider);
+  // doc 44 W6-5 (G5.24) — register REAL enterprise providers (WMS inventory, MES
+  // production) from env. Honest no-op unless the relevant *_RECONCILE_URL is set.
+  // Fire-and-forget (the daily timer fires long after this resolves).
+  void import("../integration/reconciliationProviders")
+    .then(({ registerEnterpriseReconcileProviders }) => {
+      const n = registerEnterpriseReconcileProviders(registerReconcileProvider);
+      if (n > 0) console.log(`[Reconcile] registered ${n} enterprise provider(s)`);
+    })
+    .catch((err) => console.error("[Reconcile] enterprise provider registration failed:", err?.message ?? err));
   const intervalMs = Math.max(60_000, Number(process.env.RECONCILE_INTERVAL_MS ?? 86_400_000)); // daily
   cronTimer = setInterval(() => {
     void runReconciliationCycle()

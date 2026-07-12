@@ -8,7 +8,7 @@
  * This is the factory-scale layer above the per-cell 2D twin (/rf-test-cell):
  *   plant (this page) → line → machine → cell twin.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -21,8 +21,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { PollFreshness } from "@/components/PollFreshness";
+import {
+  useUnsStream,
+  unsMachineSnapshot,
+  isa95Slug,
+  type UnsClientSnapshot,
+} from "@/lib/unsStreamClient";
 import FactoryFloor3D, { statusColor, statusLabel, type MachineNode } from "@/components/FactoryFloor3D";
-import { Factory, Cpu, Activity, CheckCircle2, PauseCircle, XCircle, FlaskConical, Info, RefreshCw, Box, Move } from "lucide-react";
+import { Factory, Cpu, Activity, CheckCircle2, PauseCircle, XCircle, FlaskConical, Info, RefreshCw, Box, Move, Radio, WifiOff } from "lucide-react";
+
+/**
+ * doc 44 W6-2 (G5.13) — overlay a LIVE UNS state snapshot onto a polled machine
+ * row (canonical PackML state + health → the latestStatus/heartbeatStatus the 3D
+ * scene colours by). Only applied when the stream is live; otherwise the poll is
+ * the source of truth (honest fallback).
+ */
+function overlayFromUns<T extends MachineNode>(row: T, snap: UnsClientSnapshot | null): T {
+  if (!snap) return row;
+  const state = String(snap.state ?? "").toUpperCase();
+  const latestStatus = snap.health === "offline" ? "offline" : "online";
+  let heartbeatStatus = row.heartbeatStatus;
+  if (["EXECUTE", "STARTING", "RUNNING", "PRODUCING", "PROCESSING"].includes(state)) heartbeatStatus = "running";
+  else if (["IDLE", "STANDBY", "READY"].includes(state)) heartbeatStatus = "idle";
+  else if (["STOPPED", "HELD", "HOLD", "ABORTED", "SUSPENDED", "COMPLETE", "OFFLINE"].includes(state)) heartbeatStatus = "stopped";
+  return { ...row, latestStatus, heartbeatStatus };
+}
 
 interface Row extends MachineNode {
   factory: { id: number; name: string; code: string };
@@ -31,12 +54,19 @@ interface Row extends MachineNode {
 export function FactoryLiveMap3DContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  // Poll hygiene (doc 27 B12): pause the 5s poll when the tab is hidden,
-  // refetch immediately on return — see usePollingInterval.
-  const polling = usePollingInterval(5000);
-  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { ...polling });
   const [factoryId, setFactoryId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+
+  // ── doc 44 W6-2 (G5.13) — WS snapshot+stream instead of a hard 5s poll.
+  // The stream keys on the factory's ISA-95 site prefix (slug of factory code).
+  // When live, we overlay live state and SLOW the poll to a 30s safety net;
+  // when the server flag is OFF (no snapshot ever arrives) we keep polling 5s.
+  //
+  // Poll hygiene (doc 27 B12): pause the poll when the tab is hidden, refetch on
+  // return. Interval adapts to the WS state (`uns.live`, wired below).
+  const [wsLive, setWsLive] = useState(false);
+  const polling = usePollingInterval(wsLive ? 30000 : 5000);
+  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { ...polling });
 
   const rows = (machinesQ.data ?? []) as unknown as Row[];
 
@@ -48,7 +78,24 @@ export function FactoryLiveMap3DContent() {
   }, [rows]);
 
   const activeFactoryId = factoryId ?? factories[0]?.id ?? null;
-  const machines = useMemo(() => rows.filter((r) => r.factory?.id === activeFactoryId), [rows, activeFactoryId]);
+  const activeFactory = useMemo(
+    () => factories.find((f) => f.id === activeFactoryId) ?? null,
+    [factories, activeFactoryId],
+  );
+  const sitePrefix = activeFactory ? isa95Slug(activeFactory.code) : null;
+
+  const uns = useUnsStream({ pathPrefix: sitePrefix, aspects: ["state"], enabled: true });
+  // Keep the poll-interval state in sync with the live flag (one source of truth).
+  useEffect(() => {
+    setWsLive(uns.live);
+  }, [uns.live]);
+
+  const machines = useMemo(() => {
+    const inFactory = rows.filter((r) => r.factory?.id === activeFactoryId);
+    if (!uns.live) return inFactory;
+    // Overlay live UNS state (by machineId) when the stream is live.
+    return inFactory.map((r) => overlayFromUns(r, unsMachineSnapshot(uns, r.id)));
+  }, [rows, activeFactoryId, uns.live, uns.byMachineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const kpi = useMemo(() => {
     let running = 0, idle = 0, offline = 0, up = 0;
@@ -70,7 +117,20 @@ export function FactoryLiveMap3DContent() {
           description={t("flm.subtitle", "Mỗi máy là một khối 3D tô màu theo trạng thái thực — bấm để xem chi tiết & mở mô phỏng cụm")}
           actions={
             <>
-              {/* Stale badge (audit F10): honest "updated Ns ago" for the 5s poll. */}
+              {/* doc 44 G5.13 — honest live/poll indicator. WS live (snapshot+stream)
+                  vs 5s poll fallback; "chậm" when the stream goes silent. */}
+              {uns.live ? (
+                <Badge variant="outline" className={uns.stale ? "gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400" : "gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"}>
+                  <Radio className="h-3 w-3" />
+                  {uns.stale ? t("flm.wsStale", "Trực tiếp (chậm)") : t("flm.wsLive", "Trực tiếp (WS)")}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 text-muted-foreground">
+                  <WifiOff className="h-3 w-3" />
+                  {t("flm.wsPoll", "Poll 5s")}
+                </Badge>
+              )}
+              {/* Stale badge (audit F10): honest "updated Ns ago" for the poll. */}
               <PollFreshness updatedAt={machinesQ.dataUpdatedAt} isFetching={machinesQ.isFetching} />
               <Select value={activeFactoryId ? String(activeFactoryId) : undefined} onValueChange={(v) => { setFactoryId(Number(v)); setSelected(null); }}>
                 <SelectTrigger className="w-[220px]"><SelectValue placeholder={t("flm.pickFactory", "Chọn nhà máy")} /></SelectTrigger>

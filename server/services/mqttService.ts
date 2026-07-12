@@ -331,6 +331,84 @@ const MQTT_TLS_KEY = process.env.MQTT_TLS_KEY || '';
 // password keep working (so enabling this never locks out existing devices).
 const MQTT_REQUIRE_PASSWORD = process.env.MQTT_REQUIRE_PASSWORD === 'true';
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 44 G5.22 — device mTLS wire (additive, DEFAULT OFF = server-TLS only, fully
+// bit-compatible with existing clients). When MQTT_MTLS_ENABLED the MQTTS listener
+// asks for a client certificate (requestCert) and pins the internal CA (ca), and
+// the authenticate handler verifies the presented device cert via
+// deviceIdentityService.verifyDeviceCert. rejectUnauthorized stays FALSE so the
+// TLS layer never hard-drops a connection — the soft-verify + MQTT_MTLS_MODE
+// decides admission at the app layer:
+//   • "permissive" (default) → a missing/invalid client cert is LOGGED and ALLOWED
+//     (safe rollout: existing server-TLS clients keep connecting),
+//   • "strict"               → a missing/invalid client cert is REJECTED.
+// This ONLY affects the MQTTS (TLS) listener; the plaintext TCP/WS listeners and
+// their auth are untouched.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Is device mTLS ENFORCEMENT active on the MQTTS listener? Default OFF. */
+export function mqttMtlsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.MQTT_MTLS_ENABLED === 'true' || env.MQTT_MTLS_ENABLED === '1';
+}
+
+/** mTLS admission mode for a missing/invalid client cert. Default "permissive". */
+export function mqttMtlsMode(env: NodeJS.ProcessEnv = process.env): 'permissive' | 'strict' {
+  return env.MQTT_MTLS_MODE === 'strict' ? 'strict' : 'permissive';
+}
+
+export interface MqttTlsBaseOpts {
+  key: Buffer | string;
+  cert: Buffer | string;
+}
+
+/**
+ * PURE builder for the TLS listener options. Given the already-read key/cert (+
+ * optional CA PEMs when mTLS is on), returns the exact options object passed to
+ * aedes-server-factory's `tls`.
+ *   • mtlsEnabled=false → { key, cert } EXACTLY as before (bit-compat, no requestCert).
+ *   • mtlsEnabled=true  → adds requestCert:true, rejectUnauthorized:false, ca:[…].
+ * Kept pure (no CA/DB access) so it is directly unit-testable.
+ */
+export function buildMqttTlsOptions(
+  base: MqttTlsBaseOpts,
+  opts: { mtlsEnabled: boolean; caPems?: Array<Buffer | string> } = { mtlsEnabled: false },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { key: base.key, cert: base.cert };
+  if (opts.mtlsEnabled) {
+    out.requestCert = true;
+    // Soft-verify at the app layer (deviceIdentityService) so we can honour
+    // MQTT_MTLS_MODE instead of a hard TLS-level drop.
+    out.rejectUnauthorized = false;
+    const cas = (opts.caPems ?? []).filter((c) => c != null && String(c).length > 0);
+    if (cas.length > 0) out.ca = cas;
+  }
+  return out;
+}
+
+/**
+ * PURE admission decision for a peer certificate under mTLS. Given the flag/mode
+ * and whether a (valid) client cert was presented, returns whether the client may
+ * proceed. Mirrors the deviceIdentityService fail-safe policy.
+ */
+export function decideMtlsAdmission(input: {
+  enabled: boolean;
+  mode: 'permissive' | 'strict';
+  hasCert: boolean;
+  certValid: boolean;
+}): { allow: boolean; reason: string } {
+  if (!input.enabled) return { allow: true, reason: 'mtls-off' };
+  if (input.hasCert && input.certValid) return { allow: true, reason: 'ok' };
+  const what = input.hasCert ? 'invalid client certificate' : 'no client certificate';
+  if (input.mode === 'strict') return { allow: false, reason: `${what} (strict)` };
+  return { allow: true, reason: `${what} (permissive — allowed, logged)` };
+}
+
+/** Convert a DER certificate buffer to PEM (for deviceIdentityService verify). */
+export function derToPem(der: Buffer): string {
+  const b64 = der.toString('base64').replace(/(.{64})/g, '$1\n');
+  return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
+}
+
 // External MQTT broker configuration (HiveMQ Public or custom)
 const EXTERNAL_MQTT_ENABLED = process.env.EXTERNAL_MQTT_ENABLED === 'true';
 const EXTERNAL_MQTT_BROKER = process.env.EXTERNAL_MQTT_BROKER || 'mqtt://broker.hivemq.com';
@@ -421,20 +499,14 @@ export function initMqttBroker() {
 
   // Phase 1 WS1.3 — Optional MQTTS (TLS) listener. Additive: existing plaintext
   // listeners are untouched. Requires MQTT_TLS_CERT + MQTT_TLS_KEY (PEM files).
+  // doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
+  // pinned internal CA (loaded async), so the listener setup is deferred to a
+  // helper. mTLS OFF path stays option-identical to the prior behaviour.
   if (MQTT_TLS_ENABLED) {
     if (!MQTT_TLS_CERT || !MQTT_TLS_KEY) {
       console.error('[MQTT] MQTT_TLS_ENABLED but MQTT_TLS_CERT/MQTT_TLS_KEY not set — skipping TLS listener.');
     } else {
-      try {
-        const tlsOpts = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
-        mqttTlsServer = createServer(aedes, { tls: tlsOpts });
-        attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
-        mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
-          console.log(`[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}`);
-        });
-      } catch (err) {
-        console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
-      }
+      void startMqttTlsListener();
     }
   }
 
@@ -453,6 +525,102 @@ export function initMqttBroker() {
 
   // Start stale client detection
   startStaleClientChecker();
+}
+
+/**
+ * doc 44 G5.22 — start the MQTTS (TLS) listener, wiring device mTLS when enabled.
+ * Async because pinning the internal CA (buildCaCert) is async. When mTLS is OFF
+ * the options are IDENTICAL to the prior { key, cert } (bit-compat); when ON they
+ * add requestCert + rejectUnauthorized:false + the pinned CA (internal CA cert
+ * plus an optional external CA bundle from MQTT_MTLS_CA).
+ */
+async function startMqttTlsListener(): Promise<void> {
+  if (!aedes) return;
+  try {
+    const base = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
+    const mtlsOn = mqttMtlsEnabled();
+    const caPems: Array<Buffer | string> = [];
+    if (mtlsOn) {
+      // Pin the internal CA so aedes advertises it in the client-cert request.
+      try {
+        const { buildCaCert } = await import('./security/internalCa');
+        const ca = await buildCaCert();
+        if (ca?.certPem) caPems.push(ca.certPem);
+      } catch (caErr) {
+        console.warn('[MQTT] mTLS: could not load internal CA (continuing without pin):', (caErr as Error)?.message ?? caErr);
+      }
+      // Optional additional CA bundle (e.g. an external device CA).
+      const extCaPath = (process.env.MQTT_MTLS_CA || '').trim();
+      if (extCaPath) {
+        try { caPems.push(readFileSync(extCaPath)); }
+        catch (e) { console.warn('[MQTT] mTLS: MQTT_MTLS_CA unreadable:', (e as Error)?.message ?? e); }
+      }
+    }
+    const tlsOpts = buildMqttTlsOptions(base, { mtlsEnabled: mtlsOn, caPems });
+    mqttTlsServer = createServer(aedes, { tls: tlsOpts });
+    attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
+    mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
+      console.log(
+        `[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}` +
+          (mtlsOn ? ` (mTLS=${mqttMtlsMode()}, client cert requested)` : ''),
+      );
+    });
+  } catch (err) {
+    console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
+  }
+}
+
+/**
+ * doc 44 G5.22 — evaluate a connecting client's TLS peer certificate against the
+ * device PKI and decide admission per MQTT_MTLS_MODE. Returns {allow:true,
+ * reason:'mtls-off'} immediately when mTLS is disabled (callers guard on the flag
+ * too, so this is doubly safe / non-breaking). Never throws.
+ */
+export async function evaluateMqttPeerCert(
+  client: { conn?: unknown; id?: string } | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ allow: boolean; reason: string; spiffeId?: string; deviceId?: string }> {
+  const enabled = mqttMtlsEnabled(env);
+  if (!enabled) return { allow: true, reason: 'mtls-off' };
+  const mode = mqttMtlsMode(env);
+
+  // Extract the peer certificate DER from the underlying TLS socket, if any.
+  let pem: string | undefined;
+  try {
+    const conn = client?.conn as { getPeerCertificate?: (detailed?: boolean) => { raw?: Buffer } } | undefined;
+    const cert = conn?.getPeerCertificate?.(true);
+    if (cert?.raw && cert.raw.length > 0) pem = derToPem(cert.raw);
+  } catch {
+    /* no TLS socket / plaintext client → treated as "no cert" below */
+  }
+
+  const hasCert = !!pem;
+  let certValid = false;
+  let spiffeId: string | undefined;
+  let deviceId: string | undefined;
+  let verifyReason: string | undefined;
+  if (hasCert) {
+    try {
+      const { verifyDeviceCert } = await import('./security/deviceIdentityService');
+      // enabled:true forces a REAL crypto verdict (not the device-PKI soft-allow),
+      // because inside the mTLS path we genuinely want to validate the presented cert.
+      const v = await verifyDeviceCert(pem!, { enabled: true });
+      certValid = v.valid;
+      spiffeId = v.spiffeId;
+      deviceId = v.deviceId;
+      verifyReason = v.reason;
+    } catch (e) {
+      verifyReason = `verify error: ${(e as Error)?.message ?? e}`;
+    }
+  }
+
+  const decision = decideMtlsAdmission({ enabled, mode, hasCert, certValid });
+  return {
+    allow: decision.allow,
+    reason: verifyReason && hasCert ? `${decision.reason} [${verifyReason}]` : decision.reason,
+    spiffeId,
+    deviceId,
+  };
 }
 
 /**
@@ -523,6 +691,21 @@ function setupEventHandlers() {
   // Client authentication
   aedes.authenticate = async (client, username, password, callback) => {
     try {
+      // doc 44 G5.22 — device mTLS admission (additive; guarded by MQTT_MTLS_ENABLED,
+      // default OFF → skipped entirely = bit-compat). In "strict" mode a missing/invalid
+      // client certificate is rejected here; in "permissive" mode it is logged + allowed.
+      if (mqttMtlsEnabled()) {
+        const admission = await evaluateMqttPeerCert(client);
+        if (!admission.allow) {
+          console.warn(`[MQTT] mTLS admission denied for ${client.id}: ${admission.reason}`);
+          callback({ returnCode: 5 } as any, false);
+          return;
+        }
+        if (admission.reason !== 'ok') {
+          console.warn(`[MQTT] mTLS admission (${mqttMtlsMode()}) for ${client.id}: ${admission.reason}`);
+        }
+      }
+
       // Extract device info from username (format: deviceId:deviceName:deviceModel)
       const [deviceId, deviceName, deviceModel] = (username?.toString() || '').split(':');
       

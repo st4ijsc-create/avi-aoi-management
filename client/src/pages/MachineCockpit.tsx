@@ -176,7 +176,7 @@ function CapabilitiesValidationBadge({ machineId }: { machineId: number }) {
   const warnCount = fresh.errors.length + fresh.unknownKeys.length;
   if (fresh.ok && warnCount === 0) {
     return (
-      <Badge className="bg-emerald-500 text-[10px] text-white">
+      <Badge className="bg-success text-[10px] text-success-foreground">
         {t("cockpit.capsOk", "Capabilities validated")} · {fresh.deviceTypeKey}
       </Badge>
     );
@@ -661,7 +661,7 @@ function MaintenanceTab({ machineId, now }: { machineId: number; now: number }) 
                       <div className="flex items-center gap-2">
                         <StatusBadge status={String(e.category ?? "other")} tone={downtimeTone(String(e.category ?? ""))} className="px-1.5 py-0 text-[10px] capitalize" />
                         {ongoing
-                          ? <Badge className="bg-red-500 px-1.5 py-0 text-[10px] text-white">{t("cockpit.moOngoing", "ONGOING")}</Badge>
+                          ? <Badge className="bg-destructive px-1.5 py-0 text-[10px] text-destructive-foreground">{t("cockpit.moOngoing", "ONGOING")}</Badge>
                           : <span className="text-xs font-medium">{fmtMinutes(e.duration)}</span>}
                         <span className="ml-auto text-[11px] text-muted-foreground">{tsToLocale(start)}</span>
                       </div>
@@ -786,7 +786,7 @@ export default function MachineCockpit() {
           actions={
             <div className="flex items-center gap-2">
               {connected === true && (
-                <Badge className="gap-1 bg-emerald-500 text-white"><Wifi className="h-3.5 w-3.5" /> {t("cockpit.online", "ONLINE")}</Badge>
+                <Badge className="gap-1 bg-success text-success-foreground"><Wifi className="h-3.5 w-3.5" /> {t("cockpit.online", "ONLINE")}</Badge>
               )}
               {connected === false && (
                 <Badge className="gap-1 bg-muted text-muted-foreground"><WifiOff className="h-3.5 w-3.5" /> {t("cockpit.offline", "OFFLINE")}</Badge>

@@ -38,6 +38,8 @@ import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger, { installConsoleBridge } from "../logger";
+import { correlationRequestMiddleware } from "./correlationMiddleware";
+import { livenessProbe, readinessProbe } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
@@ -211,10 +213,10 @@ async function startServer() {
     }
 
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", 
-      "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin");
-    res.setHeader("Access-Control-Expose-Headers", 
-      "Content-Length, Content-Type, ETag, X-Request-Id");
+    res.setHeader("Access-Control-Allow-Headers",
+      "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin, x-correlation-id, traceparent");
+    res.setHeader("Access-Control-Expose-Headers",
+      "Content-Length, Content-Type, ETag, X-Request-Id, X-Correlation-Id");
     res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
 
     // Handle preflight OPTIONS requests
@@ -224,6 +226,12 @@ async function startServer() {
 
     next();
   });
+
+  // doc 44 W6-4 (G5.17) — correlation backbone: pick up x-correlation-id / traceparent
+  // from the client (or mint one) into AsyncLocalStorage so every downstream tRPC handler,
+  // command dispatch, genealogy write, and pino log line shares ONE id (nút bấm→lệnh→máy).
+  // Mount EARLY (before body parser + all routes). Additive, non-gated.
+  app.use(correlationRequestMiddleware());
 
   // Configure body parser with larger size limit for file uploads
   // Skip JSON parsing for raw binary upload routes (APK uploads etc.)
@@ -322,6 +330,21 @@ async function startServer() {
       checkMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // doc 44 W6-4 (G5.25) — split liveness/readiness for shadow→canary rollout gating.
+  //   /livez  — process alive (never dependency-checked → no restart on a DB blip)
+  //   /readyz — can serve traffic (DB hard gate + broker informational) → the canary gate
+  app.get('/livez', (_req, res) => {
+    res.status(200).json(livenessProbe());
+  });
+  app.get('/readyz', async (_req, res) => {
+    try {
+      const result = await readinessProbe();
+      res.status(result.ready ? 200 : 503).json(result);
+    } catch {
+      res.status(503).json({ status: 'not_ready', ready: false, ts: new Date().toISOString() });
+    }
   });
 
   // W0-I (doc 44 G5.7) — CSP violation report endpoint + origin-check chống CSRF.

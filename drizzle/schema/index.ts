@@ -73,3 +73,5 @@ export * from "./twinFidelity"; // doc 44 W5-A1 — twin fidelity: simulation_ru
 export * from "./parameterGuardrails"; // doc 44 W5-A2 — engineer min-max guardrails + append-only change log (G4.18/G4.19/G4.20)
 export * from "./rulFailureMode"; // doc 44 W5-B3 — RUL survival estimates + failure-mode classification (G4.7/G4.8 software)
 export * from "./ntfClassifier"; // doc 44 W5-B1 — trained NTF/false-call classifier registry (G4.12)
+export * from "./sop"; // doc 44 W6-1 — e-SOP: sops + sop_steps + sop_executions (G5.14, spec LDS-L5 §6.2)
+export * from "./enterpriseIntegration"; // doc 44 W6-5 — WMS/PLM/CMMS connector anti-corruption id-map + sync log (G5.24)

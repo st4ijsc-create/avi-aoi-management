@@ -6,12 +6,12 @@ import { establishSession, LoginError, verifyCredentials } from "./authService";
 import { getSessionCookieOptions } from "./cookies";
 import {
   getConfiguredProvider,
-  isManusOAuthEnabled,
-  listEnabledExternalProviders,
+  listEnabledSsoMethods,
   type ConfiguredOAuthProvider,
   type ExternalOAuthProvider,
   type OAuthUserProfile,
 } from "./oauthProviders";
+import { registerSamlRoutes } from "./samlProvider";
 import { sdk } from "./sdk";
 
 function getQueryParam(req: Request, key: string): string | undefined {
@@ -210,11 +210,12 @@ async function fetchUserProfileFromProvider(
 }
 
 export function registerOAuthRoutes(app: Express) {
+  // doc 44 W6-4 (G5.19) — SAML SP routes (metadata + login + ACS) alongside OAuth.
+  // All 404 when SAML is disabled → zero surface by default. Never touches OAuth.
+  registerSamlRoutes(app);
+
   app.get("/api/oauth/providers", (_req: Request, res: Response) => {
-    res.json({
-      manus: isManusOAuthEnabled(),
-      providers: listEnabledExternalProviders(),
-    });
+    res.json(listEnabledSsoMethods());
   });
 
   app.get("/api/oauth/:provider/login", (req: Request, res: Response) => {

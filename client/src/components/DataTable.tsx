@@ -127,6 +127,24 @@ export interface DataTableProps<T> {
   /** Enable client-side pagination. Default true. */
   paginated?: boolean;
 
+  // virtualization (doc 44 G5.21 — opt-in row windowing for large lists) --------
+  /**
+   * Render only the rows in (or near) the viewport instead of all of them —
+   * pure windowing, no dependency. Opt-in; only kicks in once the row count
+   * exceeds `virtualThreshold`. When active it REPLACES pagination (the whole
+   * filtered/sorted set scrolls inside a fixed-height container). Sort / search /
+   * selection / column-chooser all keep working over the full set.
+   */
+  virtualized?: boolean;
+  /** Estimated row height in px (uniform). Default 44. Keep close to reality. */
+  rowHeight?: number;
+  /** Height of the scroll viewport in px when virtualized. Default 480. */
+  virtualMaxHeight?: number;
+  /** Extra rows rendered above/below the viewport (smooth scroll). Default 8. */
+  overscan?: number;
+  /** Only virtualize when the row count exceeds this. Default 100. */
+  virtualThreshold?: number;
+
   // search (client-side global filter across columns that define filterValue)
   /** Render a debounced global search input above the table. Default false. */
   searchable?: boolean;
@@ -251,6 +269,54 @@ const alignClass: Record<
   center: "text-center",
 };
 
+/** The slice of rows to render + the spacer heights that keep the scrollbar honest. */
+export interface VirtualWindow {
+  /** First row index to render (inclusive). */
+  startIndex: number;
+  /** One past the last row index to render (exclusive — use with Array.slice). */
+  endIndex: number;
+  /** px of empty space standing in for the rows above the window. */
+  paddingTop: number;
+  /** px of empty space standing in for the rows below the window. */
+  paddingBottom: number;
+}
+
+/**
+ * Pure row-windowing math (doc 44 G5.21). Given the scroll position and viewport,
+ * return which rows to render + top/bottom spacer heights. Exported so the
+ * windowing logic is unit-tested independently of the DOM.
+ */
+export function computeVirtualWindow(params: {
+  scrollTop: number;
+  viewportHeight: number;
+  rowHeight: number;
+  rowCount: number;
+  overscan?: number;
+}): VirtualWindow {
+  const { rowCount, rowHeight } = params;
+  const overscan = Math.max(0, params.overscan ?? 6);
+  if (rowCount <= 0 || rowHeight <= 0) {
+    return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
+  }
+  const scrollTop = Math.max(0, params.scrollTop);
+  const viewportHeight = Math.max(0, params.viewportHeight);
+
+  const firstVisible = Math.floor(scrollTop / rowHeight);
+  const visibleCount = Math.ceil(viewportHeight / rowHeight);
+
+  const endIndex = Math.min(rowCount, firstVisible + visibleCount + overscan);
+  // Clamp start into [0, endIndex] so an impossible scrollTop (past the end)
+  // yields an empty window with honest spacers rather than a negative/oversized one.
+  const startIndex = Math.min(Math.max(0, firstVisible - overscan), endIndex);
+
+  return {
+    startIndex,
+    endIndex,
+    paddingTop: startIndex * rowHeight,
+    paddingBottom: Math.max(0, (rowCount - endIndex) * rowHeight),
+  };
+}
+
 export function DataTable<T>({
   columns,
   data,
@@ -271,11 +337,17 @@ export function DataTable<T>({
   toolbar,
   columnChooser,
   tableId,
+  virtualized = false,
+  rowHeight = 44,
+  virtualMaxHeight = 480,
+  overscan = 8,
+  virtualThreshold = 100,
 }: DataTableProps<T>): React.JSX.Element {
   const { t } = useTranslation();
   const [sort, setSort] = React.useState<SortState>(initialSort ?? null);
   const [rawSearch, setRawSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
+  const [scrollTop, setScrollTop] = React.useState(0);
   const search = useDebouncedValue(rawSearch, 150);
 
   // ── Column chooser (show/hide columns) ──────────────────────────────────────
@@ -349,9 +421,11 @@ export function DataTable<T>({
       .map((entry) => entry.row);
   }, [filtered, columns, sort]);
 
-  // 3. Paginate
+  // 3. Paginate  (virtualization, when active, REPLACES paging — the full sorted
+  //    set scrolls inside a fixed-height container instead of being sliced.)
   const total = sorted.length;
-  const usePaging = paginated && pageSize > 0;
+  const virtualActive = virtualized && total > virtualThreshold;
+  const usePaging = paginated && pageSize > 0 && !virtualActive;
   const pageCount = usePaging ? Math.max(1, Math.ceil(total / pageSize)) : 1;
   const clampedPage = Math.min(page, pageCount);
 
@@ -364,6 +438,23 @@ export function DataTable<T>({
     const start = (clampedPage - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
   }, [sorted, usePaging, clampedPage, pageSize]);
+
+  // Row window (only meaningful when virtualActive). `renderRows` is the slice
+  // actually mounted; spacers stand in for the rest so the scrollbar is honest.
+  const virtualWindow = React.useMemo(
+    () =>
+      computeVirtualWindow({
+        scrollTop,
+        viewportHeight: virtualMaxHeight,
+        rowHeight,
+        rowCount: pageRows.length,
+        overscan,
+      }),
+    [scrollTop, virtualMaxHeight, rowHeight, pageRows.length, overscan]
+  );
+  const renderRows = virtualActive
+    ? pageRows.slice(virtualWindow.startIndex, virtualWindow.endIndex)
+    : pageRows;
 
   const rangeStart = total === 0 ? 0 : (clampedPage - 1) * (usePaging ? pageSize : total) + 1;
   const rangeEnd = usePaging
@@ -501,7 +592,18 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="rounded-md border bg-card overflow-x-auto">
+      <div
+        className={cn(
+          "rounded-md border bg-card overflow-x-auto",
+          virtualActive && "overflow-y-auto"
+        )}
+        style={virtualActive ? { maxHeight: virtualMaxHeight } : undefined}
+        onScroll={
+          virtualActive
+            ? (e) => setScrollTop((e.currentTarget as HTMLDivElement).scrollTop)
+            : undefined
+        }
+      >
         <Table>
           <TableHeader
             className={cn(
@@ -598,7 +700,17 @@ export function DataTable<T>({
                 </TableCell>
               </TableRow>
             ) : (
-              pageRows.map((row) => {
+              <>
+                {virtualActive && virtualWindow.paddingTop > 0 && (
+                  <TableRow aria-hidden="true" className="hover:bg-transparent">
+                    <TableCell
+                      colSpan={columnCount}
+                      className="p-0 border-0"
+                      style={{ height: virtualWindow.paddingTop }}
+                    />
+                  </TableRow>
+                )}
+                {renderRows.map((row) => {
                 const id = getRowId(row);
                 const isSelected = selectedSet.has(id);
                 const clickable = Boolean(onRowClick);
@@ -650,11 +762,29 @@ export function DataTable<T>({
                     ))}
                   </TableRow>
                 );
-              })
+                })}
+                {virtualActive && virtualWindow.paddingBottom > 0 && (
+                  <TableRow aria-hidden="true" className="hover:bg-transparent">
+                    <TableCell
+                      colSpan={columnCount}
+                      className="p-0 border-0"
+                      style={{ height: virtualWindow.paddingBottom }}
+                    />
+                  </TableRow>
+                )}
+              </>
             )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Virtualized: honest row count (paging footer is replaced). */}
+      {virtualActive && total > 0 && (
+        <p className="text-sm text-muted-foreground">
+          <span className="tabular-nums">{total}</span>
+          {t("datatable.rowsTotal", " dòng")}
+        </p>
+      )}
 
       {/* Footer: range + prev/next */}
       {usePaging && total > 0 && (

@@ -189,7 +189,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast as sonnerToast } from "sonner";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 
@@ -1516,6 +1516,19 @@ function Wave1PrimitivesShowcase() {
     { key: "shift", type: "daterange", label: "Date range" },
   ];
 
+  // doc 44 G5.21 — large synthetic dataset to demo pure row virtualization.
+  const bigData = useMemo<DemoMachine[]>(
+    () =>
+      Array.from({ length: 1000 }, (_, i) => ({
+        id: i + 1,
+        name: `AOI-${String(i + 1).padStart(4, "0")}`,
+        line: ["SMT-A", "SMT-B", "SMT-C"][i % 3],
+        status: (["running", "idle", "down"] as const)[i % 3],
+        oee: Math.round(((i * 37) % 100) * 10) / 10,
+      })),
+    [],
+  );
+
   return (
     <section className="space-y-6">
       <div>
@@ -1544,6 +1557,29 @@ function Wave1PrimitivesShowcase() {
             onSelectionChange={setSelected}
             onRowClick={(r) => sonnerToast.info(`Row clicked: ${r.name}`)}
             initialSort={{ columnId: "oee", dir: "desc" }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* DataTable — virtualized (doc 44 G5.21) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">DataTable — virtualized (1,000 rows)</CardTitle>
+          <CardDescription>
+            Opt-in <code>virtualized</code> row windowing (pure, no dependency): only the visible band is mounted, sort/search still run over the full set. Scroll the table.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            data={bigData}
+            getRowId={(r) => r.id}
+            searchable
+            searchPlaceholder="Search 1,000 machines…"
+            virtualized
+            virtualMaxHeight={420}
+            rowHeight={44}
+            initialSort={{ columnId: "name", dir: "asc" }}
           />
         </CardContent>
       </Card>
