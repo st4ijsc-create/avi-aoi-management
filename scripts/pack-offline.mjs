@@ -11,7 +11,7 @@
  *   - Scripts khởi tạo DB & cài đặt
  *   - .env.example, start.bat, install.bat
  * 
- * Output: offline-deploy/avi-aoi-management-offline-v{version}-{date}.zip
+ * Output: offline-deploy/synapse-platform-offline-v{version}-{date}.zip
  * 
  * Usage:
  *   node scripts/pack-offline.mjs
@@ -36,7 +36,7 @@ const skipBuild = process.argv.includes('--skip-build');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 const version = pkg.version || '1.0.0';
 const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-const archiveName = `avi-aoi-management-offline-v${version}-${dateStr}`;
+const archiveName = `synapse-platform-offline-v${version}-${dateStr}`; // R-2 rebrand (was avi-aoi-management-offline-*)
 
 console.log('═══════════════════════════════════════════════════════');
 console.log('  OFFLINE DEPLOYMENT PACKAGER');
@@ -108,7 +108,7 @@ console.log('\n[4/6] Creating package.json & installing dependencies...');
 const distPkg = JSON.parse(fs.readFileSync(path.join(DIST_SECURE, 'package.json'), 'utf-8'));
 
 const productionPkg = {
-  name: distPkg.name || 'avi-aoi-management',
+  name: distPkg.name || 'synapse-platform',
   version: version,
   type: 'module',
   private: true,
@@ -165,7 +165,7 @@ console.log('\n[5/6] Creating deployment scripts...');
 const startBat = `@echo off
 chcp 65001 >nul
 echo ═══════════════════════════════════════════════
-echo   AVI AOI Management System - Production
+echo   SYNAPSE Platform - Production
 echo   Version: ${version}
 echo ═══════════════════════════════════════════════
 echo.
@@ -201,7 +201,7 @@ fs.writeFileSync(path.join(STAGING, 'start.bat'), startBat);
 const installBat = `@echo off
 chcp 65001 >nul
 echo ═══════════════════════════════════════════════
-echo   AVI AOI Management System - Installer
+echo   SYNAPSE Platform - Installer
 echo   Version: ${version}
 echo ═══════════════════════════════════════════════
 echo.
@@ -284,7 +284,7 @@ fs.writeFileSync(path.join(STAGING, 'install.bat'), installBat);
 
 // Enhanced .env.example
 const envExample = `# ═══════════════════════════════════════════════════════
-# AVI AOI Management System - Production Configuration
+# SYNAPSE Platform - Production Configuration
 # Version: ${version}
 # ═══════════════════════════════════════════════════════
 
@@ -306,7 +306,8 @@ JWT_SECRET=change-this-to-a-random-secret-string
 # Set to true for offline deployment without License Server
 LICENSE_BYPASS=true
 LICENSE_SERVER_URL=
-LICENSE_PRODUCT_CODE=avi-aoi-management
+LICENSE_PRODUCT_CODE=SYNAPSE-PROD
+# legacy AVI-AOI-* van duoc chap nhan (dual-accept R-2)
 LICENSE_ENCRYPTION_SECRET=avi-license-secret-2026-xK9mP4qR
 
 # ── Storage ──────────────────────────────────────────
@@ -340,12 +341,12 @@ MASTER_API_KEY=master_avi_aoi_2026_change_me
 
 # ── App Branding ────────────────────────────────────
 VITE_APP_TITLE=VPMS System
-VITE_APP_ID=avi-aoi-management
+VITE_APP_ID=synapse-platform
 `;
 fs.writeFileSync(path.join(STAGING, '.env.example'), envExample);
 
 // README
-const readme = `# AVI AOI Management System - Offline Deployment
+const readme = `# SYNAPSE Platform (formerly AVI AOI Management) - Offline Deployment
 # Version: ${version} | Build: ${dateStr}
 
 ## Yêu cầu hệ thống

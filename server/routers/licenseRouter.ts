@@ -38,6 +38,7 @@ import { router, publicProcedure, protectedProcedure, adminProcedure } from "../
 import * as db from "../db";
 import { licenseService } from "../license/license-service";
 import { licenseGuard } from "../license/license-guard";
+import { getDefaultProductCode } from "../license/productCode";
 import { SYSTEM_MODULES, toExportFormat, isRouteAllowed, CORE_MODULE_CODES, ALL_MODULE_CODES } from "@shared/module-registry";
 import { resolveEditionModules } from "@shared/editions"; // doc 33 I3 (F1): edition module-ceiling
 import { resolveDeploymentProfile } from "../_core/deploymentProfile";
@@ -655,8 +656,8 @@ const moduleRouter = router({
    * Export toàn bộ module/feature theo mẫu JSON để gửi đến License Server đồng bộ
    */
   exportModules: adminProcedure.query(() => {
-    const productCode = ENV.licenseProductCode || 'AVI-AOI-MANAGEMENT';
-    return toExportFormat(productCode);
+    // R-2 rebrand: default export code is SYNAPSE-PLATFORM; LICENSE_PRODUCT_CODE wins.
+    return toExportFormat(getDefaultProductCode());
   }),
 });
 

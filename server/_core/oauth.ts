@@ -154,7 +154,7 @@ async function fetchUserProfileFromProvider(
   };
 
   if (providerId === "github") {
-    headers["User-Agent"] = "avi-aoi-management";
+    headers["User-Agent"] = "synapse-platform";
     const profile = await fetchJson(config.userInfoUrl!);
     let email = profile.email ?? null;
 

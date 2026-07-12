@@ -162,7 +162,9 @@ export function LicenseManagementContent() {
 function ActivateTab() {
   const { t } = useTranslation();
   const [licenseKey, setLicenseKey] = useState("");
-  const [productCode, setProductCode] = useState("avi-aoi-management");
+  // R-2 rebrand: new canonical product code. Server dual-accepts legacy
+  // AVI-AOI-* codes, so licenses issued before the rebrand still activate.
+  const [productCode, setProductCode] = useState("SYNAPSE-PLATFORM");
   const [result, setResult] = useState<any>(null);
   const [activationMode, setActivationMode] = useState<"online" | "offline">("online");
 

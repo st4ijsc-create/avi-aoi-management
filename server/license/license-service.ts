@@ -25,6 +25,7 @@ import os from 'os';
 import { createRequire } from 'node:module';
 import * as db from '../db';
 import { ENV } from '../_core/env';
+import { getDefaultProductCode, productCodesMatch } from './productCode';
 
 // Official License SDK — type-only imports (erased at compile time)
 import type {
@@ -353,7 +354,8 @@ class LicenseService {
       const { LicenseClient } = loadSDK();
       this.sdkClient = new LicenseClient({
         serverUrl,
-        productCode: ENV.licenseProductCode || 'AOI-MANAGEMENT',
+        // R-2 rebrand: default is SYNAPSE-PLATFORM; LICENSE_PRODUCT_CODE env wins.
+        productCode: getDefaultProductCode(),
         timeout: 30000,
         enableSecurityFeatures: true,
       });
@@ -621,8 +623,10 @@ class LicenseService {
       return { success: false, error: 'License key không tồn tại', moduleCodes: [] };
     }
 
-    // 2. Check product code
-    if (license.productCode !== input.productCode) {
+    // 2. Check product code — DUAL-ACCEPT (R-2 rebrand): a license issued under a
+    // legacy code (AVI-AOI-MANAGEMENT / AOI-MANAGEMENT / AVI-AOI-PROD) keeps working
+    // when the app now presents SYNAPSE-PLATFORM, and vice versa. Foreign codes fail.
+    if (!productCodesMatch(license.productCode, input.productCode)) {
       return { success: false, error: 'Product code không khớp', moduleCodes: [] };
     }
 
@@ -1174,7 +1178,7 @@ class LicenseService {
       fingerprint = this._getFallbackFingerprint();
     }
 
-    const productCode = ENV.licenseProductCode || 'AOI-MANAGEMENT';
+    const productCode = getDefaultProductCode();
     const timestamp = Date.now();
 
     const requestPayload = {
@@ -1263,7 +1267,7 @@ class LicenseService {
 
       // Step 3d: Store in local DB
       const extra = sdkResult as any;
-      const productCode = ENV.licenseProductCode || 'AOI-MANAGEMENT';
+      const productCode = getDefaultProductCode();
       const existing = await db.getLicenseByKey(licenseKey);
       let licenseId: number;
 

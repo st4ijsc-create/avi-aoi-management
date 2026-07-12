@@ -145,6 +145,6 @@ jobs:
           context: .
           push: false
           load: false
-          tags: avi-aoi-management:ci
+          tags: synapse-platform:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

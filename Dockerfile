@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage build for avi-aoi-management (Node 20 + pnpm).
+# Multi-stage build for synapse-platform (formerly avi-aoi-management) (Node 20 + pnpm).
 # Base: Debian glibc (bookworm-slim) — KHÔNG dùng alpine/musl vì native deps nặng
 # (onnxruntime-node, sharp, node-llama-cpp, puppeteer) chỉ có prebuilt glibc; trên
 # musl chúng lỗi ERR_DLOPEN_FAILED (thiếu ld-linux-x86-64.so.2) khi nạp .so.

@@ -5,7 +5,7 @@
  * Đóng gói toàn bộ ứng dụng + dependencies để deploy trên 
  * Windows Server 2019 KHÔNG CÓ INTERNET.
  * 
- * Output: _deploy/avi-aoi-v{version}/
+ * Output: _deploy/synapse-platform-v{version}/
  *   ├── node/                  (Node.js portable runtime - copy thủ công nếu cần)
  *   ├── dist/
  *   │   ├── index.js           (server bundle)
@@ -41,7 +41,7 @@ const INCLUDE_NODE = args.includes('--include-node');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 const VERSION = pkg.version || '1.0.0';
-const DEPLOY_NAME = `avi-aoi-v${VERSION}`;
+const DEPLOY_NAME = `synapse-platform-v${VERSION}`; // R-2 rebrand (was avi-aoi-v*)
 const DEPLOY_ROOT = path.join(ROOT, '_deploy');
 const DEPLOY_DIR = path.join(DEPLOY_ROOT, DEPLOY_NAME);
 const DIST = path.join(ROOT, 'dist');
@@ -57,7 +57,7 @@ const OPTIONAL_HEAVY = ['puppeteer', 'puppeteer-core'];
 
 console.log('');
 console.log('══════════════════════════════════════════════════════════════');
-console.log('  AVI AOI - OFFLINE DEPLOYMENT PACKAGE BUILDER');
+console.log('  SYNAPSE PLATFORM - OFFLINE DEPLOYMENT PACKAGE BUILDER');
 console.log('══════════════════════════════════════════════════════════════');
 console.log(`  Version:    ${VERSION}`);
 console.log(`  Output:     ${DEPLOY_DIR}`);
@@ -305,7 +305,7 @@ if (fs.existsSync(deployPkgPath)) {
   try { existingPkg = JSON.parse(fs.readFileSync(deployPkgPath, 'utf-8')); } catch {}
 }
 const prodPkgJson = {
-  name: 'avi-aoi-management',
+  name: 'synapse-platform',
   version: VERSION,
   type: 'module',
   private: true,
@@ -325,7 +325,7 @@ console.log('  ✓ package.json');
 
 // .env.example
 const envExample = `# ═══════════════════════════════════════════════════════════
-# AVI AOI Management System - Production Configuration
+# SYNAPSE Platform - Production Configuration
 # Copy this file to .env and fill in your values
 # ═══════════════════════════════════════════════════════════
 
@@ -372,7 +372,7 @@ const startBat = `@echo off
 chcp 65001 >nul
 echo.
 echo ═══════════════════════════════════════════════
-echo   AVI AOI Management System v${VERSION}
+echo   SYNAPSE Platform v${VERSION}
 echo ═══════════════════════════════════════════════
 echo.
 
@@ -417,7 +417,7 @@ const installServiceBat = `@echo off
 chcp 65001 >nul
 echo.
 echo ═══════════════════════════════════════════════
-echo   Install AVI AOI as Windows Service
+echo   Install SYNAPSE Platform as Windows Service
 echo ═══════════════════════════════════════════════
 echo.
 echo This script requires NSSM (Non-Sucking Service Manager).
@@ -455,8 +455,19 @@ if %ERRORLEVEL% neq 0 (
     for /f "tokens=*" %%i in ('where node') do set "NODE_EXE=%%i"
 )
 
-set SERVICE_NAME=AviAoiManagement
+:: R-2 rebrand: new service name. Old field installs used AviAoiManagement —
+:: the block below migrates them (stop + remove old service if present).
+set SERVICE_NAME=SynapsePlatform
+set LEGACY_SERVICE_NAME=AviAoiManagement
 set APP_DIR=%~dp0
+
+:: Migration: stop & remove the legacy service if it exists on this machine
+sc query %LEGACY_SERVICE_NAME% >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    echo [MIGRATION] Legacy service %LEGACY_SERVICE_NAME% found - stopping and removing...
+    net stop %LEGACY_SERVICE_NAME% 2>nul
+    %NSSM% remove %LEGACY_SERVICE_NAME% confirm
+)
 
 echo Installing service: %SERVICE_NAME%
 echo Node.js: %NODE_EXE%
@@ -466,8 +477,8 @@ echo.
 %NSSM% install %SERVICE_NAME% "%NODE_EXE%" dist\\index.js
 %NSSM% set %SERVICE_NAME% AppDirectory "%APP_DIR%"
 %NSSM% set %SERVICE_NAME% AppEnvironmentExtra "NODE_ENV=production"
-%NSSM% set %SERVICE_NAME% DisplayName "AVI AOI Management System"
-%NSSM% set %SERVICE_NAME% Description "AVI AOI Inspection Management System v${VERSION}"
+%NSSM% set %SERVICE_NAME% DisplayName "SYNAPSE Platform"
+%NSSM% set %SERVICE_NAME% Description "SYNAPSE Platform (formerly AVI AOI Management) v${VERSION}"
 %NSSM% set %SERVICE_NAME% Start SERVICE_AUTO_START
 %NSSM% set %SERVICE_NAME% AppStdout "%APP_DIR%logs\\service-stdout.log"
 %NSSM% set %SERVICE_NAME% AppStderr "%APP_DIR%logs\\service-stderr.log"
@@ -492,12 +503,19 @@ pause
 fs.writeFileSync(path.join(DEPLOY_DIR, 'install-service.bat'), installServiceBat);
 console.log('  ✓ install-service.bat');
 
-// uninstall-service.bat
+// uninstall-service.bat — removes the new service AND the legacy one (R-2 migration)
 const uninstallServiceBat = `@echo off
 chcp 65001 >nul
-echo Stopping and removing AviAoiManagement service...
-net stop AviAoiManagement 2>nul
-nssm remove AviAoiManagement confirm
+echo Stopping and removing SynapsePlatform service...
+net stop SynapsePlatform 2>nul
+nssm remove SynapsePlatform confirm
+:: Legacy service name (pre-rebrand installs)
+sc query AviAoiManagement >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    echo Removing legacy AviAoiManagement service...
+    net stop AviAoiManagement 2>nul
+    nssm remove AviAoiManagement confirm
+)
 echo Done.
 pause
 `;
@@ -506,7 +524,7 @@ console.log('  ✓ uninstall-service.bat');
 
 // README.txt
 const readme = `═══════════════════════════════════════════════════════════════
-  AVI AOI Management System v${VERSION}
+  SYNAPSE Platform v${VERSION}
   Offline Deployment Package
   Built: ${new Date().toISOString()}
 ═══════════════════════════════════════════════════════════════
@@ -532,7 +550,8 @@ INSTALL AS WINDOWS SERVICE:
   1. Download nssm.exe from https://nssm.cc/download
   2. Place nssm.exe in this folder
   3. Run install-service.bat as Administrator
-  4. Start: net start AviAoiManagement
+     (it migrates a legacy AviAoiManagement service automatically if present)
+  4. Start: net start SynapsePlatform
 
 PORTABLE NODE.JS (no installer needed):
   1. Download Node.js Windows Binary (.zip) from https://nodejs.org
@@ -585,7 +604,7 @@ const migrateBat = `@echo off
 chcp 65001 >nul
 echo.
 echo ═══════════════════════════════════════════════
-echo   AVI AOI - Database Migration
+echo   SYNAPSE Platform - Database Migration
 echo ═══════════════════════════════════════════════
 echo.
 

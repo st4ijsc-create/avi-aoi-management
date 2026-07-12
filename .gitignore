@@ -159,6 +159,7 @@ __pycache__/
 # Large archives / backups (NEVER commit — e.g. 13GB repo archive)
 *.7z
 avi-aoi-management.7z
+synapse-platform.7z
 knowledge/embeddings.jsonl.*-bak
 *.mxbai-bak
 

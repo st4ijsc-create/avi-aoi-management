@@ -19,6 +19,13 @@ import {
   canonicalClaims,
 } from "./ed25519License";
 import { computeDeviceUsage, usageReportLine, type MeteredDevice } from "./deviceMetering";
+import {
+  CURRENT_PRODUCT_CODE,
+  LEGACY_PRODUCT_CODES,
+  getDefaultProductCode,
+  isAcceptedProductCode,
+  productCodesMatch,
+} from "./productCode";
 
 const alwaysAllowed = (p: string) => p === "auth.me" || p === "license.activate";
 
@@ -106,6 +113,58 @@ describe("licensePolicy — never stop production (SYNAPSE §4.3)", () => {
     expect(
       decideLicenseBatch({ procedures: ["inspection.record", "andon.raise"], method: "POST", state: "locked", alwaysAllowed }).allow,
     ).toBe(true);
+  });
+});
+
+describe("productCode — dual-accept (REBRAND R-2)", () => {
+  it("NEW canonical code passes", () => {
+    expect(CURRENT_PRODUCT_CODE).toBe("SYNAPSE-PLATFORM");
+    expect(isAcceptedProductCode("SYNAPSE-PLATFORM", "")).toBe(true);
+    expect(isAcceptedProductCode("SYNAPSE-PROD", "")).toBe(true);
+  });
+
+  it("LEGACY codes still pass (licenses issued in the field must not die)", () => {
+    for (const legacy of LEGACY_PRODUCT_CODES) {
+      expect(isAcceptedProductCode(legacy, "")).toBe(true);
+    }
+    // field .env / DB rows used lowercase — comparison is case-insensitive
+    expect(isAcceptedProductCode("avi-aoi-management", "")).toBe(true);
+  });
+
+  it("FOREIGN code fails", () => {
+    expect(isAcceptedProductCode("SOME-OTHER-PRODUCT", "")).toBe(false);
+    expect(isAcceptedProductCode("", "")).toBe(false);
+    expect(isAcceptedProductCode(null, "")).toBe(false);
+    expect(isAcceptedProductCode(undefined, "")).toBe(false);
+  });
+
+  it("configured env code is accepted even when outside both families", () => {
+    expect(isAcceptedProductCode("CUSTOM-OEM-CODE", "CUSTOM-OEM-CODE")).toBe(true);
+    expect(isAcceptedProductCode("CUSTOM-OEM-CODE", "")).toBe(false);
+  });
+
+  it("productCodesMatch: old license ↔ new app identity match both ways", () => {
+    // license stored under legacy code, app presents the new code
+    expect(productCodesMatch("AVI-AOI-MANAGEMENT", "SYNAPSE-PLATFORM", "")).toBe(true);
+    // and vice versa
+    expect(productCodesMatch("SYNAPSE-PLATFORM", "avi-aoi-management", "")).toBe(true);
+    // exact match (any casing) always passes, even outside the family
+    expect(productCodesMatch("X-CUSTOM", "x-custom", "")).toBe(true);
+    // foreign vs family never matches
+    expect(productCodesMatch("SOME-OTHER-PRODUCT", "SYNAPSE-PLATFORM", "")).toBe(false);
+    expect(productCodesMatch("AVI-AOI-MANAGEMENT", "SOME-OTHER-PRODUCT", "")).toBe(false);
+    // empty never matches
+    expect(productCodesMatch("", "SYNAPSE-PLATFORM", "")).toBe(false);
+  });
+
+  it("getDefaultProductCode falls back to the NEW canonical code (env wins when set)", () => {
+    // In the test env LICENSE_PRODUCT_CODE is unset → ENV.licenseProductCode === ''
+    // (vitest setup does not define it) so the fallback must be the new code.
+    if (!process.env.LICENSE_PRODUCT_CODE) {
+      expect(getDefaultProductCode()).toBe("SYNAPSE-PLATFORM");
+    } else {
+      expect(getDefaultProductCode()).toBe(process.env.LICENSE_PRODUCT_CODE.trim());
+    }
   });
 });
 

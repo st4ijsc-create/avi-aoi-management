@@ -10,15 +10,17 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const productCode = process.env.LICENSE_PRODUCT_CODE || 'avi-aoi-management';
+// R-2 rebrand: default export code is the new canonical one; LICENSE_PRODUCT_CODE wins.
+// Legacy AVI-AOI-* codes remain accepted at validation (server/license/productCode.ts).
+const productCode = process.env.LICENSE_PRODUCT_CODE || 'SYNAPSE-PLATFORM';
 const exportData = toExportFormat(productCode);
 
-const outPath = join(__dirname, '..', 'avi-aoi-modules-export.json');
+const outPath = join(__dirname, '..', 'synapse-modules-export.json');
 writeFileSync(outPath, JSON.stringify(exportData, null, 2), 'utf-8');
 
 const totalFeatures = SYSTEM_MODULES.reduce((sum, m) => sum + m.features.length, 0);
 
-console.log(`✅ Exported ${exportData.modules.length} modules to: avi-aoi-modules-export.json`);
+console.log(`✅ Exported ${exportData.modules.length} modules to: synapse-modules-export.json`);
 console.log(`   Product Code: ${exportData.productCode}`);
 console.log(`   Core modules: ${exportData.modules.filter(m => m.isCore).length}`);
 console.log(`   Optional modules: ${exportData.modules.filter(m => !m.isCore).length}`);

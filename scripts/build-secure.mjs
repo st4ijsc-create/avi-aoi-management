@@ -233,7 +233,7 @@ fs.writeFileSync(path.join(DIST_SECURE, '.env.example'), envTemplate);
 
 // Create package.json for production
 const prodPkg = {
-  name: 'avi-aoi-management',
+  name: 'synapse-platform',
   version: manifest.version,
   type: 'module',
   private: true,

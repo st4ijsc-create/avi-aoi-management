@@ -41,7 +41,7 @@ docker compose -f monitoring/docker-compose.observability.yml up -d
 | `prometheus/prometheus.yml` | Scrape config (adjust the app target host:port) |
 | `grafana/provisioning/datasources/prometheus.yml` | Auto-wire Prometheus datasource |
 | `grafana/provisioning/dashboards/dashboards.yml` | Auto-load dashboards from disk |
-| `grafana/dashboards/avi-aoi-overview.json` | Service overview dashboard |
+| `grafana/dashboards/synapse-overview.json` | Service overview dashboard |
 | `docker-compose.observability.yml` | Prometheus + Grafana stack |
 
 ## Notes
