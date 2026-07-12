@@ -1,8 +1,11 @@
 /**
- * doc 44 W4 / G2.7 — NATS adapter HONEST seam tests.
- *   • the `nats` client is not installed → available() false, ops refuse with
+ * doc 44 W4 / G2.7 — NATS adapter tests (nats client installed + WIRED).
+ *   • lib present → natsClientAvailable() true
+ *   • no NATS_URL / unreachable server → available() false + ops refuse with
  *     NATS_NOT_AVAILABLE (never fake cross-process durability)
  *   • topic → subject mapping is correct for the real wiring
+ * (Live JetStream publish/replay round-trip is covered by an ops smoke, not a
+ *  hermetic unit test — this suite must not depend on a running broker.)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -13,7 +16,7 @@ import {
 } from "./natsAdapter";
 import { StreamNotAvailableError } from "./streamBridge";
 
-describe("natsAdapter honest seam (nats lib absent)", () => {
+describe("natsAdapter — lib present, honest refuse without a reachable broker", () => {
   beforeEach(() => {
     __resetNatsSeamLog();
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -23,8 +26,8 @@ describe("natsAdapter honest seam (nats lib absent)", () => {
     delete process.env.NATS_URL;
   });
 
-  it("natsClientAvailable() is false (package not installed)", async () => {
-    expect(await natsClientAvailable()).toBe(false);
+  it("natsClientAvailable() is true (nats package installed)", async () => {
+    expect(await natsClientAvailable()).toBe(true);
   });
 
   it("available() is false without NATS_URL", async () => {
@@ -32,8 +35,9 @@ describe("natsAdapter honest seam (nats lib absent)", () => {
     expect(await b.available()).toBe(false);
   });
 
-  it("available() is false even with NATS_URL when the lib is missing", async () => {
-    process.env.NATS_URL = "nats://127.0.0.1:4222";
+  it("available() is false with an unreachable NATS_URL (connect fails honestly)", async () => {
+    // Port 1 is unusable → connect rejects → ensure() returns null → not available.
+    process.env.NATS_URL = "nats://127.0.0.1:1";
     const b = createNatsStreamBridge();
     expect(await b.available()).toBe(false);
   });
