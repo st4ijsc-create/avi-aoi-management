@@ -82,6 +82,19 @@ export const predictiveMaintenanceRouter = router({
       return results.sort((a, b) => b.failureRisk - a.failureRisk);
     }),
 
+  /**
+   * G4.7 (doc 44 W5-B3) — latest PERSISTED survival RUL estimate for a machine.
+   * Reads the rul_estimates table (written by the PdM cycle when
+   * RUL_WEIBULL_ENABLED is on). Returns null when there is no persisted row yet
+   * (flag off / cold start) — the live heuristic RUL is still on getMachineRisk.
+   */
+  getRulEstimate: protectedProcedure
+    .input(z.object({ machineId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const { getLatestRulEstimate } = await import("../services/ai/rulEstimatorService");
+      return getLatestRulEstimate(input.machineId);
+    }),
+
   runNow: adminProcedure
     .mutation(async () => {
       return runPredictiveMaintenanceCycle();

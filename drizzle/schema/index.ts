@@ -71,3 +71,5 @@ export * from "./orderLifecycle"; // doc 44 W3-A3 — order lifecycle transition
 export * from "./lineController"; // doc 44 W3-A2 — Line Controller FSM: line_states + line_state_transitions (G3.1)
 export * from "./twinFidelity"; // doc 44 W5-A1 — twin fidelity: simulation_runs + twin_trust (G4.1)
 export * from "./parameterGuardrails"; // doc 44 W5-A2 — engineer min-max guardrails + append-only change log (G4.18/G4.19/G4.20)
+export * from "./rulFailureMode"; // doc 44 W5-B3 — RUL survival estimates + failure-mode classification (G4.7/G4.8 software)
+export * from "./ntfClassifier"; // doc 44 W5-B1 — trained NTF/false-call classifier registry (G4.12)

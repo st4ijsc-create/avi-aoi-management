@@ -46,6 +46,7 @@ import {
   measurementResults,
   measurementPointDefs,
   measurementCorrections,
+  machines,
 } from "../../../drizzle/schema";
 
 // ─── Env gates / tunables ────────────────────────────────────────────────────
@@ -59,6 +60,16 @@ export function isNtfPredictorEnabled(): boolean {
 export function ntfBadgeThreshold(): number {
   const n = Number(process.env.NTF_BADGE_THRESHOLD);
   return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.7;
+}
+
+/**
+ * W5-B1 (G4.12) — when ON *and* a trained NTF classifier is active, computeNtfScore
+ * serves the TRAINED probability; otherwise it falls back to the heuristic below.
+ * Default OFF ⇒ the heuristic is byte-for-byte unchanged.
+ */
+export function isNtfClassifierEnabled(): boolean {
+  return String(process.env.NTF_CLASSIFIER_ENABLED ?? "false").toLowerCase() === "true"
+    || process.env.NTF_CLASSIFIER_ENABLED === "1";
 }
 
 const HISTORY_WINDOW_DAYS = 90; // (a) repeat-offender lookback
@@ -80,6 +91,30 @@ export interface NtfScoreResult {
   inspectionId: number;
   score: number;
   signals: NtfSignals;
+  /** Provenance of `score`: the hand-tuned blend vs the trained classifier (G4.12). */
+  method: "heuristic" | "trained";
+}
+
+/**
+ * Feature context for one inspection — the 3 heuristic signals PLUS the extra
+ * features the trained classifier (G4.12) consumes. Shared by the heuristic
+ * scorer AND the classifier (train + serve) so the two never skew (SYNAPSE
+ * LDS-L4 §3.2 "Feature Store — cùng một định nghĩa đặc trưng ở cả hai phía").
+ */
+export interface NtfFeatureContext {
+  inspectionId: number;
+  machineId: number;
+  signals: NtfSignals;
+  /** blendSignals(signals) — the heuristic score, reused as a classifier feature. */
+  heuristicBlend: number | null;
+  /** Number of NG points on the board. */
+  ngPointCount: number;
+  /** Whether any NG point yielded a computable near-limit margin. */
+  hasNumericMargin: boolean;
+  /** Dominant NG-point measurement type (defect-type proxy), null when unknown. */
+  measurementType: string | null;
+  /** The machine's station (categorical feature), null when unresolved. */
+  stationId: number | null;
 }
 
 // ─── Pure scoring pieces (unit-testable) ─────────────────────────────────────
@@ -129,36 +164,29 @@ export function blendSignals(signals: NtfSignals): number | null {
 // ─── Scoring ─────────────────────────────────────────────────────────────────
 
 /**
- * Compute the false-call likelihood for one inspection. Returns null when the
- * inspection is missing, not NG, or no signal is computable. THROWS only on
- * DB errors — callers that must be fail-open use scoreInspectionNtf.
+ * Gather the NTF feature context for one inspection (signals + classifier
+ * extras). Shared by the heuristic scorer AND the classifier. THROWS only on DB
+ * errors. `opts.needStation` triggers the (extra) station lookup — kept off the
+ * heuristic path so the disabled-classifier path issues no additional query.
  */
-export async function computeNtfScore(inspectionId: number): Promise<NtfScoreResult | null> {
-  const db = await getDb();
-  if (!db) return null;
-
-  const [inspection] = await db
-    .select({
-      id: productInspections.id,
-      machineId: productInspections.machineId,
-      overallResult: productInspections.overallResult,
-    })
-    .from(productInspections)
-    .where(eq(productInspections.id, inspectionId))
-    .limit(1);
-  if (!inspection || inspection.overallResult !== "NG") return null;
-
+async function gatherNtfContext(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  inspection: { id: number; machineId: number },
+  opts: { needStation?: boolean } = {},
+): Promise<NtfFeatureContext> {
+  const inspectionId = inspection.id;
   const now = Date.now();
   const historySince = new Date(now - HISTORY_WINDOW_DAYS * 86_400_000);
   const trendSince = new Date(now - MACHINE_TREND_DAYS * 86_400_000);
 
-  // NG points of THIS inspection, with their numeric limits.
+  // NG points of THIS inspection, with their numeric limits + measurement type.
   const ngPoints = await db
     .select({
       pointDefId: measurementResults.pointDefId,
       measuredValue: measurementResults.measuredValue,
       lowerLimit: measurementPointDefs.lowerLimit,
       upperLimit: measurementPointDefs.upperLimit,
+      measurementType: measurementPointDefs.measurementType,
     })
     .from(measurementResults)
     .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
@@ -252,9 +280,106 @@ export async function computeNtfScore(inspectionId: number): Promise<NtfScoreRes
   const machineTrend = laplaceRate(Number(trendRow?.cleared) || 0, Number(trendRow?.total) || 0);
 
   const signals: NtfSignals = { repeatOffender, limitMargin, machineTrend };
-  const score = blendSignals(signals);
+
+  // Dominant NG-point measurement type (defect-type proxy) — most-frequent, ties
+  // broken by first-seen for determinism.
+  const typeCounts = new Map<string, number>();
+  for (const p of ngPoints) {
+    if (p.measurementType) typeCounts.set(p.measurementType, (typeCounts.get(p.measurementType) ?? 0) + 1);
+  }
+  let measurementType: string | null = null;
+  let bestTypeCount = 0;
+  for (const [t, c] of typeCounts) if (c > bestTypeCount) { bestTypeCount = c; measurementType = t; }
+
+  // Station (categorical) — only when the classifier needs it (extra query).
+  let stationId: number | null = null;
+  if (opts.needStation) {
+    const [m] = await db
+      .select({ stationId: machines.stationId })
+      .from(machines)
+      .where(eq(machines.id, inspection.machineId))
+      .limit(1);
+    stationId = m?.stationId ?? null;
+  }
+
+  return {
+    inspectionId,
+    machineId: inspection.machineId,
+    signals,
+    heuristicBlend: blendSignals(signals),
+    ngPointCount: ngPoints.length,
+    hasNumericMargin: limitMargin != null,
+    measurementType,
+    stationId,
+  };
+}
+
+/**
+ * Public feature-context accessor for the classifier trainer (G4.12). Unlike
+ * computeNtfScore it does NOT gate on the CURRENT overall verdict — training
+ * needs features for reviewed inspections that were later CLEARED (overall=NTF/OK)
+ * as well as those KEPT NG. Returns null only when the inspection is missing.
+ */
+export async function computeNtfFeatureContext(
+  inspectionId: number,
+  opts: { needStation?: boolean } = {},
+): Promise<NtfFeatureContext | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [insp] = await db
+    .select({ id: productInspections.id, machineId: productInspections.machineId })
+    .from(productInspections)
+    .where(eq(productInspections.id, inspectionId))
+    .limit(1);
+  if (!insp) return null;
+  return gatherNtfContext(db, insp, opts);
+}
+
+/**
+ * Compute the false-call likelihood for one inspection. Returns null when the
+ * inspection is missing, not NG, or no signal is computable. THROWS only on
+ * DB errors — callers that must be fail-open use scoreInspectionNtf.
+ *
+ * G4.12: when NTF_CLASSIFIER_ENABLED is on AND a trained classifier is active AND
+ * it can score this context, `method:'trained'` is returned; otherwise the honest
+ * heuristic blend is served with `method:'heuristic'` (fallback). Flag OFF ⇒ the
+ * heuristic path is byte-for-byte unchanged.
+ */
+export async function computeNtfScore(inspectionId: number): Promise<NtfScoreResult | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [inspection] = await db
+    .select({
+      id: productInspections.id,
+      machineId: productInspections.machineId,
+      overallResult: productInspections.overallResult,
+    })
+    .from(productInspections)
+    .where(eq(productInspections.id, inspectionId))
+    .limit(1);
+  if (!inspection || inspection.overallResult !== "NG") return null;
+
+  const classifierOn = isNtfClassifierEnabled();
+  const ctx = await gatherNtfContext(db, inspection, { needStation: classifierOn });
+
+  // Trained classifier (G4.12) — only when the flag is on AND a model is active
+  // AND it can score this context; else honest heuristic fallback below.
+  if (classifierOn) {
+    try {
+      const { classifyNtfContext } = await import("./ntfClassifierService");
+      const trained = await classifyNtfContext(ctx);
+      if (trained != null && Number.isFinite(trained)) {
+        return { inspectionId, score: trained, signals: ctx.signals, method: "trained" };
+      }
+    } catch {
+      /* fall through to the heuristic — classifier must never break scoring */
+    }
+  }
+
+  const score = ctx.heuristicBlend;
   if (score == null) return null;
-  return { inspectionId, score, signals };
+  return { inspectionId, score, signals: ctx.signals, method: "heuristic" };
 }
 
 /**

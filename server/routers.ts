@@ -198,6 +198,7 @@ import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter";
 import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
 import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
 import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
+import { ntfClassifierRouter } from "./routers/ntfClassifierRouter"; // doc 44 W5-B1 (G4.12): trained NTF/false-call classifier lifecycle (train/eval-gate/activate) + serve method
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -427,6 +428,7 @@ export const appRouter = router({
   feederVerify: feederVerifyRouter, // doc 35 W4-C
   lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
   parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
+  ntfClassifier: ntfClassifierRouter, // doc 44 W5-B1 — trained NTF/false-call classifier (G4.12)
   orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C

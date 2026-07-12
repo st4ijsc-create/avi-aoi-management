@@ -6,6 +6,10 @@ import { getAiModelById } from "../db/ai";
 import { createInferenceResult } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { MicroBatcher, Semaphore, type BatchOutcome } from "./ai/microBatcher";
+// W5-B2 (doc 44 G4.16) — vision-inference-p95 SLO budget observation. Pure helper
+// (no ONNX/DB imports); recordVisionInferenceLatency is a NO-OP unless
+// VISION_SLO_OBSERVE_ENABLED, so this import is bit-compatible when the flag is off.
+import { recordVisionInferenceLatency } from "./ai/visionInferenceSlo";
 
 // ─── W7-D (doc 27 gap V6) — GPU micro-batching + concurrency knobs ───────────
 //   AI_SESSION_CACHE_MAX  LRU ONNX session cache size (default 5; 8 documented-OK
@@ -431,6 +435,10 @@ export async function runInference(
 
     const topPrediction = predictions[0];
     const processingTimeMs = Date.now() - startTime;
+
+    // W5-B2 (doc 44 G4.16) — feed the vision-inference-p95 SLO from THIS (ONNX)
+    // path only. Observe-only (never blocks); no-op unless VISION_SLO_OBSERVE_ENABLED.
+    recordVisionInferenceLatency(processingTimeMs);
 
     // Save result (fire-and-forget)
     createInferenceResult({

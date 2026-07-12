@@ -91,6 +91,34 @@ export interface TrainHeadConfig {
   standardize?: boolean;
   /** Fit a 1-D temperature on the val split to calibrate confidence. Default true. */
   fitTemperature?: boolean;
+  // ── W5-B1 (doc 44, gap G4.14) — CLASS-IMBALANCE handling ────────────────────
+  // Rare-defect classes get drowned out by an unweighted cross-entropy loss. The
+  // caller gates these behind HEAD_CLASS_BALANCE_ENABLED; the trainer itself is
+  // pure + flag-agnostic. DEFAULTS ("none" + γ=0) are BYTE-COMPATIBLE with the
+  // pre-G4.14 trainer (sampleWeight collapses to exactly 1.0 → identical math).
+  /**
+   * Imbalance strategy:
+   *  - "none"         : current behaviour (unweighted) — DEFAULT.
+   *  - "class_weight" : scale each sample's loss/gradient by balanced inverse
+   *                     frequency w_c = N / (C · n_c) (sklearn "balanced").
+   *  - "oversample"   : replicate minority-class training rows up to the majority
+   *                     count (deterministic cycling; the per-epoch shuffle mixes them).
+   */
+  classBalance?: "none" | "class_weight" | "oversample";
+  /** Focal-loss-lite focusing parameter γ. 0 (default) = plain cross-entropy. */
+  focalGamma?: number;
+}
+
+/** Per-class distribution snapshot + weights (honest audit of the balancing). */
+export interface ClassBalanceInfo {
+  mode: "none" | "class_weight" | "oversample";
+  focalGamma: number;
+  /** Raw class counts in the TRAIN split BEFORE balancing (by display label). */
+  distributionBefore: Record<string, number>;
+  /** Effective class counts the optimizer sees AFTER balancing (by display label). */
+  distributionAfter: Record<string, number>;
+  /** Per-class loss weight actually applied (index = class index). */
+  classWeights: number[];
 }
 
 /** The SHIPPED artifact — serializable to JSON, self-contained for inference. */
@@ -121,6 +149,8 @@ export interface TrainHeadResult {
   bestEpoch: number;
   trainCount: number;
   valCount: number;
+  /** W5-B1 (G4.14) — class-imbalance audit (distribution before/after + weights). */
+  classBalance: ClassBalanceInfo;
 }
 
 export interface HeadPrediction {
@@ -338,6 +368,52 @@ function forwardLogits(
   return logits;
 }
 
+// ─── Class-imbalance helpers (W5-B1, gap G4.14) ─────────────────────────────────
+
+/**
+ * Balanced inverse-frequency class weights (sklearn "balanced"):
+ *   w_c = N / (C · n_c)   — a rare class gets a bigger weight so its samples are
+ * not drowned out. mode="none" ⇒ every weight is EXACTLY 1.0 (byte-compatible).
+ * Empty classes get weight 1 (they contribute no samples anyway).
+ */
+function computeClassWeights(counts: number[], mode: TrainHeadConfig["classBalance"]): number[] {
+  const numClasses = counts.length;
+  if (mode !== "class_weight") return new Array<number>(numClasses).fill(1);
+  const total = counts.reduce((a, b) => a + b, 0);
+  const present = counts.filter((c) => c > 0).length || 1;
+  return counts.map((c) => (c > 0 ? total / (present * c) : 1));
+}
+
+/**
+ * Deterministic oversampled index order: replicate each class's rows (cycling in a
+ * stable order) up to the majority-class count. No RNG here — the per-epoch
+ * seededShuffle randomizes the resulting order. mode≠"oversample" ⇒ caller keeps
+ * the plain [0..n) order (byte-compatible).
+ */
+function buildOversampledOrder(trainY: number[], numClasses: number): number[] {
+  const byClass: number[][] = Array.from({ length: numClasses }, () => []);
+  for (let i = 0; i < trainY.length; i++) {
+    const y = trainY[i];
+    if (y >= 0 && y < numClasses) byClass[y].push(i);
+  }
+  const target = byClass.reduce((m, arr) => Math.max(m, arr.length), 0);
+  const out: number[] = [];
+  for (let c = 0; c < numClasses; c++) {
+    const arr = byClass[c];
+    if (arr.length === 0) continue;
+    for (let k = 0; k < target; k++) out.push(arr[k % arr.length]);
+  }
+  // Stable ascending order so a downstream shuffle is the only source of ordering.
+  return out.sort((a, b) => a - b);
+}
+
+/** Map class-index counts → { displayLabel: count } for the honest audit. */
+function countsToRecord(counts: number[], classLabels: string[]): Record<string, number> {
+  const rec: Record<string, number> = {};
+  for (let c = 0; c < classLabels.length; c++) rec[classLabels[c]] = counts[c] ?? 0;
+  return rec;
+}
+
 // ─── Trainer ────────────────────────────────────────────────────────────────────
 
 /**
@@ -364,6 +440,9 @@ export function trainEmbeddingHead(
     earlyStoppingPatience: config.earlyStoppingPatience ?? 15,
     standardize: config.standardize ?? true,
     fitTemperature: config.fitTemperature ?? true,
+    // G4.14 — default "none"/0 ⇒ sampleWeight ≡ 1.0 ⇒ byte-compatible with pre-G4.14.
+    classBalance: config.classBalance ?? "none",
+    focalGamma: config.focalGamma ?? 0,
   };
 
   if (classLabels.length < 2) throw new Error("trainEmbeddingHead requires >= 2 class labels");
@@ -397,8 +476,18 @@ export function trainEmbeddingHead(
   let noImprove = 0;
   const history: TrainHeadResult["history"] = [];
 
-  const nTrain = trainX.length;
-  const order = trainX.map((_, i) => i);
+  // G4.14 — class-imbalance: raw counts → loss weights (byte-compatible when "none").
+  const classCounts = new Array<number>(numClasses).fill(0);
+  for (const y of trainY) if (y >= 0 && y < numClasses) classCounts[y]++;
+  const classWeights = computeClassWeights(classCounts, cfg.classBalance);
+  const focalGamma = cfg.focalGamma > 0 ? cfg.focalGamma : 0;
+
+  // Optionally oversample minority rows. "none"/"class_weight" ⇒ the plain [0..n)
+  // order (identical training set + iteration count as pre-G4.14).
+  const order = cfg.classBalance === "oversample"
+    ? buildOversampledOrder(trainY, numClasses)
+    : trainX.map((_, i) => i);
+  const nTrain = order.length;
 
   for (let epoch = 1; epoch <= cfg.epochs; epoch++) {
     // Deterministic per-epoch shuffle (seed folded with epoch).
@@ -415,10 +504,14 @@ export function trainEmbeddingHead(
         const x = trainX[idx];
         const y = trainY[idx];
         const probs = softmax(forwardLogits(x, weights, biases, numClasses, numFeatures));
-        epochLoss += -Math.log(Math.max(probs[y], 1e-10));
+        const py = Math.max(probs[y], 1e-10);
+        // G4.14 — per-sample weight = classWeight · focal( (1−p_y)^γ ). Both
+        // collapse to EXACTLY 1.0 under the defaults ("none"/γ=0) ⇒ identical math.
+        const sw = focalGamma > 0 ? classWeights[y] * Math.pow(1 - probs[y], focalGamma) : classWeights[y];
+        epochLoss += sw * -Math.log(py);
         if (argmax(probs) === y) correct++;
         for (let c = 0; c < numClasses; c++) {
-          const g = probs[c] - (c === y ? 1 : 0);
+          const g = sw * (probs[c] - (c === y ? 1 : 0));
           gradB[c] += g;
           for (let f = 0; f < numFeatures; f++) gradW[f * numClasses + c] += x[f] * g;
         }
@@ -506,7 +599,31 @@ export function trainEmbeddingHead(
     trainConfig: cfg,
   };
 
-  return { artifact, metrics, history, bestEpoch, trainCount: train.length, valCount: val.length };
+  // G4.14 — honest audit of the class distribution the optimizer actually saw.
+  const effectiveCounts = cfg.classBalance === "oversample"
+    ? (() => {
+        const c = new Array<number>(numClasses).fill(0);
+        for (const idx of order) { const y = trainY[idx]; if (y >= 0 && y < numClasses) c[y]++; }
+        return c;
+      })()
+    : classCounts;
+  const classBalanceInfo: ClassBalanceInfo = {
+    mode: cfg.classBalance,
+    focalGamma: cfg.focalGamma,
+    distributionBefore: countsToRecord(classCounts, classLabels),
+    distributionAfter: countsToRecord(effectiveCounts, classLabels),
+    classWeights,
+  };
+
+  return {
+    artifact,
+    metrics,
+    history,
+    bestEpoch,
+    trainCount: train.length,
+    valCount: val.length,
+    classBalance: classBalanceInfo,
+  };
 }
 
 /** 1-D temperature search (fixed grid) minimizing validation NLL. Deterministic. */

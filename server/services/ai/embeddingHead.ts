@@ -112,6 +112,22 @@ function autoPromoteEnabled(): boolean {
   return String(process.env.AI_AUTO_PROMOTE_ENABLED ?? "false").toLowerCase() === "true";
 }
 
+/**
+ * W5-B1 (G4.14) — class-imbalance handling on the head trainer. Default OFF ⇒ the
+ * trainer runs the pre-G4.14 unweighted loss (byte-compatible). When ON, rare
+ * defect classes are balanced by inverse-frequency loss weights; HEAD_FOCAL_GAMMA
+ * additionally enables focal-loss-lite. The pure trainer stays flag-agnostic; the
+ * flag is read HERE (the orchestrator) and passed as trainConfig, so an explicit
+ * opts.trainConfig.classBalance still wins.
+ */
+function classBalanceTrainConfig(): { classBalance?: "class_weight"; focalGamma?: number } {
+  const on = String(process.env.HEAD_CLASS_BALANCE_ENABLED ?? "false").toLowerCase() === "true"
+    || process.env.HEAD_CLASS_BALANCE_ENABLED === "1";
+  if (!on) return {};
+  const g = Number(process.env.HEAD_FOCAL_GAMMA);
+  return { classBalance: "class_weight", ...(Number.isFinite(g) && g > 0 ? { focalGamma: g } : {}) };
+}
+
 /** A model is an embedding-head model when format=CUSTOM + metadata.headKind matches. */
 export function isEmbeddingHeadModel(model: Pick<AiModel, "format" | "metadata"> | null | undefined): boolean {
   if (!model) return false;
@@ -369,6 +385,8 @@ export async function trainAndRegisterHead(
 
   const trained = trainEmbeddingHead(split.train, split.val, snapshot.classLabels, {
     seed: splitSeed,
+    // G4.14 — flag-gated class-imbalance handling (OFF ⇒ absent ⇒ unchanged math).
+    ...classBalanceTrainConfig(),
     ...opts.trainConfig,
   });
 

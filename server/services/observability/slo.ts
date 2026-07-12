@@ -154,4 +154,18 @@ export const DEFAULT_SLOS: readonly SloTarget[] = [
     latencyThresholdMs: 100,
     windowSec: 30 * 24 * 3600,
   },
+  // ── W5-B2 (doc 44 G4.16) — vision inference SLO (SYNAPSE L4 §2.2). HONEST:
+  //   • ONLY the ONNX inference path feeds this (aiInferenceEngine.runInference →
+  //     visionInferenceSlo). The VLM/VL-model path (~1.2s, async/offline) is
+  //     EXCLUDED — it cannot meet 200ms and is not an inline path.
+  //   • Excluded from the generic HTTP proxy (see sloMetricsProvider) so it stays
+  //     "no data" until a real ONNX inference is recorded (flag observe).
+  {
+    id: "vision-inference-p95",
+    name: "Độ trễ suy luận thị giác (ONNX) P95 ≤ 200ms (L4)",
+    kind: "latency",
+    objective: 0.95,
+    latencyThresholdMs: 200,
+    windowSec: 30 * 24 * 3600,
+  },
 ];

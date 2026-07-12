@@ -21,6 +21,7 @@ import { getDb } from "../db/connection";
 import { rootCauseAnalysis } from "../../drizzle/schema";
 import { getTool, isWriteTool, type Tool, type ToolLang } from "./aiLocalTools/toolRegistry";
 import { proposeAction, type CopilotUser } from "./aiCopilotActions";
+import type { FactorCorrelation } from "./ai/defectCorrelationService";
 
 // ─── Flag ────────────────────────────────────────────────────────────────────
 export function isRcaCopilotEnabled(): boolean {
@@ -66,6 +67,10 @@ export interface EvidenceBundle {
    *  W7-B's table, read DYNAMICALLY; [] when the table does not exist yet). */
   recentCorrections: Array<{ at: string; summary: string }>;
   causalText: string;
+  /** W5-B2 (doc 44 G4.17) — QUANTITATIVE upstream-param ⇄ defect correlations
+   *  (Pearson/point-biserial + p-value + logistic direction). Additive alongside
+   *  the qualitative causalText; [] when disabled/insufficient data. */
+  quantitativeCorrelations: FactorCorrelation[];
   notes: string[];
 }
 
@@ -101,6 +106,7 @@ function emptyEvidence(): EvidenceBundle {
     similarIncidents: [],
     recentCorrections: [],
     causalText: "",
+    quantitativeCorrelations: [],
     notes: [],
   };
 }
@@ -126,7 +132,7 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   const now = new Date();
   const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30d window
 
-  const [pareto, spc, anomaly, vision, audit, rag, corrections, causal] = await Promise.allSettled([
+  const [pareto, spc, anomaly, vision, audit, rag, corrections, causal, quant] = await Promise.allSettled([
     // (a) Pareto top defects
     (async () => {
       const { paretoByDefectType } = await import("./paretoAnalysisService");
@@ -179,6 +185,14 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       });
       return ctx.causalText;
     })(),
+    // (h) W5-B2 (G4.17) — QUANTITATIVE upstream-param ⇄ defect correlation. Flag-
+    // gated (RCA_QUANTITATIVE_ENABLED) inside correlateStationDefect; returns []
+    // (ok:false) when disabled/insufficient — additive to the qualitative causal path.
+    (async () => {
+      const { correlateStationDefect } = await import("./ai/defectCorrelationService");
+      const r = await correlateStationDefect({ machineId: input.machineId, defectType: input.defectType });
+      return r.ok ? r.factors : [];
+    })(),
   ]);
 
   if (pareto.status === "fulfilled") bundle.paretoTop = pareto.value;
@@ -197,6 +211,8 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
   // (no note when corrections are unavailable — the table may legitimately not exist yet)
   if (causal.status === "fulfilled") bundle.causalText = causal.value;
   else bundle.notes.push("causal_unavailable");
+  if (quant.status === "fulfilled") bundle.quantitativeCorrelations = quant.value;
+  else bundle.notes.push("quantitative_correlation_unavailable");
 
   return bundle;
 }
@@ -429,6 +445,20 @@ function buildEvidenceDigest(ev: EvidenceBundle): string {
   if (ev.similarIncidents.length) lines.push(`Similar past incidents: ${ev.similarIncidents.map((s) => s.title).join("; ")}`);
   if (ev.recentCorrections.length) lines.push(`Recent operator corrections: ${ev.recentCorrections.map((c) => c.summary).join("; ")}`);
   if (ev.causalText) lines.push(`Causal graph:\n${ev.causalText}`);
+  // W5-B2 (G4.17) — QUANTITATIVE evidence: give the model the measured association
+  // (direction + r + p-value) so hypotheses cite numbers, not just a qualitative list.
+  if (ev.quantitativeCorrelations.length) {
+    lines.push(
+      "Quantitative upstream-parameter correlations (defect vs prior-station params):\n" +
+        ev.quantitativeCorrelations
+          .map(
+            (c) =>
+              `- ${c.factor}: ${c.direction === "higher_more_defects" ? "higher→more defects" : c.direction === "lower_more_defects" ? "lower→more defects" : "no clear direction"}` +
+              ` (r=${c.pearson}, p=${c.pValue}, logit_coef=${c.logisticCoef}, n=${c.n}, meanNG=${c.meanDefect} vs meanOK=${c.meanOk}${c.significant ? ", SIGNIFICANT" : ""})`,
+          )
+          .join("\n"),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -440,7 +470,8 @@ function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
     ev.anomaly != null ||
     ev.visionDescription != null ||
     ev.similarIncidents.length > 0 ||
-    ev.causalText.length > 0
+    ev.causalText.length > 0 ||
+    ev.quantitativeCorrelations.length > 0
   );
 }
 
@@ -634,6 +665,8 @@ export async function persistRca(input: PersistRcaInput): Promise<number | null>
       preventiveMeasures: [],
       // Structured RCA payload (full hypotheses incl. fix kind/tool/args/oneTap).
       rcaHypotheses: result.hypotheses,
+      // W5-B2 (G4.17) — quantitative upstream-param correlations (additive, may be []).
+      quantitativeCorrelations: result.evidence.quantitativeCorrelations,
       needsHumanInvestigation: result.needsHumanInvestigation,
     };
 

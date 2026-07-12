@@ -26,6 +26,12 @@ import { selectCanaryVariant } from "./aiABTesting";
 // AOI-F (doc 24 Wave-4) — quality→control proposal (advisory by default; flag-gated).
 // isVisionControlEnabled has NO runtime top-level deps (type-only imports) → cycle-safe.
 import { isVisionControlEnabled, proposeControlForInspection } from "./qualityControlProposer";
+// W5-B1 (doc 44, gap G4.15) — cost-sensitive / risk-based triage threshold (flag OFF default).
+import {
+  isCostSensitiveThresholdEnabled,
+  applyCostSensitiveTriage,
+  buildSeverityMap,
+} from "./ai/costSensitiveThreshold";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -341,6 +347,29 @@ export async function processQualityGate(
   } else {
     decision = "NEEDS_REVIEW";
     reviewReason = `Confidence in grey zone (${(confidence * 100).toFixed(1)}%)`;
+  }
+
+  // ── W5-B1 (doc 44, gap G4.15) — cost-sensitive / risk-based threshold ────────
+  // Flag OFF (default) ⇒ no-op → today's fixed-threshold decision stands. When ON,
+  // RECALL-FIRST: an over-confident AUTO_OK on a board where a SEVERE defect is
+  // even plausible is pulled back to NEEDS_REVIEW (spec §8.2 "lỗi nghi ngờ → đẩy
+  // sang người"). Never relaxes an NG/review to OK. Best-effort — never throws.
+  if (isCostSensitiveThresholdEnabled() && ngLabels.length > 0) {
+    try {
+      const override = applyCostSensitiveTriage({
+        baseDecision: decision,
+        predictions,
+        severityMap: buildSeverityMap(ngLabels),
+      });
+      if (override.overridden) {
+        decision = override.decision;
+        reviewReason = override.reason ?? reviewReason;
+      }
+    } catch (err) {
+      console.warn(
+        `[QualityGate] cost-sensitive threshold skipped for inspection ${inspectionId}: ${(err as Error)?.message}`,
+      );
+    }
   }
 
   const processingTimeMs = Date.now() - startTime;

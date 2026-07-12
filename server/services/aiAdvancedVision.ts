@@ -87,6 +87,15 @@ export interface ExtractedText {
   language: "en" | "vi" | "auto";
   confidence: "high" | "medium" | "low";
   generatedBy: "openai" | "gguf" | "offline";
+  // W5-B2 (doc 44 G4.13) — present when the REAL OCR engine ran (OCR_ENGINE_ENABLED).
+  /** "onnx" | "vlm" | "none" — which engine produced the text. */
+  engine?: "onnx" | "vlm" | "none";
+  /** REAL numeric recognition score 0..1 (from CTC rec-score), NOT string length. */
+  score?: number;
+  /** True when the engine degraded honestly (e.g. model absent) — text is empty. */
+  degraded?: boolean;
+  /** Honest degrade reason, e.g. "OCR_MODEL_NOT_AVAILABLE". */
+  reason?: string;
 }
 
 export interface RoiBox {
@@ -678,12 +687,47 @@ export async function generateDefectHeatmap(
   };
 }
 
-// ─── D. Extract Text (OCR via LLaVA) ─────────────────────────
+// ─── D. Extract Text (OCR) ────────────────────────────────────
+//
+// W5-B2 (doc 44 G4.13): when OCR_ENGINE_ENABLED, route through the REAL OCR engine
+// (ocrService — ONNX PaddleOCR/RapidOCR CTC, honest confidence from rec-score, or
+// honest OCR_MODEL_NOT_AVAILABLE degrade when the model is absent). When the flag
+// is OFF (default) the LEGACY VLM path below runs UNCHANGED (bit-compat).
+//
+// Barcode/label verification (checkLabel) is re-exported at the OCR point below.
+export { checkLabel, labelMatch, similarityRatio } from "./ai/ocrService";
+export type { LabelCheckResult, OcrResult, OcrEngine } from "./ai/ocrService";
+
+/** Map a 0..1 rec-score to the coarse confidence band. Honest — from real score. */
+function scoreToBand(score: number): ExtractedText["confidence"] {
+  if (score >= 0.85) return "high";
+  if (score >= 0.6) return "medium";
+  return "low";
+}
 
 export async function extractText(
   image: Buffer,
   language: "en" | "vi" | "auto" = "auto",
 ): Promise<ExtractedText> {
+  // ── W5-B2 — REAL OCR engine path (flag-gated) ──────────────────────────────
+  const { isOcrEngineEnabled } = await import("./ai/ocrService");
+  if (isOcrEngineEnabled()) {
+    const { runOcr } = await import("./ai/ocrService");
+    const r = await runOcr(image, { language });
+    return {
+      text: r.text,
+      language,
+      // Confidence from REAL rec-score; degrade → low. Never from string length.
+      confidence: r.degraded ? "low" : scoreToBand(r.confidence),
+      generatedBy: r.engine === "vlm" ? "gguf" : "offline",
+      engine: r.engine,
+      score: Number(r.confidence.toFixed(4)),
+      degraded: r.degraded,
+      reason: r.reason,
+    };
+  }
+
+  // ── LEGACY VLM path (UNCHANGED — OFF bit-compat) ───────────────────────────
   const prompt = language === "vi"
     ? "Hãy trích xuất CHÍNH XÁC mọi văn bản (chữ, số, mã serial, nhãn) hiển thị trong ảnh. Trả về NGUYÊN văn, mỗi dòng văn bản trên một dòng. Nếu không có chữ, trả về 'NO_TEXT'."
     : "Extract EXACTLY all visible text (letters, digits, serial numbers, labels) in the image. Return verbatim, one line per text block. If no text, return 'NO_TEXT'.";

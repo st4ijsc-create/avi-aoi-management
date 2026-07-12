@@ -36,6 +36,8 @@ import {
   type MultivariatePoint,
 } from "./aiTimeSeriesEngine";
 import { recordMachineHealthSnapshot } from "../db/machine";
+import type { RulEstimate } from "./ai/rulEstimatorService";
+import type { FailureModeResult } from "./ai/failureModeClassifier";
 
 // ─── Tunables (env-overridable) ──────────────────────────────────────────────
 
@@ -100,6 +102,21 @@ export interface FailureRiskResult {
   maintenanceUrgency: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   factors: RiskFactor[];
   dataPoints: number;
+  // ── G4.7 (doc 44 W5-B3) — RUL provenance. rulMethod is HONEST: 'weibull' only
+  // when a survival fit backed the timeframe; otherwise 'heuristic' (EWMA/MTBF
+  // proxy) or 'insufficient_data'. rulHours is the number used for planning. ──
+  rulMethod: "weibull" | "heuristic" | "insufficient_data";
+  rulHours: number | null;
+  rulConfidence: number | null;
+  rulNote: string | null;
+  // ── G4.8 (doc 44 W5-B3) — likely failure mode + maintenance direction, or null
+  // when the classifier is off / has no vibration signal ('unknown'). ──
+  failureMode: {
+    mode: string;
+    reason: string;
+    confidence: number;
+    recommendedAction: string;
+  } | null;
 }
 
 /** Raw inputs for pure risk computation — enables unit testing without a DB. */
@@ -114,6 +131,11 @@ export interface RiskInputs {
   tempSeries: TimeSeriesPoint[];
   /** uptime (hours) since the last unplanned-downtime event. */
   uptimeSinceLastHours: number | null;
+  /** G4.7 — optional survival RUL estimate; when method='weibull' it overrides the
+   *  heuristic timeframe. NULL/absent ⇒ heuristic path (unchanged behaviour). */
+  rul?: RulEstimate | null;
+  /** G4.8 — optional failure-mode verdict to attach to the prediction. */
+  failureMode?: FailureModeResult | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -328,7 +350,7 @@ export const getReliabilityStats = computeReliabilityStats;
  * SHARE is stable for clearly anomalous vs. normal series).
  */
 export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskResult {
-  const { machineId, reliability, healthSeries, heartbeatSeries, tempSeries, uptimeSinceLastHours } = inputs;
+  const { machineId, reliability, healthSeries, heartbeatSeries, tempSeries, uptimeSinceLastHours, rul, failureMode } = inputs;
   const factors: RiskFactor[] = [];
 
   let weightSum = 0;
@@ -455,9 +477,42 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     timeframeHours = Math.max(0, reliability.mtbfHours - uptimeSinceLastHours);
   }
 
+  // ── G4.7 (doc 44 W5-B3) — RUL provenance + Weibull override ──────────────────
+  // When a trained survival (Weibull) RUL is available it OVERRIDES the heuristic
+  // timeframe (honest: method='weibull'). Otherwise the timeframe stays the EWMA/
+  // MTBF proxy and rulMethod is reported as 'heuristic' | 'insufficient_data'.
+  let rulMethod: "weibull" | "heuristic" | "insufficient_data" = "heuristic";
+  let rulConfidence: number | null = null;
+  let rulNote: string | null = null;
+  if (rul) {
+    rulMethod = rul.method;
+    rulConfidence = rul.confidence;
+    rulNote = rul.note;
+    if (rul.method === "weibull" && rul.rulHours != null && Number.isFinite(rul.rulHours)) {
+      timeframeHours = rul.rulHours;
+      factors.push({
+        name: "rul_weibull",
+        contribution: 0, // informational (a timeframe, not a risk contributor)
+        description:
+          `Weibull RUL ≈ ${rul.rulHours.toFixed(0)}h ` +
+          `(k=${rul.shape?.toFixed(2)}, λ=${rul.scale?.toFixed(0)}h, ${rul.failures} failure obs, ` +
+          `conf ${Math.round(rul.confidence * 100)}%)`,
+      });
+    }
+  }
+
   const recommendedMaintenanceDate = timeframeHours != null
     ? new Date(Date.now() + timeframeHours * 3600_000)
     : null;
+
+  // ── G4.8 — attach the failure mode when the classifier produced a usable one.
+  if (failureMode && failureMode.mode !== "unknown") {
+    factors.push({
+      name: "failure_mode",
+      contribution: 0,
+      description: `Likely mode: ${failureMode.mode} (${Math.round(failureMode.confidence * 100)}%) — ${failureMode.recommendedAction}`,
+    });
+  }
 
   return {
     machineId,
@@ -469,6 +524,18 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     maintenanceUrgency: urgencyFromRisk(failureRisk),
     factors,
     dataPoints,
+    rulMethod,
+    rulHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    rulConfidence,
+    rulNote,
+    failureMode: failureMode
+      ? {
+          mode: failureMode.mode,
+          reason: failureMode.reason,
+          confidence: failureMode.confidence,
+          recommendedAction: failureMode.recommendedAction,
+        }
+      : null,
   };
 }
 
@@ -490,6 +557,11 @@ export async function computeFailureRisk(
       maintenanceUrgency: "LOW",
       factors: [],
       dataPoints: 0,
+      rulMethod: "insufficient_data",
+      rulHours: null,
+      rulConfidence: null,
+      rulNote: null,
+      failureMode: null,
     };
   }
 
@@ -604,6 +676,38 @@ export async function computeFailureRisk(
     uptimeSinceLastHours = (to.getTime() - healthSeries[0].timestamp) / 3600_000;
   }
 
+  // ── G4.7 — survival RUL (flag RUL_WEIBULL_ENABLED). Skipped entirely (no import,
+  // no query) when the flag is OFF, so the heuristic path is zero-overhead by
+  // default. Errors are swallowed → heuristic timeframe stands. ──
+  let rul: RulEstimate | null = null;
+  if (process.env.RUL_WEIBULL_ENABLED === "true") {
+    try {
+      const { estimateRulForMachine } = await import("./ai/rulEstimatorService");
+      rul = await estimateRulForMachine(machineId, { ageHours: uptimeSinceLastHours });
+    } catch (err) {
+      console.error(`[PredictiveMaintenance] RUL estimate failed for machine ${machineId}:`, (err as Error)?.message ?? err);
+    }
+  }
+
+  // ── G4.8 — failure-mode classification from the REAL sensor stream (flag
+  // FAILURE_MODE_ENABLED). Honest 'unknown' when no vibration tag. Skipped when
+  // off (no import, no work). ──
+  let failureMode: FailureModeResult | null = null;
+  if (process.env.FAILURE_MODE_ENABLED === "true") {
+    try {
+      const { classifyForMachine } = await import("./ai/failureModeClassifier");
+      failureMode = classifyForMachine(
+        sensorRows.map((r) => ({
+          sensorType: r.sensorType,
+          value: Number(r.value),
+          timestamp: new Date(r.timestamp).getTime(),
+        })),
+      );
+    } catch (err) {
+      console.error(`[PredictiveMaintenance] failure-mode classify failed for machine ${machineId}:`, (err as Error)?.message ?? err);
+    }
+  }
+
   return computeFailureRiskFromInputs({
     machineId,
     reliability,
@@ -611,6 +715,8 @@ export async function computeFailureRisk(
     heartbeatSeries,
     tempSeries,
     uptimeSinceLastHours,
+    rul,
+    failureMode,
   });
 }
 
@@ -680,6 +786,20 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         calculationMethod: PDM_CALC_METHOD,
         notes: risk.predictedTimeframe,
       } as any);
+
+      // G4.7 (doc 44 W5-B3) — persist a survival RUL estimate row for this machine.
+      // Only when RUL_WEIBULL_ENABLED is on (so the cycle writes rul_estimates only
+      // under the flag). Isolated: a failure here never affects the
+      // snapshot/alert/work-order path.
+      if (process.env.RUL_WEIBULL_ENABLED === "true") {
+        try {
+          const { estimateRulForMachine, persistRulEstimate } = await import("./ai/rulEstimatorService");
+          const est = await estimateRulForMachine(m.id);
+          if (est) await persistRulEstimate(est);
+        } catch (rulErr) {
+          console.error(`[PredictiveMaintenance] RUL persist failed for machine ${m.id}:`, (rulErr as Error)?.message ?? rulErr);
+        }
+      }
 
       // Alert gating: avoid false positives on sparse/low-confidence data.
       const timeframeOk =

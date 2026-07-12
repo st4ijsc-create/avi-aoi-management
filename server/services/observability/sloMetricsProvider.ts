@@ -63,7 +63,15 @@ function longWindowMs(): number {
  * state-read are subsystem-internal calls, not HTTP round-trips), so they are
  * excluded from the generic proxy and get dedicated providers below.
  */
-const HTTP_PROXY_EXCLUDED_SLO_IDS = new Set(["screen-load-p95", "policy-eval-p95", "state-read-p95"]);
+const HTTP_PROXY_EXCLUDED_SLO_IDS = new Set([
+  "screen-load-p95",
+  "policy-eval-p95",
+  "state-read-p95",
+  // W5-B2 (doc 44 G4.16): vision inference latency ≠ server-HTTP latency — feeding
+  // it from the HTTP ring would be DISHONEST. Its dedicated feed (visionInferenceSlo,
+  // fed by the ONNX runInference path) registers on first real inference.
+  "vision-inference-p95",
+]);
 
 /** Catalogue SLOs the HTTP rolling-window proxy is allowed to feed. */
 const HTTP_PROXIED_SLOS = DEFAULT_SLOS.filter((s) => !HTTP_PROXY_EXCLUDED_SLO_IDS.has(s.id));
