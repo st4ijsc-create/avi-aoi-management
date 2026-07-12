@@ -262,6 +262,12 @@ export const machines = pgTable("machines", {
   // --- Bổ sung cho đồng bộ online/offline ---
   serialNumber: varchar("serialNumber", { length: 100 }), // Serial number từ máy AOI/AVI
   firmwareVersion: varchar("firmwareVersion", { length: 50 }), // Phiên bản firmware
+  // Doc 40 W1 (Tuấn-P0, 0238) — địa chỉ kết nối máy nhập ở onboarding wizard (Step 2).
+  // Trước đây IP/port/protocol chỉ dùng cho probe testConnection rồi bị vứt; nay lưu
+  // vào bản ghi máy. Nullable để không phá caller cũ (create không truyền các field này).
+  ipAddress: varchar("ipAddress", { length: 45 }), // IPv4/IPv6 literal của máy
+  port: integer("port"), // Cổng TCP/WS (1-65535)
+  connectionProtocol: varchar("connectionProtocol", { length: 20 }), // "websocket" | "tcp" | "http"
   syncMode: statusEnum_1("syncMode").default("online").notNull(), // "online" | "offline"
   registrationStatus: varchar("registrationStatus", { length: 20 }).default("pending").notNull(), // "pending" | "approved" | "rejected" | "unmapped"
   // Doc 27 Đợt 3 / W3-B — gap M2: asset lifecycle state (varchar-enum, app-validated).

@@ -99,6 +99,9 @@ const CLASS_PARENT: Record<EquipmentClass, string> = {
   AUTOMATION: "ProcessAutomation", ASSEMBLY: "ProcessAutomation", FEEDER: "ProcessAutomation",
   SCREWDRIVE: "ProcessAutomation", DISPENSING: "ProcessAutomation", PACKAGING: "ProcessAutomation",
   ROBOT: "Robot", PALLETIZER: "Robot",
+  // doc 40 W5 (MTX-03) — SMT line cells sit under ProcessAutomation.
+  MOUNTER: "ProcessAutomation", REFLOW: "ProcessAutomation",
+  STENCIL_PRINTER: "ProcessAutomation", WAVE_SOLDER: "ProcessAutomation",
 };
 
 /** Base attributes every Equipment carries (mirrors report §9.6 Equipment(base)). */

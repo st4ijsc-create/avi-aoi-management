@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const getModelsSpy = vi.fn();
 const getByIdSpy = vi.fn();
 const getByCodeSpy = vi.fn();
+const createSpy = vi.fn(async () => 42);
 const updateSpy = vi.fn(async () => {});
 const deleteSpy = vi.fn(async () => {});
 const backfillNormalizedSpy = vi.fn(async () => ({ points: 0, fiducials: 0 }));
@@ -24,6 +25,7 @@ vi.mock("../db", () => ({
   getProductModels: (...a: any[]) => getModelsSpy(...a),
   getProductModelById: (...a: any[]) => getByIdSpy(...a),
   getProductModelByCode: (...a: any[]) => getByCodeSpy(...a),
+  createProductModel: (...a: any[]) => createSpy(...a),
   updateProductModel: (...a: any[]) => updateSpy(...a),
   deleteProductModel: (...a: any[]) => deleteSpy(...a),
   backfillNormalizedCoordsForProduct: (...a: any[]) => backfillNormalizedSpy(...a),
@@ -55,6 +57,7 @@ beforeEach(() => {
   getModelsSpy.mockReset();
   getByIdSpy.mockReset();
   getByCodeSpy.mockReset();
+  createSpy.mockClear();
   updateSpy.mockClear();
   deleteSpy.mockClear();
   auditSpy.mockClear();
@@ -171,5 +174,98 @@ describe("RBAC — mutations are admin-only", () => {
   it("a viewer CAN list (read is protectedProcedure, not admin)", async () => {
     getModelsSpy.mockResolvedValue([]);
     await expect(viewer.list()).resolves.toEqual([]);
+  });
+});
+
+// ── Doc 42 Đợt 4A (APPLY-B) — import/export danh sách sản phẩm ───────────────
+describe("productModel.exportList — Excel/CSV buffer (APPLY-B)", () => {
+  it("forwards the current filters to db.getProductModels and returns a base64 xlsx", async () => {
+    getModelsSpy.mockResolvedValue([
+      { code: "PCB-A", name: "Board A", description: "d", category: "PCBA", lifecycleStatus: "active", targetYieldRate: "98.00", minYieldRate: "95.00", createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-02") },
+    ]);
+    const res = await admin.exportList({ search: "PCB", lifecycleStatus: "active", sortBy: "code", sortOrder: "desc" });
+    expect(getModelsSpy).toHaveBeenCalledWith({ search: "PCB", lifecycleStatus: "active", sortBy: "code", sortOrder: "desc" });
+    expect(res.fileName).toMatch(/^san_pham_.*\.xlsx$/);
+    expect(res.mimeType).toContain("spreadsheetml");
+    expect(res.count).toBe(1);
+    // xlsx files are ZIP archives → start with "PK".
+    expect(Buffer.from(res.base64, "base64").subarray(0, 2).toString("latin1")).toBe("PK");
+  });
+
+  it("csv format returns a text/csv buffer whose header carries the Vietnamese labels", async () => {
+    getModelsSpy.mockResolvedValue([{ code: "PCB-A", name: "Board A", lifecycleStatus: "active" }]);
+    const res = await admin.exportList({ format: "csv" });
+    expect(res.fileName).toMatch(/\.csv$/);
+    expect(res.mimeType).toContain("text/csv");
+    const text = Buffer.from(res.base64, "base64").toString("utf8");
+    expect(text).toContain("Mã sản phẩm");
+    expect(text).toContain("PCB-A");
+  });
+
+  it("a viewer CAN export (read is protectedProcedure)", async () => {
+    getModelsSpy.mockResolvedValue([]);
+    await expect(viewer.exportList()).resolves.toMatchObject({ count: 0 });
+  });
+});
+
+describe("productModel.importList — upsert-by-code + validation (APPLY-B)", () => {
+  it("inserts a NEW code and coerces yields to decimal strings", async () => {
+    getByCodeSpy.mockResolvedValue(undefined);
+    const res = await admin.importList({
+      rows: [{ code: "NEW-1", name: "New One", category: "PCBA", lifecycleStatus: "active", targetYieldRate: 98, minYieldRate: 95 }],
+    });
+    expect(res).toMatchObject({ inserted: 1, updated: 0, failed: 0 });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const arg = createSpy.mock.calls[0][0] as any;
+    expect(arg).toMatchObject({ code: "NEW-1", name: "New One", category: "PCBA", lifecycleStatus: "active", targetYieldRate: "98", minYieldRate: "95" });
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("UPDATES an existing code (no duplicate insert) with only the provided fields", async () => {
+    getByCodeSpy.mockResolvedValue({ id: 77, code: "EXIST" });
+    const res = await admin.importList({ rows: [{ code: "EXIST", name: "Renamed", category: "NewCat" }] });
+    expect(res).toMatchObject({ inserted: 0, updated: 1, failed: 0 });
+    expect(createSpy).not.toHaveBeenCalled();
+    const [id, patch] = updateSpy.mock.calls[0] as any[];
+    expect(id).toBe(77);
+    expect(patch).toMatchObject({ name: "Renamed", category: "NewCat" });
+    expect("code" in patch).toBe(false); // code never overwritten on update
+  });
+
+  it("does NOT skip validation — missing name / bad code / bad lifecycle become per-row errors, nothing written", async () => {
+    getByCodeSpy.mockResolvedValue(undefined);
+    const res = await admin.importList({
+      rows: [
+        { code: "OK-1", name: "" },                    // missing required name
+        { code: "bad code!", name: "Has space" },      // invalid code chars
+        { code: "OK-2", name: "Good", lifecycleStatus: "nope" }, // invalid enum
+        { name: "No code at all" },                    // missing required code
+      ],
+    });
+    expect(res.inserted).toBe(0);
+    expect(res.updated).toBe(0);
+    expect(res.failed).toBe(4);
+    expect(res.errors.map((e) => e.row).sort()).toEqual([1, 2, 3, 4]);
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports a mix: 1 insert + 1 update + 1 error, in one call", async () => {
+    getByCodeSpy.mockImplementation(async (code: string) => (code === "EXIST" ? { id: 5, code: "EXIST" } : undefined));
+    const res = await admin.importList({
+      rows: [
+        { code: "EXIST", name: "Upd" },
+        { code: "FRESH", name: "Ins" },
+        { code: "OK-3", name: "" }, // error
+      ],
+    });
+    expect(res).toMatchObject({ inserted: 1, updated: 1, failed: 1 });
+    expect(res.errors[0].row).toBe(3);
+  });
+
+  it("a viewer cannot import (adminProcedure → FORBIDDEN, nothing written)", async () => {
+    await expect(viewer.importList({ rows: [{ code: "X", name: "Y" }] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 });

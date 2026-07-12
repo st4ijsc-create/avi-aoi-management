@@ -70,6 +70,7 @@ import {
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useCopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 import { useFlowHistory } from "@/components/programming/flowHistory";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 import { IrMergePanel } from "@/components/programming/IrMergePanel";
@@ -976,6 +977,23 @@ export default function IrEditor() {
   const errorCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "error").length;
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
   const lintOk = lint?.ok ?? true;
+
+  // doc 41 — publish the IR editor to the Programming Copilot DOCK as an ADVISORY assistant.
+  // A block/graph flow has no text buffer to inject into, so no onApply: the copilot explains
+  // the transpiled output, reasons over the safety-linter diagnostics, and drafts reference
+  // snippets to copy. Clears when the editor unmounts.
+  useCopilotBinding(
+    () => ({
+      kind: "ir-flow" as const,
+      surfaceLabel: t("nav.irEditor", "IR Editor"),
+      diagnostics: (lint?.diagnostics ?? []).map((d) => ({
+        message: `[${d.rule}] ${d.message}`,
+        severity: d.severity === "error" ? ("error" as const) : ("warn" as const),
+        source: "lint",
+      })),
+    }),
+    [lint],
+  );
 
   // ── Mutations (gated: DPC_IR_V2_ENABLED + machine_control) ─────────────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {

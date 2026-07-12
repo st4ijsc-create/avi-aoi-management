@@ -21,7 +21,7 @@
  *                          generated code back into the host editor (onApply).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -52,8 +52,18 @@ export const COPILOT_KINDS = [
 ] as const;
 export type CopilotKind = (typeof COPILOT_KINDS)[number];
 
-const MODES = ["generate", "complete", "translate", "review", "explain"] as const;
-type CopilotMode = (typeof MODES)[number];
+export const MODES = ["generate", "complete", "translate", "review", "explain"] as const;
+export type CopilotMode = (typeof MODES)[number];
+
+/** doc 41 — a one-shot instruction pushed from a host (e.g. the dock's "Explain this
+ * error" / "Suggest a fix" inline actions). When `nonce` changes, the panel adopts the
+ * mode/request and — if `autoRun` — fires the generation immediately. */
+export interface CopilotSeed {
+  nonce: number;
+  mode?: CopilotMode;
+  request?: string;
+  autoRun?: boolean;
+}
 
 /** Vendor scopes for RAG grounding (server-side vendor filter). "" / "any" = auto. */
 const VENDORS = ["mitsubishi", "delta", "omron", "fanuc", "universal-robots", "zmotion"] as const;
@@ -91,10 +101,14 @@ export interface ProgrammingCopilotPanelProps {
   variant?: "full" | "embedded";
   /** Prefill the source kind (e.g. the host project.kind). */
   initialKind?: CopilotKind;
+  /** Prefill the RAG vendor scope (e.g. the host machine's vendor). "" / "any" = auto. */
+  vendorInitial?: string;
   /** Seed the "existing code" context from a host editor buffer (kept in sync). */
   contextCode?: string;
   /** When provided, an "Apply" action inserts the generated code into the host. */
   onApply?: (code: string) => void;
+  /** doc 41 — one-shot host instruction (dock inline actions). */
+  seed?: CopilotSeed;
   className?: string;
 }
 
@@ -104,8 +118,10 @@ const isExplainMode = (m: CopilotMode) => m === "explain" || m === "review";
 export function ProgrammingCopilotPanel({
   variant = "full",
   initialKind = "iec61131-st",
+  vendorInitial,
   contextCode,
   onApply,
+  seed,
   className,
 }: ProgrammingCopilotPanelProps) {
   const { t } = useTranslation();
@@ -113,7 +129,7 @@ export function ProgrammingCopilotPanel({
 
   const [kind, setKind] = useState<CopilotKind>(initialKind);
   const [mode, setMode] = useState<CopilotMode>("generate");
-  const [vendor, setVendor] = useState<string>("any");
+  const [vendor, setVendor] = useState<string>(vendorInitial || "any");
   const [targetKind, setTargetKind] = useState<CopilotKind>("zmotion-basic");
   const [request, setRequest] = useState("");
   const [ctxCode, setCtxCode] = useState(contextCode ?? "");
@@ -172,6 +188,30 @@ export function ProgrammingCopilotPanel({
       targetKind: mode === "translate" ? targetKind : undefined,
     });
   };
+
+  // doc 41 — adopt a one-shot host seed (dock inline actions). On a new nonce, set the
+  // mode/request, and if autoRun fire the generation straight away (bypassing the state
+  // batch by mutating with the seed values directly).
+  const seedNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!seed || seed.nonce === seedNonceRef.current) return;
+    seedNonceRef.current = seed.nonce;
+    const m = seed.mode ?? mode;
+    if (seed.mode) setMode(seed.mode);
+    if (seed.request != null) setRequest(seed.request);
+    if (seed.autoRun && !busy) {
+      const req = (seed.request ?? request).trim() || defaultRequest(m);
+      gen.mutate({
+        kind,
+        request: req,
+        mode: m,
+        vendor: vendor === "any" ? undefined : vendor,
+        contextCode: needsContextMode(m) && ctxCode.trim() ? ctxCode : undefined,
+        targetKind: m === "translate" ? targetKind : undefined,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.nonce]);
 
   const copyCode = async () => {
     if (!resultCode) return;

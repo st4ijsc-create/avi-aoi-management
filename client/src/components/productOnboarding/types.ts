@@ -102,6 +102,26 @@ export function mergeStepStatus(
   return "todo";
 }
 
+/**
+ * Required (non-optional, non-review) step keys that are NOT yet satisfied
+ * (doc 42 §10.12 · H3 #1 — Finish guard).
+ *
+ * A required step is satisfied when its MERGED status is "done" (real config
+ * exists, or an explicit manual completion). Required steps can never be
+ * "skipped" (only optional steps carry a skip mark), so a stray skip never
+ * satisfies one. The review step keeps its "Finish" button disabled while this
+ * list is non-empty and renders it as the "còn thiếu" checklist. Pure +
+ * unit-testable.
+ */
+export function requiredIncompleteSteps(
+  derived: Record<string, StepStatus>,
+  manual: OnboardingStepState = {},
+): string[] {
+  return PRODUCT_ONBOARDING_STEPS.filter((s) => !s.optional && s.key !== "review")
+    .filter((s) => mergeStepStatus(s.key, derived[s.key] ?? "todo", manual[s.key]) !== "done")
+    .map((s) => s.key);
+}
+
 /** Full readiness roll-up (pure) — powers the review summary + progress badge. */
 export function computeReadiness(input: OnboardingReadinessInput): OnboardingReadiness {
   const derived = deriveStepStatuses(input);

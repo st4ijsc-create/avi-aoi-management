@@ -967,28 +967,25 @@ export const oeeRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        INSERT INTO oee_targets 
-         (machineId, lineId, targetOEE, targetAvailability, targetPerformance, targetQuality,
-          alertThreshold, criticalThreshold, setBy, notes)
-         VALUES (
-          ${input.machineId || null},
-          ${input.lineId || null},
-          ${input.targetOEE},
-          ${input.targetAvailability},
-          ${input.targetPerformance},
-          ${input.targetQuality},
-          ${input.alertThreshold},
-          ${input.criticalThreshold},
-          ${ctx.user?.id || 0},
-          ${input.notes || null}
-         )
-      `);
-      
+
+      // Hương-P0: dùng Drizzle thay raw SQL — identifier camelCase không quote bị
+      // Postgres fold về lowercase (machineId → machineid) gây "column does not exist".
+      await db.insert(oeeTargets).values({
+        machineId: input.machineId ?? null,
+        lineId: input.lineId ?? null,
+        targetOEE: input.targetOEE,
+        targetAvailability: input.targetAvailability,
+        targetPerformance: input.targetPerformance,
+        targetQuality: input.targetQuality,
+        alertThreshold: input.alertThreshold,
+        criticalThreshold: input.criticalThreshold,
+        setBy: ctx.user?.id || 0,
+        notes: input.notes ?? null,
+      });
+
       return { success: true };
     }),
 
@@ -1008,25 +1005,27 @@ export const oeeRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        UPDATE oee_targets
-        SET machineId = ${input.machineId || null},
-            lineId = ${input.lineId || null},
-            targetOEE = ${input.targetOEE},
-            targetAvailability = ${input.targetAvailability},
-            targetPerformance = ${input.targetPerformance},
-            targetQuality = ${input.targetQuality},
-            alertThreshold = ${input.alertThreshold},
-            criticalThreshold = ${input.criticalThreshold},
-            notes = ${input.notes || null},
-            updatedAt = NOW()
-        WHERE id = ${input.id}
-      `);
-      
+
+      // Hương-P0: dùng Drizzle thay raw SQL không quote (camelCase bị fold lowercase).
+      await db.update(oeeTargets)
+        .set({
+          machineId: input.machineId ?? null,
+          lineId: input.lineId ?? null,
+          targetOEE: input.targetOEE,
+          targetAvailability: input.targetAvailability,
+          targetPerformance: input.targetPerformance,
+          targetQuality: input.targetQuality,
+          alertThreshold: input.alertThreshold,
+          criticalThreshold: input.criticalThreshold,
+          notes: input.notes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(oeeTargets.id, input.id));
+
       return { success: true };
     }),
 
@@ -1035,16 +1034,16 @@ export const oeeRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('../db');
-      const { sql } = await import('drizzle-orm');
+      const { oeeTargets } = await import('../../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(sql`
-        UPDATE oee_targets
-        SET isActive = false
-        WHERE id = ${input.id}
-      `);
-      
+
+      // Hương-P0: soft-delete qua Drizzle thay raw SQL.
+      await db.update(oeeTargets)
+        .set({ isActive: false })
+        .where(eq(oeeTargets.id, input.id));
+
       return { success: true };
     }),
 });

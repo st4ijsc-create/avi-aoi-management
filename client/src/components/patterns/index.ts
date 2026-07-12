@@ -14,6 +14,19 @@ export type { PageContainerProps } from "./PageContainer";
 export { MetricCard } from "./MetricCard";
 export type { MetricCardProps, MetricTone } from "./MetricCard";
 
+// doc 40 Wave 4d §13.3 — content-first: KPI 1 dòng thay lưới MetricCard 110px.
+export { StatChip, StatChipRow } from "./StatChip";
+export type { StatChipProps } from "./StatChip";
+
+// doc 40 Wave 4d §13.3 — mật độ hiển thị (comfortable/compact, lưu localStorage).
+export {
+  DensityProvider,
+  useDensity,
+  useDensityClasses,
+  densityClass,
+} from "./DensityProvider";
+export type { Density, DensityClasses } from "./DensityProvider";
+
 export { StatusBadge } from "./StatusBadge";
 export type { StatusBadgeProps, StatusMapEntry, BadgeVariant } from "./StatusBadge";
 
@@ -82,3 +95,20 @@ export { Sparkline } from "./Sparkline";
 export type { SparklineProps, SparkPoint } from "./Sparkline";
 export { ConnectionChip } from "./ConnectionChip";
 export type { ConnectionChipProps, ConnectionState } from "./ConnectionChip";
+
+// ── doc 42 Đợt 1 (INFRA-1) — shared delete-confirm + entity-picker guard ──────
+// ConfirmDeleteDialog: thay nút thùng-rác 1-click bằng bước xác nhận thống nhất
+// (hard-delete / soft-archive + cảnh báo tham chiếu mồ côi). Không tự toast.
+export { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+export type { ConfirmDeleteDialogProps } from "./ConfirmDeleteDialog";
+
+// ── doc 42 Đợt 4A (INFRA-4A) — thanh import/export master-data dùng chung ──────
+// ImportExportBar: Xuất Excel/CSV (client-side qua xlsx) + Tải mẫu + Nhập (preview
+// DataTable, tô đỏ dòng lỗi). Luật parse/validate chung server qua @shared/masterDataIO.
+export { ImportExportBar } from "./ImportExportBar";
+export type {
+  ImportExportBarProps,
+  ImportResultSummary,
+  MasterDataColumn,
+  MasterDataFormat,
+} from "./ImportExportBar";

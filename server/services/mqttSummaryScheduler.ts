@@ -18,13 +18,78 @@ let dailyJob: cron.ScheduledTask | null = null;
 let weeklyJob: cron.ScheduledTask | null = null;
 
 /**
+ * MON-F14 (doc 40 §11) — RESOLVE the db handle FRESH on every run.
+ *
+ * Trước đây `db` được gán qua một promise KHÔNG await trong initSummaryScheduler;
+ * nếu job cron chạy trước khi promise đó resolve thì `db` còn null → cả run bị bỏ
+ * qua âm thầm. ensureDb() await getDb() mỗi lần gọi (getDb tự cache connection nội
+ * bộ, nên không mở kết nối mới) → run không bao giờ chạy với handle null nữa.
+ */
+async function ensureDb(): Promise<any> {
+  try {
+    const module = await import('../db');
+    db = await module.getDb();
+  } catch (err) {
+    console.error('[MQTT Scheduler] getDb() failed:', (err as any)?.message || err);
+  }
+  return db;
+}
+
+/**
+ * MON-F14 — UPSERT idempotent cho một dòng summary.
+ *
+ * VẤN ĐỀ: insert summary không idempotent → trigger tay + cron trong cùng một ngày
+ * ghi 2 bản trùng (cùng summaryType + summaryDate + stationId). FIX: tra dòng hiện có
+ * theo bộ ba khoá tự nhiên (summaryType, summaryDate, stationId) → UPDATE nếu đã có,
+ * INSERT nếu chưa. Idempotent vì summaryDate luôn được chuẩn hoá về nửa đêm (setHours
+ * 0,0,0,0) nên hai run cùng ngày khớp đúng một dòng.
+ *
+ * LƯU Ý (race): đây là check-then-write ở tầng app — vẫn còn khe TOCTOU nếu trigger tay
+ * và cron chạy ĐỒNG THỜI. Muốn race-safe tuyệt đối cần UNIQUE index
+ * (summaryType, summaryDate, stationId) + ON CONFLICT DO UPDATE ở tầng DB — cần một
+ * migration mới (KHÔNG tự thêm ở đây để tránh trùng số migration); xem mục "blocked".
+ */
+async function upsertSummary(
+  values: typeof schema.mqttErrorSummary.$inferInsert,
+): Promise<void> {
+  const existing = await db
+    .select({ id: schema.mqttErrorSummary.id })
+    .from(schema.mqttErrorSummary)
+    .where(
+      and(
+        eq(schema.mqttErrorSummary.summaryType, values.summaryType),
+        eq(schema.mqttErrorSummary.summaryDate, values.summaryDate as Date),
+        eq(schema.mqttErrorSummary.stationId, values.stationId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    // Recompute → cập nhật số liệu; reset sentToClients để publish lại (được set true
+    // sau khi publishSummary thành công, giữ nguyên luồng gửi hiện có).
+    await db
+      .update(schema.mqttErrorSummary)
+      .set({
+        totalInspections: values.totalInspections,
+        totalNG: values.totalNG,
+        totalNTF: values.totalNTF,
+        ngRate: values.ngRate,
+        topNGPoints: values.topNGPoints,
+        sentToClients: false,
+      })
+      .where(eq(schema.mqttErrorSummary.id, existing[0].id));
+  } else {
+    await db.insert(schema.mqttErrorSummary).values(values);
+  }
+}
+
+/**
  * Initialize the summary scheduler
  */
 export function initSummaryScheduler() {
-  // Get db instance
-  import('../db').then(async module => {
-    db = await module.getDb();
-  });
+  // Warm up the db handle (best-effort); ensureDb() re-resolves it on every run so a
+  // run never depends on this fire-and-forget completing first.
+  void ensureDb();
 
   // Daily summary - Run at 6:00 AM every day
   dailyJob = cron.schedule('0 6 * * *', async () => {
@@ -49,6 +114,7 @@ export function initSummaryScheduler() {
  * Generate and send daily summary for all stations with NG
  */
 export async function generateAndSendDailySummary(): Promise<void> {
+  await ensureDb(); // MON-F14: resolve handle fresh mỗi run (không dựa promise init)
   if (!db || !isMqttRunning()) {
     console.log('[MQTT Scheduler] Database or MQTT not available');
     return;
@@ -97,8 +163,8 @@ export async function generateAndSendDailySummary(): Promise<void> {
         ? (station.totalNG / station.totalInspections) * 100 
         : 0;
 
-      // Save summary to database
-      await db.insert(schema.mqttErrorSummary).values({
+      // Save summary to database (MON-F14: idempotent upsert theo khoá tự nhiên).
+      await upsertSummary({
         summaryType: 'DAILY',
         summaryDate: yesterday,
         stationId: station.stationId,
@@ -155,6 +221,7 @@ export async function generateAndSendDailySummary(): Promise<void> {
  * Generate and send weekly summary for all stations with NG
  */
 export async function generateAndSendWeeklySummary(): Promise<void> {
+  await ensureDb(); // MON-F14: resolve handle fresh mỗi run (không dựa promise init)
   if (!db || !isMqttRunning()) {
     console.log('[MQTT Scheduler] Database or MQTT not available');
     return;
@@ -203,8 +270,8 @@ export async function generateAndSendWeeklySummary(): Promise<void> {
         ? (station.totalNG / station.totalInspections) * 100 
         : 0;
 
-      // Save summary to database
-      await db.insert(schema.mqttErrorSummary).values({
+      // Save summary to database (MON-F14: idempotent upsert theo khoá tự nhiên).
+      await upsertSummary({
         summaryType: 'WEEKLY',
         summaryDate: lastWeekStart,
         stationId: station.stationId,

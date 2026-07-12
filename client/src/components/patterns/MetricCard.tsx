@@ -43,6 +43,12 @@ export interface MetricCardProps {
   tone?: MetricTone;
   /** Optional delta line under the value (e.g. "+3 today"). */
   delta?: React.ReactNode;
+  /**
+   * Kích thước card (doc 40 §13.3 content-first). `default` giữ nguyên bản gốc
+   * (~110px). `compact` thu gọn padding / cỡ số / icon để trả không gian dọc cho
+   * nội dung chính. Mặc định `default` → không phá caller hiện tại.
+   */
+  size?: "default" | "compact";
   className?: string;
 }
 
@@ -52,22 +58,36 @@ export function MetricCard({
   value,
   tone = "default",
   delta,
+  size = "default",
   className,
 }: MetricCardProps) {
   const toneCls = TONE_CLASS[tone];
+  const compact = size === "compact";
   return (
     <Card className={className}>
-      <CardContent className="flex items-center gap-3 p-4">
+      <CardContent
+        className={
+          compact ? "flex items-center gap-2.5 p-2.5" : "flex items-center gap-3 p-4"
+        }
+      >
         {icon != null && (
           <div
             aria-hidden="true"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+            className={
+              compact
+                ? "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary [&_svg]:h-4 [&_svg]:w-4"
+                : "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+            }
           >
             {icon}
           </div>
         )}
         <div className="min-w-0">
-          <div className={`text-2xl font-bold tabular-nums ${toneCls}`}>{value}</div>
+          <div
+            className={`${compact ? "text-lg" : "text-2xl"} font-bold tabular-nums ${toneCls}`}
+          >
+            {value}
+          </div>
           <div className="truncate text-xs text-muted-foreground">{label}</div>
           {delta != null && (
             <div className="truncate text-xs text-muted-foreground">{delta}</div>

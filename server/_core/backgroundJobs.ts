@@ -41,6 +41,7 @@
 let started = false;
 let chargingSweepTimer: NodeJS.Timeout | null = null;
 let andonSlaSweepTimer: NodeJS.Timeout | null = null;
+let storeForwardDrainTimer: NodeJS.Timeout | null = null;
 
 export function backgroundSchedulersStarted(): boolean {
   return started;
@@ -385,6 +386,17 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[DowntimeDetection] start failed:", (err as any)?.message || err);
   }
 
+  // Doc 40 MON-F1 — machine presence sweep: suy trạng thái online/offline từ recency của
+  // ot_telemetry cho MỌI transport OT (bổ sung đường socket đã có), ghi machine_status_logs
+  // chống trùng. Opt in via MACHINE_PRESENCE_ENABLED=true (WRITES machine_status_logs —
+  // default OFF). startMachinePresence self-gates cờ + idempotent (no double-schedule).
+  try {
+    const { startMachinePresence } = await import("../services/machinePresenceService");
+    startMachinePresence();
+  } catch (err) {
+    console.error("[MachinePresence] start failed:", (err as any)?.message || err);
+  }
+
   // Doc 38 T-1 (P1) — SECS/GEM production bring-up. Opens an HSMS session per
   // configured equipment (SECS_GEM_EQUIPMENT JSON) and arms attachGemAlarmDispatch
   // so live S5F1 alarms reach the Andon path (EQ_INTEG_ENABLED). Honest no-op unless
@@ -400,6 +412,43 @@ export async function startBackgroundSchedulers(): Promise<void> {
     }
   } catch (err) {
     console.error("[SecsGemBringup] start failed:", (err as any)?.message || err);
+  }
+
+  // OT-F10 (doc 40 §11) — store-and-forward INDEPENDENT DRAIN timer. Trước đây backfill()
+  // chỉ chạy opportunistic sau MỘT write thành công trong ingestNow, nên khi DB hồi phục
+  // đúng lúc vắng traffic (không còn reader nào ingest) thì hàng chờ WAL nằm im vô thời hạn.
+  // Timer này định kỳ (OT_STORE_FORWARD_DRAIN_MS, mặc định 45s) tự drain khi còn backlog.
+  //
+  // SELF-GATED + AN TOÀN: chỉ làm việc khi storeForwardEnabled() && bufferedCount()>0. Với
+  // cờ OT_STORE_FORWARD_ENABLED OFF (mặc định) buffer luôn rỗng → mỗi tick chỉ là một phép
+  // kiểm tra getter rồi thoát (no-op). Unref'd + non-overlapping (mirror charging sweep).
+  // wireStoreForward() bơm lại insert fn (đề phòng WAL restore trên boot mà chưa có ingest
+  // nào wire) trước khi backfill.
+  try {
+    const rawDrainMs = Number(process.env.OT_STORE_FORWARD_DRAIN_MS);
+    const intervalMs = Math.max(15_000, Number.isFinite(rawDrainMs) ? rawDrainMs : 45_000); // guard NaN (QA-5): env phi-số → 45s
+    let draining = false;
+    storeForwardDrainTimer = setInterval(async () => {
+      if (draining) return; // no overlap
+      draining = true;
+      try {
+        const sf = await import("../services/ot/storeForward");
+        if (sf.storeForwardEnabled() && sf.bufferedCount() > 0) {
+          const { wireStoreForward } = await import("../services/telemetryBus");
+          await wireStoreForward();
+          const r = await sf.backfill();
+          if (r.drained > 0)
+            console.log(`[StoreForward] drain timer backfilled ${r.drained} row(s); remaining=${r.remaining}`);
+        }
+      } catch (err) {
+        console.error("[StoreForward] drain timer failed:", (err as any)?.message || err);
+      } finally {
+        draining = false;
+      }
+    }, intervalMs);
+    if (typeof storeForwardDrainTimer.unref === "function") storeForwardDrainTimer.unref();
+  } catch (err) {
+    console.error("[StoreForward] drain timer start failed:", (err as any)?.message || err);
   }
 
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
@@ -418,6 +467,11 @@ export function stopBackgroundSchedulers(): void {
   if (andonSlaSweepTimer) {
     clearInterval(andonSlaSweepTimer);
     andonSlaSweepTimer = null;
+  }
+  // OT-F10 — idempotent no-op when the drain timer was never started.
+  if (storeForwardDrainTimer) {
+    clearInterval(storeForwardDrainTimer);
+    storeForwardDrainTimer = null;
   }
   import("../services/reportScheduler")
     .then((m) => {
@@ -514,6 +568,10 @@ export function stopBackgroundSchedulers(): void {
   // Doc 38 T-1 (P0 #3 / P1) — idempotent no-ops when never started.
   import("../services/downtimeDetectionService")
     .then((m) => m.stopDowntimeDetection())
+    .catch(() => {});
+  // Doc 40 MON-F1 — idempotent no-op when presence sweep was never started.
+  import("../services/machinePresenceService")
+    .then((m) => m.stopMachinePresence())
     .catch(() => {});
   import("../services/secsgem/secsGemBringup")
     .then((m) => m.stopSecsGemBringup())

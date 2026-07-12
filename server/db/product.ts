@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { rethrowDbError } from "../_core/dbErrors";
 import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gte, inArray, SQL } from "drizzle-orm";
 import {
   productModels, InsertProductModel,
@@ -1590,15 +1591,17 @@ export async function getProductMachineMappings(machineId?: number, productModel
   const db = await getDb();
   if (!db) return [];
   
-  let query = db.select().from(productMachineMappings);
-  
-  if (machineId) {
-    query = query.where(eq(productMachineMappings.machineId, machineId)) as typeof query;
-  }
-  if (productModelId) {
-    query = query.where(eq(productMachineMappings.productModelId, productModelId)) as typeof query;
-  }
-  
+  // QA4F-1 (high): .where() gọi nhiều lần GHI ĐÈ nhau (không AND) → khi cả machineId
+  // lẫn productModelId đều set thì filter machineId bị mất → trả mapping của sản phẩm
+  // trên MỌI máy (wizard đổi-sản-phẩm báo "sẵn sàng" sai). Gom điều kiện + and().
+  const conds = [];
+  if (machineId) conds.push(eq(productMachineMappings.machineId, machineId));
+  if (productModelId) conds.push(eq(productMachineMappings.productModelId, productModelId));
+
+  const query = conds.length
+    ? db.select().from(productMachineMappings).where(and(...conds))
+    : db.select().from(productMachineMappings);
+
   return query.orderBy(desc(productMachineMappings.priority));
 }
 
@@ -1610,11 +1613,11 @@ export async function createProductMachineMapping(data: InsertProductMachineMapp
     return { id: result.id };
   } catch (err: any) {
     // W3-A (doc 27 M6, 0180): uq_pm_mappings_pair — a (product, machine) pair
-    // exists at most once. Translate the DB error into an actionable message.
-    if (err?.code === "23505" || /uq_pm_mappings_pair/.test(String(err?.message))) {
-      throw new Error("Mapping đã tồn tại cho cặp sản phẩm/máy này — hãy sửa (kích hoạt lại / đổi priority) bản ghi hiện có thay vì tạo mới.");
-    }
-    throw err;
+    // exists at most once. Doc 42 #10: drizzle bọc lỗi pg trong DrizzleQueryError
+    // (23505 nằm ở err.cause) → dò bằng rethrowDbError thay vì err.code trực tiếp.
+    rethrowDbError(err, {
+      conflictMessage: "Mapping đã tồn tại cho cặp sản phẩm/máy này — hãy sửa (kích hoạt lại / đổi priority) bản ghi hiện có thay vì tạo mới.",
+    });
   }
 }
 
@@ -1628,6 +1631,35 @@ export async function deleteProductMachineMapping(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(productMachineMappings).where(eq(productMachineMappings.id, id));
+}
+
+/**
+ * Doc 42 Đợt 1 (#11/#40) — dọn mapping mồ côi: bản ghi trỏ tới sản phẩm đã xoá
+ * (hard-delete hoặc soft-delete `deletedAt`) hoặc máy không còn tồn tại → hiện
+ * "N/A" trên UI và khiến máy vẫn "được gán" sản phẩm không tồn tại. Trả về số
+ * bản ghi đã xoá. Tính trong JS (bảng mapping nhỏ) để tránh ngữ nghĩa NOT IN với
+ * subquery rỗng.
+ */
+export async function deleteOrphanProductMachineMappings(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const [allMaps, validProducts, validMachines] = await Promise.all([
+    db.select({
+      id: productMachineMappings.id,
+      productModelId: productMachineMappings.productModelId,
+      machineId: productMachineMappings.machineId,
+    }).from(productMachineMappings),
+    db.select({ id: productModels.id }).from(productModels).where(isNull(productModels.deletedAt)),
+    db.select({ id: machines.id }).from(machines),
+  ]);
+  const validProductIds = new Set(validProducts.map((p) => p.id));
+  const validMachineIds = new Set(validMachines.map((m) => m.id));
+  const orphanIds = allMaps
+    .filter((m) => !validProductIds.has(m.productModelId) || !validMachineIds.has(m.machineId))
+    .map((m) => m.id);
+  if (orphanIds.length === 0) return 0;
+  await db.delete(productMachineMappings).where(inArray(productMachineMappings.id, orphanIds));
+  return orphanIds.length;
 }
 
 export async function getMappingsByMachine(machineId: number) {

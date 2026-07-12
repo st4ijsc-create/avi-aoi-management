@@ -23,9 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -33,9 +30,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
-import { Cpu, Plus, Pencil, Trash2, AlertTriangle, Link2, Link2Off, Wand2 } from "lucide-react";
+import { PageHeader, PageContainer, StatusBadge, ConfirmDeleteDialog, EmptyState } from "@/components/patterns";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { Cpu, Plus, Pencil, Trash2, RotateCcw, AlertTriangle, Link2, Link2Off, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const FAMILIES = [
   "CHIP", "QFP", "QFN", "BGA", "SOT", "SOD", "SOIC", "TSSOP", "DPAK", "THT", "CONN", "ELECTROLYTIC", "TANTALUM", "CRYSTAL", "LED", "CSP", "OTHER",
@@ -123,7 +122,7 @@ function EntityDialog({
       await onSubmit(vals);
       setOpen(false);
     } catch (e: any) {
-      toast.error(e?.message ?? "Error");
+      toastTrpcError(e);
     }
   };
 
@@ -224,14 +223,18 @@ function PackagesPanel() {
   const canEdit = hasPermission("masterdata", "canEdit");
   const canDelete = hasPermission("masterdata", "canDelete");
   const [family, setFamily] = useState<string>("all");
-  const [search, setSearch] = useState("");
-  const list = trpc.componentLibrary.packages.list.useQuery({ family: family !== "all" ? family : undefined });
+  const [showArchived, setShowArchived] = useState(false);
+  const list = trpc.componentLibrary.packages.list.useQuery({
+    family: family !== "all" ? family : undefined,
+    includeDeleted: showArchived || undefined,
+  });
   const linkStats = trpc.componentLibrary.linkStats.useQuery();
   const utils = trpc.useUtils();
   const refresh = () => { utils.componentLibrary.packages.list.invalidate(); utils.componentLibrary.linkStats.invalidate(); };
   const create = trpc.componentLibrary.packages.create.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
   const update = trpc.componentLibrary.packages.update.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
-  const del = trpc.componentLibrary.packages.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); } });
+  const del = trpc.componentLibrary.packages.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); }, onError: (e) => toastTrpcError(e) });
+  const restore = trpc.componentLibrary.packages.restore.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); }, onError: (e) => toastTrpcError(e) });
 
   const fields = usePackageFields();
   const linkCount = useMemo(() => {
@@ -240,87 +243,125 @@ function PackagesPanel() {
     return m;
   }, [linkStats.data]);
 
-  const rows = (list.data ?? []).filter((r: any) =>
-    !search || String(r.code).toLowerCase().includes(search.toLowerCase()) || String(r.ipcName ?? "").toLowerCase().includes(search.toLowerCase()),
-  );
+  const data = (list.data ?? []) as any[];
+
+  const columns: DataTableColumn<any>[] = [
+    {
+      id: "code",
+      header: t("masterData.code"),
+      sortValue: (r) => r.code,
+      filterValue: (r) => `${r.code} ${r.ipcName ?? ""}`,
+      cell: (r) => (
+        <span className="font-mono">
+          {r.code}
+          {r.origin === "seed" && (
+            <Badge variant="secondary" className="ml-2 text-[10px]">{t("componentLibrary.seedBadge")}</Badge>
+          )}
+          {r.deletedAt != null && (
+            <Badge variant="outline" className="ml-2 text-[10px] text-muted-foreground">{t("componentLibrary.archivedBadge", "Đã lưu trữ")}</Badge>
+          )}
+        </span>
+      ),
+    },
+    { id: "family", header: t("componentLibrary.family"), sortValue: (r) => r.family, cell: (r) => <Badge variant="outline">{r.family}</Badge> },
+    { id: "ipcName", header: t("componentLibrary.ipcName"), sortValue: (r) => r.ipcName, cell: (r) => <span className="font-mono text-xs">{r.ipcName ?? "-"}</span> },
+    { id: "mount", header: t("componentLibrary.mount"), sortValue: (r) => r.mountType, cell: (r) => r.mountType ?? "-" },
+    { id: "pins", header: t("componentLibrary.pins"), align: "right", sortValue: (r) => r.pinCount, cell: (r) => (r.pinCount != null ? Number(r.pinCount).toLocaleString("vi-VN") : "-") },
+    { id: "pitch", header: t("componentLibrary.pitch"), align: "right", sortValue: (r) => r.pitchMm, cell: (r) => r.pitchMm ?? "-" },
+    {
+      id: "polarity",
+      header: t("componentLibrary.polarity"),
+      sortValue: (r) => (r.hasPolarity ? 1 : 0),
+      cell: (r) => (r.hasPolarity
+        ? <Badge variant="destructive" className="text-[10px]">{r.polarityMark ?? t("componentLibrary.polarized")}</Badge>
+        : <span className="text-muted-foreground">-</span>),
+    },
+    { id: "linked", header: t("componentLibrary.linkedMaterials"), align: "right", sortValue: (r) => linkCount.get(r.id) ?? 0, cell: (r) => (linkCount.get(r.id) ?? 0).toLocaleString("vi-VN") },
+    {
+      id: "active",
+      header: t("masterData.active"),
+      sortValue: (r) => (r.isActive ? 1 : 0),
+      cell: (r) => <StatusBadge status={r.isActive ? "active" : "inactive"} tone={r.isActive ? "success" : "default"} label={r.isActive ? t("masterData.active") : t("masterData.inactive")} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      cell: (r) => (
+        <div className="space-x-1 text-right whitespace-nowrap">
+          {r.deletedAt != null ? (
+            canEdit && (
+              <Button size="sm" variant="ghost" onClick={() => restore.mutate({ id: r.id })} disabled={restore.isPending}>
+                <RotateCcw className="mr-1 h-4 w-4" /> {t("componentLibrary.restore", "Khôi phục")}
+              </Button>
+            )
+          ) : (
+            <>
+              {canEdit && (
+                <EntityDialog
+                  title={t("componentLibrary.editPackage")} fields={fields.filter((f) => f.key !== "code")} initial={r}
+                  onSubmit={async (v) => { await update.mutateAsync({ ...toPackagePayload(v), code: undefined, id: r.id } as any); }}
+                  trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
+                />
+              )}
+              {canDelete && (
+                <ConfirmDeleteDialog
+                  trigger={<Button size="sm" variant="ghost"><Trash2 className="h-4 w-4" /></Button>}
+                  itemLabel={`${t("componentLibrary.tabs.packages")} ${r.code}`}
+                  isSoftDelete
+                  referenceCount={linkCount.get(r.id)}
+                  referenceLabel={t("componentLibrary.linkedMaterials")}
+                  onConfirm={async () => { await del.mutateAsync({ id: r.id }); }}
+                />
+              )}
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <Card><CardContent className="space-y-3 pt-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {canCreate && (
-          <EntityDialog
-            title={t("componentLibrary.newPackage")} fields={fields}
-            initial={{ isActive: true, mountType: "SMT", hasPolarity: false }}
-            onSubmit={async (v) => { await create.mutateAsync(toPackagePayload(v) as any); }}
-            trigger={<Button><Plus className="mr-1 h-4 w-4" /> {t("componentLibrary.newPackage")}</Button>}
+    <Card><CardContent className="pt-4">
+      <DataTable
+        columns={columns}
+        data={data}
+        getRowId={(r) => r.id}
+        loading={list.isLoading}
+        searchable
+        searchPlaceholder={t("componentLibrary.searchPlaceholder")}
+        initialSort={{ columnId: "code", dir: "asc" }}
+        emptyState={
+          <EmptyState
+            variant="no-data"
+            title={t("componentLibrary.emptyTitle", "Chưa có package")}
+            description={t("componentLibrary.emptyDesc", "Chưa có package linh kiện nào khớp bộ lọc. Tạo package đầu tiên để bắt đầu.")}
           />
-        )}
-        <Select value={family} onValueChange={setFamily}>
-          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("common.all", "Tất cả")}</SelectItem>
-            {FAMILIES.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Input
-          className="w-56"
-          placeholder={t("componentLibrary.searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="ml-auto text-xs text-muted-foreground">
-          {t("componentLibrary.packageCount", { count: rows.length })}
-        </div>
-      </div>
-      <Table>
-        <TableHeader><TableRow>
-          <TableHead>{t("masterData.code")}</TableHead>
-          <TableHead>{t("componentLibrary.family")}</TableHead>
-          <TableHead>{t("componentLibrary.ipcName")}</TableHead>
-          <TableHead>{t("componentLibrary.mount")}</TableHead>
-          <TableHead className="text-right">{t("componentLibrary.pins")}</TableHead>
-          <TableHead className="text-right">{t("componentLibrary.pitch")}</TableHead>
-          <TableHead>{t("componentLibrary.polarity")}</TableHead>
-          <TableHead className="text-right">{t("componentLibrary.linkedMaterials")}</TableHead>
-          <TableHead>{t("masterData.active")}</TableHead>
-          <TableHead></TableHead>
-        </TableRow></TableHeader>
-        <TableBody>
-          {rows.map((r: any) => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono">
-                {r.code}
-                {r.origin === "seed" && (
-                  <Badge variant="secondary" className="ml-2 text-[10px]">{t("componentLibrary.seedBadge")}</Badge>
-                )}
-              </TableCell>
-              <TableCell><Badge variant="outline">{r.family}</Badge></TableCell>
-              <TableCell className="font-mono text-xs">{r.ipcName ?? "-"}</TableCell>
-              <TableCell>{r.mountType}</TableCell>
-              <TableCell className="text-right">{r.pinCount ?? "-"}</TableCell>
-              <TableCell className="text-right">{r.pitchMm ?? "-"}</TableCell>
-              <TableCell>
-                {r.hasPolarity
-                  ? <Badge variant="destructive" className="text-[10px]">{r.polarityMark ?? t("componentLibrary.polarized")}</Badge>
-                  : <span className="text-muted-foreground">-</span>}
-              </TableCell>
-              <TableCell className="text-right">{linkCount.get(r.id) ?? 0}</TableCell>
-              <TableCell><StatusBadge status={r.isActive ? "active" : "inactive"} tone={r.isActive ? "success" : "default"} label={r.isActive ? t("masterData.active") : t("masterData.inactive")} /></TableCell>
-              <TableCell className="text-right space-x-1">
-                {canEdit && (
-                  <EntityDialog
-                    title={t("componentLibrary.editPackage")} fields={fields.filter((f) => f.key !== "code")} initial={r}
-                    onSubmit={async (v) => { await update.mutateAsync({ ...toPackagePayload(v), code: undefined, id: r.id } as any); }}
-                    trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
-                  />
-                )}
-                {canDelete && <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
-              </TableCell>
-            </TableRow>
-          ))}
-          {rows.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
-        </TableBody>
-      </Table>
+        }
+        toolbar={
+          <>
+            {canCreate && (
+              <EntityDialog
+                title={t("componentLibrary.newPackage")} fields={fields}
+                initial={{ isActive: true, mountType: "SMT", hasPolarity: false }}
+                onSubmit={async (v) => { await create.mutateAsync(toPackagePayload(v) as any); }}
+                trigger={<Button size="sm"><Plus className="mr-1 h-4 w-4" /> {t("componentLibrary.newPackage")}</Button>}
+              />
+            )}
+            <Select value={family} onValueChange={setFamily}>
+              <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("common.all", "Tất cả")}</SelectItem>
+                {FAMILIES.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-2">
+              <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+              <Label className="text-sm">{t("componentLibrary.showArchived", "Hiện đã lưu trữ")}</Label>
+            </div>
+          </>
+        }
+      />
     </CardContent></Card>
   );
 }
@@ -341,12 +382,48 @@ function FootprintsPanel() {
   const refresh = () => utils.componentLibrary.footprints.listByPackage.invalidate();
   const create = trpc.componentLibrary.footprints.create.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
   const update = trpc.componentLibrary.footprints.update.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
-  const del = trpc.componentLibrary.footprints.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); } });
+  const del = trpc.componentLibrary.footprints.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); }, onError: (e) => toastTrpcError(e) });
 
   const fields: Field[] = [
     { key: "code", label: t("masterData.code"), required: true },
     { key: "density", label: t("componentLibrary.density"), type: "select", options: DENSITIES.map((d) => ({ value: d, label: d })) },
     { key: "padCount", label: t("componentLibrary.padCount"), type: "number" },
+  ];
+
+  const data = (footprints.data ?? []) as any[];
+  const columns: DataTableColumn<any>[] = [
+    { id: "code", header: t("masterData.code"), sortValue: (r) => r.code, filterValue: (r) => r.code, cell: (r) => <span className="font-mono">{r.code}</span> },
+    { id: "density", header: t("componentLibrary.density"), sortValue: (r) => r.density, cell: (r) => r.density ?? "-" },
+    { id: "padCount", header: t("componentLibrary.padCount"), align: "right", sortValue: (r) => r.padCount, cell: (r) => (r.padCount != null ? Number(r.padCount).toLocaleString("vi-VN") : "-") },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      cell: (r) => (
+        <div className="space-x-1 text-right whitespace-nowrap">
+          {canEdit && (
+            <EntityDialog
+              title={t("componentLibrary.editFootprint")} fields={fields.filter((f) => f.key !== "code")} initial={r}
+              onSubmit={async (v) => {
+                await update.mutateAsync({
+                  id: r.id,
+                  density: v.density,
+                  padCount: v.padCount != null ? Number(v.padCount) : undefined,
+                } as any);
+              }}
+              trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
+            />
+          )}
+          {canDelete && (
+            <ConfirmDeleteDialog
+              trigger={<Button size="sm" variant="ghost"><Trash2 className="h-4 w-4" /></Button>}
+              itemLabel={`${t("componentLibrary.tabs.footprints")} ${r.code}`}
+              onConfirm={async () => { await del.mutateAsync({ id: r.id }); }}
+            />
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -378,40 +455,22 @@ function FootprintsPanel() {
         )}
       </div>
       {selected != null ? (
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>{t("masterData.code")}</TableHead>
-            <TableHead>{t("componentLibrary.density")}</TableHead>
-            <TableHead className="text-right">{t("componentLibrary.padCount")}</TableHead>
-            <TableHead></TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {(footprints.data ?? []).map((r: any) => (
-              <TableRow key={r.id}>
-                <TableCell className="font-mono">{r.code}</TableCell>
-                <TableCell>{r.density ?? "-"}</TableCell>
-                <TableCell className="text-right">{r.padCount ?? "-"}</TableCell>
-                <TableCell className="text-right space-x-1">
-                  {canEdit && (
-                    <EntityDialog
-                      title={t("componentLibrary.editFootprint")} fields={fields.filter((f) => f.key !== "code")} initial={r}
-                      onSubmit={async (v) => {
-                        await update.mutateAsync({
-                          id: r.id,
-                          density: v.density,
-                          padCount: v.padCount != null ? Number(v.padCount) : undefined,
-                        } as any);
-                      }}
-                      trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
-                    />
-                  )}
-                  {canDelete && <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
-                </TableCell>
-              </TableRow>
-            ))}
-            {footprints.data?.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
-          </TableBody>
-        </Table>
+        <DataTable
+          columns={columns}
+          data={data}
+          getRowId={(r) => r.id}
+          loading={footprints.isLoading}
+          searchable
+          searchPlaceholder={t("masterData.code")}
+          initialSort={{ columnId: "code", dir: "asc" }}
+          emptyState={
+            <EmptyState
+              variant="no-data"
+              title={t("componentLibrary.emptyFootprintTitle", "Chưa có land-pattern")}
+              description={t("componentLibrary.emptyFootprintDesc", "Package này chưa có biến thể footprint nào. Tạo footprint đầu tiên.")}
+            />
+          }
+        />
       ) : (
         <div className="py-8 text-center text-sm text-muted-foreground">{t("componentLibrary.selectPackageHint")}</div>
       )}
@@ -430,10 +489,10 @@ function MaterialLinksPanel() {
   const [onlyUnlinked, setOnlyUnlinked] = useState(false);
   const utils = trpc.useUtils();
   const refresh = () => { utils.masterData.materials.list.invalidate(); utils.componentLibrary.linkStats.invalidate(); };
-  const link = trpc.componentLibrary.linkMaterial.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
+  const link = trpc.componentLibrary.linkMaterial.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); }, onError: (e) => toastTrpcError(e) });
   const backfill = trpc.componentLibrary.backfillMaterialLinks.useMutation({
     onSuccess: (r) => { toast.success(t("componentLibrary.backfillDone", { count: r.linked })); refresh(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const pkgById = useMemo(() => {
@@ -442,71 +501,82 @@ function MaterialLinksPanel() {
     return m;
   }, [packages.data]);
 
-  const rows = (materials.data ?? []).filter((r: any) => !onlyUnlinked || r.packageId == null);
+  const data = (materials.data ?? []).filter((r: any) => !onlyUnlinked || r.packageId == null) as any[];
+
+  const columns: DataTableColumn<any>[] = [
+    { id: "code", header: t("masterData.code"), sortValue: (r) => r.code, filterValue: (r) => `${r.code} ${r.name ?? ""}`, cell: (r) => <span className="font-mono">{r.code}</span> },
+    { id: "name", header: t("masterData.name"), sortValue: (r) => r.name, cell: (r) => r.name },
+    { id: "packageType", header: t("masterData.packageType"), sortValue: (r) => r.packageType, cell: (r) => <span className="font-mono text-xs">{r.packageType ?? "-"}</span> },
+    {
+      id: "linkedPackage",
+      header: t("componentLibrary.linkedPackage"),
+      cell: (r) => (canEdit ? (
+        <Select
+          value={r.packageId != null ? String(r.packageId) : "__none__"}
+          onValueChange={(v) => link.mutate({ materialId: r.id, packageId: v === "__none__" ? null : Number(v) })}
+        >
+          <SelectTrigger className="h-8 w-56"><SelectValue placeholder="--" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t("componentLibrary.noPackage")}</SelectItem>
+            {(packages.data ?? []).map((p: any) => (
+              <SelectItem key={p.id} value={String(p.id)}>{p.code} ({p.family})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : r.packageId != null ? (
+        <Badge variant="outline">{pkgById.get(r.packageId)?.code ?? `#${r.packageId}`}</Badge>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      )),
+    },
+    {
+      id: "linked",
+      header: "",
+      align: "center",
+      width: "48px",
+      cell: (r) => (r.packageId != null
+        ? <Link2 className="h-4 w-4 text-success" aria-label={t("componentLibrary.linked")} />
+        : <Link2Off className="h-4 w-4 text-muted-foreground" aria-label={t("componentLibrary.unlinked")} />),
+    },
+  ];
 
   return (
-    <Card><CardContent className="space-y-3 pt-4">
-      <div className="flex flex-wrap items-center gap-3">
-        {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => backfill.mutate()} disabled={backfill.isPending}>
-            <Wand2 className="mr-1 h-4 w-4" /> {t("componentLibrary.backfillByType")}
-          </Button>
-        )}
-        <div className="flex items-center gap-2">
-          <Switch checked={onlyUnlinked} onCheckedChange={setOnlyUnlinked} />
-          <Label className="text-sm">{t("componentLibrary.onlyUnlinked")}</Label>
-        </div>
-        <div className="ml-auto text-xs text-muted-foreground">
-          {t("componentLibrary.linkCoverage", {
-            linked: linkStats.data?.linkedMaterials ?? 0,
-            total: linkStats.data?.totalMaterials ?? 0,
-          })}
-        </div>
-      </div>
-      <Table>
-        <TableHeader><TableRow>
-          <TableHead>{t("masterData.code")}</TableHead>
-          <TableHead>{t("masterData.name")}</TableHead>
-          <TableHead>{t("masterData.packageType")}</TableHead>
-          <TableHead>{t("componentLibrary.linkedPackage")}</TableHead>
-          <TableHead></TableHead>
-        </TableRow></TableHeader>
-        <TableBody>
-          {rows.map((r: any) => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono">{r.code}</TableCell>
-              <TableCell>{r.name}</TableCell>
-              <TableCell className="font-mono text-xs">{r.packageType ?? "-"}</TableCell>
-              <TableCell>
-                {canEdit ? (
-                  <Select
-                    value={r.packageId != null ? String(r.packageId) : "__none__"}
-                    onValueChange={(v) => link.mutate({ materialId: r.id, packageId: v === "__none__" ? null : Number(v) })}
-                  >
-                    <SelectTrigger className="h-8 w-56"><SelectValue placeholder="--" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{t("componentLibrary.noPackage")}</SelectItem>
-                      {(packages.data ?? []).map((p: any) => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.code} ({p.family})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : r.packageId != null ? (
-                  <Badge variant="outline">{pkgById.get(r.packageId)?.code ?? `#${r.packageId}`}</Badge>
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
-              </TableCell>
-              <TableCell>
-                {r.packageId != null
-                  ? <Link2 className="h-4 w-4 text-success" aria-label={t("componentLibrary.linked")} />
-                  : <Link2Off className="h-4 w-4 text-muted-foreground" aria-label={t("componentLibrary.unlinked")} />}
-              </TableCell>
-            </TableRow>
-          ))}
-          {rows.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
-        </TableBody>
-      </Table>
+    <Card><CardContent className="pt-4">
+      <DataTable
+        columns={columns}
+        data={data}
+        getRowId={(r) => r.id}
+        loading={materials.isLoading}
+        searchable
+        searchPlaceholder={t("componentLibrary.searchPlaceholder")}
+        initialSort={{ columnId: "code", dir: "asc" }}
+        emptyState={
+          <EmptyState
+            variant="no-data"
+            title={t("componentLibrary.emptyMaterialTitle", "Không có vật liệu")}
+            description={t("componentLibrary.emptyMaterialDesc", "Không có vật liệu nào khớp bộ lọc hiện tại.")}
+          />
+        }
+        toolbar={
+          <>
+            {canEdit && (
+              <Button size="sm" variant="outline" onClick={() => backfill.mutate()} disabled={backfill.isPending}>
+                <Wand2 className="mr-1 h-4 w-4" /> {t("componentLibrary.backfillByType")}
+              </Button>
+            )}
+            <div className="flex items-center gap-2">
+              <Switch checked={onlyUnlinked} onCheckedChange={setOnlyUnlinked} />
+              <Label className="text-sm">{t("componentLibrary.onlyUnlinked")}</Label>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {t("componentLibrary.linkCoverage", {
+                linked: linkStats.data?.linkedMaterials ?? 0,
+                total: linkStats.data?.totalMaterials ?? 0,
+              })}
+            </div>
+          </>
+        }
+      />
     </CardContent></Card>
   );
 }

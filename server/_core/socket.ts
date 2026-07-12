@@ -167,6 +167,16 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join("sites:global");
         console.log(`[Socket.io] ${socket.id} joined sites:global`);
       }
+      // MON-F6 (doc 40) — OPT-IN telemetry firehose room. `telemetry:sample` is a
+      // high-rate stream; it used to fan out to `global` (which EVERY client joins),
+      // so a 100+ machine fleet flooded every browser. Now only clients that
+      // explicitly opt in — the admin telemetry monitor — join `telemetry:all`.
+      // Per-machine subscribers still receive just their machine's subset via
+      // `machine:{id}` (unchanged).
+      if ((data as any).telemetryAll) {
+        socket.join("telemetry:all");
+        console.log(`[Socket.io] ${socket.id} joined telemetry:all`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -183,6 +193,8 @@ export function initializeSocket(server: HttpServer): Server {
       // U5-live — leave the federation site room(s).
       if ((data as any).siteCode) socket.leave(`site:${(data as any).siteCode}`);
       if ((data as any).sitesGlobal) socket.leave("sites:global");
+      // MON-F6 — leave the opt-in telemetry firehose room.
+      if ((data as any).telemetryAll) socket.leave("telemetry:all");
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -848,9 +860,11 @@ export interface TelemetryBroadcastSample {
 /**
  * P2 — broadcast a batch of canonical telemetry samples on the ONE unified bus
  * channel. SIGNAL ONLY (never writes to a device or DB; the bus already persisted).
- * No-op when io is not initialized (tests / headless). Emits the whole batch to the
- * `global` room, and additionally fans each sample out to its per-machine room so a
- * client subscribed to `machine:{id}` receives only that machine's samples.
+ * No-op when io is not initialized (tests / headless). MON-F6 (doc 40): the whole
+ * batch goes to the OPT-IN `telemetry:all` room (admin telemetry monitor) — NOT the
+ * everyone-joins `global` room — and each sample is additionally fanned out to its
+ * per-machine room so a client subscribed to `machine:{id}` receives only that
+ * machine's samples. This stops the firehose from flooding every connected client.
  */
 export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
   if (!io || samples.length === 0) return;
@@ -907,7 +921,8 @@ function flushTelemetryEmit(): void {
 /** The actual room fan-out (immediate). Shared by the direct + coalesced paths. */
 function doEmitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
   if (!io || samples.length === 0) return;
-  io.to("global").emit("telemetry:sample", { samples });
+  // MON-F6 (doc 40): full batch → opt-in `telemetry:all`, not the `global` firehose.
+  io.to("telemetry:all").emit("telemetry:sample", { samples });
   // Per-machine fan-out: group by machineId so each machine room gets its subset.
   const byMachine = new Map<number, TelemetryBroadcastSample[]>();
   for (const s of samples) {
@@ -1629,53 +1644,65 @@ export interface DowntimeEvent {
   reportedBy?: string;
 }
 
-const activeDowntimes: Map<number, DowntimeEvent> = new Map();
-const downtimeHistory: DowntimeEvent[] = [];
+// Hương-P0: downtime giờ đọc/ghi thẳng vào bảng downtime_events (Drizzle) để bền
+// vững qua restart và không lệch với dữ liệu thật. Bỏ mảng in-memory trước đây
+// (activeDowntimes/downtimeHistory) vì mất khi restart và dễ lệch với DB.
 
-// Start downtime tracking
-export function startDowntime(
+// Ánh xạ một row downtime_events (id số, reportedBy là user id) sang shape
+// DowntimeEvent mà UI/API đang dùng (id chuỗi, reportedBy chuỗi).
+function rowToDowntimeEvent(row: {
+  id: number;
+  machineId: number;
+  machineCode: string;
+  category: DowntimeEvent['category'];
+  reason: string | null;
+  startTime: Date | string;
+  endTime: Date | string | null;
+  duration: number | null;
+  resolution: string | null;
+  reportedBy: number | null;
+}): DowntimeEvent {
+  return {
+    id: String(row.id),
+    machineId: row.machineId,
+    machineCode: row.machineCode,
+    startTime: new Date(row.startTime),
+    endTime: row.endTime ? new Date(row.endTime) : undefined,
+    duration: row.duration ?? undefined,
+    category: row.category,
+    reason: row.reason ?? undefined,
+    notes: row.resolution ?? undefined,
+    reportedBy: row.reportedBy != null ? String(row.reportedBy) : undefined,
+  };
+}
+
+// Start downtime tracking — ném lỗi nếu ghi DB thất bại (không nuốt để UI biết thật).
+export async function startDowntime(
   machineId: number,
   machineCode: string,
   category: DowntimeEvent['category'],
   reason?: string,
-  reportedBy?: string
-): DowntimeEvent {
-  const event: DowntimeEvent = {
-    id: `DT-${Date.now()}-${machineId}`,
-    machineId,
-    machineCode,
-    startTime: new Date(),
-    category,
-    reason,
-    reportedBy,
-  };
-  
-  activeDowntimes.set(machineId, event);
-  
-  // Save to database
-  (async () => {
-    try {
-      const { getDb } = await import('../db');
-      const dbConnection = await getDb();
-      if (!dbConnection) return;
-      const { sql } = await import('drizzle-orm');
-      await dbConnection.execute(sql`
-        INSERT INTO downtime_events 
-         (machineId, machineCode, category, reason, startTime, detectionMethod)
-         VALUES (
-          ${machineId},
-          ${machineCode},
-          ${category},
-          ${reason || 'No reason provided'},
-          ${event.startTime},
-          'MANUAL'
-         )
-      `);
-    } catch (error) {
-      console.error('[Downtime] Failed to save start event:', error);
-    }
-  })();
-  
+  _reportedBy?: string
+): Promise<DowntimeEvent> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  const { downtimeEvents } = await import('../../drizzle/schema');
+
+  const [row] = await dbConnection
+    .insert(downtimeEvents)
+    .values({
+      machineId,
+      machineCode,
+      category,
+      reason: reason || 'No reason provided',
+      startTime: new Date(),
+      detectionMethod: 'MANUAL',
+    })
+    .returning();
+
+  const event = rowToDowntimeEvent(row as any);
+
   // U1 — publish on the bus so downtime feeds the unified stream.
   eventBus.publish("downtime.start", event, "socket");
   // Emit downtime start event
@@ -1687,44 +1714,39 @@ export function startDowntime(
   return event;
 }
 
-// End downtime tracking
-export function endDowntime(machineId: number, notes?: string): DowntimeEvent | null {
-  const event = activeDowntimes.get(machineId);
-  if (!event) return null;
-  
-  event.endTime = new Date();
-  event.duration = Math.round((event.endTime.getTime() - event.startTime.getTime()) / 60000);
-  event.notes = notes;
-  
-  activeDowntimes.delete(machineId);
-  downtimeHistory.push(event);
-  
-  // Keep only last 1000 events
-  if (downtimeHistory.length > 1000) {
-    downtimeHistory.shift();
-  }
-  
-  // Update database
-  (async () => {
-    try {
-      const { getDb } = await import('../db');
-      const dbConnection = await getDb();
-      if (!dbConnection) return;
-      const { sql } = await import('drizzle-orm');
-      await dbConnection.execute(sql`
-        UPDATE downtime_events 
-        SET endTime = ${event.endTime},
-            duration = ${event.duration}
-        WHERE machineId = ${machineId}
-          AND endTime IS NULL
-        ORDER BY startTime DESC
-        LIMIT 1
-      `);
-    } catch (error) {
-      console.error('[Downtime] Failed to update end event:', error);
-    }
-  })();
-  
+// End downtime tracking — đóng sự kiện downtime đang mở mới nhất của máy trong DB.
+export async function endDowntime(machineId: number, notes?: string): Promise<DowntimeEvent | null> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, isNull, desc } = await import('drizzle-orm');
+
+  // Tìm sự kiện downtime đang mở (endTime IS NULL) mới nhất của máy.
+  const [open] = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(and(eq(downtimeEvents.machineId, machineId), isNull(downtimeEvents.endTime)))
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1);
+  if (!open) return null;
+
+  const endTime = new Date();
+  const duration = Math.round((endTime.getTime() - new Date(open.startTime).getTime()) / 60000);
+
+  const [updated] = await dbConnection
+    .update(downtimeEvents)
+    .set({
+      endTime,
+      duration,
+      resolution: notes ?? open.resolution ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(downtimeEvents.id, open.id))
+    .returning();
+
+  const event = rowToDowntimeEvent(updated as any);
+
   // U1 — publish on the bus so downtime feeds the unified stream.
   eventBus.publish("downtime.end", event, "socket");
   // Emit downtime end event
@@ -1736,34 +1758,50 @@ export function endDowntime(machineId: number, notes?: string): DowntimeEvent | 
   return event;
 }
 
-// Get active downtime for a machine
-export function getActiveDowntime(machineId: number): DowntimeEvent | undefined {
-  return activeDowntimes.get(machineId);
+// Get active downtime for a machine — đọc từ DB (sự kiện đang mở mới nhất).
+export async function getActiveDowntime(machineId: number): Promise<DowntimeEvent | undefined> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) return undefined;
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, isNull, desc } = await import('drizzle-orm');
+
+  const [open] = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(and(eq(downtimeEvents.machineId, machineId), isNull(downtimeEvents.endTime)))
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1);
+  return open ? rowToDowntimeEvent(open as any) : undefined;
 }
 
-// Get downtime history
-export function getDowntimeHistory(options?: {
+// Get downtime history — đọc từ DB, lọc theo machineId/category/khoảng thời gian.
+export async function getDowntimeHistory(options?: {
   machineId?: number;
   category?: DowntimeEvent['category'];
   startDate?: Date;
   endDate?: Date;
-}): DowntimeEvent[] {
-  let filtered = [...downtimeHistory];
-  
-  if (options?.machineId) {
-    filtered = filtered.filter(d => d.machineId === options.machineId);
-  }
-  if (options?.category) {
-    filtered = filtered.filter(d => d.category === options.category);
-  }
-  if (options?.startDate) {
-    filtered = filtered.filter(d => d.startTime >= options.startDate!);
-  }
-  if (options?.endDate) {
-    filtered = filtered.filter(d => d.startTime <= options.endDate!);
-  }
-  
-  return filtered;
+}): Promise<DowntimeEvent[]> {
+  const { getDb } = await import('../db');
+  const dbConnection = await getDb();
+  if (!dbConnection) return [];
+  const { downtimeEvents } = await import('../../drizzle/schema');
+  const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+
+  const conds = [];
+  if (options?.machineId) conds.push(eq(downtimeEvents.machineId, options.machineId));
+  if (options?.category) conds.push(eq(downtimeEvents.category, options.category));
+  if (options?.startDate) conds.push(gte(downtimeEvents.startTime, options.startDate));
+  if (options?.endDate) conds.push(lte(downtimeEvents.startTime, options.endDate));
+
+  const rows = await dbConnection
+    .select()
+    .from(downtimeEvents)
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(desc(downtimeEvents.startTime))
+    .limit(1000);
+
+  return rows.map((r) => rowToDowntimeEvent(r as any));
 }
 
 // ============ PREDICTIVE MAINTENANCE ============

@@ -9,6 +9,16 @@ import { productionSessions, dailyStatistics } from "../../drizzle/schema/produc
 
 const SIGNOFF_ALGORITHM = "HMAC-SHA256";
 
+// doc 40 QA-1b (owner-scope): operator chỉ được thao tác phiên của CHÍNH MÌNH; role
+// điều phối (admin/supervisor/quality_inspector) thao tác mọi phiên của line.
+const SESSION_SUPERVISOR_ROLES = new Set(["admin", "supervisor", "quality_inspector"]);
+function assertSessionActor(session: { operatorId: number | null }, user: { id: number; role?: string } | undefined | null) {
+  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Chưa đăng nhập" });
+  if (SESSION_SUPERVISOR_ROLES.has(String(user.role))) return;
+  if (session.operatorId != null && session.operatorId === user.id) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "Bạn chỉ được thao tác phiên sản xuất của chính mình" });
+}
+
 function buildSignoffPayload(input: {
   sessionId: number;
   operatorId: number;
@@ -113,7 +123,7 @@ export const productionSessionRouter = router({
     }),
 
   open: protectedProcedure
-    .use(requirePermission("production_orders", "canCreate"))
+    .use(requirePermission("production_session", "canCreate"))
     .input(z.object({
       shiftConfigId: z.number(),
       factoryId: z.number(),
@@ -153,43 +163,48 @@ export const productionSessionRouter = router({
     }),
 
   pause: protectedProcedure
-    .use(requirePermission("production_orders", "canEdit"))
+    .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
         .set({ status: "paused" as any, updatedAt: new Date() })
         .where(eq(productionSessions.id, input.id))
         .returning();
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       return { success: true, session: updated };
     }),
 
   resume: protectedProcedure
-    .use(requirePermission("production_orders", "canEdit"))
+    .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
         .set({ status: "open" as any, updatedAt: new Date() })
         .where(eq(productionSessions.id, input.id))
         .returning();
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       return { success: true, session: updated };
     }),
 
   close: protectedProcedure
-    .use(requirePermission("production_orders", "canEdit"))
+    .use(requirePermission("production_session", "canEdit"))
     .input(z.object({ id: z.number(), operatorNotes: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      assertSessionActor(session, ctx.user);
       if (session.status === "closed" || (session.status as any) === "signed_off") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã đóng hoặc đã ký" });
       }
@@ -217,7 +232,7 @@ export const productionSessionRouter = router({
     }),
 
   handover: protectedProcedure
-    .use(requirePermission("production_orders", "canEdit"))
+    .use(requirePermission("production_session", "canEdit"))
     .input(z.object({
       fromSessionId: z.number(),
       toSessionId: z.number(),

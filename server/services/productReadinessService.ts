@@ -14,7 +14,7 @@
 // queries (7) regardless of how many products are requested — NO N+1. The single-
 // product helper just calls the batch with [id].
 import { getDb } from "../db/connection";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   productModels,
   measurementPointDefs,
@@ -331,7 +331,10 @@ export async function aggregateReadinessData(ids: number[]): Promise<ReadinessAg
     .where(and(
       eq(goldenSampleReferences.active, true),
       eq(goldenSampleReferences.status, "approved"),
-      sql`(${goldenSampleReferences.productModelId} = ANY(${productIds}) OR ${goldenSampleReferences.productCode} = ANY(${codes}))`,
+      or(
+        inArray(goldenSampleReferences.productModelId, productIds),
+        inArray(goldenSampleReferences.productCode, codes),
+      ),
     ));
 
   // (5) Released programs.

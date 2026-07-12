@@ -254,17 +254,34 @@ export default function FleetOrchestration() {
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
-  // Realtime: poll các query trạng thái động mỗi 5s khi có quyền xem; dừng khi
-  // mất quyền HOẶC khi tab bị ẩn (doc 27 B12 — usePollingInterval).
-  const fleetPolling = usePollingInterval(canView ? 5000 : false);
-  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, ...fleetPolling });
+  // ENG-F8 (doc 40 W4b) — GATE POLL THEO TAB để cắt over-fetch. Trước đây cả 5
+  // query G1 (status/tasks/zones/reservations/deadlocks) đều poll 5s BẤT KỂ tab
+  // nào đang mở → ~5 request/5s ngay cả khi user đang ở tab Operations/Resources/
+  // Charging (vốn KHÔNG hiển thị những dữ liệu này). Nay:
+  //   • MỌI query vẫn `enabled: canView` để KPI strip + banner deadlock (luôn
+  //     hiển thị bên trên các tab) NẠP một lần & giữ giá trị từ cache khi đổi tab
+  //     — honest, không để KPI trống. Đây là fetch một-lần, không phải poll.
+  //   • Nhưng refetchInterval 5s CHỈ bật cho query thuộc tab đang mở:
+  //       - tasks / reservations / status(cờ) → chỉ tab "tasks";
+  //       - zones → tab "tasks" HOẶC "map" (FleetMap vẽ zone);
+  //       - deadlocks → poll khi canView bất kể tab (AN TOÀN: banner + KPI + toast
+  //         "deadlock mới" luôn hiển thị nên phải giữ live). Đây là "1" luôn chạy.
+  //   • Quay lại tab → refetchOnWindowFocus/visibility làm mới NGAY (usePollingInterval).
+  // Kết quả: tasks-tab poll các query của nó; Operations/Resources/Charging chỉ còn
+  // deadlocks (1); Map còn zones + deadlocks (2, chưa kể poll riêng của Map). Dừng
+  // poll khi mất quyền xem HOẶC tab trình duyệt bị ẩn (doc 27 B12).
+  const tasksTabActive = canView && tab === "tasks";
+  const tasksPolling = usePollingInterval(tasksTabActive ? 5000 : false);
+  const zonesPolling = usePollingInterval(canView && (tab === "tasks" || tab === "map") ? 5000 : false);
+  const deadlocksPolling = usePollingInterval(canView ? 5000 : false);
+  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, ...tasksPolling });
   const tasksQ = trpc.fleet.listTasks.useQuery(
     { status: (statusFilter || undefined) as (typeof TASK_STATUSES)[number] | undefined, limit: 200 },
-    { enabled: canView, ...fleetPolling },
+    { enabled: canView, ...tasksPolling },
   );
-  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, ...fleetPolling });
-  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, ...fleetPolling });
-  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, ...fleetPolling });
+  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, ...zonesPolling });
+  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, ...tasksPolling });
+  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, ...deadlocksPolling });
 
   const tasks = (tasksQ.data ?? []) as FleetTask[];
   const zones = (zonesQ.data ?? []) as FleetZone[];

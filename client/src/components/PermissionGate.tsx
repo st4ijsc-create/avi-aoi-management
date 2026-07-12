@@ -62,17 +62,66 @@ interface PermissionGateProps {
 }
 
 /**
+ * Merge props injected by a Radix `*Trigger asChild` Slot onto the gated child
+ * (same semantics as Radix Slot: compose event handlers child-first, merge
+ * className/style, slot props win otherwise). Without this, wrapping
+ * `<PermissionGate>` inside e.g. `<DialogTrigger asChild>` used to swallow the
+ * trigger's onClick/aria props → the button rendered but did nothing (doc 42 P0-1).
+ */
+function mergeSlotProps(childProps: Record<string, any>, slotProps: Record<string, any>) {
+  const merged: Record<string, any> = { ...slotProps };
+  for (const key of Object.keys(slotProps)) {
+    const slotValue = slotProps[key];
+    const childValue = childProps?.[key];
+    if (/^on[A-Z]/.test(key)) {
+      if (typeof slotValue === "function" && typeof childValue === "function") {
+        merged[key] = (...args: unknown[]) => {
+          childValue(...args);
+          slotValue(...args);
+        };
+      } else if (typeof childValue === "function" && slotValue == null) {
+        merged[key] = childValue;
+      }
+    } else if (key === "className") {
+      merged[key] = [childValue, slotValue].filter(Boolean).join(" ") || undefined;
+    } else if (key === "style") {
+      merged[key] = { ...(childValue ?? {}), ...(slotValue ?? {}) };
+    }
+  }
+  return merged;
+}
+
+/**
  * Gate a single action control (button/menu item) by a module permission. When denied:
  *   mode="hide"    → render `fallback` (or nothing).
  *   mode="disable" → clone the child with `disabled` + muted styling (keeps layout).
+ *
+ * Slot-transparent: any extra props (onClick, aria-*, data-state, ref… injected by a
+ * Radix `*Trigger asChild`) are forwarded onto the single child element.
  */
-export function PermissionGate({ module, action, mode = "hide", children, fallback = null }: PermissionGateProps) {
+export function PermissionGate({
+  module,
+  action,
+  mode = "hide",
+  children,
+  fallback = null,
+  ...slotProps
+}: PermissionGateProps & Record<string, unknown>) {
   const { hasPermission } = usePermissions();
-  if (hasPermission(module, action)) return <>{children}</>;
+  const hasSlotProps = Object.keys(slotProps).length > 0;
+
+  if (hasPermission(module, action)) {
+    if (hasSlotProps && isValidElement(children)) {
+      const el = children as ReactElement<any>;
+      return cloneElement(el, mergeSlotProps(el.props ?? {}, slotProps));
+    }
+    return <>{children}</>;
+  }
 
   if (mode === "disable" && isValidElement(children)) {
     const el = children as ReactElement<any>;
     return cloneElement(el, {
+      ...(hasSlotProps ? mergeSlotProps(el.props ?? {}, slotProps) : {}),
       disabled: true,
       "aria-disabled": true,
       title: el.props?.title ?? "Bạn không có quyền thực hiện",

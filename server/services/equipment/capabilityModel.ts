@@ -43,7 +43,12 @@ export type EquipmentClass =
   | "ROBOT_TEST"
   | "PACKAGING"
   | "PALLETIZER"
-  | "ROBOT";
+  | "ROBOT"
+  // ── doc 40 W5 (MTX-03) — SMT line machine classes ──
+  | "MOUNTER"
+  | "REFLOW"
+  | "STENCIL_PRINTER"
+  | "WAVE_SOLDER";
 
 /**
  * How the unified EquipmentAdapter facade reaches the real driver/registry for a
@@ -272,6 +277,21 @@ const T_ESTOP: TelemetryDescriptor = { key: "estop", label: "E-stop", dataType: 
 const T_RESULT: TelemetryDescriptor = { key: "process_result", label: "Process result", dataType: "string" };
 const T_TORQUE: TelemetryDescriptor = { key: "torque", label: "Torque", dataType: "float", unit: "Nm" };
 const T_VOLUME: TelemetryDescriptor = { key: "dispense_volume", label: "Dispense volume", dataType: "float", unit: "mm3" };
+// ── doc 40 W5 (MTX-03) — SMT line telemetry building blocks ──
+// Mounter (chip-shooter / pick-and-place): throughput + placement quality.
+const T_CPH: TelemetryDescriptor = { key: "cph", label: "Components / hour", dataType: "float", unit: "cph" };
+const T_PICKUP_RATE: TelemetryDescriptor = { key: "pickup_rate", label: "Pickup success rate", dataType: "float", unit: "%" };
+const T_PLACEMENT: TelemetryDescriptor = { key: "placement_count", label: "Placements", dataType: "int" };
+// Reflow oven: per-zone temperatures (json array) + belt speed.
+const T_ZONE_TEMPS: TelemetryDescriptor = { key: "zone_temps", label: "Zone temperatures", dataType: "json", unit: "degC" };
+const T_CONVEYOR_SPEED: TelemetryDescriptor = { key: "conveyor_speed", label: "Conveyor speed", dataType: "float", unit: "mm/min" };
+// Stencil printer: squeegee pressure/speed + print cycle time.
+const T_SQUEEGEE_PRESSURE: TelemetryDescriptor = { key: "squeegee_pressure", label: "Squeegee pressure", dataType: "float", unit: "N" };
+const T_SQUEEGEE_SPEED: TelemetryDescriptor = { key: "squeegee_speed", label: "Squeegee speed", dataType: "float", unit: "mm/s" };
+const T_PRINT_CYCLE: TelemetryDescriptor = { key: "print_cycle_time", label: "Print cycle time", dataType: "float", unit: "s" };
+// Wave/selective solder: solder-pot temperature + preheat.
+const T_SOLDER_POT_TEMP: TelemetryDescriptor = { key: "solder_pot_temp", label: "Solder pot temp", dataType: "float", unit: "degC" };
+const T_PREHEAT_TEMP: TelemetryDescriptor = { key: "preheat_temp", label: "Preheat temp", dataType: "float", unit: "degC" };
 // X1-a (doc 16 §5) — UDM/UEM extension telemetry for robots/AMRs. Surfaced on the
 // canonical model so the Unified Device Model exposes battery/joint/firmware/zone/
 // heartbeat regardless of vendor. battery_level is populated for AGVs (VDA5050);
@@ -363,6 +383,16 @@ const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   ROBOT: { equipmentClass: "ROBOT", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
   ROBOT_TEST: { equipmentClass: "ROBOT_TEST", adapterKind: "robot", supportedCommands: [CMD_START, CMD_STOP, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_RESULT, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
   PALLETIZER: { equipmentClass: "PALLETIZER", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+
+  // ── doc 40 W5 (MTX-03): SMT line cells (PLC tag control via OT; recipe-driven) ──
+  // Mounter (chip-shooter): start/stop/pause/reset/select_recipe/ack; throughput + pickup quality.
+  MOUNTER: { equipmentClass: "MOUNTER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_CPH, T_PICKUP_RATE, T_PLACEMENT, T_NG, T_CYCLE], supportedStates: FULL_STATES },
+  // Reflow oven: recipe (thermal profile) select; zone temps + belt speed telemetry.
+  REFLOW: { equipmentClass: "REFLOW", adapterKind: "ot-opcua", supportedCommands: [CMD_START, CMD_STOP, CMD_SELECT_RECIPE, CMD_SET_PARAM, CMD_ACK_ALARM], telemetryTags: [T_STATE, T_MODE, T_ZONE_TEMPS, T_CONVEYOR_SPEED], supportedStates: FULL_STATES },
+  // Solder-paste stencil printer: recipe select; squeegee pressure/speed + cycle time.
+  STENCIL_PRINTER: { equipmentClass: "STENCIL_PRINTER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_SQUEEGEE_PRESSURE, T_SQUEEGEE_SPEED, T_PRINT_CYCLE, T_CYCLE], supportedStates: FULL_STATES },
+  // Wave / selective solder: solder-pot + preheat temps + belt speed.
+  WAVE_SOLDER: { equipmentClass: "WAVE_SOLDER", adapterKind: "ot-opcua", supportedCommands: [CMD_START, CMD_STOP, CMD_SELECT_RECIPE, CMD_SET_PARAM, CMD_ACK_ALARM], telemetryTags: [T_STATE, T_MODE, T_SOLDER_POT_TEMP, T_PREHEAT_TEMP, T_CONVEYOR_SPEED], supportedStates: FULL_STATES },
 };
 
 /** A minimal, read-only fallback profile for an unknown/unmodelled machineType. */

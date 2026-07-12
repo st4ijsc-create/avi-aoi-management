@@ -2,6 +2,7 @@ import { protectedProcedure, qualityProcedure, writeProcedure, router } from "..
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import * as db from "../db";
+import { withDbErrors } from "../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { storagePut, resolveImageToDataUrl } from "../storage";
@@ -48,6 +49,8 @@ import {
   evaluateLotAcceptance,
   listLotDispositions,
 } from "../services/lotAcceptanceService";
+// Doc 42 Đợt 4A (APPLY-B) — engine import/export dùng chung cho danh sách sản phẩm.
+import { exportRows, type MasterDataColumn } from "../services/masterDataIO";
 
 const legacyMeasurementTypeValues = ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"] as const;
 const legacyMeasurementTypeSchema = z.enum(legacyMeasurementTypeValues);
@@ -205,6 +208,32 @@ async function extractDimsFromDataUrl(
 }
 
 // ============ PRODUCT MODEL ROUTER ============
+// ─── Doc 42 Đợt 4A (APPLY-B) — import/export danh sách sản phẩm ────────────────
+// Trạng thái vòng đời hợp lệ (khớp lifecycleStatusEnum + productModel.create).
+const productLifecycleValues = ["development", "active", "eol", "archived"] as const;
+
+// Cột NHẬP (parse + validate) & mẫu — trùng khớp cột client trong ProductModels.tsx
+// (cả hai phía validate cùng luật @shared/masterDataIO nên không lệch).
+const PRODUCT_IMPORT_COLUMNS: MasterDataColumn[] = [
+  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
+  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
+  { field: "description", header: "Mô tả", type: "string" },
+  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
+  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
+  { field: "variant", header: "Biến thể", type: "string" },
+  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
+  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
+  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
+  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
+];
+
+// Cột XUẤT = cột nhập + ngày tạo/cập nhật (chỉ đọc, không dùng khi nhập).
+const PRODUCT_EXPORT_COLUMNS: MasterDataColumn[] = [
+  ...PRODUCT_IMPORT_COLUMNS,
+  { field: "createdAt", header: "Ngày tạo", type: "date" },
+  { field: "updatedAt", header: "Ngày cập nhật", type: "date" },
+];
+
 export const productModelRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -254,8 +283,8 @@ export const productModelRouter = router({
 
   create: adminProcedure
     .input(z.object({
-      code: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, "Mã sản phẩm là bắt buộc").max(100).regex(/^[A-Za-z0-9_\-]+$/, "Mã chỉ được chứa chữ, số, gạch dưới, gạch ngang"),
+      name: z.string().min(1, "Tên sản phẩm là bắt buộc").max(255),
       description: z.string().optional(),
       category: z.string().optional(),
       categoryId: z.number().int().positive().optional(),
@@ -335,13 +364,13 @@ export const productModelRouter = router({
         }
       }
 
-      const id = await db.createProductModel({
+      const id = await withDbErrors(() => db.createProductModel({
         ...input,
         referenceImageUrl: finalImageUrl,
         referenceImageKey: finalImageKey,
         imageWidth: input.imageWidth ?? autoImageWidth,
         imageHeight: input.imageHeight ?? autoImageHeight,
-      });
+      }), { conflictMessage: `Mã sản phẩm '${input.code}' đã tồn tại` });
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -462,7 +491,7 @@ export const productModelRouter = router({
         }
       }
 
-      await db.updateProductModel(id, finalData);
+      await withDbErrors(() => db.updateProductModel(id, finalData), { conflictMessage: "Mã sản phẩm đã tồn tại" });
       // PM8: when dims are now known, recompute normalized coords for all points
       // (+ fiducials) so existing pixel coordinates become resolution-independent.
       if (finalData.imageWidth && finalData.imageHeight) {
@@ -656,6 +685,151 @@ export const productModelRouter = router({
         console.warn("audit log failed (product.backfillImageDimensions)", err);
       }
       return { results };
+    }),
+
+  // ── Doc 42 Đợt 4A (APPLY-B) — xuất danh sách sản phẩm ra Excel/CSV ──
+  // Xuất theo BỘ LỌC hiện tại (khớp productModel.list). Trả buffer base64 để
+  // client tải về, giữ header brand + tiếng Việt (qua masterDataIO/exportRows).
+  exportList: protectedProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      lifecycleStatus: z.enum(productLifecycleValues).optional(),
+      sortBy: z.enum(["code", "name", "createdAt", "updatedAt"]).optional(),
+      sortOrder: z.enum(["asc", "desc"]).optional(),
+      format: z.enum(["csv", "xlsx"]).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const format = input?.format ?? "xlsx";
+      const products = await db.getProductModels({
+        search: input?.search,
+        lifecycleStatus: input?.lifecycleStatus,
+        sortBy: input?.sortBy,
+        sortOrder: input?.sortOrder,
+      });
+      const rows = (products as any[]).map((p) => ({
+        code: p.code,
+        name: p.name,
+        description: p.description ?? "",
+        category: p.category ?? "",
+        productLine: p.productLine ?? "",
+        variant: p.variant ?? "",
+        revision: p.revision ?? "",
+        lifecycleStatus: p.lifecycleStatus ?? "",
+        targetYieldRate: p.targetYieldRate ?? "",
+        minYieldRate: p.minYieldRate ?? "",
+        createdAt: p.createdAt ?? null,
+        updatedAt: p.updatedAt ?? null,
+      }));
+      const buffer = await exportRows(rows, PRODUCT_EXPORT_COLUMNS, format);
+      const ext = format === "csv" ? "csv" : "xlsx";
+      const mimeType =
+        format === "csv"
+          ? "text/csv;charset=utf-8"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      return {
+        fileName: `san_pham_${new Date().toISOString().slice(0, 10)}.${ext}`,
+        mimeType,
+        base64: buffer.toString("base64"),
+        count: rows.length,
+      };
+    }),
+
+  // ── Doc 42 Đợt 4A (APPLY-B) — nhập danh sách sản phẩm (upsert theo mã) ──
+  // Nhận các dòng ĐÃ ánh xạ field (client preview qua @shared/masterDataIO) rồi
+  // RE-VALIDATE phía server (không bỏ qua validation): mã trùng → UPDATE, chưa có
+  // → INSERT, thiếu trường bắt buộc/không hợp lệ → lỗi theo dòng. UPDATE chỉ ghi
+  // các field có giá trị (không xoá trắng dữ liệu cũ). Trả {inserted,updated,failed,errors}.
+  importList: adminProcedure
+    .input(z.object({
+      rows: z.array(z.record(z.string(), z.unknown())).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      let inserted = 0;
+      let updated = 0;
+      const errors: Array<{ row: number; message: string }> = [];
+
+      const str = (v: unknown): string | undefined => {
+        const s = v == null ? "" : String(v).trim();
+        return s === "" ? undefined : s;
+      };
+      const dec = (v: unknown): string | undefined => {
+        if (v == null || String(v).trim() === "") return undefined;
+        const n = Number(String(v).trim());
+        return Number.isFinite(n) ? String(n) : undefined;
+      };
+
+      for (let i = 0; i < input.rows.length; i++) {
+        const rowNo = i + 1;
+        const raw = input.rows[i] ?? {};
+        try {
+          const code = String(raw.code ?? "").trim();
+          const name = String(raw.name ?? "").trim();
+          if (!code) { errors.push({ row: rowNo, message: '"Mã sản phẩm" bắt buộc nhập' }); continue; }
+          if (!/^[A-Za-z0-9_\-]+$/.test(code)) {
+            errors.push({ row: rowNo, message: `Mã '${code}' chỉ được chứa chữ, số, gạch dưới, gạch ngang` });
+            continue;
+          }
+          if (!name) { errors.push({ row: rowNo, message: '"Tên sản phẩm" bắt buộc nhập' }); continue; }
+
+          // Trạng thái vòng đời (nếu có) phải hợp lệ.
+          let lifecycleStatus: (typeof productLifecycleValues)[number] | undefined;
+          const rawLifecycle = raw.lifecycleStatus == null ? "" : String(raw.lifecycleStatus).trim().toLowerCase();
+          if (rawLifecycle) {
+            if (!(productLifecycleValues as readonly string[]).includes(rawLifecycle)) {
+              errors.push({ row: rowNo, message: `Trạng thái '${rawLifecycle}' không hợp lệ (development/active/eol/archived)` });
+              continue;
+            }
+            lifecycleStatus = rawLifecycle as (typeof productLifecycleValues)[number];
+          }
+
+          const fields: Record<string, unknown> = {
+            name,
+            description: str(raw.description),
+            category: str(raw.category),
+            productLine: str(raw.productLine),
+            variant: str(raw.variant),
+            revision: str(raw.revision),
+            lifecycleStatus,
+            targetYieldRate: dec(raw.targetYieldRate),
+            minYieldRate: dec(raw.minYieldRate),
+          };
+          // Bỏ field undefined để UPDATE không ghi đè null lên dữ liệu cũ.
+          const data: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(fields)) if (v !== undefined) data[k] = v;
+
+          const existing = await db.getProductModelByCode(code);
+          if (existing) {
+            await withDbErrors(() => db.updateProductModel(existing.id, data as any));
+            updated++;
+          } else {
+            await withDbErrors(
+              () => db.createProductModel({ code, ...data } as any),
+              { conflictMessage: `Mã sản phẩm '${code}' đã tồn tại` },
+            );
+            inserted++;
+          }
+        } catch (err: any) {
+          errors.push({ row: rowNo, message: err?.message ? String(err.message) : "Lỗi không xác định" });
+        }
+      }
+
+      const failed = errors.length;
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "product.import",
+          entityType: "product",
+          entityId: 0,
+          entityName: `import ${inserted + updated}/${input.rows.length}`,
+          details: { inserted, updated, failed, total: input.rows.length },
+          status: inserted + updated === 0 && failed > 0 ? "failure" : "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (product.import)", err);
+      }
+
+      return { inserted, updated, failed, errors };
     }),
 });
 
@@ -1356,12 +1530,30 @@ export const productMachineMappingRouter = router({
 
   create: writeProcedure
     .input(z.object({
-      productModelId: z.number().int().positive(),
-      machineId: z.number().int().positive(),
+      productModelId: z.number({ error: "Vui lòng chọn sản phẩm" }).int().positive(),
+      machineId: z.number({ error: "Vui lòng chọn máy" }).int().positive(),
       priority: z.number().int().nonnegative().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Doc 42 #40 — orphan guard: chặn tạo mapping trỏ tới sản phẩm/máy không tồn
+      // tại (hoặc đã xoá) — nguồn gốc của các mapping mồ côi "N/A".
+      const [product, machine] = await Promise.all([
+        db.getProductModelById(input.productModelId),
+        db.getMachineById(input.machineId),
+      ]);
+      if (!product) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
+        });
+      }
+      if (!machine) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
+        });
+      }
       const result = await db.createProductMachineMapping(input);
       try {
         await db.createAuditLog({
@@ -1422,6 +1614,25 @@ export const productMachineMappingRouter = router({
         console.warn("audit log failed (productMachineMapping.delete)", err);
       }
       return { success: true };
+    }),
+
+  // Doc 42 Đợt 1 (#11) — dọn mapping mồ côi (sản phẩm/máy đã xoá) cho admin.
+  cleanupOrphans: writeProcedure
+    .mutation(async ({ ctx }) => {
+      const deleted = await db.deleteOrphanProductMachineMappings();
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "productMachineMapping.cleanupOrphans",
+          entityType: "mapping",
+          details: { deleted },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (productMachineMapping.cleanupOrphans)", err);
+      }
+      return { deleted };
     }),
 });
 

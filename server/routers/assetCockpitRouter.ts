@@ -15,8 +15,9 @@
  * NO CONTROL PATH: `gatedActions` is METADATA ONLY (which capability commands the
  * user MAY propose); execution still routes through the existing gated dispatcher.
  *
- * RBAC: read-only; every procedure requires machine_monitoring/canView (mirrors
- * commandCenterRouter / fleetRouter / equipmentRouter). Tenant scope is honored by
+ * RBAC: read-only; every procedure requires machine_status/canView (doc 40 — was the
+ * phantom `machine_monitoring` moduleName which no role is seeded for → admin-only).
+ * Tenant scope is honored by
  * the identity join (corporateCode surfaced from the machine's factory) — the FE
  * scopes on it; no cross-tenant write is possible (read-only). NO writes.
  * ════════════════════════════════════════════════════════════════════════════
@@ -34,7 +35,7 @@ export const assetCockpitRouter = router({
    * is absent/disabled (never fabricated).
    */
   machineDetail: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
+    .use(requirePermission("machine_status", "canView"))
     .input(z.object({ machineId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const detail = await machineDetail(input.machineId);
@@ -50,7 +51,7 @@ export const assetCockpitRouter = router({
    * authored SAMPLE chain until real URDF import (T2a) — flagged `isSample`.
    */
   robotDetail: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
+    .use(requirePermission("machine_status", "canView"))
     .input(z.object({ robotId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const detail = await robotDetail(input.robotId);
@@ -67,7 +68,7 @@ export const assetCockpitRouter = router({
    * per-asset feed (the cockpit + any per-machine alarm rail consume it).
    */
   machineAlarms: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
+    .use(requirePermission("machine_status", "canView"))
     .input(z.object({ machineId: z.number().int().positive(), limit: z.number().int().min(1).max(200).optional() }))
     .query(async ({ input }) => {
       const alarms = await machineAlarms(input.machineId, input.limit ?? 50);

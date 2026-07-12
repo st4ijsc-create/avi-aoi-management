@@ -84,6 +84,8 @@ import {
   Undo2,
   Rocket,
   Recycle,
+  QrCode,
+  Printer,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
@@ -187,6 +189,45 @@ export function MachineRegistrationContent() {
 
   // API Key visibility
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
+
+  // ── QR asset-tag (doc 40 Wave 4, persona operator) ────────────────────────
+  // Generate scan-to-open QR labels encoding the machine profile URL
+  // (`/machine/:id`). A technician sticks the printed tag on the machine and
+  // scans it to open the full cockpit. Uses the already-installed `qrcode` dep
+  // (dynamic import → out of the main bundle).
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrItems, setQrItems] = useState<
+    Array<{ id: number; code: string; name: string; url: string; dataUrl: string }>
+  >([]);
+
+  const openQrDialog = async (targets: Array<{ id: number; code: string; name: string }>) => {
+    if (targets.length === 0) {
+      toast.info(t('machineRegistration.qr.noMachines', 'Không có máy nào để tạo QR'));
+      return;
+    }
+    setQrItems([]);
+    setQrDialogOpen(true);
+    setQrLoading(true);
+    try {
+      const QRCode = await import('qrcode');
+      const origin = window.location.origin;
+      const items = await Promise.all(
+        targets.map(async (m) => {
+          const url = `${origin}/machine/${m.id}`;
+          const dataUrl = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+          return { id: m.id, code: m.code, name: m.name, url, dataUrl };
+        }),
+      );
+      setQrItems(items);
+    } catch (err) {
+      console.error('QR generation failed', err);
+      toast.error(t('machineRegistration.qr.genError', 'Không tạo được mã QR'));
+      setQrDialogOpen(false);
+    } finally {
+      setQrLoading(false);
+    }
+  };
 
   // Queries
   const pendingQuery = trpc.machine.listPending.useQuery();
@@ -535,6 +576,14 @@ export function MachineRegistrationContent() {
                 onClick={() => navigate("/machine-onboarding")}
               >
                 <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pagedMachines.length === 0}
+                onClick={() => openQrDialog(pagedMachines)}
+              >
+                <QrCode className="h-4 w-4 mr-1" /> {t('machineRegistration.qr.bulkButton', 'In QR hàng loạt')}
               </Button>
               <Button
                 variant="outline"
@@ -890,6 +939,19 @@ export function MachineRegistrationContent() {
                                 )}
                                 {machine.registrationStatus === "approved" && (
                                   <div className="flex gap-1 justify-end">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => openQrDialog([machine])}
+                                        >
+                                          <QrCode className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.qr.rowAction', 'Tạo nhãn QR')}</TooltipContent>
+                                    </Tooltip>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Button
@@ -1375,6 +1437,60 @@ export function MachineRegistrationContent() {
                 <Recycle className="h-4 w-4 mr-1" />
               )}
               {t('machineRegistration.lifecycle.dialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── QR Asset-Tag Dialog (doc 40 Wave 4) ── */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              {t('machineRegistration.qr.dialogTitle', 'Nhãn QR dán lên máy')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('machineRegistration.qr.dialogDesc', 'Quét nhãn để mở hồ sơ máy (/machine/:id). In và dán lên thân máy.')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {qrLoading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+              {t('machineRegistration.qr.generating', 'Đang tạo mã QR…')}
+            </div>
+          ) : (
+            <div className="print-area grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {qrItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col items-center gap-1 rounded-lg border p-3 text-center"
+                >
+                  <img
+                    src={item.dataUrl}
+                    alt={`QR ${item.code}`}
+                    className="h-32 w-32"
+                    width={128}
+                    height={128}
+                  />
+                  <p className="font-mono text-sm font-semibold">{item.code}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1">{item.name}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQrDialogOpen(false)}>
+              {t('machineRegistration.qr.close', 'Đóng')}
+            </Button>
+            <Button
+              onClick={() => window.print()}
+              disabled={qrLoading || qrItems.length === 0}
+            >
+              <Printer className="h-4 w-4 mr-1" />
+              {t('machineRegistration.qr.print', 'In nhãn')}
             </Button>
           </DialogFooter>
         </DialogContent>

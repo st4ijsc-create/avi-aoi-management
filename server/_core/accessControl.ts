@@ -16,6 +16,10 @@ import { permissions } from "../../drizzle/schema";
 import { protectedProcedure } from "./trpc";
 import { initTRPC } from "@trpc/server";
 import type { TrpcContext } from "./context";
+// doc 40 Lan-P0/DEV-02 — resolve "permission ma" (moduleName = category `machine_monitoring`)
+// về module THẬT (machine_status) tại một điểm trung tâm. Sửa MỌI gate `machine_monitoring`
+// trên toàn server (kể cả router chưa đụng tới) mà không cần migration.
+import { resolvePermissionModule } from "@shared/permissions";
 
 // Cache for user assignments (per-request, short-lived)
 const assignmentCache = new Map<string, { corporateCodes: string[]; factoryCodes: string[]; timestamp: number }>();
@@ -117,12 +121,15 @@ export async function checkPermission(
   const db = await getDb();
   if (!db) return false;
 
+  // doc 40 — áp alias: `machine_monitoring` (category dùng nhầm làm module) → `machine_status`.
+  const resolvedModule = resolvePermissionModule(moduleName);
+
   const [perm] = await db
     .select()
     .from(permissions)
     .where(and(
       eq(permissions.userId, userId),
-      eq(permissions.moduleName, moduleName),
+      eq(permissions.moduleName, resolvedModule),
     ))
     .limit(1);
 

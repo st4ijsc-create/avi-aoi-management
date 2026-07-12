@@ -177,7 +177,11 @@ export default function ControlPlane() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {equipment.length === 0 && (
+                      {/* ENG-F7 — nhánh isLoading TRƯỚC empty-state (tránh "Chưa có thiết bị" giả khi đang tải) */}
+                      {equipQ.isLoading && (
+                        <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">{t("common.loading", "Đang tải…")}</TableCell></TableRow>
+                      )}
+                      {!equipQ.isLoading && equipment.length === 0 && (
                         <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">{t("controlPlane.noEquipment", "Chưa có thiết bị.")}</TableCell></TableRow>
                       )}
                       {equipment.map((m) => (

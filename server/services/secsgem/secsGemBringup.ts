@@ -32,6 +32,7 @@ import "./index"; // side-effect: register the built-in "secsgem" connector
 import { createSecsGem, isSecsGemEnabled, isSecsGemLiveEnabled, type SecsGemConnector } from "./secsGemRegistry";
 import { attachGemAlarmDispatch } from "./liveDispatch";
 import type { ParsedS6F11 } from "./s5s6Messages";
+import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
 
 export interface SecsGemEquipmentConfig {
   /** Platform machine code this equipment maps to (traceability on raised alarms). */
@@ -83,6 +84,67 @@ export function parseEquipmentConfig(raw: string | undefined = process.env.SECS_
   }
 }
 
+/**
+ * OT-F9 (doc 40 §11) — S6F11 EVENT SINK: đẩy sự kiện thu thập dữ liệu vào ĐÚNG đường
+ * ingest chuẩn (telemetryBus), KHÔNG ghi thẳng DB.
+ *
+ * ── HONESTY / SCOPE ──────────────────────────────────────────────────────────
+ * Trước đây onEvent chỉ console.log '(no DB writer wired)' → mọi S6F11 bị MẤT. Sink này
+ * chuyển mỗi event thành các CanonicalSample rồi gọi ingestTelemetry — cùng đường mà
+ * mọi reader thật dùng (normalize → resolve machineId → persist → broadcast). machineId
+ * được bus tự resolve từ deviceId = machineCode (khớp machines.code), nên không cần một
+ * writer riêng ở tầng connectivity.
+ *
+ * Report VID→giá trị KHÔNG resolve được nếu thiếu report-linking (S2F33/F35), nên metric
+ * được đặt tên vị-trí thành thật: `secs_s6f11_ceid<ceid>_rpt<rptId>_v<i>` (giữ ceid/rptId/
+ * dataId trong meta để truy vết). Luôn phát THÊM một mẫu marker `secs_s6f11_ceid<ceid>`
+ * (numValue = ceid) để không mất bản ghi ngay cả khi event rỗng report. protocol='other'
+ * (SECS/GEM không nằm trong telemetryProtocolEnum).
+ */
+export function buildSamplesFromS6F11(machineCode: string, event: ParsedS6F11): CanonicalSample[] {
+  const ts = new Date();
+  const baseMeta = { source: "secsgem", dataId: event.dataId, ceid: event.ceid } as const;
+  const samples: CanonicalSample[] = [];
+
+  // Marker: mỗi CEID fired = 1 mẫu (không mất bản ghi khi report rỗng).
+  samples.push({
+    ts,
+    deviceId: machineCode,
+    protocol: "other",
+    metric: `secs_s6f11_ceid${event.ceid}`,
+    value: event.ceid,
+    meta: { ...baseMeta, kind: "event_marker" },
+  });
+
+  for (const rep of event.reports ?? []) {
+    rep.values.forEach((v, i) => {
+      if (v === null || v === undefined) return; // không bịa mẫu cho leaf rỗng
+      samples.push({
+        ts,
+        deviceId: machineCode,
+        protocol: "other",
+        metric: `secs_s6f11_ceid${event.ceid}_rpt${rep.rptId}_v${i}`,
+        value: v,
+        meta: { ...baseMeta, rptId: rep.rptId, valueIndex: i },
+      });
+    });
+  }
+  return samples;
+}
+
+/** OT-F9 — nhận một S6F11 đã decode và đẩy qua telemetryBus. Fail-safe (không ném). */
+export async function ingestS6F11Event(machineCode: string, event: ParsedS6F11): Promise<void> {
+  try {
+    const samples = buildSamplesFromS6F11(machineCode, event);
+    if (samples.length > 0) await ingestTelemetry(samples);
+  } catch (err) {
+    console.error(
+      `[SecsGemBringup] S6F11 ingest failed for ${machineCode}:`,
+      (err as Error)?.message || err,
+    );
+  }
+}
+
 /** Bring up ONE equipment: connect → Select → establishComms → arm live dispatch. */
 async function bringUpOne(cfg: SecsGemEquipmentConfig): Promise<void> {
   const connector = createSecsGem(
@@ -112,12 +174,10 @@ async function bringUpOne(cfg: SecsGemEquipmentConfig): Promise<void> {
     machineId: null, // resolved by machineCode in the alarm bridge
     vendor: cfg.vendor,
     onEvent: (event: ParsedS6F11) => {
-      // Framework module owns NO process_results writer (needs DB + machineId
-      // resolution). Log honestly so an operator sees events arrive; the platform
-      // sink can be wired later without touching the connectivity layer.
-      console.log(
-        `[SecsGemBringup] S6F11 event from ${cfg.machineCode}: CEID=${event.ceid} reports=${event.reports?.length ?? 0} (no DB writer wired)`,
-      );
+      // OT-F9: đẩy event qua telemetryBus (đường ingest chuẩn) thay vì bỏ rơi. Bus tự
+      // resolve machineId từ deviceId = machineCode. Fire-and-forget: dispatch loop đã
+      // gửi S6F12 ack bất kể handler; ingestS6F11Event tự fail-safe.
+      void ingestS6F11Event(cfg.machineCode, event);
     },
   });
 

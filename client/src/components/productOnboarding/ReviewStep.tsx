@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, MinusCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, MinusCircle } from "lucide-react";
 import {
   PRODUCT_ONBOARDING_STEPS,
   type OnboardingReadiness,
@@ -15,6 +15,7 @@ import {
   type OnboardingStepState,
   type StepStatus,
   mergeStepStatus,
+  requiredIncompleteSteps,
 } from "./types";
 
 interface Props {
@@ -34,6 +35,11 @@ const STATUS_ICON: Record<StepStatus, ReactNode> = {
 
 export function ReviewStep({ input, readiness, manual, onGoToStep, onFinish, finishing }: Props) {
   const { t } = useTranslation();
+
+  // H3 #1 — Finish guard: block until every REQUIRED step is done, and name the
+  // ones still missing (was: Finish clickable at 25% with 4/6 required undone).
+  const missingKeys = requiredIncompleteSteps(readiness.derived, manual);
+  const canFinish = missingKeys.length === 0;
 
   const metric = (labelKey: string, fallback: string, value: string) => (
     <div className="rounded border p-3">
@@ -112,8 +118,38 @@ export function ReviewStep({ input, readiness, manual, onGoToStep, onFinish, fin
         })}
       </div>
 
+      {/* Finish guard: list the required steps still blocking completion. */}
+      {!canFinish && (
+        <div className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
+          <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {t("productOnboarding.review.guardTitle", {
+              defaultValue: "Còn {{count}} bước bắt buộc chưa hoàn thành",
+              count: missingKeys.length,
+            })}
+          </div>
+          <ul className="space-y-1">
+            {missingKeys.map((key) => {
+              const idx = PRODUCT_ONBOARDING_STEPS.findIndex((s) => s.key === key);
+              return (
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() => onGoToStep(idx)}
+                    className="flex items-center gap-2 text-left hover:underline"
+                  >
+                    <Circle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>{t(`productOnboarding.steps.${key}`, key)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <div className="flex justify-end">
-        <Button onClick={onFinish} disabled={finishing} className="gap-1">
+        <Button onClick={onFinish} disabled={finishing || !canFinish} className="gap-1">
           <CheckCircle2 className="h-4 w-4" />
           {finishing
             ? t("productOnboarding.review.finishing", "Finishing…")

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearch } from "wouter";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
@@ -23,7 +24,6 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Circle, MinusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import { ProductFiducialsTab } from "@/components/product-fiducials/ProductFiducialsTab";
 import ProductGoldenSamplesPanel from "@/components/products/ProductGoldenSamplesPanel";
 import PanelDefinitionPanel from "@/components/panel/PanelDefinitionPanel";
 import ProgramReleasePanel from "@/components/program-release/ProgramReleasePanel";
@@ -31,12 +31,15 @@ import ProgramReleasePanel from "@/components/program-release/ProgramReleasePane
 import { Step1Product } from "@/components/productOnboarding/Step1Product";
 import { DeepLinkStep } from "@/components/productOnboarding/DeepLinkStep";
 import { ReviewStep } from "@/components/productOnboarding/ReviewStep";
+import { ResumeDraftsPicker } from "@/components/productOnboarding/ResumeDraftsPicker";
+import { OnboardingFiducialsStep } from "@/components/productOnboarding/OnboardingFiducialsStep";
 import {
   PRODUCT_ONBOARDING_STEPS,
   REVIEW_STEP_INDEX,
   computeReadiness,
   mergeStepStatus,
   pointHasLimits,
+  requiredIncompleteSteps,
   type ManualStepMark,
   type OnboardingReadinessInput,
   type OnboardingStepState,
@@ -185,8 +188,29 @@ export function ProductOnboardingWizardContent() {
     persist(1, manual, id);
   };
 
+  // H3 #2 — resume an in-progress draft from the step-0 picker: jump to its
+  // product + last step, and let the draft query re-hydrate its manual marks.
+  const resumeDraft = (id: number, code: string | null, currentStep: number) => {
+    setProductModelId(id);
+    if (code) setProductCode(code);
+    hydratedRef.current = false;      // re-hydrate manual marks for this draft
+    urlStepAppliedRef.current = true; // keep the resumed step (don't let hydrate override)
+    setStep(Math.min(Math.max(currentStep, 0), REVIEW_STEP_INDEX));
+  };
+
   const onFinish = () => {
     if (!productModelId) return;
+    // H3 #1 — defense in depth: never complete while required steps are missing.
+    const missing = requiredIncompleteSteps(readiness.derived, manual);
+    if (missing.length > 0) {
+      toast.error(
+        t("productOnboarding.review.guardBlocked", {
+          defaultValue: "Còn {{count}} bước bắt buộc chưa hoàn thành",
+          count: missing.length,
+        }),
+      );
+      return;
+    }
     completeMut.mutate(
       { productModelId, currentStep: REVIEW_STEP_INDEX, stepState: manual },
       { onSuccess: () => { draftQuery.refetch(); } },
@@ -203,7 +227,7 @@ export function ProductOnboardingWizardContent() {
       case "product":
         return <Step1Product productModelId={productModelId} onProductChosen={chooseProduct} />;
       case "fiducials":
-        return enabled ? <ProductFiducialsTab productModelId={pid} /> : null;
+        return enabled ? <OnboardingFiducialsStep productModelId={pid} /> : null;
       case "points":
         return (
           <DeepLinkStep
@@ -344,6 +368,9 @@ export function ProductOnboardingWizardContent() {
           );
         })}
       </div>
+
+      {/* Resume-picker: step 0 with no product yet → offer unfinished drafts. */}
+      {step === 0 && !enabled && <ResumeDraftsPicker onResume={resumeDraft} />}
 
       <Card>
         <CardHeader>

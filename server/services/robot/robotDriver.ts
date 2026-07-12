@@ -10,7 +10,7 @@
 // "vda5050" (AGV/AMR over the open VDA 5050 MQTT standard) is a first-class vendor
 // as of doc 24 C4 (DB enum widened by migration 0161). Its driver lives under
 // server/services/vda5050 and is registered into the driver registry on import.
-export type RobotVendor = "fanuc" | "mitsubishi" | "delta" | "techman" | "sim" | "vda5050";
+export type RobotVendor = "fanuc" | "mitsubishi" | "delta" | "techman" | "sim" | "vda5050" | "ur";
 
 export type RobotJobType = "move" | "pick_place" | "dispense" | "screw" | "home" | "abort" | "custom";
 

@@ -16,9 +16,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+// Doc 43 Đợt 3 — tab-hoá cột chi tiết (Điểm đo / Thông tin SP / Phát hành / Nền tảng).
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, MoreHorizontal, ChevronDown, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle } from "lucide-react";
 import { useSearch, useLocation } from "wouter";
 // Doc 31 UX1 (WD-1) — mount the previously-orphaned fiducial CRUD tab (0 importers).
 import { ProductFiducialsTab } from "@/components/product-fiducials/ProductFiducialsTab";
@@ -45,12 +48,18 @@ import { ProductPackageButtons } from "@/components/ProductPackageButtons";
 import MeasurementPointCanvas, { type CanvasGeometry, type CanvasPointShape } from "@/components/measurement-point-canvas/MeasurementPointCanvas";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
+import { DataTable } from "@/components/DataTable";
+// Doc 42 Đợt 4A (APPLY-B) — thanh nhập/xuất danh sách sản phẩm (Excel/CSV).
+import { ImportExportBar, type MasterDataColumn } from "@/components/patterns";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
+// Doc 42 Đợt 0.5 — bộ dịch lỗi tRPC dùng chung (FORBIDDEN/CONFLICT/zod → tiếng Việt).
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 interface MeasurementPoint {
   id?: number;
@@ -136,6 +145,24 @@ function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
 type ToleranceMode = "min_only" | "max_only" | "range" | "bilateral";
 type MaterialCondition = "MMC" | "LMC" | "RFS";
 
+/**
+ * Doc 43 Đợt 5 — tóm tắt ngưỡng của 1 điểm đo cho cột bảng (không cần i18n).
+ * Ưu tiên khoảng [dưới … trên], rồi danh định ± dung sai, else "—".
+ */
+function thresholdSummaryOf(p: MeasurementPoint): string {
+  const unit = p.unit ? ` ${p.unit}` : "";
+  if (p.lowerLimit || p.upperLimit) {
+    return `${p.lowerLimit ?? "−∞"} … ${p.upperLimit ?? "+∞"}${unit}`;
+  }
+  if (p.nominalValue) {
+    if (p.tolPlus || p.tolMinus) {
+      return `${p.nominalValue} +${p.tolPlus ?? "0"}/−${p.tolMinus ?? "0"}${unit}`;
+    }
+    return `${p.nominalValue}${unit}`;
+  }
+  return "—";
+}
+
 interface ProductModel {
   id: number;
   code: string;
@@ -175,9 +202,28 @@ function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["me
   }
 }
 
+// Doc 42 Đợt 4A (APPLY-B) — cột nhập/xuất danh sách sản phẩm. Khớp server
+// PRODUCT_IMPORT_COLUMNS (productRouters.ts); validate cùng luật @shared/masterDataIO.
+// Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
+const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation"] as const;
+
+const PRODUCT_IO_COLUMNS: MasterDataColumn[] = [
+  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
+  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
+  { field: "description", header: "Mô tả", type: "string" },
+  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
+  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
+  { field: "variant", header: "Biến thể", type: "string" },
+  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
+  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
+  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
+  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
+];
+
 export default function ProductModels() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
+  const { hasPermission } = usePermissions();
   const setCopilotContext = useSetCopilotContext();
   const [selectedProduct, setSelectedProduct] = useState<ProductModel | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -206,6 +252,9 @@ export default function ProductModels() {
   const [isDragging, setIsDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  // Doc 43 Đợt 5 — bọc DataTable điểm đo để cuộn hàng đang chọn vào tầm nhìn khi
+  // chọn điểm từ canvas (đồng bộ canvas → bảng).
+  const pointTableRef = useRef<HTMLDivElement>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [scale, setScale] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -221,7 +270,9 @@ export default function ProductModels() {
   const [newProductLine, setNewProductLine] = useState("");
   const [newProductVariant, setNewProductVariant] = useState("");
   const [newProductRevision, setNewProductRevision] = useState("");
-  const [newProductLifecycle, setNewProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("active");
+  // Doc 43 Đợt 4 (C) — sản phẩm mới mặc định 'development' để không kích cổng duyệt
+  // ngưỡng (403) ngay sau khi tạo; đổi sang 'active' khi đã chốt chương trình.
+  const [newProductLifecycle, setNewProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("development");
   const [newProductTargetYield, setNewProductTargetYield] = useState("");
   const [newProductMinYield, setNewProductMinYield] = useState("");
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
@@ -473,6 +524,30 @@ export default function ProductModels() {
       preselectAppliedRef.current = true;
     }
   }, [onboardingSearch, productModels]);
+
+  // Doc 43 Đợt 3 — tab cột chi tiết (Điểm đo / Thông tin SP / Phát hành / Nền tảng) đồng
+  // bộ ?tab= URL (deep-link + reload giữ tab), theo pattern hub doc 36/40. Mặc định "points".
+  const [activeDetailTab, setActiveDetailTab] = useState<string>(() => {
+    const tab = new URLSearchParams(onboardingSearch).get("tab");
+    return tab && (PRODUCT_DETAIL_TABS as readonly string[]).includes(tab) ? tab : "points";
+  });
+  const handleDetailTabChange = useCallback(
+    (v: string) => {
+      setActiveDetailTab(v);
+      const params = new URLSearchParams(onboardingSearch);
+      params.set("tab", v);
+      setLocation(`/products?${params.toString()}`, { replace: true });
+    },
+    [onboardingSearch, setLocation],
+  );
+  // React ?tab= sau mount (deep-link vào một tab khi đã ở /products).
+  useEffect(() => {
+    const tab = new URLSearchParams(onboardingSearch).get("tab");
+    if (tab && (PRODUCT_DETAIL_TABS as readonly string[]).includes(tab) && tab !== activeDetailTab) {
+      setActiveDetailTab(tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboardingSearch]);
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
     { productModelId: selectedProduct?.id || 0 },
     { enabled: !!selectedProduct }
@@ -655,6 +730,52 @@ export default function ProductModels() {
     },
   });
 
+  // Doc 42 Đợt 4A (APPLY-B) — nhập/xuất danh sách sản phẩm (Excel/CSV).
+  const utils = trpc.useUtils();
+  const canImportProducts = hasPermission("settings_products", "canCreate");
+  const importProductsMutation = trpc.productModel.importList.useMutation();
+
+  const handleExportProducts = useCallback(
+    async (format: "csv" | "xlsx") => {
+      try {
+        const res = await utils.productModel.exportList.fetch({
+          search: productSearchQuery || undefined,
+          lifecycleStatus: productLifecycleFilter !== "all" ? productLifecycleFilter : undefined,
+          sortBy: productSortBy,
+          sortOrder: productSortOrder,
+          format,
+        });
+        // base64 → Blob → tải xuống (giữ tên file + branding từ server).
+        const bin = atob(res.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: res.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = res.fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast.success(t("products.ioExportSuccess", { count: res.count, defaultValue: `Đã xuất ${res.count} sản phẩm` }));
+      } catch (err) {
+        toast.error(t("common.errorWithMessage", { message: (err as Error).message }));
+      }
+    },
+    [utils, productSearchQuery, productLifecycleFilter, productSortBy, productSortOrder, t],
+  );
+
+  const handleImportProducts = useCallback(
+    async (rows: Array<Record<string, unknown>>) => {
+      const res = await importProductsMutation.mutateAsync({ rows });
+      await refetchProducts();
+      // Gộp INSERT + UPDATE vào "inserted" cho tổng kết; failed/errors giữ nguyên.
+      return { inserted: res.inserted + res.updated, failed: res.failed, errors: res.errors };
+    },
+    [importProductsMutation, refetchProducts],
+  );
+
   // Template mutations
   const createTemplateMutation = trpc.template.create.useMutation({
     onSuccess: () => {
@@ -701,7 +822,9 @@ export default function ProductModels() {
       // Doc 31 UX3 — a CONFLICT is handled by the reload/overwrite dialog in
       // handleSavePoint; don't also fire a scary error toast for it.
       if ((error as { data?: { code?: string } })?.data?.code === "CONFLICT") return;
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      // Doc 43 Đợt 4 (A) — dịch lỗi thân thiện (FORBIDDEN duyệt-ngưỡng, zod, …)
+      // thay vì dump message thô của server.
+      toastTrpcError(error);
     },
   });
 
@@ -976,7 +1099,7 @@ export default function ProductModels() {
     setNewProductLine("");
     setNewProductVariant("");
     setNewProductRevision("");
-    setNewProductLifecycle("active");
+    setNewProductLifecycle("development");
     setNewProductTargetYield("");
     setNewProductMinYield("");
     setUploadedImageUrl("");
@@ -1042,6 +1165,59 @@ export default function ProductModels() {
       return matchesSearch && matchesType;
     });
   }, [measurementPoints, pointSearchQuery, pointTypeFilter]);
+
+  // Doc 43 Đợt 5 — point list chip → DataTable. Bản đồ tham chiếu điểm → chỉ số
+  // trong measurementPoints ĐẦY ĐỦ (selectedPointIndex/canvas dùng chỉ số này, còn
+  // bảng ăn filteredMeasurementPoints), để onRowClick suy ra đúng index + STT.
+  const pointIndexMap = useMemo(() => {
+    const m = new Map<MeasurementPoint, number>();
+    measurementPoints.forEach((p, i) => m.set(p, i));
+    return m;
+  }, [measurementPoints]);
+
+  // Định danh hàng ổn định: id thật khi đã lưu, else khoá tạm theo vị trí (điểm mới
+  // chưa có id không tham gia batch — khớp selectAllPoints chỉ chọn p.id).
+  const pointRowId = useCallback(
+    (p: MeasurementPoint): string | number =>
+      p.id != null ? p.id : `new-${pointIndexMap.get(p) ?? -1}`,
+    [pointIndexMap]
+  );
+
+  // Nhãn loại (Việt hoá) — dùng chung với bộ lọc; 'typeVisualLabel' sửa dịch sai.
+  const pointTypeLabel = useCallback(
+    (type: MeasurementPoint["measurementType"]): string => {
+      const map: Record<MeasurementPoint["measurementType"], string> = {
+        DIMENSION: t("products.typeDimension"),
+        VISUAL: t("products.typeVisualLabel", "Trực quan"),
+        ELECTRICAL: t("products.typeElectrical"),
+        POSITION: t("products.typePosition"),
+        COLOR: t("products.typeColor"),
+        SURFACE: t("products.typeSurface"),
+        OTHER: t("products.typeOther"),
+      };
+      return map[type] ?? type;
+    },
+    [t]
+  );
+
+  // selectedIds của bảng: batch mode → tập điểm đã tick (theo id); ngược lại →
+  // 1 hàng đang chỉnh sửa (highlight đồng bộ với canvas qua data-state="selected").
+  const pointTableSelectedIds = useMemo<Array<string | number>>(() => {
+    if (isBatchMode) return Array.from(selectedPointIds);
+    const active =
+      selectedPointIndex != null ? measurementPoints[selectedPointIndex] : undefined;
+    return active ? [pointRowId(active)] : [];
+  }, [isBatchMode, selectedPointIds, selectedPointIndex, measurementPoints, pointRowId]);
+
+  // Canvas → bảng: khi điểm đang chọn đổi (kể cả bấm trên canvas), cuộn hàng tương
+  // ứng (nếu đang ở trang hiện tại) vào tầm nhìn. Batch mode không auto-cuộn.
+  useEffect(() => {
+    if (isBatchMode || selectedPointIndex == null) return;
+    const row = pointTableRef.current?.querySelector<HTMLElement>(
+      'tr[data-state="selected"]'
+    );
+    row?.scrollIntoView({ block: "nearest" });
+  }, [selectedPointIndex, isBatchMode]);
 
   // Load measurement points when product is selected
   useEffect(() => {
@@ -1150,6 +1326,32 @@ export default function ProductModels() {
   // Coplanarity/warpage are BGA/xray/solder concerns; void% is xray.
   const showCoplanaritySection = showSolderSection || showXraySection;
   const show3DSection = showSolderSection || showXraySection || showPositionSection || showCoatingSection;
+
+  // Doc 43 Đợt 4 (A) — dirty-track các trường NGƯỠNG so với bản gốc đã load. Chỉ khi
+  // các trường này THỰC SỰ đổi ta mới gửi chúng lên (xem handleSavePoint) để không
+  // kích cổng duyệt (server `touchesLimits`) khi người dùng chỉ sửa tên/mô tả.
+  // Điểm mới (chưa có id) đi qua đường create — không bị gate — nên luôn = false.
+  const thresholdFieldsDirty = useMemo(() => {
+    if (selectedPointIndex === null) return false;
+    const base = measurementPoints[selectedPointIndex];
+    if (!base || !base.id) return false;
+    const norm = (v: unknown) => (v == null ? "" : String(v));
+    return (
+      norm(base.lowerLimit) !== norm(pointLowerLimit) ||
+      norm(base.upperLimit) !== norm(pointUpperLimit) ||
+      norm(base.nominalValue) !== norm(pointNominalValue) ||
+      norm(base.toleranceMode || "range") !== norm(pointToleranceMode) ||
+      norm(base.tolPlus) !== norm(pointTolPlus) ||
+      norm(base.tolMinus) !== norm(pointTolMinus)
+    );
+  }, [selectedPointIndex, measurementPoints, pointLowerLimit, pointUpperLimit, pointNominalValue, pointToleranceMode, pointTolPlus, pointTolMinus]);
+
+  // Sản phẩm ở vòng đời khiến sửa ngưỡng trực tiếp phải qua hàng đợi duyệt — khớp
+  // thresholdGovernanceService (mọi trạng thái ≠ 'development'). Không thấy được
+  // trạng thái released-program phía client nên đây chỉ là gợi ý; server vẫn là
+  // nguồn sự thật cuối.
+  const productGatesThresholds = !!selectedProduct && selectedProduct.lifecycleStatus !== "development";
+  const saveWillRequireApproval = productGatesThresholds && thresholdFieldsDirty;
 
   // Draw measurement points on canvas
   const drawCanvas = useCallback(() => {
@@ -1741,20 +1943,21 @@ export default function ProductModels() {
     handleFillNextMsaCell,
   ]);
 
-  const openEditProductDialog = () => {
-    if (!selectedProduct) return;
-    setEditProductCode(selectedProduct.code);
-    setEditProductName(selectedProduct.name);
-    setEditProductDescription(selectedProduct.description || "");
-    setEditProductCategory(selectedProduct.category || "");
-    setEditProductLine(selectedProduct.productLine || "");
-    setEditProductVariant(selectedProduct.variant || "");
-    setEditProductRevision(selectedProduct.revision || "");
-    setEditProductLifecycle(selectedProduct.lifecycleStatus);
-    setEditProductTargetYield(selectedProduct.targetYieldRate || "");
-    setEditProductMinYield(selectedProduct.minYieldRate || "");
+  const openEditProductDialog = (product?: ProductModel) => {
+    const target = product ?? selectedProduct;
+    if (!target) return;
+    setEditProductCode(target.code);
+    setEditProductName(target.name);
+    setEditProductDescription(target.description || "");
+    setEditProductCategory(target.category || "");
+    setEditProductLine(target.productLine || "");
+    setEditProductVariant(target.variant || "");
+    setEditProductRevision(target.revision || "");
+    setEditProductLifecycle(target.lifecycleStatus);
+    setEditProductTargetYield(target.targetYieldRate || "");
+    setEditProductMinYield(target.minYieldRate || "");
     setEditProductImageUrl("");
-    setEditProductDisplayMode((selectedProduct.imageDisplayMode as any) || "contain");
+    setEditProductDisplayMode((target.imageDisplayMode as any) || "contain");
     setIsEditProductDialogOpen(true);
   };
 
@@ -1857,11 +2060,24 @@ export default function ProductModels() {
 
     try {
       if (point.id) {
+        // Doc 43 Đợt 4 (A) — dirty-track: nếu người dùng KHÔNG đổi ngưỡng thì bỏ hẳn
+        // các trường ngưỡng khỏi payload update, để server `touchesLimits` không kích
+        // cổng duyệt (403) trên sản phẩm active khi chỉ sửa tên/mô tả. Bản `pointData`
+        // (đủ trường) vẫn dùng cho cập-nhật-local + đường create bên dưới.
+        const updatePayload: Record<string, unknown> = { ...pointData };
+        if (!thresholdFieldsDirty) {
+          delete updatePayload.lowerLimit;
+          delete updatePayload.upperLimit;
+          delete updatePayload.nominalValue;
+          delete updatePayload.toleranceMode;
+          delete updatePayload.tolPlus;
+          delete updatePayload.tolMinus;
+        }
         // Update existing point — Doc 31 UX3: send the updatedAt we loaded so the
         // server can compare-and-set and reject a stale overwrite (CONFLICT).
         await updatePointMutation.mutateAsync({
           id: point.id,
-          ...pointData,
+          ...updatePayload,
           expectedUpdatedAt: (point as any).updatedAt ?? undefined,
         });
 
@@ -2195,8 +2411,8 @@ export default function ProductModels() {
     <>
       <DashboardLayout title={t("products.managementTitle")} navItems={navItems} currentPath="/products">
       <ErrorBoundary>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Product List */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Product List — thu gọn còn 1/4 (danh sách sản phẩm ít cần rộng) */}
         <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
@@ -2275,6 +2491,82 @@ export default function ProductModels() {
                       placeholder={t("products.revisionExample")}
                       maxLength={32}
                     />
+                  </div>
+                  {/* Doc 43 Đợt 4 (C) — bổ sung control cho các trường mutation đã nhận:
+                      danh mục / dòng sản phẩm / biến thể / vòng đời (mặc định 'development'
+                      → không kích cổng duyệt ngay sau tạo) / FPY mục tiêu · tối thiểu. */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductCategory">{t("common.category")}</Label>
+                      <Input
+                        id="newProductCategory"
+                        value={newProductCategory}
+                        onChange={(e) => setNewProductCategory(e.target.value)}
+                        placeholder={t("products.categoryPlaceholder")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductLine">{t("products.productLine")}</Label>
+                      <Input
+                        id="newProductLine"
+                        value={newProductLine}
+                        onChange={(e) => setNewProductLine(e.target.value)}
+                        placeholder={t("products.linePlaceholder")}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductVariant">{t("products.variant")}</Label>
+                      <Input
+                        id="newProductVariant"
+                        value={newProductVariant}
+                        onChange={(e) => setNewProductVariant(e.target.value)}
+                        placeholder={t('products.variantExample')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductLifecycle">{t("common.status")}</Label>
+                      <Select value={newProductLifecycle} onValueChange={(value: any) => setNewProductLifecycle(value)}>
+                        <SelectTrigger id="newProductLifecycle">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="development">{t("products.development")}</SelectItem>
+                          <SelectItem value="active">{t("products.activeStatus")}</SelectItem>
+                          <SelectItem value="eol">{t("products.endOfLife")}</SelectItem>
+                          <SelectItem value="archived">{t("products.archived")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductTargetYield">{t("products.targetYieldLabel")}</Label>
+                      <Input
+                        id="newProductTargetYield"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={newProductTargetYield}
+                        onChange={(e) => setNewProductTargetYield(e.target.value)}
+                        placeholder="95.5"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newProductMinYield">{t("products.minYieldLabel")}</Label>
+                      <Input
+                        id="newProductMinYield"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={newProductMinYield}
+                        onChange={(e) => setNewProductMinYield(e.target.value)}
+                        placeholder="85.0"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>{t("products.imageDisplayModeLabel")}</Label>
@@ -2399,96 +2691,141 @@ export default function ProductModels() {
                 </div>
               )}
             </div>
-            
-            <ScrollArea className="h-125">
-              <div className="space-y-2">
-                {productModels?.map((product) => (
-                  <div
-                    key={product.id}
-                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selectedProduct?.id === product.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
-                    }`}
-                    onClick={() => {
-                      setSelectedProduct(product);
-                      setIsEditMode(false);
-                      resetPointForm();
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Package className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{product.name}</p>
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm text-muted-foreground truncate">{product.code}</p>
-                          {(product as { revision?: string | null }).revision && (
-                            <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                              {t("products.revShort")} {(product as { revision?: string | null }).revision}
-                            </Badge>
+
+            {/* Doc 42 Đợt 4A (APPLY-B) — nhập/xuất danh sách sản phẩm. Xuất/Tải mẫu cho
+                mọi người; "Nhập" chỉ hiện khi có quyền tạo (onImport = undefined nếu không). */}
+            <div className="mb-4">
+              <ImportExportBar
+                entityLabel={t("products.entityLabel", "sản phẩm")}
+                fileBaseName="san_pham"
+                columns={PRODUCT_IO_COLUMNS}
+                onExport={handleExportProducts}
+                onImport={canImportProducts ? handleImportProducts : undefined}
+              />
+            </div>
+
+            {/* Doc 42 Đợt 2 (D2) — danh sách sản phẩm dùng DataTable: skeleton khi tải,
+                phân trang, empty-state có CTA. Search/lọc/sắp xếp vẫn do controls phía
+                trên điều khiển server-side (query productModel.list). */}
+            <DataTable<ProductModel>
+              data={(productModels ?? []) as unknown as ProductModel[]}
+              getRowId={(p) => p.id}
+              loading={productModels === undefined}
+              paginated
+              pageSize={8}
+              onRowClick={(product) => {
+                setSelectedProduct(product);
+                setIsEditMode(false);
+                resetPointForm();
+                // Doc 43 Đợt 3 — ghi ?product= (giữ tab hiện tại) để reload giữ nguyên
+                // sản phẩm + tab. Preselect chỉ auto-chọn 1 lần nên không gây vòng lặp.
+                const params = new URLSearchParams(onboardingSearch);
+                params.set("product", String(product.id));
+                setLocation(`/products?${params.toString()}`, { replace: true });
+              }}
+              emptyState={
+                productSearchQuery || productLifecycleFilter !== "all" ? (
+                  <EmptyState
+                    variant="no-results"
+                    compact
+                    title={t("products.noMatchingProducts", "Không có sản phẩm khớp")}
+                    description={t("products.tryDifferentSearch", "Thử đổi từ khoá hoặc bộ lọc.")}
+                  />
+                ) : (
+                  <EmptyState
+                    variant="no-data"
+                    compact
+                    title={t("products.noProductsYet")}
+                    description={t("products.clickAddToCreate")}
+                    actionLabel={t("common.add")}
+                    onAction={() => setIsCreateDialogOpen(true)}
+                  />
+                )
+              }
+              columns={[
+                {
+                  id: "product",
+                  header: t("products.product", "Sản phẩm"),
+                  cell: (product) => {
+                    const isSelected = selectedProduct?.id === product.id;
+                    const updatedAt = (product as { updatedAt?: string | Date | null }).updatedAt;
+                    return (
+                      <div
+                        className={`flex items-start gap-3 -mx-1 rounded-md px-2 py-1 ${
+                          isSelected ? "bg-primary/5" : ""
+                        }`}
+                      >
+                        <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                          <Package className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{product.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm text-muted-foreground truncate">{product.code}</p>
+                            {product.revision && (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                                {t("products.revShort")} {product.revision}
+                              </Badge>
+                            )}
+                          </div>
+                          {/* Doc 31 UX2/PM9 — config-completeness badge (batched, no N+1) */}
+                          <div className="mt-1">
+                            <ProductReadinessBadge readiness={readinessById.get(product.id)} />
+                          </div>
+                          {updatedAt && (
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              {t("common.updated", "Cập nhật")}: {new Date(updatedAt).toLocaleDateString("vi-VN")}
+                            </p>
                           )}
                         </div>
-                        {/* Doc 31 UX2/PM9 — config-completeness badge (batched, no N+1) */}
-                        <div className="mt-1">
-                          <ProductReadinessBadge readiness={readinessById.get(product.id)} />
-                        </div>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedProduct(product);
-                            openEditProductDialog();
-                          }}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            {t("common.edit")}
-                          </DropdownMenuItem>
-                          <PermissionGate module="settings_products" action="canCreate">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={(e) => {
                               e.stopPropagation();
-                              openCloneProductDialog(product as unknown as ProductModel);
-                            }}>
-                              <Copy className="h-4 w-4 mr-2" />
-                              {t("products.clone")}
-                            </DropdownMenuItem>
-                          </PermissionGate>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
                               setSelectedProduct(product);
-                              setIsDeleteProductDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {t("common.delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                ))}
-                {(!productModels || productModels.length === 0) && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>{t("products.noProductsYet")}</p>
-                    <p className="text-sm">{t("products.clickAddToCreate")}</p>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
+                              openEditProductDialog(product as unknown as ProductModel);
+                            }}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              {t("common.edit")}
+                            </DropdownMenuItem>
+                            <PermissionGate module="settings_products" action="canCreate">
+                              <DropdownMenuItem onClick={(e) => {
+                                e.stopPropagation();
+                                openCloneProductDialog(product as unknown as ProductModel);
+                              }}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                {t("products.clone")}
+                              </DropdownMenuItem>
+                            </PermissionGate>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedProduct(product);
+                                setIsDeleteProductDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              {t("common.delete")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  },
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 
-        {/* Measurement Point Editor */}
-        <Card className="lg:col-span-2">
+        {/* Measurement Point Editor — mở rộng 3/4 để phần điểm đo to hơn */}
+        <Card className="lg:col-span-3">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
               <CardTitle className="text-lg">
@@ -2540,56 +2877,111 @@ export default function ProductModels() {
                     </Button>
                   </>
                 ) : (
-                  <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" onClick={() => setIsBulkImportDialogOpen(true)} className="gap-1">
-                      <FileSpreadsheet className="h-4 w-4" />
-                      {t('common.import')}
-                    </Button>
-                    {/* Doc 31 MP5/PM4 (Đợt C) — centroid / pick-place import (author 200 pts fast) */}
-                    <Button size="sm" variant="outline" onClick={() => setIsCentroidImportOpen(true)} className="gap-1">
-                      <Package className="h-4 w-4" />
-                      {t('products.centroidImport.button', 'Import centroid')}
-                    </Button>
-                    {/* Doc 31 PM3 — portable product package export / import (JSON) */}
-                    <ProductPackageButtons
-                      selectedProduct={selectedProduct}
-                      onImported={() => refetchProducts()}
-                    />
-                    <Button size="sm" variant="outline" onClick={() => setIsTemplateDialogOpen(true)} className="gap-1">
-                      <Layers className="h-4 w-4" />
-                      {t('products.templates')}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={openMsaWizard} className="gap-1">
-                      <Target className="h-4 w-4" />
-                      MSA Wizard
-                    </Button>
-                    {/* W3-C (doc 27 §2 M9) — program release workflow (Phát hành chương trình) */}
-                    <Button size="sm" variant="outline" onClick={() => setIsProgramReleaseOpen(true)} className="gap-1">
-                      <Rocket className="h-4 w-4" />
-                      {t("programRelease.button")}
-                    </Button>
-                    {/* W8-B (doc 29 §2 — M12b) — panel N-up definition editor */}
-                    <Button size="sm" variant="outline" onClick={() => setIsPanelDefOpen(true)} className="gap-1">
-                      <Grid3X3 className="h-4 w-4" />
-                      {t("panelDef.button")}
-                    </Button>
-                    {/* Doc 31 UX1 (WD-1) — fiducial marks (mounts the previously-orphaned tab) */}
-                    <Button size="sm" variant="outline" onClick={() => setIsFiducialsOpen(true)} className="gap-1">
-                      <Crosshair className="h-4 w-4" />
-                      {t("products.fiducialsButton", "Fiducials")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={isBatchMode ? "default" : "outline"}
-                      onClick={() => {
-                        setIsBatchMode(!isBatchMode);
-                        if (isBatchMode) setSelectedPointIds(new Set());
-                      }} 
-                      className="gap-1"
-                    >
-                      {isBatchMode ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                      {isBatchMode ? t("products.exitMode") : t("products.selectMode")}
-                    </Button>
+                  /* Doc 43 Đợt 1 — gom toolbar: 10 nút flat → Nhập ▾ + ⋯ Nâng cao + ✎ Sửa.
+                     KHÔNG đổi handler/state — chỉ dời vị trí (flat button → menu item). */
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Nhập điểm đo (dropdown nhỏ: Excel/CSV + centroid) */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="gap-1">
+                          <FileSpreadsheet className="h-4 w-4" />
+                          {t('products.importPointsBtn', 'Nhập điểm đo')}
+                          <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem onClick={() => setIsBulkImportDialogOpen(true)} className="gap-2">
+                          <FileSpreadsheet className="h-4 w-4" />
+                          {t('products.importExcelCsv', 'Nhập Excel/CSV')}
+                        </DropdownMenuItem>
+                        {/* Doc 31 MP5/PM4 (Đợt C) — centroid / pick-place import (author 200 pts fast) */}
+                        <DropdownMenuItem onClick={() => setIsCentroidImportOpen(true)} className="gap-2">
+                          <Package className="h-4 w-4" />
+                          {t('products.centroidImport.button', 'Import centroid')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* ⋯ Nâng cao — gom 8 action ít dùng theo nhóm (giữ nguyên onClick/handler) */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="gap-1">
+                          <MoreHorizontal className="h-4 w-4" />
+                          {t('products.advancedMenu', 'Nâng cao')}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-60">
+                        {/* Chương trình */}
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          {t('products.advGroupProgram', 'Chương trình')}
+                        </DropdownMenuLabel>
+                        {/* W3-C (doc 27 §2 M9) — program release workflow (Phát hành chương trình) */}
+                        <DropdownMenuItem onClick={() => setIsProgramReleaseOpen(true)} className="gap-2">
+                          <Rocket className="h-4 w-4" />
+                          {t("programRelease.button")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsTemplateDialogOpen(true)} className="gap-2">
+                          <Layers className="h-4 w-4" />
+                          {t('products.templates')}
+                        </DropdownMenuItem>
+
+                        <DropdownMenuSeparator />
+                        {/* Bố cục & tham chiếu */}
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          {t('products.advGroupLayout', 'Bố cục & tham chiếu')}
+                        </DropdownMenuLabel>
+                        {/* W8-B (doc 29 §2 — M12b) — panel N-up definition editor */}
+                        <DropdownMenuItem onClick={() => setIsPanelDefOpen(true)} className="gap-2">
+                          <Grid3X3 className="h-4 w-4" />
+                          {t("panelDef.button")}
+                        </DropdownMenuItem>
+                        {/* Doc 31 UX1 (WD-1) — fiducial marks (mounts the previously-orphaned tab) */}
+                        <DropdownMenuItem onClick={() => setIsFiducialsOpen(true)} className="gap-2">
+                          <Crosshair className="h-4 w-4" />
+                          {t("products.fiducialsButton", "Fiducials")}
+                        </DropdownMenuItem>
+
+                        <DropdownMenuSeparator />
+                        {/* Chất lượng */}
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          {t('products.advGroupQuality', 'Chất lượng')}
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem onClick={openMsaWizard} className="gap-2">
+                          <Target className="h-4 w-4" />
+                          MSA Wizard
+                        </DropdownMenuItem>
+
+                        <DropdownMenuSeparator />
+                        {/* Trao đổi dữ liệu — Doc 31 PM3: xuất/nhập gói sản phẩm (JSON) */}
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          {t('products.advGroupExchange', 'Trao đổi dữ liệu')}
+                        </DropdownMenuLabel>
+                        <div className="flex flex-wrap gap-1 px-1 py-1">
+                          <ProductPackageButtons
+                            selectedProduct={selectedProduct}
+                            onImported={() => refetchProducts()}
+                          />
+                        </div>
+
+                        <DropdownMenuSeparator />
+                        {/* Hàng loạt */}
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
+                          {t('products.advGroupBatch', 'Hàng loạt')}
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setIsBatchMode(!isBatchMode);
+                            if (isBatchMode) setSelectedPointIds(new Set());
+                          }}
+                          className="gap-2"
+                        >
+                          {isBatchMode ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                          {isBatchMode ? t("products.exitMode") : t("products.selectMode")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Sửa (primary) — giữ PermissionGate settings_products.canEdit */}
                     <PermissionGate module="settings_products" action="canEdit">
                       <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
                         <Edit className="h-4 w-4" />
@@ -2603,7 +2995,30 @@ export default function ProductModels() {
           </CardHeader>
           <CardContent>
             {selectedProduct ? (
-              <div className="space-y-4">
+              <Tabs value={activeDetailTab} onValueChange={handleDetailTabChange} className="space-y-4">
+                {/* Doc 43 Đợt 3 — tab-hoá cột chi tiết: Điểm đo / Thông tin SP / Phát hành / Nền tảng.
+                    ?tab= đồng bộ URL (deep-link, reload giữ tab). Toolbar Nhập/Nâng cao/Sửa vẫn ở header card. */}
+                <TabsList className="flex h-9 flex-wrap">
+                  <TabsTrigger value="points" className="h-7 gap-1.5 text-xs">
+                    <Target className="h-4 w-4" />
+                    {t("products.tabPoints", "Điểm đo")}
+                  </TabsTrigger>
+                  <TabsTrigger value="info" className="h-7 gap-1.5 text-xs">
+                    <Package className="h-4 w-4" />
+                    {t("products.tabInfo", "Thông tin sản phẩm")}
+                  </TabsTrigger>
+                  <TabsTrigger value="release" className="h-7 gap-1.5 text-xs">
+                    <Rocket className="h-4 w-4" />
+                    {t("products.tabRelease", "Phát hành & Chương trình")}
+                  </TabsTrigger>
+                  <TabsTrigger value="foundation" className="h-7 gap-1.5 text-xs">
+                    <Layers className="h-4 w-4" />
+                    {t("products.tabFoundation", "Nền tảng")}
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* ① Điểm đo — canvas + point list + form (màn làm việc chính) */}
+                <TabsContent value="points" className="space-y-4 mt-2">
                 {/* Batch Actions Bar */}
                 {isBatchMode && (
                   <div className="flex items-center gap-2 p-2 bg-accent/50 rounded-lg">
@@ -2641,19 +3056,10 @@ export default function ProductModels() {
                   </div>
                 )}
 
-                {/* Search and Filter */}
+                {/* Bộ lọc theo loại — Doc 43 Đợt 5: ô tìm text đã chuyển vào DataTable
+                    điểm đo (searchable, ngay trên bảng); giữ lọc-theo-loại làm bộ lọc thô. */}
                 <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Label htmlFor="pointSearch" className="text-xs">{t('common.search')}</Label>
-                    <Input
-                      id="pointSearch"
-                      placeholder={t('products.searchPointPlaceholder')}
-                      value={pointSearchQuery}
-                      onChange={(e) => setPointSearchQuery(e.target.value)}
-                      className="h-8"
-                    />
-                  </div>
-                  <div className="w-40">
+                  <div className="w-48">
                     <Label htmlFor="typeFilter" className="text-xs">{t('common.type')}</Label>
                     <Select value={pointTypeFilter} onValueChange={(val) => setPointTypeFilter(val as any)}>
                       <SelectTrigger id="typeFilter" className="h-8">
@@ -2662,7 +3068,10 @@ export default function ProductModels() {
                       <SelectContent>
                         <SelectItem value="all">{t('common.all')}</SelectItem>
                         <SelectItem value="DIMENSION">{t('products.typeDimension')}</SelectItem>
-                        <SelectItem value="VISUAL">{t('products.typeVisual')}</SelectItem>
+                        {/* Doc 43 §5 — 'products.typeVisual' trong locale dịch sai ("Loại
+                            hiển thị"); dùng key mới + defaultValue "Trực quan" (i18next bỏ
+                            qua defaultValue nếu key cũ tồn tại). Sửa locale = pass i18n sau. */}
+                        <SelectItem value="VISUAL">{t('products.typeVisualLabel', 'Trực quan')}</SelectItem>
                         <SelectItem value="ELECTRICAL">{t('products.typeElectrical')}</SelectItem>
                         <SelectItem value="POSITION">{t('products.typePosition')}</SelectItem>
                         <SelectItem value="COLOR">{t('products.typeColor')}</SelectItem>
@@ -2674,14 +3083,9 @@ export default function ProductModels() {
                   <span className="text-xs text-muted-foreground">({filteredMeasurementPoints.length})</span>
                 </div>
 
-                {/* Doc 31 UX2/PM9/UX7 — readiness checklist + contextual cross-links */}
-                <ProductReadinessPanel productModelId={selectedProduct.id} productCode={selectedProduct.code} />
-
-                {/* Doc 31 PM5/UX8 — golden samples for this product (surface + capture deep-link) */}
-                <ProductGoldenSamplesPanel productModelId={selectedProduct.id} productCode={selectedProduct.code} />
-
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-                  {/* Canvas Area */}
+                {/* Canvas + form điểm đo (2/3 canvas · 1/3 form) — readiness/golden dời sang tab Thông tin SP */}
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  {/* Canvas Area — chiếm 2/3 chiều rộng detail (ảnh điểm đo to hơn) */}
                   <div className="xl:col-span-2">
                   {/* Zoom Controls */}
                   <div className="flex items-center gap-4 mb-3 p-2 bg-muted/30 rounded-lg">
@@ -2714,7 +3118,7 @@ export default function ProductModels() {
                     )}
                   </div>
 
-                  <div className="relative border rounded-lg overflow-auto bg-muted/30 max-h-125">
+                  <div className="relative border rounded-lg overflow-auto bg-muted/30 max-h-[78vh]">
                     {selectedProduct.referenceImageUrl ? (
                       <MeasurementPointCanvas
                         imageUrl={selectedProduct.referenceImageUrl}
@@ -2761,6 +3165,19 @@ export default function ProductModels() {
                           <Upload className="h-12 w-12 mx-auto mb-2 opacity-50" />
                           <p>{t("products.noReferenceImage")}</p>
                           <p className="text-sm">{t("products.updateImageInEdit")}</p>
+                          {/* Doc 43 Đợt 4 (B) — nút mở dialog sửa + tải ảnh (tái dùng luồng
+                              upload ảnh sản phẩm) thay cho dòng chữ chết; không có ảnh thì
+                              không đặt được điểm đo. */}
+                          <PermissionGate module="settings_products" action="canEdit">
+                            <Button
+                              size="sm"
+                              className="gap-1 mt-3"
+                              onClick={() => openEditProductDialog(selectedProduct)}
+                            >
+                              <Upload className="h-4 w-4" />
+                              {t("products.uploadReferenceImage", "Tải ảnh tham chiếu")}
+                            </Button>
+                          </PermissionGate>
                         </div>
                       </div>
                     )}
@@ -2777,27 +3194,134 @@ export default function ProductModels() {
                     )}
                   </div>
 
-                  {/* Point List */}
-                  <div className="mt-4">
+                  {/* Point List — Doc 43 Đợt 5: chip badge → DataTable (cột STT/mã/tên/
+                      loại/vị trí/ngưỡng + tìm + sort + phân trang) để board nhiều điểm
+                      (centroid tới ~200) dùng được. Đồng bộ 2 chiều canvas ↔ bảng:
+                      • click hàng → chọn điểm + populate form (canvas tự highlight qua
+                        selectedPointIndex);
+                      • chọn điểm trên canvas → selectedPointIndex đổi → hàng active
+                        (selectedIds/data-state="selected") + cuộn vào tầm nhìn.
+                      Batch/Select Mode → cột checkbox (selectable) ↔ selectedPointIds.
+                      QUYẾT ĐỊNH: LUÔN dùng DataTable (bỏ chip) — bảng tự gọn khi ít hàng
+                      và có sẵn tìm/sort/phân trang; đơn giản hơn toggle chip↔bảng. */}
+                  <div className="mt-4" ref={pointTableRef}>
                     <h4 className="text-sm font-medium mb-2">{t("products.pointList")} ({measurementPoints.length}/50)</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {measurementPoints.length === 0 ? (
-                        <NoMeasurementPoints onAdd={() => setIsDrawing(true)} />
-                      ) : measurementPoints.map((point, index) => (
-                        <Badge
-                          key={index}
-                          variant={selectedPointIndex === index ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => {
-                            setSelectedPointIndex(index);
-                            populatePointForm(point);
-                          }}
-                        >
-                          <Target className="h-3 w-3 mr-1" />
-                          {index + 1}. {point.code}
-                        </Badge>
-                       ))}
-                    </div>
+                    {measurementPoints.length === 0 ? (
+                      <NoMeasurementPoints onAdd={() => setIsDrawing(true)} />
+                    ) : (
+                      <DataTable<MeasurementPoint>
+                        data={filteredMeasurementPoints}
+                        getRowId={pointRowId}
+                        searchable
+                        searchPlaceholder={t("products.searchPointPlaceholder")}
+                        pageSize={25}
+                        initialSort={{ columnId: "stt", dir: "asc" }}
+                        selectable={isBatchMode}
+                        selectedIds={pointTableSelectedIds}
+                        onSelectionChange={
+                          isBatchMode
+                            ? (ids) =>
+                                setSelectedPointIds(
+                                  new Set(
+                                    ids.filter((v): v is number => typeof v === "number")
+                                  )
+                                )
+                            : undefined
+                        }
+                        onRowClick={(point) => {
+                          const idx = measurementPoints.indexOf(point);
+                          if (idx < 0) return;
+                          setSelectedPointIndex(idx);
+                          populatePointForm(point);
+                        }}
+                        emptyState={
+                          <EmptyState
+                            variant="no-results"
+                            compact
+                            title={t("products.noMatchingPoints", "Không có điểm khớp")}
+                            description={t("products.tryDifferentSearch", "Thử đổi từ khoá hoặc bộ lọc.")}
+                          />
+                        }
+                        columns={[
+                          {
+                            id: "stt",
+                            header: t("products.pointNo", "STT"),
+                            width: "56px",
+                            align: "right",
+                            sortValue: (p) => (pointIndexMap.get(p) ?? 0) + 1,
+                            cell: (p) => {
+                              const isActive = pointIndexMap.get(p) === selectedPointIndex;
+                              return (
+                                <span
+                                  className={`tabular-nums ${isActive ? "font-semibold text-primary" : "text-muted-foreground"}`}
+                                >
+                                  {(pointIndexMap.get(p) ?? 0) + 1}
+                                </span>
+                              );
+                            },
+                          },
+                          {
+                            id: "code",
+                            header: t("products.pointCodeLabel"),
+                            sortValue: (p) => p.code,
+                            filterValue: (p) => p.code,
+                            cell: (p) => {
+                              const isActive = pointIndexMap.get(p) === selectedPointIndex;
+                              return (
+                                <span
+                                  className={`inline-flex items-center gap-1.5 ${isActive ? "font-semibold text-primary" : ""}`}
+                                >
+                                  <Target className={`h-3 w-3 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+                                  {p.code}
+                                </span>
+                              );
+                            },
+                          },
+                          {
+                            id: "name",
+                            header: t("products.pointNameLabel", "Tên"),
+                            sortValue: (p) => p.name,
+                            filterValue: (p) => p.name,
+                            cell: (p) => (
+                              <span className="truncate">{p.name}</span>
+                            ),
+                          },
+                          {
+                            id: "type",
+                            header: t("common.type"),
+                            width: "120px",
+                            sortValue: (p) => pointTypeLabel(p.measurementType),
+                            filterValue: (p) => `${pointTypeLabel(p.measurementType)} ${p.measurementType}`,
+                            cell: (p) => (
+                              <Badge variant="outline" className="font-normal">
+                                {pointTypeLabel(p.measurementType)}
+                              </Badge>
+                            ),
+                          },
+                          {
+                            id: "position",
+                            header: t("products.position"),
+                            width: "110px",
+                            align: "right",
+                            sortValue: (p) => p.positionX,
+                            cell: (p) => (
+                              <span className="tabular-nums text-muted-foreground text-xs">
+                                ({p.positionX}, {p.positionY})
+                              </span>
+                            ),
+                          },
+                          {
+                            id: "threshold",
+                            header: t("products.thresholdSummary", "Ngưỡng"),
+                            cell: (p) => (
+                              <span className="tabular-nums text-xs text-muted-foreground">
+                                {thresholdSummaryOf(p)}
+                              </span>
+                            ),
+                          },
+                        ]}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -2841,30 +3365,25 @@ export default function ProductModels() {
                           <ValidationMessage error={pointValidation.getFieldError("name")} />
                         </div>
 
+                        {/* ── CƠ BẢN: loại đo (1 selector duy nhất) + badge nhóm suy ra (doc 43 Đợt 2 §3.3) ── */}
                         <div className="space-y-2">
-                          <Label htmlFor="pointType">{t("products.pointType")}</Label>
-                          <Select
-                            value={pointType}
-                            onValueChange={(v) => setPointType(v as MeasurementPoint["measurementType"])}
-                            disabled={!isEditMode}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="VISUAL">{t("products.typeVisual")}</SelectItem>
-                              <SelectItem value="DIMENSION">{t("products.typeDimension")}</SelectItem>
-                              <SelectItem value="POSITION">{t("products.typePosition")}</SelectItem>
-                              <SelectItem value="COLOR">{t("products.typeColor")}</SelectItem>
-                              <SelectItem value="SURFACE">{t("products.typeSurface")}</SelectItem>
-                              <SelectItem value="ELECTRICAL">{t("products.typeElectrical")}</SelectItem>
-                              <SelectItem value="OTHER">{t("products.typeOther")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pointMeasurementTypeCode">{t("measurementPointP2.measurementTypeCode")}</Label>
+                          <div className="flex items-center justify-between gap-2">
+                            <Label htmlFor="pointMeasurementTypeCode">{t("measurementPointP2.measurementTypeCode")}</Label>
+                            <Badge variant="secondary" className="text-xs shrink-0">
+                              {t("products.pointGroupBadge", "Nhóm")}: {(() => {
+                                const labels: Record<string, string> = {
+                                  VISUAL: t("products.typeVisualLabel", "Trực quan"),
+                                  DIMENSION: t("products.typeDimension"),
+                                  POSITION: t("products.typePosition"),
+                                  COLOR: t("products.typeColor"),
+                                  SURFACE: t("products.typeSurface"),
+                                  ELECTRICAL: t("products.typeElectrical"),
+                                  OTHER: t("products.typeOther"),
+                                };
+                                return labels[pointType] || pointType;
+                              })()}
+                            </Badge>
+                          </div>
                           <Select
                             value={pointMeasurementTypeCode || "none"}
                             onValueChange={(v) => {
@@ -2890,6 +3409,31 @@ export default function ProductModels() {
                             </SelectContent>
                           </Select>
                         </div>
+
+                        {/* Fallback: sản phẩm cũ chưa gán mã catalog → vẫn cho chọn 7 nhóm legacy (giữ tương thích) */}
+                        {!pointMeasurementTypeCode && (
+                          <div className="space-y-2">
+                            <Label htmlFor="pointType">{t("products.pointType")}</Label>
+                            <Select
+                              value={pointType}
+                              onValueChange={(v) => setPointType(v as MeasurementPoint["measurementType"])}
+                              disabled={!isEditMode}
+                            >
+                              <SelectTrigger id="pointType">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="VISUAL">{t("products.typeVisualLabel", "Trực quan")}</SelectItem>
+                                <SelectItem value="DIMENSION">{t("products.typeDimension")}</SelectItem>
+                                <SelectItem value="POSITION">{t("products.typePosition")}</SelectItem>
+                                <SelectItem value="COLOR">{t("products.typeColor")}</SelectItem>
+                                <SelectItem value="SURFACE">{t("products.typeSurface")}</SelectItem>
+                                <SelectItem value="ELECTRICAL">{t("products.typeElectrical")}</SelectItem>
+                                <SelectItem value="OTHER">{t("products.typeOther")}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
 
                         <div className="space-y-2">
                           <Label htmlFor="pointDescription">{t("products.descriptionLabel")}</Label>
@@ -2930,559 +3474,579 @@ export default function ProductModels() {
                           </div>
                         </div>
 
-                        {showToleranceSection && (
-                          <>
-                            <div className="space-y-2">
-                              <Label htmlFor="pointToleranceMode">{t("measurementPointP2.toleranceMode")}</Label>
-                              <Select
-                                value={pointToleranceMode}
-                                onValueChange={(v) => setPointToleranceMode(v as ToleranceMode)}
-                                disabled={!isEditMode}
-                              >
-                                <SelectTrigger id="pointToleranceMode">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="range">{t("measurementPointP2.toleranceModes.range")}</SelectItem>
-                                  <SelectItem value="bilateral">{t("measurementPointP2.toleranceModes.bilateral")}</SelectItem>
-                                  <SelectItem value="min_only">{t("measurementPointP2.toleranceModes.min_only")}</SelectItem>
-                                  <SelectItem value="max_only">{t("measurementPointP2.toleranceModes.max_only")}</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointLowerLimit">{t("products.lowerLimit")}</Label>
-                                <Input
-                                  id="pointLowerLimit"
-                                  value={pointLowerLimit}
-                                  onChange={(e) => setPointLowerLimit(e.target.value)}
-                                  onBlur={() => pointValidation.handleBlur("lowerLimit", pointLowerLimit)}
-                                  disabled={!isEditMode}
-                                  className={pointValidation.hasError("lowerLimit") ? "border-destructive" : ""}
-                                />
-                                <ValidationMessage error={pointValidation.getFieldError("lowerLimit")} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointUpperLimit">{t("products.upperLimit")}</Label>
-                                <Input
-                                  id="pointUpperLimit"
-                                  value={pointUpperLimit}
-                                  onChange={(e) => setPointUpperLimit(e.target.value)}
-                                  onBlur={() => pointValidation.handleBlur("upperLimit", pointUpperLimit)}
-                                  disabled={!isEditMode}
-                                  className={pointValidation.hasError("upperLimit") ? "border-destructive" : ""}
-                                />
-                                <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
-                              </div>
-                            </div>
-                            {/* AI Threshold Advisor — only for a persisted point in edit mode */}
-                            {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
-                              <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
-                                <span className="text-xs text-muted-foreground">
-                                  {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
-                                </span>
-                                <AIThresholdSuggestButton
-                                  target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
-                                  onApplied={() => refetchPoints()}
-                                  onSubmitted={() => refetchPoints()}
-                                />
-                              </div>
-                            ) : null}
-                            <div className="space-y-2">
-                              <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>
-                              <Input
-                                id="pointNominalValue"
-                                value={pointNominalValue}
-                                onChange={(e) => setPointNominalValue(e.target.value)}
-                                disabled={!isEditMode}
-                              />
-                            </div>
-                            {pointToleranceMode === "bilateral" && (
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointTolPlus">{t("measurementPointP2.tolPlus")}</Label>
-                                  <Input
-                                    id="pointTolPlus"
-                                    value={pointTolPlus}
-                                    onChange={(e) => setPointTolPlus(e.target.value)}
-                                    disabled={!isEditMode}
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointTolMinus">{t("measurementPointP2.tolMinus")}</Label>
-                                  <Input
-                                    id="pointTolMinus"
-                                    value={pointTolMinus}
-                                    onChange={(e) => setPointTolMinus(e.target.value)}
-                                    disabled={!isEditMode}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              <Label htmlFor="pointUnit">{t("products.unit")}</Label>
-                              <Input
-                                id="pointUnit"
-                                value={pointUnit}
-                                onChange={(e) => setPointUnit(e.target.value)}
-                                disabled={!isEditMode}
-                                placeholder="mm, V, A..."
-                              />
-                            </div>
-                          </>
-                        )}
-
-                        {showGdtSection && (
-                          <>
-                            <div className="space-y-2">
-                              <Label htmlFor="pointDatumRefs">{t("measurementPointP2.datumRefs")}</Label>
-                              <Input
-                                id="pointDatumRefs"
-                                value={pointDatumRefsInput}
-                                onChange={(e) => setPointDatumRefsInput(e.target.value)}
-                                disabled={!isEditMode}
-                                placeholder="A,B,C"
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointMaterialCondition">{t("measurementPointP2.materialCondition")}</Label>
-                                <Select
-                                  value={pointMaterialCondition || "none"}
-                                  onValueChange={(v) => setPointMaterialCondition(v === "none" ? "" : (v as MaterialCondition))}
-                                  disabled={!isEditMode}
-                                >
-                                  <SelectTrigger id="pointMaterialCondition">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">{t("common.none")}</SelectItem>
-                                    <SelectItem value="MMC">MMC</SelectItem>
-                                    <SelectItem value="LMC">LMC</SelectItem>
-                                    <SelectItem value="RFS">RFS</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointFitClass">{t("measurementPointP2.fitClass")}</Label>
-                                <Input
-                                  id="pointFitClass"
-                                  value={pointFitClass}
-                                  onChange={(e) => setPointFitClass(e.target.value)}
-                                  disabled={!isEditMode}
-                                  placeholder="H7/g6"
-                                />
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        {show3DSection && (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointPositionZ">{t("measurementPointP2.positionZ")}</Label>
-                                <Input
-                                  id="pointPositionZ"
-                                  value={pointPositionZ}
-                                  onChange={(e) => setPointPositionZ(e.target.value)}
-                                  disabled={!isEditMode}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointVoidPctMax">{t("measurementPointP2.voidPctMax")}</Label>
-                                <Input
-                                  id="pointVoidPctMax"
-                                  value={pointVoidPctMax}
-                                  onChange={(e) => setPointVoidPctMax(e.target.value)}
-                                  disabled={!isEditMode || !showXraySection}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointHeightMin">{t("measurementPointP2.heightMin")}</Label>
-                                <Input id="pointHeightMin" value={pointHeightMin} onChange={(e) => setPointHeightMin(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointHeightMax">{t("measurementPointP2.heightMax")}</Label>
-                                <Input id="pointHeightMax" value={pointHeightMax} onChange={(e) => setPointHeightMax(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointHeightUnit">{t("measurementPointP2.heightUnit")}</Label>
-                                <Input id="pointHeightUnit" value={pointHeightUnit} onChange={(e) => setPointHeightUnit(e.target.value)} disabled={!isEditMode || !showSolderSection} placeholder="um" />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointAreaMin">{t("measurementPointP2.areaMin")}</Label>
-                                <Input id="pointAreaMin" value={pointAreaMin} onChange={(e) => setPointAreaMin(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointAreaMax">{t("measurementPointP2.areaMax")}</Label>
-                                <Input id="pointAreaMax" value={pointAreaMax} onChange={(e) => setPointAreaMax(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointAreaUnit">{t("measurementPointP2.areaUnit")}</Label>
-                                <Input id="pointAreaUnit" value={pointAreaUnit} onChange={(e) => setPointAreaUnit(e.target.value)} disabled={!isEditMode || !showSolderSection} placeholder="%" />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointVolumeMin">{t("measurementPointP2.volumeMin")}</Label>
-                                <Input id="pointVolumeMin" value={pointVolumeMin} onChange={(e) => setPointVolumeMin(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointVolumeMax">{t("measurementPointP2.volumeMax")}</Label>
-                                <Input id="pointVolumeMax" value={pointVolumeMax} onChange={(e) => setPointVolumeMax(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointVolumeUnit">{t("measurementPointP2.volumeUnit")}</Label>
-                                <Input id="pointVolumeUnit" value={pointVolumeUnit} onChange={(e) => setPointVolumeUnit(e.target.value)} disabled={!isEditMode || !showSolderSection} placeholder="%" />
-                              </div>
-                            </div>
-
-                            {/* Doc 31 MP6 — nominal targets for solder metrics */}
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="pointHeightNominal">{t("measurementPointP2.heightNominal")}</Label>
-                                <Input id="pointHeightNominal" value={pointHeightNominal} onChange={(e) => setPointHeightNominal(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointAreaNominal">{t("measurementPointP2.areaNominal")}</Label>
-                                <Input id="pointAreaNominal" value={pointAreaNominal} onChange={(e) => setPointAreaNominal(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="pointVolumeNominal">{t("measurementPointP2.volumeNominal")}</Label>
-                                <Input id="pointVolumeNominal" value={pointVolumeNominal} onChange={(e) => setPointVolumeNominal(e.target.value)} disabled={!isEditMode || !showSolderSection} />
-                              </div>
-                            </div>
-
-                            {/* Doc 31 MP6 — BGA coplanarity + warpage (solder/xray) */}
-                            {showCoplanaritySection && (
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointCoplanarityMax">{t("measurementPointP2.coplanarityMax")}</Label>
-                                  <Input id="pointCoplanarityMax" value={pointCoplanarityMax} onChange={(e) => setPointCoplanarityMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointWarpageMax">{t("measurementPointP2.warpageMax")}</Label>
-                                  <Input id="pointWarpageMax" value={pointWarpageMax} onChange={(e) => setPointWarpageMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Doc 31 MP6 — placement offset + tilt (position) */}
-                            {showPositionSection && (
-                              <div className="grid grid-cols-3 gap-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointOffsetXMax">{t("measurementPointP2.offsetXMax")}</Label>
-                                  <Input id="pointOffsetXMax" value={pointOffsetXMax} onChange={(e) => setPointOffsetXMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointOffsetYMax">{t("measurementPointP2.offsetYMax")}</Label>
-                                  <Input id="pointOffsetYMax" value={pointOffsetYMax} onChange={(e) => setPointOffsetYMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointTiltMax">{t("measurementPointP2.tiltMax")}</Label>
-                                  <Input id="pointTiltMax" value={pointTiltMax} onChange={(e) => setPointTiltMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Doc 31 MP6 — coating / surface thickness */}
-                            {showCoatingSection && (
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointThicknessMin">{t("measurementPointP2.thicknessMin")}</Label>
-                                  <Input id="pointThicknessMin" value={pointThicknessMin} onChange={(e) => setPointThicknessMin(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="pointThicknessMax">{t("measurementPointP2.thicknessMax")}</Label>
-                                  <Input id="pointThicknessMax" value={pointThicknessMax} onChange={(e) => setPointThicknessMax(e.target.value)} disabled={!isEditMode} />
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {/* Doc 31 MP6 — pass/fail criteria + lighting recipe editors */}
-                        <PointCriteriaEditor
-                          value={pointCriteria}
-                          onChange={setPointCriteria}
-                          disabled={!isEditMode}
-                        />
-                        {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
-                          <PointLightingEditor
-                            pointDefId={measurementPoints[selectedPointIndex]!.id as number}
-                            canEdit={isEditMode && (user?.role === "admin")}
-                          />
-                        ) : (
-                          <div className="rounded border border-dashed p-3 text-xs text-muted-foreground">
-                            {t("measurementPointP2.lightingSaveFirst")}
-                          </div>
-                        )}
-
-                        {/* Reference Image for Point */}
-                        <div className="space-y-2">
-                          <Label>{t("products.pointReferenceImage")}</Label>
-                          {pointReferenceImageUrl && (
-                            <div className="relative">
-                              <img
-                                src={pointReferenceImageUrl}
-                                alt="Point reference"
-                                className="w-full rounded border"
-                              />
-                              {isEditMode && (
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  className="absolute top-1 right-1 h-6 w-6 p-0"
-                                  onClick={() => setPointReferenceImageUrl("")}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                          {!pointReferenceImageUrl && !isEditMode && (
-                            <div className="flex items-center justify-center h-20 bg-muted/30 rounded border border-dashed text-muted-foreground text-sm">
-                              <ImageIcon className="h-4 w-4 mr-1" />
-                              {t("products.noReferenceImagePoint")}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pointWorkstation">{t("products.workstationOptional")}</Label>
-                          <Select value={pointWorkstationId?.toString() || ""} onValueChange={(value) => setPointWorkstationId(value ? parseInt(value) : undefined)}>
-                            <SelectTrigger id="pointWorkstation" disabled={!isEditMode}>
-                              <SelectValue placeholder={t("products.selectWorkstation")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {workstations?.map((ws) => (
-                                <SelectItem key={ws.id} value={ws.id.toString()}>
-                                  <div className="flex items-center gap-2">
-                                    <span>{ws.code} - {ws.name}</span>
-                                    <Badge variant={ws.isActive ? "default" : "secondary"} className="ml-2">
-                                      {ws.isActive ? t('common.active') : t('common.inactive')}
-                                    </Badge>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pointPreferredInstrument">Preferred Instrument (P3)</Label>
-                          <Select
-                            value={pointPreferredInstrumentId?.toString() || "__none"}
-                            onValueChange={(value) => setPointPreferredInstrumentId(value === "__none" ? undefined : parseInt(value, 10))}
-                          >
-                            <SelectTrigger id="pointPreferredInstrument" disabled={!isEditMode}>
-                              <SelectValue placeholder="Select preferred instrument" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none">None</SelectItem>
-                              {(measurementInstruments || []).map((inst: any) => (
-                                <SelectItem key={inst.id} value={String(inst.id)} disabled={!inst.isActive}>
-                                  {inst.code} - {inst.name}
-                                  {inst.mmPerPixel && ` (cal: ${inst.mmPerPixel} mm/px)`}
-                                  {!inst.isActive && " [inactive]"}
-                                  {!inst.mmPerPixel && " [uncalibrated]"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {pointPreferredInstrumentId && (
-                            (() => {
-                              const selected = (measurementInstruments || []).find((i: any) => i.id === pointPreferredInstrumentId);
-                              return (
-                                <>
-                                  {selected?.isActive === false && (
-                                    <p className="text-xs text-warning">⚠️ Selected instrument is inactive and will be rejected on save.</p>
-                                  )}
-                                  {!selected?.mmPerPixel && (
-                                    <p className="text-xs text-warning">⚠️ Selected instrument has no mmPerPixel calibration (will use pixel coordinates only).</p>
-                                  )}
-                                </>
-                              );
-                            })()
-                          )}
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pointPreferredSamplingPlan">Preferred Sampling Plan (P3)</Label>
-                          <Select
-                            value={pointPreferredSamplingPlanId?.toString() || "__none"}
-                            onValueChange={(value) => setPointPreferredSamplingPlanId(value === "__none" ? undefined : parseInt(value, 10))}
-                          >
-                            <SelectTrigger id="pointPreferredSamplingPlan" disabled={!isEditMode}>
-                              <SelectValue placeholder="Select sampling plan" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none">None</SelectItem>
-                              {(samplingPlans || []).map((plan: any) => (
-                                <SelectItem key={plan.id} value={String(plan.id)} disabled={!plan.isActive}>
-                                  {plan.code} - {plan.strategy}
-                                  {!plan.isActive && " (inactive)"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {pointPreferredSamplingPlanId && (samplingPlans || []).find((p: any) => p.id === pointPreferredSamplingPlanId)?.isActive === false && (
-                            <p className="text-xs text-warning">⚠️ Selected sampling plan is inactive and will be rejected on save.</p>
-                          )}
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pointProductView">Product View / Camera (P3.4)</Label>
-                          <Select
-                            value={pointProductViewId?.toString() || "__none"}
-                            onValueChange={(value) => setPointProductViewId(value === "__none" ? undefined : parseInt(value, 10))}
-                          >
-                            <SelectTrigger id="pointProductView" disabled={!isEditMode}>
-                              <SelectValue placeholder="Select view / camera (optional)" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none">None (all views)</SelectItem>
-                              {(productViews || []).map((view: any) => (
-                                <SelectItem key={view.id} value={String(view.id)} disabled={!view.isActive}>
-                                  {view.viewType === "custom" ? view.name : view.viewType.toUpperCase()} ({view.code})
-                                  {!view.isActive && " [inactive]"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {pointProductViewId && (productViews || []).find((v: any) => v.id === pointProductViewId)?.isActive === false && (
-                            <p className="text-xs text-warning">⚠️ Selected view is inactive and will be rejected on save.</p>
-                          )}
-                        </div>
-
+                        {/* Vị trí readout (CORE) */}
                         <div className="text-sm text-muted-foreground p-2 bg-muted/30 rounded">
                           <p>{t("products.position")}: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
                           <p>{t("products.radius")}: {measurementPoints[selectedPointIndex]?.radius}px</p>
                         </div>
 
-                        {/* P3.3: Quality Readiness Indicator */}
-                        {selectedPointIndex !== null && (() => {
-                          const point = measurementPoints[selectedPointIndex];
-                          const instrument = (measurementInstruments || []).find((i: any) => i.id === pointPreferredInstrumentId);
-                          const samplingPlan = (samplingPlans || []).find((p: any) => p.id === pointPreferredSamplingPlanId);
-                          const productView = (productViews || []).find((v: any) => v.id === pointProductViewId);
-                          
-                          // Compute readiness status
-                          const hasCalibration = instrument?.mmPerPixel;
-                          const hasAQL = samplingPlan?.aqlCritical || samplingPlan?.aqlMajor || samplingPlan?.aqlMinor;
-                          const hasView = pointProductViewId !== undefined;
-                          const readinessCount = (hasCalibration ? 1 : 0) + (hasAQL ? 1 : 0) + (hasView ? 1 : 0);
-                          const readinessStatus = readinessCount === 3 ? 'ready' : readinessCount >= 2 ? 'partial' : 'incomplete';
-                          const readinessColor = readinessStatus === 'ready' ? 'bg-success/10 border-success/30' :
-                                               readinessStatus === 'partial' ? 'bg-warning/10 border-warning/30' : 'bg-destructive/10 border-destructive/30';
-                          const readinessIcon = readinessStatus === 'ready' ? '✓' : 
-                                              readinessStatus === 'partial' ? '⚠️' : '❌';
-                          const readinessLabel = readinessStatus === 'ready' ? 'Ready' : 
-                                               readinessStatus === 'partial' ? 'Partial' : 'Incomplete';
-
-                          return (
-                            <div className={`text-xs p-3 border rounded ${readinessColor}`}>
-                              <p className="font-semibold mb-2">{readinessIcon} P3 Quality Readiness: <span className="font-bold">{readinessLabel}</span></p>
-                              <div className="space-y-1">
-                                <p className={hasCalibration ? 'text-success' : 'text-muted-foreground'}>
-                                  • Instrument: {instrument ? `${instrument.code} (cal: ${instrument.mmPerPixel ?? 'uncalibrated'} mm/px)` : 'None'}
-                                </p>
-                                <p className={hasAQL ? 'text-success' : 'text-muted-foreground'}>
-                                  • Sampling Plan: {samplingPlan ? `${samplingPlan.code} (AQL: C=${samplingPlan.aqlCritical ?? '-'}, M=${samplingPlan.aqlMajor ?? '-'}, m=${samplingPlan.aqlMinor ?? '-'}, n=${samplingPlan.sampleSize ?? '?'})` : 'None'}
-                                </p>
-                                <p className={hasView ? 'text-success' : 'text-muted-foreground'}>
-                                  • View: {productView ? `${productView.viewType.toUpperCase()} (${productView.code})` : 'All views'}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Vùng cắt ảnh mẫu */}
-                        <div className="space-y-2 border-t pt-3 mt-3">
-                          <Label className="text-sm font-medium">{t("products.cropAreaLabel")}</Label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label htmlFor="cropWidth" className="text-xs text-muted-foreground">{t("products.width")} (px)</Label>
-                              <Input
-                                id="cropWidth"
-                                type="number"
-                                value={pointCropWidth}
-                                onChange={(e) => setPointCropWidth(parseInt(e.target.value) || 100)}
-                                disabled={!isEditMode}
-                                min={20}
-                                max={500}
-                              />
-                            </div>
-                            <div>
-                              <Label htmlFor="cropHeight" className="text-xs text-muted-foreground">{t("products.height")} (px)</Label>
-                              <Input
-                                id="cropHeight"
-                                type="number"
-                                value={pointCropHeight}
-                                onChange={(e) => setPointCropHeight(parseInt(e.target.value) || 100)}
-                                disabled={!isEditMode}
-                                min={20}
-                                max={500}
-                              />
-                            </div>
-                          </div>
-                          {/* Image Source Mode Selection */}
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={imageSourceMode === "auto-crop" ? "default" : "outline"}
-                              onClick={() => setImageSourceMode("auto-crop")}
-                              className="flex-1 text-xs"
-                              disabled={!isEditMode}
-                            >
-                              {t("products.autoCrop")}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={imageSourceMode === "upload" ? "default" : "outline"}
-                              onClick={() => setImageSourceMode("upload")}
-                              className="flex-1 text-xs"
-                              disabled={!isEditMode}
-                            >
-                              {t("products.uploadImage")}
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {imageSourceMode === "auto-crop" 
-                              ? t("products.autoCropDesc")
-                              : t("products.uploadDesc")}
-                          </p>
-                          {imageSourceMode === "upload" && isEditMode && (
-                            <div className="mt-2">
-                              <Label htmlFor="pointImageUpload" className="text-xs text-muted-foreground">{t("products.uploadPointImage")}</Label>
-                              <Input
-                                id="pointImageUpload"
-                                type="file"
-                                accept="image/*"
-                                onChange={handlePointImageUpload}
-                                className="text-xs"
-                              />
-                            </div>
+                        {/* ── Nhóm gập: Progressive disclosure (doc 43 Đợt 2 §3.1) ── */}
+                        <Accordion
+                          type="multiple"
+                          key={selectedPointIndex ?? -1}
+                          defaultValue={["thresholds"]}
+                          className="w-full space-y-2"
+                        >
+                          {/* ①  Ngưỡng & dung sai — chỉ hiện + mở sẵn cho loại có ngưỡng */}
+                          {showToleranceSection && (
+                            <AccordionItem value="thresholds" className="border rounded-md px-3">
+                              <AccordionTrigger className="py-3">{t("products.sectionThresholds", "Ngưỡng & dung sai")}</AccordionTrigger>
+                              <AccordionContent className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="pointToleranceMode">{t("measurementPointP2.toleranceMode")}</Label>
+                                  <Select
+                                    value={pointToleranceMode}
+                                    onValueChange={(v) => setPointToleranceMode(v as ToleranceMode)}
+                                    disabled={!isEditMode}
+                                  >
+                                    <SelectTrigger id="pointToleranceMode">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="range">{t("measurementPointP2.toleranceModes.range")}</SelectItem>
+                                      <SelectItem value="bilateral">{t("measurementPointP2.toleranceModes.bilateral")}</SelectItem>
+                                      <SelectItem value="min_only">{t("measurementPointP2.toleranceModes.min_only")}</SelectItem>
+                                      <SelectItem value="max_only">{t("measurementPointP2.toleranceModes.max_only")}</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointLowerLimit">{t("products.lowerLimit")}</Label>
+                                    <Input
+                                      id="pointLowerLimit"
+                                      value={pointLowerLimit}
+                                      onChange={(e) => setPointLowerLimit(e.target.value)}
+                                      onBlur={() => pointValidation.handleBlur("lowerLimit", pointLowerLimit)}
+                                      disabled={!isEditMode}
+                                      className={pointValidation.hasError("lowerLimit") ? "border-destructive" : ""}
+                                    />
+                                    <ValidationMessage error={pointValidation.getFieldError("lowerLimit")} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointUpperLimit">{t("products.upperLimit")}</Label>
+                                    <Input
+                                      id="pointUpperLimit"
+                                      value={pointUpperLimit}
+                                      onChange={(e) => setPointUpperLimit(e.target.value)}
+                                      onBlur={() => pointValidation.handleBlur("upperLimit", pointUpperLimit)}
+                                      disabled={!isEditMode}
+                                      className={pointValidation.hasError("upperLimit") ? "border-destructive" : ""}
+                                    />
+                                    <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
+                                  </div>
+                                </div>
+                                {/* AI Threshold Advisor — only for a persisted point in edit mode */}
+                                {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                                  <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                                    <span className="text-xs text-muted-foreground">
+                                      {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
+                                    </span>
+                                    <AIThresholdSuggestButton
+                                      target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
+                                      onApplied={() => refetchPoints()}
+                                      onSubmitted={() => refetchPoints()}
+                                    />
+                                  </div>
+                                ) : null}
+                                <div className="space-y-2">
+                                  <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>
+                                  <Input
+                                    id="pointNominalValue"
+                                    value={pointNominalValue}
+                                    onChange={(e) => setPointNominalValue(e.target.value)}
+                                    disabled={!isEditMode}
+                                  />
+                                </div>
+                                {pointToleranceMode === "bilateral" && (
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointTolPlus">{t("measurementPointP2.tolPlus")}</Label>
+                                      <Input
+                                        id="pointTolPlus"
+                                        value={pointTolPlus}
+                                        onChange={(e) => setPointTolPlus(e.target.value)}
+                                        disabled={!isEditMode}
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointTolMinus">{t("measurementPointP2.tolMinus")}</Label>
+                                      <Input
+                                        id="pointTolMinus"
+                                        value={pointTolMinus}
+                                        onChange={(e) => setPointTolMinus(e.target.value)}
+                                        disabled={!isEditMode}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="space-y-2">
+                                  <Label htmlFor="pointUnit">{t("products.unit")}</Label>
+                                  <Input
+                                    id="pointUnit"
+                                    value={pointUnit}
+                                    onChange={(e) => setPointUnit(e.target.value)}
+                                    disabled={!isEditMode}
+                                    placeholder="mm, V, A..."
+                                  />
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
                           )}
-                        </div>
 
+                          {/* ②  Nâng cao theo loại — chỉ mount khối đúng loại thực chọn (doc 43 Đợt 2 §3.2) */}
+                          <AccordionItem value="advanced" className="border rounded-md px-3">
+                            <AccordionTrigger className="py-3">{t("products.sectionAdvanced", "Nâng cao theo loại")}</AccordionTrigger>
+                            <AccordionContent className="space-y-4">
+                              {showGdtSection && (
+                                <>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointDatumRefs">{t("measurementPointP2.datumRefs")}</Label>
+                                    <Input
+                                      id="pointDatumRefs"
+                                      value={pointDatumRefsInput}
+                                      onChange={(e) => setPointDatumRefsInput(e.target.value)}
+                                      disabled={!isEditMode}
+                                      placeholder="A,B,C"
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointMaterialCondition">{t("measurementPointP2.materialCondition")}</Label>
+                                      <Select
+                                        value={pointMaterialCondition || "none"}
+                                        onValueChange={(v) => setPointMaterialCondition(v === "none" ? "" : (v as MaterialCondition))}
+                                        disabled={!isEditMode}
+                                      >
+                                        <SelectTrigger id="pointMaterialCondition">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">{t("common.none")}</SelectItem>
+                                          <SelectItem value="MMC">MMC</SelectItem>
+                                          <SelectItem value="LMC">LMC</SelectItem>
+                                          <SelectItem value="RFS">RFS</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointFitClass">{t("measurementPointP2.fitClass")}</Label>
+                                      <Input
+                                        id="pointFitClass"
+                                        value={pointFitClass}
+                                        onChange={(e) => setPointFitClass(e.target.value)}
+                                        disabled={!isEditMode}
+                                        placeholder="H7/g6"
+                                      />
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* SOLDER — solder paste/joint metrics (height/area/volume + nominal) */}
+                              {showSolderSection && (
+                                <>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointHeightMin">{t("measurementPointP2.heightMin")}</Label>
+                                      <Input id="pointHeightMin" value={pointHeightMin} onChange={(e) => setPointHeightMin(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointHeightMax">{t("measurementPointP2.heightMax")}</Label>
+                                      <Input id="pointHeightMax" value={pointHeightMax} onChange={(e) => setPointHeightMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointHeightUnit">{t("measurementPointP2.heightUnit")}</Label>
+                                      <Input id="pointHeightUnit" value={pointHeightUnit} onChange={(e) => setPointHeightUnit(e.target.value)} disabled={!isEditMode} placeholder="um" />
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointAreaMin">{t("measurementPointP2.areaMin")}</Label>
+                                      <Input id="pointAreaMin" value={pointAreaMin} onChange={(e) => setPointAreaMin(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointAreaMax">{t("measurementPointP2.areaMax")}</Label>
+                                      <Input id="pointAreaMax" value={pointAreaMax} onChange={(e) => setPointAreaMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointAreaUnit">{t("measurementPointP2.areaUnit")}</Label>
+                                      <Input id="pointAreaUnit" value={pointAreaUnit} onChange={(e) => setPointAreaUnit(e.target.value)} disabled={!isEditMode} placeholder="%" />
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointVolumeMin">{t("measurementPointP2.volumeMin")}</Label>
+                                      <Input id="pointVolumeMin" value={pointVolumeMin} onChange={(e) => setPointVolumeMin(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointVolumeMax">{t("measurementPointP2.volumeMax")}</Label>
+                                      <Input id="pointVolumeMax" value={pointVolumeMax} onChange={(e) => setPointVolumeMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointVolumeUnit">{t("measurementPointP2.volumeUnit")}</Label>
+                                      <Input id="pointVolumeUnit" value={pointVolumeUnit} onChange={(e) => setPointVolumeUnit(e.target.value)} disabled={!isEditMode} placeholder="%" />
+                                    </div>
+                                  </div>
+                                  {/* Doc 31 MP6 — nominal targets for solder metrics */}
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointHeightNominal">{t("measurementPointP2.heightNominal")}</Label>
+                                      <Input id="pointHeightNominal" value={pointHeightNominal} onChange={(e) => setPointHeightNominal(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointAreaNominal">{t("measurementPointP2.areaNominal")}</Label>
+                                      <Input id="pointAreaNominal" value={pointAreaNominal} onChange={(e) => setPointAreaNominal(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointVolumeNominal">{t("measurementPointP2.volumeNominal")}</Label>
+                                      <Input id="pointVolumeNominal" value={pointVolumeNominal} onChange={(e) => setPointVolumeNominal(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* XRAY — void percentage */}
+                              {showXraySection && (
+                                <div className="space-y-2">
+                                  <Label htmlFor="pointVoidPctMax">{t("measurementPointP2.voidPctMax")}</Label>
+                                  <Input id="pointVoidPctMax" value={pointVoidPctMax} onChange={(e) => setPointVoidPctMax(e.target.value)} disabled={!isEditMode} />
+                                </div>
+                              )}
+
+                              {/* Doc 31 MP6 — BGA coplanarity + warpage (solder/xray) */}
+                              {showCoplanaritySection && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointCoplanarityMax">{t("measurementPointP2.coplanarityMax")}</Label>
+                                    <Input id="pointCoplanarityMax" value={pointCoplanarityMax} onChange={(e) => setPointCoplanarityMax(e.target.value)} disabled={!isEditMode} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointWarpageMax">{t("measurementPointP2.warpageMax")}</Label>
+                                    <Input id="pointWarpageMax" value={pointWarpageMax} onChange={(e) => setPointWarpageMax(e.target.value)} disabled={!isEditMode} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Doc 31 MP6 — placement offset + tilt + Z (position) */}
+                              {showPositionSection && (
+                                <>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointOffsetXMax">{t("measurementPointP2.offsetXMax")}</Label>
+                                      <Input id="pointOffsetXMax" value={pointOffsetXMax} onChange={(e) => setPointOffsetXMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointOffsetYMax">{t("measurementPointP2.offsetYMax")}</Label>
+                                      <Input id="pointOffsetYMax" value={pointOffsetYMax} onChange={(e) => setPointOffsetYMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="pointTiltMax">{t("measurementPointP2.tiltMax")}</Label>
+                                      <Input id="pointTiltMax" value={pointTiltMax} onChange={(e) => setPointTiltMax(e.target.value)} disabled={!isEditMode} />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointPositionZ">{t("measurementPointP2.positionZ")}</Label>
+                                    <Input id="pointPositionZ" value={pointPositionZ} onChange={(e) => setPointPositionZ(e.target.value)} disabled={!isEditMode} />
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Doc 31 MP6 — coating / surface thickness */}
+                              {showCoatingSection && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointThicknessMin">{t("measurementPointP2.thicknessMin")}</Label>
+                                    <Input id="pointThicknessMin" value={pointThicknessMin} onChange={(e) => setPointThicknessMin(e.target.value)} disabled={!isEditMode} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="pointThicknessMax">{t("measurementPointP2.thicknessMax")}</Label>
+                                    <Input id="pointThicknessMax" value={pointThicknessMax} onChange={(e) => setPointThicknessMax(e.target.value)} disabled={!isEditMode} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Doc 31 MP6 — pass/fail criteria (áp cho mọi loại) */}
+                              <PointCriteriaEditor
+                                value={pointCriteria}
+                                onChange={setPointCriteria}
+                                disabled={!isEditMode}
+                              />
+                            </AccordionContent>
+                          </AccordionItem>
+
+                          {/* ③  Chất lượng — dụng cụ / lấy mẫu / góc nhìn + độ sẵn sàng gọn */}
+                          <AccordionItem value="quality" className="border rounded-md px-3">
+                            <AccordionTrigger className="py-3">{t("products.sectionQuality", "Chất lượng")}</AccordionTrigger>
+                            <AccordionContent className="space-y-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="pointPreferredInstrument">{t("products.preferredInstrument", "Thiết bị đo ưu tiên")}</Label>
+                                <Select
+                                  value={pointPreferredInstrumentId?.toString() || "__none"}
+                                  onValueChange={(value) => setPointPreferredInstrumentId(value === "__none" ? undefined : parseInt(value, 10))}
+                                >
+                                  <SelectTrigger id="pointPreferredInstrument" disabled={!isEditMode}>
+                                    <SelectValue placeholder={t("products.selectPreferredInstrument", "Chọn dụng cụ ưu tiên")} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none">{t("common.none")}</SelectItem>
+                                    {(measurementInstruments || []).map((inst: any) => (
+                                      <SelectItem key={inst.id} value={String(inst.id)} disabled={!inst.isActive}>
+                                        {inst.code} - {inst.name}
+                                        {inst.mmPerPixel && ` (cal: ${inst.mmPerPixel} mm/px)`}
+                                        {!inst.isActive && " [inactive]"}
+                                        {!inst.mmPerPixel && " [uncalibrated]"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {pointPreferredInstrumentId && (
+                                  (() => {
+                                    const selected = (measurementInstruments || []).find((i: any) => i.id === pointPreferredInstrumentId);
+                                    return (
+                                      <>
+                                        {selected?.isActive === false && (
+                                          <p className="text-xs text-warning">⚠️ {t("products.instrumentInactiveWarn", "Dụng cụ đã ngừng hoạt động, sẽ bị từ chối khi lưu.")}</p>
+                                        )}
+                                        {!selected?.mmPerPixel && (
+                                          <p className="text-xs text-warning">⚠️ {t("products.instrumentNoCalWarn", "Dụng cụ chưa hiệu chuẩn mmPerPixel (chỉ dùng toạ độ pixel).")}</p>
+                                        )}
+                                      </>
+                                    );
+                                  })()
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="pointPreferredSamplingPlan">{t("products.preferredSamplingPlan", "Kế hoạch lấy mẫu")}</Label>
+                                <Select
+                                  value={pointPreferredSamplingPlanId?.toString() || "__none"}
+                                  onValueChange={(value) => setPointPreferredSamplingPlanId(value === "__none" ? undefined : parseInt(value, 10))}
+                                >
+                                  <SelectTrigger id="pointPreferredSamplingPlan" disabled={!isEditMode}>
+                                    <SelectValue placeholder={t("products.selectSamplingPlan", "Chọn kế hoạch lấy mẫu")} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none">{t("common.none")}</SelectItem>
+                                    {(samplingPlans || []).map((plan: any) => (
+                                      <SelectItem key={plan.id} value={String(plan.id)} disabled={!plan.isActive}>
+                                        {plan.code} - {plan.strategy}
+                                        {!plan.isActive && " (inactive)"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {pointPreferredSamplingPlanId && (samplingPlans || []).find((p: any) => p.id === pointPreferredSamplingPlanId)?.isActive === false && (
+                                  <p className="text-xs text-warning">⚠️ {t("products.samplingInactiveWarn", "Kế hoạch lấy mẫu đã ngừng, sẽ bị từ chối khi lưu.")}</p>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="pointProductView">{t("products.productViewCamera", "Khung nhìn / Camera")}</Label>
+                                <Select
+                                  value={pointProductViewId?.toString() || "__none"}
+                                  onValueChange={(value) => setPointProductViewId(value === "__none" ? undefined : parseInt(value, 10))}
+                                >
+                                  <SelectTrigger id="pointProductView" disabled={!isEditMode}>
+                                    <SelectValue placeholder={t("products.selectProductView", "Chọn góc nhìn / camera (tuỳ chọn)")} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none">{t("products.allViews", "Mọi góc nhìn")}</SelectItem>
+                                    {(productViews || []).map((view: any) => (
+                                      <SelectItem key={view.id} value={String(view.id)} disabled={!view.isActive}>
+                                        {view.viewType === "custom" ? view.name : view.viewType.toUpperCase()} ({view.code})
+                                        {!view.isActive && " [inactive]"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {pointProductViewId && (productViews || []).find((v: any) => v.id === pointProductViewId)?.isActive === false && (
+                                  <p className="text-xs text-warning">⚠️ {t("products.viewInactiveWarn", "Góc nhìn đã ngừng, sẽ bị từ chối khi lưu.")}</p>
+                                )}
+                              </div>
+
+                              {/* Độ sẵn sàng chất lượng — gọn 1 dòng (thay box P3.3 lặp) */}
+                              {selectedPointIndex !== null && (() => {
+                                const instrument = (measurementInstruments || []).find((i: any) => i.id === pointPreferredInstrumentId);
+                                const samplingPlan = (samplingPlans || []).find((p: any) => p.id === pointPreferredSamplingPlanId);
+                                const hasCalibration = !!instrument?.mmPerPixel;
+                                const hasAQL = !!(samplingPlan?.aqlCritical || samplingPlan?.aqlMajor || samplingPlan?.aqlMinor);
+                                const hasView = pointProductViewId !== undefined;
+                                const readinessCount = (hasCalibration ? 1 : 0) + (hasAQL ? 1 : 0) + (hasView ? 1 : 0);
+                                const ready = readinessCount === 3;
+                                const partial = readinessCount === 2;
+                                const color = ready ? "text-success" : partial ? "text-warning" : "text-destructive";
+                                const icon = ready ? "✓" : partial ? "⚠️" : "❌";
+                                const label = ready
+                                  ? t("products.readinessReady", "Sẵn sàng")
+                                  : partial
+                                    ? t("products.readinessPartial", "Một phần")
+                                    : t("products.readinessIncomplete", "Chưa đủ");
+                                return (
+                                  <p className={`text-xs ${color}`}>
+                                    {icon} {t("products.qualityReadiness", "Mức sẵn sàng chất lượng")}: <span className="font-semibold">{label}</span> ({readinessCount}/3)
+                                  </p>
+                                );
+                              })()}
+                            </AccordionContent>
+                          </AccordionItem>
+
+                          {/* ④  Ảnh & vùng cắt — ảnh tham chiếu / workstation / vùng cắt / công thức chiếu sáng */}
+                          <AccordionItem value="image" className="border rounded-md px-3">
+                            <AccordionTrigger className="py-3">{t("products.sectionImage", "Ảnh & vùng cắt")}</AccordionTrigger>
+                            <AccordionContent className="space-y-4">
+                              {/* Reference Image for Point */}
+                              <div className="space-y-2">
+                                <Label>{t("products.pointReferenceImage")}</Label>
+                                {pointReferenceImageUrl && (
+                                  <div className="relative">
+                                    <img
+                                      src={pointReferenceImageUrl}
+                                      alt="Point reference"
+                                      className="w-full rounded border"
+                                    />
+                                    {isEditMode && (
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="absolute top-1 right-1 h-6 w-6 p-0"
+                                        onClick={() => setPointReferenceImageUrl("")}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                                {!pointReferenceImageUrl && !isEditMode && (
+                                  <div className="flex items-center justify-center h-20 bg-muted/30 rounded border border-dashed text-muted-foreground text-sm">
+                                    <ImageIcon className="h-4 w-4 mr-1" />
+                                    {t("products.noReferenceImagePoint")}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="pointWorkstation">{t("products.workstationOptional")}</Label>
+                                <Select value={pointWorkstationId?.toString() || ""} onValueChange={(value) => setPointWorkstationId(value ? parseInt(value) : undefined)}>
+                                  <SelectTrigger id="pointWorkstation" disabled={!isEditMode}>
+                                    <SelectValue placeholder={t("products.selectWorkstation")} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {workstations?.map((ws) => (
+                                      <SelectItem key={ws.id} value={ws.id.toString()}>
+                                        <div className="flex items-center gap-2">
+                                          <span>{ws.code} - {ws.name}</span>
+                                          <Badge variant={ws.isActive ? "default" : "secondary"} className="ml-2">
+                                            {ws.isActive ? t('common.active') : t('common.inactive')}
+                                          </Badge>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              {/* Vùng cắt ảnh mẫu */}
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium">{t("products.cropAreaLabel")}</Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <Label htmlFor="cropWidth" className="text-xs text-muted-foreground">{t("products.width")} (px)</Label>
+                                    <Input
+                                      id="cropWidth"
+                                      type="number"
+                                      value={pointCropWidth}
+                                      onChange={(e) => setPointCropWidth(parseInt(e.target.value) || 100)}
+                                      disabled={!isEditMode}
+                                      min={20}
+                                      max={500}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="cropHeight" className="text-xs text-muted-foreground">{t("products.height")} (px)</Label>
+                                    <Input
+                                      id="cropHeight"
+                                      type="number"
+                                      value={pointCropHeight}
+                                      onChange={(e) => setPointCropHeight(parseInt(e.target.value) || 100)}
+                                      disabled={!isEditMode}
+                                      min={20}
+                                      max={500}
+                                    />
+                                  </div>
+                                </div>
+                                {/* Image Source Mode Selection */}
+                                <div className="flex gap-2 mt-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={imageSourceMode === "auto-crop" ? "default" : "outline"}
+                                    onClick={() => setImageSourceMode("auto-crop")}
+                                    className="flex-1 text-xs"
+                                    disabled={!isEditMode}
+                                  >
+                                    {t("products.autoCrop")}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={imageSourceMode === "upload" ? "default" : "outline"}
+                                    onClick={() => setImageSourceMode("upload")}
+                                    className="flex-1 text-xs"
+                                    disabled={!isEditMode}
+                                  >
+                                    {t("products.uploadImage")}
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {imageSourceMode === "auto-crop"
+                                    ? t("products.autoCropDesc")
+                                    : t("products.uploadDesc")}
+                                </p>
+                                {imageSourceMode === "upload" && isEditMode && (
+                                  <div className="mt-2">
+                                    <Label htmlFor="pointImageUpload" className="text-xs text-muted-foreground">{t("products.uploadPointImage")}</Label>
+                                    <Input
+                                      id="pointImageUpload"
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={handlePointImageUpload}
+                                      className="text-xs"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Doc 31 MP6 — per-point lighting recipe (công thức chiếu sáng) */}
+                              {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                                <PointLightingEditor
+                                  pointDefId={measurementPoints[selectedPointIndex]!.id as number}
+                                  canEdit={isEditMode && (user?.role === "admin")}
+                                />
+                              ) : (
+                                <div className="rounded border border-dashed p-3 text-xs text-muted-foreground">
+                                  {t("measurementPointP2.lightingSaveFirst")}
+                                </div>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+
+                        {/* Doc 43 Đợt 4 (A) — báo trước khi đổi ngưỡng trên sản phẩm
+                            active sẽ phải qua hàng đợi duyệt (thay vì toast 403 im lặng). */}
+                        {isEditMode && saveWillRequireApproval && (
+                          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 mt-2">
+                            <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                            <p className="text-xs text-warning">
+                              {t("products.thresholdApprovalBanner", "Sản phẩm đang hoạt động — thay đổi ngưỡng cần được duyệt. Nhấn “Gửi yêu cầu duyệt” để tạo yêu cầu.")}
+                            </p>
+                          </div>
+                        )}
                         {isEditMode && (
                           <div className="flex gap-2 pt-2">
-                            <Button 
-                              size="sm" 
-                              onClick={handleSavePoint} 
+                            <Button
+                              size="sm"
+                              onClick={handleSavePoint}
                               className="flex-1"
                               disabled={isSavingPoint}
                             >
@@ -3490,6 +4054,11 @@ export default function ProductModels() {
                                 <>
                                   <div className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-background border-t-transparent" />
                                   {t("products.saving")}
+                                </>
+                              ) : saveWillRequireApproval ? (
+                                <>
+                                  <Save className="h-4 w-4 mr-1" />
+                                  {t("products.submitForApproval", "Gửi yêu cầu duyệt")}
                                 </>
                               ) : (
                                 <>
@@ -3518,10 +4087,19 @@ export default function ProductModels() {
                   )}
                 </div>
                 </div>
+              </TabsContent>
+
+              {/* ② Thông tin sản phẩm — độ hoàn thiện + golden samples + tài liệu */}
+              <TabsContent value="info" className="space-y-4 mt-2">
+                {/* Doc 31 UX2/PM9/UX7 — readiness checklist + contextual cross-links */}
+                <ProductReadinessPanel productModelId={selectedProduct.id} productCode={selectedProduct.code} />
+
+                {/* Doc 31 PM5/UX8 — golden samples for this product (surface + capture deep-link) */}
+                <ProductGoldenSamplesPanel productModelId={selectedProduct.id} productCode={selectedProduct.code} />
 
               {/* ─── Product Documents Section ─── */}
               <div className="border-t pt-4 mt-4">
-                <div 
+                <div
                   className="flex items-center justify-between cursor-pointer select-none"
                   onClick={() => setShowDocuments(!showDocuments)}
                 >
@@ -3600,7 +4178,96 @@ export default function ProductModels() {
                   </div>
                 )}
               </div>
+              </TabsContent>
 
+              {/* ③ Phát hành & Chương trình — mở dialog nhóm gọn (tái dùng setState open; menu ⋯ vẫn giữ) */}
+              <TabsContent value="release" className="mt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {/* Phát hành chương trình */}
+                  <div className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Rocket className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-sm">{t("programRelease.button")}</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("products.releaseProgramHint", "Đóng gói & phát hành chương trình kiểm tra cho sản phẩm này.")}
+                    </p>
+                    <Button size="sm" variant="outline" className="w-full gap-1" onClick={() => setIsProgramReleaseOpen(true)}>
+                      <Rocket className="h-4 w-4" />
+                      {t("products.openRelease", "Mở phát hành")}
+                    </Button>
+                  </div>
+
+                  {/* Panel N-up */}
+                  <div className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Grid3X3 className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-sm">{t("panelDef.button")}</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("products.panelDefHint", "Định nghĩa panel nhiều board (N-up) và bố cục ghép.")}
+                    </p>
+                    <Button size="sm" variant="outline" className="w-full gap-1" onClick={() => setIsPanelDefOpen(true)}>
+                      <Grid3X3 className="h-4 w-4" />
+                      {t("products.openPanelDef", "Mở panel N-up")}
+                    </Button>
+                  </div>
+
+                  {/* Fiducials */}
+                  <div className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Crosshair className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-sm">{t("products.fiducialsButton", "Fiducials")}</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("products.fiducialsDesc", "Alignment fiducial marks used to register the board before inspection.")}
+                    </p>
+                    <Button size="sm" variant="outline" className="w-full gap-1" onClick={() => setIsFiducialsOpen(true)}>
+                      <Crosshair className="h-4 w-4" />
+                      {t("products.openFiducials", "Mở fiducials")}
+                    </Button>
+                  </div>
+
+                  {/* Mẫu điểm đo (Templates) */}
+                  <div className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-sm">{t("products.templates")}</h4>
+                      <Badge variant="secondary" className="ml-auto">{templates?.length || 0}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("products.templatesHint", "Lưu bộ điểm đo hiện tại thành mẫu, hoặc áp mẫu có sẵn.")}
+                    </p>
+                    <Button size="sm" variant="outline" className="w-full gap-1" onClick={() => setIsTemplateDialogOpen(true)}>
+                      <Layers className="h-4 w-4" />
+                      {t("products.openTemplates", "Mở mẫu điểm đo")}
+                    </Button>
+                  </div>
+
+                  {/* Gói sản phẩm — xuất/nhập (JSON) */}
+                  <div className="border rounded-lg p-4 space-y-2 md:col-span-2 xl:col-span-1">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-sm">{t("products.advGroupExchange", "Trao đổi dữ liệu")}</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("products.packageHint", "Xuất/nhập gói sản phẩm (JSON) để chuyển giữa các hệ thống.")}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <ProductPackageButtons selectedProduct={selectedProduct} onImported={() => refetchProducts()} />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* ④ Nền tảng — 5 mini-CRUD master-data dùng chung + banner cross-link */}
+              <TabsContent value="foundation" className="space-y-4 mt-2">
+                <div className="flex items-start gap-2 rounded-md border border-info/40 bg-info/10 px-3 py-2">
+                  <Layers className="h-4 w-4 text-info shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">
+                    {t("products.foundationBanner", "Đây là dữ liệu chuẩn dùng chung — cũng quản lý được trong Cài đặt › Chất lượng.")}
+                  </p>
+                </div>
               <div className="border-t pt-4 mt-4 space-y-4">
                 <h3 className="font-semibold text-sm">{t("products.foundationSection")}</h3>
 
@@ -3789,7 +4456,8 @@ export default function ProductModels() {
                   </div>
                 </div>
               </div>
-              </div>
+              </TabsContent>
+              </Tabs>
 
             ) : (
               <div className="flex items-center justify-center h-64 text-muted-foreground">

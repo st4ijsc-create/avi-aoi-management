@@ -56,8 +56,11 @@ import { cn } from "@/lib/utils";
 import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
   Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
-  ScrollText, Radio, Upload,
+  ScrollText, Radio, Upload, Waves, History, Timer, Package, FileText, ChevronRight,
 } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+} from "recharts";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type MachineDetail = RouterOutputs["assetCockpit"]["machineDetail"];
@@ -291,6 +294,400 @@ function Model3DPane({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// TELEMETRY / SENSOR TREND — reads machine_sensor_readings (the REAL vibration /
+// current / temperature stream PdM now scores against). Historical line chart per
+// sensor type with a statistical reference band overlay (mean ± 2σ). Honest empty
+// state when no readings exist (e.g. sensor ingest not producing for this machine).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Feature → line colour (matches the twin / OEE palette used elsewhere). */
+function sensorColor(feature: string): string {
+  switch (feature) {
+    case "vibration": return "#8b5cf6";
+    case "current": return "#06b6d4";
+    case "temperature": return "#f59e0b";
+    default: return "#3b82f6";
+  }
+}
+
+const SENSOR_WINDOWS: { label: string; hours: number }[] = [
+  { label: "6h", hours: 6 },
+  { label: "24h", hours: 24 },
+  { label: "7d", hours: 24 * 7 },
+];
+
+function SensorTrendTab({ machineId }: { machineId: number }) {
+  const { t } = useTranslation();
+  const [windowHours, setWindowHours] = useState(24);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+
+  const typesQ = trpc.sensor.listTypes.useQuery(
+    { machineId, windowHours: 24 * 7 },
+    { retry: false, staleTime: 30_000 },
+  );
+  const types = typesQ.data?.available ? typesQ.data.types : [];
+
+  // Default the selection to the highest-volume sensor type once types load.
+  const effectiveType = selectedType ?? types[0]?.sensorType ?? null;
+
+  const seriesQ = trpc.sensor.readSeries.useQuery(
+    { machineId, sensorType: effectiveType ?? "", windowHours, maxPoints: 500 },
+    { enabled: !!effectiveType, retry: false, refetchInterval: 30_000, staleTime: 10_000 },
+  );
+  const s = seriesQ.data;
+
+  if (typesQ.isLoading) {
+    return <div className="py-16 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading…")}</div>;
+  }
+  if (types.length === 0) {
+    return (
+      <EmptyState
+        title={t("cockpit.noSensors", "No sensor telemetry")}
+        description={t("cockpit.noSensorsHint", "No vibration / current / temperature readings have been ingested for this machine yet.")}
+      />
+    );
+  }
+
+  const color = sensorColor(s?.feature ?? "other");
+  const band = s?.available ? s.referenceBand : null;
+  const chartData = (s?.available ? s.series : []).map((p) => ({ t: p.t, value: p.value }));
+
+  return (
+    <div className="space-y-3">
+      {/* Sensor-type selector + window selector */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1">
+          {types.map((ty) => (
+            <Button
+              key={ty.sensorType}
+              size="sm"
+              variant={ty.sensorType === effectiveType ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
+              onClick={() => setSelectedType(ty.sensorType)}
+            >
+              {ty.sensorType}
+              <Badge variant="secondary" className="ml-1.5 px-1 text-[10px]">{ty.count}</Badge>
+            </Button>
+          ))}
+        </div>
+        <div className="ml-auto flex gap-1">
+          {SENSOR_WINDOWS.map((w) => (
+            <Button
+              key={w.hours}
+              size="sm"
+              variant={w.hours === windowHours ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
+              onClick={() => setWindowHours(w.hours)}
+            >
+              {w.label}
+            </Button>
+          ))}
+          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => seriesQ.refetch()}>
+            <RefreshCw className={cn("h-3.5 w-3.5", seriesQ.isFetching && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Chart */}
+      {seriesQ.isLoading ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading…")}</div>
+      ) : !s?.available || chartData.length === 0 ? (
+        <EmptyState
+          title={t("cockpit.noSensorWindow", "No readings in this window")}
+          description={t("cockpit.noSensorWindowHint", "Try a wider time range, or this sensor has not reported recently.")}
+        />
+      ) : (
+        <>
+          <div className="h-[360px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted/40" />
+                <XAxis
+                  dataKey="t"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
+                  tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  tick={{ fontSize: 11 }}
+                  minTickGap={40}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  width={48}
+                  domain={["auto", "auto"]}
+                  label={s.unit ? { value: s.unit, angle: -90, position: "insideLeft", fontSize: 11 } : undefined}
+                />
+                <Tooltip
+                  labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
+                  formatter={(val: number) => [`${Number(val).toFixed(3)}${s.unit ? ` ${s.unit}` : ""}`, s.sensorType]}
+                  contentStyle={{ fontSize: 12 }}
+                />
+                {band && (
+                  <>
+                    <ReferenceLine y={band.mean} stroke={color} strokeDasharray="4 4" strokeOpacity={0.5}
+                      label={{ value: t("cockpit.sensorMean", "mean"), fontSize: 10, fill: color, position: "right" }} />
+                    <ReferenceLine y={band.upper} stroke="#ef4444" strokeDasharray="2 4" strokeOpacity={0.6}
+                      label={{ value: "+2σ", fontSize: 10, fill: "#ef4444", position: "right" }} />
+                    <ReferenceLine y={band.lower} stroke="#ef4444" strokeDasharray="2 4" strokeOpacity={0.6}
+                      label={{ value: "-2σ", fontSize: 10, fill: "#ef4444", position: "right" }} />
+                  </>
+                )}
+                <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.8} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Stats + honest band note */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+            {s.stats && (
+              <>
+                <span>{t("cockpit.sensorCount", "Readings")}: <span className="font-mono text-foreground">{s.rawCount}</span></span>
+                <span>{t("cockpit.sensorMeanStat", "Mean")}: <span className="font-mono text-foreground">{s.stats.mean.toFixed(3)}</span></span>
+                <span>σ: <span className="font-mono text-foreground">{s.stats.std.toFixed(3)}</span></span>
+                <span>min/max: <span className="font-mono text-foreground">{s.stats.min.toFixed(2)} / {s.stats.max.toFixed(2)}</span></span>
+              </>
+            )}
+          </div>
+          {band && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Info className="h-3 w-3 shrink-0" />
+              {t("cockpit.sensorBandNote", "The ±2σ band is a statistical reference from this window's data — not an engineering limit.")}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MAINTENANCE — the per-machine maintenance MEMORY (doc 40 §5-6, persona Hùng).
+// 100% FRONTEND over already-existing read APIs — NO new router:
+//   • work-order history   → maintenance.listWorkOrders({ machineId })
+//   • downtime timeline     → oee.getDowntimeHistory({ machineId })
+//   • spare parts consumed  → maintenance.listPartsForWorkOrder({ workOrderId })
+//     (no by-machine roll-up endpoint exists → lazy per-work-order expand, honest)
+// Everything is honest-null: empty states, "—" when a field is absent.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Work-order status → StatusBadge tone. */
+function woStatusTone(status: string): "error" | "warning" | "info" | "success" {
+  switch ((status ?? "").toUpperCase()) {
+    case "COMPLETED": return "success";
+    case "IN_PROGRESS": case "ON_HOLD": return "warning";
+    case "OPEN": case "SCHEDULED": return "info";
+    default: return "info"; // CANCELLED / unknown
+  }
+}
+
+/** Downtime category → tone (mirrors the OEE downtime taxonomy). */
+function downtimeTone(category: string): "error" | "warning" | "info" | "success" {
+  switch ((category ?? "").toLowerCase()) {
+    case "breakdown": case "unplanned": return "error";
+    case "maintenance": case "changeover": return "warning";
+    case "planned": return "info";
+    default: return "info";
+  }
+}
+
+const OPEN_WO_STATUSES = new Set(["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD"]);
+
+/** Minutes → "1h 20m" / "45m" (honest "—" when null). */
+function fmtMinutes(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const m = Math.max(0, Math.round(v));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
+}
+
+// ── Lazy spare-parts panel for ONE work order (fires only when expanded). ──
+function WorkOrderParts({ workOrderId }: { workOrderId: number }) {
+  const { t } = useTranslation();
+  const q = trpc.maintenance.listPartsForWorkOrder.useQuery(
+    { workOrderId },
+    { retry: false, staleTime: 60_000 },
+  );
+  if (q.isLoading) {
+    return <div className="px-3 py-2 text-xs text-muted-foreground">{t("cockpit.loading", "Loading…")}</div>;
+  }
+  const rows = q.data ?? [];
+  if (rows.length === 0) {
+    return (
+      <div className="px-3 py-2 text-xs text-muted-foreground">
+        {t("cockpit.moNoParts", "No spare parts recorded for this work order.")}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1 px-3 py-2">
+      {rows.map((p) => (
+        <div key={p.id} className="flex items-center gap-2 text-xs">
+          <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="font-mono">{p.partCode}</span>
+          <Badge variant="secondary" className="px-1 text-[10px]">×{p.quantityUsed}</Badge>
+          {p.unitCost != null && (
+            <span className="text-muted-foreground">@ {String(p.unitCost)}</span>
+          )}
+          <span className="ml-auto text-[11px] text-muted-foreground">{p.consumedAt ? new Date(p.consumedAt as string | number | Date).toLocaleString() : "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── One work-order row: summary line + expandable parts ledger. ──
+function WorkOrderRow({ wo, now }: { wo: Record<string, any>; now: number }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const isOpen = OPEN_WO_STATUSES.has(String(wo.status ?? "").toUpperCase());
+  const openedAt = wo.openedAt ? new Date(wo.openedAt).getTime() : null;
+  const closedAt = wo.closedAt ? new Date(wo.closedAt).getTime() : null;
+  return (
+    <div className="rounded-md border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+        <StatusBadge status={String(wo.status ?? "unknown")} tone={woStatusTone(String(wo.status ?? ""))} className="px-1.5 py-0 text-[10px] capitalize" />
+        {wo.type != null && <Badge variant="outline" className="text-[10px]">{String(wo.type)}</Badge>}
+        <span className="truncate text-sm font-medium">{String(wo.title ?? wo.workOrderNumber ?? `#${wo.id}`)}</span>
+        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+          {isOpen
+            ? `${t("cockpit.moOpenedRel", "opened")} ${relTime(openedAt, now)}`
+            : fmtMinutes(wo.downtimeMinutes)}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t bg-muted/20">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 px-3 py-2 sm:grid-cols-3">
+            <KV k={t("cockpit.moNumber", "WO #")} v={<span className="font-mono text-xs">{String(wo.workOrderNumber ?? `#${wo.id}`)}</span>} />
+            <KV k={t("cockpit.moPriority", "Priority")} v={wo.priority != null ? `P${wo.priority}` : "—"} />
+            <KV k={t("cockpit.moTrigger", "Trigger")} v={wo.trigger ?? "—"} />
+            <KV k={t("cockpit.moOpened", "Opened")} v={tsToLocale(openedAt)} />
+            <KV k={t("cockpit.moStarted", "Repair started")} v={tsToLocale(wo.repairStartedAt ? new Date(wo.repairStartedAt).getTime() : null)} />
+            <KV k={t("cockpit.moClosed", "Closed")} v={tsToLocale(closedAt)} />
+            <KV k={t("cockpit.moMttr", "Downtime (MTTR span)")} v={fmtMinutes(wo.downtimeMinutes)} />
+          </div>
+          {wo.description && <div className="px-3 pb-1 text-xs text-muted-foreground">{String(wo.description)}</div>}
+          {wo.resolutionNotes && (
+            <div className="px-3 pb-1 text-xs">
+              <span className="text-muted-foreground">{t("cockpit.moResolution", "Resolution")}: </span>
+              {String(wo.resolutionNotes)}
+            </div>
+          )}
+          <div className="border-t">
+            <div className="px-3 pt-2 text-[11px] font-medium text-muted-foreground">{t("cockpit.moPartsUsed", "Spare parts used")}</div>
+            <WorkOrderParts workOrderId={Number(wo.id)} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MaintenanceTab({ machineId, now }: { machineId: number; now: number }) {
+  const { t } = useTranslation();
+
+  const woQ = trpc.maintenance.listWorkOrders.useQuery(
+    { machineId, limit: 100 },
+    { retry: false, staleTime: 30_000 },
+  );
+  const dtQ = trpc.mqttClient.getDowntimeHistory.useQuery(
+    { machineId },
+    { retry: false, staleTime: 30_000 },
+  );
+
+  const workOrders = (woQ.data ?? []) as Array<Record<string, any>>;
+  const downtime = (dtQ.data ?? []) as Array<Record<string, any>>;
+
+  // MTTR / open-count roll-up derived purely from the WO list (honest, no fabrication).
+  const summary = useMemo(() => {
+    const open = workOrders.filter((w) => OPEN_WO_STATUSES.has(String(w.status ?? "").toUpperCase())).length;
+    const closed = workOrders.filter((w) => String(w.status ?? "").toUpperCase() === "COMPLETED");
+    const withDt = closed.filter((w) => w.downtimeMinutes != null);
+    const mttr = withDt.length
+      ? withDt.reduce((s, w) => s + Number(w.downtimeMinutes), 0) / withDt.length
+      : null;
+    const dtMin = downtime.reduce((s, e) => s + (e.duration != null ? Number(e.duration) : 0), 0);
+    return { total: workOrders.length, open, closed: closed.length, mttr, dtCount: downtime.length, dtMin };
+  }, [workOrders, downtime]);
+
+  return (
+    <div className="space-y-4">
+      {/* Roll-up strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MetricCard icon={<History className="h-4 w-4" />} label={t("cockpit.moTotal", "Work orders")} value={String(summary.total)} />
+        <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("cockpit.moOpen", "Open")} value={String(summary.open)} tone={summary.open > 0 ? "warning" : "default"} />
+        <MetricCard icon={<Timer className="h-4 w-4" />} label={t("cockpit.moMttrAvg", "Avg MTTR")} value={fmtMinutes(summary.mttr)} />
+        <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("cockpit.moDtEvents", "Downtime events")} value={`${summary.dtCount} · ${fmtMinutes(summary.dtMin)}`} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Work-order history */}
+        <SectionCard icon={<History className="h-4 w-4" />} title={t("cockpit.moHistory", "Work-order history")} description={t("cockpit.moHistoryHint", "Every maintenance work order for this machine — expand for detail + parts.")}>
+          {woQ.isLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading…")}</div>
+          ) : workOrders.length === 0 ? (
+            <EmptyState title={t("cockpit.moNoWo", "No work orders")} description={t("cockpit.moNoWoHint", "No maintenance work orders have been recorded for this machine.")} />
+          ) : (
+            <ScrollArea className="h-[440px] pr-2">
+              <div className="space-y-2">
+                {workOrders.map((wo) => (
+                  <WorkOrderRow key={String(wo.id)} wo={wo} now={now} />
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </SectionCard>
+
+        {/* Downtime timeline */}
+        <SectionCard icon={<Timer className="h-4 w-4" />} title={t("cockpit.moDowntime", "Downtime timeline")} description={t("cockpit.moDowntimeHint", "Recorded downtime intervals + reason for this machine.")}>
+          {dtQ.isLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading…")}</div>
+          ) : downtime.length === 0 ? (
+            <EmptyState title={t("cockpit.moNoDt", "No downtime recorded")} description={t("cockpit.moNoDtHint", "No downtime intervals have been logged for this machine.")} />
+          ) : (
+            <ScrollArea className="h-[440px] pr-2">
+              <div className="space-y-2">
+                {downtime.map((e, i) => {
+                  const start = e.startTime ? new Date(e.startTime).getTime() : null;
+                  const end = e.endTime ? new Date(e.endTime).getTime() : null;
+                  const ongoing = start != null && end == null;
+                  return (
+                    <div key={String(e.id ?? i)} className="rounded-md border px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={String(e.category ?? "other")} tone={downtimeTone(String(e.category ?? ""))} className="px-1.5 py-0 text-[10px] capitalize" />
+                        {ongoing
+                          ? <Badge className="bg-red-500 px-1.5 py-0 text-[10px] text-white">{t("cockpit.moOngoing", "ONGOING")}</Badge>
+                          : <span className="text-xs font-medium">{fmtMinutes(e.duration)}</span>}
+                        <span className="ml-auto text-[11px] text-muted-foreground">{tsToLocale(start)}</span>
+                      </div>
+                      {e.reason && <div className="mt-1 text-sm">{String(e.reason)}</div>}
+                      {e.notes && <div className="mt-0.5 text-xs text-muted-foreground">{String(e.notes)}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* Documents / manuals — honest empty: no per-machine attachment endpoint exists yet. */}
+      <SectionCard icon={<FileText className="h-4 w-4" />} title={t("cockpit.moDocs", "Manuals & documents")}>
+        <EmptyState
+          title={t("cockpit.moNoDocs", "No documents attached")}
+          description={t("cockpit.moNoDocsHint", "No maintenance manuals or documents are linked to this machine yet.")}
+        />
+      </SectionCard>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -417,12 +814,14 @@ export default function MachineCockpit() {
               <TabsList className="mb-2 inline-flex w-max">
                 <TabsTrigger value="overview"><Activity className="mr-1 h-4 w-4" />{t("cockpit.tabOverview", "Overview")}</TabsTrigger>
                 <TabsTrigger value="health"><HeartPulse className="mr-1 h-4 w-4" />{t("cockpit.tabHealth", "Health / PdM")}</TabsTrigger>
+                <TabsTrigger value="telemetry"><Waves className="mr-1 h-4 w-4" />{t("cockpit.tabTelemetry", "Telemetry")}</TabsTrigger>
                 <TabsTrigger value="oee"><Gauge className="mr-1 h-4 w-4" />{t("cockpit.tabOee", "OEE")}</TabsTrigger>
                 <TabsTrigger value="alarms"><AlertTriangle className="mr-1 h-4 w-4" />{t("cockpit.tabAlarms", "Alarms")}</TabsTrigger>
                 <TabsTrigger value="recipes"><FileStack className="mr-1 h-4 w-4" />{t("cockpit.tabRecipes", "Recipes")}</TabsTrigger>
                 <TabsTrigger value="programs"><ScrollText className="mr-1 h-4 w-4" />{t("cockpit.tabPrograms", "Programs")}</TabsTrigger>
                 <TabsTrigger value="genealogy"><GitBranch className="mr-1 h-4 w-4" />{t("cockpit.tabGenealogy", "Genealogy")}</TabsTrigger>
                 <TabsTrigger value="model3d"><Boxes className="mr-1 h-4 w-4" />{t("cockpit.tab3d", "3D")}</TabsTrigger>
+                <TabsTrigger value="maintenance"><History className="mr-1 h-4 w-4" />{t("cockpit.tabMaintenance", "Maintenance")}</TabsTrigger>
                 <TabsTrigger value="actions"><Wrench className="mr-1 h-4 w-4" />{t("cockpit.tabActions", "Actions")}</TabsTrigger>
               </TabsList>
             </ScrollArea>
@@ -549,6 +948,17 @@ export default function MachineCockpit() {
                     </div>
                   </div>
                 )}
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── TELEMETRY / SENSOR TREND ── */}
+            <TabsContent value="telemetry">
+              <SectionCard
+                icon={<Waves className="h-4 w-4" />}
+                title={t("cockpit.tabTelemetry", "Telemetry")}
+                description={t("cockpit.telemetryHint", "Historical vibration / current / temperature — the same sensor stream PdM scores against.")}
+              >
+                <SensorTrendTab machineId={machineId} />
               </SectionCard>
             </TabsContent>
 
@@ -701,6 +1111,11 @@ export default function MachineCockpit() {
                   onUploadFile={handleModelFile}
                 />
               </SectionCard>
+            </TabsContent>
+
+            {/* ── MAINTENANCE (work-order memory + downtime + parts) ── */}
+            <TabsContent value="maintenance">
+              <MaintenanceTab machineId={machineId} now={now} />
             </TabsContent>
 
             {/* ── ACTIONS (gated, propose-only) ── */}

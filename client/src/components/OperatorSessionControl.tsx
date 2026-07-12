@@ -47,8 +47,8 @@ export default function OperatorSessionControl() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
-  const canOpen = hasPermission("production_orders", "canCreate");
-  const canEdit = hasPermission("production_orders", "canEdit");
+  const canOpen = hasPermission("production_session", "canCreate");
+  const canEdit = hasPermission("production_session", "canEdit");
   const operatorId = (user as any)?.id as number | undefined;
 
   const utils = trpc.useUtils();
@@ -169,7 +169,7 @@ export default function OperatorSessionControl() {
             </div>
             {!canEdit && (
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <ShieldAlert className="h-3 w-3" /> {t("opSession.noEdit", "Cần quyền production_orders · canEdit để tạm dừng/kết thúc.")}
+                <ShieldAlert className="h-3 w-3" /> {t("opSession.noEdit", "Bạn chưa được cấp quyền tạm dừng/kết thúc ca — liên hệ giám sát để cấp quyền phiên sản xuất.")}
               </p>
             )}
           </>
@@ -184,7 +184,7 @@ export default function OperatorSessionControl() {
             </Button>
             {!canOpen && (
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <ShieldAlert className="h-3 w-3" /> {t("opSession.noCreate", "Cần quyền production_orders · canCreate để vào ca.")}
+                <ShieldAlert className="h-3 w-3" /> {t("opSession.noCreate", "Bạn chưa được cấp quyền vào ca — liên hệ giám sát để cấp quyền phiên sản xuất.")}
               </p>
             )}
           </>

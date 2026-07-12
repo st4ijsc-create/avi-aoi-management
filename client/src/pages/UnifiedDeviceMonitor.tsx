@@ -29,11 +29,16 @@ import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import DeviceOnboardingWizard from "@/components/DeviceOnboardingWizard";
-import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import {
+  PageHeader, PageContainer, StatChip, StatChipRow,
+  useDensity,
+} from "@/components/patterns";
+import { useFullscreen } from "@/hooks/useFullscreen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -42,7 +47,7 @@ import {
 } from "@/components/ui/table";
 import {
   Wifi, WifiOff, HelpCircle, RefreshCw, Search, Plus, Activity, Server, Plug, Cpu,
-  ChevronRight, ChevronDown, ExternalLink, Loader2,
+  ChevronRight, ChevronDown, ExternalLink, Loader2, Maximize2, Minimize2, Rows3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -152,6 +157,10 @@ export function UnifiedDeviceMonitorContent() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+
+  // doc 40 §13.3 content-first — mật độ hiển thị + fullscreen cho bảng fleet.
+  const { density, toggle: toggleDensity } = useDensity();
+  const fs = useFullscreen();
 
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState<string>("all");
@@ -331,101 +340,131 @@ export function UnifiedDeviceMonitorContent() {
 
   return (
     <>
-      <PageContainer fluid>
-        {/* Header */}
+      <PageContainer
+        fluid
+        className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 py-3 md:py-4 [&>*]:!mt-0"
+      >
+        {/* Header — gọn 1 hàng (content-first) */}
         <PageHeader
-          icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
+          className="shrink-0"
+          icon={<Activity className="h-5 w-5 text-primary" />}
           title={t("deviceMonitor.title", "Giám sát thiết bị hợp nhất")}
-          description={t("deviceMonitor.subtitle", "Mọi thiết bị (máy · adapter OT · node biên) trong một bảng — trạng thái kết nối, telemetry trực tiếp & test kết nối")}
           actions={
             <>
-              <Button onClick={() => setWizardOpen(true)}>
+              <Button size="sm" onClick={() => setWizardOpen(true)}>
                 <Plus className="mr-1.5 h-4 w-4" />{t("deviceMonitor.onboard", "Kết nối thiết bị mới")}
               </Button>
-              <Button variant="outline" onClick={refetchAll}>
+              <Button size="sm" variant="outline" onClick={refetchAll}>
                 <RefreshCw className="mr-1.5 h-4 w-4" />{t("common.refresh", "Làm mới")}
               </Button>
             </>
           }
         />
 
-        {/* Summary */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <MetricCard
-            icon={<Server className="h-5 w-5" />}
+        {/* KPI strip — StatChip 1 dòng (thay lưới MetricCard 110px). Bấm để lọc theo kết nối. */}
+        <StatChipRow className="shrink-0">
+          <StatChip
+            icon={<Server />}
+            label={t("deviceMonitor.totalDevices", "Tổng")}
             value={counts.total}
-            label={t("deviceMonitor.totalDevices", "Tổng thiết bị")}
+            onClick={() => setFilterConn("all")}
+            active={filterConn === "all"}
           />
-          <MetricCard
-            icon={<Wifi className="h-5 w-5" />}
-            value={counts.online}
+          <StatChip
             label={t("deviceMonitor.online", "Trực tuyến")}
+            value={counts.online}
             tone="success"
-            className="border-success/40"
+            onClick={() => setFilterConn(filterConn === "online" ? "all" : "online")}
+            active={filterConn === "online"}
           />
-          <MetricCard
-            icon={<WifiOff className="h-5 w-5" />}
-            value={counts.offline}
+          <StatChip
             label={t("deviceMonitor.offline", "Ngoại tuyến")}
+            value={counts.offline}
             tone="error"
-            className="border-destructive/40"
+            onClick={() => setFilterConn(filterConn === "offline" ? "all" : "offline")}
+            active={filterConn === "offline"}
           />
-          <MetricCard
-            icon={<HelpCircle className="h-5 w-5" />}
-            value={counts.unknown}
+          <StatChip
             label={t("deviceMonitor.unknown", "Chưa rõ")}
+            value={counts.unknown}
             tone="warning"
-            className="border-warning/40"
+            onClick={() => setFilterConn(filterConn === "unknown" ? "all" : "unknown")}
+            active={filterConn === "unknown"}
           />
-        </div>
-
-        {/* Protocol framework status strip (honest flag state) */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">{t("deviceMonitor.frameworks", "Khung giao thức")}:</span>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+          {/* Khung giao thức — trạng thái cờ thật, cùng hàng để tiết kiệm chiều dọc */}
           <FrameworkChip label="MTConnect" enabled={!!(mtconnectQ.data as any)?.enabled} loading={mtconnectQ.isLoading} t={t} />
           <FrameworkChip label="SECS/GEM" enabled={!!(secsQ.data as any)?.enabled} loading={secsQ.isLoading} t={t} />
-          <FrameworkChip label="VDA5050 (AMR)" enabled={undefined} loading={false} t={t} />
+          {/* DEV-09 — chip VDA5050 gỡ bỏ: không có endpoint framework-status toàn cục
+              (vda5050.status yêu cầu robotId, chỉ per-robot). Không hiện "chưa rõ" vĩnh viễn
+              để giữ đúng cam kết honesty. Trạng thái VDA5050 xem tại từng robot (Fleet/Robot). */}
           <FrameworkChip label="Edge runtime" enabled={!!(edgeStatusQ.data as any)?.enabled} loading={edgeStatusQ.isLoading} onClick={() => setLocation("/edge-nodes")} t={t} />
-          <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => setLocation("/device-adapters")}>
-            {t("deviceMonitor.manageAdapters", "Quản lý adapter")}<ExternalLink className="h-3 w-3" />
-          </Button>
-        </div>
+        </StatChipRow>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 pl-8"
-              placeholder={t("deviceMonitor.searchPlaceholder", "Tìm theo tên / mã / giao thức…")} />
-          </div>
-          <Select value={filterSource} onValueChange={setFilterSource}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("deviceMonitor.allSources", "Mọi nguồn")}</SelectItem>
-              <SelectItem value="machine">{t("deviceMonitor.sourceMachine", "Máy")}</SelectItem>
-              <SelectItem value="adapter">{t("deviceMonitor.typeAdapter", "Adapter OT")}</SelectItem>
-              <SelectItem value="edge">{t("deviceMonitor.typeEdge", "Node biên")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterConn} onValueChange={setFilterConn}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("common.all", "Tất cả")}</SelectItem>
-              <SelectItem value="online">{t("deviceMonitor.online", "Trực tuyến")}</SelectItem>
-              <SelectItem value="offline">{t("deviceMonitor.offline", "Ngoại tuyến")}</SelectItem>
-              <SelectItem value="unknown">{t("deviceMonitor.unknown", "Chưa rõ")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Master table */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t("deviceMonitor.allDevices", "Tất cả thiết bị")} ({filtered.length})</CardTitle>
+        {/* Master table — chiếm ≥70% chiều cao (flex-1), cuộn nội bộ, sticky header */}
+        <Card
+          ref={fs.ref}
+          className={cn(
+            "flex min-h-0 flex-1 flex-col gap-2 py-3",
+            fs.usingFallback && fs.isFullscreen && "fixed inset-0 z-50 rounded-none",
+            fs.isFullscreen && "bg-background",
+          )}
+        >
+          <CardHeader className="shrink-0 gap-2 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="mr-auto text-base">
+                {t("deviceMonitor.allDevices", "Tất cả thiết bị")}{" "}
+                <span className="tabular-nums text-muted-foreground">({filtered.length})</span>
+              </CardTitle>
+              {/* Bộ lọc trong header bảng — gọn cùng hàng với tiêu đề */}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 w-52 pl-8"
+                  placeholder={t("deviceMonitor.searchPlaceholder", "Tìm tên / mã / giao thức…")} />
+              </div>
+              <Select value={filterSource} onValueChange={setFilterSource}>
+                <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("deviceMonitor.allSources", "Mọi nguồn")}</SelectItem>
+                  <SelectItem value="machine">{t("deviceMonitor.sourceMachine", "Máy")}</SelectItem>
+                  <SelectItem value="adapter">{t("deviceMonitor.typeAdapter", "Adapter OT")}</SelectItem>
+                  <SelectItem value="edge">{t("deviceMonitor.typeEdge", "Node biên")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline" size="icon-sm" onClick={toggleDensity}
+                title={density === "compact"
+                  ? t("common.densityComfortable", "Mật độ thoải mái")
+                  : t("common.densityCompact", "Mật độ gọn")}
+                aria-pressed={density === "compact"}
+              >
+                <Rows3 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline" size="icon-sm" onClick={fs.toggle}
+                title={fs.isFullscreen
+                  ? t("common.exitFullscreen", "Thoát toàn màn hình")
+                  : t("common.fullscreen", "Toàn màn hình")}
+                aria-pressed={fs.isFullscreen}
+              >
+                {fs.isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" onClick={() => setLocation("/device-adapters")}>
+                {t("deviceMonitor.manageAdapters", "Quản lý adapter")}<ExternalLink className="h-3 w-3" />
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
+          {/* CardContent là khối cao cố định (flex-1); bộ cuộn thật là
+              [data-slot=table-container] bên trong Table → sticky header hoạt động. */}
+          <CardContent className="min-h-0 flex-1 p-0 [&>[data-slot=table-container]]:h-full [&>[data-slot=table-container]]:overflow-auto">
+            <Table
+              className={cn(
+                // Mật độ gọn: giảm padding ô + cỡ chữ để hiện nhiều hàng hơn.
+                density === "compact" &&
+                  "text-xs [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1.5",
+              )}
+            >
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-8" />
                   <TableHead>{t("deviceMonitor.colName", "Tên / Mã")}</TableHead>
@@ -563,7 +602,7 @@ function FrameworkChip({
   else if (enabled === true) { cls = "border-success text-success"; txt = t("deviceMonitor.flagOn", "bật"); }
   else if (enabled === false) { cls = "border-muted-foreground/40 text-muted-foreground"; txt = t("deviceMonitor.flagOff", "tắt"); }
   const inner = <>{label}<span className="opacity-70">· {txt}</span></>;
-  const base = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${cls}`;
+  const base = `inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${cls}`;
   if (!onClick) return <span className={base} title={label}>{inner}</span>;
   return <button onClick={onClick} className={`${base} hover:opacity-80`}>{inner}</button>;
 }

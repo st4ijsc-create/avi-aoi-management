@@ -146,6 +146,7 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     tags: adapter.tags,
     pollIntervalMs: adapter.pollIntervalMs,
     endpoints,
+    machineId: adapter.machineId ?? undefined, // doc 40 MON-F1 — bật presence push online/offline từ supervisor
     createDriver: () => createDriver(adapter.protocol),
     onSample,
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),

@@ -23,6 +23,7 @@
  * persists each step's state as it walks.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
@@ -73,6 +74,96 @@ export function foeDurableEnabled(): boolean {
   return process.env.FOE_DURABLE === "true" || process.env.FOE_DURABLE === "1";
 }
 
+/**
+ * doc 40 ENG-F4 (P0 tồn từ doc 22) — SIM-GATE cho deploy workflow FOE. Khi BẬT, deployWorkflow
+ * CHỈ chấp nhận một definition ĐÃ mô phỏng ĐẠT (feasible) trên digital twin — bằng chứng là một
+ * sim-token (HMAC) do orchestration.simulate phát hành cho ĐÚNG definition đó — TRỪ KHI có override
+ * kèm lý do (được ghi audit). Mặc định OFF → hành vi cũ (không đổi gì, giữ green). Fail-closed:
+ * bật mà không có sim-pass hợp lệ ⇒ TỪ CHỐI honest (an toàn hơn deploy mù). KHÔNG nới lỏng gate nào.
+ */
+export function foeSimGateRequired(): boolean {
+  return process.env.FOE_SIM_GATE_REQUIRED === "true" || process.env.FOE_SIM_GATE_REQUIRED === "1";
+}
+
+/**
+ * Bí mật ký sim-token. Ưu tiên env cố định (bền qua khởi-động-lại / đa-instance); nếu không có
+ * thì sinh NGẪU NHIÊN mỗi tiến trình — token khi đó chỉ sống trong vòng đời tiến trình, và mất
+ * token ⇒ deploy fail-closed (buộc mô phỏng lại) → hướng AN TOÀN, không nới lỏng.
+ */
+const SIM_TOKEN_SECRET =
+  process.env.FOE_SIM_TOKEN_SECRET || process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+
+/** Canonical JSON (khóa sắp xếp, đệ quy) → hash ĐỊNH NGHĨA ổn định bất kể thứ tự khóa. */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, k) => {
+        acc[k] = canonicalize(obj[k]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+/** Hash ổn định (sha256) của một WorkflowDefinition — khóa dùng cho sim-gate binding. */
+export function hashWorkflowDefinition(def: WorkflowDefinition): string {
+  return createHash("sha256").update(JSON.stringify(canonicalize(def))).digest("hex");
+}
+
+/**
+ * Phát hành sim-token (HMAC) cho một definition ĐÃ mô phỏng ĐẠT. CHỈ gọi khi sim.ok === true
+ * (router chịu trách nhiệm điều kiện đó). Token là attestation stateless: deployWorkflow xác minh
+ * lại bằng cách tính lại HMAC trên định nghĩa được nộp — không cần DB/bộ nhớ trung gian.
+ */
+export function issueSimToken(def: WorkflowDefinition): string {
+  const hash = hashWorkflowDefinition(def);
+  return createHmac("sha256", SIM_TOKEN_SECRET).update(`simpass:${hash}`).digest("hex");
+}
+
+/** Xác minh sim-token khớp ĐÚNG definition (so sánh constant-time). Thiếu token → false. */
+function verifySimToken(def: WorkflowDefinition, token: string | undefined | null): boolean {
+  if (!token) return false;
+  const expected = issueSimToken(def);
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(token, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Ghi audit best-effort cho quyết định sim-gate ở deploy (từ chối / override). Fail-safe — lỗi
+ * audit KHÔNG chặn deploy path. Dùng dynamic import để tránh coupling load-order.
+ */
+async function auditDeploySimGate(
+  user: FoeUser,
+  def: WorkflowDefinition,
+  outcome: "rejected" | "override",
+  reason: string | null,
+): Promise<void> {
+  try {
+    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    await logCrudOperation(
+      createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }),
+      {
+        action: "config_change",
+        entityType: "orchestration_workflow",
+        entityName: def.ref,
+        details: {
+          operation:
+            outcome === "rejected" ? "foe_deploy_sim_gate_rejected" : "foe_deploy_sim_gate_override",
+          metadata: { ref: def.ref, hash: hashWorkflowDefinition(def), reason },
+        },
+        status: outcome === "rejected" ? "failure" : "success",
+      },
+    );
+  } catch {
+    /* audit best-effort — không được chặn deploy */
+  }
+}
+
 /** System actor recorded on an auto-resume (never a real human). */
 const SYSTEM_FOE_USER: FoeUser = { id: 0, role: "system", name: "FOE auto-resume" };
 
@@ -92,6 +183,14 @@ export interface DeployResult {
   version?: number;
   errors?: ValidationError[];
   message?: string;
+}
+
+/** doc 40 ENG-F4 — tuỳ chọn deploy để đi qua sim-gate. */
+export interface DeployOpts {
+  /** Sim-token do orchestration.simulate phát hành cho ĐÚNG định nghĩa này (bằng chứng sim ĐẠT). */
+  simToken?: string | null;
+  /** Lý do override sim-gate (bắt buộc để bỏ qua khi gate BẬT mà không có token) — được ghi audit. */
+  overrideReason?: string | null;
 }
 
 export interface StartRunResult {
@@ -757,7 +856,11 @@ async function buildRunContext(
  * Deploy (validate + persist) a workflow definition. Upserts by ref (bumps version).
  * Flag-gated: FOE_ENABLED off → a disabled result (no persistence).
  */
-export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Promise<DeployResult> {
+export async function deployWorkflow(
+  def: WorkflowDefinition,
+  user: FoeUser,
+  opts?: DeployOpts,
+): Promise<DeployResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
   }
@@ -770,6 +873,26 @@ export async function deployWorkflow(def: WorkflowDefinition, user: FoeUser): Pr
     const machineMap = await loadMachines(structural.referencedMachineIds);
     const full = validateWorkflow(def, [...machineMap.values()]);
     if (!full.ok) return { ok: false, enabled: true, errors: full.errors };
+
+    // doc 40 ENG-F4 — SIM-GATE (sau khi validate, TRƯỚC khi persist). Khi cờ FOE_SIM_GATE_REQUIRED
+    // bật: chỉ deploy definition có sim-token hợp lệ (đã mô phỏng ĐẠT) HOẶC có override kèm lý do
+    // (ghi audit). Mặc định OFF → bỏ qua hoàn toàn (hành vi cũ). Fail-closed khi thiếu cả hai.
+    if (foeSimGateRequired()) {
+      const simOk = verifySimToken(def, opts?.simToken);
+      const reason = opts?.overrideReason?.trim() || "";
+      if (!simOk && !reason) {
+        void auditDeploySimGate(user, def, "rejected", null);
+        return {
+          ok: false,
+          enabled: true,
+          message:
+            "Chưa mô phỏng đạt (sim-gate): hãy Simulate workflow đến khi feasible rồi Deploy, hoặc deploy kèm lý do override.",
+        };
+      }
+      if (!simOk && reason) {
+        void auditDeploySimGate(user, def, "override", reason);
+      }
+    }
 
     const d = await db();
     const existing = await d
@@ -880,7 +1003,11 @@ export async function rollbackWorkflow(
     return { ok: false, enabled: true, message: `No snapshot for workflow ${workflowId} version ${version}.` };
   }
   // Re-deploy the old definition → bumps to a fresh version with the old content.
-  return deployWorkflow(target.definitionJson as WorkflowDefinition, user);
+  // doc 40 ENG-F4 — rollback re-deploy nội dung ĐÃ từng deploy+validate → qua sim-gate bằng
+  // override có lý do (được ghi audit), không buộc mô phỏng lại một bản đã biết-tốt.
+  return deployWorkflow(target.definitionJson as WorkflowDefinition, user, {
+    overrideReason: `rollback to v${version} (previously deployed, validated content)`,
+  });
 }
 
 /**

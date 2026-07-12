@@ -84,6 +84,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
+import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
 
 /**
@@ -208,6 +209,8 @@ export function buildDeltaMotion(job: RobotJobSpec): { cmd: string; args: Array<
 
 export class DeltaDriver implements RobotDriver {
   readonly vendor: RobotVendor = "delta";
+  // CTL-05 (doc 40) — HONEST: khung wire là BỊA, không có vendor protocol tài liệu hoá.
+  readonly validationStatus: RobotValidationStatus = "mock";
 
   private client: TcpLineClient | null = null;
   private connected = false;
@@ -242,6 +245,20 @@ export class DeltaDriver implements RobotDriver {
   }
 
   async connect(cfg: RobotConnectionConfig): Promise<void> {
+    // ⚠️ CTL-05 (doc 40) — MOCK GATE, fail-closed. Khung TCP dưới đây là BỊA (DRAStudio
+    // DRL không có host telegram tài liệu hoá — xem header). TỪ CHỐI mở kết nối tới một
+    // endpoint THẬT trừ khi vận hành viên bật cờ mock tường minh (mặc định OFF). Ngăn kịch
+    // bản chọn vendor 'delta' như thật rồi bắn khung bịa xuống thiết bị thật. Chỉ nên bật
+    // ROBOT_MOCK_VENDORS_ENABLED với lab/simulator, KHÔNG với robot production.
+    if (process.env.ROBOT_MOCK_VENDORS_ENABLED !== "true") {
+      const msg =
+        "Delta driver is a MOCK (fabricated TCP frame — no documented Delta host protocol). " +
+        "Refusing to connect. Integrate a real path (OT Modbus mailbox or a DRL SocketServer grammar) " +
+        "or set ROBOT_MOCK_VENDORS_ENABLED=true ONLY against a lab/simulator.";
+      this.lastError = msg;
+      throw new Error(msg);
+    }
+
     const opts = cfg.options ?? {};
     this.timeoutMs = cfg.timeoutMs ?? 5000;
 

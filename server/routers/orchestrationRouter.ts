@@ -18,7 +18,7 @@
 import { z } from "zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 // Doc 37 P0-3 — gate the Orchestration Studio surface behind MOD_ENGINEERING
@@ -29,6 +29,9 @@ const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // (device-actuation) path, PLUS the same MOD_ENGINEERING license gate. Per-action
 // requirePermission("machine_control", …) still composes on top.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
+// doc 40 CTL-07 — deploy path thêm lớp step-up 2FA (requireFreshTotp) SAU cờ ACTUATION_STEPUP_2FA
+// (mặc định OFF → pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
+const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
@@ -38,6 +41,8 @@ import {
   abortRun,
   getRun,
   foeEnabled,
+  foeSimGateRequired,
+  issueSimToken,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
 import {
@@ -57,10 +62,10 @@ async function db() {
 }
 
 export const orchestrationRouter = router({
-  /** Whether the FOE flag is enabled (UI gating hint). */
+  /** Whether the FOE flag is enabled + sim-gate required (UI gating hints). */
   status: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(() => ({ enabled: foeEnabled() })),
+    .query(() => ({ enabled: foeEnabled(), simGateRequired: foeSimGateRequired() })),
 
   /** List deployed workflows (newest first). */
   listWorkflows: protectedProcedure
@@ -90,14 +95,28 @@ export const orchestrationRouter = router({
       return row;
     }),
 
-  /** Deploy (validate + persist) a workflow definition. Flag-gated. */
-  deployWorkflow: actuationProcedure
+  /**
+   * Deploy (validate + persist) a workflow definition. Flag-gated by FOE_ENABLED.
+   * doc 40 ENG-F4 — SIM-GATE: khi FOE_SIM_GATE_REQUIRED bật, phải kèm `simToken` (do
+   * orchestration.simulate phát hành cho ĐÚNG định nghĩa này khi sim ĐẠT) HOẶC `overrideReason`
+   * (ghi audit). Mặc định OFF → không đổi. doc 40 CTL-07 — `totpCode` (tuỳ chọn) cho step-up 2FA
+   * khi ACTUATION_STEPUP_2FA bật (đọc bởi middleware requireFreshTotp; OFF → bỏ qua).
+   */
+  deployWorkflow: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .input(z.object({ definition: z.record(z.string(), z.unknown()) }))
+    .input(
+      z.object({
+        definition: z.record(z.string(), z.unknown()),
+        simToken: z.string().max(256).optional(),
+        overrideReason: z.string().max(1000).optional(),
+        totpCode: z.string().max(16).optional(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       const result = await deployWorkflow(
         input.definition as unknown as WorkflowDefinition,
         toFoeUser(ctx.user),
+        { simToken: input.simToken ?? null, overrideReason: input.overrideReason ?? null },
       );
       return result;
     }),
@@ -234,7 +253,7 @@ export const orchestrationRouter = router({
           .optional(),
       }),
     )
-    .query(async ({ input }): Promise<SimulationResult> => {
+    .query(async ({ input }): Promise<SimulationResult & { simToken?: string }> => {
       const d = await db();
 
       // Resolve the definition: inline `workflow` wins, else load by `workflowRef`.
@@ -277,13 +296,19 @@ export const orchestrationRouter = router({
           )
         : undefined;
 
-      return simulateWorkflow(def, input.params, {
+      const result = simulateWorkflow(def, input.params, {
         machines: machineRows,
         assumedTelemetry,
         commandDurations: input.commandDurations,
         defaultCommandMs: input.defaultCommandMs,
         gateMs: input.gateMs,
       });
+
+      // doc 40 ENG-F4 — khi sim ĐẠT (feasible), phát hành sim-token (HMAC) buộc vào ĐÚNG định nghĩa
+      // này. Client mang token sang deployWorkflow để qua sim-gate. Sim KHÔNG đạt → không có token
+      // (deploy sẽ bị chặn nếu FOE_SIM_GATE_REQUIRED bật, trừ khi override có lý do).
+      const simToken = result.ok ? issueSimToken(def) : undefined;
+      return { ...result, simToken };
     }),
 
   /** Abort an in-flight run (terminal). */

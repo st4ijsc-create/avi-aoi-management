@@ -1,6 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { useCallback, useMemo } from "react";
 import { useAuth } from "./useAuth";
+// doc 40 Lan-P0/DEV-02 — resolve "permission ma" `machine_monitoring` → `machine_status`
+// ở CÙNG một điểm với server (accessControl) để client ↔ server luôn khớp module.
+import { resolvePermissionModule } from "@shared/permissions";
 
 export type PermissionAction = 'canView' | 'canCreate' | 'canEdit' | 'canDelete' | 'canExport';
 
@@ -49,7 +52,7 @@ export function usePermissions() {
   const hasPermission = useCallback(
     (moduleName: string, action: PermissionAction = 'canView'): boolean => {
       if (isAdmin) return true;
-      const perm = permissionsMap.get(moduleName);
+      const perm = permissionsMap.get(resolvePermissionModule(moduleName));
       if (!perm) return false;
       // Check expiration
       if (perm.expiresAt) {

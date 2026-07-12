@@ -1,5 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer } from "@/components/patterns";
+import { PageHeader, PageContainer, ConfirmDeleteDialog } from "@/components/patterns";
+import { AsyncBoundary } from "@/components/AsyncBoundary";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,9 +31,6 @@ import {
   Settings2,
   Box,
   Layers,
-  Undo2,
-  Redo2,
-  Grid3X3,
   Download,
   Crosshair,
   X,
@@ -90,20 +89,14 @@ export default function Layout() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutType, setNewLayoutType] = useState<"2D" | "3D">("2D");
+  const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   const [highlightedStageId, setHighlightedStageId] = useState<number | null>(null);
-  
-  // Drag & drop state for machines
-  const [isDraggingMachine, setIsDraggingMachine] = useState(false);
-  const [draggedMachineId, setDraggedMachineId] = useState<number | null>(null);
-  const [machinePositions, setMachinePositions] = useState<Record<number, { x: number; y: number }>>({}); 
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  
-  // Undo/Redo state
-  const [positionHistory, setPositionHistory] = useState<Record<number, { x: number; y: number }>[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [snapToGrid, setSnapToGrid] = useState(true);
+
+  // doc 42 #47 — tab "Xem" chỉ hiển thị: vị trí máy đọc từ DB, không kéo-ghi. Sửa vị trí ở tab "Chỉnh sửa".
+  const [machinePositions, setMachinePositions] = useState<Record<number, { x: number; y: number }>>({});
   const GRID_SIZE = 50; // Grid size in pixels
 
   // G2.7 — WIP flow overlay (read-only visualization; stream or poll fallback).
@@ -120,50 +113,13 @@ export default function Layout() {
     return m;
   }, [twinStream.stations]);
   
-  // Save position to history
-  const saveToHistory = (newPositions: Record<number, { x: number; y: number }>) => {
-    const newHistory = positionHistory.slice(0, historyIndex + 1);
-    newHistory.push({ ...newPositions });
-    setPositionHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
-  };
-  
-  // Undo function
-  const handleUndo = () => {
-    if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      setMachinePositions(positionHistory[newIndex]);
-      toast.info(t('layout.undoSuccess'));
-    }
-  };
-  
-  // Redo function
-  const handleRedo = () => {
-    if (historyIndex < positionHistory.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      setMachinePositions(positionHistory[newIndex]);
-      toast.info(t('layout.redoSuccess'));
-    }
-  };
-  
-  // Snap position to grid
-  const snapPosition = (x: number, y: number) => {
-    if (!snapToGrid) return { x, y };
-    return {
-      x: Math.round(x / GRID_SIZE) * GRID_SIZE,
-      y: Math.round(y / GRID_SIZE) * GRID_SIZE,
-    };
-  };
-
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: factories } = trpc.factory.list.useQuery();
-  const { data: layouts, refetch: refetchLayouts } = trpc.layout.listByWorkshop.useQuery(
+  const { data: layouts, refetch: refetchLayouts, isLoading: layoutsLoading } = trpc.layout.listByWorkshop.useQuery(
     { workshopId: parseInt(selectedWorkshop) },
     { enabled: !!selectedWorkshop }
   );
-  const { data: layoutData, refetch: refetchLayout } = trpc.layout.getById.useQuery(
+  const { data: layoutData, refetch: refetchLayout, isLoading: layoutDataLoading } = trpc.layout.getById.useQuery(
     { id: parseInt(selectedLayout) },
     { enabled: !!selectedLayout }
   );
@@ -204,15 +160,28 @@ export default function Layout() {
       setIsCreateLayoutOpen(false);
       setNewLayoutName("");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
-  // Mutation to save machine position in layout
-  const updateLayoutPositionMutation = trpc.layout.updateMachinePosition.useMutation({
+  // doc 42 #17 — đổi tên layout
+  const renameLayoutMutation = trpc.layout.update.useMutation({
     onSuccess: () => {
-      toast.success(t('layout.positionSaved'));
+      toast.success(t('layout.layoutRenamed', 'Đã đổi tên bố trí'));
+      refetchLayouts();
+      refetchLayout();
+      setIsRenameOpen(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
+  });
+
+  // doc 42 #17 — xoá (lưu trữ) layout
+  const deleteLayoutMutation = trpc.layout.delete.useMutation({
+    onSuccess: () => {
+      toast.success(t('layout.layoutDeleted', 'Đã xoá bố trí'));
+      setSelectedLayout("");
+      refetchLayouts();
+    },
+    onError: (err) => toastTrpcError(err),
   });
 
   // Initialize machine positions from layout data (canvas pixel space)
@@ -228,63 +197,6 @@ export default function Layout() {
       setMachinePositions(positions);
     }
   }, [layoutData]);
-
-  // Machine drag handlers
-  const handleMachineDragStart = (e: React.MouseEvent, machineId: number, machineX: number, machineY: number) => {
-    e.stopPropagation();
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setIsDraggingMachine(true);
-    setDraggedMachineId(machineId);
-    // Compute click offset within the machine in canvas coordinate space
-    setDragOffset({
-      x: (e.clientX - rect.left - pan.x) / zoom - machineX,
-      y: (e.clientY - rect.top - pan.y) / zoom - machineY,
-    });
-  };
-
-  const handleMachineDrag = (e: React.MouseEvent) => {
-    if (!isDraggingMachine || draggedMachineId === null || !containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    // Convert mouse screen position to canvas space and subtract the initial click offset
-    const newX = (e.clientX - rect.left - pan.x) / zoom - dragOffset.x;
-    const newY = (e.clientY - rect.top - pan.y) / zoom - dragOffset.y;
-    
-    // Clamp to container bounds (canvas space)
-    const canvasW = rect.width / zoom;
-    const canvasH = rect.height / zoom;
-    const clampedX = Math.max(0, Math.min(canvasW - 150, newX));
-    const clampedY = Math.max(0, Math.min(canvasH - 100, newY));
-    
-    // Apply snap to grid
-    const snappedPos = snapPosition(clampedX, clampedY);
-    
-    setMachinePositions(prev => ({
-      ...prev,
-      [draggedMachineId]: snappedPos
-    }));
-  };
-
-  const handleMachineDragEnd = () => {
-    if (isDraggingMachine && draggedMachineId !== null && containerRef.current) {
-      const pos = machinePositions[draggedMachineId];
-      // Find the position record ID for the dragged machine
-      const machineData = machinesWithStats.find(m => m.id === draggedMachineId);
-      if (pos && machineData?.positionRecordId) {
-        updateLayoutPositionMutation.mutate({
-          id: machineData.positionRecordId,
-          positionX: Math.round(pos.x),
-          positionY: Math.round(pos.y),
-        });
-        
-        // Save to history for undo/redo
-        saveToHistory({ ...machinePositions });
-      }
-    }
-    setIsDraggingMachine(false);
-    setDraggedMachineId(null);
-  };
 
   // Combine machine positions with stats
   const machinesWithStats = useMemo<MachineWithStats[]>(() => {
@@ -352,16 +264,16 @@ export default function Layout() {
     setPan({ x: cw / 2 - centerX * newZoom, y: ch / 2 - centerY * newZoom });
   }, [machinesWithStats, machinePositions]);
 
-  // Handle panning - only pan when NOT dragging a machine
+  // Handle panning (view-only canvas)
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && !isDraggingMachine) {
+    if (e.button === 0) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && !isDraggingMachine) {
+    if (isPanning) {
       setPan({
         x: e.clientX - startPan.x,
         y: e.clientY - startPan.y,
@@ -550,6 +462,40 @@ export default function Layout() {
                 </Select>
               )}
 
+              {/* doc 42 #17 — đổi tên / xoá bố trí */}
+              {selectedLayout && (
+                <>
+                  <PermissionGate module="settings_factory" action="canEdit">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title={t('layout.renameLayout', 'Đổi tên bố trí')}
+                      onClick={() => {
+                        const cur = layouts?.find((l) => String(l.id) === selectedLayout);
+                        setRenameName(cur?.name || layoutData?.layout?.name || "");
+                        setIsRenameOpen(true);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </PermissionGate>
+                  <PermissionGate module="settings_factory" action="canDelete">
+                    <ConfirmDeleteDialog
+                      trigger={
+                        <Button variant="outline" size="icon" className="text-destructive hover:text-destructive" title={t('layout.deleteLayout', 'Xoá bố trí')}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
+                      itemLabel={`${t('layout.workshopLayout')} "${layouts?.find((l) => String(l.id) === selectedLayout)?.name || layoutData?.layout?.name || ''}"`}
+                      isSoftDelete
+                      onConfirm={async () => {
+                        await deleteLayoutMutation.mutateAsync({ id: parseInt(selectedLayout) });
+                      }}
+                    />
+                  </PermissionGate>
+                </>
+              )}
+
               {selectedWorkshop && (
                 <PermissionGate module="settings_factory" action="canCreate">
                 <Dialog open={isCreateLayoutOpen} onOpenChange={setIsCreateLayoutOpen}>
@@ -604,8 +550,47 @@ export default function Layout() {
           }
         />
 
-        {/* Main Content with Tabs */}
-        {selectedLayout ? (
+        {/* doc 42 #17 — Dialog đổi tên bố trí */}
+        <Dialog open={isRenameOpen} onOpenChange={setIsRenameOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('layout.renameLayout', 'Đổi tên bố trí')}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>{t('layout.layoutName')}</Label>
+              <Input
+                value={renameName}
+                onChange={(e) => setRenameName(e.target.value)}
+                placeholder={t('layout.layoutNamePlaceholder')}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsRenameOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!selectedLayout || !renameName.trim()) {
+                    toast.error(t('layout.pleaseEnterLayoutName'));
+                    return;
+                  }
+                  renameLayoutMutation.mutate({ id: parseInt(selectedLayout), name: renameName.trim() });
+                }}
+                disabled={renameLayoutMutation.isPending}
+              >
+                {t('common.save', 'Lưu')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Main Content — loading skeleton first so the canvas never shows a
+            misleading "no layout" while layouts/positions are still fetching. */}
+        {(selectedWorkshop && layoutsLoading) || (selectedLayout && layoutDataLoading) ? (
+          <AsyncBoundary isLoading isError={false} preset="cards" className="mt-4">
+            <div />
+          </AsyncBoundary>
+        ) : selectedLayout ? (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="view" className="flex items-center gap-2">
@@ -653,38 +638,6 @@ export default function Layout() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      {/* Undo/Redo buttons */}
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={handleUndo}
-                        disabled={historyIndex <= 0}
-                        title={t('layout.undoTooltip')}
-                      >
-                        <Undo2 className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={handleRedo}
-                        disabled={historyIndex >= positionHistory.length - 1}
-                        title={t('layout.redoTooltip')}
-                      >
-                        <Redo2 className="h-4 w-4" />
-                      </Button>
-                      
-                      <div className="w-px h-6 bg-border mx-1" />
-                      
-                      {/* Snap to grid toggle */}
-                      <Button
-                        variant={snapToGrid ? "default" : "outline"}
-                        size="icon"
-                        onClick={() => setSnapToGrid(!snapToGrid)}
-                        title={snapToGrid ? t('layout.disableGrid') : t('layout.enableGrid')}
-                      >
-                        <Grid3X3 className="h-4 w-4" />
-                      </Button>
-
                       {/* G2.7 — WIP flow overlay toggle (read-only) */}
                       <Button
                         variant={showWipFlow ? "default" : "outline"}
@@ -737,34 +690,22 @@ export default function Layout() {
                   </div>
                 </CardHeader>
                 <CardContent className={isFullscreen ? "p-0" : ""}>
-                  <div 
+                  <div
                     ref={containerRef}
-                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden ${isDraggingMachine ? 'cursor-grabbing' : isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
+                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden ${isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
                     onMouseDown={handleMouseDown}
-                    onMouseMove={(e) => {
-                      handleMouseMove(e);
-                      handleMachineDrag(e);
-                    }}
-                    onMouseUp={() => {
-                      handleMouseUp();
-                      handleMachineDragEnd();
-                    }}
-                    onMouseLeave={() => {
-                      handleMouseUp();
-                      handleMachineDragEnd();
-                    }}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
                     onWheel={handleWheel}
                   >
                     {/* Grid background */}
-                    <div 
+                    <div
                       className="absolute inset-0 transition-opacity duration-200"
                       style={{
-                        backgroundImage: snapToGrid ? `
-                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.5) 1px, transparent 1px),
-                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.5) 1px, transparent 1px)
-                        ` : `
-                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.2) 1px, transparent 1px),
-                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.2) 1px, transparent 1px)
+                        backgroundImage: `
+                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.3) 1px, transparent 1px),
+                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.3) 1px, transparent 1px)
                         `,
                         backgroundSize: `${GRID_SIZE * zoom}px ${GRID_SIZE * zoom}px`,
                         transform: `translate(${pan.x}px, ${pan.y}px)`,
@@ -787,21 +728,18 @@ export default function Layout() {
                           const customPos = machinePositions[machine.id];
                           const posX = customPos ? customPos.x : machine.positionX;
                           const posY = customPos ? customPos.y : machine.positionY;
-                          const isDragged = draggedMachineId === machine.id;
-                          
+
                           const isStageHighlighted = highlightedStageId != null && machine.stageId === highlightedStageId;
-                          
+
                           return (
                             <div
                               key={machine.id}
-                              className={`absolute rounded-lg border-2 shadow-lg bg-card/80 backdrop-blur cursor-move select-none ${
-                                isDragged 
-                                  ? 'border-primary shadow-primary/30 scale-105 z-50' 
-                                  : selectedMachineId === machine.id
-                                    ? 'border-primary/80 shadow-primary/20 ring-2 ring-primary/30 z-40'
-                                    : isStageHighlighted
-                                      ? 'border-amber-400 shadow-amber-400/30 ring-2 ring-amber-400/40 z-30'
-                                      : 'border-border/50 hover:scale-105 hover:border-primary/50'
+                              className={`absolute rounded-lg border-2 shadow-lg bg-card/80 backdrop-blur cursor-pointer select-none ${
+                                selectedMachineId === machine.id
+                                  ? 'border-primary/80 shadow-primary/20 ring-2 ring-primary/30 z-40'
+                                  : isStageHighlighted
+                                    ? 'border-amber-400 shadow-amber-400/30 ring-2 ring-amber-400/40 z-30'
+                                    : 'border-border/50 hover:scale-105 hover:border-primary/50'
                               } transition-all duration-100`}
                               style={{
                                 left: posX,
@@ -809,14 +747,11 @@ export default function Layout() {
                                 width: machine.width,
                                 height: machine.height,
                               }}
-                              onMouseDown={(e) => handleMachineDragStart(e, machine.id, posX, posY)}
                               onClick={(e) => {
-                                if (!isDraggingMachine) {
-                                  e.stopPropagation();
-                                  setSelectedMachineId(prev => prev === machine.id ? null : machine.id);
-                                  if (machine.stageId) {
-                                    setHighlightedStageId(prev => prev === machine.stageId ? null : machine.stageId!);
-                                  }
+                                e.stopPropagation();
+                                setSelectedMachineId(prev => prev === machine.id ? null : machine.id);
+                                if (machine.stageId) {
+                                  setHighlightedStageId(prev => prev === machine.stageId ? null : machine.stageId!);
                                 }
                               }}
                             >

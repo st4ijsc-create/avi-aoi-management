@@ -193,7 +193,7 @@ export function MachineHealthMonitoringContent() {
 
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
-  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  const { data: allOEE, refetch: refetchOEE, isLoading: oeeLoading } = trpc.mqttClient.getAllOEE.useQuery();
   // REAL per-machine health scores (same source the Details tab reads). Used to
   // drive the fleet overview so it agrees with the detail view. Machines without
   // a calculated score come back as null → rendered as an honest "—".
@@ -347,7 +347,7 @@ export function MachineHealthMonitoringContent() {
         {/* Header */}
         <PageHeader
           icon={<Heart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
-          title="Machine Health Monitoring"
+          title={t('machines.healthMonitoringTitle', 'Machine Health Monitoring')}
           description={t('machines.trackHealthAndMaintenance')}
           actions={
             <>
@@ -412,6 +412,23 @@ export function MachineHealthMonitoringContent() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4">
+            {/* DEV-11 — nhánh isLoading TRƯỚC empty-state: đang tải thì hiện skeleton
+                thay vì bảng/thẻ rỗng (nhìn như nhà máy không có máy). */}
+            {oeeLoading ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {[...Array(4)].map((_, i) => (
+                    <Card key={i} className="animate-pulse">
+                      <CardContent className="pt-6"><div className="h-14 bg-muted rounded" /></CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <Card className="animate-pulse">
+                  <CardContent className="pt-6"><div className="h-72 bg-muted rounded" /></CardContent>
+                </Card>
+              </div>
+            ) : (
+            <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <MetricCard
@@ -528,6 +545,8 @@ export function MachineHealthMonitoringContent() {
                 </Table>
               </CardContent>
             </Card>
+            </>
+            )}
           </TabsContent>
 
           {/* Details Tab */}

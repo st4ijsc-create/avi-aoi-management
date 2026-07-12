@@ -1,17 +1,18 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer } from "@/components/patterns";
+import { PageHeader, PageContainer, StatusBadge, EmptyState } from "@/components/patterns";
+import { DataTable } from "@/components/DataTable";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
 import { machineTypeLabel } from "@/lib/machineTypeLabel";
 
@@ -40,9 +41,7 @@ import {
   FolderTree,
   Package,
   Workflow,
-  Wrench,
-  Search,
-  Filter
+  Wrench
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -68,7 +67,7 @@ type Factory = { id: number; code: string; name: string; address?: string | null
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
 type Line = { id: number; workshopId: number; code: string; name: string; description?: string | null };
 type Station = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null };
-type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string | null; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null; [key: string]: any };
+type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey?: string | null; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null; [key: string]: any };
 type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
 type LineStage = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null; stationId?: number | null };
 
@@ -120,15 +119,10 @@ export default function DataSettings() {
     setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
   };
 
-  // Search & Filter states
-  const [factorySearch, setFactorySearch] = useState("");
-  const [workshopSearch, setWorkshopSearch] = useState("");
+  // Bộ lọc dropdown (tìm-kiếm-văn-bản đã chuyển sang thanh search của DataTable).
   const [workshopFilterFactory, setWorkshopFilterFactory] = useState("all");
-  const [lineSearch, setLineSearch] = useState("");
   const [lineFilterWorkshop, setLineFilterWorkshop] = useState("all");
-  const [stationSearch, setStationSearch] = useState("");
   const [stationFilterLine, setStationFilterLine] = useState("all");
-  const [machineSearch, setMachineSearch] = useState("");
   const [machineFilterStation, setMachineFilterStation] = useState("all");
   const [machineFilterType, setMachineFilterType] = useState("all");
 
@@ -237,12 +231,14 @@ export default function DataSettings() {
 
   // Queries
   const { data: factories, refetch: refetchFactories, error: factoriesError, isLoading: factoriesLoading } = trpc.factory.list.useQuery();
-  const { data: workshops, refetch: refetchWorkshops, error: workshopsError } = trpc.workshop.list.useQuery();
-  const { data: lines, refetch: refetchLines, error: linesError } = trpc.line.list.useQuery();
-  const { data: stations, refetch: refetchStations } = trpc.station.list.useQuery();
-  const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
-  const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
-  const { data: stages, refetch: refetchStages } = trpc.lineStage.list.useQuery();
+  const { data: workshops, refetch: refetchWorkshops, error: workshopsError, isLoading: workshopsLoading } = trpc.workshop.list.useQuery();
+  const { data: lines, refetch: refetchLines, error: linesError, isLoading: linesLoading } = trpc.line.list.useQuery();
+  const { data: stations, refetch: refetchStations, isLoading: stationsLoading } = trpc.station.list.useQuery();
+  const { data: machines, refetch: refetchMachines, isLoading: machinesLoading } = trpc.machine.list.useQuery();
+  // machine.list không còn trả apiKey (doc 42 theme 10) — lấy key theo-máy khi cần.
+  const trpcUtils = trpc.useUtils();
+  const { data: shifts, refetch: refetchShifts, isLoading: shiftsLoading } = trpc.shiftConfig.list.useQuery();
+  const { data: stages, refetch: refetchStages, isLoading: stagesLoading } = trpc.lineStage.list.useQuery();
 
   // Cascade info queries (enabled when delete dialog is open)
   const { data: factoryCascadeInfo, isLoading: factoryCascadeLoading } = trpc.factory.cascadeInfo.useQuery(
@@ -261,6 +257,11 @@ export default function DataSettings() {
     { id: stationToDelete?.id ?? 0 },
     { enabled: !!stationToDelete }
   );
+  // apiKey cho dialog sửa máy — fetch theo-máy (list đã bỏ apiKey khỏi payload)
+  const { data: editingMachineDetail } = trpc.machine.getById.useQuery(
+    { id: editingMachine?.id ?? 0 },
+    { enabled: !!editingMachine }
+  );
 
   // Deleted items queries (admin only, enabled when toggle is on)
   const { data: deletedFactories, refetch: refetchDeletedFactories } = trpc.factory.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
@@ -269,60 +270,36 @@ export default function DataSettings() {
   const { data: deletedStations, refetch: refetchDeletedStations } = trpc.station.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
   const { data: deletedMachines, refetch: refetchDeletedMachines } = trpc.machine.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
 
-  // Filtered data
-  const filteredFactories = useMemo(() => {
-    if (!factories) return [];
-    const q = factorySearch.toLowerCase().trim();
-    return factories.filter((f: Factory) => {
-      if (q && !f.name.toLowerCase().includes(q) && !f.code.toLowerCase().includes(q) && !(f.address || "").toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [factories, factorySearch]);
+  // Dữ liệu đã lọc theo bộ lọc dropdown (tìm-kiếm-văn-bản do DataTable đảm nhận).
+  const filteredFactories = useMemo(() => (factories ?? []) as Factory[], [factories]);
 
   const filteredWorkshops = useMemo(() => {
     if (!workshops) return [];
-    const q = workshopSearch.toLowerCase().trim();
-    return workshops.filter((w: any) => {
-      if (workshopFilterFactory !== "all" && String(w.factoryId) !== workshopFilterFactory) return false;
-      if (q && !w.name.toLowerCase().includes(q) && !w.code.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [workshops, workshopSearch, workshopFilterFactory]);
+    return workshops.filter((w: any) => workshopFilterFactory === "all" || String(w.factoryId) === workshopFilterFactory);
+  }, [workshops, workshopFilterFactory]);
 
   const filteredLines = useMemo(() => {
     if (!lines) return [];
-    const q = lineSearch.toLowerCase().trim();
-    return lines.filter((l: any) => {
-      if (lineFilterWorkshop !== "all" && String(l.workshopId) !== lineFilterWorkshop) return false;
-      if (q && !l.name.toLowerCase().includes(q) && !l.code.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [lines, lineSearch, lineFilterWorkshop]);
+    return lines.filter((l: any) => lineFilterWorkshop === "all" || String(l.workshopId) === lineFilterWorkshop);
+  }, [lines, lineFilterWorkshop]);
 
   const filteredStations = useMemo(() => {
     if (!stations) return [];
-    const q = stationSearch.toLowerCase().trim();
-    return stations.filter((s: any) => {
-      if (stationFilterLine !== "all" && String(s.lineId) !== stationFilterLine) return false;
-      if (q && !s.name.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [stations, stationSearch, stationFilterLine]);
+    return stations.filter((s: any) => stationFilterLine === "all" || String(s.lineId) === stationFilterLine);
+  }, [stations, stationFilterLine]);
 
   const filteredMachines = useMemo(() => {
     if (!machines) return [];
-    const q = machineSearch.toLowerCase().trim();
     return machines.filter((m: any) => {
       if (machineFilterStation !== "all" && String(m.stationId) !== machineFilterStation) return false;
-      if (machineFilterType !== "all" && m.type !== machineFilterType) return false;
-      if (q && !m.name.toLowerCase().includes(q) && !m.code.toLowerCase().includes(q) && !(m.type || "").toLowerCase().includes(q)) return false;
+      if (machineFilterType !== "all" && m.machineType !== machineFilterType) return false;
       return true;
     });
-  }, [machines, machineSearch, machineFilterStation, machineFilterType]);
+  }, [machines, machineFilterStation, machineFilterType]);
 
   const machineTypes = useMemo(() => {
     if (!machines) return [];
-    const types = new Set(machines.map((m: any) => m.type).filter(Boolean));
+    const types = new Set(machines.map((m: any) => m.machineType).filter(Boolean));
     return Array.from(types) as string[];
   }, [machines]);
 
@@ -334,7 +311,7 @@ export default function DataSettings() {
       setFactoryForm({ code: "", name: "", description: "", address: "" });
       refetchFactories();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const createWorkshopMutation = trpc.workshop.create.useMutation({
@@ -344,7 +321,7 @@ export default function DataSettings() {
       setWorkshopForm({ factoryId: "", code: "", name: "", description: "" });
       refetchWorkshops();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const createLineMutation = trpc.line.create.useMutation({
@@ -354,7 +331,7 @@ export default function DataSettings() {
       setLineForm({ factoryId: "", workshopId: "", code: "", name: "", description: "" });
       refetchLines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const createStationMutation = trpc.station.create.useMutation({
@@ -364,7 +341,7 @@ export default function DataSettings() {
       setStationForm({ factoryId: "", workshopId: "", lineId: "", code: "", name: "", description: "", orderIndex: "0" });
       refetchStations();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const createMachineMutation = trpc.machine.create.useMutation({
@@ -374,7 +351,7 @@ export default function DataSettings() {
       setMachineForm({ factoryId: "", workshopId: "", lineId: "", stationId: "", code: "", name: "", machineType: "AVI", model: "", manufacturer: "", description: "" });
       refetchMachines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const createShiftMutation = trpc.shiftConfig.create.useMutation({
@@ -384,7 +361,7 @@ export default function DataSettings() {
       setShiftForm({ factoryId: "", name: "", code: "", startHour: "6", startMinute: "0", endHour: "14", endMinute: "0", orderIndex: "0" });
       refetchShifts();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Import/Export Mutations
@@ -407,7 +384,7 @@ export default function DataSettings() {
       setEditingFactory(null);
       refetchFactories();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateWorkshopMutation = trpc.workshop.update.useMutation({
@@ -417,7 +394,7 @@ export default function DataSettings() {
       setEditingWorkshop(null);
       refetchWorkshops();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateLineMutation = trpc.line.update.useMutation({
@@ -427,7 +404,7 @@ export default function DataSettings() {
       setEditingLine(null);
       refetchLines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateStationMutation = trpc.station.update.useMutation({
@@ -437,7 +414,7 @@ export default function DataSettings() {
       setEditingStation(null);
       refetchStations();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateMachineMutation = trpc.machine.update.useMutation({
@@ -447,7 +424,7 @@ export default function DataSettings() {
       setEditingMachine(null);
       refetchMachines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const uploadImageMutation = trpc.machine.uploadImage.useMutation({
@@ -466,7 +443,7 @@ export default function DataSettings() {
       refetchMachines();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       setUploadingImage(null);
     },
   });
@@ -514,23 +491,23 @@ export default function DataSettings() {
       setEditingShift(null);
       refetchShifts();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Seed Data Mutations
   const seedDataMutation = trpc.seedData.seed.useMutation({
     onSuccess: () => toast.success('Đã tạo dữ liệu cơ sở mẫu thành công!'),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
     onSuccess: () => toast.success('Đã tạo 100 bản ghi kiểm tra mẫu thành công!'),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const seedWorkstationAnalyticsMutation = trpc.seedData.seedWorkstationAnalytics.useMutation({
     onSuccess: () => toast.success('Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!'),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Delete Mutations
@@ -541,7 +518,7 @@ export default function DataSettings() {
       refetchFactories();
       if (showDeleted) refetchDeletedFactories();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteWorkshopMutation = trpc.workshop.delete.useMutation({
@@ -551,7 +528,7 @@ export default function DataSettings() {
       refetchWorkshops();
       if (showDeleted) refetchDeletedWorkshops();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteLineMutation = trpc.line.delete.useMutation({
@@ -561,7 +538,7 @@ export default function DataSettings() {
       refetchLines();
       if (showDeleted) refetchDeletedLines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteStationMutation = trpc.station.delete.useMutation({
@@ -571,7 +548,7 @@ export default function DataSettings() {
       refetchStations();
       if (showDeleted) refetchDeletedStations();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteMachineMutation = trpc.machine.delete.useMutation({
@@ -580,7 +557,7 @@ export default function DataSettings() {
       refetchMachines();
       if (showDeleted) refetchDeletedMachines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteShiftMutation = trpc.shiftConfig.delete.useMutation({
@@ -588,7 +565,7 @@ export default function DataSettings() {
       toast.success(t("settings.deleteShiftSuccess"));
       refetchShifts();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Restore mutations
@@ -598,7 +575,7 @@ export default function DataSettings() {
       refetchFactories();
       refetchDeletedFactories();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const restoreWorkshopMutation = trpc.workshop.restore.useMutation({
@@ -607,7 +584,7 @@ export default function DataSettings() {
       refetchWorkshops();
       refetchDeletedWorkshops();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const restoreLineMutation = trpc.line.restore.useMutation({
@@ -616,7 +593,7 @@ export default function DataSettings() {
       refetchLines();
       refetchDeletedLines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const restoreStationMutation = trpc.station.restore.useMutation({
@@ -625,7 +602,7 @@ export default function DataSettings() {
       refetchStations();
       refetchDeletedStations();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const restoreMachineMutation = trpc.machine.restore.useMutation({
@@ -634,7 +611,7 @@ export default function DataSettings() {
       refetchMachines();
       refetchDeletedMachines();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Stage mutations
@@ -645,7 +622,7 @@ export default function DataSettings() {
       setStageDialogOpen(false);
       setStageForm({ lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: "" });
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateStageMutation = trpc.lineStage.update.useMutation({
@@ -655,7 +632,7 @@ export default function DataSettings() {
       setEditStageDialogOpen(false);
       setEditingStage(null);
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteStageMutation = trpc.lineStage.delete.useMutation({
@@ -663,7 +640,7 @@ export default function DataSettings() {
       toast.success(t("settings.deleteStageSuccess"));
       refetchStages();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const reorderStageMutation = trpc.lineStage.reorder.useMutation({
@@ -671,7 +648,7 @@ export default function DataSettings() {
       toast.success(t("settings.reorderSuccess"));
       refetchStages();
     },
-    onError: (error: { message: string }) => toast.error(error.message),
+    onError: (error: { message: string }) => toastTrpcError(error),
   });
 
   const copyToClipboard = (text: string) => {
@@ -717,6 +694,58 @@ export default function DataSettings() {
     setEditMachineDialogOpen(true);
   };
 
+  // Thanh điều hướng 12 tab nội trang (khôi phục sau doc 36 ẩn menu dọc + doc 39 gỡ sidebar).
+  // Nhãn/icon lấy đúng từ legacy menu bên dưới để không lệch ngữ nghĩa.
+  const tabGroups = [
+    {
+      id: "infrastructure",
+      label: t("settings.cat.infrastructure"),
+      icon: <Factory className="h-3.5 w-3.5 text-blue-500" />,
+      items: [
+        { value: "factories", label: t("settings.sidebar.factory"), icon: <Building2 className="h-3.5 w-3.5" /> },
+        { value: "workshops", label: t("settings.sidebar.workshop"), icon: <Warehouse className="h-3.5 w-3.5" /> },
+        { value: "lines", label: t("settings.sidebar.line"), icon: <GitBranch className="h-3.5 w-3.5" /> },
+        { value: "stations", label: t("settings.sidebar.inspectionStation"), icon: <Cpu className="h-3.5 w-3.5" /> },
+        { value: "machines", label: t("settings.sidebar.inspectionMachine"), icon: <Cpu className="h-3.5 w-3.5" /> },
+      ],
+    },
+    {
+      id: "production",
+      label: t("settings.cat.production"),
+      icon: <Cog className="h-3.5 w-3.5 text-green-500" />,
+      items: [
+        { value: "shifts", label: t("settings.sidebar.shift"), icon: <Clock className="h-3.5 w-3.5" /> },
+        { value: "stages", label: t("settings.sidebar.stage"), icon: <GitBranch className="h-3.5 w-3.5" /> },
+      ],
+    },
+    {
+      id: "products",
+      label: t("settings.cat.products"),
+      icon: <Award className="h-3.5 w-3.5 text-orange-500" />,
+      items: [
+        { value: "product-categories", label: t("settings.sidebar.productCategory"), icon: <FolderTree className="h-3.5 w-3.5" /> },
+        { value: "product-machine-mapping", label: t("settings.sidebar.productMapping"), icon: <Cpu className="h-3.5 w-3.5" /> },
+      ],
+    },
+    {
+      id: "process",
+      label: t("dataSettings.cat.process"),
+      icon: <Workflow className="h-3.5 w-3.5 text-purple-500" />,
+      items: [
+        { value: "process-management", label: t("dataSettings.sidebar.processManagement"), icon: <Workflow className="h-3.5 w-3.5" /> },
+        { value: "workstation-mgmt", label: t("dataSettings.sidebar.workstationManagement"), icon: <Wrench className="h-3.5 w-3.5" /> },
+      ],
+    },
+    {
+      id: "tools",
+      label: "Công cụ",
+      icon: <Database className="h-3.5 w-3.5 text-green-500" />,
+      items: [
+        { value: "seed-data", label: "Tạo dữ liệu mẫu", icon: <Plus className="h-3.5 w-3.5" /> },
+      ],
+    },
+  ];
+
   if (!isAdmin) {
     return (
       <DashboardLayout title={t("dataSettings.title")} navItems={navItems} currentPath="/datasettings">
@@ -740,6 +769,36 @@ export default function DataSettings() {
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
+          {/* Thanh điều hướng 12 tab nội trang — khôi phục điều hướng bị mất sau doc 36/39 */}
+          <div className="mb-6 space-y-2 border-b border-border/60 pb-4">
+            {tabGroups.map((group) => (
+              <div key={group.id} className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {group.icon}
+                  {group.label}
+                </span>
+                {group.items.map((item) => {
+                  const isActive = activeTab === item.value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => handleTabChange(item.value)}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        isActive
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
             <div className="hidden" data-legacy-hub-menu="true">
@@ -952,7 +1011,7 @@ export default function DataSettings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{t("settings.factoryList")}</CardTitle>
-                    <CardDescription>{t("settings.factoryCount", { count: filteredFactories.length })} {factorySearch && `(${t("common.filtered")})`}</CardDescription>
+                    <CardDescription>{t("settings.factoryCount", { count: filteredFactories.length })}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
@@ -1026,51 +1085,41 @@ export default function DataSettings() {
                     </Label>
                   </div>
                 )}
-                <div className="mb-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder={t("dataSettings.searchFactoryPlaceholder")}
-                      value={factorySearch}
-                      onChange={(e) => setFactorySearch(e.target.value)}
-                      className="pl-9"
+                <DataTable<Factory>
+                  data={filteredFactories}
+                  getRowId={(f) => f.id}
+                  loading={factoriesLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchFactoryPlaceholder")}
+                  emptyState={(factories?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Building2}
+                      title={t("settings.noFactory")}
+                      description={t("dataSettings.emptyFactoryDesc", "Chưa có nhà máy nào. Tạo nhà máy đầu tiên để bắt đầu.")}
+                      actionLabel={t("settings.addFactory")}
+                      onAction={() => setFactoryDialogOpen(true)}
                     />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {filteredFactories.map((factory) => (
-                    <div key={factory.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <Building2 className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">{factory.name}</p>
-                          <p className="text-sm text-muted-foreground">{factory.code} {factory.address && `• ${factory.address}`}</p>
-                        </div>
+                  ) : undefined}
+                  columns={[
+                    { id: "name", header: t("settings.factoryName"), cell: (f) => <span className="font-medium text-foreground">{f.name}</span>, sortValue: (f) => f.name, filterValue: (f) => f.name },
+                    { id: "code", header: t("settings.factoryCode"), width: "160px", cell: (f) => <span className="font-mono text-sm text-muted-foreground">{f.code}</span>, sortValue: (f) => f.code, filterValue: (f) => f.code },
+                    { id: "address", header: t("settings.address"), cell: (f) => <span className="text-sm text-muted-foreground">{f.address || t("common.na")}</span>, filterValue: (f) => f.address || "" },
+                    { id: "actions", header: "", align: "right", width: "96px", cell: (f) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditFactory(f)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setFactoryToDelete(f)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditFactory(factory)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setFactoryToDelete(factory)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                    ) },
+                  ]}
+                />
+                {/* Deleted factories (admin) */}
+                {showDeleted && isAdmin && deletedFactories && deletedFactories.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    <div className="border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
                     </div>
-                  ))}
-                  {/* Deleted factories (admin) */}
-                  {showDeleted && isAdmin && deletedFactories && deletedFactories.length > 0 && (
-                    <>
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                      </div>
-                      {deletedFactories.map((factory: Factory) => (
+                    {deletedFactories.map((factory: Factory) => (
                         <div key={factory.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
@@ -1094,12 +1143,8 @@ export default function DataSettings() {
                           </Button>
                         </div>
                       ))}
-                    </>
-                  )}
-                  {filteredFactories.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8">{factorySearch ? t("common.noResults") : t("settings.noFactory")}</p>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1111,7 +1156,7 @@ export default function DataSettings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{t("settings.workshopList")}</CardTitle>
-                    <CardDescription>{t("settings.workshopCount", { count: filteredWorkshops.length })} {(workshopSearch || workshopFilterFactory !== "all") && `(${t("common.filtered")})`}</CardDescription>
+                    <CardDescription>{t("settings.workshopCount", { count: filteredWorkshops.length })} {workshopFilterFactory !== "all" && `(${t("common.filtered")})`}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
@@ -1179,65 +1224,54 @@ export default function DataSettings() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder={t("dataSettings.searchWorkshopPlaceholder")}
-                      value={workshopSearch}
-                      onChange={(e) => setWorkshopSearch(e.target.value)}
-                      className="pl-9"
+                <DataTable<Workshop>
+                  data={filteredWorkshops}
+                  getRowId={(w) => w.id}
+                  loading={workshopsLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchWorkshopPlaceholder")}
+                  toolbar={
+                    <Select value={workshopFilterFactory} onValueChange={setWorkshopFilterFactory}>
+                      <SelectTrigger className="w-52 h-9">
+                        <SelectValue placeholder={t("dataSettings.filterByFactory")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("common.all")} {t("dashboard.factory").toLowerCase()}</SelectItem>
+                        {factories?.map((f) => (
+                          <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  }
+                  emptyState={(workshops?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Warehouse}
+                      title={t("settings.noWorkshop")}
+                      description={t("dataSettings.emptyWorkshopDesc", "Chưa có phân xưởng nào. Thêm phân xưởng để tổ chức nhà máy.")}
+                      actionLabel={t("settings.addWorkshop")}
+                      onAction={() => setWorkshopDialogOpen(true)}
                     />
-                  </div>
-                  <Select value={workshopFilterFactory} onValueChange={setWorkshopFilterFactory}>
-                    <SelectTrigger className="w-50">
-                      <SelectValue placeholder={t("dataSettings.filterByFactory")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common.all")} {t("dashboard.factory").toLowerCase()}</SelectItem>
-                      {factories?.map((f) => (
-                        <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  {filteredWorkshops.map((workshop) => {
-                    const factory = factories?.find(f => f.id === workshop.factoryId);
-                    return (
-                      <div key={workshop.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <Warehouse className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">{workshop.name}</p>
-                            <p className="text-sm text-muted-foreground">{workshop.code} • {factory?.name || t("common.na")}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(workshop)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setWorkshopToDelete(workshop)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                  ) : undefined}
+                  columns={[
+                    { id: "name", header: t("settings.workshopName"), cell: (w) => <span className="font-medium text-foreground">{w.name}</span>, sortValue: (w) => w.name, filterValue: (w) => w.name },
+                    { id: "code", header: t("settings.workshopCode"), width: "160px", cell: (w) => <span className="font-mono text-sm text-muted-foreground">{w.code}</span>, sortValue: (w) => w.code, filterValue: (w) => w.code },
+                    { id: "factory", header: t("dashboard.factory"), cell: (w) => <span className="text-sm text-muted-foreground">{factories?.find(f => f.id === w.factoryId)?.name || t("common.na")}</span>, sortValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "", filterValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "" },
+                    { id: "actions", header: "", align: "right", width: "96px", cell: (w) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(w)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setWorkshopToDelete(w)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                    );
-                  })}
-                  {/* Deleted workshops (admin) */}
-                  {showDeleted && isAdmin && deletedWorkshops && deletedWorkshops.length > 0 && (
-                    <>
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                      </div>
-                      {deletedWorkshops.map((workshop: Workshop) => (
+                    ) },
+                  ]}
+                />
+                {/* Deleted workshops (admin) */}
+                {showDeleted && isAdmin && deletedWorkshops && deletedWorkshops.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    <div className="border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                    </div>
+                    {deletedWorkshops.map((workshop: Workshop) => (
                         <div key={workshop.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
@@ -1261,12 +1295,8 @@ export default function DataSettings() {
                           </Button>
                         </div>
                       ))}
-                    </>
-                  )}
-                  {filteredWorkshops.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8">{(workshopSearch || workshopFilterFactory !== "all") ? t("common.noResults") : t("settings.noWorkshop")}</p>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1278,7 +1308,7 @@ export default function DataSettings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{t("settings.lineList")}</CardTitle>
-                    <CardDescription>{t("settings.lineCount", { count: filteredLines.length })} {(lineSearch || lineFilterWorkshop !== "all") && `(${t("common.filtered")})`}</CardDescription>
+                    <CardDescription>{t("settings.lineCount", { count: filteredLines.length })} {lineFilterWorkshop !== "all" && `(${t("common.filtered")})`}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
@@ -1357,65 +1387,54 @@ export default function DataSettings() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder={t("dataSettings.searchLinePlaceholder")}
-                      value={lineSearch}
-                      onChange={(e) => setLineSearch(e.target.value)}
-                      className="pl-9"
+                <DataTable<Line>
+                  data={filteredLines}
+                  getRowId={(l) => l.id}
+                  loading={linesLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchLinePlaceholder")}
+                  toolbar={
+                    <Select value={lineFilterWorkshop} onValueChange={setLineFilterWorkshop}>
+                      <SelectTrigger className="w-52 h-9">
+                        <SelectValue placeholder={t("dataSettings.filterByWorkshop")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("common.all")} {t("dashboard.workshop").toLowerCase()}</SelectItem>
+                        {workshops?.map((w) => (
+                          <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  }
+                  emptyState={(lines?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={GitBranch}
+                      title={t("settings.noLine")}
+                      description={t("dataSettings.emptyLineDesc", "Chưa có dây chuyền nào. Thêm dây chuyền vào phân xưởng.")}
+                      actionLabel={t("settings.addLine")}
+                      onAction={() => setLineDialogOpen(true)}
                     />
-                  </div>
-                  <Select value={lineFilterWorkshop} onValueChange={setLineFilterWorkshop}>
-                    <SelectTrigger className="w-50">
-                      <SelectValue placeholder={t("dataSettings.filterByWorkshop")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common.all")} {t("dashboard.workshop").toLowerCase()}</SelectItem>
-                      {workshops?.map((w) => (
-                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  {filteredLines.map((line) => {
-                    const workshop = workshops?.find(w => w.id === line.workshopId);
-                    return (
-                      <div key={line.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <GitBranch className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">{line.name}</p>
-                            <p className="text-sm text-muted-foreground">{line.code} • {workshop?.name || t("common.na")}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditLine(line)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setLineToDelete(line)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                  ) : undefined}
+                  columns={[
+                    { id: "name", header: t("settings.lineName"), cell: (l) => <span className="font-medium text-foreground">{l.name}</span>, sortValue: (l) => l.name, filterValue: (l) => l.name },
+                    { id: "code", header: t("settings.lineCode"), width: "160px", cell: (l) => <span className="font-mono text-sm text-muted-foreground">{l.code}</span>, sortValue: (l) => l.code, filterValue: (l) => l.code },
+                    { id: "workshop", header: t("dashboard.workshop"), cell: (l) => <span className="text-sm text-muted-foreground">{workshops?.find(w => w.id === l.workshopId)?.name || t("common.na")}</span>, sortValue: (l) => workshops?.find(w => w.id === l.workshopId)?.name || "", filterValue: (l) => workshops?.find(w => w.id === l.workshopId)?.name || "" },
+                    { id: "actions", header: "", align: "right", width: "96px", cell: (l) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditLine(l)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setLineToDelete(l)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                    );
-                  })}
-                  {/* Deleted lines (admin) */}
-                  {showDeleted && isAdmin && deletedLines && deletedLines.length > 0 && (
-                    <>
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                      </div>
-                      {deletedLines.map((line: any) => (
+                    ) },
+                  ]}
+                />
+                {/* Deleted lines (admin) */}
+                {showDeleted && isAdmin && deletedLines && deletedLines.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    <div className="border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                    </div>
+                    {deletedLines.map((line: any) => (
                         <div key={line.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
@@ -1439,12 +1458,8 @@ export default function DataSettings() {
                           </Button>
                         </div>
                       ))}
-                    </>
-                  )}
-                  {filteredLines.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8">{(lineSearch || lineFilterWorkshop !== "all") ? t("common.noResults") : t("settings.noLine")}</p>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1456,7 +1471,7 @@ export default function DataSettings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{t("settings.stationList")}</CardTitle>
-                    <CardDescription>{t("settings.stationCount", { count: filteredStations.length })} {(stationSearch || stationFilterLine !== "all") && `(${t("common.filtered")})`}</CardDescription>
+                    <CardDescription>{t("settings.stationCount", { count: filteredStations.length })} {stationFilterLine !== "all" && `(${t("common.filtered")})`}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
@@ -1561,65 +1576,56 @@ export default function DataSettings() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder={t("dataSettings.searchStationPlaceholder")}
-                      value={stationSearch}
-                      onChange={(e) => setStationSearch(e.target.value)}
-                      className="pl-9"
+                <DataTable<Station>
+                  data={filteredStations}
+                  getRowId={(s) => s.id}
+                  loading={stationsLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchStationPlaceholder")}
+                  initialSort={{ columnId: "order", dir: "asc" }}
+                  toolbar={
+                    <Select value={stationFilterLine} onValueChange={setStationFilterLine}>
+                      <SelectTrigger className="w-52 h-9">
+                        <SelectValue placeholder={t("dataSettings.filterByLine")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("common.all")} {t("dashboard.line").toLowerCase()}</SelectItem>
+                        {lines?.map((l) => (
+                          <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  }
+                  emptyState={(stations?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Cpu}
+                      title={t("settings.noStation")}
+                      description={t("dataSettings.emptyStationDesc", "Chưa có trạm nào. Thêm trạm kiểm tra vào dây chuyền.")}
+                      actionLabel={t("settings.addStation")}
+                      onAction={() => setStationDialogOpen(true)}
                     />
-                  </div>
-                  <Select value={stationFilterLine} onValueChange={setStationFilterLine}>
-                    <SelectTrigger className="w-50">
-                      <SelectValue placeholder={t("dataSettings.filterByLine")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common.all")} {t("dashboard.line").toLowerCase()}</SelectItem>
-                      {lines?.map((l) => (
-                        <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  {filteredStations.map((station) => {
-                    const line = lines?.find(l => l.id === station.lineId);
-                    return (
-                      <div key={station.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <Cpu className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">{station.name}</p>
-                            <p className="text-sm text-muted-foreground">{station.code} • {line?.name || t("common.na")} • {t("settings.orderLabel")} {station.orderIndex}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditStation(station)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setStationToDelete(station)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                  ) : undefined}
+                  columns={[
+                    { id: "name", header: t("settings.stationName"), cell: (s) => <span className="font-medium text-foreground">{s.name}</span>, sortValue: (s) => s.name, filterValue: (s) => s.name },
+                    { id: "code", header: t("settings.stationCode"), width: "160px", cell: (s) => <span className="font-mono text-sm text-muted-foreground">{s.code}</span>, sortValue: (s) => s.code, filterValue: (s) => s.code },
+                    { id: "line", header: t("dashboard.line"), cell: (s) => <span className="text-sm text-muted-foreground">{lines?.find(l => l.id === s.lineId)?.name || t("common.na")}</span>, sortValue: (s) => lines?.find(l => l.id === s.lineId)?.name || "", filterValue: (s) => lines?.find(l => l.id === s.lineId)?.name || "" },
+                    { id: "order", header: t("settings.order"), align: "right", width: "100px", cell: (s) => <span className="tabular-nums text-sm text-muted-foreground">{s.orderIndex.toLocaleString('vi-VN')}</span>, sortValue: (s) => s.orderIndex },
+                    { id: "actions", header: "", align: "right", width: "96px", cell: (s) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditStation(s)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setStationToDelete(s)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                    );
-                  })}
-                  {/* Deleted stations (admin) */}
-                  {showDeleted && isAdmin && deletedStations && deletedStations.length > 0 && (
-                    <>
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                      </div>
-                      {deletedStations.map((station: any) => (
+                    ) },
+                  ]}
+                />
+                {/* Deleted stations (admin) */}
+                {showDeleted && isAdmin && deletedStations && deletedStations.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    <div className="border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                    </div>
+                    {deletedStations.map((station: any) => (
                         <div key={station.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
@@ -1643,12 +1649,8 @@ export default function DataSettings() {
                           </Button>
                         </div>
                       ))}
-                    </>
-                  )}
-                  {filteredStations.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8">{(stationSearch || stationFilterLine !== "all") ? t("common.noResults") : t("settings.noStation")}</p>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1660,7 +1662,7 @@ export default function DataSettings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{t("settings.machineList")}</CardTitle>
-                    <CardDescription>{t("settings.machineCount", { count: filteredMachines.length })} {(machineSearch || machineFilterStation !== "all" || machineFilterType !== "all") && `(${t("common.filtered")})`}</CardDescription>
+                    <CardDescription>{t("settings.machineCount", { count: filteredMachines.length })} {(machineFilterStation !== "all" || machineFilterType !== "all") && `(${t("common.filtered")})`}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
@@ -1796,91 +1798,90 @@ export default function DataSettings() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder={t("dataSettings.searchMachinePlaceholder")}
-                      value={machineSearch}
-                      onChange={(e) => setMachineSearch(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
-                  <Select value={machineFilterStation} onValueChange={setMachineFilterStation}>
-                    <SelectTrigger className="w-50">
-                      <SelectValue placeholder={t("dataSettings.filterByStation")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common.all")} {t("settings.sidebar.workstation").toLowerCase()}</SelectItem>
-                      {stations?.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={machineFilterType} onValueChange={setMachineFilterType}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder={t("dataSettings.filterByType")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common.all")} {t("settings.machineType").toLowerCase()}</SelectItem>
-                      {machineTypes.map((type) => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-3">
-                  {filteredMachines.map((machine) => {
-                    const station = stations?.find(s => s.id === machine.stationId);
-                    return (
-                      <div key={machine.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <Cpu className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">{machine.name}</p>
-                            <p className="text-sm text-muted-foreground">{machine.code} • {machine.machineType}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => copyToClipboard(machine.apiKey || '')}
-                          >
-                            <Key className="h-3 w-3" />
-                            {t("settings.copyApiKey")}
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleEditMachine(machine)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => {
-                              setMachineToDelete(machine);
-                              setDeleteMachineDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {filteredMachines.length === 0 && (
-                    <p className="text-center text-muted-foreground py-8">{(machineSearch || machineFilterStation !== "all" || machineFilterType !== "all") ? t("common.noResults") : t("settings.noMachine")}</p>
-                  )}
-                  {/* Deleted machines (admin) */}
-                  {showDeleted && isAdmin && deletedMachines && deletedMachines.length > 0 && (
+                <DataTable<Machine>
+                  data={filteredMachines}
+                  getRowId={(m) => m.id}
+                  loading={machinesLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchMachinePlaceholder")}
+                  toolbar={
                     <>
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      <Select value={machineFilterStation} onValueChange={setMachineFilterStation}>
+                        <SelectTrigger className="w-48 h-9">
+                          <SelectValue placeholder={t("dataSettings.filterByStation")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">{t("common.all")} {t("settings.sidebar.workstation").toLowerCase()}</SelectItem>
+                          {stations?.map((s) => (
+                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={machineFilterType} onValueChange={setMachineFilterType}>
+                        <SelectTrigger className="w-40 h-9">
+                          <SelectValue placeholder={t("dataSettings.filterByType")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">{t("common.all")} {t("settings.machineType").toLowerCase()}</SelectItem>
+                          {machineTypes.map((type) => (
+                            <SelectItem key={type} value={type}>{machineTypeLabel(t, type as MachineType)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  }
+                  emptyState={(machines?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Cpu}
+                      title={t("settings.noMachine")}
+                      description={t("dataSettings.emptyMachineDesc", "Chưa có máy nào. Thêm máy kiểm tra vào trạm.")}
+                      actionLabel={t("settings.addMachine")}
+                      onAction={() => setMachineDialogOpen(true)}
+                    />
+                  ) : undefined}
+                  columns={[
+                    { id: "name", header: t("settings.machineName"), cell: (m) => <span className="font-medium text-foreground">{m.name}</span>, sortValue: (m) => m.name, filterValue: (m) => m.name },
+                    { id: "code", header: t("settings.machineCode"), width: "160px", cell: (m) => <span className="font-mono text-sm text-muted-foreground">{m.code}</span>, sortValue: (m) => m.code, filterValue: (m) => m.code },
+                    { id: "type", header: t("settings.machineType"), width: "140px", cell: (m) => <StatusBadge status={m.machineType} tone="info" label={machineTypeLabel(t, m.machineType as MachineType)} />, sortValue: (m) => m.machineType, filterValue: (m) => `${m.machineType} ${machineTypeLabel(t, m.machineType as MachineType)}` },
+                    { id: "station", header: t("settings.sidebar.workstation"), cell: (m) => <span className="text-sm text-muted-foreground">{stations?.find(s => s.id === m.stationId)?.name || t("common.na")}</span>, sortValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "", filterValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "" },
+                    { id: "actions", header: "", align: "right", width: "180px", cell: (m) => (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={async () => {
+                            const detail = await trpcUtils.machine.getById.fetch({ id: m.id });
+                            copyToClipboard(detail?.apiKey || '');
+                          }}
+                        >
+                          <Key className="h-3 w-3" />
+                          {t("settings.copyApiKey")}
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEditMachine(m)}><Pencil className="h-4 w-4" /></Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setMachineToDelete(m);
+                            setDeleteMachineDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      {deletedMachines.map((machine: any) => (
+                    ) },
+                  ]}
+                />
+                {/* Deleted machines (admin) */}
+                {showDeleted && isAdmin && deletedMachines && deletedMachines.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    <div className="border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                    </div>
+                    {deletedMachines.map((machine: any) => (
                         <div key={machine.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
@@ -1904,9 +1905,8 @@ export default function DataSettings() {
                           </Button>
                         </div>
                       ))}
-                    </>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -2053,82 +2053,72 @@ export default function DataSettings() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead>{t("settings.tableCode")}</TableHead>
-                        <TableHead>{t("settings.tableShiftName")}</TableHead>
-                        <TableHead>{t("settings.tableFactory")}</TableHead>
-                        <TableHead>{t("settings.tableTime")}</TableHead>
-                        <TableHead>{t("settings.tableStatus")}</TableHead>
-                        <TableHead className="text-right">{t("settings.tableActions")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {shifts?.map((shift) => (
-                        <TableRow key={shift.id}>
-                          <TableCell className="font-mono text-sm">{shift.code}</TableCell>
-                          <TableCell className="font-medium">{shift.name}</TableCell>
-                          <TableCell>
-                            {shift.factoryId
-                              ? factories?.find(f => f.id === shift.factoryId)?.name || t('common.na')
-                              : <span className="text-muted-foreground">{t("settings.entireSystem")}</span>
-                            }
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-mono">
-                              {String(shift.startHour).padStart(2, '0')}:{String(shift.startMinute).padStart(2, '0')}
-                              {' - '}
-                              {String(shift.endHour).padStart(2, '0')}:{String(shift.endMinute).padStart(2, '0')}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={shift.isActive ? 'border-success/30 bg-success/15 text-success' : 'text-muted-foreground'}
-                            >
-                              {shift.isActive ? t('settings.shiftActive') : t('settings.shiftPaused')}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => {
-                                  setEditingShift(shift as ShiftConfig);
-                                  setEditShiftDialogOpen(true);
-                                }}>
-                                  <Pencil className="h-4 w-4 mr-2" />
-                                  {t("settings.edit")}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    setShiftToDelete(shift);
-                                    setDeleteShiftDialogOpen(true);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  {t("common.delete")}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {(!shifts || shifts.length === 0) && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="p-8 text-center text-muted-foreground">{t("settings.noShifts")}</TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                <DataTable<ShiftConfig>
+                  data={(shifts ?? []) as ShiftConfig[]}
+                  getRowId={(s) => s.id}
+                  loading={shiftsLoading}
+                  searchable
+                  searchPlaceholder={t("dataSettings.searchShiftPlaceholder", "Tìm ca theo tên hoặc mã…")}
+                  initialSort={{ columnId: "order", dir: "asc" }}
+                  emptyState={(shifts?.length ?? 0) === 0 ? (
+                    <EmptyState
+                      variant="no-data"
+                      icon={Clock}
+                      title={t("settings.noShifts")}
+                      description={t("dataSettings.emptyShiftDesc", "Chưa có ca làm việc nào. Thêm ca để cấu hình lịch sản xuất.")}
+                      actionLabel={t("settings.addShift")}
+                      onAction={() => setShiftDialogOpen(true)}
+                    />
+                  ) : undefined}
+                  columns={[
+                    { id: "code", header: t("settings.tableCode"), width: "140px", cell: (s) => <span className="font-mono text-sm">{s.code}</span>, sortValue: (s) => s.code, filterValue: (s) => s.code },
+                    { id: "name", header: t("settings.tableShiftName"), cell: (s) => <span className="font-medium">{s.name}</span>, sortValue: (s) => s.name, filterValue: (s) => s.name },
+                    { id: "factory", header: t("settings.tableFactory"), cell: (s) => s.factoryId
+                        ? <span>{factories?.find(f => f.id === s.factoryId)?.name || t('common.na')}</span>
+                        : <span className="text-muted-foreground">{t("settings.entireSystem")}</span>,
+                      sortValue: (s) => s.factoryId ? (factories?.find(f => f.id === s.factoryId)?.name || "") : "",
+                      filterValue: (s) => s.factoryId ? (factories?.find(f => f.id === s.factoryId)?.name || "") : "" },
+                    { id: "time", header: t("settings.tableTime"), width: "150px", cell: (s) => (
+                      <span className="font-mono tabular-nums">
+                        {String(s.startHour).padStart(2, '0')}:{String(s.startMinute).padStart(2, '0')}
+                        {' - '}
+                        {String(s.endHour).padStart(2, '0')}:{String(s.endMinute).padStart(2, '0')}
+                      </span>
+                    ), sortValue: (s) => s.startHour * 60 + s.startMinute },
+                    { id: "status", header: t("settings.tableStatus"), width: "130px", cell: (s) => (
+                      <StatusBadge status={s.isActive ? "active" : "paused"} tone={s.isActive ? "success" : "default"} label={s.isActive ? t('settings.shiftActive') : t('settings.shiftPaused')} />
+                    ), sortValue: (s) => s.isActive ? 1 : 0 },
+                    { id: "order", header: t("settings.orderDisplay"), align: "right", width: "80px", cell: (s) => <span className="tabular-nums text-sm text-muted-foreground">{s.orderIndex.toLocaleString('vi-VN')}</span>, sortValue: (s) => s.orderIndex },
+                    { id: "actions", header: "", align: "right", width: "64px", cell: (s) => (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => {
+                            setEditingShift(s);
+                            setEditShiftDialogOpen(true);
+                          }}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            {t("settings.edit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => {
+                              setShiftToDelete(s);
+                              setDeleteShiftDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {t("common.delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) },
+                  ]}
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -2313,8 +2303,21 @@ export default function DataSettings() {
                       </div>
                     );
                   })}
-                  {(!stages || stages.length === 0) && (
-                    <div className="p-8 text-center text-muted-foreground">{t("settings.noStages")}</div>
+                  {stagesLoading && (
+                    <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="text-sm">{t("common.loading", "Đang tải…")}</span>
+                    </div>
+                  )}
+                  {!stagesLoading && (!stages || stages.length === 0) && (
+                    <EmptyState
+                      variant="no-data"
+                      icon={GitBranch}
+                      title={t("settings.noStages")}
+                      description={t("dataSettings.emptyStageDesc", "Chưa có công đoạn nào. Thêm công đoạn để định nghĩa luồng sản xuất theo dây chuyền.")}
+                      actionLabel={isAdmin ? t("settings.addStage") : undefined}
+                      onAction={isAdmin ? () => setStageDialogOpen(true) : undefined}
+                    />
                   )}
                 </div>
               </CardContent>
@@ -2939,8 +2942,8 @@ export default function DataSettings() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("settings.apiKey")}</label>
                 <div className="flex gap-2">
-                  <Input value={editingMachine.apiKey || ''} disabled className="bg-muted font-mono text-xs" />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(editingMachine.apiKey || '')}>
+                  <Input value={editingMachineDetail?.apiKey || ''} disabled className="bg-muted font-mono text-xs" />
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(editingMachineDetail?.apiKey || '')}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>

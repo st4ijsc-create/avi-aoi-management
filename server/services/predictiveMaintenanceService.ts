@@ -19,10 +19,11 @@
  */
 
 import { getDb } from "../db/connection";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 import {
   machineHeartbeats,
   machineHealthHistory,
+  machineSensorReadings,
   downtimeEvents,
   machines,
 } from "../../drizzle/schema";
@@ -49,6 +50,15 @@ const W_RELIABILITY = 0.35;
 const W_TREND = 0.30;
 const W_ANOMALY = 0.20;
 const W_TEMP = 0.15;
+
+/**
+ * calculationMethod tag this service writes onto its own health snapshots.
+ * MON-F15: the risk-trend feature must NOT eat these PdM-written rows (that would
+ * be self-referential — PdM predicting on its own predictions). The trend feature
+ * only consumes MEASURED health (calculationMethod != PDM_CALC_METHOD, i.e. the
+ * 'WEIGHTED' snapshots derived from real OEE / error-rate / cycle-time).
+ */
+export const PDM_CALC_METHOD = "PREDICTIVE_WS4";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +125,76 @@ function describeTimeframe(hours: number | null): string | null {
   if (hours <= 24) return `within ${Math.max(1, Math.round(hours))} hours`;
   const days = Math.round(hours / 24);
   return `within ${days} day${days > 1 ? "s" : ""}`;
+}
+
+// ─── MON-F2: machine_sensor_readings → PdM feature mapping ────────────────────
+// machine_sensor_readings carries the REAL telemetry (vibration / current /
+// temperature, ingested via sensorIngestService). machine_heartbeats has no
+// writer, so PdM's anomaly + temperature features used to be dead. Map:
+//   vibration, current → multivariate anomaly (Isolation Forest)
+//   temperature        → CUSUM change-point series
+
+export type SensorFeature = "vibration" | "current" | "temperature" | "other";
+
+/** Classify a raw sensorType string into a PdM feature (tolerant of synonyms). */
+export function sensorFeature(sensorType: string): SensorFeature {
+  const s = (sensorType ?? "").toLowerCase();
+  if (s.includes("vib")) return "vibration";
+  if (s.includes("current") || s.includes("amp") || s.includes("motor")) return "current";
+  if (s.includes("temp")) return "temperature";
+  return "other";
+}
+
+export interface SensorReadingPoint {
+  sensorType: string;
+  value: number;
+  timestamp: number; // epoch ms
+}
+
+/**
+ * Build PdM feature series from raw machine_sensor_readings rows.
+ *  - `multivariate`: forward-filled {vibration, current} vectors for anomaly share.
+ *    Only sensor types that actually have data become dimensions (honest — no
+ *    fabricated zeros for absent sensors). Points are emitted only once every
+ *    present dimension has at least one observation.
+ *  - `tempSeries`: temperature readings for CUSUM change-point detection.
+ */
+export function buildSensorFeatureSeries(rows: SensorReadingPoint[]): {
+  multivariate: MultivariatePoint[];
+  tempSeries: TimeSeriesPoint[];
+} {
+  const sorted = [...rows].sort((a, b) => a.timestamp - b.timestamp);
+
+  const tempSeries: TimeSeriesPoint[] = sorted
+    .filter((r) => sensorFeature(r.sensorType) === "temperature")
+    .map((r) => ({ timestamp: r.timestamp, value: r.value }));
+
+  // Which anomaly dimensions are present at all?
+  const present = new Set<Exclude<SensorFeature, "temperature" | "other">>();
+  for (const r of sorted) {
+    const f = sensorFeature(r.sensorType);
+    if (f === "vibration" || f === "current") present.add(f);
+  }
+  const dims = [...present];
+
+  const multivariate: MultivariatePoint[] = [];
+  if (dims.length > 0) {
+    const last: Record<string, number> = {};
+    for (const r of sorted) {
+      const f = sensorFeature(r.sensorType);
+      if (f !== "vibration" && f !== "current") continue;
+      last[f] = r.value;
+      // Emit only after every present dimension has at least one observation,
+      // so early points aren't forward-filled from nothing.
+      if (dims.every((d) => last[d] != null)) {
+        const values: Record<string, number> = {};
+        for (const d of dims) values[d] = last[d];
+        multivariate.push({ timestamp: r.timestamp, values });
+      }
+    }
+  }
+
+  return { multivariate, tempSeries };
 }
 
 // ─── Reliability statistics (MTBF / MTTR / frequency / trend) ────────────────
@@ -307,7 +387,7 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     factors.push({
       name: "anomaly",
       contribution: Math.round(riskAnomaly),
-      description: `${anomalies.length}/${heartbeatSeries.length} heartbeat points anomalous (${(share * 100).toFixed(1)}%)`,
+      description: `${anomalies.length}/${heartbeatSeries.length} telemetry points anomalous (${(share * 100).toFixed(1)}%)`,
     });
   }
 
@@ -395,7 +475,11 @@ export async function computeFailureRisk(
 
   const reliability = await computeReliabilityStats(machineId, windowHours);
 
-  // Health score series (oldest -> newest)
+  // Health score series (oldest -> newest).
+  // MON-F15: consume only MEASURED health — exclude this service's OWN snapshots
+  // (calculationMethod = PDM_CALC_METHOD) so the trend feature isn't fed by its
+  // own predictions. What remains are the 'WEIGHTED' snapshots derived from real
+  // OEE / error-rate / cycle-time.
   const healthRows = await db
     .select({
       timestamp: machineHealthHistory.timestamp,
@@ -405,6 +489,7 @@ export async function computeFailureRisk(
     .where(and(
       eq(machineHealthHistory.machineId, machineId),
       gte(machineHealthHistory.timestamp, from),
+      ne(machineHealthHistory.calculationMethod, PDM_CALC_METHOD),
     ))
     .orderBy(machineHealthHistory.timestamp);
 
@@ -413,35 +498,69 @@ export async function computeFailureRisk(
     value: Number(r.healthScore),
   }));
 
-  // Heartbeat metrics
-  const hbRows = await db
+  // MON-F2: anomaly + temperature features come from the REAL sensor stream
+  // (machine_sensor_readings). vibration/current → multivariate anomaly,
+  // temperature → CUSUM. machine_heartbeats has no writer, so it is used only as
+  // a fallback (keeps a future heartbeat writer contributing without a code change).
+  const sensorRows = await db
     .select({
-      timestamp: machineHeartbeats.timestamp,
-      cpuUsage: machineHeartbeats.cpuUsage,
-      memoryUsage: machineHeartbeats.memoryUsage,
-      diskUsage: machineHeartbeats.diskUsage,
-      temperature: machineHeartbeats.temperature,
+      sensorType: machineSensorReadings.sensorType,
+      value: machineSensorReadings.value,
+      timestamp: machineSensorReadings.timestamp,
     })
-    .from(machineHeartbeats)
+    .from(machineSensorReadings)
     .where(and(
-      eq(machineHeartbeats.machineId, machineId),
-      gte(machineHeartbeats.timestamp, from),
+      eq(machineSensorReadings.machineId, machineId),
+      gte(machineSensorReadings.timestamp, from),
     ))
-    .orderBy(machineHeartbeats.timestamp);
+    .orderBy(machineSensorReadings.timestamp);
 
-  const heartbeatSeries: MultivariatePoint[] = hbRows.map((r) => ({
-    timestamp: new Date(r.timestamp).getTime(),
-    values: {
-      cpu: Number(r.cpuUsage ?? 0),
-      mem: Number(r.memoryUsage ?? 0),
-      disk: Number(r.diskUsage ?? 0),
-      temp: Number(r.temperature ?? 0),
-    },
-  }));
+  const sensorFeatures = buildSensorFeatureSeries(
+    sensorRows.map((r) => ({
+      sensorType: r.sensorType,
+      value: Number(r.value),
+      timestamp: new Date(r.timestamp).getTime(),
+    })),
+  );
 
-  const tempSeries: TimeSeriesPoint[] = hbRows
-    .filter((r) => r.temperature != null)
-    .map((r) => ({ timestamp: new Date(r.timestamp).getTime(), value: Number(r.temperature) }));
+  let heartbeatSeries: MultivariatePoint[];
+  let tempSeries: TimeSeriesPoint[];
+
+  if (sensorFeatures.multivariate.length > 0 || sensorFeatures.tempSeries.length > 0) {
+    // Real sensor telemetry present → use it.
+    heartbeatSeries = sensorFeatures.multivariate;
+    tempSeries = sensorFeatures.tempSeries;
+  } else {
+    // Fallback: legacy heartbeat metrics (cpu/mem/disk/temperature).
+    const hbRows = await db
+      .select({
+        timestamp: machineHeartbeats.timestamp,
+        cpuUsage: machineHeartbeats.cpuUsage,
+        memoryUsage: machineHeartbeats.memoryUsage,
+        diskUsage: machineHeartbeats.diskUsage,
+        temperature: machineHeartbeats.temperature,
+      })
+      .from(machineHeartbeats)
+      .where(and(
+        eq(machineHeartbeats.machineId, machineId),
+        gte(machineHeartbeats.timestamp, from),
+      ))
+      .orderBy(machineHeartbeats.timestamp);
+
+    heartbeatSeries = hbRows.map((r) => ({
+      timestamp: new Date(r.timestamp).getTime(),
+      values: {
+        cpu: Number(r.cpuUsage ?? 0),
+        mem: Number(r.memoryUsage ?? 0),
+        disk: Number(r.diskUsage ?? 0),
+        temp: Number(r.temperature ?? 0),
+      },
+    }));
+
+    tempSeries = hbRows
+      .filter((r) => r.temperature != null)
+      .map((r) => ({ timestamp: new Date(r.timestamp).getTime(), value: Number(r.temperature) }));
+  }
 
   // Uptime since last UD event (hours)
   let uptimeSinceLastHours: number | null = null;
@@ -516,7 +635,8 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         })
         .from(machineHealthHistory)
         .where(eq(machineHealthHistory.machineId, m.id))
-        .orderBy(machineHealthHistory.timestamp)
+        // MON-F5: sắp xếp DESC để lấy bản ghi MỚI NHẤT (trước đây ASC → lấy cũ nhất).
+        .orderBy(desc(machineHealthHistory.timestamp))
         .limit(1);
 
       const base = latestHealth[0];
@@ -534,7 +654,7 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         predictedFailureRisk: risk.failureRisk,
         recommendedMaintenanceDate: risk.recommendedMaintenanceDate,
         maintenanceUrgency: risk.maintenanceUrgency as any,
-        calculationMethod: "PREDICTIVE_WS4",
+        calculationMethod: PDM_CALC_METHOD,
         notes: risk.predictedTimeframe,
       } as any);
 

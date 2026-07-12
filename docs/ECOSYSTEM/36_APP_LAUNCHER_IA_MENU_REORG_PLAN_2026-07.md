@@ -222,6 +222,14 @@ Green-gate mỗi wave: `tsc --noEmit` sạch · `npm run build` (client+server+w
 - ✅ **vitest include `shared/**`**: `shared/module-registry.test.ts` giờ chạy CI (7 test pass).
 - ✅ **Bóc DataSettings**: 5 deep-link tab-only (factories/lines/stations/shifts/stages — không có route riêng) vào admin ▸ factoryConfig, tier advanced, label tái dùng `settings.sidebar.*`.
 
-### Follow-up — CÒN LẠI (chủ ý hoãn, không chặn)
-- **Redirect hub `*-setting` (D7)** + bóc nốt admin-setting/settings tab-only: **hoãn có chủ ý** — monitoring-setting/analytics-setting map tab→route chưa 1-1 rõ (vd tab "device-management"), redirect dễ mất view; admin-setting/settings là system-config ít truy cập, đã có in-page menu. Làm khi flip cờ permanent.
-- Refactor/gỡ `MegaMenuOverlay` khi flip cờ (hiện giữ cho path OFF).
+### Follow-up — ĐÃ LÀM tiếp (commit `f37b8c0`): BÓC MENU-TRONG 6 HUB
+Audit 4-agent xác nhận 6 hub có menu-dọc-trong-page (monitoring/analytics/settings/
+admin-setting/datasettings/dashboard-center, cùng pattern `div.w-64 + Tabs + ?tab=`).
+- **Ẩn menu dọc trong cả 6** (`w-64…` → `hidden`, tag `data-legacy-hub-menu`); nội dung tab full-width, điều hướng qua menu trái.
+- **analytics-setting REDUNDANT** (mọi tab là route độc lập) → redirect `/reports`, gỡ khỏi menu.
+- **monitoring-setting**: 6/7 tab đã là route ở menu trái; thêm deep-link tab nội bộ device-management.
+- **dashboard-center** → 3 deep-link (Tổng quan). **settings/admin-setting/datasettings**: bóc tab nội bộ (không route) → deep-link `?tab=` app Quản trị (tier advanced, dùng lại `*.sidebar.*` label key).
+- Verified Playwright: menu-trong ẩn, content full-width, redirect OK, 0 pageerror. (Bỏ qua tab dev-tool: seed-data, admin overview.)
+
+### Follow-up — CÒN LẠI
+- Refactor/gỡ `MegaMenuOverlay` khi bỏ hẳn menu cổ điển (hiện giữ cho toggle "Menu cổ điển").

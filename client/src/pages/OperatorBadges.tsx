@@ -23,9 +23,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -33,8 +30,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { PageHeader, PageContainer } from "@/components/patterns";
-import { AlertTriangle, BadgeCheck, IdCard, Loader2, Plus, UserCheck, XCircle } from "lucide-react";
+import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
+import { DataTable } from "@/components/DataTable";
+import { AlertTriangle, BadgeCheck, IdCard, Loader2, Plus, QrCode, UserCheck, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -54,7 +52,14 @@ type BadgeRow = {
 function fmtDate(v: Date | string | null): string {
   if (!v) return "—";
   const d = v instanceof Date ? v : new Date(v);
-  return Number.isNaN(d.getTime()) ? "—" : format(d, "yyyy-MM-dd HH:mm");
+  return Number.isNaN(d.getTime()) ? "—" : format(d, "dd/MM/yyyy HH:mm");
+}
+
+/** Thời điểm (ms) để sắp xếp cột ngày; null cho giá trị rỗng/không hợp lệ (sort cuối). */
+function toTime(v: Date | string | null): number | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
 }
 
 export default function OperatorBadges() {
@@ -104,6 +109,27 @@ export default function OperatorBadges() {
   // Assign-user dialog (for auto_seen rows)
   const [assignTarget, setAssignTarget] = useState<BadgeRow | null>(null);
   const [assignUserId, setAssignUserId] = useState("");
+  // QR badge dialog — dùng dep `qrcode` sẵn có (dynamic import, ngoài main bundle).
+  const [qrTarget, setQrTarget] = useState<BadgeRow | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrLoading, setQrLoading] = useState(false);
+
+  const openQr = async (b: BadgeRow) => {
+    setQrTarget(b);
+    setQrDataUrl("");
+    setQrLoading(true);
+    try {
+      const QRCode = await import("qrcode");
+      const dataUrl = await QRCode.toDataURL(b.badgeCode, { width: 240, margin: 1 });
+      setQrDataUrl(dataUrl);
+    } catch (err) {
+      console.error("QR generation failed", err);
+      toast.error(t("operatorBadge.qrError", "Không tạo được mã QR"));
+      setQrTarget(null);
+    } finally {
+      setQrLoading(false);
+    }
+  };
 
   if (!canView) {
     return (
@@ -161,87 +187,105 @@ export default function OperatorBadges() {
         </div>
 
         <Card>
-          <CardContent className="p-0">
-            {listQuery.isLoading ? (
-              <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-            ) : badges.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">{t("operatorBadge.empty")}</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("operatorBadge.badgeCode")}</TableHead>
-                    <TableHead>{t("operatorBadge.user")}</TableHead>
-                    <TableHead>{t("operatorBadge.source")}</TableHead>
-                    <TableHead>{t("operatorBadge.validFrom")}</TableHead>
-                    <TableHead>{t("operatorBadge.validTo")}</TableHead>
-                    <TableHead>{t("operatorBadge.status")}</TableHead>
-                    <TableHead className="text-right">{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {badges.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-mono">{b.badgeCode}</TableCell>
-                      <TableCell>
-                        {b.userId ? (
-                          <span className="flex items-center gap-1">
-                            <BadgeCheck className="h-3 w-3 text-success" />
-                            {b.userName ?? `#${b.userId}`}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            {b.displayName || t("operatorBadge.unassigned")}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={b.source === "auto_seen" ? "secondary" : "outline"} className="text-[10px]">
-                          {t(`operatorBadge.sources.${b.source}`, b.source)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">{fmtDate(b.validFrom)}</TableCell>
-                      <TableCell className="text-xs">{fmtDate(b.validTo)}</TableCell>
-                      <TableCell>
-                        {b.isActive ? (
-                          <Badge className="bg-success/20 text-success border-success/30 text-[10px]">{t("operatorBadge.active")}</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-[10px]">{t("operatorBadge.revokedStatus")}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canEdit && (
-                          <div className="flex justify-end gap-1">
-                            {!b.userId && (
-                              <Button size="sm" variant="outline" className="gap-1"
-                                onClick={() => { setAssignTarget(b); setAssignUserId(""); }}>
-                                <UserCheck className="h-3 w-3" />
-                                {t("operatorBadge.assign")}
-                              </Button>
-                            )}
-                            {b.isActive && (
-                              <Button size="sm" variant="outline" className="gap-1 text-destructive"
-                                disabled={revokeMutation.isPending}
-                                onClick={() => revokeMutation.mutate({ id: b.id })}>
-                                <XCircle className="h-3 w-3" />
-                                {t("operatorBadge.revoke")}
-                              </Button>
-                            )}
-                            {!b.isActive && canCreate && (
-                              <Button size="sm" variant="outline" className="gap-1"
-                                onClick={() => { setIssueForm({ badgeCode: b.badgeCode, userId: "", displayName: "" }); setIssueOpen(true); }}>
-                                <Plus className="h-3 w-3" />
-                                {t("operatorBadge.reissue")}
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+          <CardContent className="p-3">
+            <DataTable<BadgeRow>
+              data={badges}
+              getRowId={(b) => b.id}
+              loading={listQuery.isLoading}
+              initialSort={{ columnId: "badgeCode", dir: "asc" }}
+              emptyState={
+                <EmptyState
+                  variant={search ? "no-results" : "no-data"}
+                  title={
+                    tab === "unassigned"
+                      ? t("operatorBadge.emptyUnassignedTitle", "Không có badge chờ gán")
+                      : t("operatorBadge.emptyTitle", "Chưa có badge")
+                  }
+                  description={
+                    search
+                      ? t("operatorBadge.emptySearch", "Không có badge nào khớp từ khoá tìm kiếm.")
+                      : t("operatorBadge.empty")
+                  }
+                />
+              }
+              columns={[
+                { id: "badgeCode", header: t("operatorBadge.badgeCode"), sortValue: (b) => b.badgeCode, cell: (b) => <span className="font-mono">{b.badgeCode}</span> },
+                {
+                  id: "user",
+                  header: t("operatorBadge.user"),
+                  sortValue: (b) => b.userName ?? b.displayName ?? "",
+                  cell: (b) => (b.userId ? (
+                    <span className="flex items-center gap-1">
+                      <BadgeCheck className="h-3 w-3 text-success" />
+                      {b.userName ?? `#${b.userId}`}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{b.displayName || t("operatorBadge.unassigned")}</span>
+                  )),
+                },
+                {
+                  id: "source",
+                  header: t("operatorBadge.source"),
+                  sortValue: (b) => b.source,
+                  cell: (b) => (
+                    <Badge variant={b.source === "auto_seen" ? "secondary" : "outline"} className="text-[10px]">
+                      {t(`operatorBadge.sources.${b.source}`, b.source)}
+                    </Badge>
+                  ),
+                },
+                { id: "validFrom", header: t("operatorBadge.validFrom"), sortValue: (b) => toTime(b.validFrom), cell: (b) => <span className="text-xs">{fmtDate(b.validFrom)}</span> },
+                { id: "validTo", header: t("operatorBadge.validTo"), sortValue: (b) => toTime(b.validTo), cell: (b) => <span className="text-xs">{fmtDate(b.validTo)}</span> },
+                {
+                  id: "status",
+                  header: t("operatorBadge.status"),
+                  sortValue: (b) => (b.isActive ? 1 : 0),
+                  cell: (b) => (b.isActive ? (
+                    <Badge className="bg-success/20 text-success border-success/30 text-[10px]">{t("operatorBadge.active")}</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">{t("operatorBadge.revokedStatus")}</Badge>
+                  )),
+                },
+                {
+                  id: "actions",
+                  header: t("common.actions"),
+                  align: "right",
+                  cell: (b) => (
+                    <div className="flex justify-end gap-1 whitespace-nowrap">
+                      <Button size="sm" variant="ghost" className="gap-1" title={t("operatorBadge.showQr", "Xem mã QR")}
+                        onClick={() => openQr(b)}>
+                        <QrCode className="h-3 w-3" />
+                      </Button>
+                      {canEdit && (
+                        <>
+                          {!b.userId && (
+                            <Button size="sm" variant="outline" className="gap-1"
+                              onClick={() => { setAssignTarget(b); setAssignUserId(""); }}>
+                              <UserCheck className="h-3 w-3" />
+                              {t("operatorBadge.assign")}
+                            </Button>
+                          )}
+                          {b.isActive && (
+                            <Button size="sm" variant="outline" className="gap-1 text-destructive"
+                              disabled={revokeMutation.isPending}
+                              onClick={() => revokeMutation.mutate({ id: b.id })}>
+                              <XCircle className="h-3 w-3" />
+                              {t("operatorBadge.revoke")}
+                            </Button>
+                          )}
+                          {!b.isActive && canCreate && (
+                            <Button size="sm" variant="outline" className="gap-1"
+                              onClick={() => { setIssueForm({ badgeCode: b.badgeCode, userId: "", displayName: "" }); setIssueOpen(true); }}>
+                              <Plus className="h-3 w-3" />
+                              {t("operatorBadge.reissue")}
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
 
@@ -323,6 +367,26 @@ export default function OperatorBadges() {
                 {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t("operatorBadge.assign")}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* QR badge dialog */}
+        <Dialog open={qrTarget != null} onOpenChange={(open) => { if (!open) setQrTarget(null); }}>
+          <DialogContent className="sm:max-w-xs">
+            <DialogHeader>
+              <DialogTitle>{t("operatorBadge.qrTitle", "Mã QR badge")}</DialogTitle>
+              <DialogDescription className="font-mono">{qrTarget?.badgeCode}</DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-center py-4">
+              {qrLoading ? (
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              ) : qrDataUrl ? (
+                <img src={qrDataUrl} alt={qrTarget?.badgeCode ?? "QR"} className="h-60 w-60 rounded-md border bg-white p-2" />
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setQrTarget(null)}>{t("common.close", "Đóng")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

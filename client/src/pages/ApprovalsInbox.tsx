@@ -25,14 +25,16 @@
  * action here already exists and is server-authorised. Where a source has no safe
  * inline action, it links out to its domain page instead.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
+import { LineDiff } from "@/components/diff/LineDiff";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +49,7 @@ import {
 import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import {
   ClipboardCheck, SlidersHorizontal, Sparkles, CheckCircle2, XCircle,
-  ArrowRight, ShieldAlert, Inbox as InboxIcon,
+  ArrowRight, ShieldAlert, Inbox as InboxIcon, Rocket, GitCompare, FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -86,6 +88,26 @@ type InboxItem = {
   actionId?: string;
   token?: string;
   expiresAt?: string;
+};
+
+// doc 40 ENG-F2 — Source 3: production deploys awaiting a SECOND person's sign-off.
+type DeployApproval = {
+  deployment: {
+    id: number;
+    buildId: number;
+    projectId: number;
+    stage: string;
+    status: string;
+    requestedBy: number | null;
+    createdAt: string | Date | null;
+  };
+  project: { id: number; code: string; name: string; kind: string } | null;
+  build: { id: number; ok: boolean; status: string } | null;
+  artifact: { id: number; version: number; branch: string; contentHash: string | null; content: string | null } | null;
+  prevContent: string | null;
+  latestSim: { ok: boolean; warnings: string[] } | null;
+  requestedByUser: { id: number; username: string | null; name: string | null } | null;
+  approvalReason: string | null;
 };
 
 // ── Small presentational helpers ───────────────────────────────────────────────
@@ -212,22 +234,65 @@ export default function ApprovalsInbox() {
     }
   };
 
+  // ── Source 3: production deploys awaiting sign-off (doc 40 ENG-F2) ───────────
+  const canViewDeploys = hasPermission("machine_monitoring", "canView");
+  const canApproveDeploys = hasPermission("machine_control", "canCreate");
+  const readiness = useActuationReadiness();
+
+  const deployQ = trpc.programming.listDeployApprovals.useQuery(
+    undefined,
+    { enabled: canViewDeploys },
+  );
+  const deployRows = (deployQ.data ?? []) as DeployApproval[];
+  const isOwnDeploy = (r: DeployApproval) => myId != null && myId === r.deployment.requestedBy;
+
+  const invalidateDeploys = () => { void utils.programming.listDeployApprovals.invalidate(); void utils.programming.listDeployments.invalidate(); };
+  const approveDeployM = trpc.programming.approveDeployment.useMutation({
+    onSuccess: (row) => {
+      // Trung thực theo trạng thái THẬT trả về (đi qua mọi gate cũ).
+      switch (row.status) {
+        case "verified":
+          toast.success(t("approvalsInbox.deploy.verified", "Đã duyệt & deploy (read-back khớp)")); break;
+        case "deployed":
+          toast.warning(t("approvalsInbox.deploy.deployed", "Đã duyệt & deploy (CHƯA xác minh read-back)")); break;
+        case "simulated":
+          toast.success(t("approvalsInbox.deploy.simulated", "Đã duyệt (SIMULATED — flag deploy OFF)")); break;
+        case "rejected":
+        case "failed":
+          toast.error(row.error || t("approvalsInbox.deploy.rejected", "Deploy bị từ chối bởi cổng an toàn")); break;
+        default:
+          toast.success(t("approvalsInbox.deploy.done", "Đã xử lý duyệt"));
+      }
+      invalidateDeploys();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const rejectDeployM = trpc.programming.rejectDeployment.useMutation({
+    onSuccess: () => { toast.success(t("approvalsInbox.deploy.rejectedOk", "Đã từ chối yêu cầu deploy")); setRejectDeployTarget(null); invalidateDeploys(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const [rejectDeployTarget, setRejectDeployTarget] = useState<DeployApproval | null>(null);
+  const [diffOpenId, setDiffOpenId] = useState<number | null>(null);
+
   // ── Summary ─────────────────────────────────────────────────────────────────
   const thresholdCount = canViewThresholds ? thresholdRows.length : 0;
   const inboxCount = inboxItems.length;
-  const totalPending = thresholdCount + inboxCount;
+  const deployCount = canViewDeploys ? deployRows.length : 0;
+  const totalPending = thresholdCount + inboxCount + deployCount;
 
   const anyLoading =
-    (canViewThresholds && thresholdQ.isLoading) || inboxQ.isLoading;
+    (canViewThresholds && thresholdQ.isLoading) || inboxQ.isLoading || (canViewDeploys && deployQ.isLoading);
   const globalEmpty = !anyLoading && totalPending === 0;
 
   const aiBusy = confirmM.isPending || dismissM.isPending;
+  const deployBusy = approveDeployM.isPending || rejectDeployM.isPending;
 
   const summaryTiles = useMemo(() => ([
     { key: "total", label: t("approvalsInbox.summary.total", "Total pending"), value: totalPending, emphasis: true },
     { key: "threshold", label: t("approvalsInbox.threshold.title", "Threshold changes"), value: thresholdCount, emphasis: false },
     { key: "ai", label: t("approvalsInbox.ai.title", "AI action inbox"), value: inboxCount, emphasis: false },
-  ]), [t, totalPending, thresholdCount, inboxCount]);
+    { key: "deploy", label: t("approvalsInbox.deploy.title", "Deploy chờ duyệt"), value: deployCount, emphasis: false },
+  ]), [t, totalPending, thresholdCount, inboxCount, deployCount]);
 
   return (
     <DashboardLayout
@@ -243,7 +308,7 @@ export default function ApprovalsInbox() {
         />
 
         {/* Summary strip */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {summaryTiles.map((tile) => (
             <Card key={tile.key} className={tile.emphasis ? "border-primary/40" : undefined}>
               <CardContent className="py-4">
@@ -485,7 +550,197 @@ export default function ApprovalsInbox() {
             </CardContent>
           </Card>
         </ApprovalSection>
+
+        {/* ── Section 3: Deploy chờ duyệt (doc 40 ENG-F2) ──────────────────────── */}
+        {canViewDeploys && (
+          <ApprovalSection
+            icon={<Rocket className="h-5 w-5" />}
+            title={t("approvalsInbox.deploy.title", "Deploy chờ duyệt")}
+            count={deployCount}
+            action={
+              <Button variant="ghost" size="sm" onClick={() => setLocation("/engineering-workspace")}>
+                {t("approvalsInbox.deploy.openWorkspace", "Mở xưởng lập trình")}
+                <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
+              </Button>
+            }
+          >
+            {/* Pre-flight: approver cần role-floor + 2FA để KÝ (actuation). Cảnh báo TRƯỚC. */}
+            {deployRows.length > 0 && canApproveDeploys && readiness.blockers.length > 0 && (
+              <div className="mb-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {t("approvalsInbox.deploy.readiness", "Bạn chưa đủ điều kiện để KÝ duyệt deploy:")}{" "}
+                  {readiness.blockers.map((bl) => t(`actuationReadiness.${bl.code}`, bl.defaultMessage)).join(" ")}
+                </span>
+              </div>
+            )}
+            <Card>
+              <CardContent className="p-0">
+                <AsyncBoundary
+                  isLoading={deployQ.isLoading}
+                  isError={deployQ.isError}
+                  error={deployQ.error}
+                  onRetry={deployQ.refetch}
+                  preset="table"
+                  isEmpty={deployRows.length === 0}
+                  emptyState={
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                      {t("approvalsInbox.deploy.empty", "Không có yêu cầu deploy nào chờ duyệt")}
+                    </div>
+                  }
+                >
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("approvalsInbox.deploy.col.project", "Dự án / phiên bản")}</TableHead>
+                        <TableHead>{t("approvalsInbox.deploy.col.checks", "Sim & hash dự kiến")}</TableHead>
+                        <TableHead>{t("approvalsInbox.deploy.col.requestedBy", "Người yêu cầu")}</TableHead>
+                        <TableHead>{t("approvalsInbox.threshold.col.when", "When")}</TableHead>
+                        <TableHead className="text-right">{t("approvalsInbox.col.actions", "Actions")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {deployRows.map((r) => {
+                        const own = isOwnDeploy(r);
+                        const canAct = canApproveDeploys && !own && readiness.ready;
+                        const simOk = r.latestSim?.ok === true;
+                        const hasDiff = r.artifact?.content != null && r.prevContent != null;
+                        return (
+                          <Fragment key={r.deployment.id}>
+                            <TableRow>
+                              <TableCell>
+                                <div className="font-medium">{r.project?.code?.trim() || `#${r.deployment.projectId}`}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {r.artifact ? `v${r.artifact.version} · ${r.artifact.branch}` : `build #${r.deployment.buildId}`}
+                                  {r.project?.kind && <> · {r.project.kind}</>}
+                                </div>
+                                {r.approvalReason && (
+                                  <div className="mt-0.5 text-xs italic text-muted-foreground">“{r.approvalReason}”</div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                <div className="flex items-center gap-1">
+                                  <FlaskConical className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                  {r.latestSim ? (
+                                    <Badge variant={simOk ? "default" : "destructive"}>
+                                      {simOk
+                                        ? t("approvalsInbox.deploy.simPass", "Sim ĐẠT")
+                                        : t("approvalsInbox.deploy.simFail", "Sim KHÔNG ĐẠT")}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary">{t("approvalsInbox.deploy.simNone", "Chưa mô phỏng")}</Badge>
+                                  )}
+                                </div>
+                                <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                                  {t("approvalsInbox.deploy.hash", "hash")}: {r.artifact?.contentHash?.slice(0, 16) ?? "—"}…
+                                </div>
+                                {hasDiff && (
+                                  <Button
+                                    variant="ghost" size="sm" className="mt-1 h-6 px-1 text-[11px]"
+                                    onClick={() => setDiffOpenId(diffOpenId === r.deployment.id ? null : r.deployment.id)}
+                                  >
+                                    <GitCompare className="mr-1 h-3 w-3" aria-hidden />
+                                    {diffOpenId === r.deployment.id
+                                      ? t("approvalsInbox.deploy.hideDiff", "Ẩn diff")
+                                      : t("approvalsInbox.deploy.showDiff", "Xem diff vs bản đã deploy")}
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {r.requestedByUser?.name || r.requestedByUser?.username ||
+                                  t("approvalsInbox.userRef", "User #{{id}}", { id: r.deployment.requestedBy ?? 0 })}
+                                {own && (
+                                  <Badge variant="outline" className="ml-2">{t("approvalsInbox.you", "You")}</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{fmtWhen(r.deployment.createdAt)}</TableCell>
+                              <TableCell className="text-right">
+                                {own ? (
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span
+                                      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                                      title={t("approvalsInbox.deploy.ownHint", "Phân tách nhiệm vụ: bạn không thể tự duyệt yêu cầu của mình")}
+                                    >
+                                      <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+                                      {t("approvalsInbox.threshold.ownRequest", "Your request")}
+                                    </span>
+                                    {canApproveDeploys && (
+                                      <Button
+                                        size="sm" variant="ghost" className="h-7"
+                                        disabled={deployBusy}
+                                        onClick={() => setRejectDeployTarget(r)}
+                                      >
+                                        {t("approvalsInbox.deploy.withdraw", "Rút yêu cầu")}
+                                      </Button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-end gap-1">
+                                    <Button
+                                      size="sm" variant="destructive"
+                                      disabled={!canApproveDeploys || deployBusy}
+                                      onClick={() => setRejectDeployTarget(r)}
+                                      aria-label={t("approvalsInbox.deploy.rejectAria", "Từ chối deploy #{{id}}", { id: r.deployment.id })}
+                                    >
+                                      <XCircle className="mr-1 h-4 w-4" aria-hidden />
+                                      {t("approvalsInbox.reject", "Reject")}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      disabled={!canAct || deployBusy}
+                                      title={!canApproveDeploys
+                                        ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
+                                        : !readiness.ready
+                                          ? readiness.blockers.map((bl) => t(`actuationReadiness.${bl.code}`, bl.defaultMessage)).join(" ")
+                                          : undefined}
+                                      onClick={() => approveDeployM.mutate({ deploymentId: r.deployment.id })}
+                                      aria-label={t("approvalsInbox.deploy.approveAria", "Duyệt & deploy #{{id}}", { id: r.deployment.id })}
+                                    >
+                                      <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
+                                      {t("approvalsInbox.deploy.approve", "Duyệt & deploy")}
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {diffOpenId === r.deployment.id && hasDiff && (
+                              <TableRow>
+                                <TableCell colSpan={5} className="bg-muted/20">
+                                  <LineDiff left={r.prevContent ?? ""} right={r.artifact?.content ?? ""} maxHeightClass="max-h-[280px]" />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </AsyncBoundary>
+              </CardContent>
+            </Card>
+          </ApprovalSection>
+        )}
       </div>
+
+      {/* Deploy reject/withdraw reason */}
+      <Dialog open={rejectDeployTarget != null} onOpenChange={(o) => { if (!o) setRejectDeployTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {rejectDeployTarget && isOwnDeploy(rejectDeployTarget)
+                ? t("approvalsInbox.deploy.withdrawTitle", "Rút yêu cầu deploy #{{id}}", { id: rejectDeployTarget?.deployment.id ?? 0 })
+                : t("approvalsInbox.deploy.rejectTitle", "Từ chối yêu cầu deploy #{{id}}", { id: rejectDeployTarget?.deployment.id ?? 0 })}
+            </DialogTitle>
+          </DialogHeader>
+          {rejectDeployTarget && (
+            <RejectReasonForm
+              busy={rejectDeployM.isPending}
+              onCancel={() => setRejectDeployTarget(null)}
+              onSubmit={(reason) => rejectDeployM.mutate({ deploymentId: rejectDeployTarget.deployment.id, reason })}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Threshold reject reason — mirrors the domain page's non-empty-comment rule */}
       <Dialog open={rejectTarget != null} onOpenChange={(o) => { if (!o) setRejectTarget(null); }}>

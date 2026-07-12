@@ -14,6 +14,10 @@ import { FormScaffold, TextField, SelectField } from "@/components/FormScaffold"
 // ── Wave 2 (shared UI kit) primitives — showcased below ──────────────────────
 import {
   MachineSelect,
+  EntityPicker,
+  ConfirmDeleteDialog,
+  ImportExportBar,
+  type MasterDataColumn,
   ScopeFilterBar,
   RadialGauge,
   Sparkline,
@@ -182,6 +186,7 @@ import {
   Clock,
   Moon,
   Sun,
+  Trash2,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -1628,6 +1633,20 @@ const DEMO_TREND = [
   { month: "Jun", ng: 22, yield: 98.1 },
 ];
 
+// doc 42 INFRA-4A — cột + dữ liệu mẫu cho ImportExportBar.
+const SHOWCASE_MASTER_COLUMNS: MasterDataColumn[] = [
+  { field: "code", header: "Mã", required: true, type: "string", example: "M-001" },
+  { field: "name", header: "Tên vật liệu", required: true, type: "string", example: "Nhôm 6061" },
+  { field: "qty", header: "Số lượng", type: "number", example: 10 },
+  { field: "active", header: "Kích hoạt", type: "boolean", example: true },
+];
+
+const SHOWCASE_MASTER_DATA = [
+  { code: "M-001", name: "Nhôm 6061", qty: 120, active: true },
+  { code: "M-002", name: "Thép SUS304", qty: 45, active: true },
+  { code: "M-003", name: "Đồng C1100", qty: 8, active: false },
+];
+
 function Wave2KitShowcase() {
   const [machineId, setMachineId] = useState<string | number | null>(null);
 
@@ -1656,6 +1675,81 @@ function Wave2KitShowcase() {
             <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">ScopeFilterBar</p>
             <ScopeFilterBar show={["line", "machine", "dateRange"]} />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* doc 42 INFRA-1: EntityPicker invalid-value guard + ConfirmDeleteDialog */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">EntityPicker "Không tồn tại" &amp; ConfirmDeleteDialog</CardTitle>
+          <CardDescription>Cảnh báo liên kết code rác + xác nhận xoá/lưu-trữ thống nhất (doc 42 Đợt 1).</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-8">
+          <div className="max-w-xs space-y-1">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Value không khớp option</p>
+            <EntityPicker
+              options={[
+                { value: "M-001", label: "Nhôm 6061", sublabel: "M-001" },
+                { value: "M-002", label: "Thép SUS304", sublabel: "M-002" },
+              ]}
+              value="M-DELETED"
+              onChange={() => {}}
+              placeholder="Chọn vật liệu…"
+            />
+          </div>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">ConfirmDeleteDialog</p>
+            <div className="flex flex-wrap gap-3">
+              <ConfirmDeleteDialog
+                trigger={
+                  <Button variant="destructive" size="sm">
+                    <Trash2 /> Xoá vĩnh viễn
+                  </Button>
+                }
+                itemLabel="vật liệu M-001"
+                referenceCount={3}
+                referenceLabel="phiếu nhập kho"
+                onConfirm={() => new Promise((r) => setTimeout(r, 800))}
+              />
+              <ConfirmDeleteDialog
+                trigger={
+                  <Button variant="outline" size="sm">
+                    <Trash2 /> Lưu trữ
+                  </Button>
+                }
+                itemLabel="line SMT-1"
+                isSoftDelete
+                onConfirm={() => new Promise((r) => setTimeout(r, 800))}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* doc 42 INFRA-4A: ImportExportBar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">ImportExportBar (doc 42 Đợt 4A)</CardTitle>
+          <CardDescription>
+            Xuất Excel/CSV client-side · Tải mẫu · Nhập với preview + validate (dòng lỗi tô đỏ). Luật
+            parse/validate dùng chung server qua <code>@shared/masterDataIO</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ImportExportBar
+            entityLabel="vật liệu"
+            columns={SHOWCASE_MASTER_COLUMNS}
+            data={SHOWCASE_MASTER_DATA}
+            onImport={async (rows) => {
+              // Demo: giả lập upsert — coi mọi dòng hợp lệ là thành công.
+              await new Promise((r) => setTimeout(r, 500));
+              return { inserted: rows.length, failed: 0 };
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Thử: bấm <strong>Tải mẫu</strong> → sửa vài dòng (bỏ trống Mã, nhập chữ vào Số lượng) →{" "}
+            <strong>Nhập</strong> lại để xem preview highlight lỗi.
+          </p>
         </CardContent>
       </Card>
 

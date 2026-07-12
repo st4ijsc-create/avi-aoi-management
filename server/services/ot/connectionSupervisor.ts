@@ -97,6 +97,21 @@ export interface SupervisorOptions {
   healthIntervalMs?: number;
   /** Backoff parameters (defaults to DEFAULT_BACKOFF). */
   backoff?: Partial<BackoffConfig>;
+  /**
+   * doc 40 OT-F1 — số lần health()/probe báo NOT-connected LIÊN TIẾP trước khi coi là
+   * mất kết nối (fallback cho driver KHÔNG expose event transport). Mặc định đọc
+   * OT_LINKLOSS_FAIL_THRESHOLD (default 3), tối thiểu 1. Lưu ý: driver báo isConnected()
+   * === false, hoặc health() NÉM lỗi, vẫn là tín hiệu CỨNG → mất kết nối NGAY (không đợi
+   * ngưỡng) — ngưỡng chỉ áp cho tín hiệu MỀM (health trả {connected:false} không ném).
+   */
+  linkLossFailThreshold?: number;
+  /**
+   * doc 40 MON-F1 — machineId để đẩy sự kiện online/offline (adapter connected/
+   * disconnected) sang machinePresenceService. Tuỳ chọn: khi otManager truyền vào,
+   * mỗi lần vào/ra state 'connected' sẽ ghi machine_status_logs (chống trùng, gated
+   * MACHINE_PRESENCE_ENABLED). Không truyền ⇒ chỉ nhánh sweep-telemetry ghi presence.
+   */
+  machineId?: number;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -147,6 +162,12 @@ function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n;
 }
 
+/** doc 40 OT-F1 — ngưỡng số lần probe-mềm thất bại liên tiếp (env, default 3, min 1). */
+function linkLossThresholdFromEnv(): number {
+  const raw = Number(process.env.OT_LINKLOSS_FAIL_THRESHOLD);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 3;
+}
+
 /**
  * Supervises ONE adapter connection: reconnect with backoff + dual-endpoint
  * failover + a state machine. All public methods are non-throwing.
@@ -160,6 +181,10 @@ export class ConnectionSupervisor {
   private readonly onSample: OnOtSample;
   private readonly healthIntervalMs: number;
   private readonly backoff: BackoffConfig;
+  /** doc 40 OT-F1 — ngưỡng probe-mềm thất bại liên tiếp → coi mất kết nối. */
+  private readonly linkLossThreshold: number;
+  /** doc 40 MON-F1 — machineId (nếu có) để đẩy presence online/offline. */
+  private readonly machineId: number | null;
 
   private readonly endpoints: RuntimeEndpoint[];
 
@@ -171,6 +196,10 @@ export class ConnectionSupervisor {
   private hasConnectedOnce = false;
   private cycleRunning = false;
   private stopped = false;
+  /** doc 40 OT-F1 — đếm probe-mềm (health trả {connected:false}) thất bại liên tiếp. */
+  private consecutiveProbeFailures = 0;
+  /** doc 40 MON-F1 — presence đã đẩy gần nhất (chống đẩy trùng mỗi tick). */
+  private lastPresenceOnline: boolean | null = null;
 
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -202,6 +231,11 @@ export class ConnectionSupervisor {
     // cycle (the failover requirement); floored only to avoid a busy loop.
     const desiredHealth = opts.healthIntervalMs ?? Math.min(this.pollIntervalMs, 2000);
     this.healthIntervalMs = Math.max(20, Math.min(desiredHealth, this.pollIntervalMs));
+    this.linkLossThreshold = Math.max(
+      1,
+      Math.floor(opts.linkLossFailThreshold ?? linkLossThresholdFromEnv()),
+    );
+    this.machineId = opts.machineId ?? null;
 
     if (!opts.endpoints || opts.endpoints.length === 0) {
       throw new Error(`ConnectionSupervisor "${opts.code}": at least one endpoint required`);
@@ -302,9 +336,41 @@ export class ConnectionSupervisor {
   // ── internals ──────────────────────────────────────────────────────────────
 
   private setState(next: SupervisorState): void {
-    if (this.state === next) return;
+    const prev = this.state;
+    if (prev === next) return;
     this.state = next;
     this.lastStateChangeAt = Date.now();
+    // doc 40 MON-F1 — đẩy presence CHỈ trên chuyển tiếp THẬT quanh 'connected':
+    //   • vào 'connected'                → online
+    //   • RỜI 'connected' sang state khác → offline
+    // KHÔNG đẩy 'offline' cho idle→connecting→failed lúc mới khởi động (máy chưa từng
+    // online). Chống trùng qua lastPresenceOnline; chỉ khi có machineId; không throw.
+    if (this.machineId != null) {
+      if (next === "connected" && this.lastPresenceOnline !== true) {
+        this.lastPresenceOnline = true;
+        void this.notifyPresence(true);
+      } else if (prev === "connected" && next !== "connected" && this.lastPresenceOnline !== false) {
+        this.lastPresenceOnline = false;
+        void this.notifyPresence(false);
+      }
+    }
+  }
+
+  /**
+   * doc 40 MON-F1 — đẩy 1 sự kiện presence sang machinePresenceService (best-effort).
+   * Import động để tránh coupling load-order + để nhánh này là no-op khi service/DB vắng.
+   * machinePresenceService tự gate MACHINE_PRESENCE_ENABLED + tự chống ghi trùng.
+   */
+  private async notifyPresence(online: boolean): Promise<void> {
+    if (this.machineId == null) return;
+    try {
+      const mod = await import("../machinePresenceService");
+      await mod.recordPresenceEvent(this.machineId, online, {
+        source: `adapter:${this.code}`,
+      });
+    } catch {
+      // never throw to the host from a presence push
+    }
   }
 
   private startHealthLoop(): void {
@@ -326,19 +392,50 @@ export class ConnectionSupervisor {
       if (this.stopped || this.state !== "connected") return;
       const ep = this.endpoints[this.activeIndex];
       if (!ep) return;
-      let healthy = false;
+
+      // ── Tín hiệu CỨNG #1: driver báo isConnected()===false (event transport đã lật,
+      // hoặc trạng thái lib thật đã đứt) → mất kết nối NGAY (không đợi ngưỡng). Đây là
+      // đường doc 40 OT-F1: mọi driver nay lật connected=false khi rớt cáp giữa phiên.
+      let reportedConnected: boolean;
       try {
-        healthy = ep.driver.isConnected();
-        if (healthy) {
-          const h = await ep.driver.health();
-          healthy = h.connected !== false;
-        }
+        reportedConnected = ep.driver.isConnected();
+      } catch {
+        reportedConnected = false;
+      }
+      if (!reportedConnected) {
+        this.consecutiveProbeFailures = 0;
+        if (this.state === "connected") await this.onActiveLost("driver reported disconnected");
+        return;
+      }
+
+      // ── Probe health(). NÉM lỗi = tín hiệu CỨNG #2 (I/O fault) → mất kết nối NGAY.
+      let probeThrew = false;
+      let probeConnected = true;
+      try {
+        const h = await ep.driver.health();
+        probeConnected = h.connected !== false;
       } catch (err) {
         this.lastError = errMsg(err);
-        healthy = false;
+        probeThrew = true;
       }
-      if (!healthy && this.state === "connected") {
-        await this.onActiveLost();
+      if (this.state !== "connected") return; // state có thể đã đổi trong lúc await
+      if (probeThrew) {
+        this.consecutiveProbeFailures = 0;
+        await this.onActiveLost("health probe threw");
+        return;
+      }
+      if (probeConnected) {
+        this.consecutiveProbeFailures = 0;
+        return;
+      }
+
+      // ── Tín hiệu MỀM: health() trả {connected:false} nhưng KHÔNG ném — fallback cho
+      // driver không phân biệt rõ rớt-giữa-phiên. Đếm liên tiếp, chỉ coi mất kết nối khi
+      // đạt ngưỡng OT_LINKLOSS_FAIL_THRESHOLD (đảm bảo đúng cả khi driver không expose event).
+      this.consecutiveProbeFailures += 1;
+      if (this.consecutiveProbeFailures >= this.linkLossThreshold) {
+        this.consecutiveProbeFailures = 0;
+        await this.onActiveLost(`health reported disconnected ${this.linkLossThreshold}x`);
       }
     } catch {
       // never throw to the host from a timer callback
@@ -346,8 +443,9 @@ export class ConnectionSupervisor {
   }
 
   /** The active endpoint was detected down → promote standby / reconnect. */
-  private async onActiveLost(): Promise<void> {
+  private async onActiveLost(reason?: string): Promise<void> {
     if (this.stopped) return;
+    if (reason) this.lastError = reason;
     this.setState("reconnecting");
     await this.closeActiveHandle();
     // preferOther=true → try the OTHER endpoint first (immediate hot-standby promote).
@@ -391,6 +489,7 @@ export class ConnectionSupervisor {
         // ── success ──
         this.activeIndex = idx;
         this.consecutiveFailures = 0;
+        this.consecutiveProbeFailures = 0; // doc 40 OT-F1 — reset đếm probe-mềm sau khi nối lại
         this.lastError = null;
         this.lastConnectedAt = Date.now();
         const wasConnected = this.hasConnectedOnce;

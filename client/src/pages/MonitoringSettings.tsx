@@ -40,10 +40,23 @@ import ManualMachineMapping from "@/components/ManualMachineMapping";
 export default function MonitoringSettings() {
   const { t } = useTranslation();
   const { hasPermission, loading: permsLoading } = usePermissions();
-  const canView = hasPermission("admin_system", "canView");
+  // doc 40 DEV-02 — đồng bộ với nav row (machine_status). Trang này chỉ còn là
+  // đăng ký/gán thiết bị (device-mapping), không phải quản trị hệ thống.
+  const canView = hasPermission("machine_status", "canView");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
+
+  // doc 40 DEV-01 — 5 tab MQTT trùng 100% ConnectivityHub. Redirect deep-link
+  // ?tab=mqtt-* sang /connectivity (tab tương ứng); trang này chỉ giữ device-management
+  // + machine-registration.
+  const MQTT_TAB_REDIRECTS: Record<string, string> = {
+    'mqtt-clients': 'clients',
+    'mqtt-topics': 'topics',
+    'mqtt-replay': 'replay',
+    'mqtt-profiles': 'profiles',
+    'mqtt-ng-rate': 'ngrate',
+  };
 
   // Parse tab from URL query parameter
   const getTabFromUrl = () => {
@@ -60,6 +73,15 @@ export default function MonitoringSettings() {
     setActiveTab(tab);
     setLocation(`/monitoring-setting?tab=${tab}`);
   };
+
+  // doc 40 DEV-01 — redirect deep-link ?tab=mqtt-* sang hub /connectivity (no reload).
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const tab = params.get('tab');
+    if (tab && MQTT_TAB_REDIRECTS[tab]) {
+      setLocation(`/connectivity?tab=${MQTT_TAB_REDIRECTS[tab]}`);
+    }
+  }, [search]);
 
   // Sync tab with URL on mount and URL changes
   useEffect(() => {
@@ -234,10 +256,9 @@ export default function MonitoringSettings() {
                             {t("settings.mqttDescription")}
                           </p>
                         </div>
-                        <Button asChild>
-                          <a href="/mqtt-clients">
-                            {t("settings.goToMqttClients")}
-                          </a>
+                        {/* doc 40 DEV-01 — dùng wouter navigate (no full reload) thay raw <a>. */}
+                        <Button onClick={() => setLocation("/connectivity?tab=clients")}>
+                          {t("settings.goToMqttClients")}
                         </Button>
                       </div>
                     </CardContent>

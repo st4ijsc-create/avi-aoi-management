@@ -1,10 +1,12 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   ArrowUpDown,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Columns3,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -19,6 +21,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/EmptyState";
 import { TableSkeleton } from "@/components/AnalyticsSkeleton";
 
@@ -86,6 +96,16 @@ export interface DataTableColumn<T> {
   width?: string;
   /** Extra classes applied to every cell (and header) of this column. */
   className?: string;
+  /**
+   * Plain-text label shown in the column-chooser menu. Falls back to `header`
+   * when it is a string, else to `id`. Set this when `header` is a node.
+   */
+  chooserLabel?: string;
+  /**
+   * When true, the column can never be hidden by the column chooser and is
+   * omitted from its checkbox list (e.g. a primary identifier column).
+   */
+  alwaysVisible?: boolean;
 }
 
 export interface DataTableProps<T> {
@@ -126,6 +146,19 @@ export interface DataTableProps<T> {
 
   // toolbar slot (right side of the search row) for page-specific actions
   toolbar?: React.ReactNode;
+
+  // column chooser (show/hide columns) ----------------------------------------
+  /**
+   * Enable the "Cột" column chooser button. When omitted, it is auto-enabled if
+   * `tableId` is provided. Pass `false` to force it off even with a `tableId`.
+   */
+  columnChooser?: boolean;
+  /**
+   * Stable identity used to persist the hidden-column choice in localStorage
+   * (`datatable:cols:<tableId>`). Without it the chooser still works but the
+   * choice only lasts for the session (component lifetime).
+   */
+  tableId?: string;
 }
 
 type SortState = { columnId: string; dir: "asc" | "desc" } | null;
@@ -138,6 +171,52 @@ function useDebouncedValue<V>(value: V, delayMs: number): V {
     return () => clearTimeout(handle);
   }, [value, delayMs]);
   return debounced;
+}
+
+/**
+ * Set of hidden column ids for the column chooser. Persisted to localStorage
+ * when `tableId` is supplied; otherwise kept for the component's lifetime only.
+ */
+function useHiddenColumns(
+  tableId: string | undefined
+): [Set<string>, (ids: Set<string>) => void] {
+  const storageKey = tableId ? `datatable:cols:${tableId}` : null;
+
+  const [hidden, setHidden] = React.useState<Set<string>>(() => {
+    if (!storageKey || typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? new Set(parsed.filter((v): v is string => typeof v === "string"))
+        : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const update = React.useCallback(
+    (ids: Set<string>) => {
+      setHidden(ids);
+      if (!storageKey || typeof window === "undefined") return;
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(Array.from(ids)));
+      } catch {
+        /* private mode / quota — fall back to in-memory only */
+      }
+    },
+    [storageKey]
+  );
+
+  return [hidden, update];
+}
+
+/** Plain-text label for a column in the chooser menu. */
+function columnChooserLabel<T>(col: DataTableColumn<T>): string {
+  if (col.chooserLabel) return col.chooserLabel;
+  if (typeof col.header === "string") return col.header;
+  return col.id;
 }
 
 /** Compare two sortValue results. Nulls always sort last (in both directions). */
@@ -190,11 +269,45 @@ export function DataTable<T>({
   stickyHeader = true,
   className,
   toolbar,
+  columnChooser,
+  tableId,
 }: DataTableProps<T>): React.JSX.Element {
+  const { t } = useTranslation();
   const [sort, setSort] = React.useState<SortState>(initialSort ?? null);
   const [rawSearch, setRawSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const search = useDebouncedValue(rawSearch, 150);
+
+  // ── Column chooser (show/hide columns) ──────────────────────────────────────
+  // Enabled explicitly, or auto-enabled when a persistence `tableId` is given.
+  const chooserEnabled = columnChooser ?? Boolean(tableId);
+  const [hiddenColumns, setHiddenColumns] = useHiddenColumns(tableId);
+
+  // Columns that are eligible to be toggled off (not `alwaysVisible`).
+  const hideableColumns = React.useMemo(
+    () => columns.filter((c) => !c.alwaysVisible),
+    [columns]
+  );
+
+  // The columns actually rendered. Sorting/searching still runs over ALL columns
+  // (so a hidden column keeps contributing to global search and any active sort).
+  const visibleColumns = React.useMemo(
+    () =>
+      chooserEnabled
+        ? columns.filter((c) => c.alwaysVisible || !hiddenColumns.has(c.id))
+        : columns,
+    [columns, chooserEnabled, hiddenColumns]
+  );
+
+  const setColumnHidden = React.useCallback(
+    (columnId: string, hide: boolean) => {
+      const next = new Set(hiddenColumns);
+      if (hide) next.add(columnId);
+      else next.delete(columnId);
+      setHiddenColumns(next);
+    },
+    [hiddenColumns, setHiddenColumns]
+  );
 
   const selectedSet = React.useMemo(
     () => new Set(selectedIds ?? []),
@@ -306,7 +419,7 @@ export function DataTable<T>({
     [selectedSet, emitSelection]
   );
 
-  const columnCount = columns.length + (selectable ? 1 : 0);
+  const columnCount = visibleColumns.length + (selectable ? 1 : 0);
 
   // ---- Loading ----
   if (loading) {
@@ -323,10 +436,49 @@ export function DataTable<T>({
   const headerCellBase =
     "text-foreground h-10 px-2 align-middle font-medium whitespace-nowrap";
 
+  const showChooser = chooserEnabled && hideableColumns.length > 0;
+
+  const columnChooserMenu = showChooser ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5"
+          aria-label={t("datatable.chooseColumns", "Chọn cột hiển thị")}
+        >
+          <Columns3 className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">{t("datatable.columns", "Cột")}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel>{t("datatable.showColumns", "Hiện cột")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {hideableColumns.map((col) => {
+          const isVisible = !hiddenColumns.has(col.id);
+          // Never allow hiding the last remaining visible column.
+          const wouldEmptyTable = isVisible && visibleColumns.length <= 1;
+          return (
+            <DropdownMenuCheckboxItem
+              key={col.id}
+              checked={isVisible}
+              disabled={wouldEmptyTable}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(checked) => setColumnHidden(col.id, !checked)}
+            >
+              {columnChooserLabel(col)}
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
   return (
     <div className={cn("w-full space-y-3", className)}>
-      {/* Toolbar row: search + page-specific actions */}
-      {(searchable || toolbar) && (
+      {/* Toolbar row: search + page-specific actions + column chooser */}
+      {(searchable || toolbar || columnChooserMenu) && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex-1 min-w-[200px] max-w-sm">
             {searchable && (
@@ -340,8 +492,11 @@ export function DataTable<T>({
               />
             )}
           </div>
-          {toolbar && (
-            <div className="flex items-center gap-2">{toolbar}</div>
+          {(toolbar || columnChooserMenu) && (
+            <div className="flex items-center gap-2">
+              {toolbar}
+              {columnChooserMenu}
+            </div>
           )}
         </div>
       )}
@@ -371,7 +526,7 @@ export function DataTable<T>({
                   />
                 </TableHead>
               )}
-              {columns.map((col) => {
+              {visibleColumns.map((col) => {
                 const isSorted = sort?.columnId === col.id;
                 const ariaSort: React.AriaAttributes["aria-sort"] = col.sortValue
                   ? isSorted
@@ -481,7 +636,7 @@ export function DataTable<T>({
                         />
                       </TableCell>
                     )}
-                    {columns.map((col) => (
+                    {visibleColumns.map((col) => (
                       <TableCell
                         key={col.id}
                         style={col.width ? { width: col.width } : undefined}

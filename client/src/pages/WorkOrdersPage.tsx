@@ -11,7 +11,8 @@
  * close) and delete actions are hidden unless the user holds the matching grant.
  * SAFETY: pure maintenance lifecycle — never writes a value to a machine.
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -28,6 +29,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { StatusBadge, PageHeader, PageContainer, type BadgeVariant } from "@/components/patterns";
+import { UserSelect } from "@/components/patterns/EntityPicker";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -38,7 +40,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Wrench, Plus, Pencil, Trash2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Wrench, Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Package, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUSES = ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
@@ -229,7 +231,16 @@ export default function WorkOrdersPage() {
                 {rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">{r.workOrderNumber}</TableCell>
-                    <TableCell>{r.machineCode ?? machineLabel(r.machineId)}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/machine/${r.machineId}`}
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
+                        title={t("workOrders.openMachine", "Mở thiết bị")}
+                      >
+                        {r.machineCode ?? machineLabel(r.machineId)}
+                        <ExternalLink aria-hidden="true" className="h-3 w-3 opacity-60" />
+                      </Link>
+                    </TableCell>
                     <TableCell className="max-w-[20rem] truncate">{r.title}</TableCell>
                     <TableCell><Badge variant="outline">{t(`workOrders.type.${r.type}`)}</Badge></TableCell>
                     <TableCell><Badge variant={r.priority <= 2 ? "destructive" : "outline"}>P{r.priority}</Badge></TableCell>
@@ -315,7 +326,7 @@ function CreateDialog({
   const [title, setTitle] = useState("");
   const [type, setType] = useState<string>("CORRECTIVE");
   const [priority, setPriority] = useState<number>(3);
-  const [assignedTo, setAssignedTo] = useState<string>("");
+  const [assignedTo, setAssignedTo] = useState<number | null>(null);
   const [description, setDescription] = useState("");
 
   const submit = () => {
@@ -326,7 +337,7 @@ function CreateDialog({
       title: title.trim(),
       type,
       priority,
-      assignedTo: assignedTo ? Number(assignedTo) : undefined,
+      assignedTo: assignedTo ?? undefined,
       description: description.trim() || undefined,
     });
   };
@@ -371,8 +382,12 @@ function CreateDialog({
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.assignee")}</Label>
-            <Input type="number" placeholder={t("workOrders.assigneePlaceholder")} value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)} />
+            <UserSelect
+              value={assignedTo}
+              onChange={(v) => setAssignedTo(v == null ? null : Number(v))}
+              placeholder={t("workOrders.assigneePlaceholder", "Chọn người phụ trách…")}
+              aria-label={t("workOrders.assignee")}
+            />
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.col.description")}</Label>
@@ -403,7 +418,7 @@ function DetailDialog({
   const { t } = useTranslation();
   const [status, setStatus] = useState(wo.status);
   const [priority, setPriority] = useState(wo.priority);
-  const [assignedTo, setAssignedTo] = useState<string>(wo.assignedTo != null ? String(wo.assignedTo) : "");
+  const [assignedTo, setAssignedTo] = useState<number | null>(wo.assignedTo);
   const [resolutionNotes, setResolutionNotes] = useState(wo.resolutionNotes ?? "");
   const [downtime, setDowntime] = useState<string>(wo.downtimeMinutes != null ? String(wo.downtimeMinutes) : "");
 
@@ -442,8 +457,13 @@ function DetailDialog({
           </div>
           <div className="grid gap-1">
             <Label>{t("workOrders.assignee")}</Label>
-            <Input type="number" disabled={!canEdit || isClosed} value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)} />
+            <UserSelect
+              value={assignedTo}
+              onChange={(v) => setAssignedTo(v == null ? null : Number(v))}
+              disabled={!canEdit || isClosed}
+              placeholder={t("workOrders.assigneePlaceholder", "Chọn người phụ trách…")}
+              aria-label={t("workOrders.assignee")}
+            />
           </div>
 
           {/* Resolution + downtime — the close-loop inputs (feed MTTR). */}
@@ -465,6 +485,9 @@ function DetailDialog({
               <div className="text-xs text-muted-foreground">{t("workOrders.recordedDowntime", { mins: wo.downtimeMinutes })}</div>
             )}
           </div>
+
+          {/* Spare-parts consumed — recordPartsUsed (atomic ledger + stock decrement). */}
+          <WorkOrderPartsPanel workOrderId={wo.id} canEdit={canEdit} isClosed={isClosed} />
         </div>
         <DialogFooter className="flex-wrap gap-2">
           <Button variant="outline" onClick={onClose}>{t("workOrders.cancel")}</Button>
@@ -473,7 +496,7 @@ function DetailDialog({
               onClick={() => onUpdate({
                 status,
                 priority,
-                assignedTo: assignedTo ? Number(assignedTo) : null,
+                assignedTo,
                 resolutionNotes: resolutionNotes || null,
               })}>
               {t("workOrders.saveChanges")}
@@ -488,5 +511,128 @@ function DetailDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Phụ tùng đã tiêu thụ trên 1 lệnh công việc — nối recordPartsUsed (trừ kho +
+ * ghi ledger nguyên tử) và liệt kê listPartsForWorkOrder. Chi phí tính từ
+ * snapshot unitCost trong ledger (KHÔNG bịa nếu null). Không có endpoint danh
+ * mục vật tư đầy đủ nên nhập theo partCode (khớp spare_parts_inventory.partCode).
+ */
+function WorkOrderPartsPanel({
+  workOrderId, canEdit, isClosed,
+}: {
+  workOrderId: number;
+  canEdit: boolean;
+  isClosed: boolean;
+}) {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const partsQ = trpc.maintenance.listPartsForWorkOrder.useQuery({ workOrderId });
+  const [partCode, setPartCode] = useState("");
+  const [qty, setQty] = useState<string>("1");
+  const [notes, setNotes] = useState("");
+
+  const recordM = trpc.maintenance.recordPartsUsed.useMutation({
+    onSuccess: (res) => {
+      toast.success(t("workOrders.parts.recorded", "Đã ghi nhận vật tư"));
+      if (res?.belowReorder) {
+        toast.warning(t("workOrders.parts.belowReorder", "Tồn kho phụ tùng dưới mức đặt lại"));
+      }
+      setPartCode(""); setQty("1"); setNotes("");
+      void utils.maintenance.listPartsForWorkOrder.invalidate({ workOrderId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const rows = (partsQ.data ?? []) as Array<{
+    id: number; partCode: string; quantityUsed: number;
+    unitCost: string | null; consumedAt: string | Date | null; notes: string | null;
+  }>;
+  const totalCost = rows.reduce(
+    (sum, r) => sum + (r.unitCost != null ? Number(r.unitCost) * r.quantityUsed : 0),
+    0,
+  );
+  const anyCost = rows.some((r) => r.unitCost != null);
+
+  const submit = () => {
+    const q = Number(qty);
+    if (!partCode.trim()) { toast.error(t("workOrders.parts.codeRequired", "Nhập mã phụ tùng")); return; }
+    if (!Number.isInteger(q) || q < 1) { toast.error(t("workOrders.parts.qtyRequired", "Số lượng ≥ 1")); return; }
+    recordM.mutate({
+      workOrderId,
+      partCode: partCode.trim(),
+      quantityUsed: q,
+      notes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="rounded-md border p-3 space-y-2">
+      <div className="text-sm font-medium flex items-center gap-1">
+        <Package className="h-4 w-4" /> {t("workOrders.parts.title", "Vật tư đã dùng")}
+      </div>
+
+      {partsQ.isLoading ? (
+        <div className="text-xs text-muted-foreground py-2">{t("workOrders.loading")}</div>
+      ) : rows.length === 0 ? (
+        <div className="text-xs text-muted-foreground py-2">{t("workOrders.parts.empty", "Chưa ghi nhận vật tư nào")}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("workOrders.parts.code", "Mã phụ tùng")}</TableHead>
+                <TableHead className="text-right">{t("workOrders.parts.qty", "SL")}</TableHead>
+                <TableHead className="text-right">{t("workOrders.parts.cost", "Chi phí")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono text-xs">
+                    {r.partCode}
+                    {r.notes ? <span className="ml-1 text-muted-foreground">— {r.notes}</span> : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{r.quantityUsed}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.unitCost != null ? (Number(r.unitCost) * r.quantityUsed).toLocaleString() : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {anyCost && (
+            <div className="text-xs text-muted-foreground text-right pt-1">
+              {t("workOrders.parts.total", "Tổng chi phí")}: <span className="tabular-nums font-medium">{totalCost.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canEdit && !isClosed && (
+        <div className="flex flex-wrap items-end gap-2 pt-1">
+          <div className="grid gap-1">
+            <Label className="text-xs">{t("workOrders.parts.code", "Mã phụ tùng")}</Label>
+            <Input className="h-9 w-40 font-mono" value={partCode}
+              placeholder={t("workOrders.parts.codePlaceholder", "VD: BRG-6204")}
+              onChange={(e) => setPartCode(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-xs">{t("workOrders.parts.qty", "SL")}</Label>
+            <Input className="h-9 w-20" type="number" min={1} value={qty}
+              onChange={(e) => setQty(e.target.value)} />
+          </div>
+          <div className="grid gap-1 flex-1 min-w-[8rem]">
+            <Label className="text-xs">{t("workOrders.parts.notes", "Ghi chú")}</Label>
+            <Input className="h-9" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <Button size="sm" onClick={submit} disabled={recordM.isPending}>
+            <Plus className="h-4 w-4 mr-1" /> {t("workOrders.parts.record", "Ghi nhận")}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

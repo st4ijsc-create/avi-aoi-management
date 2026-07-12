@@ -186,7 +186,11 @@ export default function EdgeNodesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.length === 0 && (
+                {/* DEV-11 — nhánh isLoading TRƯỚC empty-state để không hiện "trống" khi đang tải */}
+                {listQ.isLoading && (
+                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">{t("common.loading", "Đang tải…")}</TableCell></TableRow>
+                )}
+                {!listQ.isLoading && rows.length === 0 && (
                   <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">{t("edgeNodes.empty", "Chưa có node nào.")}</TableCell></TableRow>
                 )}
                 {rows.map((n) => (

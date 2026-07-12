@@ -129,8 +129,9 @@ describe("DeltaDriver — session + read path", () => {
     nextSocket = null;
     connectCalls = 0;
     delete process.env.ROBOT_CONTROL_ENABLED;
+    process.env.ROBOT_MOCK_VENDORS_ENABLED = "true"; // test này CHỦ ĐÍCH exercise mock Delta driver (kịch bản lab/sim mà flag CTL-05 dành cho)
   });
-  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; });
+  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; delete process.env.ROBOT_MOCK_VENDORS_ENABLED; });
 
   it("connect: single RDSTS probe → connected (NO SERVO)", async () => {
     const { d, sock } = await connectedDriver();
@@ -185,8 +186,9 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
     nextSocket = null;
     connectCalls = 0;
     delete process.env.ROBOT_CONTROL_ENABLED;
+    process.env.ROBOT_MOCK_VENDORS_ENABLED = "true"; // test này CHỦ ĐÍCH exercise mock Delta driver (kịch bản lab/sim mà flag CTL-05 dành cho)
   });
-  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; });
+  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; delete process.env.ROBOT_MOCK_VENDORS_ENABLED; });
 
   it("runJob dry-run: builds command but writes NO bytes, no SERVO/MOVL", async () => {
     const { d, sock } = await connectedDriver();

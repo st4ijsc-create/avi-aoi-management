@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
+import { Redirect } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -136,7 +136,13 @@ function DowntimeCategoryBadge({ category }: { category: DowntimeEvent['category
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export default function OEEDashboard() {
+/**
+ * doc 40 Wave 4 DEV-10 — OEE & Downtime body, extracted WITHOUT its own
+ * DashboardLayout so it can render as the "oee" tab of DeviceHub (/device-monitor
+ * ?tab=oee) alongside Fleet / Health / Field. The standalone /oee-dashboard route
+ * now just redirects here (see the thin default export below), keeping deep-links.
+ */
+export function OEEDashboardContent() {
   const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [showCalculator, setShowCalculator] = useState(false);
@@ -159,7 +165,10 @@ export default function OEEDashboard() {
 
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
-  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  // doc 40 DEV-10 — auto-refresh mỗi 60s (trước đây chỉ cập nhật khi bấm Refresh).
+  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
   const { data: machineOEE } = trpc.mqttClient.getMachineOEE.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }
@@ -375,7 +384,6 @@ export default function OEEDashboard() {
   };
 
   return (
-    <DashboardLayout>
       <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
         {/* Header */}
         <PageHeader
@@ -1069,6 +1077,14 @@ export default function OEEDashboard() {
           </TabsContent>
         </Tabs>
       </div>
-    </DashboardLayout>
   );
+}
+
+/**
+ * doc 40 Wave 4 DEV-10 — OEE & Downtime is now the 4th tab of DeviceHub. The
+ * legacy /oee-dashboard route stays as a thin redirect into the hub so bookmarks,
+ * the nav item, and cross-links keep working.
+ */
+export default function OEEDashboard() {
+  return <Redirect to="/device-monitor?tab=oee" />;
 }

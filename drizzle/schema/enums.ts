@@ -31,6 +31,11 @@ export const machineTypeEnum = pgEnum("machinetypeenum", [
   "PACKAGING",  // Packaging station
   "PALLETIZER", // Palletizer
   "ROBOT",      // Generic industrial robot
+  // --- doc 40 W5 (MTX-03): SMT line machine types (migration 0241_smt_machine_types) ---
+  "MOUNTER",         // SMT pick-and-place mounter
+  "REFLOW",          // Reflow soldering oven
+  "STENCIL_PRINTER", // Solder-paste stencil printer
+  "WAVE_SOLDER",     // Wave / selective soldering
 ]);
 // Sprint F2 — outcome of a generic process/station step (telemetry RESULT, not a control command)
 export const processResultEnum = pgEnum("processresultenum", ["pass", "fail", "warn", "skip"]);
@@ -209,7 +214,9 @@ export const drCheckStatusEnum = pgEnum("drcheckstatusenum", ["passed", "failed"
 
 // === Sprint F1.1 — OT Connectivity Framework ===
 // Industrial protocol of an OT device adapter (driver scaffold; only "stub" is functional in F1.1)
-export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub"]);
+// doc 40 Wave 5 OT-F8 — 'slmp' = SLMP 3E/4E binary (Mitsubishi FX5U/iQ-R) qua node:net
+// (driver slmpDriver.ts). Bổ khuyết 'mitsubishi-mc' (chỉ 1E frame). Migration 0241.
+export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub", "slmp"]);
 // Logical data type of an OT tag value
 export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", "string", "json"]);
 // Runtime connection state of an OT adapter
@@ -395,6 +402,9 @@ export const programDeployStageEnum = pgEnum("programdeploystageenum", ["staging
 // default outcome when DPC_DEPLOY_ENABLED is off — nothing reaches the device.
 export const programDeployStatusEnum = pgEnum("programdeploystatusenum", [
   "pending",
+  // doc 40 ENG-F2 — a production real-deploy queued for a SECOND person to sign off
+  // in the Approval Inbox (two-phase request→approve). Migration 0239.
+  "awaiting_approval",
   "simulated",
   "deployed",
   "verified",

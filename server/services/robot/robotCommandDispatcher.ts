@@ -14,11 +14,67 @@
  *   5. real run under timeout → record done/failed.
  * Every branch writes an append-only robot_jobs row.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotJobResult } from "./robotDriver";
+
+/**
+ * CTL-02 (doc 40) — ROBOT COMMISSIONING / FAT LEDGER (bảng migration 0240). Định nghĩa
+ * table INLINE ở đây (đúng shape với 0240_robot_commissioning.sql) vì đây là consumer duy
+ * nhất và schema robot.ts nằm ngoài phạm vi sửa của Wave 2. Song song với OT
+ * commissioning_records nhưng khoá theo robotId (KHÔNG tái dùng adapterId để tránh trùng
+ * khoá số giữa robot và OT-adapter). Chỉ bản ghi status='active' + chưa hết hạn mới
+ * commission một robot cho real-motion.
+ */
+const robotCommissioningRecords = pgTable("robot_commissioning_records", {
+  id: serial("id").primaryKey(),
+  robotId: integer("robotId").notNull(),
+  status: varchar("status", { length: 16 }).default("active").notNull(),
+  fatReference: varchar("fatReference", { length: 255 }),
+  signedBy: integer("signedBy").notNull(),
+  signedAt: timestamp("signedAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+  revokedBy: integer("revokedBy"),
+  revokedAt: timestamp("revokedAt"),
+  revokeReason: text("revokeReason"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/**
+ * Cờ chủ cho CTL-02 gate. Khi ON (MẶC ĐỊNH — an toàn theo mặc định) dispatcher đòi robot
+ * đã commissioned TRƯỚC một real-write; robot chưa commissioned bị ÉP xuống nhánh 'simulated'.
+ * Chỉ "false"/"0" tường minh mới tắt (legacy/dev). Đọc ở RUNTIME (không phải lúc load module).
+ * Đối xứng OT_COMMISSIONING_REQUIRED.
+ */
+export function isRobotCommissioningRequired(): boolean {
+  const v = process.env.ROBOT_COMMISSIONING_REQUIRED;
+  return !(v === "false" || v === "0"); // DEFAULT ON: chỉ opt-out tường minh mới tắt.
+}
+
+/**
+ * TRUE iff `robotId` có ≥1 bản ghi commissioning status='active', chưa hết hạn, đã ký.
+ * Fail-safe: DB không sẵn ⇒ FALSE (⇒ dispatcher KHÔNG real-write; degrade về simulated).
+ * Chỉ có thể NGHIÊM NGẶT hơn hành vi trước — không bao giờ cho phép một write chưa được phép.
+ */
+export async function isRobotCommissioned(robotId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false; // fail-safe: no DB ⇒ coi như CHƯA commissioned.
+  const rows = await db
+    .select()
+    .from(robotCommissioningRecords)
+    .where(and(eq(robotCommissioningRecords.robotId, robotId), eq(robotCommissioningRecords.status, "active")));
+  if (!Array.isArray(rows)) return false; // fail-safe: kết quả bất thường ⇒ coi như CHƯA commissioned.
+  const now = Date.now();
+  return rows.some((r) => {
+    if (r.status !== "active") return false;
+    if (r.expiresAt == null) return true;
+    return new Date(r.expiresAt).getTime() > now;
+  });
+}
 
 /**
  * X1-e — resolve the (equipmentClass, userRole) the command-authz guard needs.
@@ -182,6 +238,22 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
   // 4) MODE GATE — dry-run by default.
   if (!controlEnabled()) {
     const jobId = await record(input, "simulated", { dryRun: true });
+    return { ok: true, status: "simulated", jobId };
+  }
+
+  // 4a) COMMISSIONING / FAT GATE (CTL-02, doc 40) — ĐỐI XỨNG với OT commandDispatcher.
+  //     Reachable CHỈ khi ROBOT_CONTROL_ENABLED==='true' (bước 4 đã trả 'simulated' nếu
+  //     không). Khi ROBOT_COMMISSIONING_REQUIRED bật (MẶC ĐỊNH) và robot CHƯA có bản ghi
+  //     commissioning active/chưa hết hạn/đã ký → ÉP xuống nhánh 'simulated' (y như OT).
+  //     Chỉ HẠ một would-be real-write xuống simulated; KHÔNG bao giờ mở một write nên
+  //     không thể nới lỏng bất kỳ gate nào ở trên. PRECEDENCE: chưa-commissioned ⇒ simulated.
+  if (isRobotCommissioningRequired() && !(await isRobotCommissioned(input.robotId))) {
+    const jobId = await record(
+      input,
+      "simulated",
+      { dryRun: true, notCommissioned: true },
+      "not_commissioned: robot has no active, non-expired, signed commissioning record — real motion refused (recorded simulated)",
+    );
     return { ok: true, status: "simulated", jobId };
   }
 

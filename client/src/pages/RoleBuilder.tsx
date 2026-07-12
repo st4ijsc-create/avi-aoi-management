@@ -559,11 +559,23 @@ export function RoleBuilderContent() {
                     return (
                       <AccordionItem key={category} value={category}>
                         <AccordionTrigger className="text-sm font-medium">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span>{t(CATEGORY_LABELS[category] || category)}</span>
                             <Badge variant="outline" className="text-xs">
                               {t('roles.modulesCount', { count: modules.length })}
                             </Badge>
+                            {/* doc 40 ENG-F3/Tuấn — cảnh báo role-floor: kể cả khi cấp bit
+                                machine_control cho role bất kỳ, server vẫn CHẶN thực thi lệnh
+                                nếu không phải admin/supervisor/engineer + 2FA (actuationProcedure). */}
+                            {category === 'machine_control' && (
+                              <Badge variant="destructive" className="text-xs gap-1">
+                                <Shield className="h-3 w-3" />
+                                {t(
+                                  'roles.machineControlFloorWarning',
+                                  'Chỉ admin/supervisor/engineer + 2FA mới thực thi được lệnh',
+                                )}
+                              </Badge>
+                            )}
                           </div>
                         </AccordionTrigger>
                         <AccordionContent>

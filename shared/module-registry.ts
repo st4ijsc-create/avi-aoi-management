@@ -322,7 +322,8 @@ const SEED_MODULES: SystemModule[] = [
     version: "1.0.0",
     isCore: false,
     routes: [
-      // doc 36 — master-data surface of the "Quản trị & Cấu hình" app (D5). import-export → CORE_ADMIN.
+      // 2026-07-11 — surface của app "Quản lý dữ liệu" riêng (tách khỏi app Quản trị,
+      // thay quyết định D5 doc 36). import-export → CORE_ADMIN.
       "/master-data", "/operator-badges", "/component-library",
       "/products", "/product-onboarding", "/product-mapping",
       "/layout", "/workstation-management", "/process-management", "/datasettings",

@@ -125,10 +125,14 @@ beforeEach(() => {
   publishes.length = 0;
   delete process.env.ROBOT_CONTROL_ENABLED;
   delete process.env.VDA5050_ENABLED;
+  // Các test này kiểm tra publish MQTT của VDA5050 — mối quan tâm ĐỘC LẬP với robot
+  // commissioning gate (CTL-02). Tắt gate để cô lập (robot fixture chưa commissioned).
+  process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
 });
 afterEach(() => {
   delete process.env.ROBOT_CONTROL_ENABLED;
   delete process.env.VDA5050_ENABLED;
+  delete process.env.ROBOT_COMMISSIONING_REQUIRED;
 });
 
 describe("VDA5050 State → robot_telemetry mapping", () => {

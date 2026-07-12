@@ -17,6 +17,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { rethrowDbError } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import {
@@ -90,8 +91,8 @@ export const componentLibraryRouter = router({
       .use(requirePermission(MODULE, "canCreate"))
       .input(z.object({
         ...packageBody,
-        code: z.string().min(1).max(64),
-        family: z.string().min(1).max(40),
+        code: z.string().min(1, "Mã package là bắt buộc").max(64),
+        family: z.string().min(1, "Family là bắt buộc").max(40),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
@@ -108,10 +109,9 @@ export const componentLibraryRouter = router({
           } as InsertComponentPackage).returning({ id: componentPackages.id });
           return { id: row.id };
         } catch (e) {
-          if (/uq_comp_pkg_code|duplicate key/i.test(String((e as Error)?.message))) {
-            throw new TRPCError({ code: "CONFLICT", message: `Package code '${input.code}' already exists` });
-          }
-          throw e;
+          // Doc 42 #2/#4: drizzle bọc lỗi pg trong DrizzleQueryError (23505 nằm ở
+          // e.cause) — rethrowDbError dò đúng shape thay vì regex trên e.message.
+          rethrowDbError(e, { conflictMessage: `Mã package '${input.code}' đã tồn tại (kể cả bản ghi đã xoá mềm)` });
         }
       }),
 
@@ -151,6 +151,21 @@ export const componentLibraryRouter = router({
           .where(eq(componentPackages.id, input.id));
         return { success: true };
       }),
+
+    /** Doc 42 #4 — gỡ khoá tombstone: khôi phục package đã xoá mềm (clear deletedAt,
+     *  bật lại isActive) để mã dùng lại được thay vì kẹt vĩnh viễn. */
+    restore: protectedProcedure
+      .use(requirePermission(MODULE, "canEdit"))
+      .input(idInput)
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db
+          .update(componentPackages)
+          .set({ deletedAt: null, isActive: true, updatedAt: new Date() })
+          .where(eq(componentPackages.id, input.id));
+        return { success: true };
+      }),
   }),
 
   // ── Footprints (land-pattern variants per package) ──────────────────────────
@@ -170,7 +185,7 @@ export const componentLibraryRouter = router({
       .use(requirePermission(MODULE, "canCreate"))
       .input(z.object({
         packageId: z.number().int().positive(),
-        code: z.string().min(1).max(64),
+        code: z.string().min(1, "Mã footprint là bắt buộc").max(64),
         density: z.enum(["most", "nominal", "least"]).optional(),
         padCount: z.number().int().nonnegative().optional(),
         geometry: z.object({
@@ -189,10 +204,7 @@ export const componentLibraryRouter = router({
             .returning({ id: componentFootprints.id });
           return { id: row.id };
         } catch (e) {
-          if (/uq_comp_fp_pkg_code|duplicate key/i.test(String((e as Error)?.message))) {
-            throw new TRPCError({ code: "CONFLICT", message: `Footprint '${input.code}' already exists for this package` });
-          }
-          throw e;
+          rethrowDbError(e, { conflictMessage: `Footprint '${input.code}' đã tồn tại trong package này` });
         }
       }),
 

@@ -2,13 +2,13 @@
  * P4 (audit H / doc 12 §6) — ROBOT CONTROL surface (read-mostly + honest safety gate).
  *
  * Surfaces the Phase-3 robotRouter: registry list, per-robot telemetry, and the
- * append-only motion-job log. The command panel is INTENTIONALLY non-actuating:
- * motion control is NOT exposed over tRPC — it routes through the internal
- * robotCommandDispatcher (HITL-confirmed + dry-run/simulated + idempotency-keyed),
- * never from the browser. So this page is honest about that: it shows the job log
- * (status: simulated / hitl / rejected …), whether a robot is ENABLED (a disabled
- * robot never actuates), and explains that any "command" issued elsewhere is
- * simulated until the device is enabled. The UI never implies a real motion happened.
+ * append-only motion-job log. ENG-F15 (doc 40): this page is now purely a REGISTRY /
+ * observation surface — the dead in-page "command panel" (text-only, no dispatch) is
+ * removed. Issuing a single gated robot command lives on /command-console (the first UI
+ * that actually calls robot.actuate → robotCommandDispatcher, HITL-confirmed + dry-run +
+ * idempotency). "Điều khiển" per row and the header button route there; legacy deep-links
+ * that carried ?command= are forwarded to the console. The job log stays here (status:
+ * simulated / hitl / rejected …) and the UI never implies a real motion happened.
  *
  * RBAC: writes on the robot registry are adminProcedure (admin only). Read-only roles
  * see a ViewOnlyBadge and disabled controls. Registry create/edit/delete live on the
@@ -19,7 +19,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { withParams } from "@/lib/engineeringDeepLink";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
@@ -31,8 +32,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Bot, RefreshCw, ShieldAlert, Plug, Activity, AlertTriangle, Lock, CheckCircle2, CircleSlash, ExternalLink,
-  X, Send,
+  Bot, RefreshCw, ShieldAlert, Plug, Activity, AlertTriangle, CheckCircle2, CircleSlash, ExternalLink,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,12 +79,15 @@ export default function RobotControl() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { hasPermission } = usePermissions();
+  // doc 40 ENG-F3 — bỏ hardgate role==='admin'. Bật/tắt thiết bị + test kết nối là hành
+  // vi điều khiển OT → gate theo permission bit machine_control/canEdit (admin bypass sẵn
+  // trong hasPermission). Engineer/supervisor có machine_control giờ không bị khóa oan.
+  const canControl = hasPermission("machine_control", "canEdit");
 
-  // Deep-link from RobotCockpit "Propose": /robot-control?robotId=X&command=Y
-  // (params emitted at RobotCockpit.tsx ~line 680). We consume them to auto-focus
-  // the robot and surface the proposed command honestly — dispatch stays gated.
+  // Deep-link params. `?robotId=` auto-focuses the row (still useful). `?command=` is a
+  // LEGACY shape (cockpit Propose now targets /command-console directly) — we forward it
+  // to the console below rather than reviving a dead in-page command panel (ENG-F15).
   const deepLink = useMemo(() => {
     const p = new URLSearchParams(search);
     const rid = p.get("robotId");
@@ -115,28 +119,14 @@ export default function RobotControl() {
     }
   }, [deepLink.robotId, robots]);
 
-  // A dismissible deep-link banner; reset dismissal whenever the link changes.
-  const [deepLinkDismissed, setDeepLinkDismissed] = useState(false);
+  // ENG-F15 — điều khiển thật đã chuyển sang /command-console. Chuyển tiếp deep-link cũ
+  // mang ?command= (vd từ liên kết Propose cũ) sang console, giữ robotId + command, thay
+  // vì hiển thị bảng lệnh chết ở trang này.
   useEffect(() => {
-    setDeepLinkDismissed(false);
-  }, [deepLink.robotId, deepLink.command]);
-
-  const bannerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (deepLink.robotId != null && !deepLinkDismissed) {
-      bannerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (deepLink.command != null) {
+      setLocation(withParams("/command-console", { robotId: deepLink.robotId, command: deepLink.command }), { replace: true });
     }
-  }, [deepLink.robotId, deepLink.command, deepLinkDismissed]);
-
-  const deepLinkRobot = useMemo(
-    () => (deepLink.robotId != null ? robots.find((r) => r.id === deepLink.robotId) ?? null : null),
-    [robots, deepLink.robotId],
-  );
-  // Show the proposed-command panel when a command was deep-linked and the currently
-  // selected robot is the one it targets (or no specific robot was named).
-  const proposedForSelected =
-    deepLink.command != null && selected != null &&
-    (deepLink.robotId == null || deepLink.robotId === selected.id);
+  }, [deepLink.command, deepLink.robotId, setLocation]);
 
   const telemetryQ = trpc.robot.telemetry.useQuery(
     { robotId: activeId ?? 0, limit: 20 },
@@ -173,12 +163,23 @@ export default function RobotControl() {
         <PageHeader
           icon={<Bot className="h-6 w-6" />}
           title={t("robot.title", "Điều khiển Robot")}
-          badge={!isAdmin ? <ViewOnlyBadge /> : undefined}
+          badge={!canControl ? <ViewOnlyBadge /> : undefined}
           description={t("robot.subtitle", "Theo dõi robot/AGV: registry, telemetry, nhật ký lệnh — chuyển động luôn qua HITL/dry-run")}
           actions={
-            <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canControl}
+                onClick={() => setLocation(withParams("/command-console", { robotId: activeId }))}
+                title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : t("robot.openConsoleTip", "Mở Command Console để phát lệnh có gate (HITL + dry-run)")}
+              >
+                <Send className="mr-1 h-4 w-4" /> {t("robot.commandConsole", "Command Console")}
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           }
         />
 
@@ -192,47 +193,6 @@ export default function RobotControl() {
             )}
           </span>
         </div>
-
-        {/* Deep-link banner — cockpit "Propose" landed here with a robot + command. */}
-        {deepLink.robotId != null && !deepLinkDismissed && (
-          <div
-            ref={bannerRef}
-            className="flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 p-3 text-sm"
-          >
-            <Send className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div className="flex-1">
-              <p className="font-medium">{t("robot.deepLinkTitle", "Proposed command from cockpit")}</p>
-              <p className="mt-0.5 text-muted-foreground">
-                {deepLinkRobot
-                  ? deepLink.command
-                    ? t(
-                        "robot.deepLinkBody",
-                        'The robot cockpit proposed the command "{{command}}" for robot {{robot}}. It has been focused below — review it in the gated command panel; nothing is dispatched automatically.',
-                        { command: deepLink.command, robot: `${deepLinkRobot.name} (${deepLinkRobot.code})` },
-                      )
-                    : t(
-                        "robot.deepLinkRobotOnly",
-                        "The robot cockpit focused robot {{robot}} below.",
-                        { robot: `${deepLinkRobot.name} (${deepLinkRobot.code})` },
-                      )
-                  : t(
-                      "robot.deepLinkNotFound",
-                      "A cockpit link referenced robot #{{robotId}}, but it is not in the registry (it may be hidden or removed).",
-                      { robotId: deepLink.robotId },
-                    )}
-              </p>
-            </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 shrink-0"
-              onClick={() => setDeepLinkDismissed(true)}
-              title={t("common.dismiss", "Dismiss")}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
 
         {/* Registry */}
         <Card>
@@ -287,16 +247,24 @@ export default function RobotControl() {
                         >
                           <ExternalLink className="mr-1 h-3.5 w-3.5" />{t("robot.cockpit", "Cockpit")}
                         </Button>
-                        <div className="flex items-center gap-1.5" title={!isAdmin ? t("robot.adminOnly", "Chỉ admin") : undefined}>
+                        <Button
+                          size="sm" variant="ghost" className="h-7"
+                          disabled={!canControl}
+                          onClick={() => setLocation(withParams("/command-console", { robotId: r.id }))}
+                          title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : t("robot.controlTip", "Mở Command Console cho robot này (phát lệnh có gate)")}
+                        >
+                          <Send className="mr-1 h-3.5 w-3.5" />{t("robot.control", "Điều khiển")}
+                        </Button>
+                        <div className="flex items-center gap-1.5" title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : undefined}>
                           <Switch
                             checked={r.isEnabled}
-                            disabled={!isAdmin || setEnabledM.isPending}
+                            disabled={!canControl || setEnabledM.isPending}
                             onCheckedChange={(v) => setEnabledM.mutate({ id: r.id, enabled: v })}
                           />
                         </div>
                         <Button
                           size="sm" variant="outline" className="h-7"
-                          disabled={!isAdmin || testM.isPending}
+                          disabled={!canControl || testM.isPending}
                           onClick={() => testM.mutate({ id: r.id })}
                           title={t("robot.testConnTip", "Kiểm tra kết nối — chỉ đọc trạng thái, không chuyển động")}
                         >
@@ -311,9 +279,9 @@ export default function RobotControl() {
           </CardContent>
         </Card>
 
-        {/* Detail: telemetry + command/job log */}
+        {/* Detail: telemetry + job log (điều khiển ở /command-console) */}
         {selected && (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
             {/* Telemetry */}
             <Card>
               <CardHeader className="pb-2">
@@ -352,78 +320,8 @@ export default function RobotControl() {
               </CardContent>
             </Card>
 
-            {/* Command panel — honest read-only / gated */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Lock className="h-4 w-4" />
-                  {t("robot.commandPanel", "Bảng lệnh (gated)")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {proposedForSelected ? (
-                  <div className="space-y-3">
-                    <div className="rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
-                      <p className="flex items-center gap-2 font-medium">
-                        <Send className="h-4 w-4 text-primary" />
-                        {t("robot.proposedCmdTitle", "Proposed command (from cockpit)")}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="text-muted-foreground">{t("robot.proposedCmd", "Command")}:</span>
-                        <Badge variant="outline" className="font-mono">{deepLink.command}</Badge>
-                        <span className="text-muted-foreground">·</span>
-                        <span className="text-muted-foreground">{t("robot.forRobot", "Robot")}:</span>
-                        <span className="font-mono text-xs">{selected.code}</span>
-                        {selected.isEnabled
-                          ? <StatusBadge status="enabled" tone="success" label={<><CheckCircle2 className="mr-1 h-3 w-3" />{t("robot.enabled", "Bật")}</>} className="gap-0" />
-                          : <StatusBadge status="disabled" tone="default" label={<><CircleSlash className="mr-1 h-3 w-3" />{t("robot.disabled", "Tắt")}</>} className="gap-0" />}
-                      </div>
-                      <p className="mt-2 text-muted-foreground">
-                        {t(
-                          "robot.proposedCmdNote",
-                          "This surface does NOT dispatch motion. To execute, the command must go through the internal gated dispatcher (robotCommandDispatcher: human-in-the-loop confirm + dry-run + idempotency key).",
-                        )}{" "}
-                        {selected.isEnabled
-                          ? t("robot.proposedCmdEnabled", "This robot is ENABLED — an operator can confirm and run it via the HITL dispatcher; watch the job log below for its status (simulated / hitl / done).")
-                          : t("robot.proposedCmdDisabled", "This robot is DISABLED — any dispatch is recorded as SIMULATED (no real motion) until an admin enables it in the registry above.")}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7"
-                        onClick={() => setLocation(`/robot/${selected.id}`)}
-                        title={t("robot.openCockpit", "Mở cockpit robot")}
-                      >
-                        <ExternalLink className="mr-1 h-3.5 w-3.5" />{t("robot.backToCockpit", "Back to cockpit")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7"
-                        onClick={() => setLocation("/robot-control")}
-                        title={t("robot.clearProposed", "Clear proposed command")}
-                      >
-                        <X className="mr-1 h-3.5 w-3.5" />{t("robot.clearProposed", "Clear proposed command")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 p-3 text-sm">
-                    <p className="font-medium">{t("robot.noDirectCmdTitle", "Không phát lệnh trực tiếp từ UI")}</p>
-                    <p className="mt-1 text-muted-foreground">
-                      {selected.isEnabled
-                        ? t("robot.cmdEnabledNote", "Robot đã BẬT. Lệnh vẫn chỉ được phát qua bộ điều phối HITL nội bộ (xác nhận con người + idempotency). Giao diện này không kích hoạt chuyển động.")
-                        : t("robot.cmdDisabledNote", "Robot đang TẮT — mọi lệnh sẽ chỉ được ghi nhận ở trạng thái MÔ PHỎNG (simulated), không có chuyển động thật cho tới khi được bật.")}
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
             {/* Job log (append-only) */}
-            <Card className="lg:col-span-2">
+            <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{t("robot.jobLog", "Nhật ký lệnh (append-only)")}</CardTitle>
               </CardHeader>

@@ -59,7 +59,7 @@ function sessionLabel(s: SessionLike): string {
 export function ShiftHandoverDialog({ open, onOpenChange, fromSession, onDone }: ShiftHandoverDialogProps) {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
-  const canHandover = hasPermission("production_orders", "canEdit");
+  const canHandover = hasPermission("production_session", "canEdit");
 
   // Candidate sessions to hand over between: open + paused are still "live".
   const openQ = trpc.productionSession.list.useQuery({ status: "open", limit: 200 }, { enabled: open });
@@ -126,7 +126,7 @@ export function ShiftHandoverDialog({ open, onOpenChange, fromSession, onDone }:
         {!canHandover && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>{t("handover.noPermission", "Bạn không có quyền bàn giao (cần production_orders · canEdit).")}</span>
+            <span>{t("handover.noPermission", "Bạn chưa được cấp quyền bàn giao ca — liên hệ giám sát để cấp quyền phiên sản xuất.")}</span>
           </div>
         )}
 

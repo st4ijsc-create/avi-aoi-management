@@ -17,6 +17,7 @@
  */
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useCopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 import { useLocation, Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
@@ -187,6 +188,23 @@ export default function PouStudio() {
   const errorCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "error").length;
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
   const lintOk = lint?.ok ?? false;
+
+  // doc 41 — publish POU Studio to the Programming Copilot DOCK as an ADVISORY assistant.
+  // Structured LAD/FBD/SFC has no text buffer to inject into (no onApply); the copilot
+  // explains the transpiled ST preview and reasons over the semantic-linter diagnostics.
+  useCopilotBinding(
+    () => ({
+      kind: "iec61131-pou" as const,
+      surfaceLabel: t("nav.pouStudio", "POU Studio"),
+      code: transpile?.code ?? undefined,
+      diagnostics: (lint?.diagnostics ?? []).map((d) => ({
+        message: `[${d.rule}] ${d.pou}/${d.ref}: ${d.message}`,
+        severity: d.severity === "error" ? ("error" as const) : ("warn" as const),
+        source: "lint",
+      })),
+    }),
+    [lint, transpile],
+  );
 
   // Group the selected POU's diagnostics by lint `ref` (rung / net / step) for canvas markers.
   const diagsByRef = useMemo(() => {

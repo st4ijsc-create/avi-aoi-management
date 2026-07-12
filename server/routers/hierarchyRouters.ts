@@ -1,4 +1,4 @@
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -31,6 +31,7 @@ import {
   ENTITY_TYPES,
 } from "../services/auditTrailService";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { withDbErrors, rethrowDbError } from "../_core/dbErrors";
 import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
 
 // ── Doc 27 Đợt 3 / W3-B — M5 audit helpers ──────────────────────────────────
@@ -116,13 +117,13 @@ export const factoryRouter = router({
 
   create: adminProcedure
     .input(z.object({
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      code: z.string().min(1, "Mã nhà máy là bắt buộc").max(50),
+      name: z.string().min(1, "Tên nhà máy là bắt buộc").max(255),
       description: z.string().optional(),
       address: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const id = await db.createFactory(input);
+      const id = await withDbErrors(() => db.createFactory(input), { conflictMessage: `Mã nhà máy '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.FACTORY, id, input.name, input);
       return { id };
     }),
@@ -144,7 +145,7 @@ export const factoryRouter = router({
       if (mapPositionX !== undefined) data.mapPositionX = mapPositionX.toString();
       if (mapPositionY !== undefined) data.mapPositionY = mapPositionY.toString();
       const before = await db.getFactoryById(id);
-      await db.updateFactory(id, data);
+      await withDbErrors(() => db.updateFactory(id, data), { conflictMessage: "Mã nhà máy đã tồn tại" });
       await logUpdate(createAuditContext(ctx), ENTITY_TYPES.FACTORY, id, before?.name ?? `factory#${id}`, pickBefore(before, Object.keys(data)), data);
       return { success: true };
     }),
@@ -323,13 +324,13 @@ export const workshopRouter = router({
 
   create: adminProcedure
     .input(z.object({
-      factoryId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      factoryId: z.number({ error: "Vui lòng chọn nhà máy" }),
+      code: z.string().min(1, "Mã xưởng là bắt buộc").max(50),
+      name: z.string().min(1, "Tên xưởng là bắt buộc").max(255),
       description: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const id = await db.createWorkshop(input);
+      const id = await withDbErrors(() => db.createWorkshop(input), { conflictMessage: `Mã xưởng '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.WORKSHOP, id, input.name, input);
       return { id };
     }),
@@ -396,13 +397,13 @@ export const lineRouter = router({
 
   create: adminProcedure
     .input(z.object({
-      workshopId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      workshopId: z.number({ error: "Vui lòng chọn xưởng" }),
+      code: z.string().min(1, "Mã line là bắt buộc").max(50),
+      name: z.string().min(1, "Tên line là bắt buộc").max(255),
       description: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const id = await db.createProductionLine(input);
+      const id = await withDbErrors(() => db.createProductionLine(input), { conflictMessage: `Mã line '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.LINE, id, input.name, input);
       return { id };
     }),
@@ -469,14 +470,14 @@ export const stationRouter = router({
 
   create: adminProcedure
     .input(z.object({
-      lineId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      lineId: z.number({ error: "Vui lòng chọn line" }),
+      code: z.string().min(1, "Mã trạm là bắt buộc").max(50),
+      name: z.string().min(1, "Tên trạm là bắt buộc").max(255),
       description: z.string().optional(),
       orderIndex: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const id = await db.createStation(input);
+      const id = await withDbErrors(() => db.createStation(input), { conflictMessage: `Mã trạm '${input.code}' đã tồn tại` });
       await logCreate(createAuditContext(ctx), ENTITY_TYPES.STATION, id, input.name, input);
       return { id };
     }),
@@ -804,7 +805,10 @@ export const machineRouter = router({
     }),
 
   list: protectedProcedure.query(async () => {
-    return db.getMachines();
+    // Doc 42 (theme 10) — KHÔNG trả apiKey trong list (kể cả admin); màn hình
+    // cần key dùng endpoint theo-máy (getById/approve/regenerateApiKey).
+    const rows = await db.getMachines();
+    return rows.map(({ apiKey: _apiKey, ...rest }) => rest);
   }),
 
   // ── Doc 27 Đợt 5 / W5-E — gap F9: server-side search + pagination ────────
@@ -871,11 +875,15 @@ export const machineRouter = router({
       return db.getMachineStats(input.id, input.startDate, input.endDate);
     }),
 
-  create: adminProcedure
+  // Doc 40 W1 (Minh-P1) — role-floor: engineer/supervisor may ONBOARD (create) a
+  // machine (master-data write, not device actuation). NB: update/delete/regenerateApiKey
+  // vẫn adminProcedure (admin-only) — cố ý để onboarding mở nhưng sửa/xoá vòng đời vẫn
+  // do admin; nếu cần nhất quán thì mở cùng role-floor ở đợt sau (QA-1b ghi nhận).
+  create: roleProcedure("admin", "supervisor", "engineer")
     .input(z.object({
-      stationId: z.number(),
-      code: z.string().min(1).max(50),
-      name: z.string().min(1).max(255),
+      stationId: z.number({ error: "Vui lòng chọn trạm" }),
+      code: z.string().min(1, "Mã máy là bắt buộc").max(50),
+      name: z.string().min(1, "Tên máy là bắt buộc").max(255),
       machineType: z.enum(MACHINE_TYPES),
       model: z.string().optional(),
       manufacturer: z.string().optional(),
@@ -884,6 +892,11 @@ export const machineRouter = router({
       image2DKey: z.string().optional(),
       image3DUrl: z.string().optional(),
       image3DKey: z.string().optional(),
+      // Doc 40 W1 (Tuấn-P0, 0238) — địa chỉ kết nối từ onboarding wizard. Optional
+      // để không phá caller cũ; lưu thẳng vào bản ghi máy qua createMachine(...input).
+      ipAddress: z.string().min(1).max(45).optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+      connectionProtocol: z.enum(["websocket", "tcp", "http"]).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       // M7: pre-check duplicate code among ACTIVE machines → clean CONFLICT
@@ -892,7 +905,7 @@ export const machineRouter = router({
       if (dup) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: `Machine code '${input.code}' is already in use by machine #${dup.id} (${dup.name})`,
+          message: `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
         });
       }
 
@@ -908,7 +921,7 @@ export const machineRouter = router({
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
           throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
         }
-        throw e;
+        rethrowDbError(e, { conflictMessage: `Mã máy '${input.code}' đã tồn tại` });
       }
     }),
 

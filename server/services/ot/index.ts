@@ -11,6 +11,8 @@ import { createModbusDriver } from "./drivers/modbusDriver";
 import { createS7Driver } from "./drivers/s7Driver";
 import { createMitsubishiMcDriver } from "./drivers/mitsubishiMcDriver";
 import { createEthernetIpDriver } from "./drivers/ethernetIpDriver";
+import { createSlmpDriver } from "./drivers/slmpDriver";
+import type { OtProtocol } from "./otDriver";
 import { pluginDriversEnabled, registerPluginDrivers } from "../plugins/pluginDriverBridge";
 
 registerDriver("stub", createStubDriver);
@@ -19,6 +21,10 @@ registerDriver("modbus", createModbusDriver);
 registerDriver("s7", createS7Driver);
 registerDriver("mitsubishi-mc", createMitsubishiMcDriver);
 registerDriver("ethernet-ip", createEthernetIpDriver);
+// doc 40 Wave 5 OT-F8 — SLMP 3E/4E (Mitsubishi FX5U/iQ-R) trên node:net. 'slmp' đã có
+// trong otProtocolEnum (migration 0241) nhưng CHƯA trong union OtProtocol (otDriver.ts
+// không thuộc pass này) → cast runtime-safe (khớp registry + DB enum + deviceAdapter).
+registerDriver("slmp" as OtProtocol, createSlmpDriver);
 
 // ── doc 37 P0-4 — PLUGIN device-connector drivers ("thêm hãng = 1 plugin"). ──────
 // Flag OFF by default (PLUGIN_DRIVERS_ENABLED). When ON, each PLUGIN_DRIVERS manifest that

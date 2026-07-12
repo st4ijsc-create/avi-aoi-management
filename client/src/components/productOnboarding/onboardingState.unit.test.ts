@@ -8,6 +8,7 @@ import {
   deriveStepStatuses,
   mergeStepStatus,
   computeReadiness,
+  requiredIncompleteSteps,
   type OnboardingReadinessInput,
 } from "./types";
 
@@ -95,5 +96,43 @@ describe("computeReadiness", () => {
     expect(r.percent).toBe(50);
     // required-done: product, fiducials, points, mapping = 4 of 6
     expect(r.requiredComplete).toBe(4);
+  });
+});
+
+describe("requiredIncompleteSteps (Finish guard)", () => {
+  it("lists all 6 required steps when nothing is configured", () => {
+    const missing = requiredIncompleteSteps(deriveStepStatuses(EMPTY), {});
+    expect(missing.sort()).toEqual(
+      ["fiducials", "mapping", "points", "product", "release", "thresholds"].sort(),
+    );
+  });
+  it("excludes optional steps + never lists review", () => {
+    const missing = requiredIncompleteSteps(deriveStepStatuses(EMPTY), {});
+    expect(missing).not.toContain("golden");
+    expect(missing).not.toContain("panel");
+    expect(missing).not.toContain("review");
+  });
+  it("is empty once every required step has real data", () => {
+    const full = deriveStepStatuses({
+      ...EMPTY,
+      hasProduct: true,
+      fiducialCount: 2,
+      pointCount: 5,
+      pointsWithLimits: 5,
+      releaseCount: 1,
+      mappingCount: 1,
+    });
+    expect(requiredIncompleteSteps(full, {})).toEqual([]);
+  });
+  it("a skip mark never satisfies a required step (only real data does)", () => {
+    const derived = deriveStepStatuses({ ...EMPTY, hasProduct: true });
+    const missing = requiredIncompleteSteps(derived, { fiducials: { status: "skipped" } });
+    expect(missing).toContain("fiducials");
+    expect(missing).not.toContain("product"); // product has data → satisfied
+  });
+  it("honors an explicit manual 'done' on a required step", () => {
+    const derived = deriveStepStatuses({ ...EMPTY, hasProduct: true });
+    const missing = requiredIncompleteSteps(derived, { release: { status: "done" } });
+    expect(missing).not.toContain("release");
   });
 });

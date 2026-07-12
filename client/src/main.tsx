@@ -76,10 +76,24 @@ createRoot(document.getElementById("root")!).render(
   </trpc.Provider>
 );
 
-// Phase 5 WS5.1 — register the PWA service worker (production only, to avoid
-// stale-cache surprises during dev/HMR).
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  });
+// Phase 5 WS5.1 — PWA service worker. Đăng ký CHỈ khi VITE_ENABLE_SW='true'
+// (production PWA). Mặc định TẮT + tự UNREGISTER mọi SW cũ + xoá cache của nó:
+// trong lúc dev/test rebuild liên tục, SW stale-while-revalidate phục vụ main-bundle
+// cũ trỏ tới chunk hash đã chết → chunk 404 → server trả index.html → lỗi MIME
+// "Failed to load module script". Tắt SW cho luồng test sạch; bật lại khi ship PWA.
+if ("serviceWorker" in navigator) {
+  const enableSw = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SW === "true";
+  if (enableSw) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  } else {
+    // Gỡ mọi SW đang kiểm soát + xoá cache của chúng để hết stale-chunk.
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const r of regs) r.unregister().catch(() => {});
+    }).catch(() => {});
+    if ("caches" in window) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+    }
+  }
 }

@@ -121,6 +121,11 @@ export class S7Driver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — NodeS7 là callback-based, KHÔNG có event channel ổn định. Gắn
+      // 'error'/'close' phòng hờ (bọc try/catch — no-op nếu không expose). Đường phát
+      // hiện CHÍNH cho nodes7 là isConnected()/health() đọc `isoConnectionState` thật
+      // của lib (xem isConnected) + fallback đếm-lỗi ở connectionSupervisor.
+      this.attachLinkLossHandlers(conn);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -146,8 +151,41 @@ export class S7Driver extends NotImplementedDriver {
     this.connected = false;
   }
 
+  /**
+   * doc 40 OT-F1 — isConnected() phải nói THẬT khi rớt cáp/PLC reboot giữa phiên.
+   * NodeS7 giữ trạng thái ISO ở `isoConnectionState` (4 = connected); khi transport
+   * đứt, lib tự hạ về != 4. Ta ưu tiên trạng thái lib (guarded) rồi mới tới cờ nội bộ —
+   * nhờ vậy health()/isConnected() không còn báo "connected" giả sau khi mất kết nối,
+   * để connectionSupervisor phát hiện và reconnect. Package mock (không có field) →
+   * lui về cờ `connected` như cũ (không đổi hành vi test).
+   */
   override isConnected(): boolean {
+    if (!this.connected) return false;
+    const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+    if (typeof st === "number") return st === 4;
     return this.connected;
+  }
+
+  /** doc 40 OT-F1 — gắn listener 'error'/'close' phòng hờ (no-op nếu lib không emit). */
+  private attachLinkLossHandlers(conn: any): void {
+    if (!conn || typeof conn.on !== "function") return;
+    for (const ev of ["error", "close"]) {
+      try {
+        conn.on(ev, (arg?: unknown) => {
+          if (this.conn === conn) this.markLinkLost(ev, arg);
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `s7 link lost (${ev})${detail}`;
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -312,7 +350,9 @@ export class S7Driver extends NotImplementedDriver {
   override async health(): Promise<OtHealth> {
     return {
       protocol: this.protocol,
-      connected: this.connected,
+      // doc 40 OT-F1 — báo trạng thái THẬT (đọc isoConnectionState của lib), không phải
+      // cờ nội bộ có thể đã lỗi thời sau khi rớt kết nối giữa phiên.
+      connected: this.isConnected(),
       lastOkAt: this.lastOkAt ?? this.connectedAt ?? undefined,
       lastError: this.lastError,
       latencyMs: this.lastLatencyMs,

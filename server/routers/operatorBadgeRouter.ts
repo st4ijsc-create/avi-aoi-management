@@ -28,7 +28,10 @@ const dateInput = z
   .union([z.string(), z.date()])
   .nullish()
   .transform((v) => {
-    if (v == null || v === "") return null;
+    // Key VẮNG MẶT phải ra undefined (không phải null) — nếu gộp về null thì
+    // update sẽ ghi NULL đè validFrom/validTo cũ khi client chỉ gửi userId.
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
     return d;

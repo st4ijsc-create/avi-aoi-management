@@ -11,6 +11,14 @@
  * the list (cmdk), selecting fires `onChange(value, option)` and closes, the active
  * row shows a ✓, and an optional ✕ clears back to null without opening the popover.
  *
+ * Doc 42 INFRA-1: khi `value` đã set nhưng không khớp option nào (đã load xong) →
+ * trigger hiện raw value + badge "Không tồn tại" — chống liên kết code rác
+ * (material↔class↔uom). Tắt qua `warnOnInvalid={false}`.
+ *
+ * Doc 42 §7 quick-create (opt-in): truyền `onQuickCreate` để khi gõ một giá trị
+ * không khớp option nào, người dùng bấm "＋ Tạo mới «X»" ngay trong combobox thay
+ * vì phải rời trang. Không truyền prop ⇒ hành vi giữ nguyên như cũ.
+ *
  * ── Generic usage (inline options) ─────────────────────────────────────────────
  *   const [status, setStatus] = React.useState<string | number | null>(null);
  *   <EntityPicker
@@ -36,9 +44,11 @@
  * English-default and overridable via props — no hardcoded i18n.
  */
 import * as React from "react";
-import { Check, ChevronsUpDown, Loader2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { AlertTriangle, Check, ChevronsUpDown, Loader2, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -81,6 +91,24 @@ export interface EntityPickerProps {
   className?: string;
   id?: string;
   "aria-label"?: string;
+  /**
+   * When `value` is set but matches no option (and not loading), show a warning
+   * badge — the key guard against dangling code links (material↔class↔uom). The
+   * raw value is still shown so the user can see what's broken. Default true.
+   */
+  warnOnInvalid?: boolean;
+  /** Text of the invalid-value badge. Defaults to the translated `entityPicker.invalid`. */
+  invalidText?: string;
+  /**
+   * Doc 42 §7 quick-create — khi gõ một giá trị không khớp option nào, hiện mục
+   * "＋ Tạo mới «X»" ngay trong picker (thay vì rời trang). Chọn nó gọi
+   * `onQuickCreate(query)`; nếu trả về một EntityOption thì set value = option đó
+   * và đóng popover, trả `null` thì giữ nguyên. Không truyền prop ⇒ tính năng
+   * tắt hoàn toàn (tương thích ngược với mọi trang đang dùng).
+   */
+  onQuickCreate?: (query: string) => Promise<EntityOption | null>;
+  /** Nhãn đứng trước chuỗi «X» ở mục tạo nhanh. Defaults to the translated `entityPicker.createNew`. */
+  createText?: string;
 }
 
 export function EntityPicker({
@@ -96,14 +124,26 @@ export function EntityPicker({
   className,
   id,
   "aria-label": ariaLabel,
+  warnOnInvalid = true,
+  invalidText,
+  onQuickCreate,
+  createText,
 }: EntityPickerProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
+  // Controlled search text — needed so quick-create can echo what the user typed
+  // and so we can tell whether the query matches any existing option.
+  const [query, setQuery] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
 
   const selected = React.useMemo(
     () => options.find((o) => o.value === value) ?? null,
     [options, value],
   );
-  const hasValue = value !== null && value !== undefined && selected !== null;
+  const valueSet = value !== null && value !== undefined && value !== "";
+  const hasValue = valueSet && selected !== null;
+  // value đã set nhưng không khớp option nào (và đã load xong) → liên kết rác.
+  const isInvalid = warnOnInvalid && valueSet && selected === null && !loading;
 
   const handleSelect = React.useCallback(
     (option: EntityOption) => {
@@ -128,11 +168,50 @@ export function EntityPicker({
     [onChange],
   );
 
-  const showClear = clearable && hasValue && !disabled && !loading;
+  // ── Quick-create (doc 42 §7) ────────────────────────────────────────────────
+  const trimmedQuery = query.trim();
+  // Mirror the cmdk filter below (label + sublabel + value, case-insensitive) so
+  // "no option matches" here matches exactly what the list shows.
+  const queryMatchesOption = React.useMemo(() => {
+    if (trimmedQuery === "") return true;
+    const q = trimmedQuery.toLowerCase();
+    return options.some((o) =>
+      `${o.label} ${o.sublabel ?? ""} ${o.value}`.toLowerCase().includes(q),
+    );
+  }, [options, trimmedQuery]);
+  const showQuickCreate =
+    Boolean(onQuickCreate) && trimmedQuery !== "" && !queryMatchesOption && !loading;
+
+  const handleQuickCreate = React.useCallback(async () => {
+    if (!onQuickCreate || creating) return;
+    const q = trimmedQuery;
+    if (q === "") return;
+    setCreating(true);
+    try {
+      const created = await onQuickCreate(q);
+      if (created) {
+        onChange(created.value, created);
+        setOpen(false);
+        setQuery("");
+      }
+    } finally {
+      setCreating(false);
+    }
+  }, [onQuickCreate, creating, trimmedQuery, onChange]);
+
+  const showClear = clearable && (hasValue || isInvalid) && !disabled && !loading;
 
   return (
     <div className={cn("relative", className)}>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          // Reset the search when the popover closes so a stale query never
+          // lingers (controlled CommandInput doesn't self-clear on close).
+          if (!o) setQuery("");
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -148,18 +227,34 @@ export function EntityPicker({
               // Reserve room for the chevron (+ clear ✕ when present) so long
               // labels never slide under the trailing icons.
               showClear ? "pr-14" : "pr-8",
-              !hasValue && "text-muted-foreground",
+              !hasValue && !isInvalid && "text-muted-foreground",
+              isInvalid && "border-amber-500/60",
             )}
           >
             <span className="flex min-w-0 items-center gap-2 truncate">
               {loading && <Loader2 className="size-4 shrink-0 animate-spin opacity-70" aria-hidden="true" />}
-              <span className="truncate">
-                {selected ? selected.label : placeholder}
-              </span>
-              {selected?.sublabel != null && selected.sublabel !== "" && (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {selected.sublabel}
-                </span>
+              {isInvalid ? (
+                <>
+                  <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+                  <span className="truncate text-foreground">{String(value)}</span>
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400"
+                  >
+                    {invalidText ?? t("entityPicker.invalid", "Không tồn tại")}
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  <span className="truncate">
+                    {selected ? selected.label : placeholder}
+                  </span>
+                  {selected?.sublabel != null && selected.sublabel !== "" && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {selected.sublabel}
+                    </span>
+                  )}
+                </>
               )}
             </span>
             <ChevronsUpDown className="absolute right-2 size-4 shrink-0 opacity-50" aria-hidden="true" />
@@ -175,7 +270,11 @@ export function EntityPicker({
               itemValue.toLowerCase().includes(search.toLowerCase().trim()) ? 1 : 0
             }
           >
-            <CommandInput placeholder={searchPlaceholder} />
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={query}
+              onValueChange={setQuery}
+            />
             <CommandList>
               {loading ? (
                 <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
@@ -184,7 +283,9 @@ export function EntityPicker({
                 </div>
               ) : (
                 <>
-                  <CommandEmpty>{emptyText}</CommandEmpty>
+                  {/* When quick-create is offered for an unmatched query, that
+                      actionable row replaces the plain empty state. */}
+                  {!showQuickCreate && <CommandEmpty>{emptyText}</CommandEmpty>}
                   <CommandGroup>
                     {options.map((option) => {
                       const isSelected = option.value === value;
@@ -214,6 +315,26 @@ export function EntityPicker({
                       );
                     })}
                   </CommandGroup>
+                  {showQuickCreate && (
+                    <CommandGroup>
+                      <CommandItem
+                        // A value containing the query keeps this row past the
+                        // cmdk filter above even when no option matches.
+                        value={`__quick_create__ ${trimmedQuery}`}
+                        disabled={creating}
+                        onSelect={handleQuickCreate}
+                      >
+                        {creating ? (
+                          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Plus className="size-4 shrink-0" aria-hidden="true" />
+                        )}
+                        <span className="truncate">
+                          {createText ?? t("entityPicker.createNew", "Tạo mới")} «{trimmedQuery}»
+                        </span>
+                      </CommandItem>
+                    </CommandGroup>
+                  )}
                 </>
               )}
             </CommandList>

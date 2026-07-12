@@ -1053,6 +1053,9 @@ export default function OrchestrationStudio() {
   const [def, setDef] = useState<StudioDef>(() => emptyDef());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sim, setSim] = useState<SimResult | null>(null);
+  // doc 40 ENG-F4 — sim-gate: bằng chứng mô phỏng ĐẠT gắn với ĐÚNG định nghĩa (hash). Bất kỳ chỉnh
+  // sửa nào đổi định nghĩa → hash đổi → sim không còn "tươi" → Deploy khoá lại (khi gate bật).
+  const [simPass, setSimPass] = useState<{ hash: string; token?: string } | null>(null);
   // W4-16: view canvas — "tree" (mặc định an toàn) | "graph" (sơ đồ node react-flow).
   const [canvasView, setCanvasView] = useState<"tree" | "graph">("tree");
 
@@ -1064,6 +1067,12 @@ export default function OrchestrationStudio() {
 
   const statusQ = trpc.orchestration.status.useQuery();
   const foeEnabled = statusQ.data?.enabled ?? false;
+  // doc 40 ENG-F4 — server báo sim-gate có bắt buộc không (cờ FOE_SIM_GATE_REQUIRED). OFF → không
+  // khoá Deploy theo sim (hành vi cũ); ON → phải mô phỏng ĐẠT định nghĩa hiện tại trước khi Deploy.
+  const simGateRequired = statusQ.data?.simGateRequired ?? false;
+  // Hash định nghĩa hiện tại (khoá so khớp với lần sim gần nhất). serializeDef xác định → ổn định.
+  const defHash = useMemo(() => JSON.stringify(serializeDef(def)), [def]);
+  const simFresh = simPass != null && simPass.hash === defHash;
   const aiStatusQ = trpc.aiOrchestration.status.useQuery();
   const aiEnabled = aiStatusQ.data?.enabled ?? false;
 
@@ -1231,6 +1240,7 @@ export default function OrchestrationStudio() {
       setDef(cloned);
       setSelectedId(null);
       setSim(null);
+      setSimPass(null); // doc 40 ENG-F4 — định nghĩa mới nạp vào → phải mô phỏng lại trước khi Deploy
       setLastWorkflowRef(cloned.ref || null); // U1 — nhớ ref để mang sang Cell Twin
       toast.success(t("studio.loaded", "Workflow loaded into the editor"));
     }
@@ -1239,15 +1249,26 @@ export default function OrchestrationStudio() {
   const runSimulate = async () => {
     setSimulating(true);
     try {
-      const res = await utils.orchestration.simulate.fetch({ workflow: serializeDef(def) as Record<string, unknown> });
+      const payload = serializeDef(def) as Record<string, unknown>;
+      const submittedHash = JSON.stringify(payload);
+      const res = await utils.orchestration.simulate.fetch({ workflow: payload });
       setSim(res as unknown as SimResult);
+      // doc 40 ENG-F4 — sim ĐẠT → nhớ token gắn với ĐÚNG định nghĩa vừa nộp để qua sim-gate ở Deploy.
+      // Sim không đạt → xoá bằng chứng cũ (Deploy sẽ khoá lại khi gate bật).
+      if (res?.ok) setSimPass({ hash: submittedHash, token: (res as { simToken?: string }).simToken });
+      else setSimPass(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setSimulating(false);
     }
   };
-  const runDeploy = () => deployM.mutate({ definition: serializeDef(def) as Record<string, unknown> });
+  // doc 40 ENG-F4 — mang sim-token (nếu còn tươi cho định nghĩa hiện tại) sang server để qua sim-gate.
+  const runDeploy = () =>
+    deployM.mutate({
+      definition: serializeDef(def) as Record<string, unknown>,
+      simToken: simFresh ? simPass?.token : undefined,
+    });
   const runStart = () => startRunM.mutate({ workflowRef: def.ref, params: {} });
 
   // ── E5: AI advisor — propose / optimize (HITL: AI only proposes; human deploys) ──
@@ -1337,7 +1358,17 @@ export default function OrchestrationStudio() {
               <Button variant="outline" onClick={() => void runSimulate()} disabled={simulating || def.steps.length === 0}>
                 <FlaskConical className="mr-1.5 h-4 w-4" /> {t("studio.simulate", "Simulate")}
               </Button>
-              <Button variant="outline" onClick={runDeploy} disabled={!canControl || !foeEnabled || deployM.isPending} title={controlReason}>
+              <Button
+                variant="outline"
+                onClick={runDeploy}
+                disabled={!canControl || !foeEnabled || deployM.isPending || (simGateRequired && !simFresh)}
+                title={
+                  controlReason ??
+                  (simGateRequired && !simFresh
+                    ? t("studio.simRequired", "Chưa mô phỏng đạt — hãy Simulate đến khi feasible trước khi Deploy")
+                    : undefined)
+                }
+              >
                 <Save className="mr-1.5 h-4 w-4" /> {t("studio.deploy", "Save (deploy)")}
               </Button>
               <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref} title={controlReason}>
@@ -1358,6 +1389,18 @@ export default function OrchestrationStudio() {
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <span>{t("studio.foeOff", "FOE is off (FOE_ENABLED) — you can still author & simulate, but deploy/run are disabled.")}</span>
+          </div>
+        )}
+
+        {/* doc 40 ENG-F4 — sim-gate: đánh dấu bước Simulate là BẮT BUỘC trước Deploy (khi cờ bật). */}
+        {simGateRequired && foeEnabled && (
+          <div className={`flex items-start gap-2 rounded-md border p-2 text-xs ${simFresh ? "border-emerald-500/40 bg-emerald-500/10" : "border-sky-500/40 bg-sky-500/10"}`}>
+            <FlaskConical className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${simFresh ? "text-emerald-600" : "text-sky-600"}`} aria-hidden="true" />
+            <span>
+              {simFresh
+                ? t("studio.simGateOk", "Mô phỏng đã ĐẠT cho định nghĩa hiện tại — có thể Deploy.")
+                : t("studio.simGateRequiredHint", "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại.")}
+            </span>
           </div>
         )}
 

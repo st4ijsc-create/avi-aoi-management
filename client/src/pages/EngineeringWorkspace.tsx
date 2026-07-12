@@ -32,7 +32,8 @@ import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
 // Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
-import { ProgrammingCopilotPanel, COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
+import { COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
+import { useCopilotBinding, useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -58,11 +59,12 @@ import {
   Code2, Plus, FolderGit2, FileCode, Play, Hammer, FlaskConical, Rocket,
   AlertTriangle, CheckCircle2, XCircle, RefreshCw, Variable, ShieldCheck,
   Radio, Trash2, Pencil, Wifi, WifiOff, RotateCcw, GitCompare, Info,
-  Check, ChevronRight, Sparkles,
+  Check, ChevronRight, Sparkles, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -181,7 +183,11 @@ export default function EngineeringWorkspace() {
   const statusQ = trpc.programming.status.useQuery(undefined, { enabled: canView });
   const deployEnabled = statusQ.data?.deployEnabled ?? false;
   const streamingEnabled = statusQ.data?.streamingEnabled ?? false;
+  // doc 40 ENG-F2 — khi bật, deploy production đi qua Approval Inbox (request→approve).
+  const deployApprovalEnabled = statusQ.data?.deployApprovalEnabled ?? false;
   const adapters = statusQ.data?.adapters ?? [];
+  // doc 40 ENG-F13 — pre-flight: cảnh báo TRƯỚC nếu user thiếu 2FA / quyền để deploy (actuation).
+  const readiness = useActuationReadiness();
 
   // U4 (doc 26 §2.4) — lý do khoá nút ghi để KTV biết cần xin quyền hay bật cờ.
   const createReason = !canCreate
@@ -310,6 +316,11 @@ export default function EngineeringWorkspace() {
     { projectId: projectId! },
     { enabled: canView && projectId != null },
   );
+  // doc 40 W5 §11 — ma trận máy × version (máy nào đang chạy artifact/hash nào).
+  const fleetMatrixQ = trpc.programming.fleetVersionMatrix.useQuery(
+    { projectId: projectId! },
+    { enabled: canView && projectId != null },
+  );
 
   // ── Mutations ──
   const createProject = trpc.programming.createProject.useMutation({
@@ -363,11 +374,33 @@ export default function EngineeringWorkspace() {
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
-      toast.success(
-        d.simulated
-          ? t("engineering.deploySimulated", "Đã ghi nhận (SIMULATED — flag OFF / chưa sign-off)")
-          : t("engineering.deployReal", "Đã deploy"),
-      );
+      // doc 40 (Minh ui-fix) — báo toast THEO trạng thái THẬT (status), không chỉ theo cờ
+      // `simulated`. Trước đây rejected/failed vẫn hiện "Đã deploy" → che giấu việc bị từ chối.
+      switch (d.status) {
+        case "rejected":
+        case "failed":
+          toast.error(d.error || t("engineering.deployRejected", "Deploy bị từ chối"));
+          break;
+        case "verified":
+          toast.success(t("engineering.deployVerified", "Đã deploy & xác minh (read-back khớp)"));
+          break;
+        case "deployed":
+          toast.warning(t("engineering.deployedUnverified", "Đã deploy nhưng CHƯA xác minh read-back (thiết bị vắng / không hỗ trợ đọc lại)"));
+          break;
+        case "simulated":
+        default:
+          toast.success(t("engineering.deploySimulated", "Đã ghi nhận (SIMULATED — flag OFF / chưa sign-off)"));
+          break;
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  // doc 40 ENG-F2 — gửi YÊU CẦU deploy production (request→approve). Không tự deploy: tạo
+  // hàng chờ duyệt để người thứ hai ký ở Approval Inbox (đóng lỗ four-eyes hình thức).
+  const requestDeployApprovalM = trpc.programming.requestDeployApproval.useMutation({
+    onSuccess: () => {
+      utils.programming.listDeployments.invalidate();
+      toast.success(t("engineering.deployRequested", "Đã gửi yêu cầu deploy — chờ người thứ hai duyệt ở Hộp duyệt"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -380,6 +413,22 @@ export default function EngineeringWorkspace() {
     },
     onError: (e) => { setRollbackTarget(null); toast.error(e.message); },
   });
+  // doc 40 W5 §11 — triển khai đội máy (canary): tuần tự qua đúng deployBuild từng máy.
+  const deployToFleetM = trpc.programming.deployToFleet.useMutation({
+    onSuccess: (r) => {
+      utils.programming.listDeployments.invalidate();
+      utils.programming.fleetVersionMatrix.invalidate();
+      if (r.halted) {
+        toast.error(r.haltReason || t("engineering.fleetHalted", "Rollout đã DỪNG do canary không đạt"));
+      } else if (r.promoted) {
+        toast.success(t("engineering.fleetPromoted", "Canary đạt — đã promote toàn đội máy"));
+      } else {
+        toast.success(t("engineering.fleetCanaryOk", "Canary đã chạy xong"));
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const fleetResult = deployToFleetM.data ?? null;
 
   // ── Symbols (tag table) CRUD — feeds Online Monitor ──
   const upsertSymbol = trpc.programming.upsertSymbol.useMutation({
@@ -483,7 +532,31 @@ export default function EngineeringWorkspace() {
     [approversQ.data, user?.id],
   );
   const isProd = deployStage === "production";
-  const prodDeployReady = !isProd || (approverId !== "" && deployReason.trim().length > 0);
+  // doc 40 ENG-F2 — production qua Approval Inbox: chỉ cần lý do (không tự chọn approver nữa).
+  const useApprovalFlow = isProd && deployApprovalEnabled;
+  const prodDeployReady = !isProd
+    ? true
+    : useApprovalFlow
+      ? deployReason.trim().length > 0
+      : approverId !== "" && deployReason.trim().length > 0;
+
+  // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) state ──
+  const [fleetDeviceIds, setFleetDeviceIds] = useState<number[]>([]);
+  const [fleetStage, setFleetStage] = useState<"staging" | "production">("staging");
+  const [fleetSignOff, setFleetSignOff] = useState(false);
+  const [fleetCanary, setFleetCanary] = useState(1);
+  const [fleetPromoteVerified, setFleetPromoteVerified] = useState(false);
+  const [fleetAutoRollback, setFleetAutoRollback] = useState(true);
+  const [fleetApproverId, setFleetApproverId] = useState<string>("");
+  const [fleetReason, setFleetReason] = useState("");
+  const fleetIsProd = fleetStage === "production";
+  const toggleFleetDevice = (id: number) =>
+    setFleetDeviceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const fleetReady =
+    fleetDeviceIds.length > 0 &&
+    (!fleetIsProd || (fleetApproverId !== "" && fleetReason.trim().length > 0));
+  // Đổi project → xóa lựa chọn đội máy (tránh giữ id máy của project cũ).
+  useEffect(() => { setFleetDeviceIds([]); }, [projectId]);
 
   // ── Editor mode: a visual editor exists for ladder (rung grid) + robot (teach/jog) ──
   const [editorMode, setEditorMode] = useState<"code" | "visual">("code");
@@ -493,11 +566,32 @@ export default function EngineeringWorkspace() {
   // Doc 34 · P3 — embedded AI Programming Copilot (collapsible, unobtrusive). Seeded with the
   // current editor buffer as context; Apply inserts the generated code into this editor. Only
   // the 8 copilot-supported kinds map to a source kind (else the panel picks its own default).
-  const [copilotOpen, setCopilotOpen] = useState(false);
   const copilotInitialKind = useMemo<CopilotKind | undefined>(() => {
     const k = project?.kind;
     return k && (COPILOT_KINDS as readonly string[]).includes(k) ? (k as CopilotKind) : undefined;
   }, [project?.kind]);
+
+  // doc 41 — publish this editor to the Programming Copilot DOCK (the "extension"): the live
+  // buffer as context, build/validate diagnostics for inline "explain / fix" actions, and
+  // Apply inserts generated code back into the editor. Clears when the workspace unmounts.
+  const { openDock } = useProgrammingCopilot();
+  useCopilotBinding(
+    () => ({
+      kind: copilotInitialKind,
+      code,
+      surfaceLabel: t("nav.engineeringWorkspace", "Engineering Workspace"),
+      diagnostics: (diagnostics ?? []).map((d) => ({
+        message: `${d.line ? `L${d.line}: ` : ""}${d.message}`,
+        severity: d.severity === "error" ? ("error" as const) : ("warn" as const),
+        source: "validate",
+      })),
+      onApply: (gen: string) => {
+        setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
+        toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
+      },
+    }),
+    [copilotInitialKind, code, diagnostics],
+  );
 
   // U10 (doc 26) — phím tắt tác vụ trong editor. Ctrl/Cmd+S = Lưu phiên bản (chặn hộp
   // "lưu trang" của trình duyệt); Ctrl/Cmd+Enter = Build phiên bản đã lưu. Hook scope
@@ -950,38 +1044,27 @@ export default function EngineeringWorkspace() {
                   </CardContent>
                 </Card>
 
-                {/* Doc 34 · P3 — AI Programming Copilot (embedded, collapsible, unobtrusive).
-                    Seeded with the editor buffer as context; Apply inserts generated code back
-                    into the editor. Advisory + display-only (no device path). */}
+                {/* Doc 34 · P3 / doc 41 — AI Programming Copilot now lives in the persistent
+                    DOCK (right rail, mounted app-wide) — the "extension" model. This card is
+                    the anchor + opener; the dock is already seeded with this editor's buffer +
+                    diagnostics and Apply inserts generated code back here. */}
                 <Card id="gt-copilot" className="scroll-mt-16">
                   <CardHeader className="pb-2">
-                    <button
-                      type="button"
-                      onClick={() => setCopilotOpen((v) => !v)}
-                      aria-expanded={copilotOpen}
-                      className="flex w-full items-center justify-between text-left"
-                    >
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Sparkles className="h-4 w-4 text-primary" />
-                        {t("progCopilot.embedTitle", "AI Programming Copilot")}
-                        <Badge variant="outline" className="text-[10px]">{t("progCopilot.beta", "Beta")}</Badge>
-                      </CardTitle>
-                      <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${copilotOpen ? "rotate-90" : ""}`} />
-                    </button>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      {t("progCopilot.embedTitle", "AI Programming Copilot")}
+                      <Badge variant="outline" className="text-[10px]">{t("progCopilot.beta", "Beta")}</Badge>
+                    </CardTitle>
                   </CardHeader>
-                  {copilotOpen && (
-                    <CardContent>
-                      <ProgrammingCopilotPanel
-                        variant="embedded"
-                        initialKind={copilotInitialKind}
-                        contextCode={code}
-                        onApply={(gen) => {
-                          setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
-                          toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
-                        }}
-                      />
-                    </CardContent>
-                  )}
+                  <CardContent className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t("progCopilot.dockHint", "Trợ lý sinh/hoàn thiện/dịch/rà soát mã — mở ở thanh bên phải, đã gắn sẵn buffer & lỗi của editor này.")}
+                    </p>
+                    <Button size="sm" variant="outline" onClick={openDock}>
+                      <Sparkles className="mr-1.5 h-4 w-4" />
+                      {t("progCopilot.openDock", "Mở Trợ lý")}
+                    </Button>
+                  </CardContent>
                 </Card>
 
                 {/* Builds + Simulate */}
@@ -1045,6 +1128,23 @@ export default function EngineeringWorkspace() {
                     <CardTitle className="flex items-center gap-2 text-base"><Rocket className="h-4 w-4" /> {t("engineering.deploy", "Deploy (có kiểm soát)")}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {/* doc 40 ENG-F13 — PRE-FLIGHT: cảnh báo TRƯỚC nếu user thiếu 2FA / quyền để
+                        deploy (actuation). Không đợi tới lúc bấm mới nhận FORBIDDEN từ server. */}
+                    {readiness.blockers.length > 0 && (
+                      <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+                        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="space-y-1">
+                          <div className="font-medium">
+                            {t("engineering.readinessTitle", "Chưa đủ điều kiện để deploy (actuation)")}
+                          </div>
+                          <ul className="list-disc space-y-0.5 pl-4">
+                            {readiness.blockers.map((bl) => (
+                              <li key={bl.code}>{t(`actuationReadiness.${bl.code}`, bl.defaultMessage)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <Label className="text-xs">{t("engineering.stage", "Giai đoạn")}</Label>
@@ -1063,8 +1163,16 @@ export default function EngineeringWorkspace() {
                           <ShieldCheck className="h-3 w-3" /> {t("engineering.signOff", "Tôi ký duyệt (HITL sign-off)")}
                         </label>
                       )}
-                      {/* Production: second-approver (phân tách nhiệm vụ) — người ký duyệt KHÁC người yêu cầu. */}
-                      {isProd && (
+                      {/* Production + Approval Inbox BẬT: KHÔNG cho người yêu cầu tự chọn approver.
+                          Chỉ gửi yêu cầu; người thứ hai ký ở Hộp duyệt bằng session của họ. */}
+                      {useApprovalFlow && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-xs text-muted-foreground">
+                          <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
+                          {t("engineering.approvalInboxHint", "Sẽ gửi CHỜ DUYỆT — người thứ hai ký ở Hộp duyệt")}
+                        </span>
+                      )}
+                      {/* Production (legacy, flag OFF): second-approver do người yêu cầu chọn. */}
+                      {isProd && !deployApprovalEnabled && (
                         <div>
                           <Label className="text-xs">{t("engineering.approver", "Người ký duyệt")}</Label>
                           <Select value={approverId} onValueChange={setApproverId}>
@@ -1086,26 +1194,44 @@ export default function EngineeringWorkspace() {
                           </Select>
                         </div>
                       )}
-                      <Button
-                        size="sm"
-                        disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
-                        title={createReason}
-                        onClick={() =>
-                          buildId && deployM.mutate({
-                            buildId,
-                            stage: deployStage,
-                            // Khóa idempotency ổn định theo (build, stage) → double-click không tạo 2 deploy.
-                            idempotencyKey: `dep-${buildId}-${deployStage}`,
-                            actionId: rid("act"),
-                            confirmedBy: isProd
-                              ? (approverId ? Number(approverId) : undefined)
-                              : (signOff && user?.id ? user.id : undefined),
-                            reason: isProd ? deployReason.trim() : undefined,
-                          })
-                        }
-                      >
-                        <Rocket className="mr-1 h-4 w-4" /> {t("engineering.deployBtn", "Deploy build")}
-                      </Button>
+                      {useApprovalFlow ? (
+                        <Button
+                          size="sm"
+                          disabled={!canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady}
+                          title={createReason}
+                          onClick={() =>
+                            buildId && requestDeployApprovalM.mutate({
+                              buildId,
+                              // Khóa idempotency ổn định theo build → double-click không tạo 2 yêu cầu.
+                              idempotencyKey: `depreq-${buildId}-production`,
+                              reason: deployReason.trim(),
+                            })
+                          }
+                        >
+                          <Rocket className="mr-1 h-4 w-4" /> {t("engineering.requestDeployBtn", "Gửi yêu cầu deploy")}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
+                          title={createReason}
+                          onClick={() =>
+                            buildId && deployM.mutate({
+                              buildId,
+                              stage: deployStage,
+                              // Khóa idempotency ổn định theo (build, stage) → double-click không tạo 2 deploy.
+                              idempotencyKey: `dep-${buildId}-${deployStage}`,
+                              actionId: rid("act"),
+                              confirmedBy: isProd
+                                ? (approverId ? Number(approverId) : undefined)
+                                : (signOff && user?.id ? user.id : undefined),
+                              reason: isProd ? deployReason.trim() : undefined,
+                            })
+                          }
+                        >
+                          <Rocket className="mr-1 h-4 w-4" /> {t("engineering.deployBtn", "Deploy build")}
+                        </Button>
+                      )}
                     </div>
 
                     {/* Production: ô lý do duyệt bắt buộc + ghi chú SoD. */}
@@ -1120,7 +1246,9 @@ export default function EngineeringWorkspace() {
                         />
                         <p className="flex items-center gap-1 text-xs text-muted-foreground">
                           <ShieldCheck className="h-3 w-3 shrink-0" />
-                          {t("engineering.sodHint", "Deploy production cần người ký duyệt KHÁC người yêu cầu (phân tách nhiệm vụ).")}
+                          {useApprovalFlow
+                            ? t("engineering.sodHintInbox", "Deploy production được gửi CHỜ DUYỆT: một người KHÁC bạn sẽ ký bằng session của họ (phân tách nhiệm vụ).")
+                            : t("engineering.sodHint", "Deploy production cần người ký duyệt KHÁC người yêu cầu (phân tách nhiệm vụ).")}
                         </p>
                       </div>
                     )}
@@ -1162,6 +1290,245 @@ export default function EngineeringWorkspace() {
                         )}
                       </TableBody>
                     </Table>
+                  </CardContent>
+                </Card>
+
+                {/* doc 40 W5 §11 — TRIỂN KHAI ĐỘI MÁY (fleet rollout canary + ma trận version) */}
+                <Card id="gt-fleet" className="scroll-mt-16">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Rocket className="h-4 w-4" /> {t("engineering.fleetTitle", "Triển khai đội máy (canary)")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      {t("engineering.fleetHint", "Đẩy build đang chọn ra nhiều máy TUẦN TỰ qua đúng đường deploy (giữ nguyên mọi cổng an toàn). Canary N máy đầu; nếu không đạt sẽ DỪNG và (tùy chọn) tự khôi phục các máy đã ghi.")}
+                    </p>
+
+                    {/* Pre-flight actuation readiness (2FA/quyền) — dùng chung với deploy đơn. */}
+                    {readiness.blockers.length > 0 && (
+                      <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+                        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        <ul className="list-disc space-y-0.5 pl-4">
+                          {readiness.blockers.map((bl) => (
+                            <li key={bl.code}>{t(`actuationReadiness.${bl.code}`, bl.defaultMessage)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {!buildId && (
+                      <p className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                        {t("engineering.fleetNeedBuild", "Chọn một build ở khối \"Builds & Mô phỏng\" trước để triển khai ra đội máy.")}
+                      </p>
+                    )}
+
+                    {/* Chọn máy đích (đa chọn) */}
+                    <div>
+                      <Label className="text-xs">{t("engineering.fleetTargets", "Máy đích")} ({fleetDeviceIds.length})</Label>
+                      <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+                        {(machinesQ.data ?? []).length === 0 && (
+                          <p className="text-xs text-muted-foreground">{t("engineering.noMachines", "Chưa có máy nào — có thể gắn sau ở Online Monitor")}</p>
+                        )}
+                        {(machinesQ.data ?? []).map((m) => (
+                          <label key={m.id} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={fleetDeviceIds.includes(m.id)}
+                              onCheckedChange={() => toggleFleetDevice(m.id)}
+                            />
+                            <span className="truncate">{m.name} · #{m.id}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Chiến lược canary */}
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div>
+                        <Label className="text-xs">{t("engineering.stage", "Giai đoạn")}</Label>
+                        <Select value={fleetStage} onValueChange={(v) => setFleetStage(v as "staging" | "production")}>
+                          <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="staging">staging</SelectItem>
+                            <SelectItem value="production">production</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">{t("engineering.fleetCanaryCount", "Số máy canary")}</Label>
+                        <Input
+                          type="number" min={1} max={fleetDeviceIds.length || 1}
+                          className="h-8 w-24 text-sm"
+                          value={fleetCanary}
+                          onChange={(e) => setFleetCanary(Math.max(1, Number(e.target.value) || 1))}
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox checked={fleetPromoteVerified} onCheckedChange={(v) => setFleetPromoteVerified(Boolean(v))} />
+                        {t("engineering.fleetPromoteVerified", "Chỉ promote khi canary VERIFIED")}
+                      </label>
+                      <label className="flex items-center gap-2 text-xs">
+                        <Checkbox checked={fleetAutoRollback} onCheckedChange={(v) => setFleetAutoRollback(Boolean(v))} />
+                        <RotateCcw className="h-3 w-3" /> {t("engineering.fleetAutoRollback", "Tự khôi phục nếu canary hỏng")}
+                      </label>
+                      {!fleetIsProd && (
+                        <label className="flex items-center gap-2 text-xs">
+                          <Checkbox checked={fleetSignOff} onCheckedChange={(v) => setFleetSignOff(Boolean(v))} />
+                          <ShieldCheck className="h-3 w-3" /> {t("engineering.signOff", "Tôi ký duyệt (HITL sign-off)")}
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Production: người ký duyệt (SoD) + lý do bắt buộc. */}
+                    {fleetIsProd && (
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                          <Label className="text-xs">{t("engineering.approver", "Người ký duyệt")}</Label>
+                          <Select value={fleetApproverId} onValueChange={setFleetApproverId}>
+                            <SelectTrigger className="h-8 w-48">
+                              <SelectValue placeholder={t("engineering.selectApprover", "Chọn người ký duyệt…")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {approverOptions.map((a) => (
+                                <SelectItem key={a.id} value={String(a.id)}>{a.name || a.username || `#${a.id}`}</SelectItem>
+                              ))}
+                              {approverOptions.length === 0 && (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("engineering.noApprovers", "Không có người đủ quyền ký duyệt")}</div>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 min-w-[220px]">
+                          <Label className="text-xs">{t("engineering.approvalReason", "Lý do duyệt (bắt buộc)")}</Label>
+                          <Input
+                            className="h-8 text-xs"
+                            value={fleetReason}
+                            onChange={(e) => setFleetReason(e.target.value)}
+                            placeholder={t("engineering.approvalReasonPh", "Nêu lý do / căn cứ duyệt deploy production…")}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <Button
+                      size="sm"
+                      disabled={!canCreate || !buildId || !fleetReady || deployToFleetM.isPending}
+                      title={createReason}
+                      onClick={() => {
+                        if (!buildId) return;
+                        // QA W5: nonce/lần-thử để LẦN NÀY khác lần trước → sau khi canary
+                        // hỏng (rejected) và sửa build, bấm lại sẽ DEPLOY LẠI thay vì trả
+                        // về hàng rejected cũ (deployBuild dedupe theo idempotencyKey).
+                        const fleetRunId = rid("frun");
+                        deployToFleetM.mutate({
+                          buildId,
+                          deviceIds: fleetDeviceIds,
+                          stage: fleetStage,
+                          strategy: {
+                            canaryCount: Math.min(fleetCanary, fleetDeviceIds.length),
+                            promoteOnVerified: fleetPromoteVerified,
+                            autoRollbackOnMismatch: fleetAutoRollback,
+                          },
+                          // Ổn định trong 1 lần bấm (chống double-submit), khác giữa các lần rollout.
+                          idempotencyKeyPrefix: `fleet-${buildId}-${fleetStage}-${fleetRunId}`,
+                          actionId: fleetRunId,
+                          confirmedBy: fleetIsProd
+                            ? (fleetApproverId ? Number(fleetApproverId) : undefined)
+                            : (fleetSignOff && user?.id ? user.id : undefined),
+                          reason: fleetIsProd ? fleetReason.trim() : undefined,
+                        });
+                      }}
+                    >
+                      {deployToFleetM.isPending
+                        ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
+                        : <Rocket className="mr-1 h-4 w-4" />}
+                      {t("engineering.fleetDeployBtn", "Triển khai (canary)")}
+                    </Button>
+
+                    {/* Kết quả rollout từng máy */}
+                    {fleetResult && (
+                      <div className="space-y-2">
+                        <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+                          fleetResult.halted
+                            ? "border-destructive/40 bg-destructive/10 text-destructive"
+                            : "border-success/40 bg-success/10 text-success"
+                        }`}>
+                          {fleetResult.halted ? <XCircle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                          {fleetResult.halted
+                            ? t("engineering.fleetHaltedShort", "DỪNG — canary không đạt")
+                            : fleetResult.promoted
+                              ? t("engineering.fleetPromotedShort", "Đã promote toàn đội máy")
+                              : t("engineering.fleetCanaryOkShort", "Canary đã chạy")}
+                        </div>
+                        {fleetResult.haltReason && (
+                          <p className="text-xs text-destructive">{fleetResult.haltReason}</p>
+                        )}
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{t("engineering.fleetTargets", "Máy")}</TableHead>
+                              <TableHead>{t("engineering.fleetPhase", "Pha")}</TableHead>
+                              <TableHead>{t("common.status", "Trạng thái")}</TableHead>
+                              <TableHead>{t("engineering.rollback", "Khôi phục")}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {fleetResult.results.map((r) => (
+                              <TableRow key={r.deviceId}>
+                                <TableCell className="font-medium">{machineLabel(r.deviceId)}</TableCell>
+                                <TableCell><Badge variant="outline" className="text-[10px]">{r.phase}</Badge></TableCell>
+                                <TableCell>
+                                  <Badge variant={r.status === "rejected" || r.status === "failed" ? "destructive" : "secondary"}>{r.status}</Badge>
+                                  {r.error && <span className="ml-1 text-[10px] text-muted-foreground">{r.error}</span>}
+                                </TableCell>
+                                <TableCell>
+                                  {r.rolledBack === true
+                                    ? <Badge variant="outline" className="text-[10px]"><RotateCcw className="mr-1 h-3 w-3" />{t("engineering.rolledBack", "Đã khôi phục")}</Badge>
+                                    : r.rollbackError
+                                      ? <span className="text-[10px] text-warning">{r.rollbackError}</span>
+                                      : <span className="text-muted-foreground">—</span>}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+
+                    {/* Ma trận máy × version (máy nào đang chạy artifact/hash nào) */}
+                    <div>
+                      <div className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                        <GitCompare className="h-3.5 w-3.5" /> {t("engineering.fleetMatrix", "Ma trận máy × version")}
+                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{t("engineering.fleetTargets", "Máy")}</TableHead>
+                            <TableHead>{t("engineering.versions", "Phiên bản")}</TableHead>
+                            <TableHead>{t("engineering.stage", "Giai đoạn")}</TableHead>
+                            <TableHead>{t("common.status", "Trạng thái")}</TableHead>
+                            <TableHead>Hash</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(fleetMatrixQ.data ?? []).map((e) => (
+                            <TableRow key={e.deviceId}>
+                              <TableCell className="font-medium">{machineLabel(e.deviceId)}</TableCell>
+                              <TableCell>{e.version != null ? `v${e.version} · ${e.branch ?? ""}` : "—"}</TableCell>
+                              <TableCell>{e.stage}</TableCell>
+                              <TableCell>
+                                <Badge variant={e.simulated ? "outline" : "secondary"}>{e.status}</Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-[10px]">{e.contentHash ? e.contentHash.slice(0, 12) + "…" : "—"}</TableCell>
+                            </TableRow>
+                          ))}
+                          {(fleetMatrixQ.data ?? []).length === 0 && (
+                            <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground">{t("engineering.fleetMatrixEmpty", "Chưa có máy nào ghi nhận phiên bản")}</TableCell></TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
 

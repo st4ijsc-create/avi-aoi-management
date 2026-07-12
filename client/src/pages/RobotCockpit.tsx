@@ -25,8 +25,8 @@
  * gated robotCommandDispatcher (ROBOT_CONTROL_ENABLED + HITL), which this cockpit does NOT call.
  * Labeled "preview / gated" honestly.
  *
- * ACTIONS — gatedActions METADATA ONLY; "Propose" routes to the existing gated /robot-control
- * surface. Nothing executes from this page.
+ * ACTIONS — gatedActions METADATA ONLY; "Propose" routes to the gated /command-console
+ * surface (typed-confirm + interlock preview). Nothing executes from this page.
  *
  * READ-ONLY. RBAC: machine_monitoring/canView. i18n via t("cockpit.*","English default").
  * ════════════════════════════════════════════════════════════════════════════
@@ -49,10 +49,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
+import { Sparkline } from "@/components/patterns/Sparkline";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { withParams } from "@/lib/engineeringDeepLink";
+import { toast } from "sonner";
 import {
   Bot, Activity, Sliders, ListChecks, Boxes, ScrollText, ShieldAlert, AlertTriangle,
   Wrench, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info, Radio, Battery,
-  Gamepad2, Zap, OctagonAlert,
+  Gamepad2, Zap, OctagonAlert, Save, BellOff, TrendingUp, Loader2,
 } from "lucide-react";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -131,10 +135,12 @@ function jointValue(j: Record<string, unknown> | undefined): number | null {
 // ════════════════════════════════════════════════════════════════════════════
 
 function JointBars({
-  kinematic, live, t,
+  kinematic, live, chron, t,
 }: {
   kinematic: RobotDetail["kinematicModel"];
   live: RobotLiveTelemetry | null;
+  /** ENG-F14 — telemetry cũ→mới để vẽ mini-trend từng khớp. */
+  chron: Array<Record<string, unknown>>;
   t: (k: string, f: string) => string;
 }) {
   const model = kinematic.available ? kinematic.value?.model : null;
@@ -171,16 +177,24 @@ function JointBars({
             pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
           }
           const nearLimit = val != null && min != null && max != null && (pct < 8 || pct > 92);
+          const hist = chron
+            .map((r) => jointValue((r.jointStates as Array<Record<string, unknown>> | undefined)?.[i]))
+            .filter((n): n is number => n != null);
           return (
             <div key={j.name}>
-              <div className="mb-1 flex items-center justify-between text-xs">
+              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                 <span className="flex items-center gap-1.5 font-medium">
                   <Sliders className="h-3 w-3 text-muted-foreground" />
                   {j.name}
                   <Badge variant="outline" className="text-[9px] capitalize">{j.type}</Badge>
                 </span>
-                <span className={cn("font-mono", nearLimit && "text-destructive")}>
-                  {val == null ? "—" : disp(val)}
+                <span className="flex items-center gap-2">
+                  {hist.length >= 2 && (
+                    <Sparkline data={hist} width={72} height={16} tone={nearLimit ? "critical" : "neutral"} aria-label={t("cockpit.jointTrend", "Joint trend")} />
+                  )}
+                  <span className={cn("font-mono", nearLimit && "text-destructive")}>
+                    {val == null ? "—" : disp(val)}
+                  </span>
                 </span>
               </div>
               <div className="relative h-3 w-full overflow-hidden rounded bg-muted">
@@ -279,11 +293,85 @@ export default function RobotCockpit() {
     return () => clearInterval(id);
   }, []);
 
+  const { hasPermission } = usePermissions();
+  // ENG-F14/F12 — điều khiển OT ở cockpit gate theo permission bit machine_control
+  // (admin bypass sẵn trong hasPermission). canEdit = shelve/ack alarm; canCreate = lưu
+  // teach buffer thành artifact programming (createProject/createArtifact yêu cầu canCreate).
+  const canEditControl = hasPermission("machine_control", "canEdit");
+  const canCreateProgram = hasPermission("machine_control", "canCreate");
+  const utils = trpc.useUtils();
+
   const detailQ = trpc.assetCockpit.robotDetail.useQuery(
     { robotId },
     { enabled: validId, refetchInterval: 15_000, staleTime: 5_000, retry: false },
   );
   const d = detailQ.data;
+
+  // ENG-F14 — series telemetry (~20 mẫu) để vẽ mini-trend (robotDetail chỉ cho 1 mẫu
+  // tức thời). robot.telemetry trả các hàng robot_telemetry mới-nhất-trước.
+  const seriesQ = trpc.robot.telemetry.useQuery(
+    { robotId, limit: 20 },
+    { enabled: validId, refetchInterval: 15_000, staleTime: 5_000, retry: false },
+  );
+  const series = useMemo(() => {
+    const rows = (seriesQ.data ?? []) as Array<Record<string, unknown>>;
+    const chron = [...rows].reverse(); // cũ → mới (trái → phải)
+    const num = (v: unknown): number | null => {
+      const n = typeof v === "string" ? Number(v) : (v as number);
+      return typeof n === "number" && Number.isFinite(n) ? n : null;
+    };
+    const speed = chron.map((r) => num(r.speedPct)).filter((n): n is number => n != null);
+    const battery = chron.map((r) => num(r.batteryLevel)).filter((n): n is number => n != null);
+    return { count: chron.length, speed, battery, chron };
+  }, [seriesQ.data]);
+
+  // ENG-F12 — teach/jog buffer sống ở STATE CHA + localStorage (không mất khi đổi tab / reload).
+  const teachKey = `robot-cockpit-teach:${robotId}`;
+  const [teachBuffer, setTeachBuffer] = useState<string>("# robot-tm tmscript (local preview)\n");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(teachKey);
+      if (saved != null) setTeachBuffer(saved);
+    } catch { /* localStorage unavailable → giữ default in-memory */ }
+  }, [teachKey]);
+  useEffect(() => {
+    try { localStorage.setItem(teachKey, teachBuffer); } catch { /* ignore quota / privacy mode */ }
+  }, [teachKey, teachBuffer]);
+
+  // ENG-F12 — "Lưu vào project robot-tm": tái dùng project robot-tm đã gắn robot này
+  // (deviceId) nếu có; nếu chưa có → tạo project robot-tm gắn deviceId rồi tạo artifact.
+  // createArtifact KHÔNG nhận deviceId (chỉ projectId) nên đường đi đúng là project trước.
+  const createArtifactM = trpc.programming.createArtifact.useMutation({
+    onSuccess: (a) => {
+      toast.success(t("cockpit.teachSaved", "Đã lưu teach buffer vào project robot-tm (bản {{v}})", { v: (a as { version?: number })?.version ?? "?" }));
+      void utils.assetCockpit.robotDetail.invalidate({ robotId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const createProjectM = trpc.programming.createProject.useMutation({
+    onSuccess: (proj) => {
+      createArtifactM.mutate({ projectId: (proj as { id: number }).id, language: "tmscript", content: teachBuffer });
+      void utils.assetCockpit.robotDetail.invalidate({ robotId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const savingTeach = createArtifactM.isPending || createProjectM.isPending;
+  const saveTeachToProject = () => {
+    if (!canCreateProgram || savingTeach) return;
+    const progs = (d?.programs.available ? d.programs.value : null) as Array<Record<string, unknown>> | null;
+    const existing = progs?.find((p) => String(p.kind) === "robot-tm" && p.id != null);
+    if (existing) {
+      createArtifactM.mutate({ projectId: Number(existing.id), language: "tmscript", content: teachBuffer });
+    } else {
+      // Mã duy nhất (timestamp) để tránh CONFLICT nếu tồn tại project cùng mã chưa gắn robot.
+      createProjectM.mutate({
+        code: `robot-${robotId}-tm-${Date.now().toString(36)}`,
+        name: `${d?.identity.name ?? `Robot ${robotId}`} — Teach/Jog`,
+        kind: "robot-tm",
+        deviceId: robotId,
+      });
+    }
+  };
 
   // ── LIVE telemetry overlay from room `robot:{id}` / `robot:telemetry` (closes G-5). ──
   const [liveOverlay, setLiveOverlay] = useState<RobotTelemetryEvent | null>(null);
@@ -397,7 +485,12 @@ export default function RobotCockpit() {
             <TabsContent value="overview" className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <MetricCard icon={<Activity className="h-4 w-4" />} label={t("cockpit.mode", "Mode")} value={live?.mode ?? "—"} />
-                <MetricCard icon={<Zap className="h-4 w-4" />} label={t("cockpit.speed", "Speed")} value={live?.speedPct == null ? "—" : `${Math.round(live.speedPct)}%`} />
+                <MetricCard
+                  icon={<Zap className="h-4 w-4" />}
+                  label={t("cockpit.speed", "Speed")}
+                  value={live?.speedPct == null ? "—" : `${Math.round(live.speedPct)}%`}
+                  delta={series.speed.length >= 2 ? <Sparkline data={series.speed} width={84} height={20} tone="neutral" showArea showEndDot aria-label={t("cockpit.speedTrend", "Speed trend")} /> : undefined}
+                />
                 <MetricCard
                   icon={<OctagonAlert className="h-4 w-4" />}
                   label={t("cockpit.estopState", "E-stop")}
@@ -409,7 +502,14 @@ export default function RobotCockpit() {
                   label={t("cockpit.battery", "Battery")}
                   value={live?.batteryPct == null ? "—" : `${Math.round(live.batteryPct)}%`}
                   tone={live?.batteryPct != null && live.batteryPct < 20 ? "error" : "default"}
+                  delta={series.battery.length >= 2 ? <Sparkline data={series.battery} width={84} height={20} tone={series.battery[series.battery.length - 1] < 20 ? "critical" : "good"} showArea showEndDot aria-label={t("cockpit.batteryTrend", "Battery trend")} /> : undefined}
                 />
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5" />
+                {series.count >= 2
+                  ? t("cockpit.trendCaption", "Mini-trend từ {{n}} mẫu telemetry gần nhất (cũ → mới).", { n: series.count })
+                  : t("cockpit.trendNone", "Chưa đủ mẫu telemetry để vẽ mini-trend (cần ≥ 2 mẫu).")}
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -480,7 +580,7 @@ export default function RobotCockpit() {
             {/* ── JOINTS (2D live joint-bar readout) ── */}
             <TabsContent value="joints">
               <SectionCard icon={<Sliders className="h-4 w-4" />} title={t("cockpit.tabJoints", "Joints & pose")} description={t("cockpit.jointsHint", "Live joint values vs kinematic limits (2D readout)")}>
-                <JointBars kinematic={d.kinematicModel} live={live} t={t} />
+                <JointBars kinematic={d.kinematicModel} live={live} chron={series.chron} t={t} />
               </SectionCard>
             </TabsContent>
 
@@ -544,7 +644,12 @@ export default function RobotCockpit() {
                           <span className="font-medium">{String(p.name ?? p.title ?? `#${p.id ?? i}`)}</span>
                           {p.kind != null && <Badge variant="outline" className="text-[10px]">{String(p.kind)}</Badge>}
                           {p.status != null && <StatusBadge status={String(p.status)} className="px-1.5 py-0 text-[10px]" />}
-                          <Button size="sm" variant="ghost" className="ml-auto h-7" onClick={() => setLocation("/ir-editor")}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="ml-auto h-7"
+                            onClick={() => setLocation(p.id != null ? withParams("/ir-editor", { projectId: Number(p.id) }) : "/ir-editor")}
+                          >
                             <ExternalLink className="mr-1 h-3.5 w-3.5" /> {t("cockpit.openIr", "Open IR")}
                           </Button>
                         </div>
@@ -608,6 +713,21 @@ export default function RobotCockpit() {
             {/* ── ALARMS ── */}
             <TabsContent value="alarms">
               <SectionCard icon={<AlertTriangle className="h-4 w-4" />} title={t("cockpit.tabAlarms", "Alarms")} description={t("cockpit.robotAlarmsHint", "Per-robot ISA-18.2 normalized feed (from safety)")}>
+                {/* ENG-F14 — feed chuẩn hoá từ safety_events KHÔNG mang id ledger, và safety_events
+                    không có mutation ack/resolve qua tRPC → không thể Ack/Shelve theo TỪNG lần xảy ra
+                    tại đây. Shelve theo LỚP alarm (ISA-18.2 rationalization) làm ở Equipment Standards
+                    (equipmentStandards.shelveMasterAlarm, gate machine_control/canEdit). */}
+                {canEditControl && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2 text-xs text-info">
+                    <Info className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 min-w-[12rem]">
+                      {t("cockpit.alarmAckBlocked", "Ack/Shelve theo từng lần xảy ra chưa khả dụng cho alarm robot (feed từ safety_events không có ledger id). Bạn có thể shelve theo LỚP alarm ở Equipment Standards.")}
+                    </span>
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => setLocation("/equipment-standards")}>
+                      <BellOff className="mr-1 h-3.5 w-3.5" /> {t("cockpit.shelveClass", "Shelve theo lớp")}
+                    </Button>
+                  </div>
+                )}
                 {!d.alarms.available || ((d.alarms.value?.length ?? 0) === 0) ? (
                   <EmptyState title={t("cockpit.noAlarms", "No active alarms")} description={t("cockpit.noRobotAlarmsHint", "This robot has no recent normalized alarms.")} />
                 ) : (
@@ -620,6 +740,17 @@ export default function RobotCockpit() {
                             <span className="font-mono text-xs">{a.standardCode}</span>
                             <Badge variant="outline" className="text-[10px] text-muted-foreground">{a.source}</Badge>
                             <span className="ml-auto text-[11px] text-muted-foreground">{tsToLocale(a.ts)}</span>
+                            {canEditControl && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1.5"
+                                title={t("cockpit.shelveClassTip", "Mở Equipment Standards để shelve/rationalize LỚP alarm {{code}} (không phải lần xảy ra này)", { code: a.standardCode })}
+                                onClick={() => setLocation("/equipment-standards")}
+                              >
+                                <BellOff className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </div>
                           {a.description && <div className="mt-1 text-sm">{a.description}</div>}
                           {a.recommendedAction && <div className="mt-0.5 text-xs text-muted-foreground">→ {a.recommendedAction}</div>}
@@ -649,7 +780,13 @@ export default function RobotCockpit() {
                   <ShieldAlert className="h-4 w-4 shrink-0" />
                   {t("cockpit.teachGate", "PREVIEW / GATED — jog moves a local preview pose only. Running a job on the real robot requires the gated robotCommandDispatcher (ROBOT_CONTROL_ENABLED + HITL). Nothing is dispatched from this cockpit.")}
                 </div>
-                <TeachJogBuffer />
+                <TeachJogBuffer
+                  value={teachBuffer}
+                  onChange={setTeachBuffer}
+                  onSave={saveTeachToProject}
+                  canSave={canCreateProgram}
+                  saving={savingTeach}
+                />
               </SectionCard>
             </TabsContent>
 
@@ -658,11 +795,11 @@ export default function RobotCockpit() {
               <SectionCard
                 icon={<Wrench className="h-4 w-4" />}
                 title={t("cockpit.tabActions", "Actions")}
-                description={t("cockpit.robotActionsHint", "Commands you MAY propose. Execution stays behind the existing gated (HITL / dry-run) robot control surface — nothing runs from here.")}
+                description={t("cockpit.robotActionsHint", "Commands you MAY propose. \"Propose\" opens the gated Command Console — the actual dispatch stays behind the same HITL / mode / commissioning / interlock gates (dry-run unless control is enabled).")}
               >
                 <div className="mb-3 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {t("cockpit.robotActionsGate", "Read-only cockpit. \"Propose\" opens the gated Robot Control surface — it never dispatches a command directly.")}
+                  {t("cockpit.robotActionsGate", "Read-only cockpit. \"Propose\" opens the gated Command Console (typed-confirm + interlock preview); nothing dispatches from this page.")}
                 </div>
                 {d.gatedActions.length === 0 ? (
                   <EmptyState title={t("cockpit.noActions", "No commands")} description={t("cockpit.noActionsHint", "This robot's capability profile exposes no proposable commands.")} />
@@ -677,7 +814,7 @@ export default function RobotCockpit() {
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           <span className="text-[11px] text-muted-foreground">{t("cockpit.requires", "Requires")}: {a.requiredPermission}</span>
-                          <Button size="sm" variant="outline" onClick={() => setLocation(`/robot-control?robotId=${robotId}&command=${encodeURIComponent(a.name)}`)}>
+                          <Button size="sm" variant="outline" onClick={() => setLocation(`/command-console?robotId=${robotId}&command=${encodeURIComponent(a.name)}`)}>
                             <ExternalLink className="mr-1 h-3.5 w-3.5" /> {t("cockpit.propose", "Propose")}
                           </Button>
                         </div>
@@ -694,16 +831,40 @@ export default function RobotCockpit() {
   );
 }
 
-/** Local buffer wrapper so <TeachJogPanel> (buffer editor) is self-contained here. */
-function TeachJogBuffer() {
+/**
+ * Buffer wrapper for <TeachJogPanel>. ENG-F12 — buffer sống ở STATE CHA (value/onChange)
+ * nên KHÔNG mất khi đổi tab; cha cũng đồng bộ localStorage. "Lưu vào project robot-tm"
+ * gọi programming.createArtifact (qua cha) để đưa buffer vào pipeline build/deploy có gate.
+ */
+function TeachJogBuffer({
+  value, onChange, onSave, canSave, saving,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onSave: () => void;
+  canSave: boolean;
+  saving: boolean;
+}) {
   const { t } = useTranslation();
-  const [buffer, setBuffer] = useState<string>("# robot-tm tmscript (local preview)\n");
   return (
     <div className="space-y-3">
-      <TeachJogPanel value={buffer} onChange={setBuffer} />
+      <TeachJogPanel value={value} onChange={onChange} />
       <div>
-        <div className="mb-1 text-xs text-muted-foreground">{t("cockpit.tmscript", "tmscript buffer (preview)")}</div>
-        <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-xs font-mono">{buffer}</pre>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">{t("cockpit.tmscript", "tmscript buffer (preview)")}</span>
+          <span
+            title={!canSave ? t("cockpit.teachSavePerm", "Cần quyền tạo chương trình (machine_control/canCreate)") : undefined}
+          >
+            <Button size="sm" variant="outline" className="h-7" disabled={!canSave || saving} onClick={onSave}>
+              {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+              {t("cockpit.teachSave", "Lưu vào project robot-tm")}
+            </Button>
+          </span>
+        </div>
+        <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-xs font-mono">{value}</pre>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {t("cockpit.teachSaveHint", "Lưu tạo một artifact bản mới trong project robot-tm gắn robot này (tự tạo project nếu chưa có) — vào pipeline validate/build/deploy có gate. Không phát chuyển động.")}
+        </p>
       </div>
     </div>
   );

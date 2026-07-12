@@ -201,8 +201,14 @@ export async function runOeeSnapshotNow(opts?: {
         }
 
         // Ideal cycle time: configured/last-known first, else observed avg.
+        // MON-F8 (doc 40): pass the window's observed avg so that, when
+        // OEE_IDEAL_FROM_TARGET is armed, resolveIdealCycleTimeSec can derive a
+        // PROACTIVE ideal from the active OEE target (avgCycle × targetPerformance)
+        // instead of only reading it back from prior oee_metrics. Flag OFF ⇒
+        // identical behaviour (the avg is ignored and we still fall through to the
+        // observed-avg branch below).
         let idealSource = "configured";
-        let ideal = await resolveIdealCycleTimeSec(machineId);
+        let ideal = await resolveIdealCycleTimeSec(machineId, { avgCycleTimeSec: c.avgCycle, at: to });
         if (!ideal || ideal <= 0) {
           ideal = c.avgCycle && c.avgCycle > 0 ? c.avgCycle : null;
           idealSource = "observed_avg";

@@ -87,6 +87,7 @@
   Share2,
   FolderSearch,
   Star,
+  Repeat,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -189,7 +190,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.commandCenter",
         icon: <Gauge className="h-4 w-4" />,
         description: "nav.commandCenterDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
       {
@@ -275,6 +276,34 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
         section: "mes",
+      },
+      {
+        // doc 40 Wave 4c §11 — War-room "Giao ban 7h": one-pager giao ban theo ca
+        // (KPI + OEE theo Line + top downtime + so sánh ca + kế hoạch vs thực tế).
+        // Công cụ giao ban cốt lõi của quản đốc/quản lý → tier simple. Nhãn tiếng Việt
+        // trực tiếp (i18n key hoãn sang đợt i18n — theo tiền lệ Feeder/ECN/NCR).
+        href: "/war-room",
+        label: "Giao ban (War-room)",
+        icon: <Presentation className="h-4 w-4" />,
+        description: "Bảng giao ban theo ca: OEE theo Line · top máy dừng · so sánh ca · kế hoạch vs thực tế",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "mes",
+        tier: "simple",
+      },
+      {
+        // doc 40 Wave 4 — Đổi sản phẩm (changeover) tại line: operator quét sản phẩm
+        // mới → kiểm tra readiness/mapping máy/feeder → xác nhận đổi. Công cụ vận hành
+        // cốt lõi tại line → tier simple. Gate machine_status (operator/maintenance đều
+        // có). Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
+        href: "/product-changeover",
+        label: "Đổi sản phẩm",
+        icon: <Repeat className="h-4 w-4" />,
+        description: "Trình đổi sản phẩm tại line: quét mã → kiểm tra readiness · ánh xạ máy · feeder → xác nhận",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "mes",
+        tier: "simple",
       },
       {
         href: "/mes-control-tower",
@@ -378,6 +407,18 @@ export const navGroups: NavGroup[] = [
         section: "ordersSchedule",
       },
       {
+        // doc 35 W4-E — routing master (ISA-95). doc 41 IA cleanup — DỜI từ module
+        // Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: định tuyến công đoạn
+        // theo sản phẩm là MES/kế hoạch, thuộc "Đơn hàng & Lịch".
+        href: "/routing-master",
+        label: "Định tuyến sản xuất (Routing)",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
+        requiredPermission: "production_orders",
+        permissionCategory: "production_orders",
+        section: "ordersSchedule",
+      },
+      {
         href: "/bom-management",
         label: "nav.bomManagement",
         icon: <Boxes className="h-4 w-4" />,
@@ -385,6 +426,19 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "mes_bom",
         permissionCategory: "mes_bom",
         section: "bom",
+      },
+      {
+        // doc 35 W4-C — feeder/MSD/stencil scan-verify. doc 41 IA cleanup — DỜI từ
+        // module Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: quản lý vật tư
+        // tại line (feeder/MSD/stencil) thuộc BOM & Máng cấp, không phải bảo trì máy.
+        href: "/feeder-verify",
+        label: "Vật tư tại line (Feeder/MSD/Stencil)",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "bom",
+        tier: "simple", // doc 40 — cốt lõi operator tại line, hiện trong Simple mode
       },
     ],
   },
@@ -496,14 +550,36 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "machine_monitoring",
     // doc 22 P4 — engineering-heavy module: hidden in Simple mode.
     tier: "advanced",
+    // doc 41 (2026-07-11) IA cleanup — 4 section rõ nghĩa thay 4 section cũ lệch
+    // ngữ nghĩa: gộp telemetry(1-mục) + onboarding thành "connect" (Kết nối & Cài
+    // máy), TÁCH các surface điều-khiển-runtime (robot/control-plane/edge) ra
+    // "control" (Điều khiển thiết bị), dồn "Quản lý thiết bị" về cạnh "Đăng ký
+    // máy" (bỏ khỏi maintenance), và đẩy routing/feeder (MES/vật tư) sang module
+    // Sản xuất. maintenance chỉ còn bảo trì thật + cảnh báo.
     sections: [
       { key: "monitoring", label: "nav.section.monitoring" },
-      { key: "telemetry", label: "nav.section.telemetry" },
-      { key: "onboarding", label: "nav.section.onboarding" },
+      { key: "connect", label: "nav.section.connect" },
+      { key: "control", label: "nav.section.control" },
       { key: "maintenance", label: "nav.section.maintenance" },
     ],
     items: [
       // — Status & health —
+      {
+        // doc 40 Wave 4d §13.1 — Factory Command View: màn hình chỉ huy TOÀN nhà máy
+        // (sơ đồ 2D/3D theo Line, click máy → drawer chi tiết + rail "vấn đề đang mở").
+        // Landing giám sát cho supervisor/manager. Giữ tier "simple" (công cụ chỉ huy
+        // cốt lõi) dù nhóm devices là advanced.
+        // Nhãn tiếng Việt trực tiếp (i18n key hoãn sang đợt i18n; locale ngoài phạm vi
+        // sở hữu của agent này) — theo tiền lệ Feeder/ECN/NCR trong file này.
+        href: "/factory-command",
+        label: "Chỉ huy nhà máy",
+        icon: <Factory className="h-4 w-4" />,
+        description: "Sơ đồ 2D/3D toàn nhà máy theo Line · click máy xem chi tiết · vấn đề đang mở",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+        tier: "simple",
+      },
       {
         // P3-W2: unified Device Monitor — default DEVICES & OT landing (machines +
         // OT adapters + edge nodes in one live table; legacy /machine-status redirects here).
@@ -514,6 +590,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
+        // doc 40 Lan — công cụ cốt lõi của operator/maintenance: giữ hiện trong Simple
+        // mode dù nhóm "devices" là advanced (xem filterNavGroupsByMode).
+        tier: "simple",
       },
       // doc 36 follow-up — /machine-health REMOVED: it redirects into /device-monitor
       // (Health tab); the hub row above is the single entry point.
@@ -522,8 +601,11 @@ export const navGroups: NavGroup[] = [
         label: "nav.oeeDashboard",
         icon: <Timer className="h-4 w-4" />,
         description: "nav.oeeDashboardDesc",
-        requiredPermission: "analytics_oee",
-        permissionCategory: "analytics",
+        // QA4F-1: OEE giờ là tab giám sát trong DeviceHub (redirect /oee-dashboard →
+        // /device-monitor?tab=oee, hub gate machine_monitoring). Đồng bộ gate về
+        // machine_status (OEE là KPI giám sát máy) thay analytics_oee để hết lệch quyền.
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
         section: "monitoring",
       },
       // doc 36 follow-up — /factory-live-map + /digital-twin-center REMOVED: both
@@ -537,26 +619,16 @@ export const navGroups: NavGroup[] = [
         label: "nav.systemHealth",
         icon: <Activity className="h-4 w-4" />,
         description: "nav.systemHealthDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
         engineerOriented: true,
       },
-      // — Connectivity (MQTT / UNS telemetry) —
+      // — Kết nối & Cài máy (section "connect") —
       // doc 36 follow-up — the 9 legacy MQTT/UNS rows now all <Redirect> into the
       // unified /connectivity hub. ONE hub row only; every surface (overview / devices /
       // topics / bulletin / replay / alerts / ng-rate / uns / profiles) is a TAB inside
       // the hub — no ?tab= deep-link rows in the menu (doc 39: tab-switcher menus removed).
-      {
-        href: "/connectivity",
-        label: "nav.connectivity",
-        icon: <Radio className="h-4 w-4" />,
-        description: "nav.mqttDashboardDesc",
-        requiredPermission: "mqtt_monitoring",
-        permissionCategory: "mqtt",
-        section: "telemetry",
-      },
-      // — Onboarding & adapters —
       {
         href: "/machine-onboarding",
         label: "nav.machineOnboarding",
@@ -564,7 +636,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.machineOnboardingDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "onboarding",
+        section: "connect",
       },
       {
         // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter +
@@ -575,7 +647,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aoiOnboardingDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "onboarding",
+        section: "connect",
       },
       {
         href: "/machine-registration",
@@ -584,7 +656,20 @@ export const navGroups: NavGroup[] = [
         description: "nav.machineRegistrationDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "onboarding",
+        section: "connect",
+      },
+      {
+        // doc 41 IA cleanup — "Quản lý thiết bị" (device-management tab của
+        // /monitoring-setting) DỜI từ section maintenance về ĐÂY, ngay cạnh "Đăng ký
+        // máy": cùng một chức năng quản lý/đăng ký thiết bị, không phải bảo trì. Hết
+        // cảnh "1 chức năng nằm rải 2-3 section".
+        href: "/monitoring-setting?tab=device-management",
+        label: "monitoringSettings.sidebar.deviceManagement",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.monitoringSettingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "connect",
       },
       {
         href: "/device-adapters",
@@ -593,10 +678,9 @@ export const navGroups: NavGroup[] = [
         description: "nav.deviceAdaptersDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "onboarding",
+        section: "connect",
       },
-      // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab);
-      // now surfaced as the "/connectivity?tab=uns" deep-link in the telemetry section.
+      // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab).
       {
         // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)
         href: "/hot-folders",
@@ -605,8 +689,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.hotFoldersDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "onboarding",
+        section: "connect",
       },
+      {
+        href: "/connectivity",
+        label: "nav.connectivity",
+        icon: <Radio className="h-4 w-4" />,
+        description: "nav.mqttDashboardDesc",
+        requiredPermission: "mqtt_monitoring",
+        permissionCategory: "mqtt",
+        section: "connect",
+      },
+      // — Điều khiển thiết bị (section "control") — runtime control surfaces —
       {
         href: "/edge-nodes",
         label: "nav.edgeNodes",
@@ -614,7 +708,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.edgeNodesDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
-        section: "onboarding",
+        section: "control",
       },
       {
         // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via HITL dispatcher)
@@ -622,9 +716,9 @@ export const navGroups: NavGroup[] = [
         label: "nav.robotControl",
         icon: <Bot className="h-4 w-4" />,
         description: "nav.robotControlDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "onboarding",
+        section: "control",
       },
       {
         // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only)
@@ -632,9 +726,9 @@ export const navGroups: NavGroup[] = [
         label: "nav.controlPlane",
         icon: <Network className="h-4 w-4" />,
         description: "nav.controlPlaneDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "onboarding",
+        section: "control",
         hint: "nav.hint.controlPlane",
         engineerOriented: true,
         beta: true,
@@ -648,60 +742,51 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "maintenance",
+        tier: "simple", // doc 40 — cốt lõi maintenance, hiện trong Simple mode
       },
       {
         href: "/work-orders",
         label: "nav.workOrders",
         icon: <ClipboardList className="h-4 w-4" />,
         description: "nav.workOrdersDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "maintenance",
+        tier: "simple", // doc 40 — cốt lõi maintenance, hiện trong Simple mode
       },
       {
-        // doc 35 W4-C — plain labels (i18n keys deferred to the i18n polish pass)
-        href: "/feeder-verify",
-        label: "Vật tư tại line (Feeder/MSD/Stencil)",
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
+        // doc 40 Wave 4c §11 — CMMS hub: lịch bảo trì phòng ngừa (maintenance_schedules)
+        // + phụ tùng/độ tin cậy (MTTR/MTBF). Gate machine_control (bảo trì có mutation).
+        // Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
+        href: "/cmms",
+        label: "Bảo trì (CMMS)",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "Lịch bảo trì phòng ngừa · phụ tùng & độ tin cậy (MTTR/MTBF)",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
         section: "maintenance",
+        tier: "simple",
       },
-      {
-        // doc 35 W4-E — routing master (ISA-95); plain label (i18n polish deferred)
-        href: "/routing-master",
-        label: "Định tuyến sản xuất (Routing)",
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
-        requiredPermission: "production_orders",
-        permissionCategory: "production_orders",
-        section: "maintenance",
-      },
+      // doc 41 IA cleanup — /feeder-verify (vật tư tại line) DỜI sang module Sản
+      // xuất §bom, /routing-master (định tuyến ISA-95) DỜI sang §ordersSchedule:
+      // cả hai thuộc MES/vật tư, không phải "Bảo trì thiết bị".
       {
         href: "/alerts",
         label: "nav.alertsList",
         icon: <Bell className="h-4 w-4" />,
         description: "nav.alertsListDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-        section: "maintenance",
-      },
-      // doc 36 follow-up — /mqtt-alerts (Alert Rules) REMOVED: redirects into
-      // /connectivity (Alerts tab); surfaced as "/connectivity?tab=alerts" in telemetry.
-      // (/alerts — the read-only alerts LIST — stays; it is not part of the hub.)
-      {
-        // doc 36 follow-up — /monitoring-setting bóc ra: 6/7 tab (đăng ký máy, MQTT clients/
-        // topics/replay/profiles/ng-rate) đã là item route ở menu trái; chỉ tab nội bộ
-        // "Quản lý thiết bị" (device-management) cần deep-link riêng.
-        href: "/monitoring-setting?tab=device-management",
-        label: "monitoringSettings.sidebar.deviceManagement",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.monitoringSettingDesc",
+        // doc 40 Lan — trước gate `mqtt_alerts` (operator/maintenance không có) → không
+        // thấy danh sách cảnh báo. Đổi sang `machine_status` (cả 2 role đều có canView).
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "maintenance",
+        tier: "simple", // doc 40 — cốt lõi operator/maintenance, hiện trong Simple mode
       },
+      // doc 36 follow-up — /mqtt-alerts (Alert Rules) REMOVED: redirects into
+      // /connectivity (Alerts tab); surfaced as "/connectivity?tab=alerts" in the hub.
+      // (/alerts — the read-only alerts LIST — stays; it is not part of the hub.)
+      // doc 41 IA cleanup — "Quản lý thiết bị" (/monitoring-setting?tab=device-management)
+      // DỜI lên section "connect" (cạnh Đăng ký máy); không còn ở maintenance.
     ],
   },
 
@@ -746,8 +831,10 @@ export const navGroups: NavGroup[] = [
         label: "nav.engineeringHome",
         icon: <LayoutDashboard className="h-4 w-4" />,
         description: "nav.engineeringHomeDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
+        // doc 40 QA-1b: hub Kỹ thuật là surface control → machine_control (engineer/
+        // supervisor/admin), KHÔNG để viewer/operator xem qua alias machine_status.
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
       },
       // — Authoring & Programming —
       {
@@ -812,7 +899,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.irEditor",
         icon: <Code2 className="h-4 w-4" />,
         description: "nav.irEditorDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "authoring",
         hint: "nav.hint.irEditor",
@@ -827,7 +914,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.pouStudio",
         icon: <FileCode2 className="h-4 w-4" />,
         description: "nav.pouStudioDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "authoring",
         hint: "nav.hint.pouStudio",
@@ -835,15 +922,15 @@ export const navGroups: NavGroup[] = [
         beta: true,
       },
       {
-        // Doc 34 · P3 — Programming Copilot: LLM code generation (generate / complete /
-        // translate / review / explain), grounded in vendor-manual RAG and VALIDATED by the
-        // same programming substrate. Read-open (machine_monitoring); advisory + display-only
-        // (no device path) — the engineer reviews, then builds/deploys via the gated pipeline.
+        // Doc 34 · P3 — Programming Copilot. doc 41: đây là NHÀ DUY NHẤT còn lại (entry
+        // trùng ở nhóm AI đã gỡ). Vai trò trang này = "scratchpad" sinh code nhanh khi
+        // CHƯA mở project; còn khi soạn trong editor, copilot hiện diện dạng dock nhúng
+        // (ProgrammingCopilotDock) ngay trong Engineering Workspace / IR / POU.
         href: "/programming-copilot",
         label: "nav.programmingCopilot",
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.programmingCopilotDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "authoring",
         hint: "nav.hint.programmingCopilot",
@@ -856,7 +943,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.fleetOrchestration",
         icon: <Bot className="h-4 w-4" />,
         description: "nav.fleetOrchestrationDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "orchestration",
         hint: "nav.hint.fleetOrchestration",
@@ -870,7 +957,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.safetyWorkforce",
         icon: <ShieldQuestion className="h-4 w-4" />,
         description: "nav.safetyWorkforceDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "safety",
         hint: "nav.hint.safetyWorkforce",
@@ -884,7 +971,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.equipmentStandards",
         icon: <ShieldCheck className="h-4 w-4" />,
         description: "nav.equipmentStandardsDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "standardsIntegration",
         hint: "nav.hint.equipmentStandards",
@@ -898,7 +985,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.equipmentIntegration",
         icon: <Plug className="h-4 w-4" />,
         description: "nav.equipmentIntegrationDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "standardsIntegration",
         hint: "nav.hint.equipmentIntegration",
@@ -1125,19 +1212,10 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiHubDesc",
         section: "aiWorkspace",
       },
-      {
-        // doc 34 P3 — AI programming copilot ALSO surfaced under the AI group (its other home
-        // is Engineering ▸ Authoring). Users hunting for an "AI" copilot look here first.
-        href: "/programming-copilot",
-        label: "nav.programmingCopilot",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.programmingCopilotDesc",
-        requiredPermission: "machine_monitoring",
-        permissionCategory: "machine_monitoring",
-        section: "aiWorkspace",
-        hint: "nav.hint.programmingCopilot",
-        engineerOriented: true,
-      },
+      // doc 41 (2026-07-11) — /programming-copilot entry TRÙNG ở đây ĐÃ GỠ. Copilot lập
+      // trình là một EXTENSION nhúng trong các editor (Engineering Workspace / IR / POU),
+      // không phải một đích đến riêng; nhà duy nhất còn lại là trang scratchpad ở
+      // "Kỹ thuật ▸ Soạn thảo & Lập trình" (sinh code nhanh khi chưa mở project).
       {
         href: "/management-insight",
         label: "nav.managementInsight",
@@ -1200,7 +1278,7 @@ export const navGroups: NavGroup[] = [
         label: "nav.robotModelHealth",
         icon: <Bot className="h-4 w-4" />,
         description: "nav.robotModelHealthDesc",
-        requiredPermission: "machine_monitoring",
+        requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "aiControlPlane",
       },
@@ -1320,7 +1398,9 @@ export const navGroups: NavGroup[] = [
 
   // ──────────────────────────────────────────────────────────────────────────
   // 7. ADMIN — Admin & Security (hub / users / roles / audit / license / backup
-  //    / api keys / sessions) · Master Data / Data Management. Landing for admin.
+  //    / api keys / sessions / system settings). Landing for admin.
+  //    2026-07-11 — Master Data tách ra group `data-management` riêng (xem 7b):
+  //    quản trị = chức năng cho admin; dữ liệu chủ = cho người dùng quản lý.
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "admin",
@@ -1335,11 +1415,6 @@ export const navGroups: NavGroup[] = [
     sections: [
       { key: "securityAccess", label: "nav.section.securityAccess" },
       { key: "platform", label: "nav.section.platform" },
-      // Doc 31 UX7 — coherent "Product & Program" cluster (products/mapping/
-      // component-library) split out of the generic Master Data section.
-      { key: "productProgram", label: "nav.section.productProgram" },
-      { key: "masterData", label: "nav.section.masterData" },
-      { key: "factoryConfig", label: "nav.section.factoryConfig" },
     ],
     items: [
       {
@@ -1466,7 +1541,64 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "admin",
         section: "securityAccess",
       },
-      // — Master Data / Data Management —
+      {
+        href: "/corporate-management",
+        label: "nav.corporateManagement",
+        icon: <Settings className="h-4 w-4" />,
+        description: "nav.corporateManagementDesc",
+        requiredRole: 'admin',
+        requiredPermission: "dashboard_corporate",
+        permissionCategory: "dashboard",
+        section: "platform",
+      },
+      {
+        href: "/settings",
+        label: "nav.generalSettings",
+        icon: <Settings className="h-4 w-4" />,
+        description: "nav.generalSettingsDesc",
+        requiredPermission: "settings_view",
+        permissionCategory: "settings",
+        section: "platform",
+      },
+      // doc 39 — Settings ?tab= deep-link rows removed (redundant with in-page tabs);
+      // the plain /settings entry above is the single menu row.
+      {
+        href: "/admin-setting",
+        label: "nav.adminSetting",
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.adminSettingDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+        section: "platform",
+      },
+      // doc 39 — Admin Setting ?tab= deep-link rows removed (redundant with in-page tabs);
+      // the plain /admin-setting entry above is the single menu row.
+    ],
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 7b. DATA MANAGEMENT — master data người dùng quản lý (sản phẩm, thư viện
+  //     linh kiện, badge, layout, trạm, quy trình, cài đặt dữ liệu). Tách khỏi
+  //     group ADMIN 2026-07-11: KHÔNG requiredRole:'admin' và KHÔNG tier
+  //     advanced — người dùng thường (có quyền settings/masterdata) thấy được;
+  //     RBAC vẫn gate từng item. Backing SKU: MOD_DATA_MANAGEMENT → app "data".
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: "data-management",
+    label: "nav.dataGroup",
+    icon: <Database className="h-4 w-4" />,
+    description: "nav.dataGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "settings",
+    sections: [
+      // Doc 31 UX7 — coherent "Product & Program" cluster (products/mapping/
+      // component-library) split out of the generic Master Data section.
+      { key: "productProgram", label: "nav.section.productProgram" },
+      { key: "masterData", label: "nav.section.masterData" },
+      { key: "factoryConfig", label: "nav.section.factoryConfig" },
+    ],
+    items: [
       {
         href: "/master-data",
         label: "nav.masterData",
@@ -1494,6 +1626,29 @@ export const navGroups: NavGroup[] = [
         label: "nav.operatorBadges",
         icon: <Users className="h-4 w-4" />,
         description: "nav.operatorBadgesDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+      },
+      // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào").
+      // Locale keys nav.masterDataAudit(Desc) đã đồng bộ vi/en/zh (nợ nhỏ doc 42).
+      {
+        href: "/master-data-audit",
+        label: "nav.masterDataAudit",
+        icon: <History className="h-4 w-4" />,
+        description: "nav.masterDataAuditDesc",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "masterData",
+      },
+      // doc 42 Đợt 5 (K1): bảng điều khiển chất lượng dữ liệu chủ (thiếu trường /
+      // tham chiếu mồ côi, chỉ đọc). Locale keys nav.dataQuality(Desc) đã đồng bộ
+      // vi/en/zh (doc 42 Đợt 3 i18n pass — giống nav.masterDataAudit).
+      {
+        href: "/data-quality",
+        label: "nav.dataQuality",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.dataQualityDesc",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
         section: "masterData",
@@ -1565,39 +1720,6 @@ export const navGroups: NavGroup[] = [
       },
       // doc 39 — DataSettings ?tab= deep-link rows removed (redundant with in-page tabs);
       // the plain /datasettings entry above is the single menu row.
-      {
-        href: "/corporate-management",
-        label: "nav.corporateManagement",
-        icon: <Settings className="h-4 w-4" />,
-        description: "nav.corporateManagementDesc",
-        requiredRole: 'admin',
-        requiredPermission: "dashboard_corporate",
-        permissionCategory: "dashboard",
-        section: "masterData",
-      },
-      {
-        href: "/settings",
-        label: "nav.generalSettings",
-        icon: <Settings className="h-4 w-4" />,
-        description: "nav.generalSettingsDesc",
-        requiredPermission: "settings_view",
-        permissionCategory: "settings",
-        section: "platform",
-      },
-      // doc 39 — Settings ?tab= deep-link rows removed (redundant with in-page tabs);
-      // the plain /settings entry above is the single menu row.
-      {
-        href: "/admin-setting",
-        label: "nav.adminSetting",
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.adminSettingDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
-        section: "platform",
-      },
-      // doc 39 — Admin Setting ?tab= deep-link rows removed (redundant with in-page tabs);
-      // the plain /admin-setting entry above is the single menu row.
     ],
   },
 
@@ -1703,17 +1825,29 @@ export function hasAdvancedContent(groups: NavGroup[]): boolean {
 }
 
 /**
- * Filter nav groups by menu mode. In `advanced` mode nothing is removed. In
- * `simple` mode, advanced groups are dropped entirely and advanced items are
- * removed from the surviving groups (empty groups then drop out). Purely additive
- * — this runs AFTER getFilteredNavGroups, so power-user (advanced) flows are
+ * Filter nav groups by menu mode. In `advanced` mode nothing is removed.
+ *
+ * In `simple` mode:
+ *   - A SIMPLE group keeps every item that is not explicitly advanced (untagged =
+ *     simple, backward-compatible).
+ *   - An ADVANCED group is NO LONGER dropped wholesale (doc 40 Lan): it survives but
+ *     is trimmed to ONLY the items EXPLICITLY tagged `tier: 'simple'`. This surfaces
+ *     the operator/maintenance core tools (device-monitor, alerts, feeder-verify,
+ *     work-orders, technician-copilot) that live inside the advanced "Devices" group,
+ *     while the engineering-heavy rows (untagged/advanced) stay hidden. A group with
+ *     no explicit-simple item drops out exactly as before.
+ *
+ * Purely additive — runs AFTER getFilteredNavGroups, so advanced-mode flows are
  * untouched.
  */
 export function filterNavGroupsByMode(groups: NavGroup[], mode: NavMode): NavGroup[] {
   if (mode === 'advanced') return groups;
   return groups
-    .filter(group => !isAdvancedGroup(group))
-    .map(group => ({ ...group, items: group.items.filter(item => !isAdvancedItem(item)) }))
+    .map(group =>
+      isAdvancedGroup(group)
+        ? { ...group, items: group.items.filter(item => item.tier === 'simple') }
+        : { ...group, items: group.items.filter(item => !isAdvancedItem(item)) },
+    )
     .filter(group => group.items.length > 0);
 }
 

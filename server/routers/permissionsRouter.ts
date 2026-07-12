@@ -93,6 +93,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'production', moduleName: 'production_layout', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // doc 40 Lan-P0 — phiên sản xuất (vào ca/tạm dừng/kết thúc/bàn giao). Tách khỏi production_orders.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -157,6 +159,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'production', moduleName: 'production_layout', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // doc 40 Lan-P0 — supervisor quản lý phiên sản xuất của line.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
@@ -216,6 +220,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // doc 40 Lan-P0 — operator TỰ mở/tạm dừng/kết thúc/bàn giao ca của mình (không cần
+    // quyền tạo đơn sản xuất). Mở khóa OperatorSessionControl + ShiftHandoverDialog.
+    { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Andon (F5a) — operators raise/ack/resolve Andons from the line
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Energy advanced (G2.6a) — operators view + manually record energy readings (telemetry, no machine write)
@@ -790,6 +797,7 @@ export const permissionsRouter = router({
         { category: 'production', moduleName: 'production_orders', displayName: 'QL Đơn sản xuất', description: 'Tạo/sửa/xóa đơn hàng sản xuất, lên lịch' },
         { category: 'production', moduleName: 'production_layout', displayName: 'Bố trí Xưởng', description: 'Quản lý layout xưởng sản xuất, vị trí máy' },
         { category: 'production', moduleName: 'production_line_assignments', displayName: 'Gán SP-Dây chuyền', description: 'Gán sản phẩm cho dây chuyền sản xuất' },
+        { category: 'production', moduleName: 'production_session', displayName: 'Phiên sản xuất (Ca)', description: 'Vào ca/tạm dừng/kết thúc/bàn giao ca của operator. Tách khỏi QL Đơn sản xuất — operator mở ca của mình không cần quyền tạo đơn.' },
 
         // ======================== MACHINE MONITORING ========================
         { category: 'machine_monitoring', moduleName: 'machine_status', displayName: 'Trạng thái Máy', description: 'Giám sát trạng thái máy real-time, uptime' },

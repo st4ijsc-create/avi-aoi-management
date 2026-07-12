@@ -5035,6 +5035,36 @@ async function startServer() {
     console.error("[ControlGatewayConsistency] check failed:", (err as any)?.message || err);
   }
 
+  // doc 40 Wave 3A (§11 · OT-F2) — Connectivity / flag summary lúc boot. Operator nhìn
+  // MỘT log biết đường/gate nào ARMED (đang thật) vs DORMANT (cờ tắt) vs BYPASS (một lớp
+  // enforcement bị tắt). Nguồn: cùng ma trận READ-ONLY của readinessRouter (single source
+  // of truth). KHÔNG đổi hành vi — chỉ đọc process.env + getter thuần và IN. Toàn bộ chi
+  // tiết trực quan xem tại trang /control-readiness (Trust & Enforcement Center).
+  try {
+    const { collectFlagMatrix } = await import("../routers/readinessRouter");
+    const items = collectFlagMatrix();
+    const tag = (s: string) =>
+      s === "armed" ? "ARMED" : s === "bypass" ? "BYPASS" : s === "warn" ? "WARN " : "dormant";
+    const s = {
+      armed: items.filter((i) => i.state === "armed").length,
+      dormant: items.filter((i) => i.state === "dormant").length,
+      bypass: items.filter((i) => i.state === "bypass").length,
+      warn: items.filter((i) => i.state === "warn").length,
+    };
+    console.log(
+      `[Readiness] Control/Trust flag summary — ${s.armed} armed · ${s.dormant} dormant · ${s.bypass} bypass · ${s.warn} warn ` +
+        `(chi tiết: /control-readiness)`,
+    );
+    // Chỉ liệt kê những mục CẦN CHÚ Ý (bypass/warn) để log gọn; dormant/armed đã tổng hợp ở trên.
+    for (const i of items) {
+      if (i.state === "bypass" || i.state === "warn") {
+        console.log(`[Readiness]   ${tag(i.state)} · ${i.key} — ${i.reason}`);
+      }
+    }
+  } catch (err) {
+    console.error("[Readiness] flag summary failed:", (err as any)?.message || err);
+  }
+
   // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the
   // module registers the vendor drivers. Disabled by default; opt in via
   // ROBOT_GATEWAY_ENABLED=true. Motion control is dry-run unless ROBOT_CONTROL_ENABLED=true.

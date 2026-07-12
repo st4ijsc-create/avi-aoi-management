@@ -48,7 +48,7 @@ import {
 import { useNavMode } from "@/hooks/useNavMode";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
-import { scopeGroupsToApp } from "@/lib/apps";
+import { scopeGroupsToApp, listApps, type AppDescriptor } from "@/lib/apps";
 import { BetaBanner } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
@@ -282,6 +282,20 @@ function DashboardLayoutContent({
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
   const sidebarGroups = launcherOn ? scopeGroupsToApp(visibleGroups, activeApp.appId) : visibleGroups;
   const searchGroups = launcherOn ? accessibleGroups : visibleGroups;
+
+  // doc 40 Lan — RBAC cho App Launcher: một app "truy cập được" khi là core, HOẶC còn ≥1
+  // item hiển thị sau khi lọc role/permission/license (accessibleGroups). Tile không truy
+  // cập được sẽ hiện khoá (không phải upsell license).
+  const accessibleAppIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const app of listApps()) {
+      if (app.kind === "core" || scopeGroupsToApp(accessibleGroups, app.appId).length > 0) {
+        ids.add(app.appId);
+      }
+    }
+    return ids;
+  }, [accessibleGroups]);
+  const canAccessApp = (app: AppDescriptor) => accessibleAppIds.has(app.appId);
 
   const openApp = (href: string) => {
     setLocation(href);
@@ -595,6 +609,7 @@ function DashboardLayoutContent({
           activeAppId={activeApp.appId}
           onSelectApp={app => openApp(app.landingHref)}
           onUpgrade={() => openApp("/modules")}
+          canAccessApp={canAccessApp}
         />
       )}
       {/* C3a — AILocalChatBubble moved to App root (mounted once globally).

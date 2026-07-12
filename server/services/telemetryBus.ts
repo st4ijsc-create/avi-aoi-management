@@ -105,8 +105,12 @@ export function toCanonicalRow(s: CanonicalSample, machineId: number | null): In
   return row;
 }
 
-// deviceId → machineId resolution cache (negative results cached as null).
-const machineIdCache = new Map<string, number | null>();
+// deviceId → machineId resolution cache.
+// MON-F11: entry NEGATIVE (chưa map được, value=null) phải có TTL, nếu không map
+// máy sau khi telemetry đã chảy sẽ mãi NULL tới lần restart. Entry POSITIVE
+// (đã resolve ra id) cache vĩnh viễn (expires=Infinity) như hành vi trước đây.
+const NEG_CACHE_TTL_MS = 60_000; // 60s cho negative entry
+const machineIdCache = new Map<string, { value: number | null; expires: number }>();
 
 /** Clear the deviceId→machineId cache (tests / after master-data edits). */
 export function clearMachineIdCache(): void {
@@ -116,7 +120,10 @@ export function clearMachineIdCache(): void {
 /** Resolve a deviceId to a platform machineId via machines.code (cached). */
 async function resolveMachineId(deviceId: string | null | undefined): Promise<number | null> {
   if (!deviceId) return null;
-  if (machineIdCache.has(deviceId)) return machineIdCache.get(deviceId) ?? null;
+  const cached = machineIdCache.get(deviceId);
+  if (cached && (cached.value !== null || cached.expires > Date.now())) {
+    return cached.value; // positive: dùng luôn; negative: dùng khi chưa hết TTL
+  }
   let resolved: number | null = null;
   try {
     const { getDb } = await import("../db/connection");
@@ -134,7 +141,10 @@ async function resolveMachineId(deviceId: string | null | undefined): Promise<nu
   } catch {
     resolved = null; // resolution failure → ingest as unmapped (machineId null)
   }
-  machineIdCache.set(deviceId, resolved);
+  machineIdCache.set(deviceId, {
+    value: resolved,
+    expires: resolved === null ? Date.now() + NEG_CACHE_TTL_MS : Infinity,
+  });
   return resolved;
 }
 
@@ -239,6 +249,17 @@ async function ensureStoreForwardWired(): Promise<typeof import("./ot/storeForwa
   const sf = await import("./ot/storeForward");
   sf.setInsertFn((rows) => persistRows(rows));
   return sf;
+}
+
+/**
+ * OT-F10 (doc 40 §11) — expose the store-forward wiring so an INDEPENDENT drain timer
+ * (backgroundJobs) can replay the buffer through the SAME persist path even when no live
+ * ingest is happening (DB recovered during a quiet period). Without this the injected
+ * insert fn stays the default (throws) until the next ingest, so a WAL restored on boot
+ * could never drain on its own. Idempotent (setInsertFn is a cheap re-assignment).
+ */
+export async function wireStoreForward(): Promise<void> {
+  await ensureStoreForwardWired();
 }
 
 // ── R-2a (doc 38 P0-D) — WRITE-COALESCING RING BUFFER ───────────────────────
@@ -436,4 +457,136 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
   }
 
   return persisted;
+}
+
+// ── MON-F13 (doc 40 §11) — ENERGY auto-ingest tap ────────────────────────────
+// Mirror whitelisted energy metrics from the unified telemetry stream into the
+// dedicated `energy_readings` table so the ISO-50001 energy views have live data
+// WITHOUT a second reader / second ingest path. This is an OBSERVER (a tap): it runs
+// AFTER the canonical persist + broadcast and never affects them; a failure is isolated.
+//
+// FLAG: ENERGY_INGEST_FROM_TELEMETRY (default OFF). Registered ONLY when the flag is
+// true at boot, so the flag-OFF path keeps taps.size === 0 (byte-for-byte prior
+// behaviour, zero overhead). Set the flag in .env before start to engage it.
+//
+// HONESTY: produces NO data of its own — it only re-shapes rows a real reader already
+// handed the bus. Only rows whose metric is in the whitelist AND carry a finite numeric
+// value are mirrored; everything else is ignored. `unit` is taken from device_tags
+// (by adapterId+tagKey in meta, cached) when the sample itself omitted a unit.
+
+/** metric name (lowercased) → which energy_readings column it populates. */
+const ENERGY_METRIC_COLUMN: Record<
+  string,
+  "value" | "powerKw" | "powerFactor" | "reactivePowerKvar" | "apparentPowerKva"
+> = {
+  // energy (kWh) → the mandatory `value` column
+  energy_kwh: "value",
+  kwh: "value",
+  active_energy_kwh: "value",
+  // instantaneous active power (kW)
+  power_kw: "powerKw",
+  active_power_kw: "powerKw",
+  kw: "powerKw",
+  // power factor [0..1]
+  power_factor: "powerFactor",
+  pf: "powerFactor",
+  // reactive / apparent power
+  reactive_power_kvar: "reactivePowerKvar",
+  kvar: "reactivePowerKvar",
+  apparent_power_kva: "apparentPowerKva",
+  kva: "apparentPowerKva",
+};
+
+/** Default unit per target column (used only when neither sample nor device_tags has one). */
+const ENERGY_DEFAULT_UNIT: Record<string, string> = {
+  value: "kWh",
+  powerKw: "kW",
+  powerFactor: "",
+  reactivePowerKvar: "kVAr",
+  apparentPowerKva: "kVA",
+};
+
+function energyIngestEnabled(): boolean {
+  return process.env.ENERGY_INGEST_FROM_TELEMETRY === "true";
+}
+
+// unit lookup cache: `${adapterId}|${tagKey}` → unit (or "" when not found).
+const energyUnitCache = new Map<string, string>();
+
+/** Resolve a row's unit: prefer the sample's own unit, else device_tags (cached). */
+async function resolveEnergyUnit(row: InsertOtTelemetry): Promise<string | null> {
+  if (row.unit) return row.unit;
+  const meta = (row.meta ?? {}) as Record<string, unknown>;
+  const adapterId = meta.adapterId;
+  const tagKey = meta.tagKey;
+  if (adapterId == null || tagKey == null) return null;
+  const cacheKey = `${adapterId}|${tagKey}`;
+  const cached = energyUnitCache.get(cacheKey);
+  if (cached !== undefined) return cached || null;
+  let unit = "";
+  try {
+    const { getDb } = await import("../db/connection");
+    const db = await getDb();
+    if (db) {
+      const { deviceTags } = await import("../../drizzle/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const found = await db
+        .select({ unit: deviceTags.unit })
+        .from(deviceTags)
+        .where(and(eq(deviceTags.adapterId, Number(adapterId)), eq(deviceTags.tagKey, String(tagKey))))
+        .limit(1);
+      unit = found.length > 0 && found[0].unit ? String(found[0].unit) : "";
+    }
+  } catch {
+    unit = ""; // lookup failure → fall back to the sample/default unit
+  }
+  energyUnitCache.set(cacheKey, unit);
+  return unit || null;
+}
+
+/**
+ * The tap fn: for each whitelisted numeric row, build one energy_readings insert and
+ * bulk-persist the batch. Fired from a sync tap via an isolated async IIFE (the bus's
+ * tap loop is sync). Fault-isolated — an insert error is logged, never rethrown.
+ */
+function energyMirrorTap(rows: InsertOtTelemetry[]): void {
+  if (!energyIngestEnabled() || rows.length === 0) return;
+  void (async () => {
+    try {
+      const energyRows: Array<Record<string, unknown>> = [];
+      for (const row of rows) {
+        const col = ENERGY_METRIC_COLUMN[row.metric?.toLowerCase() ?? ""];
+        if (!col) continue;
+        const num = row.numValue;
+        if (num == null || !Number.isFinite(num)) continue; // energy is numeric-only
+        const unit = (await resolveEnergyUnit(row)) ?? ENERGY_DEFAULT_UNIT[col] ?? "";
+        const valueStr = String(num);
+        const er: Record<string, unknown> = {
+          machineId: row.machineId ?? null,
+          source: "electricity",
+          value: valueStr, // NOT NULL — always the measured value of this metric
+          unit: unit || ENERGY_DEFAULT_UNIT[col] || "kWh",
+          timestamp: row.ts instanceof Date ? row.ts : new Date(row.ts as string | number),
+        };
+        // Populate the typed column too (value already holds it when col === 'value').
+        if (col !== "value") er[col] = valueStr;
+        energyRows.push(er);
+      }
+      if (energyRows.length === 0) return;
+      const { getDb } = await import("../db/connection");
+      const db = await getDb();
+      if (!db) return; // DB absent → no-op (never fabricate)
+      const { energyReadings } = await import("../../drizzle/schema");
+      await db.insert(energyReadings).values(energyRows as any);
+    } catch (err) {
+      console.error("[TelemetryBus] energy mirror tap failed:", (err as Error)?.message || err);
+    }
+  })();
+}
+
+// Register the energy tap ONLY when the flag is on at boot (keeps the flag-OFF path at
+// taps.size === 0 → zero overhead + byte-for-byte prior behaviour).
+if (energyIngestEnabled()) {
+  registerTelemetryTap(energyMirrorTap);
+  console.log("[TelemetryBus] MON-F13 energy auto-ingest tap ENABLED (ENERGY_INGEST_FROM_TELEMETRY)");
 }

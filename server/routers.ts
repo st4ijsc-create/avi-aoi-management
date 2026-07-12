@@ -51,6 +51,7 @@ import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotation
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
 import { causalGraphRouter } from "./routers/causalGraphRouter"; // Causal knowledge-graph admin CRUD (validated + atomic write to knowledge/causal-graph.json)
 import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
+import { sensorRouter } from "./routers/sensorRouter"; // doc 40 Wave 3A: read machine_sensor_readings (telemetry trend)
 import { mesControlTowerRouter } from "./routers/mesControlTowerRouter";
 import { maintenanceRouter } from "./routers/maintenanceRouter"; // Work-order CRUD + close→MTTR (machine_monitoring RBAC)
 import { digitalTwinRouter } from "./routers/digitalTwinRouter";
@@ -187,6 +188,10 @@ import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — sten
 import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
 import { routingRouter } from "./routers/routingRouter"; // doc 35 W4-E — ISA-95 routing master
 import { reportingMartRouter } from "./routers/reportingMartRouter"; // doc 35 W5-B — dim/fact reporting mart
+import { readinessRouter } from "./routers/readinessRouter"; // doc 40 Wave 3A (§11): READ-ONLY Control/Trust readiness matrix — gate/flag runtime state (no behavior change)
+import { factoryCommandRouter } from "./routers/factoryCommandRouter"; // doc 40 Wave 4d (§13.1-13.3): READ-ONLY whole-factory command view aggregation (overview + machineDetail; set-based, no control path)
+import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11): READ-ONLY war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (set-based, no control path)
+import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -407,6 +412,7 @@ export const appRouter = router({
   causalGraph: causalGraphRouter,
   predictiveAlert: predictiveAlertRouter,
   predictiveMaintenance: predictiveMaintenanceRouter,
+  sensor: sensorRouter, // doc 40 Wave 3A: machine_sensor_readings telemetry trend
   mesControlTower: mesControlTowerRouter,
   maintenance: maintenanceRouter,
   ncr: ncrRouter, // doc 35 W4-B
@@ -445,6 +451,7 @@ export const appRouter = router({
   commissioning: commissioningRouter, // C2 (doc 24 Wave-1): hardware commissioning/FAT gate — admin sign-off ledger (no device write path)
   unsMapping: unsMappingRouter, // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (config + pure preview; UNS_MAPPING_ENABLED, default OFF)
   systemHealth: systemHealthRouter, // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward + connection HA supervisors + DINOv2 model tier
+  readiness: readinessRouter, // doc 40 Wave 3A (§11): READ-ONLY Control/Trust readiness matrix (gate/flag runtime state; RBAC admin_system|machine_control)
   robot: robotRouter,
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
@@ -471,6 +478,12 @@ export const appRouter = router({
   // Ecosystem Command Center (doc 21 / U2) — whole-ecosystem hierarchy + KPI aggregation (read-only)
   commandCenter: commandCenterRouter,
   assetCockpit: assetCockpitRouter,
+  // doc 40 Wave 4d (§13.1-13.3): whole-factory command view — overview + machineDetail (read-only aggregation, set-based)
+  factoryCommand: factoryCommandRouter,
+  // doc 40 Wave 4c (§11): war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (read-only, set-based)
+  warRoom: warRoomRouter,
+  // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status / write machine_control)
+  maintenanceSchedule: maintenanceScheduleRouter,
   // W2-D (doc 27 §3 C4): AOI/AVI onboarding wizard — draft CRUD + dry-run + commissioning sign-off (SOFT gate)
   aoiOnboarding: aoiOnboardingRouter,
   // W3-C (doc 27 §2 M9): inspection-program release workflow (SoD + atomic supersede; ledger only)

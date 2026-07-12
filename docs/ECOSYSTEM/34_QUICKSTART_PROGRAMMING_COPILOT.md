@@ -6,8 +6,11 @@ Rà soát frontend thực tế 2026-07-06. App live `http://localhost:3000` · g
 ---
 
 ## 1) Trợ lý Lập trình (AI sinh/giải thích mã — TRONG APP)
-**Menu:** thanh bên trái → nhóm **“Kỹ thuật & Điều khiển (Nâng cao)”** → mục **“Soạn thảo & Lập trình”** → **“Trợ lý Lập trình”** (icon ✨, nhãn *beta*).
+**Menu (2 chỗ — chọn chỗ nào cũng được):**
+- **Nhóm “AI”** (icon ✨) → mục **“Không gian AI”** → **“Trợ lý Lập trình”**  ← dễ tìm nhất, tìm “AI” là thấy.
+- Hoặc nhóm **“Kỹ thuật & Điều khiển (Nâng cao)”** → mục **“Soạn thảo & Lập trình”** → **“Trợ lý Lập trình”**.
 **URL trực tiếp:** `http://localhost:3000/programming-copilot`
+*(Đã bỏ nhãn “beta” — tính năng đã chạy thật.)*
 
 **Dùng:**
 1. Chọn **Loại chương trình**: Structured Text / Ladder / POU / IR-flow / Zmotion Basic / Mitsubishi (MELSEC) / Techman.

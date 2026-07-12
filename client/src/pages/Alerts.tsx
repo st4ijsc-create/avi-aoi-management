@@ -279,12 +279,17 @@ export default function Alerts() {
                         onCheckedChange={(v) => setFormData({ ...formData, notifyInApp: v })}
                       />
                     </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 opacity-50">
+                    {/* MON-F10 — SMS là no-op (dispatchAlert không có nhánh SMS). Tắt hẳn
+                        switch + tooltip 'sắp có' để không hứa hẹn thông báo sẽ gửi. */}
+                    <div
+                      className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 opacity-50"
+                      title={t('alerts.smsComingTooltip', 'SMS chưa được hỗ trợ — sắp có')}
+                    >
                       <div className="flex items-center gap-2">
                         <Smartphone className="h-4 w-4 text-muted-foreground" />
                         <span>{t('alerts.smsComing')}</span>
                       </div>
-                      <Switch disabled checked={false} />
+                      <Switch disabled checked={false} title={t('alerts.smsComingTooltip', 'SMS chưa được hỗ trợ — sắp có')} />
                     </div>
                   </div>
                 </div>

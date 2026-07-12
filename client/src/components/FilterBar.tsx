@@ -38,9 +38,18 @@
  * ```
  */
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import type { DateRange } from "react-day-picker";
-import { CalendarIcon, Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  Bookmark,
+  CalendarIcon,
+  Save,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -211,6 +220,12 @@ export interface FilterBarProps {
   className?: string;
   /** Extra controls rendered on the right (e.g. an export button). */
   children?: React.ReactNode;
+  /**
+   * Enable "saved filter views": when set, users can name & store the current
+   * filter set and re-apply it later. Persisted in localStorage under
+   * `filterbar:views:<viewsId>`. Omit to hide the feature entirely.
+   */
+  viewsId?: string;
 }
 
 /** Small uppercase caption used to label each control accessibly. */
@@ -487,6 +502,220 @@ function DateRangeControl({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Saved filter views (localStorage-backed)
+// ---------------------------------------------------------------------------
+
+/** One named, re-applyable snapshot of a filter set. */
+interface SavedView {
+  name: string;
+  values: FilterValues;
+}
+
+function viewsStorageKey(viewsId: string): string {
+  return `filterbar:views:${viewsId}`;
+}
+
+function loadSavedViews(viewsId: string): SavedView[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(viewsStorageKey(viewsId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (v): v is SavedView =>
+        v != null && typeof v.name === "string" && typeof v.values === "object",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedViews(viewsId: string, views: SavedView[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(viewsStorageKey(viewsId), JSON.stringify(views));
+  } catch {
+    /* private mode / quota — best effort only */
+  }
+}
+
+/**
+ * "Bộ lọc đã lưu" control: save the current filter set under a name and
+ * re-apply saved sets later. Applying a view builds a patch over *all* managed
+ * keys so it fully replaces the current filter state (keys absent from the view
+ * are cleared), staying in sync with the URL like every other control.
+ */
+function SavedViews({
+  viewsId,
+  keys,
+  values,
+  onApply,
+}: {
+  viewsId: string;
+  keys: string[];
+  values: FilterValues;
+  onApply: (patch: FilterValues) => void;
+}) {
+  const { t } = useTranslation();
+  const [views, setViews] = React.useState<SavedView[]>(() =>
+    loadSavedViews(viewsId),
+  );
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+
+  // Reload if the namespace changes (rare, but keeps the list correct).
+  React.useEffect(() => {
+    setViews(loadSavedViews(viewsId));
+  }, [viewsId]);
+
+  const updateViews = React.useCallback(
+    (next: SavedView[]) => {
+      setViews(next);
+      persistSavedViews(viewsId, next);
+    },
+    [viewsId],
+  );
+
+  // Snapshot of the currently-active managed values (what "Save" would store).
+  const currentValues = React.useMemo<FilterValues>(() => {
+    const snapshot: FilterValues = {};
+    for (const key of keys) {
+      const v = values[key];
+      if (v !== undefined && v !== "") snapshot[key] = v;
+    }
+    return snapshot;
+  }, [keys, values]);
+
+  const hasActive = Object.keys(currentValues).length > 0;
+  const trimmedName = name.trim();
+
+  const handleSave = React.useCallback(() => {
+    if (!trimmedName) return;
+    const without = views.filter((v) => v.name !== trimmedName);
+    updateViews([...without, { name: trimmedName, values: currentValues }]);
+    setName("");
+  }, [trimmedName, views, updateViews, currentValues]);
+
+  const handleApply = React.useCallback(
+    (view: SavedView) => {
+      // Cover every managed key so absent keys are cleared, not left behind.
+      const patch: FilterValues = {};
+      for (const key of keys) patch[key] = view.values[key];
+      onApply(patch);
+      setOpen(false);
+    },
+    [keys, onApply],
+  );
+
+  const handleDelete = React.useCallback(
+    (viewName: string) => {
+      updateViews(views.filter((v) => v.name !== viewName));
+    },
+    [views, updateViews],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mb-0.5 h-9 gap-1.5"
+          aria-label={t("filterbar.savedFilters", "Bộ lọc đã lưu")}
+        >
+          <Bookmark className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">{t("filterbar.savedFilters", "Bộ lọc đã lưu")}</span>
+          {views.length > 0 && (
+            <span className="tabular-nums text-muted-foreground">
+              ({views.length})
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-0">
+        <div className="border-b px-3 py-2">
+          <p className="text-sm font-medium">{t("filterbar.savedFilters", "Bộ lọc đã lưu")}</p>
+        </div>
+
+        {views.length > 0 ? (
+          <ul className="max-h-56 overflow-y-auto py-1">
+            {views.map((view) => (
+              <li
+                key={view.name}
+                className="flex items-center gap-1 px-1.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleApply(view)}
+                  className="flex-1 truncate rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title={view.name}
+                >
+                  {view.name}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("filterbar.deleteView", 'Xoá "{{name}}"').replace(
+                    "{{name}}",
+                    view.name,
+                  )}
+                  onClick={() => handleDelete(view.name)}
+                  className="rounded-sm p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-3 py-3 text-sm text-muted-foreground">
+            {t("filterbar.noSavedFilters", "Chưa có bộ lọc nào được lưu.")}
+          </p>
+        )}
+
+        <div className="border-t p-2">
+          <ControlLabel htmlFor={`${viewsId}-save-view`}>
+            {t("filterbar.saveCurrent", "Lưu bộ lọc hiện tại")}
+          </ControlLabel>
+          <div className="mt-1 flex items-center gap-1.5">
+            <Input
+              id={`${viewsId}-save-view`}
+              value={name}
+              placeholder={t("filterbar.filterNamePlaceholder", "Tên bộ lọc…")}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSave();
+                }
+              }}
+              disabled={!hasActive}
+              className="h-8"
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 shrink-0 gap-1"
+              disabled={!hasActive || !trimmedName}
+              onClick={handleSave}
+            >
+              <Save className="size-3.5" aria-hidden="true" />
+              {t("filterbar.save", "Lưu")}
+            </Button>
+          </div>
+          {!hasActive && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {t("filterbar.selectAtLeastOne", "Chọn ít nhất một bộ lọc để lưu.")}
+            </p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /**
  * A horizontal, wrapping filter bar. URL-synced by default; pass
  * `values` + `onChange` + `syncToUrl={false}` for a controlled component.
@@ -498,6 +727,7 @@ export function FilterBar({
   syncToUrl = true,
   className,
   children,
+  viewsId,
 }: FilterBarProps): React.JSX.Element {
   const url = useUrlFilters(filters);
   const baseId = React.useId();
@@ -620,6 +850,15 @@ export function FilterBar({
           <X className="size-4" aria-hidden="true" />
           Clear
         </Button>
+      )}
+
+      {viewsId && (
+        <SavedViews
+          viewsId={viewsId}
+          keys={keys}
+          values={values}
+          onApply={applyPatch}
+        />
       )}
 
       {children != null && (

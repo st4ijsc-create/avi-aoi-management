@@ -31,6 +31,7 @@ import {
   LineChart,
   Sparkles,
   Building2,
+  Database,
   Shield,
   User,
   type LucideIcon,
@@ -165,6 +166,21 @@ export const APPS: AppDescriptor[] = [
     moduleCodes: ["MOD_CORPORATE", "MOD_FEDERATION"],
     order: 70,
   },
+  {
+    // Tách khỏi app Quản trị (yêu cầu 2026-07-11, thay quyết định D5): master data là
+    // dữ liệu NGƯỜI DÙNG quản lý (sản phẩm, linh kiện, layout, trạm, quy trình) — không
+    // phải chức năng admin. Group nav riêng `data-management`, KHÔNG khoá role admin;
+    // RBAC vẫn gate từng item (masterdata / settings_products / settings_factory).
+    appId: "data",
+    kind: "sellable",
+    labelKey: "nav.app.data",
+    blurbKey: "nav.app.dataDesc",
+    icon: Database,
+    landingHref: "/master-data",
+    navGroupIds: ["data-management"],
+    moduleCodes: ["MOD_DATA_MANAGEMENT"],
+    order: 75,
+  },
   // ── Core (governance + personal) ──────────────────────────────────────────
   {
     appId: "admin",
@@ -174,8 +190,9 @@ export const APPS: AppDescriptor[] = [
     icon: Shield,
     landingHref: "/admin-home",
     navGroupIds: ["admin"],
-    // D5 — Master Data folded into the Admin app.
-    moduleCodes: ["CORE_ADMIN", "CORE_SETTINGS", "MOD_DATA_MANAGEMENT"],
+    // Admin đúng nghĩa quản trị: user/role/audit/license/backup + cài đặt hệ thống.
+    // (Master data → app "data" riêng, xem trên.)
+    moduleCodes: ["CORE_ADMIN", "CORE_SETTINGS"],
     order: 80,
   },
   {

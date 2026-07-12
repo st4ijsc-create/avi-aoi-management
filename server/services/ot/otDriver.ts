@@ -7,7 +7,7 @@
  * mới chỉ khai báo — thực thi ở F4.
  */
 
-export type OtProtocol = "opcua" | "modbus" | "s7" | "mitsubishi-mc" | "ethernet-ip" | "stub";
+export type OtProtocol = "opcua" | "modbus" | "s7" | "mitsubishi-mc" | "ethernet-ip" | "slmp" | "stub";
 
 export type OtDataType = "bool" | "int" | "float" | "string" | "json";
 

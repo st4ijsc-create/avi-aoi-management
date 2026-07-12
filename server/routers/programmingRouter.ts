@@ -47,12 +47,16 @@ import {
   buildArtifact,
   simulateBuild,
   deployBuild,
+  requestDeployApproval,
+  approveDeployment,
+  rejectDeployment,
   rollbackDeployment,
   hashContent,
   dpcDeployEnabled,
   dpcStreamingEnabled,
   dpcForceEnabled,
   dpcVersionReviewEnabled,
+  dpcDeployApprovalEnabled,
   type DpcUser,
 } from "../services/programming/programmingService";
 import {
@@ -61,6 +65,8 @@ import {
   copilotEnabled,
   generateProgram,
 } from "../services/programming/aiProgrammingCopilot";
+// ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
+import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
 import { getEngineeringStreamManager } from "../services/programming/engineeringStream";
 // ── P4 (doc 24 Wave-3) — structured IEC 61131-3 POU (LAD/FBD/SFC) + PLCopen XML round-trip ──
@@ -91,6 +97,9 @@ export const programmingRouter = router({
       forceEnabled: dpcForceEnabled(),
       // doc 38 T-2 — four-eyes-at-version gate state (UI shows the review step when on).
       versionReviewEnabled: dpcVersionReviewEnabled(),
+      // doc 40 ENG-F2 — when on, PRODUCTION deploy goes via the Approval Inbox (request→approve)
+      // instead of the requester picking an approver + self-deploying (four-eyes formality).
+      deployApprovalEnabled: dpcDeployApprovalEnabled(),
       adapters: programmingRegistry.listAdapters(),
     })),
 
@@ -347,6 +356,142 @@ export const programmingRouter = router({
     }),
 
   /**
+   * doc 40 ENG-F2 — PHIÊN 1: gửi YÊU CẦU deploy production (request→approve). KHÔNG chạm
+   * thiết bị: tạo hàng 'awaiting_approval' + pending record để một người thứ hai ký duyệt ở
+   * Approval Inbox. Không phải actuation (không ghi HW) → chỉ cần machine_control/canCreate +
+   * license gate. Người yêu cầu KHÔNG tự chọn approver nữa (đóng lỗ four-eyes hình thức).
+   */
+  requestDeployApproval: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        buildId: z.number().int().positive(),
+        idempotencyKey: z.string().min(1).max(128),
+        deviceId: z.number().int().positive().optional(),
+        // Lý do bắt buộc cho deploy production (lưu vào detailJson, hiển thị cho approver).
+        reason: z.string().min(1).max(2000),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      requestDeployApproval(
+        { buildId: input.buildId, idempotencyKey: input.idempotencyKey, deviceId: input.deviceId, reason: input.reason },
+        toDpcUser(ctx.user),
+      ),
+    ),
+
+  /**
+   * doc 40 ENG-F2 — inbox source: các yêu cầu deploy đang CHỜ DUYỆT (status='awaiting_approval').
+   * Kèm đủ ngữ cảnh để approver quyết định TRƯỚC khi ký: dự án, phiên bản + hash dự kiến, build,
+   * kết quả sim gần nhất, nội dung artifact (để diff với bản đã deploy trước), người yêu cầu.
+   * Chỉ đọc (machine_monitoring/canView).
+   */
+  listDeployApprovals: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ projectId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input }) => {
+      const d = await db();
+      const pending = await d
+        .select()
+        .from(programDeployments)
+        .where(
+          input?.projectId
+            ? and(eq(programDeployments.status, "awaiting_approval"), eq(programDeployments.projectId, input.projectId))
+            : eq(programDeployments.status, "awaiting_approval"),
+        )
+        .orderBy(desc(programDeployments.id));
+
+      const out = [];
+      for (const dep of pending) {
+        const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, dep.buildId)).limit(1);
+        const [art] = b
+          ? await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1)
+          : [undefined];
+        const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, dep.projectId)).limit(1);
+        const [latestSim] = b
+          ? await d
+              .select()
+              .from(programSimRuns)
+              .where(eq(programSimRuns.buildId, b.id))
+              .orderBy(desc(programSimRuns.id))
+              .limit(1)
+          : [undefined];
+        // Nội dung bản đã deploy TRƯỚC (để diff): lần deploy 'deployed'/'verified' gần nhất
+        // của cùng project+production trước hàng chờ này.
+        const priorDeploys = await d
+          .select()
+          .from(programDeployments)
+          .where(and(eq(programDeployments.projectId, dep.projectId), eq(programDeployments.stage, "production")))
+          .orderBy(desc(programDeployments.id));
+        const prev = priorDeploys.find(
+          (h) => h.id < dep.id && (h.status === "deployed" || h.status === "verified"),
+        );
+        let prevContent: string | null = null;
+        if (prev) {
+          const [pb] = await d.select().from(programBuilds).where(eq(programBuilds.id, prev.buildId)).limit(1);
+          const [pa] = pb
+            ? await d.select().from(programArtifacts).where(eq(programArtifacts.id, pb.artifactId)).limit(1)
+            : [undefined];
+          prevContent = pa?.content ?? null;
+        }
+        const [requester] = dep.requestedBy != null
+          ? await d
+              .select({ id: users.id, username: users.username, name: users.name })
+              .from(users)
+              .where(eq(users.id, dep.requestedBy))
+              .limit(1)
+          : [undefined];
+        const detail = (dep.detailJson ?? {}) as Record<string, unknown>;
+        out.push({
+          deployment: dep,
+          project: proj ? { id: proj.id, code: proj.code, name: proj.name, kind: proj.kind } : null,
+          build: b ? { id: b.id, ok: b.ok, status: b.status } : null,
+          artifact: art
+            ? { id: art.id, version: art.version, branch: art.branch, contentHash: art.contentHash, content: art.content }
+            : null,
+          prevContent,
+          latestSim: latestSim ? { ok: latestSim.ok, warnings: (latestSim.warningsJson ?? []) as string[] } : null,
+          requestedByUser: requester ?? null,
+          approvalReason: typeof detail.approvalReason === "string" ? detail.approvalReason : null,
+        });
+      }
+      return out;
+    }),
+
+  /**
+   * doc 40 ENG-F2 — PHIÊN 2: DUYỆT & deploy. Đây là ACTUATION (kích hoạt ghi HW thật) →
+   * actuationProcedure (role-floor admin/supervisor/engineer + 2FA) + machine_control/canCreate
+   * + license gate. approver ký bằng session CỦA CHÍNH HỌ; service enforced SoD (approver ≠
+   * requester) và chạy đúng mọi gate cũ (sim/verify/version) với actionId THẬT.
+   */
+  approveDeployment: actuationProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        deploymentId: z.number().int().positive(),
+        reason: z.string().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      approveDeployment(input.deploymentId, toDpcUser(ctx.user), { reason: input.reason }),
+    ),
+
+  /**
+   * doc 40 ENG-F2 — TỪ CHỐI / rút một yêu cầu deploy chờ duyệt. An toàn (không chạm HW) →
+   * chỉ cần machine_control/canCreate + license gate. Cho cả approver lẫn người yêu cầu.
+   */
+  rejectDeployment: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        deploymentId: z.number().int().positive(),
+        reason: z.string().min(1).max(2000),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      rejectDeployment(input.deploymentId, toDpcUser(ctx.user), input.reason),
+    ),
+
+  /**
    * W2-9 (doc 25 T6) — danh sách người đủ quyền KÝ DUYỆT deploy (second-approver).
    * = admin (được cấp toàn quyền) hoặc user có quyền machine_control (canCreate).
    * Chỉ đọc; client dùng để render picker "người ký duyệt" cho deploy production.
@@ -384,6 +529,68 @@ export const programmingRouter = router({
         input.idempotencyKey,
       );
     }),
+
+  // ── doc 40 W5 §11 — FLEET ROLLOUT (canary) + MACHINE × VERSION MATRIX ──
+  //
+  // deployToFleet đẩy MỘT build ra NHIỀU máy TUẦN TỰ qua ĐÚNG deployBuild (mỗi máy 1 hàng
+  // audit riêng, GIỮ NGUYÊN mọi cổng: sim-gate / four-eyes / SoD / verify-after-download).
+  // Là ACTUATION (kích hoạt ghi HW thật) → actuationProcedure (role-floor + 2FA) +
+  // machine_control/canCreate + MOD_ENGINEERING. Cùng ràng buộc four-eyes ở schema như
+  // deployBuild: production phải có confirmedBy (người ký ≠ người yêu cầu, service tái kiểm).
+  deployToFleet: actuationProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        buildId: z.number().int().positive(),
+        deviceIds: z.array(z.number().int().positive()).min(1).max(200),
+        stage: z.enum(["staging", "production"]).default("staging"),
+        strategy: z.object({
+          canaryCount: z.number().int().min(1).max(200).default(1),
+          promoteOnVerified: z.boolean().default(false),
+          autoRollbackOnMismatch: z.boolean().default(true),
+        }),
+        idempotencyKeyPrefix: z.string().min(1).max(96),
+        actionId: z.string().min(1).max(96),
+        confirmedBy: z.number().int().positive().optional(),
+        reason: z.string().max(2000).optional(),
+      })
+        // Four-eyes AT THE SCHEMA cho đường nhạy cảm: rollout production phải có approver.
+        .refine((v) => v.stage !== "production" || v.confirmedBy != null, {
+          message: "Rollout production bắt buộc có người ký duyệt (four-eyes): thiếu confirmedBy.",
+          path: ["confirmedBy"],
+        }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      deployToFleet(
+        {
+          buildId: input.buildId,
+          deviceIds: input.deviceIds,
+          stage: input.stage,
+          strategy: input.strategy,
+          idempotencyKeyPrefix: input.idempotencyKeyPrefix,
+          actionId: input.actionId,
+          confirmedBy: input.confirmedBy,
+          reason: input.reason,
+        },
+        toDpcUser(ctx.user),
+      ),
+    ),
+
+  /**
+   * MA TRẬN MÁY × VERSION (read-only): máy nào đang chạy artifact/hash nào. Chỉ đọc
+   * program_deployments → không chạm thiết bị. Gated machine_monitoring/canView.
+   */
+  fleetVersionMatrix: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          projectId: z.number().int().positive().optional(),
+          deviceIds: z.array(z.number().int().positive()).max(500).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => fleetVersionMatrix(input)),
 
   // ── Symbols (variable/tag table; feeds Online Monitor in D6) ──
   listSymbols: protectedProcedure

@@ -128,6 +128,12 @@ export class OpcuaDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — lắng event transport để phát hiện MẤT KẾT NỐI GIỮA PHIÊN
+      // (rớt cáp / server reboot). Trước đây `connected` chỉ bị lật ở disconnect() →
+      // supervisor không bao giờ thấy rớt cáp. node-opcua OPCUAClient phát
+      // 'connection_lost'/'close'/'backoff'/'abort' → lật connected=false để
+      // isConnected()/health() nói thật; connectionSupervisor sẽ reconnect/failover.
+      this.attachLinkLossHandlers(client);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -161,6 +167,34 @@ export class OpcuaDriver extends NotImplementedDriver {
 
   override isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * doc 40 OT-F1 — gắn listener mất-kết-nối vào OPCUAClient. Chỉ lật connected=false
+   * (KHÔNG tự reconnect — đó là việc của connectionSupervisor). Guard `this.client===client`
+   * để listener của một client CŨ (đã bị thay khi reconnect) không lật nhầm kết nối MỚI.
+   * Bọc try/catch: package tối giản/mock có thể không phải EventEmitter.
+   */
+  private attachLinkLossHandlers(client: any): void {
+    if (!client || typeof client.on !== "function") return;
+    const events = ["connection_lost", "close", "backoff", "abort"];
+    for (const ev of events) {
+      try {
+        client.on(ev, (arg?: unknown) => {
+          if (this.client === client) this.markLinkLost(ev, arg);
+        });
+      } catch {
+        // ignore — không phải mọi build đều expose event này
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `opcua link lost (${ev})${detail}`;
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {

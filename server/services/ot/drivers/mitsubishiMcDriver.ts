@@ -156,6 +156,10 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — mcprotocol là fork của NodeS7 (callback-based, cùng API), KHÔNG
+      // có event channel ổn định. Gắn 'error'/'close' phòng hờ; đường phát hiện CHÍNH là
+      // isConnected()/health() đọc `isoConnectionState` thật + fallback đếm-lỗi ở supervisor.
+      this.attachLinkLossHandlers(conn);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -181,8 +185,39 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     this.connected = false;
   }
 
+  /**
+   * doc 40 OT-F1 — isConnected() nói THẬT khi rớt kết nối giữa phiên. mcprotocol (fork
+   * NodeS7) giữ `isoConnectionState` (4 = connected); lib tự hạ khi transport đứt. Ưu tiên
+   * trạng thái lib (guarded) rồi mới tới cờ nội bộ để supervisor phát hiện & reconnect.
+   * Mock không có field → lui về cờ `connected` (không đổi hành vi test).
+   */
   override isConnected(): boolean {
+    if (!this.connected) return false;
+    const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+    if (typeof st === "number") return st === 4;
     return this.connected;
+  }
+
+  /** doc 40 OT-F1 — gắn listener 'error'/'close' phòng hờ (no-op nếu lib không emit). */
+  private attachLinkLossHandlers(conn: any): void {
+    if (!conn || typeof conn.on !== "function") return;
+    for (const ev of ["error", "close"]) {
+      try {
+        conn.on(ev, (arg?: unknown) => {
+          if (this.conn === conn) this.markLinkLost(ev, arg);
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -340,7 +375,8 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   override async health(): Promise<OtHealth> {
     return {
       protocol: this.protocol,
-      connected: this.connected,
+      // doc 40 OT-F1 — báo trạng thái THẬT (đọc isoConnectionState), không phải cờ nội bộ.
+      connected: this.isConnected(),
       lastOkAt: this.lastOkAt ?? this.connectedAt ?? undefined,
       lastError: this.lastError,
       latencyMs: this.lastLatencyMs,

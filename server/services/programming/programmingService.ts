@@ -15,7 +15,7 @@
  *   • Idempotency: a terminal deployment for an idempotencyKey is returned as-is.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { desc, eq, and } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
@@ -24,6 +24,7 @@ import {
   programBuilds,
   programSimRuns,
   programDeployments,
+  aiPendingActions,
 } from "../../../drizzle/schema";
 import {
   programmingRegistry,
@@ -58,6 +59,21 @@ export function dpcForceEnabled(): boolean {
 export function dpcVersionReviewEnabled(): boolean {
   return process.env.DPC_VERSION_REVIEW_ENABLED === "true" || process.env.DPC_VERSION_REVIEW_ENABLED === "1";
 }
+/**
+ * doc 40 ENG-F2 — DEPLOY APPROVAL INBOX (two-phase request→approve). Default OFF.
+ * When ON, a PRODUCTION real-deploy no longer executes on the requester's click: the
+ * requester REQUESTS approval (an 'awaiting_approval' program_deployments row + a REAL
+ * ai_pending_actions row) and a SECOND person signs it off from THEIR OWN session
+ * (approveDeployment actuation procedure), which then runs the existing deploy gate with
+ * the REAL actionId — so the mitsubishi/robot dispatcher's ai_pending_actions re-verify
+ * passes instead of NOT_CONFIRMED. Staging / simulated deploys are UNCHANGED. With the
+ * flag OFF the legacy four-eyes path (deployBuild) is untouched (applying 0239 is inert).
+ */
+export function dpcDeployApprovalEnabled(): boolean {
+  return process.env.DPC_DEPLOY_APPROVAL_ENABLED === "true" || process.env.DPC_DEPLOY_APPROVAL_ENABLED === "1";
+}
+/** TTL cho một yêu cầu deploy đang chờ duyệt trước khi hết hạn (7 ngày — dài hơn AI 5' vì duyệt deploy cần thời gian). */
+const DEPLOY_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function db() {
   const d = await getDb();
@@ -281,72 +297,66 @@ export interface DeployRequest {
   deviceId?: number;
 }
 
-/**
- * THE DEPLOY GATE. Records an append-only program_deployments row. Reaches the device
- * ONLY when DPC_DEPLOY_ENABLED is on AND a human signed off; otherwise 'simulated'.
- */
-export async function deployBuild(req: DeployRequest, user: DpcUser) {
+/** Kết quả TÍNH TOÁN của deploy (đã qua mọi gate + có thể đã gọi adapter) — CHƯA persist. */
+interface DeployComputed {
+  status: "rejected" | "simulated" | "deployed" | "verified" | "failed";
+  simulated: boolean;
+  signedOffBy: number | null;
+  error: string | null;
+  detailJson: Record<string, unknown> | null;
+}
+
+/** Nạp build + artifact + project cho một deploy (ném lỗi nếu thiếu). deviceId gắn ở PROJECT. */
+async function loadDeployCtx(buildId: number) {
   const d = await db();
-
-  // Idempotency — return a prior terminal deployment for this key as-is.
-  const [prior] = await d
-    .select()
-    .from(programDeployments)
-    .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
-    .limit(1);
-  if (prior) return prior;
-
-  const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, req.buildId)).limit(1);
-  if (!b) throw new Error(`Build ${req.buildId} not found`);
+  const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
+  if (!b) throw new Error(`Build ${buildId} not found`);
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
   if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
   const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, art.projectId)).limit(1);
-  // deviceId is bound at the PROJECT level (artifacts have none); the request may override.
-  const projectDeviceId = proj?.deviceId ?? null;
+  return { b, art, proj: proj ?? null, projectDeviceId: proj?.deviceId ?? null };
+}
+
+/**
+ * THE DEPLOY GATE (pure of persistence). Runs EVERY safety gate in order — four-eyes-at-
+ * version, build-ok, SoD (production self-approve), Simulation Gate — and only then invokes
+ * the adapter's REAL device path (when DPC_DEPLOY_ENABLED is on AND a human signed off),
+ * followed by VERIFY-AFTER-DOWNLOAD. Returns the computed row values; the CALLER persists
+ * them (deployBuild inserts an append-only audit row; approveDeployment updates the queued
+ * 'awaiting_approval' row in place). This keeps the two callers byte-identical on the gate.
+ */
+async function computeDeploy(
+  req: DeployRequest,
+  b: typeof programBuilds.$inferSelect,
+  art: typeof programArtifacts.$inferSelect,
+  projectDeviceId: number | null,
+): Promise<DeployComputed> {
+  const d = await db();
 
   // doc 38 T-2 — FOUR-EYES AT THE VERSION. With DPC_VERSION_REVIEW_ENABLED on, a version
   // that was not 'approved' by a second person (reviewer ≠ author) can NOT be deployed —
-  // not even simulated. Recorded as an append-only 'rejected' audit row (like the other
-  // gates below), never a silent pass. Off (default) → unchanged.
+  // not even simulated. Off (default) → unchanged.
   if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
-    const [row] = await d
-      .insert(programDeployments)
-      .values({
-        buildId: req.buildId,
-        projectId: art.projectId,
-        deviceId: req.deviceId ?? projectDeviceId,
-        stage: req.stage,
-        status: "rejected",
-        simulated: true,
-        requestedBy: user.id,
-        idempotencyKey: req.idempotencyKey,
-        error:
-          `Four-eyes — phiên bản chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
-          "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi deploy.",
-      })
-      .returning();
-    publishDeployed(row);
-    return row;
+    return {
+      status: "rejected",
+      simulated: true,
+      signedOffBy: null,
+      error:
+        `Four-eyes — phiên bản chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
+        "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi deploy.",
+      detailJson: null,
+    };
   }
 
   // A non-ok build can never be deployed (even simulated).
   if (!b.ok) {
-    const [row] = await d
-      .insert(programDeployments)
-      .values({
-        buildId: req.buildId,
-        projectId: art.projectId,
-        deviceId: req.deviceId ?? projectDeviceId,
-        stage: req.stage,
-        status: "rejected",
-        simulated: true,
-        requestedBy: user.id,
-        idempotencyKey: req.idempotencyKey,
-        error: "Build is not ok — refusing to deploy.",
-      })
-      .returning();
-    publishDeployed(row);
-    return row;
+    return {
+      status: "rejected",
+      simulated: true,
+      signedOffBy: null,
+      error: "Build is not ok — refusing to deploy.",
+      detailJson: null,
+    };
   }
 
   const signedOff = req.hitl.confirmedBy != null;
@@ -354,36 +364,21 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
 
   // W2-9 (doc 25 T6) — SEGREGATION OF DUTIES. A REAL production deploy may NOT be
   // self-approved: the human who signs off (confirmedBy) must differ from the requester.
-  // Closes the HITL "tự ký" loophole (người yêu cầu tự duyệt deploy của chính mình).
-  // Staging / simulated deploys are unaffected — the two-person control applies to
-  // production hardware writes only.
+  // Staging / simulated deploys are unaffected — two-person control applies to production
+  // hardware writes only.
   if (realDeploy && req.stage === "production" && req.hitl.confirmedBy === req.hitl.requestedBy) {
-    const [row] = await d
-      .insert(programDeployments)
-      .values({
-        buildId: req.buildId,
-        projectId: art.projectId,
-        deviceId: req.deviceId ?? projectDeviceId,
-        stage: req.stage,
-        status: "rejected",
-        simulated: true,
-        signedOffBy: req.hitl.confirmedBy ?? null,
-        requestedBy: user.id,
-        idempotencyKey: req.idempotencyKey,
-        error:
-          "Segregation of duties — người ký duyệt deploy production phải KHÁC người yêu cầu (không được tự ký).",
-        detailJson: req.hitl.reason ? { approvalReason: req.hitl.reason } : null,
-      })
-      .returning();
-    publishDeployed(row);
-    return row;
+    return {
+      status: "rejected",
+      simulated: true,
+      signedOffBy: req.hitl.confirmedBy ?? null,
+      error:
+        "Segregation of duties — người ký duyệt deploy production phải KHÁC người yêu cầu (không được tự ký).",
+      detailJson: req.hitl.reason ? { approvalReason: req.hitl.reason } : null,
+    };
   }
 
   // P0 — ENFORCE THE SIMULATION GATE. A real (hardware) deploy is refused unless the
   // most-recent simulation run for this build PASSED (program_sim_runs.ok === true).
-  // Simulated / gate-closed deploys never touch a device, so they don't require it.
-  // This makes the Simulation Gate a HARD precondition for reaching hardware — a flow
-  // whose kinematic/one-scan sim failed (or was never simulated) can no longer deploy.
   if (realDeploy) {
     const [latestSim] = await d
       .select()
@@ -392,25 +387,15 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
       .orderBy(desc(programSimRuns.id))
       .limit(1);
     if (!latestSim || latestSim.ok !== true) {
-      const [row] = await d
-        .insert(programDeployments)
-        .values({
-          buildId: req.buildId,
-          projectId: art.projectId,
-          deviceId: req.deviceId ?? projectDeviceId,
-          stage: req.stage,
-          status: "rejected",
-          simulated: true,
-          signedOffBy: req.hitl.confirmedBy ?? null,
-          requestedBy: user.id,
-          idempotencyKey: req.idempotencyKey,
-          error: latestSim
-            ? "Simulation Gate not passed (latest sim run failed) — refusing real deploy."
-            : "Simulation Gate required — no simulation run recorded for this build. Refusing real deploy.",
-        })
-        .returning();
-      publishDeployed(row);
-      return row;
+      return {
+        status: "rejected",
+        simulated: true,
+        signedOffBy: req.hitl.confirmedBy ?? null,
+        error: latestSim
+          ? "Simulation Gate not passed (latest sim run failed) — refusing real deploy."
+          : "Simulation Gate required — no simulation run recorded for this build. Refusing real deploy.",
+        detailJson: null,
+      };
     }
   }
 
@@ -429,7 +414,6 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
 
     // doc 38 T-2 — VERIFY-AFTER-DOWNLOAD. A deploy is only 'verified' when we READ IT BACK
     // from the device and the read-back matches — never on the strength of an audit row.
-    // On a successful download we read the program back (adapter.upload) and compare hashes.
     //   • match          → promote status to 'verified'.
     //   • mismatch       → the download did NOT stick → status 'failed' (honest).
     //   • no read-back   → device absent / adapter can't upload → stays 'deployed' with
@@ -453,7 +437,6 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
         };
       } else {
         // Downloaded but NOT read-back-verified (device absent / read-back unsupported).
-        // Stay 'deployed' but record verified:false honestly — do NOT claim 'verified'.
         result = { ...result, detail };
       }
     }
@@ -471,6 +454,39 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
     };
   }
 
+  return {
+    status: result.status as DeployComputed["status"],
+    simulated: result.simulated,
+    signedOffBy: signedOff ? (req.hitl.confirmedBy ?? null) : null,
+    // W2-9 — ghi kèm lý do duyệt (nếu có) vào detailJson để lưu vết SoD.
+    detailJson: mergeApprovalReason(result.detail ?? null, req.hitl.reason),
+    error: result.error ?? null,
+  };
+}
+
+/**
+ * THE DEPLOY GATE. Records an append-only program_deployments row. Reaches the device
+ * ONLY when DPC_DEPLOY_ENABLED is on AND a human signed off; otherwise 'simulated'.
+ *
+ * doc 40 ENG-F2 — UNCHANGED entry for STAGING + rollback (they pass through here as before).
+ * A PRODUCTION real-deploy through the Approval Inbox goes via requestDeployApproval →
+ * approveDeployment; this function stays the byte-identical legacy path (flag OFF) + the
+ * executor approveDeployment reuses via computeDeploy.
+ */
+export async function deployBuild(req: DeployRequest, user: DpcUser) {
+  const d = await db();
+
+  // Idempotency — return a prior terminal deployment for this key as-is.
+  const [prior] = await d
+    .select()
+    .from(programDeployments)
+    .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
+    .limit(1);
+  if (prior) return prior;
+
+  const { b, art, projectDeviceId } = await loadDeployCtx(req.buildId);
+  const computed = await computeDeploy(req, b, art, projectDeviceId);
+
   const [row] = await d
     .insert(programDeployments)
     .values({
@@ -478,15 +494,253 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
       projectId: art.projectId,
       deviceId: req.deviceId ?? projectDeviceId,
       stage: req.stage,
-      status: result.status,
-      simulated: result.simulated,
-      signedOffBy: signedOff ? req.hitl.confirmedBy : null,
+      status: computed.status,
+      simulated: computed.simulated,
+      signedOffBy: computed.signedOffBy,
       requestedBy: user.id,
       idempotencyKey: req.idempotencyKey,
-      // W2-9 — ghi kèm lý do duyệt (nếu có) vào detailJson để lưu vết SoD.
-      detailJson: mergeApprovalReason(result.detail ?? null, req.hitl.reason),
-      error: result.error ?? null,
+      detailJson: computed.detailJson,
+      error: computed.error,
     })
+    .returning();
+  publishDeployed(row);
+  return row;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 40 ENG-F2 + Minh-P0 — DEPLOY APPROVAL INBOX (two-phase request→approve).
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface DeployApprovalRequest {
+  buildId: number;
+  deviceId?: number;
+  /** Lý do yêu cầu (bắt buộc ở UI cho deploy production). */
+  reason?: string;
+  /** Khóa idempotency ổn định theo (build, production) → double-click không tạo 2 yêu cầu. */
+  idempotencyKey: string;
+}
+
+/**
+ * PHIÊN 1 — YÊU CẦU DUYỆT. Tạo một hàng 'awaiting_approval' + một hàng ai_pending_actions
+ * THẬT (id = actionId mà dispatcher tái xác minh). KHÔNG gọi adapter, KHÔNG chạm thiết bị.
+ * ai_pending_actions.userId để tạm = người yêu cầu (hàng 'proposed' KHÔNG thể authorize
+ * dispatch); khi approveDeployment ký, nó lật sang 'confirmed' VÀ đặt userId = người ký
+ * (approver) — đúng điều kiện dispatcher: status confirmed/executed AND userId === confirmedBy.
+ */
+export async function requestDeployApproval(req: DeployApprovalRequest, requester: DpcUser) {
+  const d = await db();
+
+  // Idempotency — trả lại hàng deployment đã có cho key này (đang chờ / đã kết thúc).
+  const [prior] = await d
+    .select()
+    .from(programDeployments)
+    .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
+    .limit(1);
+  if (prior) return prior;
+
+  const { b, art, proj, projectDeviceId } = await loadDeployCtx(req.buildId);
+  const deviceId = req.deviceId ?? projectDeviceId;
+
+  // Build không ok → không xếp hàng chờ duyệt (từ chối trung thực, append-only audit).
+  if (!b.ok) {
+    const [row] = await d
+      .insert(programDeployments)
+      .values({
+        buildId: req.buildId,
+        projectId: art.projectId,
+        deviceId,
+        stage: "production",
+        status: "rejected",
+        simulated: true,
+        requestedBy: requester.id,
+        idempotencyKey: req.idempotencyKey,
+        error: "Build is not ok — refusing to queue for approval.",
+      })
+      .returning();
+    publishDeployed(row);
+    return row;
+  }
+
+  // Hàng ai_pending_actions THẬT — id chính là actionId dispatcher tái xác minh.
+  const actionId = randomUUID();
+  const pendingIdem = `progdeploy-${req.idempotencyKey}-${randomUUID().slice(0, 8)}`;
+  const expiresAt = new Date(Date.now() + DEPLOY_APPROVAL_TTL_MS);
+  await d.insert(aiPendingActions).values({
+    id: actionId,
+    tool: "program_deploy",
+    argsJson: {
+      buildId: req.buildId,
+      stage: "production",
+      deviceId: deviceId ?? null,
+      artifactId: art.id,
+      projectId: art.projectId,
+    },
+    userId: requester.id, // tạm; approveDeployment sẽ đặt lại = người ký (approver)
+    userRole: requester.role,
+    requiredPermissionJson: { module: "machine_control", action: "canCreate" },
+    summary: `Deploy production build #${req.buildId} (project ${proj?.code ?? art.projectId})`,
+    status: "proposed",
+    idempotencyKey: pendingIdem,
+    expiresAt,
+  });
+
+  const [row] = await d
+    .insert(programDeployments)
+    .values({
+      buildId: req.buildId,
+      projectId: art.projectId,
+      deviceId,
+      stage: "production",
+      status: "awaiting_approval",
+      simulated: true, // chưa chạm thiết bị cho tới khi được duyệt
+      requestedBy: requester.id,
+      idempotencyKey: req.idempotencyKey,
+      detailJson: {
+        pendingActionId: actionId,
+        approvalReason: req.reason ?? null,
+        requestedAt: new Date().toISOString(),
+      },
+    })
+    .returning();
+  publishDeployed(row);
+  return row;
+}
+
+/**
+ * PHIÊN 2 — DUYỆT & DEPLOY. approver ký bằng SESSION CỦA CHÍNH HỌ (actuationProcedure ở
+ * router: role-floor + 2FA). Xác minh hàng chờ + pending record, lật pending → 'confirmed'
+ * VÀ gắn userId = approver, RỒI chạy đúng đường deploy thật qua computeDeploy (sim-gate,
+ * four-eyes-version, SoD, verify-after-download y nguyên) với actionId THẬT → dispatcher
+ * không còn NOT_CONFIRMED. Cập nhật TẠI CHỖ hàng 'awaiting_approval' sang trạng thái kết
+ * quả (rời khỏi inbox). SoD: approver ≠ requester.
+ */
+export async function approveDeployment(
+  deploymentId: number,
+  approver: DpcUser,
+  approval: { reason?: string },
+) {
+  const d = await db();
+  const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
+  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
+  if (dep.status !== "awaiting_approval") {
+    throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
+  }
+  // SoD (defense-in-depth; computeDeploy tái kiểm) — người duyệt phải KHÁC người yêu cầu.
+  if (dep.requestedBy != null && dep.requestedBy === approver.id) {
+    throw new Error(
+      "Segregation of duties — người ký duyệt deploy phải KHÁC người yêu cầu (không được tự duyệt).",
+    );
+  }
+
+  const detail = (dep.detailJson ?? {}) as Record<string, unknown>;
+  const actionId = typeof detail.pendingActionId === "string" ? detail.pendingActionId : null;
+  if (!actionId) throw new Error("Bản ghi chờ duyệt thiếu pendingActionId — không thể duyệt.");
+
+  const [pending] = await d.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+  if (!pending) throw new Error("Không tìm thấy bản ghi phê duyệt (ai_pending_actions).");
+  if (pending.status !== "proposed" && pending.status !== "confirmed") {
+    throw new Error(`Bản ghi phê duyệt không hợp lệ (status=${pending.status}).`);
+  }
+  if (pending.expiresAt.getTime() <= Date.now()) {
+    await d.update(aiPendingActions).set({ status: "expired" }).where(eq(aiPendingActions.id, actionId));
+    const [row] = await d
+      .update(programDeployments)
+      .set({ status: "rejected", error: "Yêu cầu deploy đã hết hạn chờ duyệt." })
+      .where(eq(programDeployments.id, deploymentId))
+      .returning();
+    publishDeployed(row);
+    return row;
+  }
+
+  // Lật pending → 'confirmed' và GẮN vào approver (userId = approver.id). Đây là điều kiện
+  // để dispatcher HITL vượt qua (status confirmed/executed AND userId === confirmedBy).
+  await d
+    .update(aiPendingActions)
+    .set({ status: "confirmed", userId: approver.id, userRole: approver.role })
+    .where(eq(aiPendingActions.id, actionId));
+
+  const { b, art, projectDeviceId } = await loadDeployCtx(dep.buildId);
+  const reason = (typeof detail.approvalReason === "string" ? detail.approvalReason : undefined) ?? approval.reason;
+  const computed = await computeDeploy(
+    {
+      buildId: dep.buildId,
+      stage: "production",
+      idempotencyKey: dep.idempotencyKey ?? `progdeploy-${deploymentId}`,
+      deviceId: dep.deviceId ?? undefined,
+      hitl: {
+        actionId,
+        requestedBy: dep.requestedBy ?? approver.id,
+        confirmedBy: approver.id,
+        reason,
+      },
+    },
+    b,
+    art,
+    projectDeviceId,
+  );
+
+  // Lượt DUYỆT đã được xử lý xong → pending = 'executed' (giá trị enum hợp lệ:
+  // proposed/confirmed/executed/denied/expired/cancelled). Kết quả deploy THẬT
+  // (deployed/verified/rejected/failed do sim-gate...) nằm ở resultJson.status VÀ ở
+  // chính deployment row bên dưới — nên audit vẫn trung thực, không phụ thuộc pending.
+  await d
+    .update(aiPendingActions)
+    .set({ status: "executed", executedAt: new Date(), resultJson: { deploymentId, status: computed.status } })
+    .where(eq(aiPendingActions.id, actionId));
+
+  // Cập nhật TẠI CHỖ hàng chờ → trạng thái kết quả (một hàng sạch, rời khỏi inbox).
+  const [row] = await d
+    .update(programDeployments)
+    .set({
+      status: computed.status,
+      simulated: computed.simulated,
+      signedOffBy: computed.signedOffBy ?? approver.id,
+      error: computed.error,
+      detailJson: {
+        ...detail,
+        ...(computed.detailJson ?? {}),
+        approvedBy: approver.id,
+        approvedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(programDeployments.id, deploymentId))
+    .returning();
+  publishDeployed(row);
+  return row;
+}
+
+/**
+ * TỪ CHỐI một yêu cầu deploy đang chờ duyệt. An toàn (không chạm thiết bị): đánh dấu hàng
+ * 'awaiting_approval' → 'rejected' + hủy pending record. Cho phép cả approver lẫn chính
+ * người yêu cầu (tự rút yêu cầu). Ghi lý do vào detailJson để lưu vết.
+ */
+export async function rejectDeployment(
+  deploymentId: number,
+  actor: DpcUser,
+  reason: string,
+) {
+  const d = await db();
+  const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
+  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
+  if (dep.status !== "awaiting_approval") {
+    throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
+  }
+  const detail = (dep.detailJson ?? {}) as Record<string, unknown>;
+  const actionId = typeof detail.pendingActionId === "string" ? detail.pendingActionId : null;
+  if (actionId) {
+    await d
+      .update(aiPendingActions)
+      .set({ status: "cancelled" })
+      .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, "proposed")));
+  }
+  const [row] = await d
+    .update(programDeployments)
+    .set({
+      status: "rejected",
+      error: `Yêu cầu deploy bị từ chối: ${reason}`,
+      detailJson: { ...detail, rejectedBy: actor.id, rejectedAt: new Date().toISOString(), rejectReason: reason },
+    })
+    .where(eq(programDeployments.id, deploymentId))
     .returning();
   publishDeployed(row);
   return row;
@@ -548,16 +802,22 @@ export async function rollbackDeployment(
   if (!target) throw new Error(`Deployment ${deploymentId} not found`);
 
   // Find the most recent successful deployment BEFORE the target, to revert to.
+  // QA W5 (high): phải lọc theo ĐÚNG deviceId của target — trong fleet mọi máy chung
+  // 1 projectId, nếu chỉ lọc project+stage thì rollback máy A có thể re-deploy bản của
+  // máy B xuống máy B (để máy A vẫn chạy build lỗi). Scope theo máy cho cả single+fleet.
+  const conds = [eq(programDeployments.projectId, target.projectId), eq(programDeployments.stage, target.stage)];
+  if (target.deviceId != null) conds.push(eq(programDeployments.deviceId, target.deviceId));
   const history = await d
     .select()
     .from(programDeployments)
-    .where(and(eq(programDeployments.projectId, target.projectId), eq(programDeployments.stage, target.stage)))
+    .where(and(...conds))
     .orderBy(desc(programDeployments.id));
   const previous = history.find((h) => h.id < target.id && (h.status === "deployed" || h.status === "verified" || h.status === "simulated"));
   if (!previous) throw new Error("No prior deployment to roll back to.");
 
   const dep = await deployBuild(
-    { buildId: previous.buildId, stage: target.stage, idempotencyKey, hitl, deviceId: previous.deviceId ?? undefined },
+    // Ép deviceId = target.deviceId (nếu có) để LÙI ĐÚNG máy, không dùng previous.deviceId.
+    { buildId: previous.buildId, stage: target.stage, idempotencyKey, hitl, deviceId: (target.deviceId ?? previous.deviceId) ?? undefined },
     user,
   );
 

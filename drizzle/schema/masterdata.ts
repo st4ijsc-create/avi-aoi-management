@@ -340,6 +340,29 @@ export const calendarDays = pgTable("calendar_days", {
 export type CalendarDay = typeof calendarDays.$inferSelect;
 export type InsertCalendarDay = typeof calendarDays.$inferInsert;
 
+/**
+ * Calendar Day Shifts (doc 42 T9) — ca làm việc áp dụng cho MỘT ngày lịch cụ thể.
+ * Bảng nối many-to-many calendar_days ↔ shift_configs (production.ts): 1 ngày chạy
+ * nhiều ca, 1 ca dùng lại cho nhiều ngày. calendarDayId -> calendar_days.id,
+ * shiftConfigId -> shift_configs.id (relate by id). Unique per (day, shift) chống
+ * gán trùng. Feeds takt-time / OEE-availability theo ca của từng ngày.
+ */
+export const calendarDayShifts = pgTable("calendar_day_shifts", {
+  id: serial("id").primaryKey(),
+  calendarDayId: integer("calendarDayId").notNull(), // FK -> calendar_days.id
+  shiftConfigId: integer("shiftConfigId").notNull(),  // FK -> shift_configs.id
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_caldayshifts_day").on(table.calendarDayId),
+  index("idx_caldayshifts_shift").on(table.shiftConfigId),
+  uniqueIndex("uq_caldayshifts_day_shift").on(table.calendarDayId, table.shiftConfigId),
+]);
+
+export type CalendarDayShift = typeof calendarDayShifts.$inferSelect;
+export type InsertCalendarDayShift = typeof calendarDayShifts.$inferInsert;
+
 // =============================================================
 // Warehouse / Inventory master
 // =============================================================

@@ -9,6 +9,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { SiteProvider } from "./contexts/SiteContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
+import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
+import { ProgrammingCopilotDock } from "./components/programming/ProgrammingCopilotDock";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
@@ -101,12 +103,15 @@ const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage")
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
 const SystemHealth = React.lazy(() => import("./pages/SystemHealth")); // Tier-1b (doc 24): OT store-and-forward + connection HA supervisors + DINOv2 model health + commissioning + twin export
+const ControlReadiness = React.lazy(() => import("./pages/ControlReadiness")); // doc 40 Wave 3A (§11): Trust & Enforcement Center — READ-ONLY gate/flag readiness matrix
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
+const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
+const DataQualityDashboard = React.lazy(() => import("./pages/DataQualityDashboard")); // doc 42 Đợt 5 (K1): master-data quality dashboard (missing-field / orphan-ref profiler, read-only)
 const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
 const EngineeringChanges = React.lazy(() => import("./pages/EngineeringChanges")); // doc 35 W4-D: ECN/ECO change control (request→impact→approve→effectivity) + componentCode backfill
@@ -139,7 +144,11 @@ const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage
 // doc 39 Wave 4 — device-monitoring surfaces (fleet list / health-OEE / field devices)
 // consolidated into one lazy Device hub; legacy routes redirect into their tab.
 const DeviceHub = React.lazy(() => import("./pages/DeviceHub"));
+const FactoryCommandView = React.lazy(() => import("./pages/FactoryCommandView")); // doc 40 Wave 4d §13.1: màn hình chỉ huy toàn nhà máy (2D/3D theo Line, click máy → drawer chi tiết)
+const WarRoom = React.lazy(() => import("./pages/WarRoom")); // doc 40 Wave 4c §11: "Giao ban 7h" theo ca — KPI + OEE theo line + top downtime + so sánh ca + plan-vs-actual (trpc.warRoom.briefing)
+const MaintenanceHub = React.lazy(() => import("./pages/MaintenanceHub")); // doc 40 Wave 4c §11: CMMS hub — lịch bảo trì phòng ngừa + parts/reliability (agent C)
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
+const CommandConsole = React.lazy(() => import("./pages/CommandConsole")); // ENG-F1 (doc 40): gated command console — phát 1 lệnh robot đơn lẻ qua HITL dispatcher (mọi gate giữ nguyên)
 const FleetOrchestration = React.lazy(() => import("./pages/FleetOrchestration")); // G1 (doc 16 §7 Khối 2): fleet task allocation + zone traffic (read-mostly; mutations gated by FLEET_ORCH_ENABLED)
 const ControlPlane = React.lazy(() => import("./pages/ControlPlane")); // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only projections)
 const SafetyWorkforce = React.lazy(() => import("./pages/SafetyWorkforce")); // S1 (doc 16 §8): advisory safety monitoring + mixed-workforce board + human↔robot handover (read-mostly; mutations gated by SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
@@ -164,10 +173,13 @@ import MachineRegistration from "./pages/MachineRegistration";
 import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
 const AoiOnboardingWizard = React.lazy(() => import("./pages/AoiOnboardingWizard")); // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)
 const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardingWizard")); // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)
+const ProductChangeoverWizard = React.lazy(() => import("./pages/ProductChangeoverWizard")); // doc 40 Wave 4 — operator changeover: quét sản phẩm mới → kiểm tra readiness/mapping/feeder → xác nhận đổi
 const FeederVerify = React.lazy(() => import("./pages/FeederVerify")); // doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)
 import CorporateManagement from "./pages/CorporateManagement";
 import LicenseManagement from "./pages/LicenseManagement";
 import MonitoringSettings from "./pages/MonitoringSettings";
+// doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
+import AdminMonitoring from "./pages/AdminMonitoring";
 import AnalyticsSettings from "./pages/AnalyticsSettings";
 import AdminSettings from "./pages/AdminSettings";
 import DashboardCenter from "./pages/DashboardCenter";
@@ -246,6 +258,8 @@ function Router() {
 
       {/* ── PRODUCTION ───────────────────────────────────────────────────── */}
       <Route path="/production-dashboard"><RouteGuard navHref="/production-dashboard"><ProductionDashboard /></RouteGuard></Route>
+      {/* doc 40 Wave 4c §11 — War-room "Giao ban 7h": one-pager giao ban theo ca (OEE theo line + top downtime + so sánh ca + plan-vs-actual). Read-only → machine_status. */}
+      <Route path="/war-room"><RouteGuard requirePermission="machine_status"><AIPageWrapper><WarRoom /></AIPageWrapper></RouteGuard></Route>
       <Route path="/mes-control-tower"><RouteGuard navHref="/mes-control-tower"><MESControlTower /></RouteGuard></Route>
       <Route path="/wip-dashboard"><RouteGuard navHref="/wip-dashboard"><WipLineBalance /></RouteGuard></Route>
       <Route path="/traceability"><RouteGuard navHref="/traceability"><TraceabilityLineage /></RouteGuard></Route>
@@ -293,6 +307,8 @@ function Router() {
       {/* doc 39 Wave 4 — Device hub consolidates fleet list + health/OEE + field devices
           into one tabbed page; /machine-health & /field-devices deep-link into their tab. */}
       <Route path="/device-monitor"><RouteGuard navHref="/device-monitor"><AIPageWrapper><DeviceHub /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 40 Wave 4d §13.1 — Factory Command View: chỉ huy toàn nhà máy 2D/3D (xem = giám sát). */}
+      <Route path="/factory-command"><RouteGuard requirePermission="machine_status"><AIPageWrapper><FactoryCommandView /></AIPageWrapper></RouteGuard></Route>
       {/* P3-W2 consolidation: legacy machine-status grid → unified Device Monitor. */}
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
@@ -313,40 +329,50 @@ function Router() {
       <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
       <Route path="/aoi-onboarding"><RouteGuard navHref="/aoi-onboarding"><AIPageWrapper><AoiOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/product-onboarding"><RouteGuard navHref="/product-onboarding"><AIPageWrapper><ProductOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 40 Wave 4 — Đổi sản phẩm (changeover) tại line: gate machine_status qua navHref (operator/maintenance đều có canView). */}
+      <Route path="/product-changeover"><RouteGuard navHref="/product-changeover"><AIPageWrapper><ProductChangeoverWizard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
       <Route path="/uns-mapping"><Redirect to="/connectivity?tab=uns" /></Route>
-      <Route path="/system-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/system-health"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SystemHealth /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 40 Wave 3A (§11): Trust & Enforcement Center — READ-ONLY gate/flag readiness matrix (QA + audit). RBAC machine_control (admin bypass). */}
+      <Route path="/control-readiness"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlReadiness /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/hot-folders"><RouteGuard navHref="/hot-folders"><AIPageWrapper><HotFolderConfigPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-control"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/control-plane"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/safety-workforce"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/equipment-standards"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/equipment-integration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
+      {/* ENG-F1 (doc 40): gated command console — actuation qua HITL dispatcher (mode/commissioning/interlock gate giữ nguyên). */}
+      <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CommandConsole /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_control"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/equipment-standards"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/equipment-integration"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
       <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ir-editor"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/pou-studio"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/programming-copilot"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ir-editor"><RouteGuard requirePermission="machine_control"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/pou-studio"><RouteGuard requirePermission="machine_control"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><Redirect to="/digital-twin?tab=floor" /></Route>
       <Route path="/rf-test-cell"><Redirect to="/digital-twin?tab=rf" /></Route>
       <Route path="/cell-twin"><Redirect to="/digital-twin?tab=cell" /></Route>
       <Route path="/digital-twin-center"><Redirect to="/digital-twin?tab=center" /></Route>
-      <Route path="/command-center"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/command-center"><RouteGuard requirePermission="machine_status"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       {/* U3 (doc 21 §6 G-4/G-5): per-asset cockpits — reached by drill (no top-nav entry). */}
-      <Route path="/machine/:id"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><MachineCockpit /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot/:id"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><RobotCockpit /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/machine/:id"><RouteGuard requirePermission="machine_status"><AIPageWrapper><MachineCockpit /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot/:id"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RobotCockpit /></AIPageWrapper></RouteGuard></Route>
       <Route path="/technician-copilot"><RouteGuard navHref="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
+      {/* doc 40 Wave 4c §11 — CMMS hub: lịch bảo trì phòng ngừa (maintenance_schedules) + phụ tùng/độ tin cậy. Gate machine_control (bảo trì). */}
+      <Route path="/cmms"><RouteGuard requirePermission="machine_control"><AIPageWrapper><MaintenanceHub /></AIPageWrapper></RouteGuard></Route>
       <Route path="/feeder-verify"><RouteGuard navHref="/feeder-verify"><AIPageWrapper><FeederVerify /></AIPageWrapper></RouteGuard></Route>
       <Route path="/alerts"><RouteGuard navHref="/alerts"><Alerts /></RouteGuard></Route>
-      <Route path="/monitoring-setting"><RouteGuard requirePermission="admin_system"><MonitoringSettings /></RouteGuard></Route>
+      {/* doc 40 DEV-02 — nav row đòi machine_status; đồng bộ guard về machine_status
+          (trang chỉ là device-mapping/registration, không phải quản trị hệ thống). */}
+      <Route path="/monitoring-setting"><RouteGuard requirePermission="machine_status"><MonitoringSettings /></RouteGuard></Route>
       {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}
       <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
 
@@ -407,6 +433,8 @@ function Router() {
       <Route path="/users"><RouteGuard navHref="/users"><Users /></RouteGuard></Route>
       <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
       <Route path="/audit-logs"><RouteGuard requirePermission="admin_system"><AuditLogs /></RouteGuard></Route>
+      {/* doc 40 DEV-03 — đưa AdminMonitoring (giám sát slow-query, backend thật) vào app Admin. */}
+      <Route path="/admin-monitoring"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AdminMonitoring /></RouteGuard></Route>
       {/* P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page. */}
       <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
       <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>
@@ -424,6 +452,8 @@ function Router() {
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
       <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/master-data-audit"><RouteGuard navHref="/master-data-audit"><MasterDataAudit /></RouteGuard></Route>
+      <Route path="/data-quality"><RouteGuard navHref="/data-quality"><DataQualityDashboard /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
       <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>
@@ -482,6 +512,7 @@ function App() {
             {/* U1 (doc 26): EngineeringProvider — store lastSelected {project/thiết bị/
                 workflow} làm fallback cho deep-link golden-thread giữa các trang Kỹ thuật. */}
             <EngineeringProvider>
+            <ProgrammingCopilotProvider>
             <AiCopilotProvider>
               <ConnectionBanner />
               <Toaster />
@@ -501,7 +532,11 @@ function App() {
                   provider from main.tsx) so it appears on every route, including
                   lazy AI pages. The bubble hides itself when not logged in. */}
               <AILocalChatBubble />
+              {/* doc 41 — Programming Copilot DOCK: mounted ONCE, renders only when a
+                  programming surface (Engineering/IR/POU) has published a binding. */}
+              <ProgrammingCopilotDock />
             </AiCopilotProvider>
+            </ProgrammingCopilotProvider>
             </EngineeringProvider>
           </TooltipProvider>
         </SiteProvider>

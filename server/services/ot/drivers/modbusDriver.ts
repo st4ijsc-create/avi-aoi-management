@@ -100,6 +100,11 @@ export class ModbusDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      // doc 40 OT-F1 — lắng 'close'/'error' của socket TCP để phát hiện mất kết nối
+      // giữa phiên (rớt cáp / PLC reboot). Trước đây `connected` chỉ lật ở disconnect()
+      // → supervisor không thấy rớt. modbus-serial giữ socket ở client._port (TcpPort,
+      // là EventEmitter). Lật connected=false → isConnected()/health() nói thật.
+      this.attachLinkLossHandlers(client);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
@@ -127,6 +132,37 @@ export class ModbusDriver extends NotImplementedDriver {
 
   override isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * doc 40 OT-F1 — gắn listener mất-kết-nối vào socket modbus-serial. Chỉ lật
+   * connected=false (reconnect do connectionSupervisor lo). Thử cả `client` và các
+   * emitter socket nội bộ (client._port / ._port._client / ._client) vì bản modbus-serial
+   * khác nhau đặt EventEmitter ở nơi khác nhau. Guard `this.client===client` chống listener
+   * của kết nối cũ lật nhầm kết nối mới. Bọc try/catch cho package tối giản/mock.
+   */
+  private attachLinkLossHandlers(client: any): void {
+    const candidates = [client, client?._port, client?._port?._client, client?._client];
+    for (const emitter of candidates) {
+      if (!emitter || typeof emitter.on !== "function") continue;
+      for (const ev of ["close", "error"]) {
+        try {
+          emitter.on(ev, (arg?: unknown) => {
+            if (this.client === client) this.markLinkLost(ev, arg);
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
+  private markLinkLost(ev: string, arg?: unknown): void {
+    if (!this.connected) return;
+    this.connected = false;
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    this.lastError = `modbus link lost (${ev})${detail}`;
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
