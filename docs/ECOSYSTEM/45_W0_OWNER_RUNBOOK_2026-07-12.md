@@ -463,3 +463,21 @@ NATS_URL=nats://localhost:4222  # mục e — CHƯA được app đọc (client 
 
 **UI mới:** trang Line View tại `/line-view` (app Giám sát máy trong launcher).
 **REST mới (scoped API key):** /v1/assets · /v1/state|query/timeseries|events|metrics|genealogy · /v1/policy/* · /v1/lines/* · /v1/orders/* (xem /api/v1/openapi.json).
+
+---
+
+## ADDENDUM 2 (2026-07-12, sau W5-A Trí tuệ) — migration 0260-0262
+
+| Mig | Nội dung | Đợt |
+|---|---|---|
+| 0260 | simulation_runs + twin_trust (twin fidelity loop) | W5-A1 |
+| 0261 | parameter_guardrails + parameter_change_log (guardrail per-param + closed-loop) | W5-A2 |
+| 0262 | model_versions.stage/stage_history/owner/trained_on (MLOps stage pipeline) | W5-A4 |
+
+**Cờ mới W5-A (mặc định OFF, bật sau khi áp mig + có dữ liệu tích lũy):**
+- `TWIN_FIDELITY_ENABLED` — chỉ có ý nghĩa khi line_balance_metrics có dữ liệu thật (DES so với thực tế).
+- `PARAM_GUARDRAIL_ENABLED` + `PARAM_VERIFY_ENABLED` — cần kỹ sư nhập dải min/max per-parameter trước (bảng parameter_guardrails, qua tRPC parameterGuardrail.set).
+- `ADVICE_CONTRACT_ENABLED` — cưỡng chế requires[] tại confirm; chỉ chặn thực khi POLICY_DEFAULT_DENY_ACTIONS khớp `ai.recommendation.execute`.
+- `FEATURE_STORE_ENABLED` + `MODEL_STAGE_PIPELINE_ENABLED` — MLOps; cần bảng g3 (ml_feature_cache) trong DB.
+
+**REST mới:** /v1/predict/{task} · /v1/recommend · /v1/recommendations (scope advice:read) · /v1/models nay có stage thật. **tRPC mới:** parameterGuardrail · twinGov.twinTrusted/runFidelityCheck · aiModel.listStages/promoteStage.
