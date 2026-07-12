@@ -39,11 +39,11 @@ BEGIN
 
   IF NOT has_ts THEN
     RAISE NOTICE '[0235] timescaledb extension not installed — skipping continuous aggregate (plain-PG no-op). Run after the cutover in scripts/migrate-to-timescaledb.md.';
-    INSERT INTO db_feature_status (feature, status, detail, checked_at)
+    INSERT INTO db_feature_status (feature, status, detail, "checkedAt")
     VALUES ('cagg_hourly_yield', 'missing',
             'timescaledb not installed — hourly_yield_cache matview remains the active source (full-refresh). CAgg pending cutover.',
             now())
-    ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, checked_at = EXCLUDED.checked_at;
+    ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, "checkedAt" = EXCLUDED."checkedAt";
     RETURN;
   END IF;
 
@@ -54,11 +54,11 @@ BEGIN
 
   IF NOT is_hyper THEN
     RAISE NOTICE '[0235] product_inspections is not a hypertable yet — apply 0172 first. Skipping CAgg.';
-    INSERT INTO db_feature_status (feature, status, detail, checked_at)
+    INSERT INTO db_feature_status (feature, status, detail, "checkedAt")
     VALUES ('cagg_hourly_yield', 'missing',
             'product_inspections not a hypertable (0172 not applied) — CAgg pending.',
             now())
-    ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, checked_at = EXCLUDED.checked_at;
+    ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, "checkedAt" = EXCLUDED."checkedAt";
     RETURN;
   END IF;
 
@@ -100,9 +100,9 @@ BEGIN
     RAISE NOTICE '[0235] continuous aggregate hourly_yield_cagg created (WITH NO DATA). Run CALL refresh_continuous_aggregate(''hourly_yield_cagg'', NULL, NULL); to backfill.';
   END IF;
 
-  INSERT INTO db_feature_status (feature, status, detail, checked_at)
+  INSERT INTO db_feature_status (feature, status, detail, "checkedAt")
   VALUES ('cagg_hourly_yield', 'ok',
           'hourly_yield_cagg continuous aggregate present (UTC bucket). Validate timezone vs hourly_yield_cache matview before swapping the dashboard read-path.',
           now())
-  ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, checked_at = EXCLUDED.checked_at;
+  ON CONFLICT (feature) DO UPDATE SET status = EXCLUDED.status, detail = EXCLUDED.detail, "checkedAt" = EXCLUDED."checkedAt";
 END $mig$;
