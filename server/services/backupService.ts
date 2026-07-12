@@ -93,6 +93,222 @@ async function sha256File(filePath: string): Promise<string> {
   });
 }
 
+// ─── W0-I (doc 44 G5.8) — Config/secrets bundle đi kèm backup ───────────────
+//
+// pg_dump chỉ cứu được DB — mất máy chủ là mất luôn: .env runtime (mọi secret/
+// flag), cặp khoá license RSA (server/license/keys/*.pem — mất là license đã
+// phát hành không xác minh được), keystore CA nội bộ (device PKI, doc 38 C2)
+// và contracts/canonical (schema hợp đồng máy).
+//
+// createConfigBundle() gom các file đó thành 1 bundle MÃ HOÁ AES-256-GCM:
+//   - Flag `BACKUP_INCLUDE_SECRETS` default OFF — không bật thì skip im lặng.
+//   - BẮT BUỘC `BACKUP_ENCRYPTION_KEY` (64-hex = key thô 32 byte, hoặc
+//     passphrase bất kỳ → sha256). Thiếu key → SKIP + warn trung thực,
+//     TUYỆT ĐỐI không ghi secrets plaintext ra đĩa backup.
+//   - Định dạng file: magic "CFGB0001" (8B) + IV (12B) + GCM tag (16B) +
+//     ciphertext( gzip( JSON{v,createdAt,files:[{path,bytes,sha256,contentBase64}]} ) ).
+//   - Log CHỈ tên file + size + sha256 của ciphertext — không bao giờ nội dung.
+//   - Off-site: tái dùng replicateBackup (S3/offsite dir) best-effort.
+
+const CONFIG_BUNDLE_MAGIC = Buffer.from("CFGB0001", "ascii"); // 8 bytes
+const CONFIG_BUNDLE_EXT = ".cfgb.enc";
+
+export interface ConfigBundleFileInfo {
+  /** đường dẫn tương đối so với cwd (không bao giờ là nội dung) */
+  path: string;
+  bytes: number;
+}
+
+export interface ConfigBundleResult {
+  skipped: boolean;
+  reason?: string;
+  fileName?: string;
+  filePath?: string;
+  fileSizeBytes?: number;
+  /** sha256 của CIPHERTEXT (file trên đĩa) — dùng verify khi restore */
+  sha256?: string;
+  fileCount?: number;
+  /** tên + size các file được gom — KHÔNG chứa nội dung */
+  files?: ConfigBundleFileInfo[];
+  offsite?: BackupResult["offsite"];
+}
+
+/** Nguồn mặc định của bundle. Chỉ trả về file THỰC SỰ tồn tại. */
+export function collectConfigBundleSources(cwd: string = process.cwd()): string[] {
+  const out: string[] = [];
+  const pushFile = (p: string) => {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) out.push(p);
+    } catch { /* unreadable — bỏ qua */ }
+  };
+  const pushDir = (dir: string, filter?: (f: string) => boolean) => {
+    try {
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+      for (const f of fs.readdirSync(dir)) {
+        if (!filter || filter(f)) pushFile(path.join(dir, f));
+      }
+    } catch { /* unreadable — bỏ qua */ }
+  };
+
+  // (a) runtime env
+  pushFile(path.join(cwd, ".env"));
+  // (b) license keystore — RSA pair (license-service.ts keyDir)
+  pushDir(path.join(cwd, "server", "license", "keys"), (f) => f.endsWith(".pem"));
+  // (b2) internal CA keystore — device PKI (internalCa.ts, gitignored)
+  pushDir(path.join(cwd, "server", "services", "security", ".keystore"));
+  // (c) canonical machine contracts
+  pushDir(path.join(cwd, "contracts", "canonical"), (f) => f.endsWith(".json"));
+  return out;
+}
+
+/** 64-hex → key thô 32 byte; ngược lại sha256(passphrase). */
+function deriveBundleKey(secret: string): Buffer {
+  const t = secret.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(t)) return Buffer.from(t, "hex");
+  return crypto.createHash("sha256").update(t, "utf8").digest();
+}
+
+export async function createConfigBundle(opts: {
+  label?: string;
+  /** override nguồn (test/DI) — đường dẫn tuyệt đối */
+  sources?: string[];
+  /** override thư mục output (test) — default uploads/backups */
+  outDir?: string;
+  /** override env (test) — default process.env */
+  env?: NodeJS.ProcessEnv;
+  /** default true — tái dùng replicateBackup (no-op nếu chưa cấu hình off-site) */
+  replicateOffsite?: boolean;
+} = {}): Promise<ConfigBundleResult> {
+  const env = opts.env ?? process.env;
+
+  if (env.BACKUP_INCLUDE_SECRETS !== "true") {
+    return { skipped: true, reason: "BACKUP_INCLUDE_SECRETS is not enabled (default off)" };
+  }
+  const secret = (env.BACKUP_ENCRYPTION_KEY ?? "").trim();
+  if (!secret) {
+    console.warn(
+      "[Backup] BACKUP_INCLUDE_SECRETS=true nhưng BACKUP_ENCRYPTION_KEY chưa đặt — " +
+        "BỎ QUA config bundle (không bao giờ ghi secrets plaintext). Đặt BACKUP_ENCRYPTION_KEY để bật.",
+    );
+    return {
+      skipped: true,
+      reason: "BACKUP_ENCRYPTION_KEY not set — refusing to write secrets in plaintext",
+    };
+  }
+
+  const cwd = process.cwd();
+  const sources = opts.sources ?? collectConfigBundleSources(cwd);
+  if (sources.length === 0) {
+    return { skipped: true, reason: "no config/secret files found to bundle" };
+  }
+
+  const outDir = opts.outDir ?? BACKUP_DIR;
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const files: Array<{ path: string; bytes: number; sha256: string; contentBase64: string }> = [];
+  const publicList: ConfigBundleFileInfo[] = [];
+  for (const abs of sources) {
+    try {
+      const content = fs.readFileSync(abs);
+      const rel = path.relative(cwd, abs).split(path.sep).join("/") || path.basename(abs);
+      files.push({
+        path: rel,
+        bytes: content.length,
+        sha256: crypto.createHash("sha256").update(content).digest("hex"),
+        contentBase64: content.toString("base64"),
+      });
+      publicList.push({ path: rel, bytes: content.length });
+    } catch (err: any) {
+      console.warn(`[Backup] config bundle: không đọc được ${path.basename(abs)} — bỏ qua (${err?.message})`);
+    }
+  }
+  if (files.length === 0) {
+    return { skipped: true, reason: "all config/secret source files were unreadable" };
+  }
+
+  const manifest = JSON.stringify({ v: 1, createdAt: new Date().toISOString(), files });
+  const plaintext = zlib.gzipSync(Buffer.from(manifest, "utf8"), { level: 9 });
+
+  const key = deriveBundleKey(secret);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const tag2 = opts.label ? `_${opts.label.replace(/[^a-z0-9]/gi, "_")}` : "";
+  const fileName = `config_bundle${tag2}_${ts}${CONFIG_BUNDLE_EXT}`;
+  const filePath = path.join(outDir, fileName);
+  fs.writeFileSync(filePath, Buffer.concat([CONFIG_BUNDLE_MAGIC, iv, tag, ciphertext]));
+
+  const stat = fs.statSync(filePath);
+  const sha256 = await sha256File(filePath);
+  // Log CHỈ metadata của ciphertext — không tên biến env, không nội dung key.
+  console.log(
+    `[Backup] config bundle: ${fileName} (${files.length} files, ${stat.size} B, sha256=${sha256})`,
+  );
+
+  // Retention nhẹ cho bundle (mặc định giữ 30 bản mới nhất).
+  try {
+    const keep = Math.max(1, parseInt(env.BACKUP_CONFIG_BUNDLE_RETENTION ?? "30", 10) || 30);
+    const bundles = fs.readdirSync(outDir)
+      .filter((f) => f.startsWith("config_bundle") && f.endsWith(CONFIG_BUNDLE_EXT))
+      .map((f) => ({ f, t: fs.statSync(path.join(outDir, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const stale of bundles.slice(keep)) {
+      try { fs.unlinkSync(path.join(outDir, stale.f)); } catch { /* best effort */ }
+    }
+  } catch { /* best effort */ }
+
+  // Off-site (best-effort, không fail bundle).
+  let offsite: BackupResult["offsite"];
+  if (opts.replicateOffsite !== false) {
+    try {
+      const { replicateBackup } = await import("./backupReplicationService");
+      offsite = await replicateBackup(filePath);
+    } catch (err: any) {
+      offsite = { skipped: false, error: err?.message ?? String(err) };
+    }
+  }
+
+  return {
+    skipped: false,
+    fileName,
+    filePath,
+    fileSizeBytes: stat.size,
+    sha256,
+    fileCount: files.length,
+    files: publicList,
+    offsite,
+  };
+}
+
+/**
+ * Giải mã + giải nén 1 config bundle (restore/verify + test round-trip).
+ * Ném lỗi nếu sai magic / sai key / ciphertext bị sửa (GCM auth fail).
+ */
+export function decryptConfigBundle(
+  filePath: string,
+  secret: string,
+): { v: number; createdAt: string; files: Array<{ path: string; bytes: number; sha256: string; contentBase64: string }> } {
+  const raw = fs.readFileSync(filePath);
+  if (raw.length < CONFIG_BUNDLE_MAGIC.length + 12 + 16 + 1) {
+    throw new Error("config bundle too short / corrupted");
+  }
+  if (!raw.subarray(0, CONFIG_BUNDLE_MAGIC.length).equals(CONFIG_BUNDLE_MAGIC)) {
+    throw new Error("not a config bundle (bad magic)");
+  }
+  let off = CONFIG_BUNDLE_MAGIC.length;
+  const iv = raw.subarray(off, off + 12); off += 12;
+  const tag = raw.subarray(off, off + 16); off += 16;
+  const ciphertext = raw.subarray(off);
+
+  const decipher = crypto.createDecipheriv("aes-256-gcm", deriveBundleKey(secret), iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(zlib.gunzipSync(plaintext).toString("utf8"));
+}
+
 // ─── Full DB dump via pg_dump ─────────────────────────────────────────────
 
 export interface BackupResult {
@@ -114,6 +330,18 @@ export interface BackupResult {
     mode?: "s3" | "offsite_dir";
     sseApplied?: string;
   };
+  /** W0-I (doc 44 G5.8) — config/secrets bundle đi kèm (skip khi flag off) */
+  configBundle?: ConfigBundleResult;
+}
+
+/** Gọi createConfigBundle mà không bao giờ làm fail backup chính. */
+async function maybeCreateConfigBundle(label?: string): Promise<ConfigBundleResult> {
+  try {
+    return await createConfigBundle({ label });
+  } catch (err: any) {
+    console.warn("[Backup] config bundle failed (backup chính không bị ảnh hưởng):", err?.message ?? err);
+    return { skipped: true, reason: `config bundle error: ${err?.message ?? String(err)}` };
+  }
 }
 
 export async function createPgDump(opts: {
@@ -210,6 +438,10 @@ export async function createPgDump(opts: {
     offsite = { skipped: false, error: err?.message ?? String(err) };
   }
 
+  // W0-I (doc 44 G5.8) — bundle .env + license keystore + CA keystore +
+  // contracts/canonical (mã hoá AES-256-GCM, flag BACKUP_INCLUDE_SECRETS default off).
+  const configBundle = await maybeCreateConfigBundle(label);
+
   return {
     fileName: gzFileName,
     filePath: gzFilePath,
@@ -220,6 +452,7 @@ export async function createPgDump(opts: {
     pgDumpVersion,
     method: "pg_dump",
     offsite,
+    configBundle,
   };
 }
 
@@ -275,6 +508,9 @@ async function createCustomJsonBackup(opts: {
     offsite = { skipped: false, error: err?.message ?? String(err) };
   }
 
+  // W0-I (doc 44 G5.8) — config/secrets bundle (mirror pg_dump path).
+  const configBundle = await maybeCreateConfigBundle(opts.label);
+
   return {
     fileName,
     filePath,
@@ -285,6 +521,7 @@ async function createCustomJsonBackup(opts: {
     pgDumpVersion: "custom_jsonl",
     method: "custom_json",
     offsite,
+    configBundle,
   };
 }
 

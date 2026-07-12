@@ -24,6 +24,9 @@ type HistogramLike = { observe: (labels: Record<string, string>, value: number) 
 export type RumWebVitalMetric = "lcp" | "cls" | "inp" | "ttfb";
 let rumHistograms: Record<RumWebVitalMetric, HistogramLike> | null = null;
 
+// Doc 44 W0-I (G5.7) — security telemetry: CSP violations + origin-check mismatches.
+let securityEventCounter: { inc: (labels: Record<string, string>) => void } | null = null;
+
 function metricsEnabled(): boolean {
   return process.env.METRICS_ENABLED === "true";
 }
@@ -103,6 +106,14 @@ export async function initMetrics(): Promise<boolean> {
       }),
     };
 
+    // Doc 44 W0-I (G5.7) — CSP report + origin-check violation counter.
+    securityEventCounter = new client.Counter({
+      name: "avi_aoi_security_events_total",
+      help: "Security telemetry: csp_violation / origin_mismatch (label mode = report-only|enforce|log)",
+      labelNames: ["type", "mode"],
+      registers: [reg],
+    });
+
     // B0.3 — AI Brain runtime telemetry (tier throughput, latency, queue,
     // resident models, VRAM). Collected read-only from router/engine getters
     // on each scrape. Fail-safe: never throws into init.
@@ -171,6 +182,18 @@ export function metricsMiddleware() {
 export function observeRumWebVital(metric: RumWebVitalMetric, route: string, value: number): void {
   try {
     rumHistograms?.[metric]?.observe({ route }, value);
+  } catch {
+    /* no-op: metrics không được làm hỏng request */
+  }
+}
+
+/**
+ * Doc 44 W0-I (G5.7) — đếm 1 security event (csp_violation / origin_mismatch).
+ * No-op an toàn khi METRICS_ENABLED tắt / prom-client thiếu / chưa init.
+ */
+export function incSecurityEvent(type: string, mode: string): void {
+  try {
+    securityEventCounter?.inc({ type, mode });
   } catch {
     /* no-op: metrics không được làm hỏng request */
   }

@@ -1,6 +1,10 @@
 # SBOM + CVE scan — SYNAPSE §5.11 / §9.6 (doc 33 F5 · H1 Security).
-# Weekly + on-demand software bill-of-materials + vulnerability scan. Advisory (does not
-# block by default); tighten `continue-on-error: false` once the baseline is clean.
+# Weekly + on-demand software bill-of-materials + vulnerability scan.
+#
+# W0-I (doc 44 G5.7): tách 2 mức —
+#   - CRITICAL + có bản vá (fixable) → BLOCKING (grype `severity-cutoff: critical`
+#     + `only-fixed: true`, fail-build). Không cần secret ngoài GITHUB_TOKEN.
+#   - HIGH trở xuống → advisory như cũ (pnpm audit, continue-on-error).
 name: sbom-cve
 
 on:
@@ -8,8 +12,11 @@ on:
     - cron: "0 3 * * 1" # Mondays 03:00 UTC
   workflow_dispatch: {}
   push:
-    branches: [synapse-foundation]
-    paths: ["package.json", "pnpm-lock.yaml", ".github/workflows/sbom-cve.yml"]
+    branches: [main, synapse-foundation]
+    paths: ["package.json", "pnpm-lock.yaml", "package-lock.json", ".github/workflows/sbom-cve.yml"]
+
+permissions:
+  contents: read
 
 jobs:
   sbom-cve:
@@ -33,7 +40,19 @@ jobs:
         continue-on-error: true
         run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json || echo "sbom generation skipped"
 
-      - name: CVE audit (advisory)
+      # BLOCKING: CVE CRITICAL đã có bản vá. `only-fixed: true` bỏ qua CVE chưa có
+      # fix (không thể hành động); severity-cutoff critical để HIGH-trở-xuống không chặn.
+      - name: CVE scan — CRITICAL fixable (BLOCKING)
+        uses: anchore/scan-action@v6
+        with:
+          path: "."
+          severity-cutoff: critical
+          only-fixed: true
+          fail-build: true
+          output-format: table
+
+      # Advisory (như cũ): toàn cảnh HIGH+ để theo dõi, không chặn.
+      - name: CVE audit — HIGH and below (advisory)
         continue-on-error: true
         run: pnpm audit --audit-level=high || echo "pnpm audit reported findings (advisory)"
 

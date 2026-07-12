@@ -1,0 +1,59 @@
+# W0-I (doc 44 G5.7) — SAST + secret scanning.
+#
+#   - semgrep: ruleset p/typescript + p/security-audit, CHỈ BLOCK trên severity
+#     ERROR (WARNING/INFO không chặn). Chạy trong docker image chính thức —
+#     không cần SEMGREP_APP_TOKEN (metrics off).
+#   - gitleaks: quét secret toàn lịch sử git — BLOCKING. Allowlist trong
+#     .gitleaks.toml (test fixture / .env.example / uploads/).
+#
+# Không phụ thuộc secret nào ngoài GITHUB_TOKEN mặc định (repo on-prem có thể
+# chạy thưa — workflow vẫn tự đủ khi được kích hoạt).
+name: security-sast
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: semgrep SAST (block on ERROR)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      # --severity ERROR: chỉ xét rule mức ERROR; --error: exit != 0 khi có finding
+      # → job fail (BLOCKING). WARNING/INFO không xuất hiện nên không chặn.
+      - name: semgrep scan (p/typescript + p/security-audit)
+        run: >
+          semgrep scan
+          --config p/typescript
+          --config p/security-audit
+          --severity ERROR
+          --error
+          --metrics=off
+          --exclude node_modules
+          --exclude dist
+          --exclude build
+          --exclude uploads
+          --exclude attached_assets
+
+  gitleaks:
+    name: gitleaks secret scan (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — gitleaks quét mọi commit
+
+      # gitleaks tự dùng .gitleaks.toml ở repo root (allowlist fixture/.env.example/uploads).
+      # GITLEAKS_LICENSE chỉ cần cho ORG repo — repo cá nhân chạy free với GITHUB_TOKEN.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

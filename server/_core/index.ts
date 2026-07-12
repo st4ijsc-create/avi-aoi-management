@@ -257,9 +257,19 @@ async function startServer() {
 
   // Security headers
   app.use(helmet({
-    contentSecurityPolicy: false, // Disable CSP as it's a SPA with inline scripts
+    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default off)
     crossOriginEmbedderPolicy: false, // Allow cross-origin resources for LAN devices
   }));
+
+  // W0-I (doc 44 G5.7a) — CSP theo SEC_CSP_MODE (off|report-only|enforce, default
+  // off = hành vi cũ) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
+  // chưa set). Mount NGAY SAU helmet. Fail-safe: lỗi wiring không chặn boot.
+  try {
+    const { securityHeadersMiddleware } = await import("./securityHeaders");
+    app.use(securityHeadersMiddleware());
+  } catch (err) {
+    console.error("[Security] headers middleware wiring failed:", (err as any)?.message || err);
+  }
 
   // Rate limiting for API endpoints
   const apiLimiter = createApiLimiter();
@@ -313,6 +323,24 @@ async function startServer() {
       timestamp: new Date().toISOString(),
     });
   });
+
+  // W0-I (doc 44 G5.7) — CSP violation report endpoint + origin-check chống CSRF.
+  // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
+  // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
+  // rate-limit chung. Origin-check: SEC_ORIGIN_CHECK_MODE off|log|enforce (default
+  // off — pass-through, zero behaviour change). Fail-safe wiring.
+  try {
+    const { registerCspReportEndpoint } = await import("./securityHeaders");
+    registerCspReportEndpoint(app);
+  } catch (err) {
+    console.error("[Security] CSP report endpoint wiring failed:", (err as any)?.message || err);
+  }
+  try {
+    const { originCheckMiddleware } = await import("./originCheck");
+    app.use(originCheckMiddleware());
+  } catch (err) {
+    console.error("[Security] origin-check wiring failed:", (err as any)?.message || err);
+  }
 
   // ============================================================
   // Network monitoring endpoints (for FactoryAlertSystem)

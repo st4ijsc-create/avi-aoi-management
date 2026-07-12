@@ -1,0 +1,153 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SYN-W0 / G2.4 (doc 44) — EMQX HA cluster 3 node (static discovery) cho UNS.
+#
+# File RIÊNG, KHÔNG phá docker-compose.yml chính (kiến trúc "gập được" — HA là
+# PROFILE TÙY CHỌN; single-node mặc định vẫn dùng service `emqx` đơn trong
+# compose chính hoặc broker nhúng Aedes).
+#
+# ⚠️ LICENSE — ĐỌC TRƯỚC KHI NÂNG IMAGE:
+#   EMQX ≥ 5.9 chuyển sang Business Source License 1.1 (BSL) — chạy CLUSTER
+#   production phải trả phí. PIN image 5.8.x (Apache-2.0, dòng open-source cuối
+#   còn full clustering miễn phí). Nâng lên 5.9+ = quyết định license của owner,
+#   KHÔNG tự nâng. (Tag `emqx/emqx:5.8` = patch mới nhất của 5.8.x.)
+#
+# ⚠️ ĐỤNG CỔNG với compose chính: service `emqx` đơn trong docker-compose.yml
+#   đang chiếm host 1884 + 18083. DỪNG nó trước khi chạy file này trên cùng máy:
+#     docker compose stop emqx
+#
+# Chạy:
+#   EMQX_CLUSTER_COOKIE=$(openssl rand -hex 32)   # hoặc đặt sẵn trong .env
+#   docker compose -f deploy/compose/docker-compose.uns-ha.yml up -d
+#   # kèm HAProxy load-balancer (tùy chọn, profile `lb`):
+#   docker compose -f deploy/compose/docker-compose.uns-ha.yml --profile lb up -d
+#
+# Cổng host:
+#   node1: 1883 (MQTT) · 8883 (MQTTS) · 18083 (dashboard)
+#   node2: 1884 (MQTT — cổng PHỤ để test failover khi node1 chết)
+#   node3: 1885 (MQTT — cổng phụ)
+#   haproxy (profile lb): 1890 (MQTT roundrobin qua 3 node) · 8404 (stats)
+#
+# Test failover nhanh:
+#   docker compose -f deploy/compose/docker-compose.uns-ha.yml stop emqx1
+#   → client nối 1884/1885 (hoặc 1890 qua LB) vẫn pub/sub bình thường
+#     (session/route được cluster chia sẻ; client phải tự reconnect — mqtt.js
+#      của app đã có reconnect sẵn).
+#
+# PRODUCTION: KHÔNG cho client trỏ thẳng vào 1 node. Đặt LB phía trước
+#   (HAProxy dưới đây, hoặc HAProxy+keepalived VIP / LB hạ tầng) giữ đúng 1
+#   endpoint 1883; các node KHÔNG expose host-port trực tiếp. Sau khi LB chạy:
+#   UNS_BROKER_URL=mqtt://<lb-host>:1890 (hoặc 1883 nếu LB độc chiếm cổng).
+#
+# Secret: cookie Erlang của cluster BẮT BUỘC giống nhau cả 3 node và là SECRET
+#   (ai biết cookie + chạm được mạng cluster = điều khiển được node). Đọc từ env
+#   EMQX_CLUSTER_COOKIE — KHÔNG hardcode trong file này, fail-fast nếu thiếu.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# YAML anchor — phần env chung của cả 3 node (DRY, tránh lệch config giữa node).
+x-emqx-common-env: &emqx-common-env
+  EMQX_NODE__COOKIE: ${EMQX_CLUSTER_COOKIE:?set EMQX_CLUSTER_COOKIE in .env (openssl rand -hex 32) — PHẢI GIỐNG NHAU cả 3 node}
+  EMQX_CLUSTER__DISCOVERY_STRATEGY: static
+  EMQX_CLUSTER__STATIC__SEEDS: "[emqx@node1.emqx.local,emqx@node2.emqx.local,emqx@node3.emqx.local]"
+  EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+
+services:
+  emqx1:
+    image: emqx/emqx:5.8   # PIN 5.8.x — Apache-2.0; 5.9+ là BSL 1.1 (xem header)
+    restart: unless-stopped
+    environment:
+      <<: *emqx-common-env
+      EMQX_NODE__NAME: "emqx@node1.emqx.local"
+    volumes:
+      - emqx1data:/opt/emqx/data
+    ports:
+      - "1883:1883"    # MQTT TCP — cổng CHÍNH
+      - "8883:8883"    # MQTTS (TLS — cấu hình cert như deploy/emqx/ nếu cần)
+      - "18083:18083"  # Dashboard UI (cluster-wide, xem được cả 3 node)
+    networks:
+      emqx-ha:
+        aliases: [node1.emqx.local]
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  emqx2:
+    image: emqx/emqx:5.8
+    restart: unless-stopped
+    environment:
+      <<: *emqx-common-env
+      EMQX_NODE__NAME: "emqx@node2.emqx.local"
+    volumes:
+      - emqx2data:/opt/emqx/data
+    ports:
+      - "1884:1883"    # MQTT — cổng PHỤ (test failover khi node1 down)
+      # - "18084:18083" # dashboard node2 — mở khi cần debug riêng node
+    networks:
+      emqx-ha:
+        aliases: [node2.emqx.local]
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  emqx3:
+    image: emqx/emqx:5.8
+    restart: unless-stopped
+    environment:
+      <<: *emqx-common-env
+      EMQX_NODE__NAME: "emqx@node3.emqx.local"
+    volumes:
+      - emqx3data:/opt/emqx/data
+    ports:
+      - "1885:1883"    # MQTT — cổng phụ
+      # - "18085:18083" # dashboard node3
+    networks:
+      emqx-ha:
+        aliases: [node3.emqx.local]
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ── HAProxy load-balancer (TÙY CHỌN — profile `lb`) ─────────────────────────
+  # Mẫu tối thiểu cho test/staging: TCP roundrobin 1 frontend → 3 backend EMQX,
+  # health-check TCP. Production thật: chạy ≥2 HAProxy + keepalived (VIP) hoặc
+  # LB hạ tầng (cloud NLB / F5) — 1 HAProxy đơn lẻ vẫn là single-point-of-failure.
+  haproxy:
+    image: haproxy:2.9-alpine
+    profiles: ["lb"]
+    restart: unless-stopped
+    depends_on:
+      emqx1:
+        condition: service_healthy
+      emqx2:
+        condition: service_healthy
+      emqx3:
+        condition: service_healthy
+    volumes:
+      - ./haproxy-emqx.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "1890:1883"   # MQTT qua LB (host 1890 vì node1 đã chiếm 1883; prod: LB độc chiếm 1883)
+      - "8404:8404"   # HAProxy stats UI (http://localhost:8404/stats)
+    networks:
+      - emqx-ha
+    healthcheck:
+      # Xác thực config hợp lệ (liveness thô — stats page mới là kiểm tra sâu).
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  # Mạng riêng cho cluster — alias node{1..3}.emqx.local phải resolve được giữa
+  # các node (Erlang distribution dùng đúng hostname trong EMQX_NODE__NAME).
+  emqx-ha:
+
+volumes:
+  # Volume RIÊNG từng node — KHÔNG share data dir giữa các node EMQX.
+  emqx1data:
+  emqx2data:
+  emqx3data:
