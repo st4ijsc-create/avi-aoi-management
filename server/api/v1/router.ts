@@ -29,6 +29,7 @@ import { registerErpIntakeRoutes } from "./erpIntake";
 import { registerModuleReadRoutes } from "./moduleReads";
 import { registerPdmHealthRoutes } from "./pdmHealth";
 import { registerModelRegistryRoutes } from "./modelRegistry";
+import { registerAssetRoutes } from "./assets";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
 import {
@@ -511,6 +512,12 @@ export function createV1Router(): Router {
   // promote/rollback (models:write, gated by V1_MODEL_MUTATIONS_ENABLED, default
   // OFF → structured 501). Mutations wrap the SAME internal lifecycle paths.
   registerModelRegistryRoutes(r);
+
+  // ── W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry:
+  // /assets discovery + detail + lifecycle (validated transitions) + health +
+  // tags + config-drift (view/approve), /adapters/:id/restart (gated by
+  // V1_ADAPTER_RESTART_ENABLED, default OFF → 501), /gateways/:id/status.
+  registerAssetRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

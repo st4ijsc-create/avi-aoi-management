@@ -191,11 +191,24 @@ export type InsertStation = typeof stations.$inferInsert;
  * Repo convention for varchar enums (see registrationStatus above,
  * aoi_commissioning_records.status): plain varchar + app-level validation — no
  * pg enum / CHECK constraint, so adding states later never needs ALTER TYPE.
+ * (Doc 44 W2-A2 verified: adding 'registered'/'faulted' below therefore needed
+ * NO ALTER TYPE — the column is varchar(20), app-validated.)
+ *
+ * Doc 44 W2-A2 (gap G1.10, SYNAPSE Tầng-1 spec §6.3) — two ADDITIVE states:
+ *   registered — declared in the Asset Registry (POST /v1/assets), not yet
+ *                connected/verified. Sits BEFORE commissioning.
+ *   faulted    — link-loss/error while active; recovers to active or goes to
+ *                maintenance. (Spec: ACTIVE ─(sự cố)─▶ FAULTED ─▶ MAINTENANCE.)
+ * The column DEFAULT stays 'active' (unchanged — existing create flows are not
+ * disturbed; the register flow still stamps 'commissioning' explicitly and the
+ * declarative /v1/assets registration stamps 'registered' explicitly).
  *
  * Legal transitions (enforced by server/db/hierarchy.ts transitionMachineLifecycle;
  * anything not listed is a CONFLICT):
- *   commissioning  → active
- *   active         → maintenance | decommissioned
+ *   registered     → commissioning | decommissioned (hủy onboard, spec §6.3)
+ *   commissioning  → active | decommissioned (hủy onboard, spec §6.3)
+ *   active         → maintenance | decommissioned | faulted
+ *   faulted        → active (recovered) | maintenance
  *   maintenance    → active | decommissioned
  *   decommissioned → retired | active (re-commission)
  *   retired        → (terminal for transitions)
@@ -206,8 +219,10 @@ export type InsertStation = typeof stations.$inferInsert;
  *                                from auto-assign until explicitly re-commissioned.
  */
 export const MACHINE_LIFECYCLE_STATUSES = [
+  "registered",
   "commissioning",
   "active",
+  "faulted",
   "maintenance",
   "decommissioned",
   "retired",
@@ -215,8 +230,10 @@ export const MACHINE_LIFECYCLE_STATUSES = [
 export type MachineLifecycleStatus = (typeof MACHINE_LIFECYCLE_STATUSES)[number];
 
 export const MACHINE_LIFECYCLE_TRANSITIONS: Record<MachineLifecycleStatus, readonly MachineLifecycleStatus[]> = {
-  commissioning: ["active"],
-  active: ["maintenance", "decommissioned"],
+  registered: ["commissioning", "decommissioned"],
+  commissioning: ["active", "decommissioned"],
+  active: ["maintenance", "decommissioned", "faulted"],
+  faulted: ["active", "maintenance"],
   maintenance: ["active", "decommissioned"],
   decommissioned: ["retired", "active"],
   retired: [],
@@ -272,6 +289,17 @@ export const machines = pgTable("machines", {
   registrationStatus: varchar("registrationStatus", { length: 20 }).default("pending").notNull(), // "pending" | "approved" | "rejected" | "unmapped"
   // Doc 27 Đợt 3 / W3-B — gap M2: asset lifecycle state (varchar-enum, app-validated).
   lifecycleStatus: varchar("lifecycleStatus", { length: 20 }).$type<MachineLifecycleStatus>().default("active").notNull(),
+  // Doc 44 W2-A2 (gap G1.10, migration 0251) — SYNAPSE asset identity. Nullable:
+  // maintained by server/services/assetRegistry/urnService.syncAssetIdentity
+  // (hooked into create/update/approve + station/line reassignment) and backfilled
+  // by 0251. Slug rule shared with UNS topics: lowercase [a-z0-9-], Vietnamese
+  // diacritics stripped, missing hierarchy level → 'unassigned'.
+  //   urn        — urn:syn:asset:{site}:{line}:{cell}:{equipment}
+  //   isa95Path  — {site}/{area}/{line}/{cell}/{equipment}
+  // Uniqueness is a PARTIAL index (active rows only — mirrors uq_machines_code_active:
+  // tombstones keep their URN for traceability without blocking code/URN reuse).
+  urn: text("urn"),
+  isa95Path: text("isa95_path"),
   lastSyncAt: timestamp("lastSyncAt"),
   pendingConfig: text("pendingConfig"), // Cấu hình chờ duyệt (offline)
   isActive: boolean("isActive").default(true).notNull(),
@@ -294,6 +322,9 @@ export const machines = pgTable("machines", {
   index("idx_machines_apikey").on(table.apiKey),
   index("idx_machines_registration_status").on(table.registrationStatus),
   index("idx_machines_lifecycle").on(table.lifecycleStatus),
+  // G1.10 (0251): URN unique among LIVE rows only (see column comment above).
+  uniqueIndex("uq_machines_urn_active").on(table.urn).where(sql`${table.isActive} = true`),
+  index("idx_machines_isa95_path").on(table.isa95Path),
   index("idx_machines_syncmode").on(table.syncMode),
   index("idx_machines_serial_number").on(table.serialNumber),
 ]);

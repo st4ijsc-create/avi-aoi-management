@@ -65,3 +65,4 @@ export * from "./ecn"; // doc 35 W4-D — engineering change control (ECN/ECO)
 export * from "./routing"; // doc 35 W4-E — ISA-95 routing master + steps
 export * from "./reportingMart"; // doc 35 W5-B — dim/fact reporting mart
 export * from "./contracts"; // doc 44 W0-E — persisted LDS-L1 contract-schema registry (G2.5)
+export * from "./assetRegistry"; // doc 44 W2-A2 — config-drift snapshots (G1.11)

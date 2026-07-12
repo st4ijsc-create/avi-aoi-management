@@ -64,18 +64,26 @@ beforeEach(() => {
 });
 
 // ── M2: transition matrix (single source of truth) ──────────────────────────
+// Doc 44 W2-A2 (G1.10, SYNAPSE spec §6.3): + 'registered' (before commissioning)
+// and 'faulted' (from active; recovers to active or goes to maintenance).
 describe("M2 — lifecycle transition matrix", () => {
   const LEGAL: Array<[string, string]> = [
+    ["registered", "commissioning"],
+    ["registered", "decommissioned"], // hủy onboard (spec §6.3)
     ["commissioning", "active"],
+    ["commissioning", "decommissioned"], // hủy onboard (spec §6.3)
     ["active", "maintenance"],
     ["active", "decommissioned"],
+    ["active", "faulted"], // sự cố (spec §6.3)
+    ["faulted", "active"], // recovered
+    ["faulted", "maintenance"],
     ["maintenance", "active"],
     ["maintenance", "decommissioned"],
     ["decommissioned", "retired"],
     ["decommissioned", "active"], // re-commission
   ];
 
-  it("allows exactly the specified transitions and nothing else (full 5×5 sweep)", () => {
+  it("allows exactly the specified transitions and nothing else (full 7×7 sweep)", () => {
     for (const from of MACHINE_LIFECYCLE_STATUSES) {
       for (const to of MACHINE_LIFECYCLE_STATUSES) {
         const expected = LEGAL.some(([f, t]) => f === from && t === to);
@@ -86,6 +94,19 @@ describe("M2 — lifecycle transition matrix", () => {
 
   it("retired is terminal", () => {
     expect(MACHINE_LIFECYCLE_TRANSITIONS.retired).toEqual([]);
+  });
+
+  it("registered sits BEFORE commissioning (cannot jump straight to active)", () => {
+    expect(isLegalLifecycleTransition("registered", "commissioning")).toBe(true);
+    expect(isLegalLifecycleTransition("registered", "active")).toBe(false);
+    expect(isLegalLifecycleTransition("registered", "faulted")).toBe(false);
+  });
+
+  it("faulted is reachable ONLY from active and recovers to active/maintenance", () => {
+    for (const from of MACHINE_LIFECYCLE_STATUSES) {
+      expect(isLegalLifecycleTransition(from, "faulted"), `${from} → faulted`).toBe(from === "active");
+    }
+    expect(MACHINE_LIFECYCLE_TRANSITIONS.faulted).toEqual(["active", "maintenance"]);
   });
 
   it("unknown states are never legal (defensive)", () => {
@@ -138,6 +159,38 @@ describe("M2 — transitionMachineLifecycle", () => {
     const r = await transitionMachineLifecycle(5, "maintenance");
     expect(r.before.lifecycleStatus).toBe("active");
     expect(r.after.lifecycleStatus).toBe("maintenance");
+  });
+
+  // ── Doc 44 W2-A2 (G1.10) — new 'registered' / 'faulted' states end-to-end ──
+  it("registered → commissioning is legal (declarative onboarding start)", async () => {
+    fake.state.selectResults = [[{ ...MACHINE, lifecycleStatus: "registered" }]];
+    const r = await transitionMachineLifecycle(5, "commissioning");
+    expect(r.after.lifecycleStatus).toBe("commissioning");
+    expect(fake.state.updates[0].lifecycleStatus).toBe("commissioning");
+  });
+
+  it("registered → active is rejected (must pass commissioning)", async () => {
+    fake.state.selectResults = [[{ ...MACHINE, lifecycleStatus: "registered" }]];
+    await expect(transitionMachineLifecycle(5, "active")).rejects.toMatchObject({
+      name: "LifecycleTransitionError",
+    });
+    expect(fake.state.updates).toHaveLength(0);
+  });
+
+  it("active → faulted → active round-trips (incident + recovery)", async () => {
+    fake.state.selectResults = [[{ ...MACHINE, lifecycleStatus: "active" }]];
+    const down = await transitionMachineLifecycle(5, "faulted");
+    expect(down.after.lifecycleStatus).toBe("faulted");
+    fake.state.selectResults = [[{ ...MACHINE, lifecycleStatus: "faulted" }]];
+    const up = await transitionMachineLifecycle(5, "active");
+    expect(up.after.lifecycleStatus).toBe("active");
+  });
+
+  it("faulted → retired is rejected (must go through maintenance/decommission)", async () => {
+    fake.state.selectResults = [[{ ...MACHINE, lifecycleStatus: "faulted" }]];
+    await expect(transitionMachineLifecycle(5, "retired")).rejects.toMatchObject({
+      name: "LifecycleTransitionError",
+    });
   });
 });
 

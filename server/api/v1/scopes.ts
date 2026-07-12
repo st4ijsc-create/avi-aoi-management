@@ -39,6 +39,9 @@ export const API_SCOPES = {
   // W0-F (doc 44 G4.27) — AI model registry reads + gated lifecycle mutations.
   MODELS_READ: "models:read",
   MODELS_WRITE: "models:write",
+  // W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry (/v1/assets).
+  ASSETS_READ: "assets:read",
+  ASSETS_WRITE: "assets:write",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -66,6 +69,10 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "bi:read": "Read the paged BI dataset feed for Power BI/Tableau (/api/bi/datasets, W5-D A10).",
   "models:read": "Read the AI model registry (models + versions + stage/status) and drift monitoring (W0-F G4.27).",
   "models:write": "Promote/rollback an AI model version — gated by V1_MODEL_MUTATIONS_ENABLED, default OFF (W0-F G4.27).",
+  "assets:read":
+    "Read the asset registry: URN/ISA-95 discovery, asset detail, health, tag catalogue, config-drift status, gateway status (W2-A2 G1.10-G1.12).",
+  "assets:write":
+    "Register a declarative asset, change asset lifecycle (validated transitions), approve config baselines; adapter restart is ADDITIONALLY gated by V1_ADAPTER_RESTART_ENABLED, default OFF (W2-A2).",
 };
 
 /**

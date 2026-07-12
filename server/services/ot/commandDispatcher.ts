@@ -67,6 +67,12 @@
  *     result. Flag UNS_CMD_ACK_ENABLED (default OFF ⇒ nothing is imported or
  *     published). The publisher is loaded via dynamic import to avoid a module
  *     cycle (unsPublisher statically imports this dispatcher).
+ *   - G1.9 (doc 44 W2-A3): when OT_CMD_SERIALIZE_ENABLED === "true" (default OFF)
+ *     real-writes to the SAME adapter are SERIALIZED through an in-process
+ *     per-adapter queue (spec §13.2 — "lệnh tới cùng asset xử lý tuần tự").
+ *     Bounded: queue depth ≥ OT_CMD_QUEUE_MAX (default 10) → immediate 'rejected'
+ *     reason 'BUSY' (spec §13.3). The lock wraps ONLY the write+verify section;
+ *     every gate above (and the simulated path) is unchanged.
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -218,6 +224,79 @@ function effectiveTimeoutMs(deadlineMs?: number): number {
   const maxRaw = Number(process.env.OT_CONTROL_TIMEOUT_MAX_MS);
   const max = Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : null;
   return max != null ? Math.min(Math.trunc(deadlineMs), max) : Math.trunc(deadlineMs);
+}
+
+// ─── G1.9 (doc 44 W2-A3) — per-adapter command serialization (spec §13.2) ──────
+//
+// "Lệnh tới cùng asset xử lý tuần tự (hoặc theo hàng đợi có khóa) để tránh tranh
+// chấp." Khi OT_CMD_SERIALIZE_ENABLED === "true" (default OFF) các REAL-WRITE tới
+// CÙNG adapterId được tuần tự hóa bằng một promise-chain in-process per adapter
+// (mutex kiểu tail-promise). Hàng đợi BOUNDED: khi depth (kể cả lệnh đang chạy)
+// đã ≥ OT_CMD_QUEUE_MAX (default 10) → lệnh mới bị REJECT NGAY reason 'BUSY'
+// (spec §13.3 — không chờ, không âm thầm treo).
+//
+// PHẠM VI: chỉ bọc quanh đoạn write+verify của NHÁNH THỰC THI THẬT — mọi gate
+// (authorization / idempotency / allowlist / mode / commissioning / policy /
+// interlock) chạy TRƯỚC và KHÔNG đổi; các nhánh simulated/rejected đã return
+// trước điểm khóa. Flag OFF → thực thi ngay như trước (byte-for-byte).
+
+/** G1.9 — cờ tuần tự hóa lệnh per-adapter, đọc tại call time (default OFF). */
+export function isCmdSerializeEnabled(): boolean {
+  return process.env.OT_CMD_SERIALIZE_ENABLED === "true";
+}
+
+/** Độ sâu hàng đợi tối đa per adapter (env OT_CMD_QUEUE_MAX, default 10). */
+function cmdQueueMax(): number {
+  const n = parseInt(String(process.env.OT_CMD_QUEUE_MAX ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 10;
+}
+
+interface AdapterCommandQueue {
+  /** Promise của lệnh cuối trong chuỗi — đã "sanitize" (không bao giờ reject). */
+  tail: Promise<void>;
+  /** Số lệnh trong hàng (kể cả lệnh đang thực thi). */
+  depth: number;
+}
+
+const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
+
+/** Chỉ dùng trong test — xóa mọi hàng đợi lệnh per-adapter. */
+export function _resetAdapterCommandQueuesForTests(): void {
+  adapterCommandQueues.clear();
+}
+
+type EnqueueOutcome<T> =
+  | { accepted: true; result: Promise<T> }
+  | { accepted: false; depth: number; max: number };
+
+/**
+ * Xếp `fn` vào hàng đợi tuần tự của adapter. Trả {accepted:false} NGAY (không
+ * side-effect) khi hàng đã đầy. `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã
+ * kết thúc (kể cả khi lệnh trước lỗi — tail được sanitize). Entry của adapter
+ * được dọn khỏi map khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
+ */
+function tryEnqueueAdapterCommand<T>(adapterId: number, fn: () => Promise<T>): EnqueueOutcome<T> {
+  const max = cmdQueueMax();
+  let q = adapterCommandQueues.get(adapterId);
+  if (!q) {
+    q = { tail: Promise.resolve(), depth: 0 };
+    adapterCommandQueues.set(adapterId, q);
+  }
+  if (q.depth >= max) return { accepted: false, depth: q.depth, max };
+  q.depth += 1;
+  const queue = q;
+  const run = queue.tail.then(fn);
+  queue.tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  const result = run.finally(() => {
+    queue.depth -= 1;
+    if (queue.depth === 0 && adapterCommandQueues.get(adapterId) === queue) {
+      adapterCommandQueues.delete(adapterId);
+    }
+  });
+  return { accepted: true, result };
 }
 
 /** Resolve the (requestedBy, confirmedBy) pair recorded on commandLog rows. */
@@ -524,7 +603,6 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         acked writes (acked_verified / acked_unverified — WARN only). The
   //         per-write outcome + read-back status are computed BEFORE inserting the
   //         commandLog rows so the ledger stays append-only (insert ONCE, no update).
-  const sentAt = new Date();
   const commandLogIds: number[] = [];
 
   // Map resolved → driver writes (carry dataType/scale/offset for INVERSE scale).
@@ -542,22 +620,6 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   const timeoutMs = effectiveTimeoutMs(input.deadlineMs);
   const TIMEOUT = Symbol("timeout");
 
-  let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
-  let threwError: string | null = null;
-  try {
-    writeResults = await Promise.race([
-      driver.writeTags(driverWrites),
-      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
-    ]);
-  } catch (err) {
-    threwError = (err as Error)?.message || String(err);
-    writeResults = [];
-  }
-
-  // Decide a per-write outcome from the write result (status BEFORE read-back).
-  const timedOut = writeResults === TIMEOUT;
-  const resultsArr = Array.isArray(writeResults) ? writeResults : [];
-
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and
   // NEVER flips ok → false (quyết định #4).
@@ -568,80 +630,129 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     errorText: string | null;
     readBackValue: unknown;
   }
-  const outcomes: Outcome[] = resolved.map((r, i) => {
-    if (timedOut) {
-      return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
-    }
-    if (threwError) {
-      return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
-    }
-    const wr =
-      resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
-      { tagKey: r.write.tagKey, ok: false, error: "no result" };
-    const ok = wr.ok === true;
-    return {
-      idx: i,
-      ok,
-      status: ok ? "acked" : "failed",
-      errorText: ok ? null : (wr.error ?? "write failed"),
-      readBackValue: null,
-    };
-  });
 
-  // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
-  //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
-  //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
-  if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
-    const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
-    const readTags: OtTagAddress[] = ackedIdx.map((i) => {
-      const r = resolved[i];
+  // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
+  //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
+  //    It never throws for expected failure modes (driver errors are caught).
+  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[] }> => {
+    const sentAt = new Date();
+
+    let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
+    let threwError: string | null = null;
+    try {
+      writeResults = await Promise.race([
+        driver.writeTags(driverWrites),
+        new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
+      ]);
+    } catch (err) {
+      threwError = (err as Error)?.message || String(err);
+      writeResults = [];
+    }
+
+    // Decide a per-write outcome from the write result (status BEFORE read-back).
+    const timedOut = writeResults === TIMEOUT;
+    const resultsArr = Array.isArray(writeResults) ? writeResults : [];
+
+    const outcomes: Outcome[] = resolved.map((r, i) => {
+      if (timedOut) {
+        return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
+      }
+      if (threwError) {
+        return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
+      }
+      const wr =
+        resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
+        { tagKey: r.write.tagKey, ok: false, error: "no result" };
+      const ok = wr.ok === true;
       return {
-        tagKey: r.write.tagKey,
-        address: r.address,
-        dataType: (r.dataType ?? "float") as OtTagAddress["dataType"],
-        scale: r.scale,
-        offset: r.offset,
+        idx: i,
+        ok,
+        status: ok ? "acked" : "failed",
+        errorText: ok ? null : (wr.error ?? "write failed"),
+        readBackValue: null,
       };
     });
 
-    const RB_TIMEOUT = Symbol("rb_timeout");
-    let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
-    let readbackUnavailable = false;
-    try {
-      samples = await Promise.race([
-        driver.readTags(readTags),
-        new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
-      ]);
-      if (samples === RB_TIMEOUT) readbackUnavailable = true;
-    } catch {
-      // readTags throwing → read-back unavailable (NOT failed, NO retry).
-      readbackUnavailable = true;
+    // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
+    //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
+    //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
+    if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
+      const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
+      const readTags: OtTagAddress[] = ackedIdx.map((i) => {
+        const r = resolved[i];
+        return {
+          tagKey: r.write.tagKey,
+          address: r.address,
+          dataType: (r.dataType ?? "float") as OtTagAddress["dataType"],
+          scale: r.scale,
+          offset: r.offset,
+        };
+      });
+
+      const RB_TIMEOUT = Symbol("rb_timeout");
+      let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
+      let readbackUnavailable = false;
+      try {
+        samples = await Promise.race([
+          driver.readTags(readTags),
+          new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
+        ]);
+        if (samples === RB_TIMEOUT) readbackUnavailable = true;
+      } catch {
+        // readTags throwing → read-back unavailable (NOT failed, NO retry).
+        readbackUnavailable = true;
+      }
+
+      const tol = readbackFloatTolerance();
+      const sampleArr = Array.isArray(samples) ? samples : [];
+      for (const i of ackedIdx) {
+        const o = outcomes[i];
+        const r = resolved[i];
+        if (readbackUnavailable) {
+          o.status = "acked_unverified";
+          o.errorText = "readback unavailable";
+          continue;
+        }
+        const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
+        const actual = s ? s.value : null;
+        const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
+        const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
+        if (matched) {
+          o.status = "acked_verified";
+          o.readBackValue = actual;
+        } else {
+          o.status = "acked_unverified";
+          o.readBackValue = actual;
+          o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
+        }
+      }
     }
 
-    const tol = readbackFloatTolerance();
-    const sampleArr = Array.isArray(samples) ? samples : [];
-    for (const i of ackedIdx) {
-      const o = outcomes[i];
-      const r = resolved[i];
-      if (readbackUnavailable) {
-        o.status = "acked_unverified";
-        o.errorText = "readback unavailable";
-        continue;
-      }
-      const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
-      const actual = s ? s.value : null;
-      const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
-      const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
-      if (matched) {
-        o.status = "acked_verified";
-        o.readBackValue = actual;
-      } else {
-        o.status = "acked_unverified";
-        o.readBackValue = actual;
-        o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
-      }
+    return { sentAt, timedOut, outcomes };
+  };
+
+  // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
+  //    default OFF → run immediately, prior behaviour byte-for-byte). Real-writes
+  //    to the SAME adapter run one-at-a-time; a full queue (depth ≥ OT_CMD_QUEUE_MAX)
+  //    rejects THIS command immediately with reason 'BUSY' (spec §13.3) — the
+  //    ledger records the rejection like every other rejected branch.
+  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[] };
+  if (isCmdSerializeEnabled()) {
+    const enq = tryEnqueueAdapterCommand(input.adapterId, executeWriteAndVerify);
+    if (!enq.accepted) {
+      const ids = await writeRejected(
+        db,
+        input,
+        "BUSY",
+        `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
+      );
+      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids };
     }
+    executed = await enq.result;
+  } else {
+    executed = await executeWriteAndVerify();
   }
+  const { sentAt, timedOut, outcomes } = executed;
 
   // Insert one commandLog row per write (append-only — single insert per write).
   const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms

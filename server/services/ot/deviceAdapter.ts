@@ -77,6 +77,10 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
         offset: t.offset != null ? Number(t.offset) : undefined,
         unit: t.unit ?? undefined,
         writable: t.writable,
+        // G1.4 (0253) — report-by-exception per tag; chỉ được otManager đánh giá
+        // khi OT_TAG_DEADBAND_ENABLED === "true" (driver không đọc 2 field này).
+        deadband: t.deadband != null && Number.isFinite(Number(t.deadband)) ? Number(t.deadband) : undefined,
+        samplingMs: t.samplingMs != null && t.samplingMs > 0 ? t.samplingMs : undefined,
       }));
 
     const protocol = a.protocol as OtProtocol;

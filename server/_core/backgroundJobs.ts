@@ -397,6 +397,18 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[MachinePresence] start failed:", (err as any)?.message || err);
   }
 
+  // Doc 44 W2-A2 (G1.11) — config-drift sweep: so khớp hash cấu hình ĐANG CHẠY của
+  // device_adapter + device_tags với bản ĐÃ DUYỆT (config_snapshots, mig 0252); lệch
+  // → alert qua routeAlert (predictive_alerts). Opt in via CONFIG_DRIFT_ENABLED=true
+  // (WRITES config_snapshots — default OFF). Interval: CONFIG_DRIFT_INTERVAL_MS
+  // (default 10 phút, floor 60s). startConfigDriftSweep self-gates + idempotent.
+  try {
+    const { startConfigDriftSweep } = await import("../services/assetRegistry/configDriftService");
+    startConfigDriftSweep();
+  } catch (err) {
+    console.error("[ConfigDrift] start failed:", (err as any)?.message || err);
+  }
+
   // Doc 38 T-1 (P1) — SECS/GEM production bring-up. Opens an HSMS session per
   // configured equipment (SECS_GEM_EQUIPMENT JSON) and arms attachGemAlarmDispatch
   // so live S5F1 alarms reach the Andon path (EQ_INTEG_ENABLED). Honest no-op unless

@@ -1,0 +1,27 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Throughput — metric definition AS-CODE (doc 44 Batch W2-A4 · SYNAPSE Tầng 2
+# §9). Units inspected/processed in the window. Changing `formula` REQUIRES a
+# version bump (guarded by verifyDefinitionsIntegrity + test snapshot).
+# ═══════════════════════════════════════════════════════════════════════════
+metric: Throughput
+version: 1
+scope: [equipment, line]
+formula: count(units inspected in window)
+implementation:
+  equipment: statisticsDb.getMachineStats   # server/db/statistics.ts — COUNT(*) over product_inspections in window
+  line: oeeService.getLineOEE               # details.totalCount — daily_statistics rollup (the warRoom line-output convention)
+inputs:
+  - name: inspection_count (equipment scope)
+    source: product_inspections — COUNT(*) for the machine inside [from, to] (inspectionTime)
+  - name: total_count (line scope)
+    source: >-
+      daily_statistics — SUM(totalCount) over the line's machines inside [from, to]
+      (oeeService.getLineOEE rollup; same number the War-Room briefing reports as
+      line output)
+notes: >-
+  Result value is a COUNT (units), not a fraction. KNOWN v1 SOURCE DIVERGENCE,
+  declared honestly: equipment scope counts raw product_inspections rows (the
+  getThroughputBy* convention), while line scope sums daily_statistics.totalCount
+  (the warRoom/getLineOEE convention) — the two can differ when daily rollups lag
+  raw ingest. Unifying both scopes onto one source is a FORMULA-MEANING change
+  and therefore requires bumping to version 2.

@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Availability / Performance / Quality — the THREE PARTS of OEE, defined
+# as-code (doc 44 Batch W2-A4 · SYNAPSE Tầng 2 §9). Multi-document YAML:
+# one governed definition per document, all delegating to the SAME canonical
+# implementation as OEE (server/services/oeeService.ts) so a part can never
+# drift from the composite. Changing a formula REQUIRES a version bump
+# (guarded by verifyDefinitionsIntegrity + the pinned test snapshot).
+# ═══════════════════════════════════════════════════════════════════════════
+metric: Availability
+version: 1
+scope: [equipment, line]
+formula: online_seconds / (online_seconds + offline_seconds)
+implementation:
+  equipment: oeeService.getMachineOEELive
+  line: oeeService.getLineOEE
+inputs:
+  - name: online_seconds / offline_seconds
+    source: >-
+      machine_status_logs — interval sum per status ('online' vs not), equipment via
+      getMachineUptimeStats (the unified status/uptime path), line via set-based
+      LEAD() window clipped to [from, to]
+notes: >-
+  Live-path availability (oeeService.ts:37). HONEST-NULL when the machine has no
+  status rows in the window (hasUptimeData=false). The persisted SEMI E10 window
+  path (computeOEE over downtime_events: (PT+ET)/(PT+SB+ET+UD)) is the batch
+  variant of the same canonical module. Result value is a fraction 0..1.
+---
+metric: Performance
+version: 1
+scope: [equipment, line]
+formula: min(1, ideal_cycle_time_sec * total_count / online_seconds)
+implementation:
+  equipment: oeeService.getMachineOEELive
+  line: oeeService.getLineOEE
+inputs:
+  - name: total_count
+    source: daily_statistics — SUM(totalCount) over the window per machine
+  - name: online_seconds
+    source: machine_status_logs — 'online' interval sum over the window
+  - name: ideal_cycle_time_sec
+    source: >-
+      oee_metrics.idealCycleTime (latest persisted per machine); when flag
+      OEE_IDEAL_FROM_TARGET is armed, the active oee_targets implied ideal
+      (avgCycleTime × targetPerformance/10000) wins (MON-F8, doc 40)
+notes: >-
+  HONEST-NULL when no ideal cycle time is configured, no production counts, or
+  no online time — never a synthetic default (oeeService.ts:43). Line scope
+  restricts numerator/denominator to machines that HAVE an ideal AND produced
+  units, so an unconfigured machine never silently deflates the line. Capped at 1.
+---
+metric: Quality
+version: 1
+scope: [equipment, line]
+formula: (ok_count + ntf_count) / total_count
+implementation:
+  equipment: oeeService.getMachineOEELive
+  line: oeeService.getLineOEE
+inputs:
+  - name: ok_count / ntf_count / total_count
+    source: daily_statistics — SUM over the window per machine
+notes: >-
+  NTF ("no-trouble-found" — machine called NG, human review cleared it) counts
+  as GOOD, the same final-yield convention as server/utils/kpi.ts (doc 27
+  decision #4). HONEST-NULL when total_count = 0 in the window.

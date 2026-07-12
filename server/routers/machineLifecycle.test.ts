@@ -176,7 +176,8 @@ describe("machine.lifecycleTransitions — UI helper", () => {
     mocks.getMachineById.mockResolvedValue({ id: 1 });
     const r = await caller.lifecycleTransitions({ id: 1 });
     expect(r.current).toBe("active");
-    expect(r.allowed).toEqual(["maintenance", "decommissioned"]);
+    // doc 44 W2-A2 (G1.10): 'faulted' added to active's legal next states.
+    expect(r.allowed).toEqual(["maintenance", "decommissioned", "faulted"]);
   });
 
   it("NOT_FOUND for unknown machine", async () => {

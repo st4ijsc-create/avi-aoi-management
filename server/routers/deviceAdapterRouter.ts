@@ -60,6 +60,10 @@ const tagCreateInput = z.object({
   offset: z.number().nullable().optional(),
   writable: z.boolean().default(false),
   isEnabled: z.boolean().default(true),
+  // G1.4 (doc 44 W2-A3, mig 0253) — report-by-exception per tag, OPTIONAL (client
+  // cũ không gửi → NULL, hành vi cũ). Chỉ có tác dụng khi OT_TAG_DEADBAND_ENABLED.
+  deadband: z.number().positive().nullable().optional(),
+  samplingMs: z.number().int().min(1).max(86_400_000).nullable().optional(),
 });
 
 const DEFAULT_TEST_TIMEOUT_MS = 8000;
@@ -277,6 +281,9 @@ export const deviceAdapterRouter = router({
               offset: input.offset != null ? String(input.offset) : undefined,
               writable: input.writable,
               isEnabled: input.isEnabled,
+              // G1.4 — deadband/samplingMs (double precision / integer, nullable)
+              deadband: input.deadband ?? null,
+              samplingMs: input.samplingMs ?? null,
             })
             .returning();
           return row;

@@ -61,6 +61,15 @@ export const deviceTags = pgTable("device_tags", {
   offset: decimal("offset", { precision: 18, scale: 6 }).default("0"),
   writable: boolean("writable").default(false).notNull(),
   isEnabled: boolean("isEnabled").default(true).notNull(),
+  // ── G1.4 (doc 44 W2-A3, migration 0253 — additive, nullable) ────────────────
+  // Report-by-exception per tag (LDS-L1 §A.2 / §5.1), đánh giá ở otManager CHỈ khi
+  // OT_TAG_DEADBAND_ENABLED === "true" (default OFF ⇒ hành vi cũ, forward mọi sample):
+  //   • deadband:   numeric — chỉ forward khi |value − lastForwarded| ≥ deadband.
+  //   • samplingMs: throttle — chỉ forward khi đã qua samplingMs từ lần forward trước.
+  // NULL = không lọc tag đó. Liveness được giữ bởi heartbeat 60s (DEADBAND_HEARTBEAT_MS)
+  // + LUÔN forward khi: giá trị đầu tiên / quality đổi / giá trị không phải number.
+  deadband: doublePrecision("deadband"),
+  samplingMs: integer("samplingMs"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

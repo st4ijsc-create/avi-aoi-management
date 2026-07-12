@@ -193,6 +193,7 @@ import { factoryCommandRouter } from "./routers/factoryCommandRouter"; // doc 40
 import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11): READ-ONLY war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (set-based, no control path)
 import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
 import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
+import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -485,6 +486,8 @@ export const appRouter = router({
   factoryCommand: factoryCommandRouter,
   // doc 40 Wave 4c (§11): war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (read-only, set-based)
   warRoom: warRoomRouter,
+  // doc 44 W2-A4 (G2.14/G2.15): semantic layer — governed metric definitions (list/get) + compute → MetricResult kèm definition_version (read-only)
+  semantics: semanticsRouter,
   // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status / write machine_control)
   maintenanceSchedule: maintenanceScheduleRouter,
   // W2-D (doc 27 §3 C4): AOI/AVI onboarding wizard — draft CRUD + dry-run + commissioning sign-off (SOFT gate)

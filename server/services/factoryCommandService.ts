@@ -35,6 +35,11 @@ import {
 } from "../../drizzle/schema";
 import { getAllMachinesOEELive } from "./oeeService";
 import { executeRows } from "../utils/kpi";
+// doc 44 W2-A4 (G2.14/G2.15): governed metric provenance — the OEE numbers on
+// this screen come from the ONE semantic-layer definition (contracts/metrics/
+// oee.yaml → oeeService, the canonical implementation this service already
+// delegates to). FAIL-SAFE: returns null if the registry cannot load.
+import { getMetricDefinitionVersion } from "./semantics/metricRegistry";
 
 // ════════════════════════════════════════════════════════════════════════════
 // CONTRACT TYPES (shape consumed by factory-scene component + command page).
@@ -80,6 +85,12 @@ export interface FactoryCommandOverview {
   factories: Array<{ id: number; name: string; code: string }>;
   machines: CommandMachineNode[];
   issues: CommandIssue[];
+  /**
+   * doc 44 W2-A4 — ADDITIVE provenance: semantic-layer definition version of the
+   * OEE numbers in `machines[].oeePercent` (e.g. "OEE@v1"). Null when the metric
+   * registry is unavailable (never breaks the screen).
+   */
+  oeeDefinitionVersion: string | null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -141,7 +152,7 @@ export async function getFactoryCommandOverview(params?: {
   factoryId?: number;
 }): Promise<FactoryCommandOverview> {
   const db = await getDb();
-  if (!db) return { factories: [], machines: [], issues: [] };
+  if (!db) return { factories: [], machines: [], issues: [], oeeDefinitionVersion: getMetricDefinitionVersion("OEE") };
   const now = Date.now();
   const factoryId = params?.factoryId;
 
@@ -173,7 +184,7 @@ export async function getFactoryCommandOverview(params?: {
     .where(baseWhere);
 
   if (machineRows.length === 0) {
-    return { factories: factoryRows, machines: [], issues: [] };
+    return { factories: factoryRows, machines: [], issues: [], oeeDefinitionVersion: getMetricDefinitionVersion("OEE") };
   }
   const machineIds = machineRows.map((m) => m.id);
   const machineIdSet = new Set(machineIds);
@@ -216,6 +227,11 @@ export async function getFactoryCommandOverview(params?: {
   for (const r of healthRows) healthByMachine.set(Number(r.machine_id), { risk: r.risk, urgency: r.urgency, ts: r.ts });
 
   // 6) OEE fleet (set-based, Wave 3A) → map machineId → oee%.
+  //    doc 44 W2-A4: this ALREADY delegates to the canonical semantic-layer
+  //    implementation (contracts/metrics/oee.yaml → oeeService.getAllMachinesOEELive
+  //    — same fleet path); the payload additionally stamps oeeDefinitionVersion
+  //    ("OEE@v1") so the UI/consumers can trace which governed definition
+  //    produced these numbers.
   const oeeByMachine = new Map<number, number | null>();
   try {
     const oeeList = await getAllMachinesOEELive({ windowHours: 24 });
@@ -386,7 +402,13 @@ export async function getFactoryCommandOverview(params?: {
     return b.ageMinutes - a.ageMinutes;
   });
 
-  return { factories: factoryRows, machines: nodes, issues };
+  return {
+    factories: factoryRows,
+    machines: nodes,
+    issues,
+    // doc 44 W2-A4 — additive provenance for the OEE KPI (fail-safe null).
+    oeeDefinitionVersion: getMetricDefinitionVersion("OEE"),
+  };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -406,7 +428,14 @@ export interface CommandMachineDetail {
   };
   status: CommandMachineStatus;
   liveStatusRaw: string | null;
-  oee: { availability: number | null; performance: number | null; quality: number | null; oee: number | null } | null;
+  oee: {
+    availability: number | null;
+    performance: number | null;
+    quality: number | null;
+    oee: number | null;
+    /** doc 44 W2-A4 — ADDITIVE: semantic-layer definition version ("OEE@v1"; null fail-safe). */
+    definitionVersion?: string | null;
+  } | null;
   alarms: Array<{ standardCode: string; severity: string; description: string | null; ts: number }>;
   /** Recipe/nạp gần nhất (từ recipeVersioningService.listLoadHistory qua cockpit). */
   recipe: unknown | null;
@@ -498,7 +527,12 @@ export async function getCommandMachineDetail(machineId: number): Promise<Comman
     },
     status,
     liveStatusRaw,
-    oee: detail.oee.value,
+    // doc 44 W2-A4 — the cockpit OEE already comes from the canonical
+    // oeeService.getMachineOEELive; stamp the governed definition version
+    // additively (shape unchanged otherwise, null-honest preserved).
+    oee: detail.oee.value
+      ? { ...detail.oee.value, definitionVersion: getMetricDefinitionVersion("OEE") }
+      : null,
     alarms: (detail.alarms.value ?? []).map((a) => ({
       standardCode: a.standardCode,
       severity: a.severity,

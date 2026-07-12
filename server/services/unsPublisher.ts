@@ -41,6 +41,32 @@ import {
 import { dispatch } from "./ot/commandDispatcher";
 import { getDb } from "../db/connection";
 import { machines, deviceAdapters } from "../../drizzle/schema";
+// ── doc 44 W2-A1 (G2.1+G1.5) — UNS v2 semantic tree (spec LDS-L1 §9.1) ────────
+import {
+  isUnsTopicV2Enabled,
+  aspectPublishOptions,
+  buildEquipmentTopicV2,
+  buildTelemetryPayloadV2,
+  buildStateSnapshotV2,
+  buildEventPayloadV2,
+  buildHealthPayloadV2,
+  classifyAviAspect,
+  parseAviLikeTopic,
+  toCanonicalState,
+  normalizeEventSeverity,
+  extractScalarMetrics,
+  isa95PathString,
+  type Isa95PathV2,
+  type UnsAspect,
+  type TelemetryMetricV2,
+  type CanonicalHealthStatus,
+} from "./uns/topicV2";
+import {
+  resolveIsa95Path,
+  resolveIsa95PathByStation,
+  resolveMachineIdByAdapterId,
+  resolveMachineIdByAdapterCode,
+} from "./uns/isa95Resolver";
 
 const UNS_BROKER_URL = process.env.UNS_BROKER_URL || "mqtt://localhost:1884";
 const UNS_BROKER_USERNAME = process.env.UNS_BROKER_USERNAME || "";
@@ -325,6 +351,17 @@ export function initUnsPublisher(): void {
   client.on("reconnect", () => {
     console.log("[UNS] Reconnecting to UNS broker...");
   });
+
+  // W2-A1 (doc 44) — v2 adapter-health sweep (UNS_TOPIC_V2_ENABLED, default OFF)
+  // + line/area/site aggregate scheduler (UNS_AGGREGATES_ENABLED, default OFF).
+  // Both are flag-gated no-ops by default. The aggregates module statically
+  // imports this publisher, so it is loaded DYNAMICALLY here (no import cycle).
+  startV2HealthSweep();
+  void import("./uns/unsAggregates")
+    .then((m) => m.startUnsAggregates())
+    .catch((err) =>
+      console.error("[UNS] aggregates scheduler start failed:", (err as Error)?.message || err),
+    );
 }
 
 /**
@@ -333,6 +370,14 @@ export function initUnsPublisher(): void {
  */
 export function publishNormalized(topic: string, payload: unknown): void {
   if (!isUnsBridgeEnabled() || !client || !connected) return;
+  // G1.5 (doc 44 W2-A1) — ADDITIONALLY dual-publish onto the v2 semantic tree
+  // (flag UNS_TOPIC_V2_ENABLED, default OFF → no-op). Fire-and-forget: the
+  // resolver may hit the DB and must never block/break the legacy hot path.
+  if (isUnsTopicV2Enabled()) {
+    void publishV2FromLegacy(topic, payload).catch((err) =>
+      console.error("[UNS v2] legacy dual-publish failed:", (err as Error)?.message || err),
+    );
+  }
   try {
     const mappings = normalize(topic, payload);
     if (mappings.length === 0) return;
@@ -375,6 +420,13 @@ export function publishSparkplugDData(deviceId: string, metrics: MetricSample[])
     client.publish(ddata.topic, ddata.buffer, { qos: 0, retain: false });
   } catch (error) {
     console.error("[UNS] Sparkplug DDATA publish failed:", (error as Error)?.message || error);
+  }
+  // G1.5 (doc 44 W2-A1) — v2 telemetry dual-publish (adapter code → machine →
+  // ISA-95 path). Fire-and-forget; default OFF.
+  if (isUnsTopicV2Enabled()) {
+    void publishV2FromSparkplugSamples(deviceId, metrics).catch((err) =>
+      console.error("[UNS v2] Sparkplug dual-publish failed:", (err as Error)?.message || err),
+    );
   }
 }
 
@@ -446,6 +498,13 @@ export function publishPackmlState(
 ): void {
   // Dedicated flag first — default OFF ⇒ legacy (no UNS PackML publish).
   if (!isUnsPackmlStateEnabled()) return;
+  // G1.5 (doc 44 W2-A1) — v2 StateSnapshot dual-publish (retained, on change).
+  // Needs only the shared client (works with or without Sparkplug). Fire-and-forget.
+  if (isUnsTopicV2Enabled() && identity.machineId != null) {
+    void publishV2FromPackmlTransition(transition, identity).catch((err) =>
+      console.error("[UNS v2] PackML dual-publish failed:", (err as Error)?.message || err),
+    );
+  }
   // Rides the Sparkplug transport (node/client/connection). Honest: needs it enabled.
   if (!isSparkplugEnabled() || !sparkplugNode || !client || !connected) return;
   try {
@@ -474,6 +533,410 @@ export function publishPackmlState(
     for (const d of buildPackmlStateMetrics(transition, identity).metricDefs) birthed.add(d.name);
   } catch (error) {
     console.error("[UNS] Sparkplug PackML state publish failed:", (error as Error)?.message || error);
+  }
+}
+
+// ═══ doc 44 W2-A1 (G2.1 + G1.5) — UNS TOPIC TREE v2 dual-publish ══════════════
+//
+// When UNS_TOPIC_V2_ENABLED === "true" (default OFF → byte-for-byte legacy
+// behaviour) every message that flows through this publisher is ADDITIONALLY
+// published on the spec-correct semantic tree
+//
+//   syn/{site}/{area}/{line}/{cell}/{equipment}/{aspect}
+//   aspect ∈ telemetry | state | events | health | cmd_ack
+//
+// with segments resolved from the REAL hierarchy (machine→station→line→
+// workshop→factory, isa95Resolver LRU/TTL-cached). The legacy tree
+// ({enterprise}/{site}/... and Sparkplug) is NEVER turned off — dual-publish so
+// existing subscribers keep working. QoS/retain per LDS-L1 §9.3: state+health
+// retained QoS1, events+cmd_ack QoS1, telemetry QoS0.
+//
+// All v2 publishes are FIRE-AND-FORGET (the resolver may hit the DB): they can
+// never block or break the synchronous legacy hot path. Unresolvable targets
+// are SKIPPED with one honest warn (never a fabricated path).
+// ══════════════════════════════════════════════════════════════════════════════
+
+const v2SeqByTopic = new Map<string, number>();
+const v2LastStateByPath = new Map<string, string>();
+const v2LastHealthByAsset = new Map<string, { status: string; publishedAt: number }>();
+const v2LastSeenByMachine = new Map<number, string>();
+let v2Published = 0;
+let v2Failed = 0;
+let v2Skipped = 0;
+
+/** v2 publish counters (status routers / tests). */
+export function getUnsV2Stats(): { published: number; failed: number; skipped: number } {
+  return { published: v2Published, failed: v2Failed, skipped: v2Skipped };
+}
+
+/** Reset v2 dedup/seq state (tests). Does NOT reset counters. */
+export function resetUnsV2StateForTests(): void {
+  v2SeqByTopic.clear();
+  v2LastStateByPath.clear();
+  v2LastHealthByAsset.clear();
+  v2LastSeenByMachine.clear();
+  v2Warned.clear();
+}
+
+// One honest warn per key (bounded set — cleared when it grows, so a warn can
+// re-appear later instead of the set growing without bound).
+const v2Warned = new Set<string>();
+function warnOnceV2(key: string, msg: string): void {
+  if (v2Warned.has(key)) return;
+  if (v2Warned.size > 500) v2Warned.clear();
+  v2Warned.add(key);
+  console.warn(msg);
+}
+
+/**
+ * Raw v2 publish on the SHARED UNS client with aspect-correct QoS/retain.
+ * Exported for uns/unsAggregates (which applies its own flag gate). Returns
+ * true only when a publish was handed to the mqtt client. NEVER throws.
+ */
+export function publishUnsV2(topic: string, payload: unknown, aspect: UnsAspect): boolean {
+  if (!client || !connected) {
+    v2Skipped += 1;
+    return false;
+  }
+  try {
+    const opts = aspectPublishOptions(aspect);
+    client.publish(topic, Buffer.from(JSON.stringify(payload)), opts);
+    v2Published += 1;
+    return true;
+  } catch (err) {
+    v2Failed += 1;
+    console.error("[UNS v2] publish failed:", (err as Error)?.message || err);
+    return false;
+  }
+}
+
+/** Monotonic per-topic seq (telemetry gap/dup detection). Bounded map. */
+function nextV2Seq(topic: string): number {
+  if (v2SeqByTopic.size > 5000 && !v2SeqByTopic.has(topic)) v2SeqByTopic.clear();
+  const n = (v2SeqByTopic.get(topic) ?? 0) + 1;
+  v2SeqByTopic.set(topic, n);
+  return n;
+}
+
+/** Scalar top-level fields of a legacy payload as a StateSnapshot.values map. */
+function v2ScalarValues(obj?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!obj) return undefined;
+  const metrics = extractScalarMetrics(obj);
+  if (metrics.length === 0) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const m of metrics) out[m.name] = m.value;
+  return out;
+}
+
+const V2_HEALTH_REFRESH_MS = 60_000;
+
+/**
+ * Publish `.../health` (retained QoS1) when the status CHANGED or the last
+ * publish is older than the refresh interval (keeps last_seen useful without
+ * hammering retained messages).
+ */
+function publishV2HealthIfDue(path: Isa95PathV2, status: CanonicalHealthStatus, lastSeen: string): void {
+  const key = isa95PathString(path);
+  const prev = v2LastHealthByAsset.get(key);
+  const now = Date.now();
+  if (prev && prev.status === status && now - prev.publishedAt < V2_HEALTH_REFRESH_MS) return;
+  const ok = publishUnsV2(
+    buildEquipmentTopicV2(path, "health"),
+    buildHealthPayloadV2({ path, status, lastSeen }),
+    "health",
+  );
+  if (ok) v2LastHealthByAsset.set(key, { status, publishedAt: now });
+}
+
+const V2_QUALITIES = new Set(["good", "uncertain", "bad"]);
+function v2NormalizeQuality(q: unknown): "good" | "uncertain" | "bad" | undefined {
+  const s = String(q ?? "").toLowerCase();
+  return V2_QUALITIES.has(s) ? (s as "good" | "uncertain" | "bad") : undefined;
+}
+
+/**
+ * G1.5 — dual-publish ONE legacy bridge message onto the v2 tree.
+ *
+ * Classification (honest, source-driven):
+ *  - adapter tag sample ({tagKey,value,machineId} — ot/ingest legacy JSON path)
+ *      → telemetry {asset_id,ts,seq,metrics:[{name:tagKey,...}]}
+ *  - `errors` (NG alert, carries machine.id)  → events (canonical event wrap)
+ *  - `status`                                  → state (retained, on CHANGE only)
+ *  - `heartbeat`                               → health (retained, online)
+ *  - everything else (inspection/summary/…)    → telemetry (scalar extraction)
+ *
+ * Machine resolution: payload machineId / machine.id first, else the numeric
+ * station id from the topic (station → first active machine, the same
+ * convention the Sparkplug bridge uses). Unresolvable → skip + warn once.
+ */
+async function publishV2FromLegacy(topic: string, payload: unknown): Promise<void> {
+  if (!isUnsTopicV2Enabled() || !client || !connected) return;
+  const parsed = parseAviLikeTopic(topic);
+  if (!parsed) return; // unknown topic shape → no honest mapping
+
+  const obj =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined;
+
+  const isAdapterSample = !!obj && typeof obj.tagKey === "string" && "value" in obj;
+
+  // Machine identity hints carried by the payload (NG alert carries machine.id).
+  let machineId: number | null = null;
+  if (obj) {
+    const direct = Number(obj.machineId);
+    if (Number.isInteger(direct) && direct > 0) {
+      machineId = direct;
+    } else if (obj.machine && typeof obj.machine === "object") {
+      const nested = Number((obj.machine as Record<string, unknown>).id);
+      if (Number.isInteger(nested) && nested > 0) machineId = nested;
+    }
+  }
+
+  let path: Isa95PathV2 | null = null;
+  if (machineId != null) path = await resolveIsa95Path(machineId);
+  if (!path) {
+    const stationNum = Number(parsed.stationId);
+    if (Number.isInteger(stationNum) && stationNum > 0) {
+      path = await resolveIsa95PathByStation(stationNum);
+    }
+  }
+  if (!path) {
+    v2Skipped += 1;
+    warnOnceV2(
+      `legacy:${parsed.stationId}`,
+      `[UNS v2] cannot resolve ISA-95 path for topic '${topic}' (station '${parsed.stationId}') — v2 publish skipped (honest, not fabricated)`,
+    );
+    return;
+  }
+
+  const aspect: UnsAspect = isAdapterSample ? "telemetry" : classifyAviAspect(parsed.messageType);
+  const ts = (obj && typeof obj.timestamp === "string" && obj.timestamp) || new Date().toISOString();
+
+  if (aspect === "events") {
+    const err = obj?.error && typeof obj.error === "object" ? (obj.error as Record<string, unknown>) : undefined;
+    const causeParts = [err?.code, err?.description].filter(
+      (x): x is string => typeof x === "string" && x.length > 0,
+    );
+    const product =
+      obj?.product && typeof obj.product === "object" ? (obj.product as Record<string, unknown>) : undefined;
+    const ev = buildEventPayloadV2({
+      path,
+      type: "fault",
+      severity: normalizeEventSeverity(obj?.severity, "error"),
+      ts,
+      cause: causeParts.length > 0 ? causeParts.join(": ") : undefined,
+      payload: {
+        ...(obj?.inspectionId != null ? { inspectionId: obj.inspectionId } : {}),
+        ...(obj?.totalNG != null ? { totalNG: obj.totalNG } : {}),
+        ...(product?.serialNumber != null ? { serialNumber: product.serialNumber } : {}),
+      },
+    });
+    publishUnsV2(buildEquipmentTopicV2(path, "events"), ev, "events");
+    return;
+  }
+
+  if (aspect === "state") {
+    const raw = obj?.status ?? obj?.state ?? obj?.operationStatus;
+    if (raw == null) {
+      v2Skipped += 1; // no state field → nothing honest to publish
+      return;
+    }
+    const state = toCanonicalState(raw);
+    const pathKey = isa95PathString(path);
+    if (v2LastStateByPath.get(pathKey) === state) return; // publish on CHANGE only
+    v2LastStateByPath.set(pathKey, state);
+    const snap = buildStateSnapshotV2({ path, ts, state, values: v2ScalarValues(obj) });
+    publishUnsV2(buildEquipmentTopicV2(path, "state"), snap, "state");
+    return;
+  }
+
+  if (aspect === "health") {
+    publishV2HealthIfDue(path, "online", ts);
+    return;
+  }
+
+  // telemetry
+  let metrics: TelemetryMetricV2[];
+  if (isAdapterSample && obj) {
+    const quality = v2NormalizeQuality(obj.quality);
+    metrics = [{ name: String(obj.tagKey), value: obj.value, ...(quality ? { quality } : {}), ts }];
+  } else {
+    metrics = extractScalarMetrics(payload, ts);
+    if (metrics.length === 0) metrics = [{ name: parsed.messageType, value: payload ?? null, ts }];
+  }
+  const v2Topic = buildEquipmentTopicV2(path, "telemetry");
+  publishUnsV2(v2Topic, buildTelemetryPayloadV2({ path, ts, seq: nextV2Seq(v2Topic), metrics }), "telemetry");
+}
+
+/** G1.5 — v2 telemetry for a Sparkplug DDATA batch (adapter code → machine). */
+async function publishV2FromSparkplugSamples(deviceId: string, samples: MetricSample[]): Promise<void> {
+  if (!isUnsTopicV2Enabled() || !client || !connected || samples.length === 0) return;
+  const machineId = await resolveMachineIdByAdapterCode(deviceId);
+  if (machineId == null) {
+    v2Skipped += 1;
+    warnOnceV2(
+      `spdev:${deviceId}`,
+      `[UNS v2] Sparkplug device '${deviceId}' has no adapter→machine mapping — v2 telemetry skipped`,
+    );
+    return;
+  }
+  const path = await resolveIsa95Path(machineId);
+  if (!path) {
+    v2Skipped += 1;
+    return;
+  }
+  const metrics: TelemetryMetricV2[] = samples.map((s) => ({
+    name: s.name,
+    value: s.value,
+    ts: new Date(typeof s.timestamp === "number" ? s.timestamp : Date.now()).toISOString(),
+  }));
+  const v2Topic = buildEquipmentTopicV2(path, "telemetry");
+  publishUnsV2(v2Topic, buildTelemetryPayloadV2({ path, seq: nextV2Seq(v2Topic), metrics }), "telemetry");
+}
+
+/** G1.5 — v2 StateSnapshot for a PackML transition (state already canonical). */
+async function publishV2FromPackmlTransition(
+  transition: PackmlTransition,
+  identity: PackmlIdentity,
+): Promise<void> {
+  if (!isUnsTopicV2Enabled() || !client || !connected) return;
+  const machineId = Number(identity.machineId);
+  if (!Number.isInteger(machineId) || machineId <= 0) return;
+  const path = await resolveIsa95Path(machineId);
+  if (!path) {
+    v2Skipped += 1;
+    return;
+  }
+  const state = String(transition.state);
+  const pathKey = isa95PathString(path);
+  if (v2LastStateByPath.get(pathKey) === state) return; // on CHANGE only
+  v2LastStateByPath.set(pathKey, state);
+  const snap = buildStateSnapshotV2({
+    path,
+    ts: new Date(transition.timestamp ?? Date.now()).toISOString(),
+    state,
+    values: {
+      ...(transition.previousState ? { previous_state: transition.previousState } : {}),
+      ...(transition.command ? { command: transition.command } : {}),
+      ...(transition.unitMode ? { unit_mode: transition.unitMode } : {}),
+      ...(identity.machineCode ? { machine_code: identity.machineCode } : {}),
+    },
+  });
+  publishUnsV2(buildEquipmentTopicV2(path, "state"), snap, "state");
+}
+
+/** G1.5 — v2 cmd_ack addressed at the machine's ISA-95 path. */
+async function publishCmdAckV2(
+  ack: CmdAckMessage,
+  target?: { adapterId?: number; machineId?: number | null },
+): Promise<void> {
+  if (!isUnsTopicV2Enabled() || !client || !connected) return;
+  let machineId: number | null = target?.machineId ?? null;
+  if (machineId == null && target?.adapterId != null) {
+    machineId = await resolveMachineIdByAdapterId(target.adapterId);
+  }
+  if (machineId == null) {
+    v2Skipped += 1;
+    warnOnceV2(
+      `cmdack:${target?.adapterId ?? "?"}`,
+      `[UNS v2] cmd_ack for adapter ${target?.adapterId ?? "?"} has no machine mapping — v2 cmd_ack skipped (legacy topic still published)`,
+    );
+    return;
+  }
+  const path = await resolveIsa95Path(machineId);
+  if (!path) {
+    v2Skipped += 1;
+    return;
+  }
+  publishUnsV2(buildEquipmentTopicV2(path, "cmd_ack"), ack, "cmd_ack");
+}
+
+// ─── v2 health sweep — adapter/supervisor source (LDS-L1 §19.1) ───────────────
+
+let v2HealthTimer: NodeJS.Timeout | null = null;
+let v2HealthSweepRunning = false;
+
+function v2HealthIntervalMs(): number {
+  const n = Number(process.env.UNS_TOPIC_V2_HEALTH_INTERVAL_MS);
+  return Number.isFinite(n) && n >= 1000 ? n : 60_000;
+}
+
+/**
+ * ONE health sweep over the OT runtime's active adapters: driver connected →
+ * online (last_seen = now); disconnected → offline with the LAST OBSERVED
+ * last_seen (never observed online in this process → honestly skipped, we have
+ * no last_seen to report). Publishes retained QoS1 on change / refresh interval.
+ * Exported for tests + on-demand runs. Never throws.
+ */
+export async function runV2HealthSweepOnce(): Promise<void> {
+  if (!isUnsTopicV2Enabled() || !client || !connected) return;
+  let adapters: Array<{ adapterId: number; code: string; machineId: number | null; driver: { isConnected(): boolean } }>;
+  try {
+    // Dynamic import: keeps the heavy OT chain out of module load (test-mockable).
+    const otManager = await import("./ot/otManager");
+    adapters = otManager.listActiveAdapters();
+  } catch (err) {
+    console.error("[UNS v2] health sweep: otManager unavailable:", (err as Error)?.message || err);
+    return;
+  }
+  for (const adapter of adapters) {
+    try {
+      if (adapter.machineId == null) {
+        warnOnceV2(
+          `health-adapter:${adapter.adapterId}`,
+          `[UNS v2] adapter '${adapter.code}' has no machineId — health not published`,
+        );
+        continue;
+      }
+      const path = await resolveIsa95Path(adapter.machineId);
+      if (!path) continue;
+      let isConn = false;
+      try {
+        isConn = adapter.driver.isConnected();
+      } catch {
+        isConn = false;
+      }
+      if (isConn) {
+        const nowIso = new Date().toISOString();
+        v2LastSeenByMachine.set(adapter.machineId, nowIso);
+        publishV2HealthIfDue(path, "online", nowIso);
+      } else {
+        const lastSeen = v2LastSeenByMachine.get(adapter.machineId);
+        if (!lastSeen) continue; // honest: no observed last_seen to report
+        publishV2HealthIfDue(path, "offline", lastSeen);
+      }
+    } catch (err) {
+      console.error(
+        `[UNS v2] health publish for adapter ${adapter.adapterId} failed:`,
+        (err as Error)?.message || err,
+      );
+    }
+  }
+}
+
+/** Start the periodic health sweep (no-op when UNS_TOPIC_V2_ENABLED is off). */
+function startV2HealthSweep(): void {
+  if (!isUnsTopicV2Enabled()) return;
+  if (v2HealthTimer) return;
+  const interval = v2HealthIntervalMs();
+  v2HealthTimer = setInterval(() => {
+    if (v2HealthSweepRunning) return;
+    v2HealthSweepRunning = true;
+    runV2HealthSweepOnce()
+      .catch((err) => console.error("[UNS v2] health sweep failed:", (err as Error)?.message || err))
+      .finally(() => {
+        v2HealthSweepRunning = false;
+      });
+  }, interval);
+  if (typeof v2HealthTimer.unref === "function") v2HealthTimer.unref();
+  console.log(`[UNS v2] adapter health sweep started (every ${interval}ms)`);
+}
+
+function stopV2HealthSweep(): void {
+  if (v2HealthTimer) {
+    clearInterval(v2HealthTimer);
+    v2HealthTimer = null;
   }
 }
 
@@ -549,6 +1012,15 @@ export function publishCmdAck(
     cmdAckFailed += 1;
     return false;
   }
+  // G1.5 (doc 44 W2-A1) — ADDITIONALLY address the ack at the machine's ISA-95
+  // path: syn/{site}/{area}/{line}/{cell}/{equipment}/cmd_ack. The legacy
+  // adapter-addressed placeholder topic below is KEPT for compatibility.
+  // Fire-and-forget (machine resolution may hit the DB).
+  if (isUnsTopicV2Enabled()) {
+    void publishCmdAckV2(ack, target).catch((err) =>
+      console.error("[UNS v2] cmd_ack dual-publish failed:", (err as Error)?.message || err),
+    );
+  }
   try {
     client.publish(cmdAckTopic(target), Buffer.from(JSON.stringify(ack)), { qos: 1, retain: false });
     cmdAckPublished += 1;
@@ -609,6 +1081,14 @@ export async function publishNdeathGraceful(timeoutMs = 1500): Promise<void> {
  * Đóng kết nối broker UNS (dùng khi shutdown).
  */
 export async function shutdownUnsPublisher(): Promise<void> {
+  // W2-A1 — stop v2 health sweep + aggregates scheduler (safe when never started).
+  stopV2HealthSweep();
+  try {
+    const m = await import("./uns/unsAggregates");
+    m.stopUnsAggregates();
+  } catch {
+    /* aggregates module unavailable — nothing to stop */
+  }
   if (!client) return;
   // F4 HITL — detach the scoped command message listener before closing.
   if (commandMessageHandler) {
@@ -627,6 +1107,11 @@ export async function shutdownUnsPublisher(): Promise<void> {
   connected = false;
   sparkplugNode = null;
   birthedMetricsByDevice.clear();
+  // W2-A1 — drop v2 dedup/seq state (a fresh connect re-publishes retained state).
+  v2SeqByTopic.clear();
+  v2LastStateByPath.clear();
+  v2LastHealthByAsset.clear();
+  v2LastSeenByMachine.clear();
 }
 
 export function isUnsPublisherConnected(): boolean {

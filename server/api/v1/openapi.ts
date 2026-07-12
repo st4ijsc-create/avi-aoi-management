@@ -169,6 +169,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       { name: "Programs", description: "U4a — device programs & deployments (read)." },
       { name: "PdM", description: "U4a/W0-F — predictive-maintenance failure risk, asset health, prediction history (read)." },
       { name: "Models", description: "W0-F G4.27 — AI model registry: catalogue + drift (read); promote/rollback (flag-gated, default OFF)." },
+      { name: "Assets", description: "W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry: URN/ISA-95 discovery, lifecycle, health, tags, config-drift; adapter restart (flag-gated); gateway status." },
       { name: "Anomaly", description: "U4a — ADVISORY robot-behaviour anomaly events (read)." },
       { name: "Standards", description: "U4a — equipment governance: device types, alarm taxonomy, compliance (read)." },
       { name: "Ecosystem", description: "U4a — single-pane roll-up: hierarchy, KPI, per-asset cockpit detail (read)." },
@@ -627,6 +628,164 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             { name: "limit", in: "query", required: false, schema: { type: "integer", default: 50, maximum: 200 } },
           ],
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      // ── W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry. ──
+      "/api/v1/assets": {
+        get: {
+          tags: ["Assets"],
+          summary: "Asset discovery (URN + ISA-95 path) with class/path/lifecycle filters",
+          description:
+            "Requires scope `assets:read`. Read-only over machines + hierarchy. Spec-shape rows: " +
+            "{asset_id (urn:syn:asset:{site}:{line}:{cell}:{equipment}), name, class, vendor, model, path " +
+            "({site}/{area}/{line}/{cell}/{equipment}), lifecycle_state, capabilities, tags (count)}. Honest-empty without a DB.",
+          parameters: [
+            { name: "class", in: "query", required: false, schema: { type: "string" }, description: "machineType filter (e.g. AOI, ROBOT)" },
+            { name: "path", in: "query", required: false, schema: { type: "string" }, description: "ISA-95 path prefix filter" },
+            { name: "lifecycle", in: "query", required: false, schema: { type: "string", enum: ["registered", "commissioning", "active", "faulted", "maintenance", "decommissioned", "retired"] } },
+            { name: "includeInactive", in: "query", required: false, schema: { type: "boolean", default: false } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", default: 200, maximum: 1000 } },
+          ],
+          responses: { "200": { description: "OK", content: jsonOk() }, "400": { description: "Bad filter", content: jsonErr() }, ...errResponses() },
+        },
+        post: {
+          tags: ["Assets"],
+          summary: "Register a DECLARATIVE asset (lifecycle 'registered')",
+          description:
+            "Requires scope `assets:write`. Creates the machine record at lifecycle `registered` (SYNAPSE spec §6.3/§12.3) " +
+            "with strict validation. HONEST: declarative only — nothing is connected/verified; the response lists the " +
+            "remaining onboarding steps (commissioning → adapter mapping → approval).",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["code", "name", "class", "stationId"],
+                  properties: {
+                    code: { type: "string", maxLength: 50 },
+                    name: { type: "string", maxLength: 255 },
+                    class: { type: "string", description: "machineType (e.g. AOI, ROBOT, MOUNTER)" },
+                    stationId: { type: "integer" },
+                    vendor: { type: "string" },
+                    model: { type: "string" },
+                    serialNumber: { type: "string" },
+                    description: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Registered (declarative)", content: jsonOk() },
+            "400": { description: "Invalid body / unknown class", content: jsonErr() },
+            "409": { description: "Machine code already in use by an active machine", content: jsonErr() },
+            ...errResponses({ "404": { description: "Station not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/assets/{id}": {
+        get: {
+          tags: ["Assets"],
+          summary: "Asset detail (id = URN or numeric machine id)",
+          description: "Requires scope `assets:read`. Read-only: identity, hierarchy codes, lifecycle/registration/operation state, adapters.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "urn:syn:asset:… or machine id" }],
+          responses: { "200": { description: "OK", content: jsonOk() }, "400": { description: "Bad id", content: jsonErr() }, ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }) },
+        },
+      },
+      "/api/v1/assets/{id}/lifecycle": {
+        put: {
+          tags: ["Assets"],
+          summary: "Change asset lifecycle state (validated transition matrix)",
+          description:
+            "Requires scope `assets:write`. Wraps the SAME transitionMachineLifecycle path the tRPC mutation uses " +
+            "(registered→commissioning→active⇄maintenance, active→faulted→active/maintenance, decommission/retire) — " +
+            "illegal transitions → 409. Writes the append-only control_audit_log.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", required: ["state"], properties: { state: { type: "string", enum: ["registered", "commissioning", "active", "faulted", "maintenance", "decommissioned", "retired"] }, reason: { type: "string", maxLength: 500 } } } } },
+          },
+          responses: {
+            "200": { description: "Transitioned", content: jsonOk() },
+            "400": { description: "Invalid state", content: jsonErr() },
+            "409": { description: "Illegal lifecycle transition", content: jsonErr() },
+            ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/assets/{id}/health": {
+        get: {
+          tags: ["Assets"],
+          summary: "Current asset health (presence + heartbeat + adapter link states)",
+          description:
+            "Requires scope `assets:read`. Read-only over REAL signals: machine_status_logs presence, machines.lastHeartbeat, " +
+            "device_adapters connection status. HONEST: presence is null when no record exists — never fabricated.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }) },
+        },
+      },
+      "/api/v1/assets/{id}/tags": {
+        get: {
+          tags: ["Assets"],
+          summary: "Asset tag catalogue (device_tags via its adapters)",
+          description: "Requires scope `assets:read`. Spec-shape rows: {tag_id, datatype, unit, direction ro|rw, source_address, enabled}.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }) },
+        },
+      },
+      "/api/v1/assets/{id}/config-drift": {
+        get: {
+          tags: ["Assets"],
+          summary: "Config-drift status per adapter (live hash vs approved baseline)",
+          description:
+            "Requires scope `assets:read`. READ-ONLY comparison (no persist — the CONFIG_DRIFT_ENABLED sweep persists + alerts). " +
+            "Hashes are computed over SECRET-REDACTED config (credentials never enter the hash or the summary).",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }) },
+        },
+      },
+      "/api/v1/assets/{id}/config-drift/approve": {
+        post: {
+          tags: ["Assets"],
+          summary: "Approve the CURRENT running config as the baseline",
+          description:
+            "Requires scope `assets:write`. Sets approved_hash := current hash for one adapter (body.adapterId) or all of the " +
+            "asset's adapters; status becomes in_sync and the drift episode is cleared. Audited (v1 guard).",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { adapterId: { type: "integer" } } } } } },
+          responses: {
+            "200": { description: "Approved", content: jsonOk() },
+            ...errResponses({ "404": { description: "Asset/adapter not found or no adapters", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/adapters/{id}/restart": {
+        post: {
+          tags: ["Assets"],
+          summary: "Restart connectivity — flag-gated, default OFF",
+          description:
+            "Requires scope `assets:write`. Gated by `V1_ADAPTER_RESTART_ENABLED` (default OFF → structured 501 " +
+            "`v1_adapter_restart_disabled`). HONEST LIMITATION: otManager exposes no per-adapter restart, so when enabled the " +
+            "restart is composed from stopOt()+startOt() and reconnects EVERY adapter (response says scope: framework).",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: {
+            "200": { description: "Restarted (framework-wide)", content: jsonOk() },
+            "409": { description: "OT framework not running", content: jsonErr() },
+            "501": { description: "Not opened (V1_ADAPTER_RESTART_ENABLED)", content: jsonErr() },
+            ...errResponses({ "404": { description: "Adapter not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/gateways/{id}/status": {
+        get: {
+          tags: ["Assets"],
+          summary: "Gateway (edge node) status & resources",
+          description:
+            "Requires scope `assets:read`. Maps to the edge_nodes registry (E4): status, heartbeat, version, assigned lines, " +
+            "self-reported health. HONEST: health is the node's own report and may be null.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "edge node id or code" }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Gateway not found", content: jsonErr() } }) },
         },
       },
       "/api/v1/anomaly/events": {

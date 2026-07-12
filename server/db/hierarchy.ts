@@ -48,6 +48,31 @@ function isActiveCodeUniqueViolation(e: unknown): boolean {
   );
 }
 
+// ── Doc 44 W2-A2 (G1.10) — asset URN/ISA-95 identity sync hooks ─────────────
+// The db layer is the single choke point every machine mutation funnels
+// through (hierarchyRouters / dataRouters / socket / _core auto-register), so
+// the URN/path columns (0251) are kept fresh HERE. Fire-and-forget by design:
+// the dynamic import + queue* wrappers never throw and never block/fail the
+// mutation (see urnService — one warning per process, then silent).
+
+function queueUrnSync(machineId: number): void {
+  import("../services/assetRegistry/urnService")
+    .then((m) => m.queueAssetIdentitySync(machineId, "db-hook"))
+    .catch(() => undefined);
+}
+
+function queueUrnSyncForStation(stationId: number): void {
+  import("../services/assetRegistry/urnService")
+    .then((m) => m.queueStationAssetIdentitySync(stationId))
+    .catch(() => undefined);
+}
+
+function queueUrnSyncForLine(lineId: number): void {
+  import("../services/assetRegistry/urnService")
+    .then((m) => m.queueLineAssetIdentitySync(lineId))
+    .catch(() => undefined);
+}
+
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
@@ -184,6 +209,8 @@ export async function updateProductionLine(id: number, data: Partial<InsertProdu
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(productionLines).set(data).where(eq(productionLines.id, id));
+  // G1.10: line renamed or moved to another workshop → machine URNs under it change.
+  if (data.code !== undefined || data.workshopId !== undefined) queueUrnSyncForLine(id);
 }
 
 export async function deleteProductionLine(id: number) {
@@ -233,6 +260,8 @@ export async function updateStation(id: number, data: Partial<InsertStation>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(stations).set(data).where(eq(stations.id, id));
+  // G1.10: station renamed or reassigned to another line → machine URNs change.
+  if (data.code !== undefined || data.lineId !== undefined) queueUrnSyncForStation(id);
 }
 
 export async function deleteStation(id: number) {
@@ -247,6 +276,7 @@ export async function createMachine(data: InsertMachine) {
   if (!db) throw new Error("Database not available");
   try {
     const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
+    queueUrnSync(result.id); // G1.10 — stamp urn/isa95_path (fire-and-forget)
     return result.id;
   } catch (e) {
     // M7: routers pre-check duplicates, but a concurrent insert can still hit
@@ -418,6 +448,8 @@ export async function updateMachine(id: number, data: Partial<InsertMachine>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(machines).set(data).where(eq(machines.id, id));
+  // G1.10: only code/station changes alter the URN — skip the (frequent) status writes.
+  if (data.code !== undefined || data.stationId !== undefined) queueUrnSync(id);
 }
 
 /**
@@ -483,6 +515,8 @@ export async function approveMachine(id: number, data: {
   await db.update(machines)
     .set({ lifecycleStatus: "active" })
     .where(and(eq(machines.id, id), eq(machines.lifecycleStatus, "commissioning")));
+  // G1.10: approval may (re)assign code/station → refresh the asset identity.
+  if (data.code !== undefined || data.stationId !== undefined) queueUrnSync(id);
 }
 
 /**

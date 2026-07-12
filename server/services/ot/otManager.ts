@@ -15,7 +15,7 @@
  * live connection. When the flag is OFF (the DEFAULT) the legacy single-endpoint
  * path below runs EXACTLY as before — no supervisor is created.
  */
-import type { OtSubscriptionHandle, OtDriver, OtSample, OnOtSample } from "./otDriver";
+import type { OtSubscriptionHandle, OtDriver, OtSample, OnOtSample, OtQuality } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
 import { createDriver } from "./driverRegistry";
 import {
@@ -82,6 +82,138 @@ function batchPollEnabled(): boolean {
   return process.env.OT_POLL_BATCH_ENABLED === "true";
 }
 
+// ─── G1.4 (doc 44 W2-A3) — report-by-exception per tag (deadband + sampling) ───
+//
+// device_tags (mig 0253) mang 2 field nullable per-tag: `deadband` (numeric —
+// chỉ forward khi |value − lastForwarded| ≥ deadband) và `samplingMs` (throttle —
+// chỉ forward khi đã qua samplingMs từ lần forward trước). Bộ lọc nằm ở SINK
+// (sau driver.subscribe, TRƯỚC ingest/bus) nên driver + đường push OPC-UA giữ
+// nguyên. Cờ OT_TAG_DEADBAND_ENABLED (default OFF ⇒ pass-through, hành vi cũ
+// byte-for-byte) đọc TẠI MỖI SAMPLE để operator/test bật-tắt runtime.
+//
+// LUÔN forward (bất kể deadband/sampling) khi: (1) giá trị ĐẦU TIÊN của tag,
+// (2) quality ĐỔI so với lần forward trước, (3) giá trị KHÔNG phải number,
+// (4) đã quá heartbeat (DEADBAND_HEARTBEAT_MS, default 60s) — giữ liveness để
+// downstream (presence/last-seen) không tưởng tag chết. Tag không cấu hình
+// deadband/samplingMs → forward mọi sample như cũ.
+
+/** Cờ G1.4 — đọc tại call time (default OFF). */
+export function tagDeadbandEnabled(): boolean {
+  return process.env.OT_TAG_DEADBAND_ENABLED === "true";
+}
+
+/** Heartbeat liveness của bộ lọc deadband (default 60_000ms; env override). */
+export const DEADBAND_HEARTBEAT_MS = 60_000;
+export function deadbandHeartbeatMs(): number {
+  return intEnv(process.env.DEADBAND_HEARTBEAT_MS, DEADBAND_HEARTBEAT_MS);
+}
+
+/** Trạng thái forward gần nhất của MỘT tag (in-memory, per sink/adapter). */
+interface TagForwardState {
+  lastForwardedAt: number;
+  lastValue: number | string | boolean | null;
+  lastQuality: OtQuality;
+}
+
+/** Đếm suppressed/forwarded per adapter (process-lifetime, expose qua stats). */
+export interface DeadbandStats {
+  adapterId: number;
+  code: string;
+  forwarded: number;
+  suppressed: number;
+}
+
+const deadbandStats = new Map<number, DeadbandStats>();
+
+function deadbandStatsFor(adapter: Pick<RuntimeAdapter, "adapterId" | "code">): DeadbandStats {
+  let s = deadbandStats.get(adapter.adapterId);
+  if (!s) {
+    s = { adapterId: adapter.adapterId, code: adapter.code, forwarded: 0, suppressed: 0 };
+    deadbandStats.set(adapter.adapterId, s);
+  }
+  return s;
+}
+
+/** Stats bộ lọc deadband của một adapter (undefined nếu chưa có sample nào). */
+export function getDeadbandStats(adapterId: number): DeadbandStats | undefined {
+  return deadbandStats.get(adapterId);
+}
+
+/** Stats bộ lọc deadband của mọi adapter (shallow copies). */
+export function listDeadbandStats(): DeadbandStats[] {
+  return [...deadbandStats.values()].map((s) => ({ ...s }));
+}
+
+/** Chỉ dùng trong test — reset bộ đếm suppressed/forwarded. */
+export function _resetDeadbandStatsForTests(): void {
+  deadbandStats.clear();
+}
+
+/**
+ * PURE — quyết định forward/suppress cho MỘT sample. Tách riêng để test không cần
+ * driver/DB. Trả true (forward) khi bất kỳ điều kiện LUÔN-forward nào đúng, hoặc
+ * khi sample vượt cả sampling-throttle lẫn deadband đã cấu hình.
+ */
+export function shouldForwardSample(
+  cfg: { deadband?: number; samplingMs?: number } | undefined,
+  prev: TagForwardState | undefined,
+  sample: Pick<OtSample, "value" | "quality">,
+  nowMs: number,
+  heartbeatMs: number,
+): boolean {
+  // (1) giá trị đầu tiên — luôn forward (khởi tạo trạng thái downstream).
+  if (!prev) return true;
+  // (2) quality đổi — luôn forward (good→bad/uncertain là tín hiệu quan trọng).
+  if (sample.quality !== prev.lastQuality) return true;
+  // (3) kiểu không phải number — deadband vô nghĩa; forward như cũ.
+  if (typeof sample.value !== "number") return true;
+  const elapsed = nowMs - prev.lastForwardedAt;
+  // (4) heartbeat liveness — quá hạn (hoặc clock lùi bất thường) → forward.
+  if (elapsed >= heartbeatMs || elapsed < 0) return true;
+  // Tag không cấu hình lọc → hành vi cũ (forward mọi sample).
+  const hasSampling = cfg?.samplingMs != null && Number.isFinite(cfg.samplingMs) && cfg.samplingMs > 0;
+  const hasDeadband = cfg?.deadband != null && Number.isFinite(cfg.deadband) && cfg.deadband > 0;
+  if (!hasSampling && !hasDeadband) return true;
+  // (a) sampling throttle — chưa qua samplingMs từ lần forward trước → suppress.
+  if (hasSampling && elapsed < (cfg!.samplingMs as number)) return false;
+  // (b) deadband — |value − lastForwarded| < deadband → suppress. lastValue không
+  //     phải number (kiểu vừa đổi) → không tính được delta → forward (fail-open).
+  if (hasDeadband && typeof prev.lastValue === "number") {
+    if (Math.abs(sample.value - prev.lastValue) < (cfg!.deadband as number)) return false;
+  }
+  return true;
+}
+
+/**
+ * Bọc một ingest sink bằng bộ lọc report-by-exception per-tag. State per
+ * adapter+tag sống trong closure (mỗi start/subscribe tạo sink mới → state mới).
+ * Cờ OFF → gọi thẳng `next` (pass-through, không đếm, không giữ state).
+ * Exported cho test (fake timers điều khiển Date.now()).
+ */
+export function makeDeadbandSink(adapter: RuntimeAdapter, next: OnOtSample): OnOtSample {
+  const cfgByTag = new Map(adapter.tags.map((t) => [t.tagKey, t]));
+  const state = new Map<string, TagForwardState>();
+  return (sample: OtSample) => {
+    if (!tagDeadbandEnabled()) return next(sample);
+    const now = Date.now();
+    const stats = deadbandStatsFor(adapter);
+    const forward = shouldForwardSample(
+      cfgByTag.get(sample.tagKey),
+      state.get(sample.tagKey),
+      sample,
+      now,
+      deadbandHeartbeatMs(),
+    );
+    if (!forward) {
+      stats.suppressed += 1;
+      return;
+    }
+    state.set(sample.tagKey, { lastForwardedAt: now, lastValue: sample.value, lastQuality: sample.quality });
+    stats.forwarded += 1;
+    return next(sample);
+  };
+}
+
 /**
  * Build the ingest sink (an `OnOtSample`) for one adapter.
  *
@@ -105,7 +237,8 @@ async function makeIngestSink(adapter: RuntimeAdapter): Promise<OnOtSample> {
   if (!batchPollEnabled()) {
     // Default path — per-sample ingest. Only `ingestSample` is touched (keeps strict
     // test mocks that stub only `ingestSample` working; `ingestSamples` is never read).
-    return (sample: OtSample) => mod.ingestSample(adapter, sample);
+    // G1.4: bọc bộ lọc deadband/sampling (pass-through khi OT_TAG_DEADBAND_ENABLED off).
+    return makeDeadbandSink(adapter, (sample: OtSample) => mod.ingestSample(adapter, sample));
   }
   const ingestSamples = mod.ingestSamples;
   let buf: OtSample[] = [];
@@ -121,13 +254,14 @@ async function makeIngestSink(adapter: RuntimeAdapter): Promise<OnOtSample> {
       console.error(`[OT] batch ingest failed for "${adapter.code}":`, (e as Error)?.message ?? e),
     );
   };
-  return (sample: OtSample) => {
+  // G1.4: bộ lọc chạy TRƯỚC buffer per-tick — sample bị suppress không vào batch.
+  return makeDeadbandSink(adapter, (sample: OtSample) => {
     buf.push(sample);
     if (!scheduled) {
       scheduled = true;
       setImmediate(flush);
     }
-  };
+  });
 }
 
 /** Build a supervisor for one runtime adapter (primary + optional secondary). */
