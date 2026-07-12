@@ -8,6 +8,7 @@ import { useLocaleDate, getActiveLocale } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ExportMenu } from "@/components/ExportMenu";
 import { Calendar } from "@/components/ui/calendar";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import {
@@ -382,6 +383,35 @@ export default function ProductionDashboard() {
     };
   }, [stationData]);
 
+  // doc 46 FE-W2 — font-safe export dataset (server renders VN/EN/ZH via BeVietnamPro).
+  const stationExportData = useMemo(
+    () =>
+      stationData.map((r: any) => ({
+        station: r.station ? `${r.station.code ?? ""}: ${r.station.name ?? ""}`.trim() : "",
+        factory: r.factory?.name ?? "",
+        line: r.line?.name ?? "",
+        output: r.output ?? 0,
+        okCount: r.okCount ?? 0,
+        totalInspections: r.totalInspections ?? 0,
+        firstPassYield: (r.totalInspections ?? 0) > 0 ? r.firstPassYield ?? 0 : null,
+        retestRate: r.retestRate ?? 0,
+      })),
+    [stationData],
+  );
+  const stationExportColumns = useMemo(
+    () => [
+      { key: "station", header: t("productionDashboard.export.station", "Station"), format: "text" as const },
+      { key: "factory", header: t("productionDashboard.export.factory", "Factory"), format: "text" as const },
+      { key: "line", header: t("productionDashboard.export.line", "Line"), format: "text" as const },
+      { key: "output", header: t("productionDashboard.export.output", "Output"), format: "number" as const },
+      { key: "okCount", header: t("productionDashboard.export.ok", "OK"), format: "number" as const },
+      { key: "totalInspections", header: t("productionDashboard.export.inspections", "Inspections"), format: "number" as const },
+      { key: "firstPassYield", header: t("productionDashboard.export.fpy", "First Pass Yield"), format: "percentage" as const },
+      { key: "retestRate", header: t("productionDashboard.export.retest", "Retest Rate"), format: "percentage" as const },
+    ],
+    [t],
+  );
+
   // Per-factory aggregates for compare mode
   const factoryAgg = useMemo(() => {
     if (!compareMode || stationData.length === 0) return [] as Array<{ id: number; name: string; avgFPY: number; output: number; stations: number; lowYield: number }>;
@@ -603,7 +633,18 @@ export default function ProductionDashboard() {
             title={t("productionDashboard.pageTitle", "Production Dashboard")}
             description={`${t("productionDashboard.todayLabel", "Today")} · ${todayStr}`}
             actions={
-              liveConnected ? (
+              <div className="flex items-center gap-2">
+              {/* doc 46 FE-W2 — font-safe multi-language export of the station grid. */}
+              <ExportMenu
+                type="production_stations"
+                title={t("productionDashboard.pageTitle", "Production Dashboard")}
+                subtitle={`${t("productionDashboard.todayLabel", "Today")} · ${todayStr}`}
+                columns={stationExportColumns}
+                data={stationExportData}
+                fileName={`production-stations-${todayStr}`}
+                disabled={isLoading || stationExportData.length === 0}
+              />
+              {liveConnected ? (
                 <span className="inline-flex items-center gap-2 border border-success/30 bg-success/10 rounded-full px-3 py-1" title={t("productionDashboard.liveHint", "Live updates over socket")}>
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
@@ -616,7 +657,8 @@ export default function ProductionDashboard() {
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-warning" />
                   <span className="text-xs font-medium text-warning">{t("productionDashboard.polling", "Polling")}</span>
                 </span>
-              )
+              )}
+              </div>
             }
           />
 

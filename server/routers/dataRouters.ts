@@ -529,6 +529,49 @@ export const importRouter = router({
 });
 
 export const exportRouter = router({
+  // doc 46 FE-W2 — GENERIC font-safe report renderer. Reuses the canonical engine
+  // (universalExportService.renderReport) which embeds BeVietnamPro, so VN/ZH
+  // diacritics render correctly — unlike client-side jsPDF, which had no VN glyphs
+  // and stripped "Ngày xuất" → "Ngay xuat". Session-auth (protectedProcedure): any
+  // logged-in user renders their OWN already-displayed table data into a branded
+  // PDF/XLSX/CSV in the language they pick. Row/col-capped to bound memory.
+  renderReport: protectedProcedure
+    .input(z.object({
+      type: z.string().min(1).max(64).default("report"),
+      title: z.string().min(1).max(200),
+      subtitle: z.string().max(300).optional(),
+      format: z.enum(["pdf", "xlsx", "csv"]),
+      language: z.enum(["vi", "en", "zh"]).default("vi"),
+      columns: z.array(z.object({
+        key: z.string().min(1).max(64),
+        header: z.string().max(120),
+        width: z.number().int().positive().max(400).optional(),
+        format: z.enum(["number", "percentage", "date", "datetime", "text"]).optional(),
+      })).min(1).max(60),
+      data: z.array(z.record(z.string(), z.any())).max(20000),
+      fileName: z.string().max(120).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { renderReport } = await import("../services/universalExportService");
+      const out = await renderReport({
+        type: input.type,
+        title: input.title,
+        subtitle: input.subtitle,
+        format: input.format,
+        locale: input.language,
+        columns: input.columns,
+        data: input.data,
+        fileName: input.fileName,
+      });
+      // base64 so the (superjson) tRPC transport carries the binary safely; the
+      // client rebuilds a Blob and triggers a download.
+      return {
+        base64: out.buffer.toString("base64"),
+        mimeType: out.mimeType,
+        filename: out.filename,
+        format: out.format,
+      };
+    }),
   exportInspections: protectedProcedure
     .use(requirePermission('history_export', 'canExport'))
     .input(z.object({

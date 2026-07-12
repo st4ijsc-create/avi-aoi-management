@@ -2941,6 +2941,20 @@
     "analyticsRenderError": "分析render错误"
   },
   "export": {
+    "reportMenu": {
+      "button": "导出",
+      "language": "语言",
+      "format": "格式",
+      "langVi": "越南语",
+      "langEn": "English",
+      "langZh": "中文",
+      "pdf": "PDF（越南语字体）",
+      "excel": "Excel (.xlsx)",
+      "csv": "CSV",
+      "noData": "无数据可导出",
+      "success": "报告已导出",
+      "error": "导出失败"
+    },
     "zipSuccess": "ZIP成功",
     "zipError": "ZIP错误",
     "zipDescription": "ZIP描述",
@@ -9373,6 +9387,16 @@
     "allProducts": "所有产品"
   },
   "productionDashboard": {
+    "export": {
+      "station": "工站",
+      "factory": "工厂",
+      "line": "产线",
+      "output": "产量",
+      "ok": "合格",
+      "inspections": "检验次数",
+      "fpy": "一次通过率",
+      "retest": "复检率"
+    },
     "title": "生产仪表板",
     "totalStations": "工站",
     "avgFPY": "平均首次通过率",

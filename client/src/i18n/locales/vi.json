@@ -2941,6 +2941,20 @@
     "error": "Lỗi"
   },
   "export": {
+    "reportMenu": {
+      "button": "Xuất",
+      "language": "Ngôn ngữ",
+      "format": "Định dạng",
+      "langVi": "Tiếng Việt",
+      "langEn": "English",
+      "langZh": "中文",
+      "pdf": "PDF (font chuẩn VN)",
+      "excel": "Excel (.xlsx)",
+      "csv": "CSV",
+      "noData": "Không có dữ liệu để xuất",
+      "success": "Đã xuất báo cáo",
+      "error": "Xuất báo cáo thất bại"
+    },
     "selectAtLeastOne": "Chọn tại least one",
     "measurementPoint": "Phép đo point",
     "cannotLoadImage": "Cannot Tải Hình ảnh",
@@ -9569,6 +9583,16 @@
     "allProducts": "Tất cả sản phẩm"
   },
   "productionDashboard": {
+    "export": {
+      "station": "Trạm",
+      "factory": "Nhà máy",
+      "line": "Chuyền",
+      "output": "Sản lượng",
+      "ok": "Đạt",
+      "inspections": "Lượt kiểm",
+      "fpy": "Tỷ lệ đạt lần đầu",
+      "retest": "Tỷ lệ kiểm lại"
+    },
     "title": "Bảng Điều Khiển Sản Xuất",
     "totalStations": "Trạm",
     "avgFPY": "Tỷ Lệ Đạt Lần Đầu TB",

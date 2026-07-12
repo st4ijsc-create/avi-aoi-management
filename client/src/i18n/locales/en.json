@@ -2949,6 +2949,20 @@
     "analyticsRenderError": "Analytics render error"
   },
   "export": {
+    "reportMenu": {
+      "button": "Export",
+      "language": "Language",
+      "format": "Format",
+      "langVi": "Tiếng Việt",
+      "langEn": "English",
+      "langZh": "中文",
+      "pdf": "PDF (VN-safe font)",
+      "excel": "Excel (.xlsx)",
+      "csv": "CSV",
+      "noData": "No data to export",
+      "success": "Report exported",
+      "error": "Export failed"
+    },
     "zipSuccess": "Zip success",
     "zipError": "Zip error",
     "zipDescription": "Zip description",
@@ -9590,6 +9604,16 @@
     "allProducts": "All Products"
   },
   "productionDashboard": {
+    "export": {
+      "station": "Station",
+      "factory": "Factory",
+      "line": "Line",
+      "output": "Output",
+      "ok": "OK",
+      "inspections": "Inspections",
+      "fpy": "First Pass Yield",
+      "retest": "Retest Rate"
+    },
     "title": "Production Dashboard",
     "totalStations": "Stations",
     "avgFPY": "Avg First Pass Yield",
