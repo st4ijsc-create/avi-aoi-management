@@ -19,6 +19,11 @@ let httpDurationHistogram: {
 } | null = null;
 let initialized = false;
 
+// Doc 44 G5.9 — RUM web-vitals histograms (route-labelled), feed từ rumRouter.
+type HistogramLike = { observe: (labels: Record<string, string>, value: number) => void };
+export type RumWebVitalMetric = "lcp" | "cls" | "inp" | "ttfb";
+let rumHistograms: Record<RumWebVitalMetric, HistogramLike> | null = null;
+
 function metricsEnabled(): boolean {
   return process.env.METRICS_ENABLED === "true";
 }
@@ -61,6 +66,42 @@ export async function initMetrics(): Promise<boolean> {
       buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
       registers: [reg],
     });
+
+    // Doc 44 G5.9 — RUM web-vitals từ client (rumRouter.report). Label duy nhất
+    // là route (đã chuẩn hoá :id phía client + server) để không nổ cardinality.
+    // Đăng ký vào CẢ default registry (client.register): SLO provider screen-load-p95
+    // (sloMetricsProvider) tra cứu bằng client.register.getSingleMetric theo tên.
+    const rumRegisters = [reg, client.register];
+    rumHistograms = {
+      lcp: new client.Histogram({
+        name: "rum_web_vitals_lcp_ms",
+        help: "RUM Largest Contentful Paint (ms) theo route",
+        labelNames: ["route"],
+        buckets: [500, 1000, 1500, 2000, 3000, 5000, 8000],
+        registers: rumRegisters,
+      }),
+      cls: new client.Histogram({
+        name: "rum_web_vitals_cls",
+        help: "RUM Cumulative Layout Shift (không đơn vị) theo route",
+        labelNames: ["route"],
+        buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+        registers: rumRegisters,
+      }),
+      inp: new client.Histogram({
+        name: "rum_web_vitals_inp_ms",
+        help: "RUM Interaction to Next Paint xấp xỉ (ms, max event duration) theo route",
+        labelNames: ["route"],
+        buckets: [100, 200, 300, 500, 800, 1500, 3000],
+        registers: rumRegisters,
+      }),
+      ttfb: new client.Histogram({
+        name: "rum_web_vitals_ttfb_ms",
+        help: "RUM Time To First Byte (ms) theo route",
+        labelNames: ["route"],
+        buckets: [100, 200, 400, 800, 1500, 3000, 8000],
+        registers: rumRegisters,
+      }),
+    };
 
     // B0.3 — AI Brain runtime telemetry (tier throughput, latency, queue,
     // resident models, VRAM). Collected read-only from router/engine getters
@@ -121,6 +162,18 @@ export function metricsMiddleware() {
     });
     next();
   };
+}
+
+/**
+ * Doc 44 G5.9 — ghi 1 mẫu RUM web-vital vào histogram tương ứng.
+ * No-op an toàn khi METRICS_ENABLED tắt / prom-client thiếu / chưa init.
+ */
+export function observeRumWebVital(metric: RumWebVitalMetric, route: string, value: number): void {
+  try {
+    rumHistograms?.[metric]?.observe({ route }, value);
+  } catch {
+    /* no-op: metrics không được làm hỏng request */
+  }
 }
 
 /**

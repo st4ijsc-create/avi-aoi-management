@@ -152,6 +152,12 @@ export const orderIntakeSchema = z.object({
   plannedStartDate: z.string().datetime().optional(),
   plannedEndDate: z.string().datetime().optional(),
   notes: z.string().optional(),
+  // ── W0-F G5.6 (doc 44, mig 0250; OPTIONAL — old clients unaffected) ──
+  // The SOURCE system's own order identity for two-way reconciliation:
+  // externalId = the order id/number in the ERP/MES, sourceSystem = which system
+  // (e.g. "SAP", "oracle-mes"). Persisted onto production_orders when present.
+  externalId: z.string().min(1).max(255).optional(),
+  sourceSystem: z.string().min(1).max(100).optional(),
 }).strip();
 
 export const bomLineSchema = z.object({
@@ -220,6 +226,11 @@ async function handleOrderIntake(req: Request, res: Response): Promise<void> {
     plannedStartDate: input.plannedStartDate ? new Date(input.plannedStartDate) : null,
     plannedEndDate: input.plannedEndDate ? new Date(input.plannedEndDate) : null,
     notes: input.notes ?? null,
+    // W0-F G5.6 (mig 0250): columns are included ONLY when the payload carries
+    // them — an intake without these fields keeps the exact pre-0250 statement
+    // shape (safe on an un-migrated DB, contract unchanged for old clients).
+    ...(input.externalId ? { externalId: input.externalId } : {}),
+    ...(input.sourceSystem ? { sourceSystem: input.sourceSystem } : {}),
   };
 
   let orderId: number;

@@ -131,6 +131,13 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   // Escalation tracking (0=none, 1=supervisor, 2=manager, 3=executive)
   escalationLevel: integer("escalationLevel").default(0).notNull(),
   lastEscalatedAt: timestamp("lastEscalatedAt"),
+  // ── W0-F G5.5 (doc 44, migration 0249; additive, nullable) ──
+  // runbook_ref: pointer to the runbook/SOP for THIS alert (e.g. an SLO target's
+  // runbook path or a doc/KB id). recommendation_ref: pointer to a recommended
+  // action/AI-proposal record. Written only when the raiser actually has one
+  // (SLO burn-rate alerts carry their catalogue runbook) — never fabricated.
+  runbookRef: text("runbook_ref"),
+  recommendationRef: text("recommendation_ref"),
   // Timestamps
   expiresAt: timestamp("expiresAt"), // Alert expiration
   createdAt: timestamp("createdAt").defaultNow().notNull(),

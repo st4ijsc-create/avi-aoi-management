@@ -115,6 +115,14 @@ export const otTelemetry = pgTable("ot_telemetry", {
   index("idx_ot_telemetry_machine_ts").on(table.machineId, table.ts.desc()),
   index("idx_ot_telemetry_metric_ts").on(table.metric, table.ts.desc()),
   index("idx_ot_telemetry_protocol_ts").on(table.protocol, table.ts.desc()),
+  // G2.9 (doc 44 W0-D, migration 0247) — replay idempotency: at most ONE row per
+  // (deviceId, metric, ts). Matches the store-forward natural key semantics
+  // (deviceId = adapter.code for OT samples; see ot/ingest.ts + storeForward.ts).
+  // Includes the partition column `ts` so the index is legal on the Timescale
+  // hypertable too (0172). Rows with NULL deviceId are EXEMPT (PG NULLS DISTINCT)
+  // — deliberate: two unmapped readers must never collide on (metric, ts). The
+  // insert path (telemetryBus persistRows fallback) is ON CONFLICT DO NOTHING.
+  uniqueIndex("uq_ot_telemetry_device_metric_ts").on(table.deviceId, table.metric, table.ts),
 ]);
 
 export type OtTelemetry = typeof otTelemetry.$inferSelect;
@@ -243,6 +251,16 @@ export const commandLog = pgTable("command_log", {
   readBackValue: jsonb("readBackValue"),
   errorText: text("errorText"),
   idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
+  // ── G1.7 (doc 44 W0-D, migration 0246 — additive, nullable) ────────────────
+  // Cross-layer trace: the correlation id flowing order → command → ack (LDS-L1).
+  // Filled from DispatchInput.correlationId, else the AsyncLocalStorage backbone
+  // (observability/correlation.ts), else NULL. Written on EVERY ledger branch
+  // (rejected / simulated / acked / failed / timeout).
+  correlationId: text("correlation_id"),
+  // Per-command ack deadline (ms) the caller requested. When set, dispatch uses it
+  // instead of the global OT_CONTROL_TIMEOUT_MS for THIS command (capped by
+  // OT_CONTROL_TIMEOUT_MAX_MS when configured). NULL = global env timeout.
+  deadlineMs: integer("deadline_ms"),
   sentAt: timestamp("sentAt"),
   ackedAt: timestamp("ackedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -252,6 +270,8 @@ export const commandLog = pgTable("command_log", {
   index("idx_command_log_machine").on(table.machineId),
   index("idx_command_log_status").on(table.status),
   index("idx_command_log_created").on(table.createdAt),
+  // G1.7/G1.16 — trace lookups + cmd→ack latency SLI scan by correlation id.
+  index("idx_command_log_correlation").on(table.correlationId).where(sql`${table.correlationId} IS NOT NULL`),
 ]);
 
 export type CommandLog = typeof commandLog.$inferSelect;

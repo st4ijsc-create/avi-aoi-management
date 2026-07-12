@@ -1,4 +1,5 @@
 // Schema domain: Production tables
+import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex, json } from "drizzle-orm/pg-core";
 import { statusEnum, processTypeEnum_1, sessionStatusEnum } from "./enums";
 
@@ -76,6 +77,13 @@ export const productionOrders = pgTable("production_orders", {
   actualEndDate: timestamp("actualEndDate"),
   notes: text("notes"),
   dependencies: json("dependencies").$type<number[]>(), // Array of order IDs that this order depends on
+  // ── W0-F G5.6 (doc 44, migration 0250; additive, nullable) ──
+  // Định danh đơn hàng phía HỆ THỐNG NGOÀI (ERP/MES) để đối soát 2 chiều:
+  // external_id = id/mã đơn bên nguồn, source_system = hệ nguồn (vd. "SAP",
+  // "oracle-mes", "b2mml"). Unique partial (external_id, source_system) WHERE
+  // external_id IS NOT NULL — mỗi đơn nguồn chỉ map 1 lệnh; đơn tạo tay giữ NULL.
+  externalId: text("external_id"),
+  sourceSystem: text("source_system"),
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -87,6 +95,9 @@ export const productionOrders = pgTable("production_orders", {
   index("idx_po_line").on(table.lineId),
   index("idx_po_product").on(table.productModelId),
   index("idx_po_status").on(table.status),
+  uniqueIndex("uq_po_external_source")
+    .on(table.externalId, table.sourceSystem)
+    .where(sql`"external_id" IS NOT NULL`),
 ]);
 
 export type ProductionOrder = typeof productionOrders.$inferSelect;

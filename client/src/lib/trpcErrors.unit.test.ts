@@ -41,6 +41,36 @@ describe("mapTrpcError", () => {
     );
   });
 
+  // Doc 44 G5.4 — 403 không nuốt reason cụ thể nữa.
+  it("keeps a recognizable FORBIDDEN reason code + original message", () => {
+    const result = mapTrpcError(
+      fakeTrpcError("APPROVAL_REQUIRED: lệnh deploy cần phê duyệt four-eyes", "FORBIDDEN"),
+    );
+    expect(result).toContain("Bạn không có quyền thực hiện thao tác này");
+    expect(result).toContain("APPROVAL_REQUIRED");
+    expect(result).toContain("four-eyes");
+  });
+
+  it("keeps actionable FORBIDDEN details (role/permission/2FA)", () => {
+    expect(mapTrpcError(fakeTrpcError("Required role: admin or supervisor", "FORBIDDEN"))).toContain(
+      "Required role: admin or supervisor",
+    );
+    expect(
+      mapTrpcError(
+        fakeTrpcError(
+          "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+          "FORBIDDEN",
+        ),
+      ),
+    ).toContain("xác thực 2 bước");
+  });
+
+  it("still falls back to generic for FORBIDDEN messages that leak SQL", () => {
+    expect(
+      mapTrpcError(fakeTrpcError('Failed query: select quyền from "users"', "FORBIDDEN")),
+    ).toBe("Bạn không có quyền thực hiện thao tác này");
+  });
+
   it("never surfaces 'Failed query'/SQL for unknown codes", () => {
     expect(mapTrpcError(fakeTrpcError('Failed query: insert into "x" values ($1)'))).toBe(
       "Lỗi hệ thống, vui lòng thử lại",

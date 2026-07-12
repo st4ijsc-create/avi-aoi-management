@@ -51,12 +51,25 @@ function longWindowMs(): number {
   return Number.isFinite(n) && n >= BUCKET_MS ? n : 60 * 60_000;
 }
 
-// ── latency thresholds that matter (from the catalogue) ──────────────────────
+// ── which SLOs the generic HTTP proxy may feed ────────────────────────────────
+
+/**
+ * W0-F (doc 44): SLOs whose signal is NOT server-HTTP latency. Feeding them from
+ * the HTTP ring would be DISHONEST (screen-load is client-side LCP; policy-eval /
+ * state-read are subsystem-internal calls, not HTTP round-trips), so they are
+ * excluded from the generic proxy and get dedicated providers below.
+ */
+const HTTP_PROXY_EXCLUDED_SLO_IDS = new Set(["screen-load-p95", "policy-eval-p95", "state-read-p95"]);
+
+/** Catalogue SLOs the HTTP rolling-window proxy is allowed to feed. */
+const HTTP_PROXIED_SLOS = DEFAULT_SLOS.filter((s) => !HTTP_PROXY_EXCLUDED_SLO_IDS.has(s.id));
+
+// ── latency thresholds that matter (from the HTTP-proxied catalogue) ─────────
 
 /** Distinct latency thresholds (ms), ascending — one "good count" column per threshold. */
 const THRESHOLDS: number[] = Array.from(
   new Set(
-    DEFAULT_SLOS.filter(
+    HTTP_PROXIED_SLOS.filter(
       (s) => s.kind === "latency" && typeof s.latencyThresholdMs === "number",
     ).map((s) => s.latencyThresholdMs as number),
   ),
@@ -166,12 +179,139 @@ function availabilityObservation(): { short: SloObservation; long: SloObservatio
   };
 }
 
+// ── W0-F: screen-load-p95 — RUM LCP histogram feed (rum_web_vitals_lcp_ms) ────
+//
+// The client-ingest path (parallel W0 batch) records real-user LCP into a
+// prom-client histogram named `rum_web_vitals_lcp_ms`. That histogram is
+// CUMULATIVE since process start, so this provider snapshots (good,total) each
+// evaluator tick and DIFFS rolling windows out of the snapshots — the same
+// multi-window shape the burn-rate math consumes.
+//
+// HONEST: prom-client absent / metric not registered (ingest not deployed yet or
+// METRICS off) / no snapshots / zero traffic in the window → null ("no data",
+// never fabricated). prom-client `.get()` is async while providers are sync, so
+// the provider serves the cached snapshots and fires a refresh in the background
+// (first tick(s) honestly report null until the cache warms).
+
+const RUM_LCP_METRIC = "rum_web_vitals_lcp_ms";
+
+interface RumSnap {
+  t: number;
+  good: number; // observations ≤ threshold (cumulative)
+  total: number; // all observations (cumulative)
+}
+
+const rumSnaps: RumSnap[] = [];
+let rumRefreshing = false;
+
+/**
+ * Read the cumulative (good,total) of the RUM LCP histogram from the prom-client
+ * DEFAULT registry. `good` = the cumulative bucket with the largest `le` ≤ the
+ * threshold (exact when a 2000ms boundary exists; otherwise conservatively
+ * undercounts "good"). Returns null when the metric/package is absent.
+ */
+async function readRumCumulative(thresholdMs: number): Promise<{ good: number; total: number } | null> {
+  try {
+    const pkg = "prom-client";
+    const promClient = await import(pkg).catch(() => null);
+    if (!promClient) return null;
+    const client = (promClient as { default?: unknown }).default ?? promClient;
+    const registry = (client as { register?: { getSingleMetric?: (n: string) => unknown } }).register;
+    const metric = registry?.getSingleMetric?.(RUM_LCP_METRIC) as
+      | { get: () => Promise<{ values?: Array<{ metricName?: string; value?: number; labels?: Record<string, unknown> }> }> }
+      | undefined;
+    if (!metric || typeof metric.get !== "function") return null; // honest: not registered yet
+
+    const data = await metric.get();
+    const values = data?.values ?? [];
+    let total = 0;
+    let sawCount = false;
+    // Per label-set, keep the bucket with the largest le ≤ threshold.
+    const bestByLabelSet = new Map<string, { le: number; value: number }>();
+    for (const v of values) {
+      const mn = v.metricName ?? "";
+      if (mn.endsWith("_count")) {
+        total += Number(v.value) || 0;
+        sawCount = true;
+      } else if (mn.endsWith("_bucket")) {
+        const rawLe = (v.labels as { le?: unknown } | undefined)?.le;
+        const le = rawLe === "+Inf" ? Infinity : Number(rawLe);
+        if (!Number.isFinite(le) || le > thresholdMs) continue;
+        const { le: _le, ...rest } = (v.labels ?? {}) as Record<string, unknown>;
+        const key = JSON.stringify(rest);
+        const prev = bestByLabelSet.get(key);
+        if (!prev || le > prev.le) bestByLabelSet.set(key, { le, value: Number(v.value) || 0 });
+      }
+    }
+    if (!sawCount) return null;
+    let good = 0;
+    for (const b of bestByLabelSet.values()) good += b.value;
+    return { good, total };
+  } catch {
+    return null; // metrics must never throw into the evaluator
+  }
+}
+
+/** Background snapshot refresh (non-overlapping). Prunes beyond the long window. */
+function refreshRumSnapshot(thresholdMs: number): void {
+  if (rumRefreshing) return;
+  rumRefreshing = true;
+  void readRumCumulative(thresholdMs)
+    .then((cum) => {
+      if (!cum) return;
+      rumSnaps.push({ t: Date.now(), good: cum.good, total: cum.total });
+      // Keep just enough history to cover the long window (+ margin).
+      const cutoff = Date.now() - (longWindowMs() + 5 * BUCKET_MS);
+      while (rumSnaps.length > 2 && rumSnaps[0].t < cutoff) rumSnaps.shift();
+    })
+    .finally(() => {
+      rumRefreshing = false;
+    });
+}
+
+/** Latest snapshot at/before `t`, else the oldest available (or null when none). */
+function rumBaselineAt(t: number): RumSnap | null {
+  let base: RumSnap | null = null;
+  for (const s of rumSnaps) {
+    if (s.t <= t) base = s;
+    else break;
+  }
+  return base ?? rumSnaps[0] ?? null;
+}
+
+/** screen-load-p95 provider: rolling windows diffed from cumulative RUM snapshots. */
+function rumLcpObservation(thresholdMs: number): { short: SloObservation; long: SloObservation } | null {
+  refreshRumSnapshot(thresholdMs); // fire-and-forget; serves the cache below
+  if (rumSnaps.length < 2) return null; // honest: not enough history to diff
+  const now = Date.now();
+  const cur = rumSnaps[rumSnaps.length - 1];
+  const longBase = rumBaselineAt(now - longWindowMs());
+  const shortBase = rumBaselineAt(now - shortWindowMs());
+  if (!longBase || longBase.t >= cur.t) return null;
+  const diff = (a: RumSnap, b: RumSnap): SloObservation => ({
+    good: Math.max(0, b.good - a.good),
+    total: Math.max(0, b.total - a.total),
+  });
+  const long = diff(longBase, cur);
+  if (long.total === 0) return null; // honest: no RUM traffic in the window
+  const short = shortBase && shortBase.t < cur.t ? diff(shortBase, cur) : { good: 0, total: 0 };
+  return { short, long };
+}
+
 // ── install (called once at observability startup) ───────────────────────────
 
 /**
- * Register an HTTP-derived observation provider for every catalogue SLO and arm the request-path
+ * Register an observation provider for every catalogue SLO and arm the request-path
  * tracker. Idempotent. NO-OP when OBSERVABILITY is off (evaluator itself is off too, so there is
  * nothing to feed). Never throws into startup.
+ *
+ * Provider assignment (register = last-writer-wins by id, so a subsystem with a
+ * better signal can replace any of these later):
+ *   • HTTP-proxied SLOs → the rolling-window HTTP tracker (as before).
+ *   • screen-load-p95   → RUM LCP histogram diff (null until the metric exists).
+ *   • policy-eval-p95 / state-read-p95 → null (chưa instrument — W2/W3): the
+ *     policy engine / state-read paths have no latency instrumentation yet, so
+ *     the ONLY honest observation is "no data". NEVER fabricate numbers here.
  */
 export function installSloMetricsProviders(): void {
   if (!observabilityEnabled()) {
@@ -179,7 +319,7 @@ export function installSloMetricsProviders(): void {
     return;
   }
 
-  for (const target of DEFAULT_SLOS) {
+  for (const target of HTTP_PROXIED_SLOS) {
     if (target.kind === "latency" && typeof target.latencyThresholdMs === "number") {
       const t = target.latencyThresholdMs;
       registerSloObservationProvider(target.id, () => latencyObservation(t));
@@ -187,10 +327,23 @@ export function installSloMetricsProviders(): void {
       registerSloObservationProvider(target.id, () => availabilityObservation());
     }
   }
+
+  // W0-F dedicated feeds (see block comment above).
+  const screenLoad = DEFAULT_SLOS.find((s) => s.id === "screen-load-p95");
+  if (screenLoad?.latencyThresholdMs) {
+    const t = screenLoad.latencyThresholdMs;
+    registerSloObservationProvider("screen-load-p95", () => rumLcpObservation(t));
+  }
+  // Chưa instrument — W2/W3: honest null until the real subsystem feed registers.
+  registerSloObservationProvider("policy-eval-p95", () => null);
+  registerSloObservationProvider("state-read-p95", () => null);
+
   active = true;
   console.log(
-    `[SLO] HTTP metrics provider installed for ${DEFAULT_SLOS.length} SLO(s) ` +
-      `(short=${shortWindowMs()}ms, long=${longWindowMs()}ms, thresholds=[${THRESHOLDS.join(",")}]ms).`,
+    `[SLO] metrics providers installed for ${DEFAULT_SLOS.length} SLO(s) ` +
+      `(HTTP-proxied=${HTTP_PROXIED_SLOS.length}, RUM=screen-load-p95, ` +
+      `pending-instrumentation=policy-eval-p95,state-read-p95; ` +
+      `short=${shortWindowMs()}ms, long=${longWindowMs()}ms, thresholds=[${THRESHOLDS.join(",")}]ms).`,
   );
 }
 
@@ -200,4 +353,6 @@ export function installSloMetricsProviders(): void {
 export function _resetSloMetricsProvider(): void {
   active = false;
   ring.fill(null);
+  rumSnaps.length = 0;
+  rumRefreshing = false;
 }

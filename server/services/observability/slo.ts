@@ -124,4 +124,34 @@ export const DEFAULT_SLOS: readonly SloTarget[] = [
     objective: 0.999,
     windowSec: 30 * 24 * 3600,
   },
+  // ── W0-F (doc 44) — 3 SLO mới theo spec tầng L2/L3/L5. HONEST: các SLO này
+  // KHÔNG dùng proxy HTTP chung (sloMetricsProvider loại chúng khỏi feed HTTP):
+  //   • screen-load-p95: feed thật = histogram RUM `rum_web_vitals_lcp_ms`
+  //     (client-ingest, batch song song); chưa có metric → "no data", không bịa.
+  //   • policy-eval-p95 / state-read-p95: CHƯA instrument (W2/W3) → provider
+  //     trả null cho tới khi subsystem tự đăng ký feed thật.
+  {
+    id: "screen-load-p95",
+    name: "Tải màn hình (LCP) P95 ≤ 2s (L5)",
+    kind: "latency",
+    objective: 0.95,
+    latencyThresholdMs: 2000,
+    windowSec: 30 * 24 * 3600,
+  },
+  {
+    id: "policy-eval-p95",
+    name: "Đánh giá policy P95 ≤ 20ms (L3)",
+    kind: "latency",
+    objective: 0.95,
+    latencyThresholdMs: 20,
+    windowSec: 30 * 24 * 3600,
+  },
+  {
+    id: "state-read-p95",
+    name: "Đọc trạng thái P95 ≤ 100ms (L2)",
+    kind: "latency",
+    objective: 0.95,
+    latencyThresholdMs: 100,
+    windowSec: 30 * 24 * 3600,
+  },
 ];

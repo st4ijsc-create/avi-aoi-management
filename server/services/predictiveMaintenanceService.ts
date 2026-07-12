@@ -42,8 +42,18 @@ import { recordMachineHealthSnapshot } from "../db/machine";
 const DANGER_HEALTH_THRESHOLD = 40; // healthScore below this = danger zone
 const RISK_ALERT_THRESHOLD = Number(process.env.PM_RISK_THRESHOLD ?? 60); // 0-100
 const CONFIDENCE_ALERT_THRESHOLD = Number(process.env.PM_CONFIDENCE_THRESHOLD ?? 50); // 0-100
-const TIMEFRAME_ALERT_HOURS = Number(process.env.PM_TIMEFRAME_HOURS ?? 24); // alert if failure <= X hours
+/**
+ * G4.9 (doc 44 W0-F) — alert lead-time gate. Default was 24h, which silently
+ * suppressed every prediction whose ETA was 1–7 days out (exactly the window a
+ * planner needs to schedule maintenance). Default is now 168h (1 week); the env
+ * override keeps the same name. HONEST: the "RUL" behind this gate is still a
+ * heuristic proxy (EWMA health-forecast crossing + MTBF cap), NOT a trained
+ * survival/RUL model — treat the timeframe as a planning hint, not a guarantee.
+ */
+const TIMEFRAME_ALERT_HOURS = Number(process.env.PM_TIMEFRAME_HOURS ?? 168); // alert if failure <= X hours
 const MIN_HEALTH_POINTS = 5; // below this, trend/forecast are unreliable
+/** Upper bound on forecast steps so a dense series can't explode the EWMA loop. */
+const MAX_FORECAST_STEPS = 720;
 
 // Feature weights (sum need not be 1; we normalize by sum of active weights)
 const W_RELIABILITY = 0.35;
@@ -129,17 +139,20 @@ function describeTimeframe(hours: number | null): string | null {
 
 // ─── MON-F2: machine_sensor_readings → PdM feature mapping ────────────────────
 // machine_sensor_readings carries the REAL telemetry (vibration / current /
-// temperature, ingested via sensorIngestService). machine_heartbeats has no
-// writer, so PdM's anomaly + temperature features used to be dead. Map:
-//   vibration, current → multivariate anomaly (Isolation Forest)
-//   temperature        → CUSUM change-point series
+// temperature / torque, ingested via sensorIngestService). machine_heartbeats has
+// no writer, so PdM's anomaly + temperature features used to be dead. Map:
+//   vibration, current, torque → multivariate anomaly (Isolation Forest)
+//   temperature                → CUSUM change-point series
 
-export type SensorFeature = "vibration" | "current" | "temperature" | "other";
+export type SensorFeature = "vibration" | "current" | "temperature" | "torque" | "other";
 
 /** Classify a raw sensorType string into a PdM feature (tolerant of synonyms). */
 export function sensorFeature(sensorType: string): SensorFeature {
   const s = (sensorType ?? "").toLowerCase();
   if (s.includes("vib")) return "vibration";
+  // G4.10 (doc 44 W0-F): torque/mô-men used to fall into "other" and was DROPPED.
+  // Checked BEFORE "current" because "motor torque" would otherwise match "motor".
+  if (s.includes("torq") || s.includes("moment") || s.includes("momen") || s.includes("mô-men")) return "torque";
   if (s.includes("current") || s.includes("amp") || s.includes("motor")) return "current";
   if (s.includes("temp")) return "temperature";
   return "other";
@@ -153,7 +166,7 @@ export interface SensorReadingPoint {
 
 /**
  * Build PdM feature series from raw machine_sensor_readings rows.
- *  - `multivariate`: forward-filled {vibration, current} vectors for anomaly share.
+ *  - `multivariate`: forward-filled {vibration, current, torque} vectors for anomaly share.
  *    Only sensor types that actually have data become dimensions (honest — no
  *    fabricated zeros for absent sensors). Points are emitted only once every
  *    present dimension has at least one observation.
@@ -169,11 +182,12 @@ export function buildSensorFeatureSeries(rows: SensorReadingPoint[]): {
     .filter((r) => sensorFeature(r.sensorType) === "temperature")
     .map((r) => ({ timestamp: r.timestamp, value: r.value }));
 
-  // Which anomaly dimensions are present at all?
+  // Which anomaly dimensions are present at all? (torque is consumed exactly like
+  // current — an extra Isolation-Forest dimension when the sensor stream has it.)
   const present = new Set<Exclude<SensorFeature, "temperature" | "other">>();
   for (const r of sorted) {
     const f = sensorFeature(r.sensorType);
-    if (f === "vibration" || f === "current") present.add(f);
+    if (f === "vibration" || f === "current" || f === "torque") present.add(f);
   }
   const dims = [...present];
 
@@ -182,7 +196,7 @@ export function buildSensorFeatureSeries(rows: SensorReadingPoint[]): {
     const last: Record<string, number> = {};
     for (const r of sorted) {
       const f = sensorFeature(r.sensorType);
-      if (f !== "vibration" && f !== "current") continue;
+      if (f !== "vibration" && f !== "current" && f !== "torque") continue;
       last[f] = r.value;
       // Emit only after every present dimension has at least one observation,
       // so early points aren't forward-filled from nothing.
@@ -342,7 +356,19 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
   let riskTrend = 0;
   let timeframeHours: number | null = null;
   if (healthSeries.length >= MIN_HEALTH_POINTS) {
-    const forecast = ewmaForecast(healthSeries, 0.3, 48);
+    // G4.9 (doc 44 W0-F): widen the forecast horizon to cover the (now 168h)
+    // alert lead-time. Horizon is in STEPS of the series' average interval, so a
+    // fixed 48 steps of hourly snapshots could only ever "see" ~2 days ahead —
+    // predictions 3–7 days out were structurally impossible. Steps are derived
+    // from the interval so the forecast reaches TIMEFRAME_ALERT_HOURS (bounded).
+    const avgIntervalMs = healthSeries.length > 1
+      ? (healthSeries[healthSeries.length - 1].timestamp - healthSeries[0].timestamp) / (healthSeries.length - 1)
+      : 3600_000;
+    const horizonSteps = Math.min(
+      MAX_FORECAST_STEPS,
+      Math.max(48, Math.ceil((TIMEFRAME_ALERT_HOURS * 3600_000) / Math.max(1, avgIntervalMs))),
+    );
+    const forecast = ewmaForecast(healthSeries, 0.3, horizonSteps);
     const last = healthSeries[healthSeries.length - 1].value;
     const first = healthSeries[0].value;
     const slope = (last - first) / Math.max(1, healthSeries.length - 1); // per step
@@ -352,10 +378,8 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     weightSum += W_TREND;
     if (riskTrend > 50) agreeingFeatures++;
 
-    // RUL: first forecast horizon whose lower-CI crosses the danger threshold.
-    const avgIntervalMs = healthSeries.length > 1
-      ? (healthSeries[healthSeries.length - 1].timestamp - healthSeries[0].timestamp) / (healthSeries.length - 1)
-      : 3600_000;
+    // "RUL" (heuristic proxy — NOT a trained survival model): first forecast
+    // horizon whose lower-CI crosses the danger threshold.
     for (const fp of forecast) {
       if (fp.lower <= DANGER_HEALTH_THRESHOLD) {
         timeframeHours = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
@@ -366,7 +390,6 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     if (timeframeHours != null && reliability?.mtbfHours) {
       timeframeHours = Math.min(timeframeHours, reliability.mtbfHours);
     }
-    void avgIntervalMs;
     factors.push({
       name: "trend",
       contribution: Math.round(riskTrend),

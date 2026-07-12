@@ -20,13 +20,19 @@ vi.mock("../db/timescale", () => ({
 }));
 
 // Controllable main-DB insert: `dbUp` flips it between throwing and succeeding.
+// G2.9: the bus now chains .onConflictDoNothing() onto values(...) — mirror the
+// drizzle builder shape (values() returns the builder; the await lands on the
+// onConflictDoNothing() result).
 let dbUp = false;
 const insertedBatches: number[] = [];
-const insertValues = vi.fn(async (rows: unknown[]) => {
+const doInsert = async (rows: unknown[]) => {
   if (!dbUp) throw new Error("ECONNREFUSED");
   insertedBatches.push(rows.length);
   return undefined;
-});
+};
+const insertValues = vi.fn((rows: unknown[]) => ({
+  onConflictDoNothing: () => doInsert(rows),
+}));
 const fakeDb = {
   insert: () => ({ values: insertValues }),
   // resolveMachineId path: select().from().where().limit() → [] (unmapped)

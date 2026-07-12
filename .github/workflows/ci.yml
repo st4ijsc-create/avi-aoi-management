@@ -59,6 +59,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          # depth 2 → HEAD~1 exists, so the contract BACKWARD gate can diff vs the parent/base
+          fetch-depth: 2
 
       - uses: pnpm/action-setup@v4
         with:
@@ -74,6 +77,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm run check
+
+      - name: Contract schema BACKWARD gate (doc 44 G2.5)
+        run: node scripts/contracts-compat-check.mjs
 
       - name: Unit tests (vitest)
         run: pnpm test

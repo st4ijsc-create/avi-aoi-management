@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contracts/canonical/command.schema.json",
+  "title": "Command",
+  "description": "LDS-L1 canonical command envelope (doc 44 G2.5). Sent on syn/{site}/{area}/{line}/{cell}/{equip}/cmd — ALWAYS via the policy/actuation gate, never raw. additionalProperties stays open.",
+  "x-subject": "syn/+/+/+/+/+/cmd",
+  "x-owner": "platform",
+  "type": "object",
+  "properties": {
+    "command_id": { "type": "string", "description": "Globally-unique command id (uuid) — ack correlates on this" },
+    "asset_id": { "type": "string", "description": "Canonical target asset identifier" },
+    "correlation_id": { "type": "string", "description": "Business correlation (work order / workflow run id)" },
+    "verb": { "type": "string", "description": "Capability verb (e.g. start, stop, reset, setParam)" },
+    "args": { "type": "object", "description": "Verb arguments (validated against the capability signature downstream)" },
+    "issued_by": { "type": "string", "description": "Principal that issued the command (user id / service account)" },
+    "policy_ref": { "type": "string", "description": "Reference to the policy decision that authorised this command" },
+    "deadline_ms": { "type": "number", "description": "Validity window — the device must reject execution after deadline" },
+    "idempotency_key": { "type": "string", "description": "Idempotency key — re-delivery with the same key must not re-execute" }
+  },
+  "required": ["command_id", "asset_id", "verb", "issued_by"]
+}

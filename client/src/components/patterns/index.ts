@@ -102,6 +102,12 @@ export type { ConnectionChipProps, ConnectionState } from "./ConnectionChip";
 export { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 export type { ConfirmDeleteDialogProps } from "./ConfirmDeleteDialog";
 
+// ── doc 44 G5.4 — xác nhận 2 bước + lý do bắt buộc cho hành động rủi ro ───────
+// ConfirmWithReason: bước 1 mô tả + impact + lý do (min length); bước 2 tóm tắt
+// + (riskLevel="high") gõ chuỗi xác nhận. reason truyền vào onConfirm(reason).
+export { ConfirmWithReason } from "./ConfirmWithReason";
+export type { ConfirmWithReasonProps } from "./ConfirmWithReason";
+
 // ── doc 42 Đợt 4A (INFRA-4A) — thanh import/export master-data dùng chung ──────
 // ImportExportBar: Xuất Excel/CSV (client-side qua xlsx) + Tải mẫu + Nhập (preview
 // DataTable, tô đỏ dòng lỗi). Luật parse/validate chung server qua @shared/masterDataIO.

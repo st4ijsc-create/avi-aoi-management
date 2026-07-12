@@ -36,6 +36,9 @@ export const API_SCOPES = {
   // W5-D (doc 27 §6 A10) — raw inspection/measurement export + BI dataset feed.
   EXPORT_READ: "export:read",
   BI_READ: "bi:read",
+  // W0-F (doc 44 G4.27) — AI model registry reads + gated lifecycle mutations.
+  MODELS_READ: "models:read",
+  MODELS_WRITE: "models:write",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -61,6 +64,8 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "standards:read": "Read equipment governance: device types, ISA-18.2 alarm taxonomy, compliance (U4a).",
   "export:read": "Stream raw inspection/measurement exports as CSV/JSON (/api/export, W5-D A10).",
   "bi:read": "Read the paged BI dataset feed for Power BI/Tableau (/api/bi/datasets, W5-D A10).",
+  "models:read": "Read the AI model registry (models + versions + stage/status) and drift monitoring (W0-F G4.27).",
+  "models:write": "Promote/rollback an AI model version — gated by V1_MODEL_MUTATIONS_ENABLED, default OFF (W0-F G4.27).",
 };
 
 /**

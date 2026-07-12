@@ -10997,6 +10997,21 @@
       "load": "加载/部署"
     }
   },
+  "confirmWithReason": {
+    "defaultConfirmText": "确认",
+    "reasonLabel": "原因（必填）",
+    "reasonPlaceholder": "您为何执行此操作？（记入审计）",
+    "reasonTooShort": "原因至少需要 {{min}} 个字符",
+    "cancel": "取消",
+    "continue": "继续",
+    "finalTitle": "最终确认",
+    "finalDescription": "执行前请核对以下摘要。",
+    "summaryAction": "操作",
+    "summaryReason": "原因",
+    "typeToConfirm": "输入 \"{{text}}\" 以确认",
+    "back": "返回",
+    "confirm": "确认执行"
+  },
   "interlockRules": {
     "title": "联锁规则管理",
     "subtitle": "配置 + 审批 + 启用/停用联锁规则。本页绝不向设备写入命令；写入通过已审批的 HITL/联锁流程。",
@@ -11075,7 +11090,12 @@
     "newEventToast": "联锁已触发",
     "newEventDesc": "触发了新的联锁事件 — 打开事件标签页查看。",
     "delete": "删除",
-    "deleteConfirmTitle": "删除联锁规则？"
+    "deleteConfirmTitle": "删除联锁规则？",
+    "disableConfirmTitle": "停用规则 \"{{name}}\"？",
+    "disableConfirmDescription": "该规则将停止监控其条件，并停止触发已配置的动作。",
+    "disableImpact": "该自动保护层将保持关闭，直到重新启用 — 超限时不再拦截/停机/告警。",
+    "deleteConfirmDescription": "永久删除 — 无法撤销（删除前已写入审计记录）。",
+    "deleteImpact": "规则定义及其自动保护层将从系统中消失。"
   },
   "quickIssue": {
     "button": "报告异常",

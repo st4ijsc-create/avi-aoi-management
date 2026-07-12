@@ -1,11 +1,12 @@
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
+import { initRum } from "./lib/rum";
 import "./index.css";
 import "./i18n"; // Initialize i18n
 
@@ -53,9 +54,14 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+// Doc 44 G5.3 — httpBatchLink thay httpLink: N query cùng tick (dashboard nhiều
+// widget) gộp thành 1 HTTP request thay vì N request rời. Server dùng
+// createExpressMiddleware mặc định (không tắt batching) nên an toàn; batching
+// còn GIẢM số request tính vào rate-limit /api (300 req/phút). Giữ nguyên
+// transformer + credentials như httpLink cũ (mutation vẫn là POST).
 const trpcClient = trpc.createClient({
   links: [
-    httpLink({
+    httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
@@ -75,6 +81,10 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
+// Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
+initRum();
 
 // Phase 5 WS5.1 — PWA service worker. Đăng ký CHỈ khi VITE_ENABLE_SW='true'
 // (production PWA). Mặc định TẮT + tự UNREGISTER mọi SW cũ + xoá cache của nó:

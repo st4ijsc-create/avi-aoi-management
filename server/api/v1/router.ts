@@ -27,6 +27,8 @@ import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
 import { registerErpIntakeRoutes } from "./erpIntake";
 import { registerModuleReadRoutes } from "./moduleReads";
+import { registerPdmHealthRoutes } from "./pdmHealth";
+import { registerModelRegistryRoutes } from "./modelRegistry";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
 import {
@@ -501,6 +503,14 @@ export function createV1Router(): Router {
   // service functions the corresponding tRPC router calls — no logic duplication, no
   // new device-control path. Writes/actions stay behind the existing gated tRPC flow.
   registerModuleReadRoutes(r);
+
+  // ── W0-F (doc 44) — PdM asset health + prediction history (READ, pdm:read). ──
+  registerPdmHealthRoutes(r);
+
+  // ── W0-F G4.27 (doc 44) — AI model registry: catalogue + drift (models:read),
+  // promote/rollback (models:write, gated by V1_MODEL_MUTATIONS_ENABLED, default
+  // OFF → structured 501). Mutations wrap the SAME internal lifecycle paths.
+  registerModelRegistryRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

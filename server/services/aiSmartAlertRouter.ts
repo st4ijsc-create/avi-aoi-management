@@ -174,6 +174,21 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     aiAnalysisPayload.modelUsed = "smart-alert-router+gguf";
   }
 
+  // W0-F G5.5 (doc 44, mig 0249): persist runbook/recommendation pointers when the
+  // RAISER supplied one (e.g. SLO burn-rate alerts pass data.runbook from the SLO
+  // catalogue). Columns are included ONLY when present so alert paths that carry
+  // no reference keep the exact pre-0249 INSERT shape (safe on an un-migrated DB).
+  const runbookRef =
+    typeof event.data.runbookRef === "string" && event.data.runbookRef.trim()
+      ? event.data.runbookRef.trim()
+      : typeof event.data.runbook === "string" && event.data.runbook.trim()
+        ? event.data.runbook.trim()
+        : null;
+  const recommendationRef =
+    typeof event.data.recommendationRef === "string" && event.data.recommendationRef.trim()
+      ? event.data.recommendationRef.trim()
+      : null;
+
   // Step 5: Record in predictive_alerts table
   const [alertRecord] = await db
     .insert(predictiveAlerts)
@@ -193,6 +208,8 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       status: "ACTIVE",
       notificationSent: true,
       notificationSentAt: new Date(),
+      ...(runbookRef ? { runbookRef } : {}),
+      ...(recommendationRef ? { recommendationRef } : {}),
     } as any)
     .returning({ id: predictiveAlerts.id });
 

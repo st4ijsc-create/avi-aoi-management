@@ -232,7 +232,15 @@ async function persistRows(rows: InsertOtTelemetry[]): Promise<number> {
   const db = await getDb();
   if (db) {
     const { otTelemetry } = await import("../../drizzle/schema");
-    await db.insert(otTelemetry).values(rows);
+    // G2.9 (doc 44 W0-D) — idempotent replay: rows violating the natural key
+    // uq_ot_telemetry_device_metric_ts ("deviceId", metric, ts — migration 0247)
+    // are silently SKIPPED instead of duplicated or failing the whole batch
+    // (store-forward backfill / reader retry re-sends the same samples). Before
+    // 0247 is applied ON CONFLICT DO NOTHING is a harmless no-op. The returned
+    // count stays rows.length ("persisted or already present") ON PURPOSE: an
+    // all-duplicate replayed batch must count as success so store-and-forward
+    // does NOT re-buffer it (that would loop the replay forever).
+    await db.insert(otTelemetry).values(rows).onConflictDoNothing();
     return rows.length;
   }
   return 0; // DB absent on both paths → nothing persisted.

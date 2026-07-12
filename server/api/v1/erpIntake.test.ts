@@ -214,6 +214,32 @@ describe("R0-3 inbound order intake", () => {
     const body = await resp.json();
     expect(body.error.code).toBe("validation_failed");
   });
+
+  // ── W0-F G5.6 (doc 44, mig 0250) — external order identity ──────────────────
+  it("persists externalId/sourceSystem when the payload carries them", async () => {
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { ...AUTH, "X-Idempotency-Key": "ext-1" },
+      body: JSON.stringify(validOrder({ externalId: "SAP-4711", sourceSystem: "SAP" })),
+    });
+    expect(resp.status).toBe(201);
+    expect(state.productionOrders.length).toBe(1);
+    expect(state.productionOrders[0].externalId).toBe("SAP-4711");
+    expect(state.productionOrders[0].sourceSystem).toBe("SAP");
+  });
+
+  it("omits the external columns entirely when the payload has none (pre-0250 statement shape)", async () => {
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { ...AUTH, "X-Idempotency-Key": "ext-2" },
+      body: JSON.stringify(validOrder()),
+    });
+    expect(resp.status).toBe(201);
+    // Conditional spread: absent fields must NOT appear as null columns — the
+    // INSERT keeps its old shape and stays safe on an un-migrated DB.
+    expect("externalId" in state.productionOrders[0]).toBe(false);
+    expect("sourceSystem" in state.productionOrders[0]).toBe(false);
+  });
 });
 
 // ── K0+-b: inbound B2MML XML path maps to the SAME upsert ──────────────────────

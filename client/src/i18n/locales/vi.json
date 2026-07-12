@@ -11183,6 +11183,21 @@
       "load": "Nạp/Triển khai"
     }
   },
+  "confirmWithReason": {
+    "defaultConfirmText": "XÁC NHẬN",
+    "reasonLabel": "Lý do (bắt buộc)",
+    "reasonPlaceholder": "Vì sao bạn thực hiện hành động này? (ghi vào audit)",
+    "reasonTooShort": "Lý do cần tối thiểu {{min}} ký tự",
+    "cancel": "Huỷ",
+    "continue": "Tiếp tục",
+    "finalTitle": "Xác nhận lần cuối",
+    "finalDescription": "Kiểm tra lại tóm tắt bên dưới trước khi thực hiện.",
+    "summaryAction": "Hành động",
+    "summaryReason": "Lý do",
+    "typeToConfirm": "Gõ \"{{text}}\" để xác nhận",
+    "back": "Quay lại",
+    "confirm": "Xác nhận thực hiện"
+  },
   "interlockRules": {
     "whenToUse": "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.",
     "title": "Quản lý quy tắc Interlock",
@@ -11261,7 +11276,12 @@
     "newEventToast": "Interlock vừa kích hoạt",
     "newEventDesc": "Có sự kiện interlock mới vừa phát sinh — mở tab Sự kiện để xem xét.",
     "delete": "Xóa",
-    "deleteConfirmTitle": "Xóa quy tắc interlock?"
+    "deleteConfirmTitle": "Xóa quy tắc interlock?",
+    "disableConfirmTitle": "Tắt rule \"{{name}}\"?",
+    "disableConfirmDescription": "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.",
+    "disableImpact": "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.",
+    "deleteConfirmDescription": "Xoá vĩnh viễn — không thể hoàn tác (đã ghi audit trước khi xoá).",
+    "deleteImpact": "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống."
   },
   "quickIssue": {
     "button": "Báo sự cố",

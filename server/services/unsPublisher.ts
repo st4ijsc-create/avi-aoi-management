@@ -477,6 +477,89 @@ export function publishPackmlState(
   }
 }
 
+// ─── G1.6 (doc 44 W0-D) — cmd_ack publish (LDS-L1 §8.5) ───────────────────────
+//
+// After the commandDispatcher reaches a TERMINAL result (simulated / acked* /
+// failed / timeout / rejected) it calls publishCmdAck (fire-and-forget, via a
+// dynamic import — the dispatcher must never statically import this module back).
+//
+// GATE (default OFF → complete no-op, publish-only behaviour unchanged):
+//   UNS_CMD_ACK_ENABLED === "true"  — the dedicated flag (checked FIRST), riding
+//   the existing UNS mqtt client (needs UNS_BRIDGE_ENABLED + a live connection).
+//
+// HONESTY: when the broker is not connected NOTHING is published (returns false,
+// counted in the failed metric) — no buffering, no fabricated ack. QoS 1 (an ack
+// is a result message — it should survive one broker hop), retain false (acks are
+// events, not state). READ-DIRECTION only: this publishes a RESULT; it opens no
+// control path.
+
+/** LDS-L1 §8.5 — cmd_ack payload: { command_id, correlation_id, status, reason, ts, result? }. */
+export interface CmdAckMessage {
+  /** The caller-visible command identity (= DispatchInput.idempotencyKey). */
+  command_id: string;
+  correlation_id: string | null;
+  status: string;
+  reason: string | null;
+  /** ISO timestamp the terminal result was reached. */
+  ts: string;
+  /** Optional per-write outcomes (DispatchPerWrite[]). */
+  result?: unknown;
+}
+
+/** True when the UNS cmd_ack channel is enabled (default OFF). Read at publish-time. */
+export function isUnsCmdAckEnabled(): boolean {
+  return process.env.UNS_CMD_ACK_ENABLED === "true";
+}
+
+// Fire-and-forget metrics: a publish failure must be VISIBLE (counted) even though
+// it can never fail the dispatch.
+let cmdAckPublished = 0;
+let cmdAckFailed = 0;
+
+/** cmd_ack publish counters (status routers / tests). */
+export function getCmdAckStats(): { published: number; failed: number } {
+  return { published: cmdAckPublished, failed: cmdAckFailed };
+}
+
+/**
+ * cmd_ack topic. Until the full ISA-95 asset path is materialized (doc 44 G1.10,
+ * separate task) the ack is addressed by adapter id under the `syn/` aspect tree
+ * (see contracts/apiSpec.ts channel conventions):
+ *   {UNS_CMD_ACK_TOPIC_ROOT|syn}/{UNS_ENTERPRISE_NAME|AVI-AOI}/cmd_ack/adapter/{adapterId}
+ */
+function cmdAckTopic(target?: { adapterId?: number; machineId?: number | null }): string {
+  const root = process.env.UNS_CMD_ACK_TOPIC_ROOT || "syn";
+  const site = process.env.UNS_ENTERPRISE_NAME || "AVI-AOI";
+  const seg = target?.adapterId != null ? `adapter/${target.adapterId}` : "unmapped";
+  return `${root}/${site}/cmd_ack/${seg}`;
+}
+
+/**
+ * G1.6 — publish one cmd_ack message. Returns true only when a publish was
+ * actually handed to the mqtt client. NEVER throws (fully try/caught) — the
+ * dispatcher calls this fire-and-forget and must be unaffected by any failure.
+ */
+export function publishCmdAck(
+  ack: CmdAckMessage,
+  target?: { adapterId?: number; machineId?: number | null },
+): boolean {
+  if (!isUnsCmdAckEnabled()) return false;
+  if (!client || !connected) {
+    // Honest: broker down/not configured → no publish, but count it (visible).
+    cmdAckFailed += 1;
+    return false;
+  }
+  try {
+    client.publish(cmdAckTopic(target), Buffer.from(JSON.stringify(ack)), { qos: 1, retain: false });
+    cmdAckPublished += 1;
+    return true;
+  } catch (error) {
+    cmdAckFailed += 1;
+    console.error("[UNS] cmd_ack publish failed:", (error as Error)?.message || error);
+    return false;
+  }
+}
+
 /**
  * F3b — Đóng node có chủ đích (graceful NDEATH): phát DDEATH cho mọi device đã birthed
  * rồi NDEATH chủ động. Best-effort với timeout NGẮN (mặc định 1.5s) — KHÔNG throw, dùng

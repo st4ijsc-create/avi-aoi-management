@@ -25,7 +25,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
-import { PageContainer, PageHeader } from "@/components/patterns";
+import { ConfirmWithReason, PageContainer, PageHeader } from "@/components/patterns";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { useLocation } from "wouter";
 import { navItems } from "@/lib/navigation";
@@ -41,10 +41,6 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -138,7 +134,6 @@ export default function InterlockRuleManagement() {
   // ── Rule dialog ──
   const [ruleOpen, setRuleOpen] = useState(false);
   const [form, setForm] = useState<RuleForm>(emptyRule);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
@@ -408,21 +403,55 @@ export default function InterlockRuleManagement() {
                                 </Tooltip>
                               )
                             )}
+                            {/* doc 44 G5.4 — tắt một rule an toàn đang chạy = gỡ lớp bảo vệ
+                                tự động → ConfirmWithReason (2 bước + lý do bắt buộc). */}
                             {r.enabled && (
-                              <Button size="sm" variant="outline" disabled={!canEdit || disableRule.isPending}
-                                title={editReason}
-                                onClick={() => disableRule.mutate({ id: r.id })}>
-                                <Pause className="h-4 w-4 mr-1" /> {t("interlockRules.disable")}
-                              </Button>
+                              <ConfirmWithReason
+                                trigger={
+                                  <Button size="sm" variant="outline" disabled={!canEdit || disableRule.isPending}
+                                    title={editReason}>
+                                    <Pause className="h-4 w-4 mr-1" /> {t("interlockRules.disable")}
+                                  </Button>
+                                }
+                                title={t("interlockRules.disableConfirmTitle", 'Tắt rule "{{name}}"?', { name: r.name })}
+                                description={t("interlockRules.disableConfirmDescription", "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.")}
+                                impact={t("interlockRules.disableImpact", "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.")}
+                                riskLevel="low"
+                                disabled={!canEdit || disableRule.isPending}
+                                onConfirm={async (reason) => {
+                                  // TODO(doc 44 G5.4): interlock.disable chưa nhận `reason` trong
+                                  // input — khi backend thêm field, truyền reason vào mutation
+                                  // (audit server-side) thay vì chỉ log client-side như dưới.
+                                  console.info("[interlock.disable] reason:", { id: r.id, reason });
+                                  await disableRule.mutateAsync({ id: r.id });
+                                }}
+                              />
                             )}
                             <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
-                              title={deleteReason}
-                              onClick={() => setDeleteTarget({ id: r.id, name: r.name })}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {/* doc 44 G5.4 — hard-delete rule an toàn: rủi ro cao → 2 bước
+                                + lý do + gõ chuỗi xác nhận (thay AlertDialog 1 bước cũ). */}
+                            <ConfirmWithReason
+                              trigger={
+                                <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
+                                  title={deleteReason}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              }
+                              title={t("interlockRules.confirmDelete", { name: r.name })}
+                              description={t("interlockRules.deleteConfirmDescription", "Xoá vĩnh viễn — không thể hoàn tác (đã ghi audit trước khi xoá).")}
+                              impact={t("interlockRules.deleteImpact", "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống.")}
+                              riskLevel="high"
+                              disabled={!canDelete || deleteRule.isPending}
+                              onConfirm={async (reason) => {
+                                // TODO(doc 44 G5.4): interlock.delete chưa nhận `reason` trong
+                                // input — khi backend thêm field, truyền reason vào mutation
+                                // (audit server-side) thay vì chỉ log client-side như dưới.
+                                console.info("[interlock.delete] reason:", { id: r.id, reason });
+                                await deleteRule.mutateAsync({ id: r.id });
+                              }}
+                            />
                           </TableCell>
                         </TableRow>
                       );
@@ -664,26 +693,7 @@ export default function InterlockRuleManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete confirm (AlertDialog — replaces window.confirm) ── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("interlockRules.deleteConfirmTitle", "Delete interlock rule?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("interlockRules.confirmDelete", { name: deleteTarget?.name ?? "" })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("interlockRules.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleteRule.isPending}
-              onClick={() => { if (deleteTarget) { deleteRule.mutate({ id: deleteTarget.id }); setDeleteTarget(null); } }}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />{t("interlockRules.delete", "Delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* doc 44 G5.4 — delete confirm chuyển sang ConfirmWithReason per-row (2 bước + lý do). */}
     </PageContainer>
     </DashboardLayout>
   );

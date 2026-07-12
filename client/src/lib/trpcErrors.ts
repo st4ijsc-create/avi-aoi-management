@@ -77,6 +77,52 @@ function getErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+// ── Doc 44 G5.4 — 403 KHÔNG nuốt reason cụ thể ────────────────────────────────
+const FORBIDDEN_GENERIC = "Bạn không có quyền thực hiện thao tác này";
+
+/** Mã reason dạng CODE (POLICY_DENIED, APPROVAL_REQUIRED, …) trong message/shape. */
+const FORBIDDEN_REASON_CODE_RE =
+  /\b(POLICY_DENIED|APPROVAL_REQUIRED|PERMISSION_[A-Z_]+|LICENSE_[A-Z_]+|MODULE_[A-Z_]+|ROLE_[A-Z_]+)\b/;
+
+/** Message 403 có nội dung actionable (quyền/role/2FA/duyệt/license) → đáng hiện. */
+const FORBIDDEN_REASON_HINT_RE =
+  /(required role|permission|policy|approval|license|module|quyền|vai trò|2fa|xác thực 2 bước|otp|phê duyệt|duyệt|giấy phép|khoá|khóa)/i;
+
+/** Lấy reason code từ shape (data.reasonCode / data.reason) nếu server có gửi. */
+function getReasonCodeFromShape(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const data = (error as { data?: { reasonCode?: unknown; reason?: unknown } }).data;
+  if (data && typeof data.reasonCode === "string") return data.reasonCode;
+  if (data && typeof data.reason === "string") return data.reason;
+  return undefined;
+}
+
+/**
+ * Dịch lỗi FORBIDDEN: trước đây làm phẳng 100% thành câu generic — user không
+ * biết vì sao bị chặn (thiếu quyền gì? cần duyệt? cần 2FA?). Giờ: nếu message/
+ * shape mang reason nhận diện được thì hiện kèm mã + message gốc; chỉ fallback
+ * generic khi không có gì (hoặc message có dấu hiệu leak nội bộ).
+ */
+function mapForbidden(error: unknown, message: string): string {
+  if (!message || looksLikeInternalLeak(message)) return FORBIDDEN_GENERIC;
+  if (message.trim() === FORBIDDEN_GENERIC) return FORBIDDEN_GENERIC; // tránh lặp đôi
+  const truncated =
+    message.length > MAX_MESSAGE_LENGTH ? `${message.slice(0, MAX_MESSAGE_LENGTH)}…` : message;
+  const shapeCode = getReasonCodeFromShape(error);
+  const messageCode = FORBIDDEN_REASON_CODE_RE.exec(message)?.[1];
+  const reasonCode = shapeCode ?? messageCode;
+  if (reasonCode) {
+    // Không lặp mã nếu message đã chứa nguyên văn mã đó.
+    return message.includes(reasonCode)
+      ? `${FORBIDDEN_GENERIC} — ${truncated}`
+      : `${FORBIDDEN_GENERIC} — [${reasonCode}] ${truncated}`;
+  }
+  if (FORBIDDEN_REASON_HINT_RE.test(message)) {
+    return `${FORBIDDEN_GENERIC} — ${truncated}`;
+  }
+  return FORBIDDEN_GENERIC;
+}
+
 /** Dịch lỗi tRPC (hoặc Error bất kỳ) thành chuỗi tiếng Việt an toàn để hiện cho user. */
 export function mapTrpcError(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
@@ -84,7 +130,9 @@ export function mapTrpcError(error: unknown): string {
 
   switch (code) {
     case "FORBIDDEN":
-      return "Bạn không có quyền thực hiện thao tác này";
+      // Doc 44 G5.4 — giữ reason cụ thể (POLICY_DENIED/APPROVAL_REQUIRED/quyền
+      // gì/2FA) thay vì nuốt hết; fallback generic khi message không có gì.
+      return mapForbidden(error, message);
     case "UNAUTHORIZED":
       return "Phiên đăng nhập hết hạn, vui lòng đăng nhập lại";
     case "CONFLICT":

@@ -14,7 +14,9 @@
  *   • No-op unless CFX_ENABLED === "true" (default OFF).
  *   • Endpoints come from env CFX_ENDPOINTS (JSON array or CSV of
  *     {host,port,address,machineCode?,username?,password?,transport?}).
- *   • start() / stop() are idempotent. NOT mounted into server boot — export only.
+ *   • start() / stop() are idempotent. MOUNTED into server boot (G1.2, doc 44 W0-D):
+ *     server/_core/index.ts calls startCfxClient() behind try/catch after the
+ *     MTConnect bring-up, and stopCfxClient() on shutdown. Flag-OFF ⇒ no-op.
  *
  * RECONNECT / LINK-LOSS HONESTY: `rhea` owns automatic reconnection with backoff
  * (reconnect:true, initial/max delay configurable). We DON'T fake a connection —
@@ -397,7 +399,11 @@ export class CfxClient {
 // ── Module-level singleton (mirrors startMtconnectPoller / stop) ─────────────
 let singleton: CfxClient | null = null;
 
-/** Start the shared CFX client. NOT mounted into server boot — call explicitly. */
+/**
+ * Start the shared CFX client. Mounted into server boot (server/_core/index.ts,
+ * G1.2 doc 44 W0-D) — gated by CFX_ENABLED (default OFF) so boot stays a no-op
+ * until the operator opts in. Safe to also call explicitly (idempotent).
+ */
 export async function startCfxClient(deps?: CfxClientDeps): Promise<boolean> {
   if (!singleton) singleton = new CfxClient(deps);
   return singleton.start();

@@ -167,7 +167,8 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       { name: "Safety", description: "U4a — ADVISORY safety events & zones (read; not safety-rated)." },
       { name: "Twin", description: "U4a — digital-twin scene graph & 3D model registry (read)." },
       { name: "Programs", description: "U4a — device programs & deployments (read)." },
-      { name: "PdM", description: "U4a — predictive-maintenance failure risk (read)." },
+      { name: "PdM", description: "U4a/W0-F — predictive-maintenance failure risk, asset health, prediction history (read)." },
+      { name: "Models", description: "W0-F G4.27 — AI model registry: catalogue + drift (read); promote/rollback (flag-gated, default OFF)." },
       { name: "Anomaly", description: "U4a — ADVISORY robot-behaviour anomaly events (read)." },
       { name: "Standards", description: "U4a — equipment governance: device types, alarm taxonomy, compliance (read)." },
       { name: "Ecosystem", description: "U4a — single-pane roll-up: hierarchy, KPI, per-asset cockpit detail (read)." },
@@ -528,6 +529,104 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "400": { description: "Bad request — missing/invalid machineId", content: jsonErr() },
             ...errResponses(),
           },
+        },
+      },
+      // ── W0-F G4.11 (doc 44) — PdM asset health + prediction history (read). ──
+      "/api/v1/health/assets/{id}": {
+        get: {
+          tags: ["PdM"],
+          summary: "Predicted health + RUL + confidence + factors for one asset",
+          description:
+            "Requires scope `pdm:read`. Read-only. Wraps predictiveMaintenanceService.computeFailureRisk + the latest " +
+            "machine_health_history snapshot. HONEST: `health` is null when no snapshot exists; `rul.method` is " +
+            "`heuristic-proxy` (EWMA forecast crossing capped by MTBF) — not a trained survival model.",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "integer" } },
+            { name: "windowHours", in: "query", required: false, schema: { type: "integer" } },
+          ],
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Bad request — invalid asset id", content: jsonErr() },
+            ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/predictions": {
+        get: {
+          tags: ["PdM"],
+          summary: "Prediction/alert history (predictive_alerts)",
+          description:
+            "Requires scope `pdm:read`. Read-only over the central predictive_alerts table. Honest-empty when no rows.",
+          parameters: [
+            { name: "assetId", in: "query", required: false, schema: { type: "integer" } },
+            { name: "type", in: "query", required: false, schema: { type: "string", enum: ["DEFECT_SPIKE", "YIELD_DROP", "MACHINE_FAILURE", "QUALITY_DEGRADATION", "PATTERN_ANOMALY"] } },
+            { name: "from", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "to", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", default: 100, maximum: 500 } },
+          ],
+          responses: { "200": { description: "OK", content: jsonOk() }, "400": { description: "Bad request — invalid filter", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      // ── W0-F G4.27 (doc 44) — AI model registry. ──
+      "/api/v1/models": {
+        get: {
+          tags: ["Models"],
+          summary: "AI model catalogue (models + versions + stage/status)",
+          description: "Requires scope `models:read`. Read-only over ai_models + model_versions. Honest-empty without a DB.",
+          parameters: [
+            { name: "status", in: "query", required: false, schema: { type: "string" } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", default: 100, maximum: 500 } },
+          ],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/models/{id}/promote": {
+        post: {
+          tags: ["Models"],
+          summary: "Promote (activate) a model version — flag-gated, default OFF",
+          description:
+            "Requires scope `models:write`. Gated by `V1_MODEL_MUTATIONS_ENABLED` (default OFF → structured 501 " +
+            "`v1_model_mutations_disabled`). When ON, wraps the SAME internal aiModelService.activateModelVersion path.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["versionId"], properties: { versionId: { type: "integer" } } } } } },
+          responses: {
+            "200": { description: "Promoted", content: jsonOk() },
+            "400": { description: "Missing/invalid versionId", content: jsonErr() },
+            "501": { description: "Mutations not opened (V1_MODEL_MUTATIONS_ENABLED)", content: jsonErr() },
+            ...errResponses({ "404": { description: "Model/version not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/models/{id}/rollback": {
+        post: {
+          tags: ["Models"],
+          summary: "Roll back a model to a stable version — flag-gated, default OFF",
+          description:
+            "Requires scope `models:write`. Gated by `V1_MODEL_MUTATIONS_ENABLED` (default OFF → structured 501). When ON, " +
+            "wraps modelAutoRollback.manualRollback (records the append-only model_rollback_events audit row). Body " +
+            "`toVersionId` optional — omitted, the most recent stable version with an eval baseline is auto-selected.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { toVersionId: { type: "integer" }, reason: { type: "string" } } } } } },
+          responses: {
+            "200": { description: "Rolled back", content: jsonOk() },
+            "409": { description: "No active version / no stable rollback target", content: jsonErr() },
+            "501": { description: "Mutations not opened (V1_MODEL_MUTATIONS_ENABLED)", content: jsonErr() },
+            ...errResponses({ "404": { description: "Model not found", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/monitoring/drift": {
+        get: {
+          tags: ["Models"],
+          summary: "AI drift monitoring report (advisory, read-only)",
+          description:
+            "Requires scope `models:read`. Read-only: aiDriftMonitor flag/counters + persisted model_drift_alerts rows. " +
+            "ADVISORY — reading this never changes which model serves.",
+          parameters: [
+            { name: "modelId", in: "query", required: false, schema: { type: "integer" } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", default: 50, maximum: 200 } },
+          ],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
         },
       },
       "/api/v1/anomaly/events": {

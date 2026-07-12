@@ -192,11 +192,14 @@ import { readinessRouter } from "./routers/readinessRouter"; // doc 40 Wave 3A (
 import { factoryCommandRouter } from "./routers/factoryCommandRouter"; // doc 40 Wave 4d (§13.1-13.3): READ-ONLY whole-factory command view aggregation (overview + machineDetail; set-based, no control path)
 import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11): READ-ONLY war-room shift briefing — line OEE/output/ng + shift compare + plan-vs-actual (set-based, no control path)
 import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
+import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
 export const appRouter = router({
   system: systemRouter,
+  // doc 44 G5.9: client RUM web-vitals ingest (public; đo được cả trước login)
+  rum: rumRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     checkSetupRequired: publicProcedure.query(async () => {

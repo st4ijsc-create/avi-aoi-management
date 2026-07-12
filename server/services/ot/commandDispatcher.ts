@@ -53,6 +53,20 @@
  *   - Idempotency: a prior terminal commandLog for the same idempotencyKey is
  *     returned as-is (no second dispatch / no blind retry).
  *   - NO auto-chaining: dispatch handles exactly one command request.
+ *   - G1.7 (doc 44 W0-D): every ledger row additionally carries `correlation_id`
+ *     (from DispatchInput.correlationId, else the AsyncLocalStorage correlation
+ *     backbone, else NULL) + `deadline_ms`. When `deadlineMs` is provided it
+ *     REPLACES the global OT_CONTROL_TIMEOUT_MS for THIS command (capped by
+ *     OT_CONTROL_TIMEOUT_MAX_MS when set); past-deadline unacked → 'timeout'
+ *     exactly like the existing flow. Absent → behaviour byte-for-byte unchanged.
+ *   - G1.6 (doc 44 W0-D): after a terminal result (any branch — simulated / acked*
+ *     / failed / timeout / rejected, including an idempotent cached replay) a
+ *     `cmd_ack` message { command_id, correlation_id, status, reason, ts, result? }
+ *     (LDS-L1 §8.5) is published to the UNS via unsPublisher.publishCmdAck.
+ *     FIRE-AND-FORGET: a publish error can NEVER fail or delay the dispatch
+ *     result. Flag UNS_CMD_ACK_ENABLED (default OFF ⇒ nothing is imported or
+ *     published). The publisher is loaded via dynamic import to avoid a module
+ *     cycle (unsPublisher statically imports this dispatcher).
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -77,6 +91,9 @@ import { isCommissioned, isCommissioningRequired } from "./commissioningService"
 // không tạo vòng phụ thuộc).
 import { evaluateInterlockGate } from "../interlock/interlockGate";
 import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGate"; // doc 33 I2 (F5): policy-as-code gate
+// G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
+// caller did not pass an explicit correlationId we read the ambient one (if any).
+import { getCorrelationId } from "../observability/correlation";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -162,6 +179,45 @@ export interface DispatchInput {
    * (no default policy matches → allow). See server/services/security/policyGate.ts.
    */
   policyContext?: { action?: string; approved?: boolean } & Record<string, unknown>;
+  /**
+   * G1.7 — optional cross-layer correlation id (order → work-order → command → ack).
+   * Absent → the ambient AsyncLocalStorage correlation context is used (if any),
+   * else NULL. Persisted on EVERY commandLog row (all branches) + echoed in cmd_ack.
+   */
+  correlationId?: string;
+  /**
+   * G1.7 — optional per-command ack deadline in ms. When provided (finite, > 0) it
+   * is used INSTEAD of the global OT_CONTROL_TIMEOUT_MS for this command (capped by
+   * OT_CONTROL_TIMEOUT_MAX_MS when configured); an unacked write past the deadline
+   * → status 'timeout' (the existing flow). Absent → behaviour unchanged.
+   */
+  deadlineMs?: number;
+}
+
+/** G1.7 — the (correlationId, deadlineMs) pair persisted on every ledger row. */
+function commandContext(input: DispatchInput): { correlationId: string | null; deadlineMs: number | null } {
+  const explicit =
+    typeof input.correlationId === "string" && input.correlationId.trim() ? input.correlationId.trim() : null;
+  const deadlineMs =
+    typeof input.deadlineMs === "number" && Number.isFinite(input.deadlineMs) && input.deadlineMs > 0
+      ? Math.trunc(input.deadlineMs)
+      : null;
+  return { correlationId: explicit ?? getCorrelationId() ?? null, deadlineMs };
+}
+
+/**
+ * G1.7 — the timeout used for THIS command's write (and read-back) race:
+ *   • deadlineMs absent/invalid → the global env timeout (OT_CONTROL_TIMEOUT_MS,
+ *     default 5000ms) — byte-for-byte the prior behaviour.
+ *   • deadlineMs provided → min(deadlineMs, OT_CONTROL_TIMEOUT_MAX_MS) when the
+ *     max is configured, else deadlineMs as-is.
+ */
+function effectiveTimeoutMs(deadlineMs?: number): number {
+  const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
+  const maxRaw = Number(process.env.OT_CONTROL_TIMEOUT_MAX_MS);
+  const max = Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : null;
+  return max != null ? Math.min(Math.trunc(deadlineMs), max) : Math.trunc(deadlineMs);
 }
 
 /** Resolve the (requestedBy, confirmedBy) pair recorded on commandLog rows. */
@@ -222,13 +278,57 @@ const TERMINAL_STATUSES: ReadonlySet<DispatchStatus> = new Set([
   "rejected",
 ]);
 
+/** G1.6 — flag for the UNS cmd_ack publish (default OFF ⇒ dispatch is unchanged). */
+function unsCmdAckEnabled(): boolean {
+  return process.env.UNS_CMD_ACK_ENABLED === "true";
+}
+
+/**
+ * G1.6 — publish the terminal cmd_ack to the UNS, FIRE-AND-FORGET. Payload per
+ * LDS-L1 §8.5: { command_id, correlation_id, status, reason, ts, result? }.
+ * `command_id` = the caller's idempotencyKey (the identity the caller knows).
+ * Dynamic import (no static cycle: unsPublisher imports this module). Any error
+ * is logged + counted inside the publisher — it can NEVER affect the dispatch.
+ */
+function emitCmdAck(input: DispatchInput, result: DispatchResult): void {
+  if (!unsCmdAckEnabled()) return;
+  const ack = {
+    command_id: input.idempotencyKey,
+    correlation_id: commandContext(input).correlationId,
+    status: result.status,
+    reason: result.reason ?? null,
+    ts: new Date().toISOString(),
+    result: result.results,
+  };
+  void (async () => {
+    try {
+      const { publishCmdAck } = await import("../unsPublisher");
+      publishCmdAck(ack, { adapterId: input.adapterId, machineId: input.machineId ?? null });
+    } catch (err) {
+      // Fire-and-forget: NEVER propagate into the dispatch result.
+      console.error("[Dispatch] cmd_ack publish failed (ignored):", (err as Error)?.message || err);
+    }
+  })();
+}
+
 /**
  * Dispatch a machine command. In F4a this is always DRY-RUN unless
  * OT_CONTROL_ENABLED === "true" (reserved for F4b). Returns a structured result
  * and records commandLog rows on every branch. Never throws for the expected
  * failure modes (offline / not writable / not confirmed).
+ *
+ * G1.6: this exported wrapper publishes the terminal cmd_ack (fire-and-forget,
+ * flag UNS_CMD_ACK_ENABLED) AFTER the core dispatch resolved — every terminal
+ * branch (including an idempotent cached replay) emits exactly one ack per call.
+ * It adds NO gate and changes NO result: dispatchCore is the entire safety path.
  */
 export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
+  const result = await dispatchCore(input);
+  emitCmdAck(input, result);
+  return result;
+}
+
+async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   const db = await getDb();
   if (!db) {
     return { ok: false, simulated: false, status: "failed", reason: "DB_UNAVAILABLE", results: [], commandLogIds: [] };
@@ -437,7 +537,9 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     offset: r.offset,
   }));
 
-  const timeoutMs = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  // G1.7 — per-command deadline (when provided) replaces the global env timeout
+  // for THIS command; absent → OT_CONTROL_TIMEOUT_MS (default 5000ms) as before.
+  const timeoutMs = effectiveTimeoutMs(input.deadlineMs);
   const TIMEOUT = Symbol("timeout");
 
   let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
@@ -542,6 +644,7 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // Insert one commandLog row per write (append-only — single insert per write).
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms
   const results: DispatchPerWrite[] = [];
   for (const o of outcomes) {
     const r = resolved[o.idx];
@@ -559,6 +662,7 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
         confirmedBy: who.confirmedBy,
         status: o.status,
         ...trig,
+        ...ctx,
         readBackValue: o.readBackValue as any,
         errorText: o.errorText,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
@@ -705,6 +809,7 @@ async function writeSimulated(
   const commandLogIds: number[] = [];
   const results: DispatchPerWrite[] = [];
   const errorText = blockedReason ? `${blockedReason}: ${blockedDetail ?? "blocked"}` : null;
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (every branch)
   for (const r of resolved) {
     const [row] = await db
       .insert(commandLog)
@@ -720,6 +825,7 @@ async function writeSimulated(
         confirmedBy: who.confirmedBy,
         status: "simulated",
         ...trig,
+        ...ctx,
         errorText,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
       })
@@ -765,6 +871,7 @@ async function writeAll(
   const ids: number[] = [];
   const who = actors(input);
   const trig = triggerCols(input);
+  const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (rejected/failed too)
   const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
   const list = writes.length > 0 ? writes : [{ tagKey: null as any, value: null }];
   for (let i = 0; i < list.length; i++) {
@@ -783,6 +890,7 @@ async function writeAll(
         confirmedBy: who.confirmedBy,
         status,
         ...trig,
+        ...ctx,
         errorText: `${reason}: ${detail}`,
         idempotencyKey: perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
       })

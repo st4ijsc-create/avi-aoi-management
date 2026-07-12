@@ -5124,6 +5124,28 @@ async function startServer() {
     console.error("[MTConnect] init failed:", (err as any)?.message || err);
   }
 
+  // G1.2 (doc 44 W0-D) — IPC-CFX (IPC-2591) telemetry client: subscribe CFX JSON
+  // envelopes from SMT machines (mounters / reflow / stencil printers) over AMQP 1.0
+  // → CanonicalSample → the ONE unified telemetry bus. INBOUND-ONLY (monitoring, no
+  // control path). No-op unless CFX_ENABLED=true + CFX_ENDPOINTS configured. A CFX
+  // startup error NEVER crashes the server (mirrors the MTConnect bring-up above).
+  try {
+    const { startCfxClient } = await import("../services/cfx");
+    await startCfxClient();
+  } catch (err) {
+    console.error("[CFX] init failed:", (err as any)?.message || err);
+  }
+
+  // G2.5 (doc 44 W0-E) — Contract Schema Registry: hydrate persisted schemas +
+  // seed canonical contracts (contracts/canonical/*.json) through the BACKWARD
+  // compat gate. No-op unless CONTRACT_REGISTRY_PERSIST_ENABLED=true; never throws.
+  try {
+    const { initContractRegistry } = await import("../services/contracts/schemaRegistry");
+    await initContractRegistry();
+  } catch (err) {
+    console.error("[Contracts] registry init failed:", (err as any)?.message || err);
+  }
+
   // F5a — Interlock engine (ALERT-ONLY). No-op unless INTERLOCK_ENGINE_ENABLED=true.
   // SAFETY: this engine raises Andon + records interlock_events ONLY; it has NO
   // path to commandDispatcher / driver.writeTags (auto block/stop → 'skipped').
@@ -5283,6 +5305,10 @@ async function startServer() {
     // MTConnect — dừng poller (no-op nếu chưa chạy)
     import("../services/mtconnect/mtconnectPoller")
       .then((m) => m.stopMtconnectPoller())
+      .catch(() => {});
+    // G1.2 — dừng CFX client (no-op nếu chưa chạy)
+    import("../services/cfx")
+      .then((m) => m.stopCfxClient())
       .catch(() => {});
     // F5a — dừng interlock engine (no-op nếu chưa chạy)
     import("../services/interlock")

@@ -11204,6 +11204,21 @@
       "load": "Load/Deploy"
     }
   },
+  "confirmWithReason": {
+    "defaultConfirmText": "CONFIRM",
+    "reasonLabel": "Reason (required)",
+    "reasonPlaceholder": "Why are you performing this action? (recorded for audit)",
+    "reasonTooShort": "Reason must be at least {{min}} characters",
+    "cancel": "Cancel",
+    "continue": "Continue",
+    "finalTitle": "Final confirmation",
+    "finalDescription": "Review the summary below before proceeding.",
+    "summaryAction": "Action",
+    "summaryReason": "Reason",
+    "typeToConfirm": "Type \"{{text}}\" to confirm",
+    "back": "Back",
+    "confirm": "Confirm and proceed"
+  },
   "interlockRules": {
     "whenToUse": "When to use — define safety rules that automatically stop or slow a machine when a limit is crossed, and review the events they fired.",
     "title": "Interlock Rule Management",
@@ -11282,7 +11297,12 @@
     "newEventToast": "Interlock triggered",
     "newEventDesc": "A new interlock event fired — open the Events tab to review.",
     "delete": "Delete",
-    "deleteConfirmTitle": "Delete interlock rule?"
+    "deleteConfirmTitle": "Delete interlock rule?",
+    "disableConfirmTitle": "Disable rule \"{{name}}\"?",
+    "disableConfirmDescription": "The rule will stop monitoring its condition and stop triggering the configured action.",
+    "disableImpact": "This automatic protection layer stays OFF until re-enabled — threshold breaches will no longer block/stop/alert.",
+    "deleteConfirmDescription": "Permanent delete — cannot be undone (an audit record is written before deletion).",
+    "deleteImpact": "The rule definition and its automatic protection layer disappear from the system."
   },
   "quickIssue": {
     "button": "Report issue",
