@@ -101,7 +101,7 @@ export function MachineOnboardingWizardContent() {
 
 export default function MachineOnboardingWizard() {
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/machine-onboarding">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/machine-onboarding">
       <MachineOnboardingWizardContent />
     </DashboardLayout>
   );

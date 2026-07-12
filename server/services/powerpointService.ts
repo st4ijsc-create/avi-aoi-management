@@ -87,7 +87,7 @@ function addTitleSlide(
   }
 
   // Company name
-  slide.addText(config.companyName || "AVI/AOI Management System", {
+  slide.addText(config.companyName || "SYNAPSE", {
     x: SLIDE_MARGIN,
     y: 4.2,
     w: "90%",
@@ -112,7 +112,7 @@ function addTitleSlide(
 }
 
 function addFooter(slide: PptxGenJS.Slide, config: PowerPointConfig, pageNum: number): void {
-  slide.addText(`${config.companyName || "AVI/AOI Management"} | Trang ${pageNum}`, {
+  slide.addText(`${config.companyName || "SYNAPSE"} | Trang ${pageNum}`, {
     x: 0.3,
     y: 5.2,
     w: "95%",
@@ -359,8 +359,8 @@ export async function exportDashboardToPowerPoint(
   config: PowerPointConfig
 ): Promise<Buffer> {
   const pptx = new PptxGenJS();
-  pptx.author = config.author || "AVI/AOI Management System";
-  pptx.company = config.companyName || "AVI/AOI Management";
+  pptx.author = config.author || "SYNAPSE";
+  pptx.company = config.companyName || "SYNAPSE";
   pptx.title = config.title;
   pptx.subject = config.subtitle || "Dashboard Report";
   pptx.layout = "LAYOUT_WIDE"; // 13.33 x 7.5

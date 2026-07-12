@@ -173,7 +173,7 @@ export const reportArtifactRouter = router({
             </div>`;
           await sendEmail({
             to: input.emailTo,
-            subject: `[AVI/AOI] ${result.title}`,
+            subject: `[SYNAPSE] ${result.title}`,
             html,
           });
           emailedTo = input.emailTo.length;

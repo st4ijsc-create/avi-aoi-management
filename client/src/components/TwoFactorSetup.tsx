@@ -128,7 +128,7 @@ export function TwoFactorSetup() {
   };
 
   const downloadBackupCodes = () => {
-    const content = `AVI-AOI Management - ${t('auth.backupCodes2FA')}
+    const content = `SYNAPSE - ${t('auth.backupCodes2FA')}
 =====================================
 ${t('auth.createdAt')}: ${new Date().toLocaleString("vi-VN")}
 

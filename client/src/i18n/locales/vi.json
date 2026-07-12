@@ -2262,7 +2262,7 @@
     "describeTemplate": "Describe Mẫu",
     "customizeWidgets": "Tùy chỉnh Widgets",
     "beFirstToPublish": "Be Đầu tiên đến Xuất bản",
-    "aviAoiManagement": "Quản lý AVI AOI",
+    "aviAoiManagement": "Quản lý SYNAPSE",
     "widgetsIncluded": "Các widget bao gồm",
     "widgetRefreshed": "Đã làm mới widget",
     "totalProduction": "Tổng Sản xuất",
@@ -2983,7 +2983,7 @@
   },
   "guide": {
     "userGuide": "Hướng dẫn sử dụng",
-    "userGuideDescription": "Tài liệu hướng dẫn đầy đủ về cách sử dụng hệ thống Continuum",
+    "userGuideDescription": "Tài liệu hướng dẫn đầy đủ về cách sử dụng hệ thống SYNAPSE",
     "tableOfContents": "Mục lục",
     "searchPlaceholder": "Tìm kiếm trong hướng dẫn...",
     "faqTitle": "Câu hỏi thường gặp",
@@ -2996,10 +2996,10 @@
     "alertRulesDesc": "Thiết lập và quản lý các quy tắc cảnh báo",
     "overview": {
       "title": "Tổng quan",
-      "description": "Giới thiệu tổng quan về hệ thống Continuum",
+      "description": "Giới thiệu tổng quan về hệ thống SYNAPSE",
       "introduction": {
         "title": "Giới thiệu hệ thống",
-        "content": "Hệ thống Continuum là giải pháp toàn diện để giám sát, phân tích và quản lý các máy kiểm tra tự động trong nhà máy sản xuất.\n\nHệ thống cung cấp khả năng theo dõi thời gian thực, phân tích dữ liệu kiểm tra, báo cáo năng suất và quản lý chất lượng sản phẩm."
+        "content": "Hệ thống SYNAPSE là giải pháp toàn diện để giám sát, phân tích và quản lý các máy kiểm tra tự động trong nhà máy sản xuất.\n\nHệ thống cung cấp khả năng theo dõi thời gian thực, phân tích dữ liệu kiểm tra, báo cáo năng suất và quản lý chất lượng sản phẩm."
       },
       "architecture": {
         "title": "Kiến trúc hệ thống",
@@ -3133,7 +3133,7 @@
       },
       "maxPoints": {
         "question": "Số điểm kiểm tra tối đa trên một PCB là bao nhiêu?",
-        "answer": "Số điểm kiểm tra tối đa phụ thuộc vào cấu hình máy AOI và chương trình kiểm tra. Hệ thống Continuum có thể xử lý đến hàng nghìn điểm kiểm tra trên mỗi PCB. Để tối ưu hiệu suất, khuyến nghị giới hạn dưới 5000 điểm kiểm tra mỗi board."
+        "answer": "Số điểm kiểm tra tối đa phụ thuộc vào cấu hình máy AOI và chương trình kiểm tra. Hệ thống SYNAPSE có thể xử lý đến hàng nghìn điểm kiểm tra trên mỗi PCB. Để tối ưu hiệu suất, khuyến nghị giới hạn dưới 5000 điểm kiểm tra mỗi board."
       }
     }
   },
@@ -5574,14 +5574,14 @@
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
     "hero": {
-      "title": "Continuum",
+      "title": "SYNAPSE",
       "description": "Nền tảng quản trị sản xuất và chất lượng dành cho dây chuyền kiểm tra tự động, giúp doanh nghiệp theo dõi vận hành theo thời gian thực, giảm lỗi và tối ưu hiệu suất.",
       "version": "Version 1.0.0",
       "updated": "Cập nhật: 13/05/2026"
     },
     "system": {
       "title": "Giới thiệu về hệ thống",
-      "description": "Các năng lực chính của nền tảng Continuum trong vận hành sản xuất.",
+      "description": "Các năng lực chính của nền tảng SYNAPSE trong vận hành sản xuất.",
       "highlights": [
         "Giám sát máy AVI/AOI theo thời gian thực qua MQTT và dashboard trực quan.",
         "Chuẩn hóa dữ liệu kiểm tra, truy vết lỗi theo từng sản phẩm, công đoạn và máy.",
@@ -5601,7 +5601,7 @@
     },
     "company": {
       "title": "Giới thiệu công ty",
-      "name": "Công ty giải pháp AVI/AOI",
+      "name": "Công ty giải pháp SYNAPSE",
       "description": "Đơn vị triển khai và vận hành giải pháp.",
       "paragraph1": "Hệ thống được phát triển cho mô hình sản xuất thông minh, tập trung vào tự động hóa kiểm tra chất lượng, chuẩn hóa dữ liệu và khả năng mở rộng theo nhiều nhà máy.",
       "paragraph2": "Công ty định hướng chuyển đổi số sản xuất theo tiêu chí: minh bạch dữ liệu, phản ứng nhanh với sự cố và cải tiến liên tục dựa trên phân tích thực tế."
@@ -5610,7 +5610,7 @@
       "title": "Người phát triển hệ thống",
       "description": "Thông tin đội ngũ phát triển và bảo trì.",
       "teamLabel": "Nhóm phát triển",
-      "teamValue": "Đội kỹ thuật nền tảng Continuum",
+      "teamValue": "Đội kỹ thuật nền tảng SYNAPSE",
       "roleLabel": "Vai trò chính",
       "roleValue": "Thiết kế kiến trúc hệ thống, phát triển tính năng nghiệp vụ, tối ưu hiệu năng, và vận hành liên tục trong môi trường sản xuất.",
       "contactLabel": "Liên hệ nội bộ",
@@ -6510,7 +6510,7 @@
     "email": "Email",
     "name": "Tên",
     "backupCodesFileGeneratedAt": "Tạo lúc",
-    "backupCodesFileTitle": "Mã dự phòng Continuum"
+    "backupCodesFileTitle": "Mã dự phòng SYNAPSE"
   },
   "qualityGates": {
     "optionalPlaceholder": "Tùy chọn Chỗ nhập...",
@@ -13899,7 +13899,7 @@
     "sectionCount": "{{count}} mục hướng dẫn",
     "subtitle": "Bám sát tài liệu hệ thống: đăng nhập, vận hành, giám sát, phân tích, báo cáo và quản trị.",
     "tableOfContents": "Mục lục",
-    "title": "Hướng dẫn sử dụng hệ thống MES Continuum",
+    "title": "Hướng dẫn sử dụng hệ thống MES SYNAPSE",
     "updated": "Cập nhật: 26/01/2026",
     "version": "Phiên bản 1.0.0"
   },

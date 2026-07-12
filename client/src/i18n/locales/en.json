@@ -2446,7 +2446,7 @@
     "below": "Below",
     "beFirstToPublish": "Be first to publish",
     "barChart": "Bar chart",
-    "aviAoiManagement": "Avi aoi management",
+    "aviAoiManagement": "SYNAPSE Management",
     "avgNGRate": "Avg n g rate",
     "autoRefreshEnabled": "Auto refresh enabled",
     "autoRefreshDisabled": "Auto refresh disabled",
@@ -2991,7 +2991,7 @@
   },
   "guide": {
     "userGuide": "User Guide",
-    "userGuideDescription": "Complete documentation on how to use the Continuum system",
+    "userGuideDescription": "Complete documentation on how to use the SYNAPSE system",
     "tableOfContents": "Table of Contents",
     "searchPlaceholder": "Search in guide...",
     "faqTitle": "Frequently Asked Questions",
@@ -3004,10 +3004,10 @@
     "alertRulesDesc": "Set up and manage alert rules",
     "overview": {
       "title": "Overview",
-      "description": "General introduction to the Continuum system",
+      "description": "General introduction to the SYNAPSE system",
       "introduction": {
         "title": "System Introduction",
-        "content": "The Continuum system is a comprehensive solution for monitoring, analyzing, and managing automatic inspection machines in manufacturing plants.\n\nThe system provides real-time monitoring, inspection data analysis, productivity reports, and product quality management."
+        "content": "The SYNAPSE system is a comprehensive solution for monitoring, analyzing, and managing automatic inspection machines in manufacturing plants.\n\nThe system provides real-time monitoring, inspection data analysis, productivity reports, and product quality management."
       },
       "architecture": {
         "title": "System Architecture",
@@ -3141,7 +3141,7 @@
       },
       "maxPoints": {
         "question": "What is the maximum number of inspection points per PCB?",
-        "answer": "The maximum number of inspection points depends on the AOI machine configuration and inspection program. The Continuum system can handle thousands of inspection points per PCB. For optimal performance, it is recommended to limit to under 5000 inspection points per board."
+        "answer": "The maximum number of inspection points depends on the AOI machine configuration and inspection program. The SYNAPSE system can handle thousands of inspection points per PCB. For optimal performance, it is recommended to limit to under 5000 inspection points per board."
       }
     }
   },
@@ -5595,14 +5595,14 @@
   "aboutPage": {
     "layoutTitle": "About System",
     "hero": {
-      "title": "Continuum",
+      "title": "SYNAPSE",
       "description": "A production and quality management platform for automated inspection lines that helps enterprises monitor operations in real time, reduce defects, and optimize performance.",
       "version": "Version 1.0.0",
       "updated": "Updated: 13/05/2026"
     },
     "system": {
       "title": "About The System",
-      "description": "Core capabilities of the Continuum platform in production operations.",
+      "description": "Core capabilities of the SYNAPSE platform in production operations.",
       "highlights": [
         "Real-time AVI/AOI machine monitoring via MQTT and visual dashboards.",
         "Standardized inspection data and defect traceability by product, stage, and machine.",
@@ -5622,7 +5622,7 @@
     },
     "company": {
       "title": "About The Company",
-      "name": "AVI/AOI Solutions Company",
+      "name": "SYNAPSE Solutions Company",
       "description": "The organization that implements and operates the solution.",
       "paragraph1": "The system is designed for smart manufacturing, focusing on quality inspection automation, data standardization, and scalability across multiple factories.",
       "paragraph2": "The company drives manufacturing digital transformation with three principles: data transparency, fast incident response, and continuous improvement based on practical analytics."
@@ -5631,7 +5631,7 @@
       "title": "System Developers",
       "description": "Development and maintenance team information.",
       "teamLabel": "Development Team",
-      "teamValue": "Continuum Platform Engineering Team",
+      "teamValue": "SYNAPSE Platform Engineering Team",
       "roleLabel": "Primary Responsibilities",
       "roleValue": "System architecture design, business feature development, performance optimization, and continuous operation in production environments.",
       "contactLabel": "Internal Contact",
@@ -6531,7 +6531,7 @@
     "backupCodes": "Backup codes",
     "accountCreatedDate": "Account created date",
     "backupCodesFileGeneratedAt": "Generated at",
-    "backupCodesFileTitle": "Continuum backup codes"
+    "backupCodesFileTitle": "SYNAPSE backup codes"
   },
   "qualityGates": {
     "yieldRateDetail": "Yield rate detail",
@@ -13920,7 +13920,7 @@
     "sectionCount": "{{count}} guide sections",
     "subtitle": "Fully aligned with the system docs: sign-in, operation, monitoring, analysis, reporting and administration.",
     "tableOfContents": "Contents",
-    "title": "MES Continuum system user guide",
+    "title": "MES SYNAPSE system user guide",
     "updated": "Updated: 26/01/2026",
     "version": "Version 1.0.0"
   },

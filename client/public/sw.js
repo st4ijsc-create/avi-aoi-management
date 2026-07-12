@@ -1,5 +1,5 @@
 /*
- * Phase 5 WS5.1 — Conservative service worker for the AVI/AOI PWA.
+ * Phase 5 WS5.1 — Conservative service worker for the SYNAPSE PWA.
  *
  * Deliberately cautious to avoid stale-content footguns on a factory terminal:
  *  - NEVER caches API / tRPC / socket / SSE (always network).

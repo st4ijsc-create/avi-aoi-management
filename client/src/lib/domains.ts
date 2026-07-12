@@ -2,7 +2,7 @@
  * F1 (doc 23 §4 Table B) — ecosystem DOMAIN registry.
  *
  * The ordered set of top-level ecosystem modules surfaced as the domain grid on
- * the Continuum homepage (the automation-ecosystem front door). Each entry maps a
+ * the SYNAPSE homepage (the automation-ecosystem front door). Each entry maps a
  * conceptual DOMAIN to its real canonical landing route (verified against
  * App.tsx routing). Labels/blurbs are i18n keys under `domains.*`.
  *

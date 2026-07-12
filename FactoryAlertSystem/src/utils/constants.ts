@@ -766,10 +766,10 @@ export const TRANSLATIONS = {
 
     // Onboarding (MB4 — cấu hình server lần đầu)
     onboardingTitle: 'Kết nối máy chủ',
-    onboardingSubtitle: 'Nhập địa chỉ máy chủ AVI/AOI của nhà máy để bắt đầu. Ứng dụng chưa được cấu hình sẵn cho bất kỳ nhà máy nào.',
+    onboardingSubtitle: 'Nhập địa chỉ máy chủ SYNAPSE của nhà máy để bắt đầu. Ứng dụng chưa được cấu hình sẵn cho bất kỳ nhà máy nào.',
     onboardingServerUrl: 'Địa chỉ máy chủ (Server URL)',
     onboardingServerUrlPlaceholder: 'VD: http://10.0.0.5:3000',
-    onboardingServerUrlHint: 'Địa chỉ HTTP của máy chủ AVI/AOI trong mạng LAN nhà máy',
+    onboardingServerUrlHint: 'Địa chỉ HTTP của máy chủ SYNAPSE trong mạng LAN nhà máy',
     onboardingApiKey: 'API Key (tùy chọn)',
     onboardingApiKeyHint: 'Master API key do quản trị viên hệ thống cấp',
     onboardingMqttHost: 'MQTT Broker',
@@ -1181,10 +1181,10 @@ export const TRANSLATIONS = {
 
     // Onboarding (MB4 — first-run server configuration)
     onboardingTitle: 'Connect to Server',
-    onboardingSubtitle: 'Enter your factory\'s AVI/AOI server address to get started. The app ships with no preset factory configuration.',
+    onboardingSubtitle: 'Enter your factory\'s SYNAPSE server address to get started. The app ships with no preset factory configuration.',
     onboardingServerUrl: 'Server URL',
     onboardingServerUrlPlaceholder: 'e.g. http://10.0.0.5:3000',
-    onboardingServerUrlHint: 'HTTP address of the AVI/AOI server on the factory LAN',
+    onboardingServerUrlHint: 'HTTP address of the SYNAPSE server on the factory LAN',
     onboardingApiKey: 'API Key (optional)',
     onboardingApiKeyHint: 'Master API key issued by your system administrator',
     onboardingMqttHost: 'MQTT Broker',
@@ -1596,10 +1596,10 @@ export const TRANSLATIONS = {
 
     // Onboarding (MB4 — 首次运行服务器配置)
     onboardingTitle: '连接服务器',
-    onboardingSubtitle: '请输入贵工厂的 AVI/AOI 服务器地址以开始使用。应用不预设任何工厂配置。',
+    onboardingSubtitle: '请输入贵工厂的 SYNAPSE 服务器地址以开始使用。应用不预设任何工厂配置。',
     onboardingServerUrl: '服务器地址 (Server URL)',
     onboardingServerUrlPlaceholder: '例如: http://10.0.0.5:3000',
-    onboardingServerUrlHint: '工厂局域网中 AVI/AOI 服务器的 HTTP 地址',
+    onboardingServerUrlHint: '工厂局域网中 SYNAPSE 服务器的 HTTP 地址',
     onboardingApiKey: 'API 密钥（可选）',
     onboardingApiKeyHint: '由系统管理员发放的 Master API Key',
     onboardingMqttHost: 'MQTT Broker',

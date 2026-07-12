@@ -202,7 +202,7 @@ export async function generateInspectionReportPDF(
       bufferPages: true,
       info: {
         Title: config.title,
-        Author: config.companyName || "AVI/AOI Management System",
+        Author: config.companyName || "SYNAPSE",
         Subject: `Inspection Report - ${data.inspection.serialNumber}`,
       },
     });
@@ -233,7 +233,7 @@ export async function generateInspectionReportPDF(
     doc
       .fontSize(10)
       .fillColor("rgba(255,255,255,0.8)")
-      .text(config.companyName || "AVI/AOI Factory Management", headTextX, 55, { align: "left" });
+      .text(config.companyName || "SYNAPSE", headTextX, 55, { align: "left" });
 
     doc
       .fontSize(10)
@@ -424,7 +424,7 @@ export async function generateInspectionReportPDF(
         .fontSize(7)
         .fillColor("#999")
         .text(
-          `${config.footerText || config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+          `${config.footerText || config.companyName || "SYNAPSE"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
           40,
           doc.page.height - 30,
           { align: "center", width: doc.page.width - 80 }
@@ -455,7 +455,7 @@ export async function generateQualityReportPDF(
       bufferPages: true,
       info: {
         Title: config.title,
-        Author: config.companyName || "AVI/AOI Management System",
+        Author: config.companyName || "SYNAPSE",
       },
     });
 
@@ -606,7 +606,7 @@ export async function generateQualityReportPDF(
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
       doc.fontSize(7).fillColor("#999").text(
-        `${config.footerText || config.companyName || "AVI/AOI Management"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
+        `${config.footerText || config.companyName || "SYNAPSE"} | Page ${i + 1} of ${pages.count} | ${new Date().toLocaleString("vi-VN")}`,
         40, doc.page.height - 30, { align: "center", width: doc.page.width - 80 }
       );
     }

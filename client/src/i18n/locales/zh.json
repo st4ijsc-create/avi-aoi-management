@@ -2438,7 +2438,7 @@
     "below": "低于",
     "beFirstToPublish": "Be第一到发布",
     "barChart": "Bar图表",
-    "aviAoiManagement": "AVI AOI管理",
+    "aviAoiManagement": "SYNAPSE 管理",
     "avgNGRate": "Avgng率",
     "autoRefreshEnabled": "Auto刷新已启用",
     "autoRefreshDisabled": "Auto刷新已禁用",
@@ -2983,7 +2983,7 @@
   },
   "guide": {
     "userGuide": "使用指南",
-    "userGuideDescription": "Continuum 系统完整使用文档",
+    "userGuideDescription": "SYNAPSE 系统完整使用文档",
     "tableOfContents": "目录",
     "searchPlaceholder": "在指南中搜索...",
     "faqTitle": "常见问题",
@@ -2996,10 +2996,10 @@
     "alertRulesDesc": "设置和管理告警规则",
     "overview": {
       "title": "概述",
-      "description": "Continuum 系统总体介绍",
+      "description": "SYNAPSE 系统总体介绍",
       "introduction": {
         "title": "系统介绍",
-        "content": "Continuum 系统是一套全面的解决方案，用于监控、分析和管理制造工厂中的自动检测设备。\n\n系统提供实时监控、检测数据分析、产能报告和产品质量管理功能。"
+        "content": "SYNAPSE 系统是一套全面的解决方案，用于监控、分析和管理制造工厂中的自动检测设备。\n\n系统提供实时监控、检测数据分析、产能报告和产品质量管理功能。"
       },
       "architecture": {
         "title": "系统架构",
@@ -3133,7 +3133,7 @@
       },
       "maxPoints": {
         "question": "每块PCB的最大检测点数是多少？",
-        "answer": "最大检测点数取决于AOI设备配置和检测程序。Continuum 系统可以处理每块PCB数千个检测点。为了优化性能，建议限制在每板5000个检测点以下。"
+        "answer": "最大检测点数取决于AOI设备配置和检测程序。SYNAPSE 系统可以处理每块PCB数千个检测点。为了优化性能，建议限制在每板5000个检测点以下。"
       }
     }
   },
@@ -5378,14 +5378,14 @@
   "aboutPage": {
     "layoutTitle": "系统介绍",
     "hero": {
-      "title": "Continuum",
+      "title": "SYNAPSE",
       "description": "面向自动化检测产线的生产与质量管理平台，帮助企业实时监控运营、降低缺陷并优化绩效。",
       "version": "版本 1.0.0",
       "updated": "更新日期：13/05/2026"
     },
     "system": {
       "title": "系统简介",
-      "description": "Continuum 平台在生产运营中的核心能力。",
+      "description": "SYNAPSE 平台在生产运营中的核心能力。",
       "highlights": [
         "通过 MQTT 与可视化仪表板实现 AVI/AOI 设备实时监控。",
         "标准化检测数据，并按产品、工序与设备追溯缺陷。",
@@ -5405,7 +5405,7 @@
     },
     "company": {
       "title": "公司介绍",
-      "name": "AVI/AOI 解决方案公司",
+      "name": "SYNAPSE 解决方案公司",
       "description": "负责方案实施与运营的组织。",
       "paragraph1": "该系统面向智能制造场景，聚焦质量检测自动化、数据标准化，以及跨多工厂的可扩展性。",
       "paragraph2": "公司以三项原则推动制造数字化转型：数据透明、快速响应异常、以及基于实际分析的持续改进。"
@@ -5414,7 +5414,7 @@
       "title": "系统开发团队",
       "description": "开发与维护团队信息。",
       "teamLabel": "开发团队",
-      "teamValue": "Continuum 平台工程团队",
+      "teamValue": "SYNAPSE 平台工程团队",
       "roleLabel": "主要职责",
       "roleValue": "系统架构设计、业务功能开发、性能优化，以及生产环境下的持续运行保障。",
       "contactLabel": "内部联系人",
@@ -6314,7 +6314,7 @@
     "backupCodes": "备份码",
     "accountCreatedDate": "Account已创建日期",
     "backupCodesFileGeneratedAt": "生成于",
-    "backupCodesFileTitle": "Continuum 备份码"
+    "backupCodesFileTitle": "SYNAPSE 备份码"
   },
   "qualityGates": {
     "yieldRateDetail": "良率详情",
@@ -14273,7 +14273,7 @@
     "sectionCount": "{{count}} 个指南章节",
     "subtitle": "与系统文档完全对齐：登录、操作、监控、分析、报表与管理。",
     "tableOfContents": "目录",
-    "title": "MES Continuum 系统用户指南",
+    "title": "MES SYNAPSE 系统用户指南",
     "updated": "更新时间：2026/01/26",
     "version": "版本 1.0.0"
   },

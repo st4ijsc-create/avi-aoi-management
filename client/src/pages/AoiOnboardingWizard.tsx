@@ -123,7 +123,7 @@ export function AoiOnboardingWizardContent() {
 
 export default function AoiOnboardingWizard() {
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/aoi-onboarding">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/aoi-onboarding">
       <AoiOnboardingWizardContent />
     </DashboardLayout>
   );

@@ -375,7 +375,7 @@ export default function Layout() {
       // Add watermark
       ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.font = '12px sans-serif';
-      ctx.fillText(`AVI/AOI Layout - ${new Date().toLocaleDateString('vi-VN')}`, 10, container.offsetHeight - 10);
+      ctx.fillText(`SYNAPSE Layout - ${new Date().toLocaleDateString('vi-VN')}`, 10, container.offsetHeight - 10);
 
       // Download
       const link = document.createElement('a');
@@ -418,7 +418,7 @@ export default function Layout() {
 
   return (
     <DashboardLayout 
-      title="AVI/AOI Management" 
+      title="SYNAPSE"
       navItems={navItems}
       currentPath="/layout"
     >

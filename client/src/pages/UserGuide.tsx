@@ -45,13 +45,13 @@ const sections: GuideSection[] = [
   {
     id: "overview",
     title: "1. Giới thiệu",
-    description: "Tổng quan hệ thống MES AVI/AOI và cấu trúc menu chính",
+    description: "Tổng quan hệ thống MES SYNAPSE và cấu trúc menu chính",
     icon: <BookOpen className="h-5 w-5" />,
     topics: [
       {
         title: "Mục tiêu hệ thống",
         content: [
-          "Hệ thống MES AVI/AOI dùng để giám sát và quản lý quy trình kiểm tra chất lượng theo thời gian thực, từ cấp tập đoàn đến từng máy.",
+          "Hệ thống MES SYNAPSE dùng để giám sát và quản lý quy trình kiểm tra chất lượng theo thời gian thực, từ cấp tập đoàn đến từng máy.",
           "Người dùng có thể theo dõi KPI sản xuất, lịch sử kiểm tra, trạng thái thiết bị, cảnh báo chất lượng và toàn bộ vòng đời dữ liệu liên quan.",
         ],
       },
@@ -327,7 +327,7 @@ export default function UserGuide() {
       <PageContainer>
         <PageHeader
           icon={<BookOpen className="h-6 w-6" />}
-          title={t("userGuide.title", "MES AVI/AOI system user guide")}
+          title={t("userGuide.title", "MES SYNAPSE system user guide")}
           description={t(
             "userGuide.subtitle",
             "Fully aligned with the system docs: sign-in, operation, monitoring, analysis, reporting and administration.",

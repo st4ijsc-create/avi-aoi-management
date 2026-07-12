@@ -420,7 +420,7 @@ export function ProductOnboardingWizardContent() {
 
 export default function ProductOnboardingWizard() {
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/product-onboarding">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/product-onboarding">
       <ProductOnboardingWizardContent />
     </DashboardLayout>
   );

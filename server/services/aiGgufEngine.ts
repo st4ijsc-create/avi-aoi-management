@@ -1434,8 +1434,8 @@ export async function analyzeDefect(
   language: "en" | "vi" = "vi",
 ): Promise<string> {
   const systemPrompt = language === "vi"
-    ? `Bạn là chuyên gia phân tích chất lượng trong nhà máy sản xuất AOI/AVI. Phân tích ngắn gọn và chính xác về lỗi kiểm tra.`
-    : `You are a quality analysis expert in an AOI/AVI manufacturing factory. Provide concise and accurate defect analysis.`;
+    ? `Bạn là chuyên gia phân tích chất lượng của hệ thống SYNAPSE trong nhà máy dùng kiểm tra AOI/AVI. Phân tích ngắn gọn và chính xác về lỗi kiểm tra.`
+    : `You are a quality analysis expert for the SYNAPSE system in a factory using AOI/AVI inspection. Provide concise and accurate defect analysis.`;
 
   const prompt = language === "vi"
     ? `Phân tích lỗi kiểm tra:

@@ -315,7 +315,7 @@ class ScheduledReportService {
     const linkColor = templateConfig?.linkColor || '#2563eb';
     const fontFamily = templateConfig?.fontFamily || 'Arial, sans-serif';
     const headingFontFamily = templateConfig?.headingFontFamily || fontFamily;
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     const copyrightText = templateConfig?.copyrightText || `© ${new Date().getFullYear()} ${companyName}`;
@@ -501,7 +501,7 @@ class ScheduledReportService {
     for (const email of params.recipients) {
       await sendEmail({
         to: email,
-        subject: `[AVI/AOI] ${content.title}`,
+        subject: `[SYNAPSE] ${content.title}`,
         html,
       });
     }
@@ -685,7 +685,7 @@ class ScheduledReportService {
     const primaryColor = templateConfig?.primaryColor || '#2563eb';
     const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
     const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     
@@ -821,7 +821,7 @@ class ScheduledReportService {
     const primaryColor = templateConfig?.primaryColor || '#2563eb';
     const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
     const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
-    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const companyName = templateConfig?.companyName || 'SYNAPSE';
     const logoUrl = templateConfig?.logoUrl;
     const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
     

@@ -1208,7 +1208,7 @@ defer res.Body.Close()`,
                 API Reference cho Hệ thống MES
               </h1>
               <p className="max-w-3xl text-base text-white/80">
-                Tài liệu đầy đủ các API endpoint cho tích hợp hệ thống AVI/AOI. Sử dụng endpoint tRPC với xác thực API Key hoặc JWT.
+                Tài liệu đầy đủ các API endpoint cho tích hợp hệ thống SYNAPSE. Sử dụng endpoint tRPC với xác thực API Key hoặc JWT.
               </p>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -5183,7 +5183,7 @@ await trpc.export.exportWorkshops.mutate({ factoryCode: "FAC-001", format: "json
   user: "noreply@company.com",
   password: "app-password",
   fromEmail: "noreply@company.com",
-  fromName: "AVI AOI System"
+  fromName: "SYNAPSE"
 });`} />
                   </div>
                   <div>

@@ -152,7 +152,7 @@ export function generateNGVisualEmailHTML(
 ): string {
   const primaryColor = customization?.primaryColor || "#667eea";
   const logoUrl = customization?.logoUrl;
-  const footerText = customization?.footerText || "Báo cáo tự động từ hệ thống AVI/AOI Factory Management";
+  const footerText = customization?.footerText || "Báo cáo tự động từ hệ thống SYNAPSE";
 
   // Generate gradient colors based on primary color
   const gradientEnd = adjustColor(primaryColor, -20);

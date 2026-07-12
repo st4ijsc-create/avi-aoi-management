@@ -79,7 +79,7 @@ function buildPlannerPrompt(goal: string, lang: ToolLang): string {
     })
     .join("\n");
   return [
-    "Bạn là bộ lập kế hoạch (planner) cho hệ thống AVI/AOI. Hãy chia MỤC TIÊU của người dùng",
+    "Bạn là bộ lập kế hoạch (planner) cho hệ thống SYNAPSE. Hãy chia MỤC TIÊU của người dùng",
     `thành tối đa ${AGENT_MAX_STEPS} bước tuần tự, mỗi bước dùng MỘT tool trong danh sách (hoặc guidance).`,
     "Loại bước (kind):",
     "  - read: truy vấn dữ liệu (chạy ngay).",

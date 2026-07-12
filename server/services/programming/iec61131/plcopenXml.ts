@@ -416,7 +416,7 @@ export function exportPlcopenXml(project: PouProject): string {
       "@_xmlns": PLCOPEN_NS,
       fileHeader: {
         "@_companyName": project.fileHeader?.companyName ?? "ST4I",
-        "@_productName": project.fileHeader?.productName ?? "AVI-AOI Engineering Workspace",
+        "@_productName": project.fileHeader?.productName ?? "SYNAPSE Engineering Workspace",
         "@_productVersion": project.fileHeader?.productVersion ?? "1.0",
         // Fixed timestamp keeps export deterministic (round-trip + golden stable).
         "@_creationDateTime": "2026-01-01T00:00:00",

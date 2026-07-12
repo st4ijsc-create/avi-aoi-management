@@ -1,6 +1,6 @@
 {
-  "name": "AVI/AOI Factory Management System",
-  "short_name": "AVI-AOI",
+  "name": "SYNAPSE — Automation & Manufacturing Operations Platform",
+  "short_name": "SYNAPSE",
   "description": "Smart factory AOI/MES platform — monitoring, quality, OT & AI.",
   "start_url": "/",
   "scope": "/",

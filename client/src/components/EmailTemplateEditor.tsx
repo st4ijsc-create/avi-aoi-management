@@ -65,7 +65,7 @@ interface EmailTemplate {
 const defaultTemplate: Omit<EmailTemplate, 'id'> = {
   name: 'New Template',
   logoUrl: null,
-  companyName: 'AVI/AOI Management System',
+  companyName: 'SYNAPSE',
   primaryColor: '#2563eb',
   secondaryColor: '#64748b',
   accentColor: '#10b981',
@@ -73,7 +73,7 @@ const defaultTemplate: Omit<EmailTemplate, 'id'> = {
   dangerColor: '#ef4444',
   backgroundColor: '#f8fafc',
   fontFamily: 'Arial, sans-serif',
-  footerText: '© 2024 AVI/AOI Management System. All rights reserved.',
+  footerText: '© 2024 SYNAPSE. All rights reserved.',
   footerLinks: null,
   contactEmail: null,
   contactPhone: null,

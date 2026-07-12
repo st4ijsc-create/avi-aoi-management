@@ -1502,7 +1502,7 @@ export function MachineRegistrationContent() {
 export default function MachineRegistration() {
   const { t } = useTranslation();
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/machine-registration">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/machine-registration">
       <MachineRegistrationContent />
     </DashboardLayout>
   );

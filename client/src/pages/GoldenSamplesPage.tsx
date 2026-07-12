@@ -240,7 +240,7 @@ export default function GoldenSamplesPage() {
   const anyActionPending = approveMutation.isPending || rejectMutation.isPending || retireMutation.isPending;
 
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/golden-samples">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/golden-samples">
       <PageContainer>
         <PageHeader
           title={t("goldenSamples.title", "Golden samples (mẫu chuẩn)")}

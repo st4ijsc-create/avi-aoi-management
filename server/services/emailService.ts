@@ -213,7 +213,7 @@ function generateAlertEmailHTML(data: AlertEmailData): string {
     </div>
     
     <div class="footer">
-      <p>This is an automated alert from AVI/AOI Management System</p>
+      <p>This is an automated alert from SYNAPSE</p>
       <p>To configure alert settings, visit the MQTT Alert Rules page</p>
     </div>
   </div>

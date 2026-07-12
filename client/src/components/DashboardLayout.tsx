@@ -87,7 +87,7 @@ const RAIL_WIDTH = 264;
 
 export default function DashboardLayout({
   children,
-  title = "AVI/AOI Management",
+  title = "SYNAPSE",
   navItems = [],
   currentPath,
   asShell = false,

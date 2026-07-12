@@ -48,7 +48,7 @@ export function buildExternalOpenApiSpec(serverUrl = "/") {
   return {
     openapi: "3.0.3",
     info: {
-      title: "AVI/AOI Management — External REST API",
+      title: "SYNAPSE — External REST API",
       version: "1.0.0",
       description:
         "REST API cho đối tác/hệ thống ngoài. Xác thực bằng x-master-key (server-to-server) hoặc Bearer JWT (đăng nhập qua /api/external/auth/login).",

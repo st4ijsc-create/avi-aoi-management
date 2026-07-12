@@ -808,32 +808,32 @@ function getSystemPromptForRole(
   if (language === "zh") {
     const fmt = isDef ? ZH_DEF_FORMAT : isList ? ZH_LIST_FORMAT : ZH_FORMAT;
     if (userLevel === "basic") {
-      return `面向一线操作工的 AVI/AOI 本地部署系统助手。用简体中文、通俗易懂、完整地回答。${fmt} ${ZH_GUARD}`;
+      return `面向一线操作工的 SYNAPSE 本地部署系统助手。用简体中文、通俗易懂、完整地回答。${fmt} ${ZH_GUARD}`;
     }
     if (userLevel === "manager") {
-      return `面向管理者的 AVI/AOI 本地部署系统分析助手。用简体中文回答，聚焦 KPI/趋势/运营影响，并给出优先级行动建议。${fmt} ${ZH_GUARD}`;
+      return `面向管理者的 SYNAPSE 本地部署系统分析助手。用简体中文回答，聚焦 KPI/趋势/运营影响，并给出优先级行动建议。${fmt} ${ZH_GUARD}`;
     }
-    return `面向工程师的 AVI/AOI 本地部署系统技术助手。用简体中文回答，给出具体的 API/数据结构/配置/命令；解释设计与错误处理。${fmt} ${ZH_GUARD}`;
+    return `面向工程师的 SYNAPSE 本地部署系统技术助手。用简体中文回答，给出具体的 API/数据结构/配置/命令；解释设计与错误处理。${fmt} ${ZH_GUARD}`;
   }
 
   if (language === "vi") {
     const fmt = isDef ? VI_DEF_FORMAT : isList ? VI_LIST_FORMAT : VI_FORMAT;
     if (userLevel === "basic") {
-      return `Trợ lý hệ thống AVI/AOI on-prem cho công nhân. Trả lời tiếng Việt, dễ hiểu, đầy đủ. ${fmt} ${VI_GUARD}`;
+      return `Trợ lý hệ thống SYNAPSE on-prem cho công nhân. Trả lời tiếng Việt, dễ hiểu, đầy đủ. ${fmt} ${VI_GUARD}`;
     }
     if (userLevel === "manager") {
-      return `Trợ lý phân tích AVI/AOI on-prem cho quản lý. Trả lời tiếng Việt, tập trung KPI/xu hướng/tác động vận hành, đề xuất hành động ưu tiên. ${fmt} ${VI_GUARD}`;
+      return `Trợ lý phân tích SYNAPSE on-prem cho quản lý. Trả lời tiếng Việt, tập trung KPI/xu hướng/tác động vận hành, đề xuất hành động ưu tiên. ${fmt} ${VI_GUARD}`;
     }
-    return `Trợ lý kỹ thuật AVI/AOI on-prem cho kỹ sư. Trả lời tiếng Việt, kèm API/schema/cấu hình/CLI cụ thể; giải thích thiết kế và xử lý lỗi. ${fmt} ${VI_GUARD}`;
+    return `Trợ lý kỹ thuật SYNAPSE on-prem cho kỹ sư. Trả lời tiếng Việt, kèm API/schema/cấu hình/CLI cụ thể; giải thích thiết kế và xử lý lỗi. ${fmt} ${VI_GUARD}`;
   }
   const fmt = isDef ? EN_DEF_FORMAT : isList ? EN_LIST_FORMAT : EN_FORMAT;
   if (userLevel === "basic") {
-    return `Support assistant for AVI/AOI on-prem system, for line workers. ${fmt} ${EN_GUARD}`;
+    return `Support assistant for SYNAPSE on-prem system, for line workers. ${fmt} ${EN_GUARD}`;
   }
   if (userLevel === "manager") {
-    return `Analytical assistant for AVI/AOI on-prem system, for managers. Focus on KPIs, trends, operational impact, prioritized actions. ${fmt} ${EN_GUARD}`;
+    return `Analytical assistant for SYNAPSE on-prem system, for managers. Focus on KPIs, trends, operational impact, prioritized actions. ${fmt} ${EN_GUARD}`;
   }
-  return `Technical assistant for AVI/AOI on-prem system, for engineers. Include APIs, schemas, config, CLI; explain design and error handling. ${fmt} ${EN_GUARD}`;
+  return `Technical assistant for SYNAPSE on-prem system, for engineers. Include APIs, schemas, config, CLI; explain design and error handling. ${fmt} ${EN_GUARD}`;
 }
 
 // Lever 9.A/9.B — extract concrete facts (API paths, screen paths, env vars,

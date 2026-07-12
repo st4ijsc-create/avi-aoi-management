@@ -84,7 +84,7 @@ export default function Setup() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-      {/* Continuum identity — first-run value line */}
+      {/* SYNAPSE identity — first-run value line */}
       <div className="mb-6 flex flex-col items-center text-center">
         <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
           <BrandMark className="h-8 w-8" />

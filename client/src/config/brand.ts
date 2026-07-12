@@ -1,9 +1,9 @@
 /**
- * F1 (doc 23 §4 Table B) — CONTINUUM brand token.
+ * F1 (doc 23 §4 Table B) — SYNAPSE brand token.
  *
  * Single source of truth for the product identity consumed by the public entry
  * surfaces (Home / Login / Setup / footers). Retires the legacy
- * "AVI/AOI Management" / "Factory Quality System" framing: Continuum is the
+ * "AVI/AOI Management" / "Factory Quality System" framing: SYNAPSE is the
  * automation & manufacturing operations PLATFORM front door, not an AOI brochure.
  *
  * Keep this the ONLY place the product name/tagline literal lives. The tagline
@@ -26,9 +26,9 @@ export interface Brand {
 }
 
 export const BRAND: Brand = {
-  name: "Continuum",
+  name: "SYNAPSE",
   tagline: "Automation & Manufacturing Operations Platform",
-  short: "Continuum",
+  short: "SYNAPSE",
   logoIcon: InfinityIcon,
   taglineKey: "brand.tagline",
 } as const;

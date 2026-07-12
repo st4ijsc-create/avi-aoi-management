@@ -370,7 +370,7 @@ export default function InspectionDetail() {
 
   if (isLoading) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
+      <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
         <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -380,7 +380,7 @@ export default function InspectionDetail() {
 
   if (!data) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
+      <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
           <p className="text-muted-foreground">{t('inspection.notFound')}</p>
           <Link href="/history">
@@ -404,7 +404,7 @@ export default function InspectionDetail() {
   const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(1) : "0";
 
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
+    <DashboardLayout title="SYNAPSE" navItems={navItems} currentPath="/history">
       <PageContainer>
         {/* Back link (kept above the title; PageHeader's icon chip is decorative). */}
         <Link href="/history">

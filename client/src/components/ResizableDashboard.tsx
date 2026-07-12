@@ -993,7 +993,7 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
           {getAllWidgetsData && (
             <DashboardDataExport 
               getAllWidgetsData={getAllWidgetsData}
-              dashboardTitle="AVI/AOI Dashboard"
+              dashboardTitle="SYNAPSE Dashboard"
             />
           )}
           

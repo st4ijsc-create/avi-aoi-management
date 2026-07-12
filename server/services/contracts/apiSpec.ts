@@ -107,7 +107,7 @@ export const SEED_UNS_CHANNELS: readonly UnsChannel[] = [
 /** Convenience: build both seeded specs. */
 export function buildSeedSpecs(version = "1.0.0") {
   return {
-    openapi: buildOpenApi(SEED_REST_ENDPOINTS, { title: "SYNAPSE REST API", version, description: "AVI/AOI orchestration REST surface (/api/v1)." }),
+    openapi: buildOpenApi(SEED_REST_ENDPOINTS, { title: "SYNAPSE REST API", version, description: "SYNAPSE orchestration REST surface (/api/v1)." }),
     asyncapi: buildAsyncApi(SEED_UNS_CHANNELS, { title: "SYNAPSE UNS (Sparkplug B)", version, description: "ISA-95 Unified Namespace channels." }),
   };
 }

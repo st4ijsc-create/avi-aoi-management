@@ -630,7 +630,7 @@ export default function Profile() {
             <Button
               variant="outline"
               onClick={() => {
-                const text = `${t('profile.backupCodesFileTitle', 'AVI/AOI Management backup codes')}\n\n${backupCodes.join('\n')}\n\n${t('profile.backupCodesFileGeneratedAt', 'Generated at')}: ${new Date().toLocaleString('vi-VN')}`;
+                const text = `${t('profile.backupCodesFileTitle', 'SYNAPSE backup codes')}\n\n${backupCodes.join('\n')}\n\n${t('profile.backupCodesFileGeneratedAt', 'Generated at')}: ${new Date().toLocaleString('vi-VN')}`;
                 const blob = new Blob([text], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');

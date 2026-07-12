@@ -842,7 +842,7 @@ export default function HistoryExportScheduling() {
               <div className="bg-muted p-4 border-b space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.from')}:</span>
-                  <span className="text-sm">AVI/AOI Management System &lt;noreply@avi-aoi.system&gt;</span>
+                  <span className="text-sm">SYNAPSE &lt;noreply@avi-aoi.system&gt;</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.to')}:</span>
@@ -858,7 +858,7 @@ export default function HistoryExportScheduling() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.subject')}:</span>
                   <span className="text-sm font-medium">
-                    [AVI/AOI] {formData.name || t('reports.report')} - {new Date().toLocaleDateString('vi-VN')}
+                    [SYNAPSE] {formData.name || t('reports.report')} - {new Date().toLocaleDateString('vi-VN')}
                   </span>
                 </div>
               </div>
@@ -868,7 +868,7 @@ export default function HistoryExportScheduling() {
                 <div className="max-w-2xl mx-auto space-y-6">
                   {/* Logo/Header */}
                   <div className="text-center pb-4 border-b">
-                    <h2 className="text-xl font-bold text-primary">AVI/AOI Management System</h2>
+                    <h2 className="text-xl font-bold text-primary">SYNAPSE</h2>
                     <p className="text-sm text-muted-foreground">{t('reports.autoReport')}</p>
                   </div>
 

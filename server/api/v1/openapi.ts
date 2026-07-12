@@ -136,7 +136,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
   return {
     openapi: "3.0.3",
     info: {
-      title: "AVI/AOI Factory Control Plane — Unified Machine API",
+      title: "SYNAPSE Factory Control Plane — Unified Machine API",
       version: "1.0.0",
       description:
         "The single, versioned integration contract (Phase E1) external machines and systems " +

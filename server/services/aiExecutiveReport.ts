@@ -592,7 +592,7 @@ function renderExecReportEmailHtml(s: ExecutiveSummaryStructured): string {
           </a>
         </p>
         <p style="font-size:11px;color:#9ca3af;margin-top:18px;">
-          ${esc(L("Báo cáo tự động từ AVI/AOI Management System", "Automated report from AVI/AOI Management System"))}
+          ${esc(L("Báo cáo tự động từ hệ thống SYNAPSE", "Automated report from SYNAPSE"))}
         </p>
       </div>
     </div>`.trim();
@@ -672,7 +672,7 @@ export async function notifyExecutiveSummary(
       if (emails.length > 0) {
         try {
           const { sendEmail } = await import("../_core/email");
-          const subject = `[AVI/AOI] ${title}`.slice(0, 200);
+          const subject = `[SYNAPSE] ${title}`.slice(0, 200);
           const html = renderExecReportEmailHtml(summary);
           const text = renderExecReportEmailText(summary);
           for (const email of emails) {

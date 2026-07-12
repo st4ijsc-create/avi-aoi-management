@@ -143,7 +143,7 @@ export async function generateExcelReport(options: ExportOptions): Promise<Buffe
   const headerArgb = hexToArgb(branding.primaryColor || DEFAULT_PRIMARY);
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = branding.companyName || "AVI AOI Management";
+  workbook.creator = branding.companyName || "SYNAPSE";
   workbook.created = new Date();
 
   const worksheet = workbook.addWorksheet(sheetName);

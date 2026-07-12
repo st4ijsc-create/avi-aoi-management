@@ -220,7 +220,7 @@ export const userRouter = router({
 
       // Generate base32 secret (same encoding the old otplib path produced).
       const user = await db.getUserById(ctx.user.id);
-      const appName = 'AVI-AOI-Management';
+      const appName = 'SYNAPSE';
       const accountName = user?.username || user?.email || `user_${ctx.user.id}`;
       const generated = speakeasy.generateSecret({
         name: `${appName}:${accountName}`,

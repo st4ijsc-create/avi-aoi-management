@@ -162,7 +162,7 @@ export function PdfReportsContent() {
                       inspectionMutation.mutate({
                         inspectionId: parseInt(inspectionForm.inspectionId),
                         config: {
-                          companyName: inspectionForm.factoryName || "AVI AOI Management",
+                          companyName: inspectionForm.factoryName || "SYNAPSE",
                         },
                       });
                     }}
@@ -283,7 +283,7 @@ export function PdfReportsContent() {
                         endDate: new Date(qualityForm.dateTo),
                         factoryId: qualityForm.factoryId,
                         config: {
-                          companyName: "AVI AOI Management",
+                          companyName: "SYNAPSE",
                         },
                       });
                     }}
@@ -447,7 +447,7 @@ function TemplateManager() {
                     includeTrend: true,
                   },
                   config: {
-                    companyName: "AVI AOI Management",
+                    companyName: "SYNAPSE",
                   },
                 });
               }}

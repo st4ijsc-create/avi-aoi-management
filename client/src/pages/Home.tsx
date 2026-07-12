@@ -1,5 +1,5 @@
 /**
- * F1 (doc 23 §4 Table B) — CONTINUUM public homepage.
+ * F1 (doc 23 §4 Table B) — SYNAPSE public homepage.
  *
  * The automation-ECOSYSTEM front door (not an AOI brochure). It keeps its OWN
  * public header/footer (this is NOT a DashboardLayout page) and is shown to
@@ -137,7 +137,7 @@ export default function Home() {
       {/* First-run coach — shown once per user (renders nothing when logged out) */}
       <FirstRunTour />
 
-      {/* ── Header — Continuum brand lockup ── */}
+      {/* ── Header — SYNAPSE brand lockup ── */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-card/50 backdrop-blur-xl">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/?stay=1" className="flex items-center gap-3">
@@ -326,7 +326,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ── Footer — Continuum brand ── */}
+      {/* ── Footer — SYNAPSE brand ── */}
       <footer className="border-t border-border/50 py-8">
         <div className="container">
           <div className="flex flex-col items-center justify-between gap-4 md:flex-row">

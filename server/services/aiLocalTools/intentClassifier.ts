@@ -775,7 +775,7 @@ function buildClassifierPrompt(question: string): string {
     })
     .join("\n");
   return [
-    "Bạn là bộ phân loại ý định cho hệ thống AVI/AOI. Chọn DUY NHẤT một tool phù hợp",
+    "Bạn là bộ phân loại ý định cho hệ thống SYNAPSE. Chọn DUY NHẤT một tool phù hợp",
     "với câu hỏi của người dùng (hoặc \"none\" nếu không tool nào phù hợp).",
     "Tool [WRITE] là hành động thay đổi dữ liệu (sẽ cần người dùng xác nhận sau).",
     "Tool [CLIENT] chỉ điều hướng / điền form (không thay đổi dữ liệu).",

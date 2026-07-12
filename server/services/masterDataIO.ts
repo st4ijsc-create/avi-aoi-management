@@ -75,7 +75,7 @@ function csvBuffer(columns: MasterDataColumn[], rows: Array<Record<string, unkno
 
 async function xlsxBuffer(columns: MasterDataColumn[], rows: Array<Record<string, unknown>>): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AVI AOI Management";
+  wb.creator = "SYNAPSE";
   wb.created = new Date();
   const ws = wb.addWorksheet("Data");
 
