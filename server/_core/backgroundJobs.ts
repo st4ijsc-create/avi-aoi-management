@@ -409,6 +409,15 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[ConfigDrift] start failed:", (err as any)?.message || err);
   }
 
+  // Doc 44 W3-A2 (G3.1) — Line Controller: startup recovery (đọc line_states bền)
+  // + sweep quan sát nhịp/fault (LINE_CONTROLLER_ENABLED, default OFF → no-op).
+  try {
+    const { startLineController } = await import("../services/lineController/lineControllerService");
+    void startLineController();
+  } catch (err) {
+    console.error("[LineController] init failed:", (err as any)?.message || err);
+  }
+
   // Doc 38 T-1 (P1) — SECS/GEM production bring-up. Opens an HSMS session per
   // configured equipment (SECS_GEM_EQUIPMENT JSON) and arms attachGemAlarmDispatch
   // so live S5F1 alarms reach the Andon path (EQ_INTEG_ENABLED). Honest no-op unless

@@ -45,6 +45,15 @@ export const API_SCOPES = {
   // W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs (READ): current
   // state, timeseries, events, semantic metrics, genealogy.
   DATA_READ: "data:read",
+  // W3-A1 (doc 44 G3.13) — SYNAPSE Tầng-3 Policy API (/v1/policy, spec §13.3).
+  POLICY_READ: "policy:read",
+  POLICY_WRITE: "policy:write",
+  // W3-A2 (doc 44 G3.1) — Line Controller FSM (/v1/lines).
+  LINES_READ: "lines:read",
+  LINES_WRITE: "lines:write",
+  // W3-A3 (doc 44 G3.6/G3.7) — order lifecycle (LDS-L3 §13.1 Orchestration API).
+  ORDERS_READ: "orders:read",
+  ORDERS_WRITE: "orders:write",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -78,6 +87,18 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
     "Register a declarative asset, change asset lifecycle (validated transitions), approve config baselines; adapter restart is ADDITIONALLY gated by V1_ADAPTER_RESTART_ENABLED, default OFF (W2-A2).",
   "data:read":
     "SYNAPSE Tầng-2 Access APIs (READ): /state/{path}, /query/timeseries, /events, /metrics/{metric} (semantic layer), /genealogy (W2-B1 G2.16-G2.18).",
+  "policy:read":
+    "Policy Engine (W3-A1 G3.13): dry-run POST /policy/evaluate, list /policy/policies, immutable /policy/audit decision log.",
+  "policy:write":
+    "RESERVED — governance mutations of policy_definitions (not exposed yet; as-code Git sync is the write path).",
+  "lines:read":
+    "Read line-controller FSM state, per-station stages, takt/bottleneck, readiness (W3-A2 G3.1).",
+  "lines:write":
+    "Issue line commands start|hold|resume|changeover|complete|reset_fault — every transition passes the policy seam (W3-A2 G3.1).",
+  "orders:read":
+    "Read production-order lifecycle: list/detail/transitions/trace (W3-A3; gated by ORDER_LIFECYCLE_ENABLED).",
+  "orders:write":
+    "Order lifecycle commands: allocate/hold/resume/cancel — policy-gated, transactional audit (W3-A3; gated by ORDER_LIFECYCLE_ENABLED).",
 };
 
 /**

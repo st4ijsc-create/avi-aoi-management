@@ -171,6 +171,9 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       { name: "Models", description: "W0-F G4.27 — AI model registry: catalogue + drift (read); promote/rollback (flag-gated, default OFF)." },
       { name: "Assets", description: "W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry: URN/ISA-95 discovery, lifecycle, health, tags, config-drift; adapter restart (flag-gated); gateway status." },
       { name: "Data", description: "W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs: current state (state store), timeseries, unified events, semantic metrics, genealogy. All read-only, scope data:read." },
+      { name: "Policy", description: "W3-A1 (doc 44 G3.11-G3.16) — SYNAPSE Tầng-3 Policy Engine: dry-run evaluate, governed policies, append-only decision audit." },
+      { name: "Lines", description: "W3-A2 (doc 44 G3.1) — Line Controller FSM: state/stages/readiness + commands start|hold|resume|changeover|complete|reset_fault (policy-gated)." },
+      { name: "Orders", description: "W3-A3 (doc 44 G3.6/G3.7) — Order lifecycle LDS-L3 §8.2: allocate/hold/resume/cancel/trace (policy-gated; ORDER_LIFECYCLE_ENABLED)." },
       { name: "Anomaly", description: "U4a — ADVISORY robot-behaviour anomaly events (read)." },
       { name: "Standards", description: "U4a — equipment governance: device types, alarm taxonomy, compliance (read)." },
       { name: "Ecosystem", description: "U4a — single-pane roll-up: hierarchy, KPI, per-asset cockpit detail (read)." },
@@ -308,6 +311,17 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "400": { description: "Validation / idempotency error", content: jsonErr() },
             "415": { description: "XML posted but B2MML disabled", content: jsonErr() },
             "503": { description: "ERP inbound disabled (ERP_INBOUND_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
+        },
+        // W3-A3 (doc 44 G3.6/G3.7) — order lifecycle list (cùng path với ERP intake POST).
+        get: {
+          tags: ["Orders"],
+          summary: "List orders + effective lifecycle + allocation",
+          description: "Requires scope `orders:read`. Query: lifecycle|lineId|limit|offset. 503 khi ORDER_LIFECYCLE_ENABLED off.",
+          responses: {
+            "200": { description: "Orders", content: jsonOk() },
+            "503": { description: "Feature off (ORDER_LIFECYCLE_ENABLED)", content: jsonErr() },
             ...errResponses(),
           },
         },
@@ -943,6 +957,171 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "400": { description: "No criterion supplied / invalid body", content: jsonErr() },
             ...errResponses(),
           },
+        },
+      },
+      // ── W3-A1 (doc 44 G3.11-G3.16) — Policy Engine (spec §13.3) ──────────────
+      "/api/v1/policy/evaluate": {
+        post: {
+          tags: ["Policy"],
+          summary: "Dry-run policy evaluation → PERMIT/DENY + obligations (SYNAPSE §13.4)",
+          description: "Requires scope `policy:read`. Dry-run only — no side effects besides the decision log.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["action"],
+                  properties: {
+                    subject: { type: "string" },
+                    action: { type: "string", example: "line.command" },
+                    resource: { type: "string", example: "HANOI/ASSY/LINE1" },
+                    verb: { type: "string" },
+                    request_id: { type: "string" },
+                    context: { type: "object", additionalProperties: true },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Decision {decision, obligations, reason_code, policy_ref, latency_ms}", content: jsonOk() },
+            "400": { description: "Missing/invalid action or context", content: jsonErr() },
+            ...errResponses(),
+          },
+        },
+      },
+      "/api/v1/policy/policies": {
+        get: {
+          tags: ["Policy"],
+          summary: "List governed policies (DB store when POLICY_STORE_ENABLED, else built-ins)",
+          responses: { "200": { description: "Policy listing", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/policy/audit": {
+        get: {
+          tags: ["Policy"],
+          summary: "Append-only policy decision log",
+          parameters: [
+            { name: "subject", in: "query", required: false, schema: { type: "string" } },
+            { name: "action", in: "query", required: false, schema: { type: "string" } },
+            { name: "decision", in: "query", required: false, schema: { type: "string", enum: ["PERMIT", "DENY"] } },
+            { name: "from", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "to", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", maximum: 500 } },
+          ],
+          responses: {
+            "200": { description: "Decisions (newest first)", content: jsonOk() },
+            "400": { description: "Bad filter", content: jsonErr() },
+            "503": { description: "Decision log unavailable (migration 0256 not applied)", content: jsonErr() },
+            ...errResponses(),
+          },
+        },
+      },
+      // ── W3-A2 (doc 44 G3.1) — Line Controller (spec §13.2) ───────────────────
+      "/api/v1/lines": {
+        get: {
+          tags: ["Lines"],
+          summary: "List production lines + FSM state",
+          description: "Requires scope `lines:read`.",
+          responses: { "200": { description: "Lines + states", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/lines/{id}/state": {
+        get: {
+          tags: ["Lines"],
+          summary: "Line FSM state + takt/bottleneck + readiness",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "LineState", content: jsonOk() }, "404": { description: "Unknown line", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/lines/{id}/stages": {
+        get: {
+          tags: ["Lines"],
+          summary: "Per-station stages (PackML/op state, dwell, blocked/starved)",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "StageState[]", content: jsonOk() }, "404": { description: "Unknown line", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/lines/{id}/command": {
+        post: {
+          tags: ["Lines"],
+          summary: "Line command start|hold|resume|changeover|complete|reset_fault (policy-gated)",
+          description: "Requires scope `lines:write`. Transition vào READY bắt buộc qua readiness checklist; mọi transition qua policy seam.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["command"],
+                  properties: {
+                    command: { type: "string", enum: ["start", "hold", "resume", "changeover", "complete", "reset_fault"] },
+                    reason: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "TransitionResult (gồm readiness checks khi bị chặn)", content: jsonOk() },
+            ...errResponses({
+              "400": { description: "INVALID_TRANSITION + danh sách hợp lệ", content: jsonErr() },
+              "403": { description: "POLICY_DENIED", content: jsonErr() },
+            }),
+          },
+        },
+      },
+      // ── W3-A3 (doc 44 G3.6/G3.7) — Order lifecycle (spec §13.1) ─────────────
+      // LƯU Ý: GET /api/v1/orders (list lifecycle) được gộp vào entry POST /orders
+      // của ERP intake phía trên (key trùng — object literal không cho phép 2 key).
+      "/api/v1/orders/{id}": {
+        get: {
+          tags: ["Orders"],
+          summary: "Order detail + transition history",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "Order + transitions", content: jsonOk() }, "404": { description: "Not found", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orders/{id}/allocate": {
+        post: {
+          tags: ["Orders"],
+          summary: "Allocate (§9.1) {lineId?} — capacity-validated / least-loaded; hết chỗ → state=rejected",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "allocated|rejected", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orders/{id}/hold": {
+        post: {
+          tags: ["Orders"],
+          summary: "running → held {reason}",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orders/{id}/resume": {
+        post: {
+          tags: ["Orders"],
+          summary: "held → running {reason}",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orders/{id}/cancel": {
+        post: {
+          tags: ["Orders"],
+          summary: "created/allocated→rejected · running/held→compensating→failed",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
+        },
+      },
+      "/api/v1/orders/{id}/trace": {
+        get: {
+          tags: ["Orders"],
+          summary: "Transitions + genealogy refs (honest-empty)",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "Trace", content: jsonOk() }, ...errResponses() },
         },
       },
       "/api/v1/anomaly/events": {

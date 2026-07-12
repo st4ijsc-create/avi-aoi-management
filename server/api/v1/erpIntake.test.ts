@@ -85,6 +85,17 @@ vi.mock("../../_core/eventBus", () => ({
   eventBus: { publish: (type: string, payload: any) => state.publishedEvents.push({ type, payload }) },
 }));
 
+// ── W3-A3 (doc 44 G3.6): lifecycle CREATED mark on intake — capture mock ──────
+const lifecycle = vi.hoisted(() => ({ marked: [] as Array<{ orderId: number; actor?: string }> }));
+vi.mock("../../services/orders/orderLifecycleService", () => ({
+  orderLifecycleEnabled: () =>
+    process.env.ORDER_LIFECYCLE_ENABLED === "true" || process.env.ORDER_LIFECYCLE_ENABLED === "1",
+  markOrderCreated: vi.fn(async (orderId: number, opts?: { actor?: string }) => {
+    lifecycle.marked.push({ orderId, actor: opts?.actor });
+    return true;
+  }),
+}));
+
 import { registerErpIntakeRoutes } from "./erpIntake";
 
 let server: Server;
@@ -239,6 +250,49 @@ describe("R0-3 inbound order intake", () => {
     // INSERT keeps its old shape and stays safe on an un-migrated DB.
     expect("externalId" in state.productionOrders[0]).toBe(false);
     expect("sourceSystem" in state.productionOrders[0]).toBe(false);
+  });
+});
+
+// ── W3-A3 (doc 44 G3.6): intake sets lifecycle CREATED (flag-gated, additive) ──
+describe("W3-A3 lifecycle CREATED mark on intake", () => {
+  beforeEach(() => {
+    lifecycle.marked = [];
+    delete process.env.ORDER_LIFECYCLE_ENABLED;
+  });
+
+  it("marks a NEW order CREATED when ORDER_LIFECYCLE_ENABLED is on", async () => {
+    process.env.ORDER_LIFECYCLE_ENABLED = "true";
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { ...AUTH, "X-Idempotency-Key": "lc-1" },
+      body: JSON.stringify(validOrder()),
+    });
+    expect(resp.status).toBe(201);
+    expect(lifecycle.marked).toEqual([{ orderId: 1, actor: "erp-intake" }]);
+    delete process.env.ORDER_LIFECYCLE_ENABLED;
+  });
+
+  it("does NOT touch the lifecycle when the flag is off (default)", async () => {
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { ...AUTH, "X-Idempotency-Key": "lc-2" },
+      body: JSON.stringify(validOrder()),
+    });
+    expect(resp.status).toBe(201);
+    expect(lifecycle.marked.length).toBe(0);
+  });
+
+  it("does NOT mark on an UPDATE of an existing order (created-only)", async () => {
+    process.env.ORDER_LIFECYCLE_ENABLED = "true";
+    _matchedOrders = [{ id: 42, orderCode: "WO-1001" }]; // existence lookup hits → update path
+    const resp = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: "POST",
+      headers: { ...AUTH, "X-Idempotency-Key": "lc-3" },
+      body: JSON.stringify(validOrder()),
+    });
+    expect(resp.status).toBe(200);
+    expect(lifecycle.marked.length).toBe(0);
+    delete process.env.ORDER_LIFECYCLE_ENABLED;
   });
 });
 

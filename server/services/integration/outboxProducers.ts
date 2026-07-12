@@ -65,3 +65,42 @@ export function publishToOutbox(input: {
     console.error(`[outboxProducers] publish ${input.eventType} threw:`, (err as Error)?.message ?? err);
   }
 }
+
+/**
+ * W3-A3 (doc 44 G3.6) — ORDER COMPLETION / "hoàn công" (spec LDS-L3 §10.1 QT-1
+ * bước 4: "xác nhận hoàn công về MES"). Fired by orderLifecycleService when an
+ * order transitions → done. REUSES the existing "production-event" family (env
+ * ERP_PRODUCTION_ENDPOINT) — `payload.kind` discriminates; no new event type,
+ * no erpOutbox change. Idempotent per order (`order-completed-{id}`), so a
+ * re-emit never double-publishes. Fire-and-forget + error-isolated like every
+ * producer here.
+ */
+export function publishOrderCompletion(input: {
+  orderId: number;
+  orderCode: string;
+  productModelId?: number | null;
+  targetQuantity?: number | null;
+  completedQuantity?: number | null;
+  okQuantity?: number | null;
+  ngQuantity?: number | null;
+  correlationId?: string | null;
+  corporateCode?: string | null;
+}): void {
+  publishToOutbox({
+    eventType: "production-event",
+    payload: {
+      kind: "order.completed",
+      orderId: input.orderId,
+      orderCode: input.orderCode,
+      productModelId: input.productModelId ?? null,
+      targetQuantity: input.targetQuantity ?? null,
+      completedQuantity: input.completedQuantity ?? null,
+      okQuantity: input.okQuantity ?? null,
+      ngQuantity: input.ngQuantity ?? null,
+      correlationId: input.correlationId ?? null,
+      completedAt: new Date().toISOString(),
+    },
+    idempotencyKey: `order-completed-${input.orderId}`,
+    corporateCode: input.corporateCode ?? undefined,
+  });
+}

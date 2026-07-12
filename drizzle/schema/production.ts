@@ -84,6 +84,15 @@ export const productionOrders = pgTable("production_orders", {
   // external_id IS NOT NULL — mỗi đơn nguồn chỉ map 1 lệnh; đơn tạo tay giữ NULL.
   externalId: text("external_id"),
   sourceSystem: text("source_system"),
+  // ── W3-A3 (doc 44 G3.6, migration 0258; additive, nullable) ──
+  // Vòng đời đơn hàng LỚP TRÊN theo SYNAPSE LDS-L3 §8.2: created | allocated |
+  // running | held | compensating | done | failed | rejected. NULL = hàng legacy
+  // chưa migrate — trạng thái hiệu dụng được PROJECT từ `status` cũ khi đọc
+  // (pending→created, in_progress→running, paused→held, completed→done,
+  // cancelled→failed — xem orderLifecycleService). Enum `status` cũ KHÔNG đổi;
+  // mỗi transition ghi lifecycle_state + project ngược xuống `status` để client
+  // & máy trạm cũ tiếp tục sống. Varchar (không pg enum) để migration additive.
+  lifecycleState: varchar("lifecycle_state", { length: 24 }),
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

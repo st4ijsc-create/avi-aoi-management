@@ -5174,6 +5174,15 @@ async function startServer() {
     console.error("[Contracts] registry init failed:", (err as any)?.message || err);
   }
 
+  // W3-A1 (doc 44 G3.13) — Policy store: sync as-code Git→DB + load snapshot.
+  // No-op unless POLICY_STORE_ENABLED=true; never throws.
+  try {
+    const { initPolicyStore } = await import("../services/security/policyStore");
+    await initPolicyStore();
+  } catch (err) {
+    console.error("[Policy] store init failed:", (err as any)?.message || err);
+  }
+
   // F5a — Interlock engine (ALERT-ONLY). No-op unless INTERLOCK_ENGINE_ENABLED=true.
   // SAFETY: this engine raises Andon + records interlock_events ONLY; it has NO
   // path to commandDispatcher / driver.writeTags (auto block/stop → 'skipped').

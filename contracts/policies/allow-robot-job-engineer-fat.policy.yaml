@@ -1,0 +1,24 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-A1 G3.11 + G3.13).
+# POLICY MẪU thứ hai cho nhóm actuation dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "robot.*", mọi lệnh robot bị TỪ CHỐI trừ khi
+# một allow-policy tường minh match. Chặt hơn mẫu OT: ngoài vai trò + FAT còn
+# yêu cầu SafetyState=OK (spec §11.1 nhóm An toàn — "Từ chối lệnh nếu
+# SafetyState≠OK"; Policy đọc safety từ context do caller cung cấp, adapter/L1
+# vẫn kiểm lại tại thiết bị — phòng thủ theo lớp, spec §17).
+policy_id: allow-robot-job-engineer-fat
+version: 1
+effect: allow
+action_pattern: "robot.*"
+priority: 10
+status: active
+description: "Cho phép lệnh robot (robot.*) khi vai trò engineer/admin, đã qua FAT và SafetyState=OK."
+conditions:
+  - path: context.role
+    op: in
+    value: [engineer, admin]
+  - path: context.fat_passed
+    op: eq
+    value: true
+  - path: context.safety
+    op: eq
+    value: OK

@@ -36,6 +36,10 @@ import {
   type SloObservation,
 } from "./slo";
 import { registerSloObservationProvider, observabilityEnabled } from "./sloAlerting";
+// W3-A1 (doc 44 G3.16): the policy engine now measures EVERY evaluatePolicy()
+// call (hrtime → 1-min rolling ring in policyLatency.ts) — a REAL feed for
+// policy-eval-p95, replacing the honest-null placeholder below.
+import { policyEvalSloObservation } from "../security/policyLatency";
 
 // ── config (env-driven; honest defaults) ─────────────────────────────────────
 
@@ -309,9 +313,11 @@ function rumLcpObservation(thresholdMs: number): { short: SloObservation; long: 
  * better signal can replace any of these later):
  *   • HTTP-proxied SLOs → the rolling-window HTTP tracker (as before).
  *   • screen-load-p95   → RUM LCP histogram diff (null until the metric exists).
- *   • policy-eval-p95 / state-read-p95 → null (chưa instrument — W2/W3): the
- *     policy engine / state-read paths have no latency instrumentation yet, so
- *     the ONLY honest observation is "no data". NEVER fabricate numbers here.
+ *   • policy-eval-p95   → REAL feed (W3-A1 G3.16): policyLatency's 1-min ring,
+ *     fed by every evaluatePolicy() call (hrtime). Honest null until the first
+ *     evaluation happens — never fabricated.
+ *   • state-read-p95    → null (chưa instrument here): api/v1/state.ts measures
+ *     the real path and re-registers this id (last-writer-wins).
  */
 export function installSloMetricsProviders(): void {
   if (!observabilityEnabled()) {
@@ -334,15 +340,18 @@ export function installSloMetricsProviders(): void {
     const t = screenLoad.latencyThresholdMs;
     registerSloObservationProvider("screen-load-p95", () => rumLcpObservation(t));
   }
-  // Chưa instrument — W2/W3: honest null until the real subsystem feed registers.
-  registerSloObservationProvider("policy-eval-p95", () => null);
+  // W3-A1 (doc 44 G3.16): policy-eval-p95 has a REAL feed — every evaluatePolicy()
+  // records its hrtime-measured latency into policyLatency's 1-min rolling ring.
+  registerSloObservationProvider("policy-eval-p95", policyEvalSloObservation);
+  // Chưa instrument tại đây — state-read-p95: honest null until the real subsystem
+  // feed registers (api/v1/state.ts re-registers it, last-writer-wins).
   registerSloObservationProvider("state-read-p95", () => null);
 
   active = true;
   console.log(
     `[SLO] metrics providers installed for ${DEFAULT_SLOS.length} SLO(s) ` +
       `(HTTP-proxied=${HTTP_PROXIED_SLOS.length}, RUM=screen-load-p95, ` +
-      `pending-instrumentation=policy-eval-p95,state-read-p95; ` +
+      `policy-eval-p95=real (policyLatency ring), pending-instrumentation=state-read-p95; ` +
       `short=${shortWindowMs()}ms, long=${longWindowMs()}ms, thresholds=[${THRESHOLDS.join(",")}]ms).`,
   );
 }

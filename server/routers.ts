@@ -184,6 +184,8 @@ import { productPanelRouter } from "./routers/productPanelRouter"; // W8-B (doc 
 import { operatorBadgeRouter } from "./routers/operatorBadgeRouter"; // W8-B (doc 29 §3 / doc 27 M14): operator/badge master — badgeCode→users.id with validity windows (issue/revoke/re-issue)
 import { ncrRouter } from "./routers/ncrRouter"; // doc 35 W4-B — nonconformance reports (NCR/MRB)
 import { feederVerifyRouter } from "./routers/feederVerifyRouter"; // doc 35 W4-C — SMT feeder-setup scan verification
+import { lineControllerRouter } from "./routers/lineControllerRouter"; // doc 44 W3-A2 — Line Controller FSM (G3.1)
+import { orderLifecycleRouter } from "./routers/orderLifecycleRouter"; // doc 44 W3-A3 — order lifecycle §13.1
 import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-life clock (J-STD-020)
 import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
 import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
@@ -422,6 +424,8 @@ export const appRouter = router({
   maintenance: maintenanceRouter,
   ncr: ncrRouter, // doc 35 W4-B
   feederVerify: feederVerifyRouter, // doc 35 W4-C
+  lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
+  orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C
   ecn: ecnRouter, // doc 35 W4-D

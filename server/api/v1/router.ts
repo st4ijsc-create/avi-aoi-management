@@ -35,6 +35,9 @@ import { registerTimeseriesRoutes } from "./timeseries";
 import { registerEventRoutes } from "./events";
 import { registerMetricRoutes } from "./metricsApi";
 import { registerGenealogyRoutes } from "./genealogyApi";
+import { registerPolicyRoutes } from "./policy";
+import { registerLineRoutes } from "./lines";
+import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
 import {
@@ -560,6 +563,12 @@ export function createV1Router(): Router {
   registerEventRoutes(r);
   registerMetricRoutes(r);
   registerGenealogyRoutes(r);
+
+  // ── W3-A (doc 44) — SYNAPSE Tầng-3 Điều phối: Policy §13.3 + Line Controller
+  // §13.2 + Order lifecycle §13.1. Mọi lệnh line/order đi qua policy seam.
+  registerPolicyRoutes(r);
+  registerLineRoutes(r);
+  registerOrdersLifecycleRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

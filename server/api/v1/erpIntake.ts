@@ -250,6 +250,18 @@ async function handleOrderIntake(req: Request, res: Response): Promise<void> {
 
   // Emit ONLY for a new order (Khối 2 task allocation subscribes later).
   if (created) {
+    // W3-A3 (doc 44 G3.6): mark the new order CREATED in the lifecycle layer +
+    // append the first transition (fromState=null). Flag-gated
+    // (ORDER_LIFECYCLE_ENABLED, default OFF → exact pre-0258 behaviour, safe on
+    // an un-migrated DB) and FAIL-SAFE — intake never breaks on this layer.
+    try {
+      const { orderLifecycleEnabled, markOrderCreated } = await import("../../services/orders/orderLifecycleService");
+      if (orderLifecycleEnabled()) {
+        await markOrderCreated(orderId, { actor: "erp-intake", reason: `intake ${input.orderCode}` });
+      }
+    } catch (err) {
+      console.error("[erpIntake] lifecycle CREATED mark failed (non-fatal):", (err as Error)?.message ?? err);
+    }
     eventBus.publish("order.created", { orderId, orderCode: input.orderCode, productModelId: input.productModelId, source: "erp-intake" }, "erp-intake");
   }
 
