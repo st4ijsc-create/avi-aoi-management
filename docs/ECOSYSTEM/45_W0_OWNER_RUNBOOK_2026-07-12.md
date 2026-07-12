@@ -481,3 +481,29 @@ NATS_URL=nats://localhost:4222  # mục e — CHƯA được app đọc (client 
 - `FEATURE_STORE_ENABLED` + `MODEL_STAGE_PIPELINE_ENABLED` — MLOps; cần bảng g3 (ml_feature_cache) trong DB.
 
 **REST mới:** /v1/predict/{task} · /v1/recommend · /v1/recommendations (scope advice:read) · /v1/models nay có stage thật. **tRPC mới:** parameterGuardrail · twinGov.twinTrusted/runFidelityCheck · aiModel.listStages/promoteStage.
+
+---
+
+## ADDENDUM 3 (2026-07-12, sau W5-B/W6/W7) — hoàn tất lộ trình phần mềm
+
+| Mig | Nội dung | Đợt |
+|---|---|---|
+| 0263 | ntf_classifier_models (NTF classifier học thật) | W5-B1 |
+| 0264 | defect_correlation_cache (RCA định lượng) | W5-B2 |
+| 0265 | rul_estimates + failure_events (RUL Weibull + failure-mode) | W5-B3 |
+| 0266 | sops + sop_steps + sop_executions (e-SOP) | W6-1 |
+| 0267 | deployment_events (DORA) | W6-4 |
+| 0268 | enterprise_id_map + enterprise_sync_log (WMS/PLM/CMMS) | W6-5 |
+
+**Tài liệu owner mới:** docs/EDGE_GATEWAY.md (cutover edge gateway) · docs/REBRAND_R3.md (rollout MQTT 3 bước) · docs/EDITIONS.md · docs/BENCHMARK.md (chạy load-test) · docs/STREAMING.md (bật NATS) · docs/security/{IR_RUNBOOK,ZONE_CONDUIT_62443}.md · docs/DEPLOYMENT_CANARY.md.
+
+**Dependency owner cần cài khi bật tính năng tương ứng (KHÔNG bắt buộc — đều có seam honest):**
+- `bonjour-service` — join-wizard mDNS discovery (static-peer + bridge dùng được không cần).
+- `nats` — streaming bus backend Site Edition (inprocess dùng được không cần).
+- `@node-saml/node-saml` — SAML signature verify production.
+- Rust toolchain + tauri-cli + WebView2/webkit — build Machine Edition .exe (Tauri).
+- OCR ONNX model files (models/ocr/rec.onnx + ppocr_keys.txt — RapidOCR GitHub).
+
+**Migration đã tới 0268. Edge gateway: `npm run start:edge`. Benchmark: `node scripts/bench/bench-ingest.mjs`.**
+
+**HW/FAT track (cần hiện diện nhà máy — ngoài phạm vi phần mềm):** HW-validate driver với PLC thật + FAT ký commissioning; safety-PLC thật (Pilz/Sick); cảm biến rung cho failure-mode G4.8; SECS/GEM + CFX với máy SMT thật; dữ liệu hỏng tích lũy cho RUL Weibull.
