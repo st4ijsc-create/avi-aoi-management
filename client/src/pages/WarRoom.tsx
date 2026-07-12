@@ -50,6 +50,7 @@ import { useFullscreen } from "@/hooks/useFullscreen";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ExportMenu } from "@/components/ExportMenu";
 import {
   Select,
   SelectContent,
@@ -203,6 +204,35 @@ export default function WarRoom() {
     refetch: () => void;
   };
   const briefing = briefingQ.data;
+
+  // doc 46 FE-W2 — font-safe export dataset (per-line shift briefing → server render VN/EN/ZH).
+  const briefingExportData = useMemo(
+    () =>
+      (briefing?.lines ?? []).map((l) => ({
+        line: l.lineName,
+        oee: l.oee,
+        availability: l.availability,
+        performance: l.performance,
+        quality: l.quality,
+        output: l.output ?? 0,
+        planTarget: l.planTarget,
+        ngRate: l.ngRate,
+      })),
+    [briefing],
+  );
+  const briefingExportColumns = useMemo(
+    () => [
+      { key: "line", header: t("warRoom.export.line", "Chuyền"), format: "text" as const },
+      { key: "oee", header: "OEE", format: "percentage" as const },
+      { key: "availability", header: t("warRoom.export.availability", "Sẵn sàng"), format: "percentage" as const },
+      { key: "performance", header: t("warRoom.export.performance", "Hiệu suất"), format: "percentage" as const },
+      { key: "quality", header: t("warRoom.export.quality", "Chất lượng"), format: "percentage" as const },
+      { key: "output", header: t("warRoom.export.output", "Sản lượng"), format: "number" as const },
+      { key: "planTarget", header: t("warRoom.export.plan", "Kế hoạch"), format: "number" as const },
+      { key: "ngRate", header: t("warRoom.export.ngRate", "Tỷ lệ NG"), format: "percentage" as const },
+    ],
+    [t],
+  );
 
   // ── Realtime U1: socket-first + poll-fallback ──────────────────────────────
   // Nghe luồng `ecosystem:event` (dùng chung 1 socket). Khi có sự kiện liên quan
@@ -445,6 +475,16 @@ export default function WarRoom() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {/* doc 46 FE-W2 — font-safe multi-language export of the shift briefing. */}
+            <ExportMenu
+              type="war_room_briefing"
+              title={t("warRoom.title", "Giao ban theo ca (War-room)")}
+              subtitle={briefing?.asOf ? new Date(briefing.asOf).toLocaleString("vi-VN") : undefined}
+              columns={briefingExportColumns}
+              data={briefingExportData}
+              fileName="war-room-briefing"
+              disabled={briefingQ.isLoading || briefingExportData.length === 0}
+            />
             {liveConnected && (
               <span
                 className="hidden items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success sm:inline-flex"
