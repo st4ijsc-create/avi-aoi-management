@@ -185,6 +185,16 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "dashboard",
     items: [
       {
+        // doc 46 FE-W3.1 (D4) — Executive Control Tower: persona-configurable single
+        // surface hợp nhất 6 màn command, cross-link ra view chuyên sâu. Mục cửa-ngõ.
+        href: "/control-tower",
+        label: "Trung tâm Điều hành (Control Tower)",
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        description: "Bảng điều hành 1-cửa theo persona: OEE/andon/kế hoạch/AI · liên kết ra 6 màn command chuyên sâu",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+      {
         // U2 (doc 21 §6 G-3) — flagship single pane of glass: hierarchy tree +
         // factory twin + KPI strip + unified live alarm rail. First/prominent item.
         href: "/command-center",
@@ -245,6 +255,16 @@ export const navGroups: NavGroup[] = [
         label: "nav.corporateDashboard",
         icon: <Building2 className="h-4 w-4" />,
         description: "nav.corporateDashboardDesc",
+        requiredPermission: "dashboard_corporate",
+        permissionCategory: "dashboard",
+      },
+      {
+        // doc 46 FE-W3.5 (D5) — Executive mobile/PWA: OEE/KPI briefing + AI summary +
+        // duyệt nhanh, tối ưu điện thoại (cài PWA). Cửa-ngõ điều hành trên di động.
+        href: "/executive",
+        label: "Điều hành Di động (Executive)",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "Bảng điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
         requiredPermission: "dashboard_corporate",
         permissionCategory: "dashboard",
       },
@@ -1098,6 +1118,17 @@ export const navGroups: NavGroup[] = [
         label: "nav.dataComparison",
         icon: <GitCompare className="h-4 w-4" />,
         description: "nav.dataComparisonDesc",
+        requiredPermission: "analytics_advanced",
+        permissionCategory: "analytics",
+        section: "analysis",
+      },
+      {
+        // doc 46 FE-W3.3 — Comparison Studio: hợp nhất so sánh đa chiều (tuyến/ca/SP/kỳ)
+        // + benchmark, 1 công cụ (gộp data-comparison/product-comparison/history-comparison).
+        href: "/comparison-studio",
+        label: "So sánh Đa chiều (Comparison Studio)",
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "So sánh tuyến/ca/sản phẩm/kỳ + đường benchmark trong 1 công cụ · xuất báo cáo font-chuẩn",
         requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
         section: "analysis",

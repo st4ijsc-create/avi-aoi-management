@@ -423,13 +423,29 @@ export async function generateExecutiveSummary(
       repeatPenalty: EXEC_REPORT_REPEAT_PENALTY,
       cacheKey: `exec-report:${period}:${kpis.window.start}:${lang}`,
     });
+    // FE-W3 (doc 46) — an EMBEDDING model can never generate coherent narrative.
+    // When the generative tier can't load (e.g. VRAM), the engine may fall back to
+    // the embedding model, which emits pure gibberish ("PPT slide slide slide…").
+    // The repeat-loop guard salvages a "clean head", but that head is ALSO garbage
+    // here — so reject embedding-model output outright and keep the offline summary.
+    const isEmbeddingNarrative = /embed/i.test(result.model || "");
+    if (isEmbeddingNarrative) {
+      degraded = true;
+      degradedReason = `embedding_model_narrative:${result.model}`;
+      console.warn(
+        `[aiExecutiveReport] narrative came from an embedding model (${result.model}) — ` +
+          `discarding, using offline summary (generative tier unavailable).`,
+      );
+    }
     // FE-W0.3 (doc 46 §2.3) — GUARDRAIL: reject/salvage degenerate output BEFORE
     // parsing so a "cell cell cell…" loop never reaches management. Unsalvageable
     // → keep the honest offline summary + flag degraded; a clean head → parse it.
     const { guardGeneratedText } = await import("./ai/generationGuard");
     const guard = guardGeneratedText(result.text);
-    const usable = guard.text.trim();
-    if (guard.degraded) {
+    // Embedding-model output is garbage end-to-end (not just a repeated tail), so its
+    // salvaged head is unusable → force the offline summary.
+    const usable = isEmbeddingNarrative ? "" : guard.text.trim();
+    if (guard.degraded && !isEmbeddingNarrative) {
       degraded = true;
       degradedReason = guard.reason;
       console.warn(

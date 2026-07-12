@@ -18,7 +18,10 @@ import {
   Boxes,
   Truck,
   PackageCheck,
+  Radar,
 } from "lucide-react";
+import CartonGenealogyView from "@/components/traceability/CartonGenealogyView";
+import ForwardSearchPanel from "@/components/traceability/ForwardSearchPanel";
 
 // Domain status → solid shadcn <Badge> variant. Unified onto the shared
 // <StatusBadge> (W4): thin wrapper keeps the `value` API + em-dash empty state,
@@ -36,11 +39,14 @@ function StatusBadge({ value }: { value?: string | null }) {
 
 export default function TraceabilityLineage() {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<"serial" | "lot">("serial");
+  const [mode, setMode] = useState<"serial" | "lot" | "carton" | "forward">("serial");
   const [serialInput, setSerialInput] = useState("");
   const [lotInput, setLotInput] = useState("");
   const [serialQuery, setSerialQuery] = useState("");
   const [lotQuery, setLotQuery] = useState("");
+  // Carton/pallet (container) view — its own lot-code lookup.
+  const [cartonInput, setCartonInput] = useState("");
+  const [cartonQuery, setCartonQuery] = useState("");
 
   const bySerial = trpc.traceability.bySerial.useQuery(
     { serialNumber: serialQuery },
@@ -53,7 +59,8 @@ export default function TraceabilityLineage() {
 
   const submit = () => {
     if (mode === "serial") setSerialQuery(serialInput.trim());
-    else setLotQuery(lotInput.trim());
+    else if (mode === "lot") setLotQuery(lotInput.trim());
+    else if (mode === "carton") setCartonQuery(cartonInput.trim());
   };
 
   const search = useSearch();
@@ -111,10 +118,16 @@ export default function TraceabilityLineage() {
           description={t("trace.subtitle", "Tra cứu lineage 2 chiều: nguyên vật liệu → serial → quyết định lô/khách hàng")}
         />
 
-        <Tabs value={mode} onValueChange={(v) => setMode(v as "serial" | "lot")}>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as "serial" | "lot" | "carton" | "forward")}>
           <TabsList>
             <TabsTrigger value="serial">{t("trace.bySerial", "Theo Serial")}</TabsTrigger>
             <TabsTrigger value="lot">{t("trace.byLot", "Theo Lô")}</TabsTrigger>
+            <TabsTrigger value="carton">
+              <Boxes className="mr-1 h-4 w-4" /> {t("trace.tabCarton", "Carton / Pallet")}
+            </TabsTrigger>
+            <TabsTrigger value="forward">
+              <Radar className="mr-1 h-4 w-4" /> {t("trace.tabForward", "Forward / Recall")}
+            </TabsTrigger>
           </TabsList>
 
           {/* SERIAL */}
@@ -348,6 +361,35 @@ export default function TraceabilityLineage() {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* CARTON / PALLET (container genealogy — IPC-1782) */}
+          <TabsContent value="carton" className="space-y-4">
+            <Card>
+              <CardContent className="flex items-end gap-2 pt-6">
+                <div className="flex-1">
+                  <Label htmlFor="carton-lot" className="text-xs">
+                    {t("trace.containerLotCode", "Lot code (production batch)")}
+                  </Label>
+                  <Input
+                    id="carton-lot"
+                    placeholder="SIM-BATCH-L1-..."
+                    value={cartonInput}
+                    onChange={(e) => setCartonInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submit()}
+                  />
+                </div>
+                <Button onClick={submit} disabled={!cartonInput.trim()}>
+                  <Search className="h-4 w-4 mr-1" /> {t("common.search", "Tra cứu")}
+                </Button>
+              </CardContent>
+            </Card>
+            <CartonGenealogyView lotCode={cartonQuery} onOpenSerial={goToSerial} />
+          </TabsContent>
+
+          {/* FORWARD / RECALL search + saved searches */}
+          <TabsContent value="forward" className="space-y-4">
+            <ForwardSearchPanel onOpenSerial={goToSerial} />
           </TabsContent>
         </Tabs>
       </div>

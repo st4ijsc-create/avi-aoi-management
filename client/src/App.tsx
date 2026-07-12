@@ -132,6 +132,9 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 // hub (their bodies are imported as *Content there). Legacy routes redirect in.
 const TwinHub = React.lazy(() => import("./pages/TwinHub"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
+const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
+const ComparisonStudio = React.lazy(() => import("./pages/ComparisonStudio")); // doc 46 FE-W3.3: unified multi-dim comparison (line/shift/product/period + benchmark)
+const ExecutiveMobile = React.lazy(() => import("./pages/ExecutiveMobile")); // doc 46 FE-W3.5 (D5): executive mobile/PWA view (OEE/KPI + AI summary + approvals)
 const MachineCockpit = React.lazy(() => import("./pages/MachineCockpit")); // U3 (doc 21 §6 G-4): /machine/:id unified per-machine cockpit (tabbed: overview/health/oee/alarms/recipes/programs/genealogy/3d/actions)
 const RobotCockpit = React.lazy(() => import("./pages/RobotCockpit")); // U3 (doc 21 §6 G-4/G-5): /robot/:id unified per-robot cockpit (LIVE robot:telemetry; tabbed overview/joints/jobs/tasks/programs/safety/anomalies/alarms/3d/teach/actions)
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
@@ -260,6 +263,10 @@ function Router() {
       <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
       <Route path="/drill-down"><RouteGuard navHref="/drill-down"><DrillDownDashboard /></RouteGuard></Route>
       <Route path="/corporate-dashboard"><RouteGuard navHref="/corporate-dashboard"><CorporateDashboard /></RouteGuard></Route>
+      {/* doc 46 FE-W3.1 (D4) — persona-configurable Executive Control Tower (single command surface). */}
+      <Route path="/control-tower"><RouteGuard navHref="/control-tower"><AIPageWrapper><ControlTower /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 46 FE-W3.5 (D5) — executive mobile/PWA view (glanceable OEE/KPI + AI summary + approvals). */}
+      <Route path="/executive"><RouteGuard navHref="/executive"><ExecutiveMobile /></RouteGuard></Route>
       <Route path="/corporate-layout"><RouteGuard requirePermission="dashboard_corporate"><CorporateLayout /></RouteGuard></Route>
 
       {/* ── PRODUCTION ───────────────────────────────────────────────────── */}
@@ -400,6 +407,8 @@ function Router() {
       <Route path="/category-analytics"><RouteGuard navHref="/category-analytics"><CategoryAnalytics /></RouteGuard></Route>
       <Route path="/correlation-analysis"><RouteGuard navHref="/correlation-analysis"><CorrelationAnalysis /></RouteGuard></Route>
       <Route path="/data-comparison"><RouteGuard navHref="/data-comparison"><DataComparison /></RouteGuard></Route>
+      {/* doc 46 FE-W3.3 — unified Comparison Studio (line/shift/product/period + benchmark). */}
+      <Route path="/comparison-studio"><RouteGuard navHref="/comparison-studio"><ComparisonStudio /></RouteGuard></Route>
       <Route path="/realtime-report"><RouteGuard navHref="/realtime-report"><RealtimeReportView /></RouteGuard></Route>
       <Route path="/energy-analytics"><RouteGuard navHref="/energy-analytics"><EnergyAnalyticsPage /></RouteGuard></Route>
       <Route path="/carbon-dashboard"><RouteGuard navHref="/carbon-dashboard"><CarbonDashboard /></RouteGuard></Route>

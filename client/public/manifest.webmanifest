@@ -10,5 +10,13 @@
   "theme_color": "#13a4a4",
   "icons": [
     { "src": "/default-machine-2d.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Executive briefing",
+      "short_name": "Executive",
+      "url": "/executive",
+      "description": "Today's OEE/KPI briefing, AI executive summary and pending approvals"
+    }
   ]
 }
