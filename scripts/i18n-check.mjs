@@ -8,9 +8,58 @@ const root = process.argv[2] || process.cwd();
 const localeDir = path.join(root, 'client/src/i18n/locales');
 const locales = ['en', 'vi', 'zh'];
 
-const data = Object.fromEntries(
-  locales.map((l) => [l, JSON.parse(readFileSync(path.join(localeDir, `${l}.json`), 'utf8'))]),
+const raw = Object.fromEntries(
+  locales.map((l) => [l, readFileSync(path.join(localeDir, `${l}.json`), 'utf8')]),
 );
+const data = Object.fromEntries(locales.map((l) => [l, JSON.parse(raw[l])]));
+
+// doc 46 FE-W4 — DUPLICATE-KEY GUARD. JSON.parse silently keeps the LAST of two
+// same-named keys in one object (that's how the historical signOff/signoff class of
+// bug hid), so a parsed-object scan can't see it. Scan the raw text instead: track a
+// stack of object frames and flag any key that repeats within the same object.
+function findDuplicateKeys(text) {
+  const dups = [];
+  const stack = [new Set()];
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      let s = '';
+      while (j < n && text[j] !== '"') {
+        if (text[j] === '\\') { s += text[j + 1] ?? ''; j += 2; continue; }
+        s += text[j];
+        j++;
+      }
+      let k = j + 1;
+      while (k < n && /\s/.test(text[k])) k++;
+      if (text[k] === ':') {
+        const top = stack[stack.length - 1];
+        if (top.has(s)) dups.push(s);
+        else top.add(s);
+      }
+      i = j;
+    } else if (c === '{') {
+      stack.push(new Set());
+    } else if (c === '}') {
+      if (stack.length > 1) stack.pop();
+    }
+  }
+  return dups;
+}
+
+const dupFindings = [];
+for (const l of locales) {
+  const dups = findDuplicateKeys(raw[l]);
+  if (dups.length > 0) dupFindings.push({ locale: l, dups: [...new Set(dups)] });
+}
+if (dupFindings.length > 0) {
+  for (const { locale, dups } of dupFindings) {
+    console.log(`DUPLICATE KEYS in ${locale}.json (${dups.length}): ${dups.join(', ')}`);
+  }
+  console.log(`\n${dupFindings.reduce((a, f) => a + f.dups.length, 0)} duplicate key(s) — a later value silently overrides an earlier one. Fix before merge.`);
+  process.exit(1);
+}
 
 function flatten(obj, prefix = '', out = {}) {
   for (const [k, v] of Object.entries(obj)) {
