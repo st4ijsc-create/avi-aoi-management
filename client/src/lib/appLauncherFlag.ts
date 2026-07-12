@@ -54,7 +54,13 @@ export function isPersistentShellEnabled(): boolean {
   } catch {
     /* storage unavailable */
   }
-  return import.meta.env.VITE_APP_SHELL_PERSISTENT === "true";
+  // doc 46 FE-W4.1 — FLIPPED ON by default after a broad live smoke (14 pages incl.
+  // chromeless /andon: single shell, no double-nest, no overflow/errors). The
+  // persistent shell stops the chrome remounting on every navigation (each page's own
+  // <DashboardLayout> collapses to a passthrough via InShellContext). Escape hatch
+  // retained: set VITE_APP_SHELL_PERSISTENT=false (or localStorage APP_SHELL_PERSISTENT
+  // = "false") to revert instantly if a kiosk/edge case surfaces.
+  return import.meta.env.VITE_APP_SHELL_PERSISTENT !== "false";
 }
 
 /**
