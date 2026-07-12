@@ -424,3 +424,42 @@ DATABASE_READ_URL=            # mục g — connstring replica (seam getReadDb; 
 DB_POOL_MAX_READ=15           # mục g — tùy chọn, pool đọc
 NATS_URL=nats://localhost:4222  # mục e — CHƯA được app đọc (client NATS wire ở SYN-W4)
 ```
+
+---
+
+## ADDENDUM (2026-07-12, sau khi thực thi W2 + W3) — migration & cờ mới
+
+**Migration mới cần áp (`npm run db:push`) — TẤT CẢ idempotent:**
+
+| Mig | Nội dung | Đợt |
+|---|---|---|
+| 0251 | machines.urn + isa95_path + backfill; lifecycle registered/faulted | W2-A |
+| 0252 | config_snapshots (config-drift) | W2-A |
+| 0253 | device_tags.deadband + sampling_ms | W2-A |
+| 0254 | contract_quarantine | W2-B |
+| 0255 | genealogy_chain.correlation_id (NGOÀI hash — verifyChain không đổi) | W2-B |
+| 0256 | policy_definitions + policy_decision_log (append-only) | W3-A |
+| 0257 | line_states + line_state_transitions | W3-A |
+| 0258 | production_orders.lifecycle_state + order_state_transitions | W3-A |
+| 0259 | recipe_sets + recipe_set_items + line_state_transitions.metadata | W3-B |
+
+**Cờ mới (mặc định OFF — bật theo thứ tự canary khuyến nghị, mô tả đầy đủ trong `.env.example`):**
+
+1. Sau khi áp mig xong, an toàn bật ngay (read-side/observe): `STATE_STORE_ENABLED`,
+   `CONTRACT_REGISTRY_PERSIST_ENABLED`, `CONFIG_DRIFT_ENABLED`, `LINE_CONTROLLER_ENABLED`
+   (chỉ sweep quan sát), `CONTRACT_VALIDATE_INGEST_MODE=log`.
+2. Khi UNS broker sẵn: `UNS_TOPIC_V2_ENABLED`, `UNS_AGGREGATES_ENABLED`,
+   `UNS_CMD_ACK_ENABLED`, `WS_UNS_STREAM_ENABLED`.
+3. Nghiệp vụ (thử trên line pilot/Full-Sim trước): `ORDER_LIFECYCLE_ENABLED`,
+   `QT_TEMPLATES_ENABLED` (+FOE_ENABLED), `MATERIAL_REPLENISH_ENABLED`,
+   `OT_TAG_DEADBAND_ENABLED`, `OT_CMD_SERIALIZE_ENABLED`.
+4. Siết quyền (SAU khi 2FA privileged sẵn — xem doc 41): `SEC_PLATFORM=true` →
+   `POLICY_STORE_ENABLED` → thêm dần nhóm vào `POLICY_DEFAULT_DENY_ACTIONS`
+   (vd `ot.command.*` trước, quan sát decision-log, rồi `robot.command.*`,
+   `foe.command.*`, `fleet.vda5050.*`). Fail-safe: action trong nhóm mà evaluator
+   lỗi → DENY (không fail-open).
+5. Cuối: `CONTRACT_VALIDATE_INGEST_MODE=quarantine` (sau khi mode=log sạch ≥1 tuần),
+   `LINE_CONTROLLER_AUTOHOLD_ENABLED` (sau khi quan sát blocking-alert chính xác).
+
+**UI mới:** trang Line View tại `/line-view` (app Giám sát máy trong launcher).
+**REST mới (scoped API key):** /v1/assets · /v1/state|query/timeseries|events|metrics|genealogy · /v1/policy/* · /v1/lines/* · /v1/orders/* (xem /api/v1/openapi.json).
