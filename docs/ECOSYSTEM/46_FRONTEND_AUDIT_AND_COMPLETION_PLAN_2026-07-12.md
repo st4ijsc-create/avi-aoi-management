@@ -198,3 +198,29 @@ Nguyên tắc: (1) gỡ nút thắt môi trường TRƯỚC (rẻ, mở khóa ph
 ---
 
 *Báo cáo lập từ 6 agent audit (4 Playwright live + 2 code), 2026-07-12. Read-only — 0 thay đổi code (1 sửa lỡ của agent đã revert; tree sạch). Kế hoạch FE-W0..W4 CHỜ DUYỆT + 5 quyết định D1-D5.*
+
+---
+
+## 8. ✅ TÌNH TRẠNG THỰC THI (cập nhật 2026-07-13)
+
+User DUYỆT D1-D5 (D1: W0→W1→W2 trước · D2: Full-Sim seed tầng SX nhãn "SIM" · D3: giữ RBAC, chỉ hoàn thiện · D4: hợp nhất Control Tower · D5: PWA exec-view trước) + "Tiếp tục FE-W3 và phần còn lại". **ĐÃ THỰC THI W0→W4, 11 commit, tất cả green (tsc 0 · i18n 0 · build OK) + verify LIVE Playwright.**
+
+**FE-W0 — gỡ 3 nút thắt** (`ece69c4f`): (1) rebuild+restart → route doc44 live (alarmKpi/lineController/sop 200, rum 405). (2) `scripts/sim-factory/seed-production.mjs` honest-SIM: 14.730 inspection/630 OEE/27.873 genealogy → warRoom OEE 82-84% THẬT. (3) `generationGuard` chống degenerate-loop + fix B7 AI-chat input.
+
+**FE-W1 — 13 bug FE** (`6dbcdf10`, 9/13 verify live): B1 clamp failure-risk (hết 6800%) · B2 telemetry [object Object] · **B3 nút Add hết bị che @1440 (doc42-P0 ĐÓNG)** · B4 machine-health 7/3/5/0 · B6 andon ack 4 nút · B10 no-overflow@768 · B14 confirm gọi-bảo-trì · B15 welcome-once · B16 404 teal. B5/B8/B11 code-verify. B7 xong W0. **B9 RBAC DEFER per D3.**
+
+**FE-W2 — wire backend (đòn bẩy cao)** (`cd53568b`+`a9d88a6a`+`b7e35a8c`): Metric Catalog (lộ semantic layer, 6 metric @v1) · SLA Cockpit (MTTA/MTTR/breach) · real-time phủ 5 dashboard (socket-first+poll) · export font-safe (server render VN/ZH + ExportMenu 3 ngôn ngữ, adopt Production+WarRoom). **site-scope MOOT (đơn-site) · virtualization framework-done.**
+
+**FE-W3 — quản lý cao cấp** (`19459907`, 5 agent, verify live supervisor tạm-2FA-off + KHÔI PHỤC): (1) **Executive Control Tower** `/control-tower` persona-config hợp nhất 6 màn command. (2) **Drill thống nhất** Corp→…→Machine + leaf-out LineView/cockpit (Workshop/Station degrade trung thực — backend không rollup). (3) **Comparison Studio** tuyến/ca/SP/kỳ+benchmark. (4) **Genealogy carton/pallet + saved forward-search** (backend gap: KHÔNG có cột carton/pallet/shipment → aggregate theo lotCode). (5) **Executive mobile/PWA** `/executive`. + FIX: exec-summary "slide slide slide" (id 25) lọt guardrail → **từ chối narrative từ model EMBEDDING** (VRAM không load tầng sinh → fallback embedding = rác).
+
+**FE-W4 — nợ kiến trúc** (`9a530d77`+`2096ad74`): (1) **App-shell hoist FLIP ON** mặc định (ON-trừ-khi-tắt) — smoke 14 trang: 1 shell/no double-nest/no overflow/0 err → **hết remount 190 trang**. (2) **i18n no-dup-key CI guard** (chặn lớp signOff/signoff). **B10/B11/B16 đã xong ở W1.**
+
+**⏳ HOÃN có chủ đích (đã điều tra, ghi lý do):**
+- **Color codemod**: điều tra 202 hex → **0 status-hex trong className** (màu status ĐÃ tokenized rồi); hex còn lại là SVG-fill/chart-palette/color-picker HỢP LỆ → codemod mù sẽ HỎNG chart/SVG → không có việc an toàn để làm.
+- **RBAC hardgate role==='admin'→hasPermission**: ĐỔI quyền truy cập thực tế → vi phạm tinh thần D3 "giữ RBAC" → cần review tường minh.
+- **toastTrpcError toàn cục**: 114/131 trang đã có onError; handler global sẽ double-toast → chỉ còn khoảng-trống 17 trang (follow-up nhỏ).
+- **Tách 5 monolith** (ApiDocs 7251/ProductModels 5085/History/Dashboard/DataSettings): rủi ro cao, giá trị người-dùng thấp (ProductModels đã redesign doc 43) → hoãn.
+
+**Hạ tầng verify tái dùng:** `scripts/.fe-auth/*.json` storageState (gitignored) + scratchpad `verify-*.mjs`/`smoke-shell*.mjs` Playwright; supervisor/engineer verify = tạm set `two_factor_enabled=false` rồi KHÔI PHỤC ngay.
+
+**Owner items còn lại (không phải lỗi code):** (1) tầng LLM sinh 30B/4B không co-load với embedding trên VRAM 32GB → exec-report chạy offline-template (sạch, có data) — tinh chỉnh GGUF_MAX_LOADED_MODELS/context. (2) AlertEvaluator startup-race 1 lần (pool chưa sẵn). (3) backend gap genealogy: thêm cột carton_id/pallet_id/shipment_id nếu cần hierarchy pack-out thật.
