@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { detectDrift } from "../services/twin/driftDetector";
+import { isTwinTrusted, runFidelityCheck } from "../services/twin/twinFidelityService";
 import { adviseDispatch, newRlAdvisorState, type RlMode } from "../services/ai/rlDispatchAdvisor";
 
 export const twinGovRouter = router({
@@ -19,6 +20,16 @@ export const twinGovRouter = router({
       }),
     )
     .query(({ input }) => detectDrift(input.pairs, input.threshold ?? 0.1)),
+
+  /** doc 44 W5-A1 (G4.1) — is a twin trustworthy enough for AUTOMATED decisions? */
+  twinTrusted: protectedProcedure
+    .input(z.object({ twinRef: z.string().max(128) }))
+    .query(({ input }) => isTwinTrusted(input.twinRef)),
+
+  /** doc 44 W5-A1 — run ONE fidelity check now (DES-vs-reality) for a line; persists + upserts trust. */
+  runFidelityCheck: protectedProcedure
+    .input(z.object({ lineId: z.number().int().positive() }))
+    .mutation(({ input }) => runFidelityCheck(input.lineId)),
 
   /** RL dispatch advice for a given mode + heuristic/RL choices + candidate set. */
   rlAdvice: protectedProcedure

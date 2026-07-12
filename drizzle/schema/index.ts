@@ -69,3 +69,4 @@ export * from "./assetRegistry"; // doc 44 W2-A2 — config-drift snapshots (G1.
 export * from "./policyStore"; // doc 44 W3-A1 — policy-as-code store + append-only decision log (G3.11/G3.13)
 export * from "./orderLifecycle"; // doc 44 W3-A3 — order lifecycle transitions (G3.6/G3.7, spec LDS-L3 §8.2)
 export * from "./lineController"; // doc 44 W3-A2 — Line Controller FSM: line_states + line_state_transitions (G3.1)
+export * from "./twinFidelity"; // doc 44 W5-A1 — twin fidelity: simulation_runs + twin_trust (G4.1)

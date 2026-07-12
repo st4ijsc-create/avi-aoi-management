@@ -418,6 +418,15 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[LineController] init failed:", (err as any)?.message || err);
   }
 
+  // Doc 44 W5-A1 (G4.1) — Twin fidelity loop: so DES-dự-đoán vs line_balance-thực
+  // → tự vô hiệu twin khi lệch ≥N lần liên tiếp (TWIN_FIDELITY_ENABLED, OFF → no-op).
+  try {
+    const { startTwinFidelitySweep } = await import("../services/twin/twinFidelityService");
+    startTwinFidelitySweep();
+  } catch (err) {
+    console.error("[TwinFidelity] start failed:", (err as any)?.message || err);
+  }
+
   // Doc 44 W3-B3 (G3.8 + G3.9) — QT workflow templates + QT-3 material watcher.
   //   • registerQtTemplates: đăng ký 4 template QT-1..4 (as-code) vào kho workflow FOE,
   //     idempotent theo hash nội dung. No-op trừ khi QT_TEMPLATES_ENABLED (default OFF;
