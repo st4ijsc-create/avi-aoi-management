@@ -8,13 +8,14 @@
  *   • top-10 bad actors            • phân bố ưu tiên (mục tiêu 80/15/5)
  * Cảnh báo trực quan khi vượt ngưỡng. ISA-101: nền trung tính, màu chỉ cho bất thường.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { AlarmClock, Activity, Bell, Gauge, Layers, ShieldAlert, TriangleAlert } from "lucide-react";
+import { AlarmClock, Activity, Bell, Gauge, Layers, ShieldAlert, TriangleAlert, Wifi, WifiOff } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
@@ -46,9 +47,37 @@ export default function AlarmKpiDashboard() {
   const crumbs = buildBreadcrumbs(location, t);
   const [windowHours, setWindowHours] = useState<number>(8);
 
-  const polling = usePollingInterval(30_000);
+  // doc 46 FE-W2 — socket drives freshness now, so the poll is lengthened to 60s and
+  // kept only as a fallback backstop (was 30s).
+  const polling = usePollingInterval(60_000);
   const q = trpc.alarmKpi.summary.useQuery({ windowHours }, { staleTime: 20_000, ...polling });
   const data = q.data;
+
+  // doc 46 FE-W2 — socket-first freshness. This KPI aggregates andon_events +
+  // predictive_alerts, so an `andon` / `maintenance` / `anomaly` / `escalation`
+  // ecosystem event invalidates the summary (short trailing debounce to collapse
+  // bursts). The 60s poll above remains the fallback backstop if the socket drops.
+  const utils = trpc.useUtils();
+  const kpiInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleKpiInvalidate = useCallback(() => {
+    if (kpiInvalidateTimer.current) clearTimeout(kpiInvalidateTimer.current);
+    kpiInvalidateTimer.current = setTimeout(() => {
+      utils.alarmKpi.summary.invalidate();
+    }, 1500);
+  }, [utils]);
+  useEffect(() => () => { if (kpiInvalidateTimer.current) clearTimeout(kpiInvalidateTimer.current); }, []);
+  const { isConnected: liveConnected } = useEcosystemEvents({
+    alertsOnly: true,
+    bufferSize: 1,
+    onEvent: (evt) => {
+      if (
+        evt.kind === "andon" || evt.kind === "maintenance" ||
+        evt.kind === "anomaly" || evt.kind === "escalation"
+      ) {
+        scheduleKpiInvalidate();
+      }
+    },
+  });
 
   const distMax = useMemo(() => {
     if (!data) return 100;
@@ -68,6 +97,18 @@ export default function AlarmKpiDashboard() {
           )}
           actions={
             <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  liveConnected ? "border-success/40 text-success" : "border-border text-muted-foreground",
+                )}
+                title={liveConnected
+                  ? t("alarmKpi.liveHint", "Cập nhật trực tiếp qua socket")
+                  : t("alarmKpi.pollHint", "Socket offline — đang dùng poll dự phòng")}
+              >
+                {liveConnected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                {liveConnected ? t("common.live", "Live") : t("common.polling", "Polling")}
+              </span>
               <PollFreshness updatedAt={q.dataUpdatedAt} isFetching={q.isFetching} />
               <Select value={String(windowHours)} onValueChange={(v) => setWindowHours(Number(v))}>
                 <SelectTrigger className="w-40">

@@ -1,4 +1,51 @@
 {
+  "metricCatalog": {
+    "title": "Metric catalog",
+    "subtitle": "Governed KPI definitions from the semantic layer — one definition, one truth. Each metric is versioned and computed through its canonical implementation.",
+    "searchPlaceholder": "Search metrics…",
+    "loadError": "Could not load the metric catalog",
+    "col": {
+      "metric": "Metric",
+      "scope": "Scope",
+      "formula": "Formula",
+      "inputs": "Inputs"
+    },
+    "empty": {
+      "title": "No governed metrics",
+      "desc": "The semantic layer has no metric definitions yet. Add versioned definitions under contracts/metrics."
+    },
+    "detail": {
+      "subtitle": "Governed definition from the semantic layer — computed through its canonical implementation.",
+      "formula": "Formula",
+      "scope": "Scope",
+      "lineage": "Lineage / inputs",
+      "noInputs": "No declared inputs",
+      "implementation": "Canonical implementation",
+      "notes": "Notes"
+    },
+    "scopeLabel": {
+      "equipment": "Equipment",
+      "line": "Line",
+      "factory": "Factory"
+    },
+    "preview": {
+      "title": "Live preview",
+      "factoryHint": "Factory · last 30 days",
+      "run": "Run live preview",
+      "computing": "Computing…",
+      "error": "Could not compute a live value",
+      "window": "Window",
+      "noValue": "No data in the selected window",
+      "needsScope": "A live value needs a specific machine or line, so it is shown on dashboards rather than here."
+    },
+    "badge": {
+      "governed": "Governed",
+      "loading": "Loading definition…",
+      "error": "Definition unavailable",
+      "viewInCatalog": "View in metric catalog",
+      "aria": "Governed definition {{label}}"
+    }
+  },
   "dataQuality": {
     "title": "Data quality",
     "subtitle": "Find master-data records missing fields or with orphan references to clean up (read-only).",
@@ -15042,6 +15089,88 @@
     "empty": {
       "title": "No alarm data",
       "desc": "No Andon/AI alerts recorded in the selected window."
+    }
+  },
+  "slaCockpit": {
+    "title": "SLA Cockpit",
+    "subtitle": "Andon / alert SLA health: mean time to acknowledge (MTTA), mean time to resolve (MTTR), escalation breaches and Andons still open past their SLA.",
+    "window": {
+      "w8h": "8h",
+      "w24h": "24h",
+      "w7d": "7d",
+      "w30d": "30d"
+    },
+    "howItWorks": "An escalation breach is an Andon the server SLA sweep escalated because it stayed unresolved past its per-state SLA (red/call urgent, yellow softer). \"Open past SLA\" counts those still unresolved. MTTA/MTTR are aggregated by the server over every Andon in the window; per-severity/line breakdowns and escalation counts are computed from the most-recent Andon events.",
+    "kpi": {
+      "mtta": "MTTA — mean time to acknowledge",
+      "mttr": "MTTR — mean time to resolve",
+      "serverAgg": "server-aggregated",
+      "breaches": "Escalation breaches",
+      "breachRate": "{{rate}}% of Andons",
+      "openPastSla": "Open past SLA",
+      "openPastSlaHint": "unresolved & escalated"
+    },
+    "chips": {
+      "total": "Andons (window)",
+      "acked": "Acknowledged",
+      "resolved": "Resolved",
+      "active": "Active",
+      "alertEsc": "Alert escalations",
+      "alertEscHint": "MQTT / connection alerts the sweep escalated (separate channel)"
+    },
+    "source": {
+      "note": "MTTA/MTTR: server-aggregated over all {{total}} Andon(s) in the window. Breakdowns & escalation counts: computed from the {{n}} most-recent Andon event rows.",
+      "capped": "Row list is capped at {{cap}} events — breakdowns use the most-recent rows only."
+    },
+    "col": {
+      "events": "Events",
+      "mtta": "MTTA",
+      "mttr": "MTTR",
+      "breaches": "Breaches"
+    },
+    "severity": {
+      "title": "SLA by severity",
+      "desc": "MTTA / MTTR and escalation breaches per Andon state",
+      "none": "No Andon events in the window.",
+      "col": {
+        "severity": "Severity"
+      },
+      "state": {
+        "call": "Call",
+        "red": "Red",
+        "yellow": "Yellow",
+        "green": "Green"
+      }
+    },
+    "byLine": {
+      "title": "SLA by line",
+      "desc": "MTTA / MTTR and escalation breaches per production line",
+      "none": "No Andon events in the window.",
+      "unassigned": "Unassigned",
+      "lineName": "Line #{{id}}",
+      "col": {
+        "line": "Line"
+      }
+    },
+    "alertEsc": {
+      "title": "Alert escalation ledger",
+      "desc": "MQTT / connection alerts the sweep escalated in the window — a separate channel from Andon (each alert escalates at most once).",
+      "none": "No alert escalations in the window.",
+      "sourceConn": "connection",
+      "sourceMqtt": "mqtt rule",
+      "resolved": "Resolved",
+      "acknowledged": "Acknowledged",
+      "open": "Still open",
+      "col": {
+        "escalatedAt": "Escalated at",
+        "source": "Source",
+        "alert": "Alert",
+        "status": "Status"
+      }
+    },
+    "empty": {
+      "title": "No SLA data",
+      "desc": "No Andon events or alert escalations were recorded in the selected window."
     }
   }
 }

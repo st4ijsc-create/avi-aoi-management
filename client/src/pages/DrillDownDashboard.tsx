@@ -1,7 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
+import {
+  useEcosystemEvents,
+  type EcosystemEvent,
+  type EcosystemKind,
+} from "@/hooks/useEcosystemEvents";
 import { MetricCard, EmptyState, chartTooltipStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +27,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
-  Activity
+  Activity,
+  Wifi
 } from "lucide-react";
 import { 
   BarChart, 
@@ -53,13 +59,28 @@ interface DrillDownState {
   machineName?: string;
 }
 
+/**
+ * Sự kiện U1 (ecosystem:event) ảnh hưởng tới số liệu sản lượng/năng suất của
+ * drill-down (OK/NG/NTF/yield). Chỉ dùng các kind THẬT có trong luồng của server —
+ * đây là các sự kiện lớp cảnh báo kiểm tra/NG/năng suất/quality-gate; các lần kiểm
+ * tra thường KHÔNG lên luồng này nên poll dự phòng vẫn giữ độ tươi nền.
+ */
+const DRILLDOWN_EVENT_KINDS: ReadonlySet<EcosystemKind> = new Set<EcosystemKind>([
+  "inspection",
+  "ng",
+  "yield",
+  "quality_gate",
+]);
+
 // Breadcrumb component
-function Breadcrumb({ 
-  state, 
-  onNavigate 
-}: { 
-  state: DrillDownState; 
+function Breadcrumb({
+  state,
+  onNavigate,
+  live = false,
+}: {
+  state: DrillDownState;
   onNavigate: (level: DrillLevel, data?: Partial<DrillDownState>) => void;
+  live?: boolean;
 }) {
   const { t } = useTranslation();
   const items = [
@@ -127,6 +148,15 @@ function Breadcrumb({
           </Button>
         </div>
       ))}
+      {live && (
+        <span
+          className="ml-auto inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
+          title={t('dashboard.liveHint', 'Cập nhật trực tiếp qua socket (poll 60s dự phòng)')}
+        >
+          <Wifi className="h-3 w-3" aria-hidden="true" />
+          {t('dashboard.live', 'TRỰC TIẾP')}
+        </span>
+      )}
     </nav>
   );
 }
@@ -180,25 +210,54 @@ export default function DrillDownDashboard() {
   const { t } = useTranslation();
   const [drillState, setDrillState] = useState<DrillDownState>({ level: "corporate" });
 
-  // Queries based on drill level
+  // Queries based on drill level.
+  // Realtime: socket-first (U1 invalidate on-event, xem bên dưới). `refetchInterval`
+  // 60s là POLL DỰ PHÒNG — trước đây các query chỉ refetch khi điều hướng; giữ backstop
+  // này để bảng không đứng số nếu socket rớt (chỉ query đang enabled mới poll).
   const { data: corporateStats, isLoading: corporateLoading } = trpc.drillDown.corporateStats.useQuery(
     undefined,
-    { enabled: drillState.level === "corporate" }
+    { enabled: drillState.level === "corporate", refetchInterval: 60_000 }
   );
 
   const { data: factoryStats, isLoading: factoryLoading } = trpc.drillDown.factoriesByCorporate.useQuery(
     { corporateCode: drillState.corporateCode! },
-    { enabled: drillState.level === "factory" && !!drillState.corporateCode }
+    { enabled: drillState.level === "factory" && !!drillState.corporateCode, refetchInterval: 60_000 }
   );
 
   const { data: lineStats, isLoading: lineLoading } = trpc.drillDown.linesByFactory.useQuery(
     { factoryId: drillState.factoryId! },
-    { enabled: drillState.level === "line" && !!drillState.factoryId }
+    { enabled: drillState.level === "line" && !!drillState.factoryId, refetchInterval: 60_000 }
   );
 
   const { data: machineStats, isLoading: machineLoading } = trpc.drillDown.machinesByLine.useQuery(
     { lineId: drillState.lineId! },
-    { enabled: drillState.level === "machine" && !!drillState.lineId }
+    { enabled: drillState.level === "machine" && !!drillState.lineId, refetchInterval: 60_000 }
+  );
+
+  // ── Realtime U1: socket-first + poll-fallback ──────────────────────────────
+  // Nghe `ecosystem:event` (socket dùng chung). Khi có sự kiện lớp kiểm tra/NG/năng
+  // suất/quality-gate → invalidate cả router drillDown (chỉ query đang enabled refetch),
+  // debounce ~1.5s để gộp nhiều delta thành 1 lần refetch (chống bão refetch).
+  const utils = trpc.useUtils();
+  const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDrillRefresh = useCallback(() => {
+    if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    invalidateTimer.current = setTimeout(() => {
+      void utils.drillDown.invalidate();
+    }, 1_500);
+  }, [utils]);
+  const onEcoEvent = useCallback(
+    (evt: EcosystemEvent) => {
+      if (DRILLDOWN_EVENT_KINDS.has(evt.kind)) scheduleDrillRefresh();
+    },
+    [scheduleDrillRefresh],
+  );
+  const { isConnected: liveConnected } = useEcosystemEvents({ onEvent: onEcoEvent });
+  useEffect(
+    () => () => {
+      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    },
+    [],
   );
 
   // Navigation handler
@@ -294,7 +353,7 @@ export default function DrillDownDashboard() {
     <DashboardLayout title={t('dashboard.drillDownDashboard')}>
       <div className="space-y-6">
         {/* Breadcrumb */}
-        <Breadcrumb state={drillState} onNavigate={handleNavigate} />
+        <Breadcrumb state={drillState} onNavigate={handleNavigate} live={liveConnected} />
 
         {/* U7 cross-links — this is the interactive corp→machine drill; the Command
             Center offers a live hierarchy tree + panorama of the same structure. */}

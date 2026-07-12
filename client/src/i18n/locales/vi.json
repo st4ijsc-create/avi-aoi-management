@@ -1,4 +1,51 @@
 {
+  "metricCatalog": {
+    "title": "Danh mục chỉ số",
+    "subtitle": "Định nghĩa KPI được quản trị từ tầng ngữ nghĩa — một định nghĩa, một sự thật. Mỗi chỉ số đều có phiên bản và được tính qua hàm canonical của nó.",
+    "searchPlaceholder": "Tìm chỉ số…",
+    "loadError": "Không tải được danh mục chỉ số",
+    "col": {
+      "metric": "Chỉ số",
+      "scope": "Phạm vi",
+      "formula": "Công thức",
+      "inputs": "Đầu vào"
+    },
+    "empty": {
+      "title": "Chưa có chỉ số quản trị",
+      "desc": "Tầng ngữ nghĩa chưa có định nghĩa chỉ số nào. Thêm định nghĩa có phiên bản trong contracts/metrics."
+    },
+    "detail": {
+      "subtitle": "Định nghĩa được quản trị từ tầng ngữ nghĩa — tính qua hàm canonical của nó.",
+      "formula": "Công thức",
+      "scope": "Phạm vi",
+      "lineage": "Nguồn gốc / đầu vào",
+      "noInputs": "Không khai báo đầu vào",
+      "implementation": "Hàm canonical",
+      "notes": "Ghi chú"
+    },
+    "scopeLabel": {
+      "equipment": "Thiết bị",
+      "line": "Dây chuyền",
+      "factory": "Nhà máy"
+    },
+    "preview": {
+      "title": "Xem trước trực tiếp",
+      "factoryHint": "Nhà máy · 30 ngày gần nhất",
+      "run": "Chạy xem trước",
+      "computing": "Đang tính…",
+      "error": "Không thể tính giá trị trực tiếp",
+      "window": "Khoảng",
+      "noValue": "Không có dữ liệu trong khoảng đã chọn",
+      "needsScope": "Giá trị trực tiếp cần một máy hoặc dây chuyền cụ thể, nên được hiển thị trên dashboard thay vì ở đây."
+    },
+    "badge": {
+      "governed": "Quản trị",
+      "loading": "Đang tải định nghĩa…",
+      "error": "Không có định nghĩa",
+      "viewInCatalog": "Xem trong danh mục chỉ số",
+      "aria": "Định nghĩa quản trị {{label}}"
+    }
+  },
   "dataQuality": {
     "title": "Chất lượng dữ liệu",
     "subtitle": "Phát hiện bản ghi dữ liệu chủ thiếu trường hoặc tham chiếu mồ côi để dọn dẹp (chỉ đọc).",
@@ -15021,6 +15068,88 @@
     "empty": {
       "title": "Chưa có dữ liệu cảnh báo",
       "desc": "Chưa ghi nhận Andon/cảnh báo AI nào trong cửa sổ đã chọn."
+    }
+  },
+  "slaCockpit": {
+    "title": "Bảng SLA",
+    "subtitle": "Sức khỏe SLA Andon / cảnh báo: thời gian tiếp nhận trung bình (MTTA), thời gian xử lý trung bình (MTTR), số lần leo thang và Andon còn tồn quá hạn SLA.",
+    "window": {
+      "w8h": "8 giờ",
+      "w24h": "24 giờ",
+      "w7d": "7 ngày",
+      "w30d": "30 ngày"
+    },
+    "howItWorks": "Một lần \"leo thang vi phạm SLA\" là Andon bị bộ quét SLA của máy chủ leo thang vì chưa xử lý quá ngưỡng SLA theo trạng thái (đỏ/gọi gấp = khẩn, vàng = nhẹ hơn). \"Tồn quá hạn SLA\" đếm số Andon đó vẫn chưa xử lý. MTTA/MTTR do máy chủ tổng hợp trên mọi Andon trong cửa sổ; phân tách theo mức độ/tuyến và số lần leo thang được tính từ các Andon gần nhất.",
+    "kpi": {
+      "mtta": "MTTA — thời gian tiếp nhận TB",
+      "mttr": "MTTR — thời gian xử lý TB",
+      "serverAgg": "máy chủ tổng hợp",
+      "breaches": "Leo thang vi phạm",
+      "breachRate": "{{rate}}% số Andon",
+      "openPastSla": "Tồn quá hạn SLA",
+      "openPastSlaHint": "chưa xử lý & đã leo thang"
+    },
+    "chips": {
+      "total": "Andon (cửa sổ)",
+      "acked": "Đã tiếp nhận",
+      "resolved": "Đã xử lý",
+      "active": "Đang mở",
+      "alertEsc": "Cảnh báo leo thang",
+      "alertEscHint": "Cảnh báo MQTT / kết nối bị leo thang (kênh riêng)"
+    },
+    "source": {
+      "note": "MTTA/MTTR: máy chủ tổng hợp trên toàn bộ {{total}} Andon trong cửa sổ. Phân tách & số lần leo thang: tính từ {{n}} bản ghi Andon gần nhất.",
+      "capped": "Danh sách bản ghi giới hạn {{cap}} sự kiện — phân tách chỉ dùng các bản ghi gần nhất."
+    },
+    "col": {
+      "events": "Sự kiện",
+      "mtta": "MTTA",
+      "mttr": "MTTR",
+      "breaches": "Vi phạm"
+    },
+    "severity": {
+      "title": "SLA theo mức độ",
+      "desc": "MTTA / MTTR và số lần leo thang theo trạng thái Andon",
+      "none": "Không có Andon trong cửa sổ.",
+      "col": {
+        "severity": "Mức độ"
+      },
+      "state": {
+        "call": "Gọi gấp",
+        "red": "Đỏ",
+        "yellow": "Vàng",
+        "green": "Xanh"
+      }
+    },
+    "byLine": {
+      "title": "SLA theo tuyến",
+      "desc": "MTTA / MTTR và số lần leo thang theo tuyến sản xuất",
+      "none": "Không có Andon trong cửa sổ.",
+      "unassigned": "Chưa gán",
+      "lineName": "Tuyến #{{id}}",
+      "col": {
+        "line": "Tuyến"
+      }
+    },
+    "alertEsc": {
+      "title": "Sổ leo thang cảnh báo",
+      "desc": "Cảnh báo MQTT / kết nối bị bộ quét leo thang trong cửa sổ — kênh riêng so với Andon (mỗi cảnh báo leo thang tối đa một lần).",
+      "none": "Không có cảnh báo leo thang trong cửa sổ.",
+      "sourceConn": "kết nối",
+      "sourceMqtt": "luật mqtt",
+      "resolved": "Đã xử lý",
+      "acknowledged": "Đã tiếp nhận",
+      "open": "Còn mở",
+      "col": {
+        "escalatedAt": "Thời điểm leo thang",
+        "source": "Nguồn",
+        "alert": "Cảnh báo",
+        "status": "Trạng thái"
+      }
+    },
+    "empty": {
+      "title": "Chưa có dữ liệu SLA",
+      "desc": "Không ghi nhận Andon hay cảnh báo leo thang nào trong cửa sổ đã chọn."
     }
   }
 }

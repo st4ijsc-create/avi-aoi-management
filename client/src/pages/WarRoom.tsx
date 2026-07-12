@@ -16,7 +16,7 @@
  *
  * RBAC: route gate machine_status (App.tsx). Trang chỉ đọc — không mutation.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Gauge,
@@ -30,12 +30,18 @@ import {
   Clock,
   Factory as FactoryIcon,
   TrendingUp,
+  Wifi,
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
+import {
+  useEcosystemEvents,
+  type EcosystemEvent,
+  type EcosystemKind,
+} from "@/hooks/useEcosystemEvents";
 import ReportExportButton, {
   type ReportExportConfig,
 } from "@/components/ReportExportButton";
@@ -142,6 +148,21 @@ function todayLocalISODate(): string {
   return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
 }
 
+/**
+ * Các loại sự kiện U1 (ecosystem:event) ẢNH HƯỞNG tới số liệu giao ban:
+ * OEE, dừng máy, và cảnh báo kiểm tra/NG/năng suất/andon. Khi một trong các sự kiện
+ * này tới, ta invalidate warRoom.briefing để làm mới (debounce để tránh refetch dồn).
+ * Chỉ dùng các kind THẬT có trong luồng UNIFIED_STREAM_TYPES của server.
+ */
+const WAR_ROOM_EVENT_KINDS: ReadonlySet<EcosystemKind> = new Set<EcosystemKind>([
+  "oee",
+  "downtime",
+  "inspection",
+  "ng",
+  "yield",
+  "andon",
+]);
+
 export default function WarRoom() {
   const { t } = useTranslation();
 
@@ -168,10 +189,12 @@ export default function WarRoom() {
     return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
   }, [dateStr]);
 
-  // ── Briefing (nguồn dữ liệu THẬT duy nhất) — refetch 60s ──
+  // ── Briefing (nguồn dữ liệu THẬT duy nhất) ──
+  // Realtime: ưu tiên socket U1 (invalidate on-event, debounce ~1.5s) — xem bên dưới.
+  // Poll 120s GIỮ LẠI làm backstop: nếu socket rớt, bảng vẫn tự làm mới, không đứng số.
   const briefingQ = trpc.warRoom.briefing.useQuery(
     { factoryId, date: dateIso, shiftConfigId: shiftId },
-    { refetchInterval: 60_000 },
+    { refetchInterval: 120_000 },
   ) as unknown as {
     data?: WarRoomBriefing;
     isLoading: boolean;
@@ -180,6 +203,32 @@ export default function WarRoom() {
     refetch: () => void;
   };
   const briefing = briefingQ.data;
+
+  // ── Realtime U1: socket-first + poll-fallback ──────────────────────────────
+  // Nghe luồng `ecosystem:event` (dùng chung 1 socket). Khi có sự kiện liên quan
+  // (OEE/dừng máy/kiểm tra/NG/năng suất/andon) → invalidate briefing với debounce
+  // ~1.5s để gộp nhiều delta thành 1 lần refetch (chống bão refetch).
+  const utils = trpc.useUtils();
+  const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleBriefingRefresh = useCallback(() => {
+    if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    invalidateTimer.current = setTimeout(() => {
+      void utils.warRoom.briefing.invalidate();
+    }, 1_500);
+  }, [utils]);
+  const onEcoEvent = useCallback(
+    (evt: EcosystemEvent) => {
+      if (WAR_ROOM_EVENT_KINDS.has(evt.kind)) scheduleBriefingRefresh();
+    },
+    [scheduleBriefingRefresh],
+  );
+  const { isConnected: liveConnected } = useEcosystemEvents({ onEvent: onEcoEvent });
+  useEffect(
+    () => () => {
+      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+    },
+    [],
+  );
 
   // ── KPI nhà máy (tổng hợp từ line — output-weighted, honest-null) ──
   const kpi = useMemo(() => {
@@ -396,6 +445,15 @@ export default function WarRoom() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {liveConnected && (
+              <span
+                className="hidden items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success sm:inline-flex"
+                title={t("warRoom.liveHint", "Cập nhật trực tiếp qua socket (poll 120s dự phòng)")}
+              >
+                <Wifi className="h-3 w-3" aria-hidden="true" />
+                {t("warRoom.live", "TRỰC TIẾP")}
+              </span>
+            )}
             {briefing?.asOf && (
               <span className="hidden text-xs text-muted-foreground sm:inline">
                 {t("warRoom.asOf", "Cập nhật")}:{" "}

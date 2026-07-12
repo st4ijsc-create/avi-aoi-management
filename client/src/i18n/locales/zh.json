@@ -1,4 +1,51 @@
 {
+  "metricCatalog": {
+    "title": "指标目录",
+    "subtitle": "来自语义层的受治理 KPI 定义 — 一个定义，一个事实。每个指标都带版本，并通过其规范实现计算。",
+    "searchPlaceholder": "搜索指标…",
+    "loadError": "无法加载指标目录",
+    "col": {
+      "metric": "指标",
+      "scope": "范围",
+      "formula": "公式",
+      "inputs": "输入"
+    },
+    "empty": {
+      "title": "暂无受治理指标",
+      "desc": "语义层尚无指标定义。请在 contracts/metrics 下添加带版本的定义。"
+    },
+    "detail": {
+      "subtitle": "来自语义层的受治理定义 — 通过其规范实现计算。",
+      "formula": "公式",
+      "scope": "范围",
+      "lineage": "血缘 / 输入",
+      "noInputs": "未声明输入",
+      "implementation": "规范实现",
+      "notes": "备注"
+    },
+    "scopeLabel": {
+      "equipment": "设备",
+      "line": "产线",
+      "factory": "工厂"
+    },
+    "preview": {
+      "title": "实时预览",
+      "factoryHint": "工厂 · 最近 30 天",
+      "run": "运行实时预览",
+      "computing": "计算中…",
+      "error": "无法计算实时值",
+      "window": "窗口",
+      "noValue": "所选窗口内无数据",
+      "needsScope": "实时值需要具体的设备或产线，因此显示在仪表板上而非此处。"
+    },
+    "badge": {
+      "governed": "受治理",
+      "loading": "正在加载定义…",
+      "error": "定义不可用",
+      "viewInCatalog": "在指标目录中查看",
+      "aria": "受治理定义 {{label}}"
+    }
+  },
   "dataQuality": {
     "title": "数据质量",
     "subtitle": "查找缺少字段或存在孤立引用的主数据记录以便清理（只读）。",
@@ -15049,6 +15096,88 @@
     "empty": {
       "title": "暂无报警数据",
       "desc": "所选窗口内未记录任何安灯/AI 预警。"
+    }
+  },
+  "slaCockpit": {
+    "title": "SLA 驾驶舱",
+    "subtitle": "安灯 / 报警 SLA 健康度：平均确认时间（MTTA）、平均解决时间（MTTR）、升级违规次数以及仍超出 SLA 未解决的安灯。",
+    "window": {
+      "w8h": "8 小时",
+      "w24h": "24 小时",
+      "w7d": "7 天",
+      "w30d": "30 天"
+    },
+    "howItWorks": "升级违规是指服务器 SLA 扫描因安灯超过其按状态设定的 SLA（红色/呼叫为紧急，黄色较缓）仍未解决而将其升级。“超出 SLA 未解决”统计其中仍未解决的数量。MTTA/MTTR 由服务器在窗口内所有安灯上汇总；按严重度/产线的拆分与升级次数由最近的安灯事件计算。",
+    "kpi": {
+      "mtta": "MTTA — 平均确认时间",
+      "mttr": "MTTR — 平均解决时间",
+      "serverAgg": "服务器汇总",
+      "breaches": "升级违规",
+      "breachRate": "占安灯 {{rate}}%",
+      "openPastSla": "超出 SLA 未解决",
+      "openPastSlaHint": "未解决且已升级"
+    },
+    "chips": {
+      "total": "安灯（窗口）",
+      "acked": "已确认",
+      "resolved": "已解决",
+      "active": "进行中",
+      "alertEsc": "报警升级",
+      "alertEscHint": "被扫描升级的 MQTT / 连接报警（独立通道）"
+    },
+    "source": {
+      "note": "MTTA/MTTR：服务器在窗口内全部 {{total}} 条安灯上汇总。拆分与升级次数：由最近 {{n}} 条安灯事件计算。",
+      "capped": "记录列表上限为 {{cap}} 条 — 拆分仅使用最近的记录。"
+    },
+    "col": {
+      "events": "事件",
+      "mtta": "MTTA",
+      "mttr": "MTTR",
+      "breaches": "违规"
+    },
+    "severity": {
+      "title": "按严重度的 SLA",
+      "desc": "按安灯状态的 MTTA / MTTR 与升级违规",
+      "none": "窗口内无安灯事件。",
+      "col": {
+        "severity": "严重度"
+      },
+      "state": {
+        "call": "呼叫",
+        "red": "红色",
+        "yellow": "黄色",
+        "green": "绿色"
+      }
+    },
+    "byLine": {
+      "title": "按产线的 SLA",
+      "desc": "按生产线的 MTTA / MTTR 与升级违规",
+      "none": "窗口内无安灯事件。",
+      "unassigned": "未分配",
+      "lineName": "产线 #{{id}}",
+      "col": {
+        "line": "产线"
+      }
+    },
+    "alertEsc": {
+      "title": "报警升级台账",
+      "desc": "窗口内被扫描升级的 MQTT / 连接报警 — 与安灯相互独立的通道（每条报警最多升级一次）。",
+      "none": "窗口内无报警升级。",
+      "sourceConn": "连接",
+      "sourceMqtt": "mqtt 规则",
+      "resolved": "已解决",
+      "acknowledged": "已确认",
+      "open": "仍未处理",
+      "col": {
+        "escalatedAt": "升级时间",
+        "source": "来源",
+        "alert": "报警",
+        "status": "状态"
+      }
+    },
+    "empty": {
+      "title": "暂无 SLA 数据",
+      "desc": "所选窗口内未记录任何安灯或报警升级。"
     }
   }
 }

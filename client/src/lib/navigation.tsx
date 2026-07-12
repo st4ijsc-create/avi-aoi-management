@@ -293,6 +293,21 @@ export const navGroups: NavGroup[] = [
         tier: "simple",
       },
       {
+        // doc 46 FE-W2 — SLA Cockpit: MTTA/MTTR + escalation-breach cho Andon/cảnh báo
+        // (companion của Alarm KPI). MTTA/MTTR = trpc.andon.metrics (backend-aggregated);
+        // breach/breakdown tính từ andon.list. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
+        href: "/sla-cockpit",
+        label: "Cockpit SLA (MTTA/MTTR)",
+        icon: <Gauge className="h-4 w-4" />,
+        description: "SLA cảnh báo/Andon: thời gian tiếp nhận (MTTA) · khắc phục (MTTR) · vi phạm leo thang · quá hạn",
+        // Gate = /andon board (dashboard_view) → cùng đối tượng có andon/canView (supervisor/operator);
+        // maintenance thiếu andon/canView sẽ thấy trạng thái rỗng trung thực (giống andon board).
+        requiredPermission: "dashboard_view",
+        permissionCategory: "dashboard",
+        section: "mes",
+        tier: "simple",
+      },
+      {
         // doc 40 Wave 4 — Đổi sản phẩm (changeover) tại line: operator quét sản phẩm
         // mới → kiểm tra readiness/mapping máy/feeder → xác nhận đổi. Công cụ vận hành
         // cốt lõi tại line → tier simple. Gate machine_status (operator/maintenance đều
@@ -1667,6 +1682,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.dataQualityDesc",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
+        section: "masterData",
+      },
+      {
+        // doc 46 FE-W2 — Metric Catalog: lộ semantic layer (định nghĩa KPI có phiên bản
+        // OEE@v1 + công thức + lineage, chỉ đọc; trpc.semantics). Gate machine_status để
+        // quản lý/kỹ sư đọc được định nghĩa KPI. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
+        href: "/metric-catalog",
+        label: "Danh mục chỉ số (Metric Catalog)",
+        icon: <BookOpen className="h-4 w-4" />,
+        description: "Semantic layer: định nghĩa KPI có phiên bản (OEE@v1) · công thức · nguồn dữ liệu (lineage)",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
         section: "masterData",
       },
       {

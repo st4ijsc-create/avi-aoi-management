@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Redirect } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import { PageHeader } from "@/components/patterns";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,7 +35,9 @@ import {
   Wrench,
   Settings2,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { 
   LineChart, 
@@ -193,6 +196,36 @@ export function OEEDashboardContent() {
     },
     { enabled: !!selectedMachine && !!machineOEE, refetchInterval: 60_000 },
   );
+
+  // doc 46 FE-W2 — socket-first freshness. The OEE/downtime/health data is driven by
+  // the unified U1 stream: an `oee` / `downtime` / `maintenance` ecosystem event
+  // invalidates the relevant mqttClient queries so the board updates live. A short
+  // trailing debounce collapses a burst of events into ONE refetch. The 60s polls
+  // above stay as the fallback backstop for when the socket is down.
+  const utils = trpc.useUtils();
+  const oeeInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleOeeInvalidate = useCallback(() => {
+    if (oeeInvalidateTimer.current) clearTimeout(oeeInvalidateTimer.current);
+    oeeInvalidateTimer.current = setTimeout(() => {
+      utils.mqttClient.getAllOEE.invalidate();
+      utils.mqttClient.getMachineOEE.invalidate();
+      utils.mqttClient.getActiveDowntime.invalidate();
+      utils.mqttClient.getDowntimeHistory.invalidate();
+      utils.mqttClient.semiE10Breakdown.invalidate();
+      utils.mqttClient.getMachineHealth.invalidate();
+    }, 1500);
+  }, [utils]);
+  useEffect(() => () => { if (oeeInvalidateTimer.current) clearTimeout(oeeInvalidateTimer.current); }, []);
+  // Full `ecosystem:event` stream (NOT alertsOnly) — `oee` + `downtime` are not
+  // alert-class kinds, so they only ride the unfiltered channel.
+  const { isConnected: liveConnected } = useEcosystemEvents({
+    bufferSize: 1,
+    onEvent: (evt) => {
+      if (evt.kind === "oee" || evt.kind === "downtime" || evt.kind === "maintenance") {
+        scheduleOeeInvalidate();
+      }
+    },
+  });
 
   // Mutations
   const calculateOEEMutation = trpc.mqttClient.calculateOEE.useMutation({
@@ -392,6 +425,15 @@ export function OEEDashboardContent() {
           description={t('oee.subtitle')}
           actions={
             <>
+            {liveConnected ? (
+              <Badge variant="outline" className="gap-1 border-success/40 text-success">
+                <Wifi className="h-3.5 w-3.5" /> {t('common.live', 'Live')}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <WifiOff className="h-3.5 w-3.5" /> {t('common.polling', 'Polling')}
+              </Badge>
+            )}
             <Button variant="outline" onClick={exportToCSV}>
               <Download className="h-4 w-4 mr-2" />
               {t('oee.exportCsv')}

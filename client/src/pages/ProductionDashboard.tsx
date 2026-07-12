@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
 import { useLocaleDate, getActiveLocale } from "@/lib/format";
@@ -332,6 +333,35 @@ export default function ProductionDashboard() {
     { enabled: activeTab === "spc", refetchInterval: activeTab === "spc" ? refetchInterval : false },
   );
 
+  // doc 46 FE-W2 — socket-first freshness. Every inspection/quality event on the
+  // unified U1 stream (`inspection` | `ng` | `yield` | `spc` | `quality_gate`)
+  // invalidates the production datasets so the board updates live even when the
+  // opt-in auto-refresh poll is OFF. A short trailing debounce collapses a burst of
+  // events into ONE refetch. The Auto-refresh (30s) poll remains the fallback backstop.
+  const prodInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleProdInvalidate = useCallback(() => {
+    if (prodInvalidateTimer.current) clearTimeout(prodInvalidateTimer.current);
+    prodInvalidateTimer.current = setTimeout(() => {
+      utils.productionDashboard.getStationOverview.invalidate();
+      utils.productionDashboard.getDefectAnalysis.invalidate();
+      utils.productionDashboard.getTrendData.invalidate();
+      utils.productionDashboard.getSpcSummary.invalidate();
+    }, 1500);
+  }, [utils]);
+  useEffect(() => () => { if (prodInvalidateTimer.current) clearTimeout(prodInvalidateTimer.current); }, []);
+  const { isConnected: liveConnected } = useEcosystemEvents({
+    alertsOnly: true,
+    bufferSize: 1,
+    onEvent: (evt) => {
+      if (
+        evt.kind === "inspection" || evt.kind === "ng" || evt.kind === "yield" ||
+        evt.kind === "spc" || evt.kind === "quality_gate"
+      ) {
+        scheduleProdInvalidate();
+      }
+    },
+  });
+
   // Summary KPIs
   const summary = useMemo(() => {
     if (stationData.length === 0)
@@ -573,13 +603,20 @@ export default function ProductionDashboard() {
             title={t("productionDashboard.pageTitle", "Production Dashboard")}
             description={`${t("productionDashboard.todayLabel", "Today")} · ${todayStr}`}
             actions={
-              <span className="inline-flex items-center gap-2 border border-success/30 bg-success/10 rounded-full px-3 py-1">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+              liveConnected ? (
+                <span className="inline-flex items-center gap-2 border border-success/30 bg-success/10 rounded-full px-3 py-1" title={t("productionDashboard.liveHint", "Live updates over socket")}>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+                  </span>
+                  <span className="text-xs font-medium text-success">{t("productionDashboard.live", "Live")}</span>
                 </span>
-                <span className="text-xs font-medium text-success">{t("productionDashboard.live", "Live")}</span>
-              </span>
+              ) : (
+                <span className="inline-flex items-center gap-2 border border-warning/30 bg-warning/10 rounded-full px-3 py-1" title={t("productionDashboard.pollingHint", "Socket offline — using refresh fallback")}>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-warning" />
+                  <span className="text-xs font-medium text-warning">{t("productionDashboard.polling", "Polling")}</span>
+                </span>
+              )
             }
           />
 

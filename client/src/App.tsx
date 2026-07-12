@@ -150,6 +150,8 @@ const SopViewer = React.lazy(() => import("./pages/SopViewer")); // doc 44 W6-1 
 const SopManagement = React.lazy(() => import("./pages/SopManagement")); // doc 44 W6-1 §G5.14: quản trị e-SOP (soạn bước/phiên bản/kích hoạt)
 const AlarmKpiDashboard = React.lazy(() => import("./pages/AlarmKpiDashboard")); // doc 44 W6-1 §G5.11: ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)
 const WarRoom = React.lazy(() => import("./pages/WarRoom")); // doc 40 Wave 4c §11: "Giao ban 7h" theo ca — KPI + OEE theo line + top downtime + so sánh ca + plan-vs-actual (trpc.warRoom.briefing)
+const SlaCockpit = React.lazy(() => import("./pages/SlaCockpit")); // doc 46 FE-W2: Andon/alert SLA cockpit (MTTA/MTTR/escalation-breach; trpc.andon.metrics + andon.list)
+const MetricCatalog = React.lazy(() => import("./pages/MetricCatalog")); // doc 46 FE-W2: semantic-layer Metric Catalog (KPI definitions/versions/lineage; trpc.semantics)
 const MaintenanceHub = React.lazy(() => import("./pages/MaintenanceHub")); // doc 40 Wave 4c §11: CMMS hub — lịch bảo trì phòng ngừa + parts/reliability (agent C)
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
 const CommandConsole = React.lazy(() => import("./pages/CommandConsole")); // ENG-F1 (doc 40): gated command console — phát 1 lệnh robot đơn lẻ qua HITL dispatcher (mọi gate giữ nguyên)
@@ -320,6 +322,8 @@ function Router() {
       <Route path="/sop-management"><RouteGuard requirePermission="settings_products"><SopManagement /></RouteGuard></Route>
       {/* doc 44 W6-1 §G5.11 — ISA-18.2 alarm KPI dashboard (READ-ONLY, đọc andon+predictive). */}
       <Route path="/alarm-kpi"><RouteGuard requirePermission="machine_status"><AIPageWrapper><AlarmKpiDashboard /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 46 FE-W2 — Andon/alert SLA cockpit (MTTA/MTTR/escalation-breach), SLA companion to alarm-kpi. */}
+      <Route path="/sla-cockpit"><RouteGuard navHref="/sla-cockpit"><AIPageWrapper><SlaCockpit /></AIPageWrapper></RouteGuard></Route>
       {/* P3-W2 consolidation: legacy machine-status grid → unified Device Monitor. */}
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
@@ -465,6 +469,8 @@ function Router() {
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
       <Route path="/master-data-audit"><RouteGuard navHref="/master-data-audit"><MasterDataAudit /></RouteGuard></Route>
       <Route path="/data-quality"><RouteGuard navHref="/data-quality"><DataQualityDashboard /></RouteGuard></Route>
+      {/* doc 46 FE-W2 — semantic-layer Metric Catalog (KPI definitions/versions/lineage, read-only). */}
+      <Route path="/metric-catalog"><RouteGuard navHref="/metric-catalog"><MetricCatalog /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
       <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>
