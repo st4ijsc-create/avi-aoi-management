@@ -19,6 +19,9 @@ import {
   verifyChain,
   type ChainRow,
 } from "../utils/genealogyChain";
+// doc 44 W2-B2 (G5.17) — cross-layer trace: stamp the ALS correlation id (if any)
+// on appended rows. OUTSIDE the hash input → verifyChain unaffected.
+import { getCorrelationId } from "../services/observability/correlation";
 
 const eventTypeSchema = z.enum([
   "born",
@@ -45,6 +48,8 @@ function rowsToChainRows(rows: any[]): ChainRow[] {
     payload: (r.payload ?? {}) as Record<string, any>,
     recordedBy: r.recordedBy ?? null,
     recordedAt: r.recordedAt instanceof Date ? r.recordedAt : new Date(r.recordedAt),
+    // G5.17 (0255): trace metadata — read-side passthrough, never part of the hash.
+    correlationId: r.correlationId ?? null,
   }));
 }
 
@@ -63,6 +68,9 @@ export const genealogyRouter = router({
     .mutation(async ({ input, ctx }) => {
       const recordedAt = new Date();
       const recordedBy = (ctx as any)?.user?.id ?? null;
+      // G5.17 (0255) — trace id from the ALS backbone; null outside a context.
+      // NOT part of hashEntry's input (fixed field list) → chain hashes unchanged.
+      const correlationId = getCorrelationId() ?? null;
       const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
       const currHash = hashEntry(prevHash, {
         serialNumber: input.serialNumber,
@@ -86,8 +94,10 @@ export const genealogyRouter = router({
         payload: input.payload as Record<string, any>,
         recordedBy,
         recordedAt,
+        // Conditional so pre-0255 databases keep working when no context is active.
+        ...(correlationId ? { correlationId } : {}),
       });
-      return { id: inserted.id, prevHash, currHash };
+      return { id: inserted.id, prevHash, currHash, correlationId };
     }),
 
   /** Get the full chain for a serial. */

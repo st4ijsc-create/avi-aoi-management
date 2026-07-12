@@ -71,6 +71,15 @@ export interface ChainRow {
   payload: Record<string, any>;
   recordedBy: number | null;
   recordedAt: Date;
+  /**
+   * doc 44 W2-B2 (G5.17, migration 0255) — cross-layer trace id from the
+   * AsyncLocalStorage correlation backbone. DELIBERATELY OUTSIDE the hash:
+   * hashEntry() reads a fixed field list that excludes it (like recordedBy),
+   * so rows with/without a correlation id verify identically and adding the
+   * column cannot break verifyChain on pre-0255 data. Trade-off (honest):
+   * correlation_id is trace metadata, NOT tamper-protected by the chain.
+   */
+  correlationId?: string | null;
 }
 
 export interface VerifyResult {

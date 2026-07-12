@@ -42,6 +42,9 @@ export const API_SCOPES = {
   // W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry (/v1/assets).
   ASSETS_READ: "assets:read",
   ASSETS_WRITE: "assets:write",
+  // W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs (READ): current
+  // state, timeseries, events, semantic metrics, genealogy.
+  DATA_READ: "data:read",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -73,6 +76,8 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
     "Read the asset registry: URN/ISA-95 discovery, asset detail, health, tag catalogue, config-drift status, gateway status (W2-A2 G1.10-G1.12).",
   "assets:write":
     "Register a declarative asset, change asset lifecycle (validated transitions), approve config baselines; adapter restart is ADDITIONALLY gated by V1_ADAPTER_RESTART_ENABLED, default OFF (W2-A2).",
+  "data:read":
+    "SYNAPSE Tầng-2 Access APIs (READ): /state/{path}, /query/timeseries, /events, /metrics/{metric} (semantic layer), /genealogy (W2-B1 G2.16-G2.18).",
 };
 
 /**

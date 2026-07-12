@@ -23,6 +23,11 @@
  */
 import type { InsertOtTelemetry, OtTelemetry } from "../../drizzle/schema";
 import { createBusFanout } from "../_core/busFanout";
+// G2.6 (doc 44 W2-B2) — contract validation before enqueue/persist. Gated by
+// CONTRACT_VALIDATE_INGEST_MODE (default "off" → filterTelemetrySamples returns the same
+// array reference immediately; zero added cost). No cycle: ingestValidation never imports
+// this module at runtime.
+import { filterTelemetrySamples } from "./contracts/ingestValidation";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
 export type TelemetryProtocol = NonNullable<OtTelemetry["protocol"]>;
@@ -374,6 +379,14 @@ export async function flushTelemetryBuffer(): Promise<number> {
  */
 export async function ingestTelemetry(samples: CanonicalSample[]): Promise<number> {
   if (!samples || samples.length === 0) return 0;
+
+  // G2.6 (doc 44 W2-B2) — contract-validation seam BEFORE enqueue (covers both the
+  // buffered and the direct path). Mode "off" (default) returns the same array reference —
+  // zero cost. Mode "quarantine" drops (and quarantines) samples whose canonical telemetry
+  // shape (subject syn/+/+/+/+/+/telemetry) is invalid; mode "log" only counts+warns.
+  // Fail-safe by contract: internal validator errors never filter the batch.
+  samples = filterTelemetrySamples(samples);
+  if (samples.length === 0) return 0;
 
   if (!batchEnabled()) {
     return ingestNow(samples);

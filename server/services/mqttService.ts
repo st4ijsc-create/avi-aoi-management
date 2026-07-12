@@ -15,6 +15,9 @@ import { readFileSync } from 'fs';
 import { timingSafeEqual } from 'node:crypto';
 import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
 import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
+// G2.6 (doc 44 W2-B2) — contract validation at the machine-inbound seam. Gated by
+// CONTRACT_VALIDATE_INGEST_MODE (default "off" → validateInboundMqtt returns immediately).
+import { validateInboundMqtt } from './contracts/ingestValidation';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
@@ -152,6 +155,15 @@ export function handleAoiPublish(topic: string, payload: Buffer | string | unkno
  * publishNormalized không phụ thuộc cờ Sparkplug và luôn chạy trước nhánh bridge.
  */
 export function processAedesPublish(topic: string, payload: Buffer | string | unknown): void {
+  // G2.6 (doc 44 W2-B2) — enforce message contracts at the ONE inbound seam. Default OFF
+  // (CONTRACT_VALIDATE_INGEST_MODE=off → immediate return, zero added cost). Only topics
+  // under a canonical contract (syn/…/telemetry|state|events|health|cmd[/ack]) are checked;
+  // everything else (avi/…, legacy) is skipped. In mode "quarantine" an invalid frame is
+  // BLOCKED from the whole pipeline (UNS mirror + Sparkplug bridge + sensor ingest) and
+  // recorded in contract_quarantine; mode "log" only counts+warns. validateInboundMqtt is
+  // fail-safe by contract (internal validator errors → pass-through, never block).
+  if (!validateInboundMqtt(topic, payload).ok) return;
+
   // G1 — Mirror message sang UNS broker (ISA-95/Sparkplug). No-op khi flag tắt.
   publishNormalized(topic, payload);
 

@@ -24,6 +24,9 @@ import {
   hashEntry,
   type GenealogyInput,
 } from "../utils/genealogyChain";
+// doc 44 W2-B2 (G5.17) — stamp the ALS correlation id on the genealogy row (trace
+// metadata, OUTSIDE the hash input → verifyChain unaffected).
+import { getCorrelationId } from "./observability/correlation";
 import { raiseAndon } from "./andon/andonService";
 import { publishToOutbox } from "./integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import type { InsertComponentInstallation } from "../../drizzle/schema";
@@ -129,6 +132,8 @@ export async function recordComponentInstallation(
       recordedAt,
     };
     const currHash = hashEntry(prevHash, eventInput);
+    // G5.17 (0255) — trace id; null outside an ALS context. NOT hashed.
+    const correlationId = getCorrelationId() ?? null;
     const inserted = await db.insertGenealogyChainRow({
       prevHash,
       currHash,
@@ -141,6 +146,8 @@ export async function recordComponentInstallation(
       payload: eventInput.payload as Record<string, any>,
       recordedBy: userId,
       recordedAt,
+      // Conditional so pre-0255 databases keep working when no context is active.
+      ...(correlationId ? { correlationId } : {}),
     });
     genealogy = { id: inserted.id, prevHash, currHash };
 

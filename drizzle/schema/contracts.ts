@@ -50,3 +50,45 @@ export const contractSchemas = pgTable("contract_schemas", {
 
 export type ContractSchema = typeof contractSchemas.$inferSelect;
 export type InsertContractSchema = typeof contractSchemas.$inferInsert;
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 44 Batch W2-B2 (gap G2.6) — `contract_quarantine` (migration 0254).
+//
+// Where contract-INVALID inbound messages land when the ingest-validation seam
+// (services/contracts/ingestValidation.ts) runs in mode "quarantine"
+// (CONTRACT_VALIDATE_INGEST_MODE — default OFF → this table stays empty).
+// Plain text status/source (no pg enums — same reasoning as contract_schemas).
+// payload is CAPPED: anything serializing >64KB is stored as a wrapper
+// { truncated: true, sizeBytes, preview } — see capQuarantinePayload().
+// reviewed_by is a soft-ref to users.id (no FK — repo convention).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Which ingest seam quarantined the message. */
+export const CONTRACT_QUARANTINE_SOURCES = ["mqtt", "telemetry_bus", "api"] as const;
+export type ContractQuarantineSource = (typeof CONTRACT_QUARANTINE_SOURCES)[number];
+
+/** Review lifecycle of a quarantined message. */
+export const CONTRACT_QUARANTINE_STATUSES = ["quarantined", "reviewed", "replayed", "discarded"] as const;
+export type ContractQuarantineStatus = (typeof CONTRACT_QUARANTINE_STATUSES)[number];
+
+export const contractQuarantine = pgTable("contract_quarantine", {
+  id: serial("id").primaryKey(),
+  /** Canonical subject the payload FAILED against (e.g. "syn/+/+/+/+/+/telemetry"). */
+  subject: text("subject").notNull(),
+  source: text("source").notNull().$type<ContractQuarantineSource>(),
+  /** The offending payload (any JSON) — capped at 64KB serialized (truncated wrapper beyond). */
+  payload: jsonb("payload").$type<unknown>().notNull(),
+  /** Validation errors from jsonSchemaValidator (string[], capped at 50 entries). */
+  errors: jsonb("errors").$type<string[]>().notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  status: text("status").default("quarantined").notNull().$type<ContractQuarantineStatus>(),
+  /** Soft-ref users.id of the reviewer (mark reviewed/discarded/replayed). */
+  reviewedBy: integer("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+}, (table) => [
+  index("idx_contract_quarantine_subject_received").on(table.subject, table.receivedAt),
+  index("idx_contract_quarantine_status").on(table.status),
+]);
+
+export type ContractQuarantine = typeof contractQuarantine.$inferSelect;
+export type InsertContractQuarantine = typeof contractQuarantine.$inferInsert;

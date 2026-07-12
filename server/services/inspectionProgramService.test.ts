@@ -44,6 +44,8 @@ function tableArr(t: any): Row[] {
     case "measurement_point_defs": return points;
     case "inspection_program_releases": return releases;
     case "users": return userRows;
+    // faiGateService (chuỗi import từ createRelease) query FAI — fake: chưa có FAI nào.
+    case "product_inspections": return [];
     default: throw new Error(`unknown fake table ${t?.__table}`);
   }
 }
@@ -135,6 +137,14 @@ vi.mock("../../drizzle/schema", () => ({
     __table: "inspection_program_releases",
     id: { __name: "id" }, productModelId: { __name: "productModelId" },
     machineId: { __name: "machineId" }, version: { __name: "version" }, status: { __name: "status" },
+  },
+  // faiGateService (import chain qua inspectionProgramService) đọc bảng này —
+  // mock partial thiếu export sẽ vỡ toàn suite ("No productInspections export").
+  productInspections: {
+    __table: "product_inspections",
+    id: { __name: "id" }, productModelId: { __name: "productModelId" },
+    machineId: { __name: "machineId" }, inspectionType: { __name: "inspectionType" },
+    overallResult: { __name: "overallResult" },
   },
   users: { __table: "users", id: { __name: "id" }, name: { __name: "name" } },
 }));

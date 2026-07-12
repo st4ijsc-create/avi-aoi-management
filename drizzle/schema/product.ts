@@ -1141,12 +1141,22 @@ export const genealogyChain = pgTable("genealogy_chain", {
   payload: jsonb("payload").$type<Record<string, any>>().notNull(),
   recordedBy: integer("recordedBy"),
   recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  // ── doc 44 W2-B2 (G5.17, migration 0255 — additive, nullable) ──────────────
+  // Cross-layer trace id (order → work-order → command → genealogy event) from
+  // the AsyncLocalStorage backbone (server/services/observability/correlation.ts).
+  // DELIBERATELY OUTSIDE the hash-chain: utils/genealogyChain.hashEntry hashes a
+  // FIXED field list that does not include this column, so old rows (NULL) and
+  // new rows (set) verify identically. Trade-off (honest): correlation_id is
+  // trace metadata and is NOT tamper-protected by the chain.
+  correlationId: text("correlation_id"),
 }, (table) => [
   uniqueIndex("uq_genealogy_chain_curr_hash").on(table.currHash),
   index("idx_genealogy_chain_serial").on(table.serialNumber),
   index("idx_genealogy_chain_parent").on(table.parentSerial),
   index("idx_genealogy_chain_lot").on(table.lotCode),
   index("idx_genealogy_chain_recorded").on(table.recordedAt),
+  // 0255 — partial (skip NULL): most historical rows carry no correlation id.
+  index("idx_genealogy_chain_correlation").on(table.correlationId).where(sql`${table.correlationId} IS NOT NULL`),
 ]);
 
 export type GenealogyChain = typeof genealogyChain.$inferSelect;

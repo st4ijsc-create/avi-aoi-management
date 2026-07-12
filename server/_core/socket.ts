@@ -6,6 +6,15 @@ import { sdk } from "./sdk";
 import { attachRedisAdapter } from "./socketRedisAdapter";
 import { eventBus, EventTypes, type DomainEvent } from "./eventBus";
 import { toEcosystemEvent, isAlertKind, type EcosystemEvent } from "../services/ecosystem/ecosystemEvents";
+// ── doc 44 W2-B1 (G2.12 + G2.17) — state-store ingest hooks + UNS snapshot-then-
+// stream gateway. Both default OFF (STATE_STORE_ENABLED / WS_UNS_STREAM_ENABLED).
+import { stateStoreEnabled } from "../services/stateStore/stateStore";
+import {
+  stateStoreOnMachineStatus,
+  stateStoreOnMachineSocketDisconnect,
+  trackMachineSocket,
+} from "../services/stateStore/ingest";
+import { registerUnsStreamHandlers } from "../services/stateStore/unsStreamGateway";
 
 let io: Server | null = null;
 
@@ -576,6 +585,41 @@ export function initializeSocket(server: HttpServer): Server {
         socket.emit("machine:sync_error", { message: `Failed to start sync: ${error.message}` });
       }
     });
+
+    // ============ doc 44 W2-B1 — ADDITIVE listeners ONLY (G2.12 + G2.17) ============
+    //
+    // G2.12 state-store ingest (flag STATE_STORE_ENABLED, default OFF → no-op):
+    // EXTRA listeners on the SAME machine events the primary handlers above own.
+    // socket.io invokes listeners in registration order, so the primary
+    // `machine:heartbeat` / `machine:confirm_mapping` handlers have already
+    // updated `connectedMachines` when these fire — the identity guard below is
+    // therefore the SAME one the primary heartbeat handler applies.
+    // (`machine:sync_started` verifies its apiKey asynchronously, so a machine
+    // that never confirms a mapping lands in the state store on its FIRST
+    // heartbeat instead — documented honest limitation in stateStore/ingest.ts.)
+    socket.on("machine:heartbeat", (data: { machineId: number; status: string; metrics?: any }) => {
+      if (!stateStoreEnabled()) return;
+      const info = connectedMachines.get(data?.machineId);
+      if (!info || info.socketId !== socket.id) return; // same guard as the primary handler
+      trackMachineSocket(socket.id, data.machineId);
+      void stateStoreOnMachineStatus({ machineId: data.machineId, status: data.status, metrics: data.metrics });
+    });
+    socket.on("machine:confirm_mapping", (data: { machineId: number }) => {
+      if (!stateStoreEnabled()) return;
+      const info = connectedMachines.get(data?.machineId);
+      if (!info || info.socketId !== socket.id) return; // primary handler registered the mapping synchronously
+      trackMachineSocket(socket.id, data.machineId);
+      void stateStoreOnMachineStatus({ machineId: data.machineId, status: "online" });
+    });
+    socket.on("disconnect", () => {
+      // No-op unless this socket was tracked as a machine (ingest.ts keeps its
+      // own map — the primary disconnect handler clears connectedMachines first).
+      void stateStoreOnMachineSocketDisconnect(socket.id);
+    });
+
+    // G2.17 — UNS snapshot-then-stream subscription handlers
+    // (flag WS_UNS_STREAM_ENABLED, default OFF → 'uns:subscribe' is a no-op).
+    registerUnsStreamHandlers(socket as never);
   });
 
   // Initialize notification service with Socket.io

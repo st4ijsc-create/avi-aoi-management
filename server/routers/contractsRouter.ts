@@ -27,6 +27,9 @@ import {
 } from "../services/contracts/schemaRegistry";
 import { reconcile } from "../services/contracts/reconciliation";
 import { listReconcileProviders, runReconciliationCycle } from "../services/contracts/reconciliationCron"; // doc 33 I6
+// doc 44 W2-B2 (G2.6) — ingest-enforcement surface: quarantine review + live counters.
+import { getIngestValidationStats } from "../services/contracts/ingestValidation";
+import { CONTRACT_QUARANTINE_STATUSES } from "../../drizzle/schema/contracts";
 
 const jsonSchema = z.record(z.string(), z.unknown());
 
@@ -151,4 +154,86 @@ export const contractsRouter = router({
 
   /** doc 33 I6: run a reconciliation cycle across all providers now (read-only; raises tickets). */
   reconcileCycle: protectedProcedure.query(() => runReconciliationCycle()),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 44 W2-B2 (G2.6) — quarantine review surface (contract_quarantine, mig 0254)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** In-process ingest-validation counters (valid/invalid/quarantined per subject + mode). */
+  ingestValidationStats: protectedProcedure.query(() => getIngestValidationStats()),
+
+  /** Quarantined messages, newest first (filter by subject/status). */
+  listQuarantine: protectedProcedure
+    .input(
+      z
+        .object({
+          subject: z.string().optional(),
+          status: z.enum(CONTRACT_QUARANTINE_STATUSES).optional(),
+          limit: z.number().int().positive().max(500).default(100),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const { getDb } = await import("../db/connection");
+      const db = await getDb();
+      if (!db) return [] as const;
+      const { contractQuarantine } = await import("../../drizzle/schema/contracts");
+      const { eq, and, desc } = await import("drizzle-orm");
+      const conditions = [
+        ...(input?.subject ? [eq(contractQuarantine.subject, input.subject)] : []),
+        ...(input?.status ? [eq(contractQuarantine.status, input.status)] : []),
+      ];
+      let q = db.select().from(contractQuarantine).$dynamic();
+      if (conditions.length > 0) q = q.where(and(...conditions));
+      return q.orderBy(desc(contractQuarantine.receivedAt)).limit(input?.limit ?? 100);
+    }),
+
+  /** Mark ONE quarantined message reviewed or discarded (admin + 2FA). */
+  reviewQuarantine: adminProcedure
+    .input(z.object({ id: z.number().int().positive(), action: z.enum(["reviewed", "discarded"]) }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db/connection");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      const { contractQuarantine } = await import("../../drizzle/schema/contracts");
+      const { eq } = await import("drizzle-orm");
+      const updated = await db
+        .update(contractQuarantine)
+        .set({ status: input.action, reviewedBy: ctx.user.id, reviewedAt: new Date() })
+        .where(eq(contractQuarantine.id, input.id))
+        .returning({ id: contractQuarantine.id, status: contractQuarantine.status });
+      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      return updated[0];
+    }),
+
+  /**
+   * "Replay" ONE quarantined message (admin + 2FA). HONEST LIMITATION: this does NOT
+   * automatically re-inject the message into the pipeline — the quarantine row stores the
+   * PARSED payload plus the subject PATTERN, not the original transport frame (concrete
+   * MQTT topic / CanonicalSample fields), so a faithful automatic replay would have to
+   * guess routing. Instead it marks the row 'replayed' and RETURNS {subject, source,
+   * payload} for the caller to re-submit through the original transport (e.g. republish
+   * to the device topic, or POST to the ingest API after fixing the producer).
+   */
+  replayQuarantine: adminProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import("../db/connection");
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      const { contractQuarantine } = await import("../../drizzle/schema/contracts");
+      const { eq } = await import("drizzle-orm");
+      const updated = await db
+        .update(contractQuarantine)
+        .set({ status: "replayed", reviewedBy: ctx.user.id, reviewedAt: new Date() })
+        .where(eq(contractQuarantine.id, input.id))
+        .returning({
+          id: contractQuarantine.id,
+          subject: contractQuarantine.subject,
+          source: contractQuarantine.source,
+          payload: contractQuarantine.payload,
+        });
+      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      return { ...updated[0], reinjected: false as const };
+    }),
 });

@@ -30,6 +30,11 @@ import { registerModuleReadRoutes } from "./moduleReads";
 import { registerPdmHealthRoutes } from "./pdmHealth";
 import { registerModelRegistryRoutes } from "./modelRegistry";
 import { registerAssetRoutes } from "./assets";
+import { registerStateRoutes } from "./state";
+import { registerTimeseriesRoutes } from "./timeseries";
+import { registerEventRoutes } from "./events";
+import { registerMetricRoutes } from "./metricsApi";
+import { registerGenealogyRoutes } from "./genealogyApi";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
 import {
@@ -172,20 +177,45 @@ export function createV1Router(): Router {
     }),
   );
 
-  // GET /equipment/:id/telemetry?from=&to= — recent telemetry.
+  // GET /equipment/:id/telemetry?from=&to=&limit= — recent OR ranged telemetry.
   r.get(
     "/equipment/:id/telemetry",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
       const m = await loadMachine(Number(req.params.id));
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, Math.trunc(limitRaw)), 1000) : 50;
+
+      // W2-B1 (doc 44) — W0-audit bug fix: from/to used to be ECHOED without ever
+      // filtering. When a range is supplied we now run a REAL range query.
+      const fromRaw = typeof req.query.from === "string" && req.query.from ? req.query.from : null;
+      const toRaw = typeof req.query.to === "string" && req.query.to ? req.query.to : null;
+      if (fromRaw || toRaw) {
+        const from = fromRaw ? new Date(fromRaw) : new Date(0);
+        const to = toRaw ? new Date(toRaw) : new Date();
+        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+          throw new ApiHttpError(400, "bad_request", "Invalid from/to — expected ISO date-times.");
+        }
+        const { queryTelemetryRangeRows } = await import("./timeseries");
+        const rows = await queryTelemetryRangeRows({ machineId: m.id, from, to, limit }).catch(() => []);
+        return sendOk(res, {
+          machineId: m.id,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          ranged: true,
+          count: rows.length,
+          samples: rows,
+        });
+      }
+
+      // No range → latest known samples (newest first), unchanged behaviour.
       const { getLatestTelemetry } = await import("../../db/otTelemetry");
-      // E1: latest known samples (newest first). from/to are echoed; deep historical
-      // range queries land with the timeseries store integration later.
-      const rows = await getLatestTelemetry({ machineId: m.id, limit: 50 }).catch(() => []);
+      const rows = await getLatestTelemetry({ machineId: m.id, limit }).catch(() => []);
       sendOk(res, {
         machineId: m.id,
-        from: (req.query.from as string) ?? null,
-        to: (req.query.to as string) ?? null,
+        from: null,
+        to: null,
+        ranged: false,
         count: rows.length,
         samples: rows,
       });
@@ -518,6 +548,18 @@ export function createV1Router(): Router {
   // tags + config-drift (view/approve), /adapters/:id/restart (gated by
   // V1_ADAPTER_RESTART_ENABLED, default OFF → 501), /gateways/:id/status.
   registerAssetRoutes(r);
+
+  // ── W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs (scope data:read):
+  // GET /state/{path+} (state store + real state-read-p95 SLO feed), POST
+  // /query/timeseries (time_bucket khi Timescale, epoch-floor plain-PG fallback),
+  // GET /events (andon ∪ safety ∪ interlock, union Event shape), GET
+  // /metrics/{metric} (semantic layer — computeMetric + definition_version),
+  // GET /genealogy/{unitId} + POST /genealogy/search (spec §10.3 record).
+  registerStateRoutes(r);
+  registerTimeseriesRoutes(r);
+  registerEventRoutes(r);
+  registerMetricRoutes(r);
+  registerGenealogyRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

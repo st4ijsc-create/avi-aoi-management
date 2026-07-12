@@ -170,6 +170,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       { name: "PdM", description: "U4a/W0-F — predictive-maintenance failure risk, asset health, prediction history (read)." },
       { name: "Models", description: "W0-F G4.27 — AI model registry: catalogue + drift (read); promote/rollback (flag-gated, default OFF)." },
       { name: "Assets", description: "W2-A2 (doc 44 G1.10-G1.12) — SYNAPSE control-plane asset registry: URN/ISA-95 discovery, lifecycle, health, tags, config-drift; adapter restart (flag-gated); gateway status." },
+      { name: "Data", description: "W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs: current state (state store), timeseries, unified events, semantic metrics, genealogy. All read-only, scope data:read." },
       { name: "Anomaly", description: "U4a — ADVISORY robot-behaviour anomaly events (read)." },
       { name: "Standards", description: "U4a — equipment governance: device types, alarm taxonomy, compliance (read)." },
       { name: "Ecosystem", description: "U4a — single-pane roll-up: hierarchy, KPI, per-asset cockpit detail (read)." },
@@ -786,6 +787,162 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "self-reported health. HONEST: health is the node's own report and may be null.",
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "edge node id or code" }],
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Gateway not found", content: jsonErr() } }) },
+        },
+      },
+      // ── W2-B1 (doc 44 G2.16-G2.18) — SYNAPSE Tầng-2 Access APIs (scope data:read). ──
+      "/api/v1/state/{path}": {
+        get: {
+          tags: ["Data"],
+          summary: "Current StateSnapshot for one ISA-95 path (spec §10.1)",
+          description:
+            "Requires scope `data:read`. `{path}` is the FULL slash-separated ISA-95 path " +
+            "({site}/{area}/{line}/{cell}/{equipment}) — the wildcard tail of the URL. Served from the " +
+            "G2.12 state store (live snapshots when STATE_STORE_ENABLED; lazy DB rebuild otherwise — the " +
+            "`source` field says which: live | db-fallback). 404 when no machine maps to the path. " +
+            "Latency feeds the REAL `state-read-p95` SLO provider.",
+          parameters: [
+            { name: "path", in: "path", required: true, schema: { type: "string" }, description: "ISA-95 path, slashes included (e.g. f1/assy/line1/cell3/screw01)" },
+          ],
+          responses: {
+            "200": { description: "StateSnapshot {path, ts, state, values?, health?, source}", content: jsonOk() },
+            "400": { description: "Empty/invalid path", content: jsonErr() },
+            ...errResponses({ "404": { description: "No asset maps to the path", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/query/timeseries": {
+        post: {
+          tags: ["Data"],
+          summary: "Timeseries query over ot_telemetry (spec §11.2)",
+          description:
+            "Requires scope `data:read`. Body: {series, path | machineId, from, to, agg: raw|avg|min|max|sum, " +
+            "bucket: '30s'|'1m'|'5m'|'1h'|…, limit (default 5000, cap 50000)}. Engine is HONESTLY reported: " +
+            "`timescale-tsdb` (dedicated TSDB_URL) / `timescale-main` (main DB, db_feature_status " +
+            "'timescaledb_hypertables' ok → time_bucket) / `plain-pg` (epoch-floor bucketing fallback). " +
+            "Aggregates operate on numeric samples only.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["series", "from", "to"],
+                  properties: {
+                    series: { type: "string", description: "metric/tag name (ot_telemetry.metric)" },
+                    path: { type: "string", description: "ISA-95 path (alternative to machineId)" },
+                    machineId: { type: "integer" },
+                    from: { type: "string", format: "date-time" },
+                    to: { type: "string", format: "date-time" },
+                    agg: { type: "string", enum: ["raw", "avg", "min", "max", "sum"], default: "raw" },
+                    bucket: { type: "string", example: "5m", description: "required meaningfully for agg≠raw (default 5m)" },
+                    limit: { type: "integer", default: 5000, maximum: 50000 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "{points:[{ts,v,…}], engine, truncated}", content: jsonOk() },
+            "400": { description: "Invalid body / from ≥ to / missing path+machineId", content: jsonErr() },
+            ...errResponses({ "404": { description: "path maps to no asset", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/events": {
+        get: {
+          tags: ["Data"],
+          summary: "Unified event feed (andon ∪ safety ∪ interlock)",
+          description:
+            "Requires scope `data:read`. Union Event shape {event_id, source, asset_id?, path?, type, severity, " +
+            "ts, payload} over andon_events + safety_events + interlock_events. `severity` is a MINIMUM filter " +
+            "(info|warning|error|critical); `type` is a prefix filter ('andon' or 'andon:quality'). HONEST: a " +
+            "`path` filter applies to machine-addressed (andon) events only — safety/interlock rows carry no " +
+            "machineId and are excluded under a path filter (stated in `notes`).",
+          parameters: [
+            { name: "path", in: "query", required: false, schema: { type: "string" }, description: "ISA-95 path prefix" },
+            { name: "type", in: "query", required: false, schema: { type: "string" } },
+            { name: "severity", in: "query", required: false, schema: { type: "string", enum: ["info", "warning", "error", "critical"] }, description: "minimum severity" },
+            { name: "from", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "to", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", default: 200, maximum: 1000 } },
+          ],
+          responses: { "200": { description: "OK", content: jsonOk() }, "400": { description: "Bad filter", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/metrics/{metric}": {
+        get: {
+          tags: ["Data"],
+          summary: "Semantic-layer metric (MetricResult + definition_version, spec §10.2)",
+          description:
+            "Requires scope `data:read`. Wraps semantics/metricRegistry.computeMetric — the ONE governed " +
+            "definition (contracts/metrics/*.yaml); the response always carries `definition_version` " +
+            "(e.g. OEE@v1). Errors: unknown metric → 404, undeclared scope / missing scopeId / unsupported " +
+            "window → 400, DB down → 503. from/to default to the trailing 24 h.",
+          parameters: [
+            { name: "metric", in: "path", required: true, schema: { type: "string" }, description: "OEE | FPY | Throughput | DPMO | Availability | Performance | Quality" },
+            { name: "scope", in: "query", required: true, schema: { type: "string" }, description: "equipment | line | factory (per definition)" },
+            { name: "scopeId", in: "query", required: false, schema: { type: "integer" } },
+            { name: "from", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+            { name: "to", in: "query", required: false, schema: { type: "string", format: "date-time" } },
+          ],
+          responses: {
+            "200": { description: "MetricResult", content: jsonOk() },
+            "400": { description: "Unsupported scope / missing scopeId / bad window", content: jsonErr() },
+            "503": { description: "DB unavailable", content: jsonErr() },
+            ...errResponses({ "404": { description: "Unknown metric", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/genealogy/{unitId}": {
+        get: {
+          tags: ["Data"],
+          summary: "Full GenealogyRecord for one unit (spec §10.3)",
+          description:
+            "Requires scope `data:read`. Assembles {unit_id, product, line, started, finished, steps[{station, " +
+            "ts, result, data}], materials[{part, lot}], carton, pallet} from genealogy_chain + " +
+            "product_inspections + process_results + component_installations (⋈ supplier_lots). HONEST: " +
+            "carton/pallet come from chain event payloads (no packing table exists) and are null when never " +
+            "recorded. 404 only when every source is empty.",
+          parameters: [{ name: "unitId", in: "path", required: true, schema: { type: "string" }, description: "serial number" }],
+          responses: {
+            "200": { description: "GenealogyRecord", content: jsonOk() },
+            "400": { description: "Invalid unit id", content: jsonErr() },
+            ...errResponses({ "404": { description: "Unit has no genealogy data", content: jsonErr() } }),
+          },
+        },
+      },
+      "/api/v1/genealogy/search": {
+        post: {
+          tags: ["Data"],
+          summary: "Reverse genealogy search → unit ids",
+          description:
+            "Requires scope `data:read`. Body {lot?, part?, carton?, pallet?, dateRange?{from,to}, limit?} — at " +
+            "least one criterion; multiple criteria INTERSECT (AND). lot matches genealogy_chain.lotCode ∪ " +
+            "supplier-lot installations; part matches component_installations.componentCode; carton/pallet match " +
+            "chain event payload keys.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    lot: { type: "string" },
+                    part: { type: "string" },
+                    carton: { type: "string" },
+                    pallet: { type: "string" },
+                    dateRange: { type: "object", properties: { from: { type: "string", format: "date-time" }, to: { type: "string", format: "date-time" } } },
+                    limit: { type: "integer", default: 200, maximum: 1000 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "{units, count, criteria, semantics: intersection}", content: jsonOk() },
+            "400": { description: "No criterion supplied / invalid body", content: jsonErr() },
+            ...errResponses(),
+          },
         },
       },
       "/api/v1/anomaly/events": {

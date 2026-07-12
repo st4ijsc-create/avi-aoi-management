@@ -137,11 +137,20 @@ describe("/api/v1 reads", () => {
     expect(body.data.capability.supportedCommands.length).toBeGreaterThan(0);
   });
 
-  it("telemetry returns latest samples", async () => {
-    const res = await call("/api/v1/equipment/1/telemetry?from=x&to=y", { key: "MASTER" });
+  it("telemetry returns latest samples (no range params)", async () => {
+    const res = await call("/api/v1/equipment/1/telemetry", { key: "MASTER" });
     const body = await res.json();
     expect(body.ok).toBe(true);
+    expect(body.data.ranged).toBe(false);
     expect(body.data.samples[0].tagKey).toBe("yield");
+  });
+
+  it("telemetry rejects garbage from/to (W2-B1 — range is now a REAL query, not an echo)", async () => {
+    const res = await call("/api/v1/equipment/1/telemetry?from=x&to=y", { key: "MASTER" });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("bad_request");
   });
 
   it("state projects PackML", async () => {

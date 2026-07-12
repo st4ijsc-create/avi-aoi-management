@@ -132,6 +132,7 @@ import { aiVisionRouter } from "./routers/aiVisionRouter"; // P4-F: vision-close
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
+import { mappingAsCodeRouter } from "./routers/mappingAsCodeRouter"; // W2-B3 (doc 44 G1.13): mapping-as-code — export/preview/apply YAML per-adapter (contracts/mappings, versioned trong Git)
 import { visionAdapterRouter } from "./routers/visionAdapterRouter"; // P1a: vendor-agnostic vision/inspection adapter ingest (VISION_ADAPTERS_ENABLED)
 import { hotFolderRouter } from "./routers/hotFolderRouter"; // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion — config CRUD + status + dry-run (HOT_FOLDER_INGEST_ENABLED)
 import { mtconnectRouter } from "./routers/mtconnectRouter"; // P1b: MTConnect (CNC) test/status
@@ -438,6 +439,7 @@ export const appRouter = router({
 
   // G2.2a — OT machine-control CONFIG + audit (config/query only; no write-to-device path)
   deviceAdapter: deviceAdapterRouter,
+  mappingAsCode: mappingAsCodeRouter, // W2-B3 (doc 44 G1.13): mapping.yaml as-code — export/diff/import, versioned trong Git
   visionAdapter: visionAdapterRouter,
   hotFolder: hotFolderRouter, // Doc 27 C1 (W2-A): hot-folder file-drop ingestion — config CRUD + status + dry-run (HOT_FOLDER_INGEST_ENABLED)
   mtconnect: mtconnectRouter,
