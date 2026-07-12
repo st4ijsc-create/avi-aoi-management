@@ -15,6 +15,7 @@ import { type AddressInfo } from "node:net";
 
 const h = vi.hoisted(() => ({
   commandResult: null as any,
+  recipeResult: null as any,
 }));
 
 // ── auth chain mocks (mirrors moduleReads.test.ts) ───────────────────────────
@@ -93,8 +94,14 @@ vi.mock("../../services/lineController/lineControllerService", () => ({
   executeLineCommand: vi.fn(async () => h.commandResult),
 }));
 
+// ── recipe set service mock (W3-B1 — POST /lines/:id/recipe) ─────────────────
+vi.mock("../../services/lineController/recipeSetService", () => ({
+  distributeRecipeSetByCode: vi.fn(async () => h.recipeResult),
+}));
+
 import { registerLineRoutes } from "./lines";
 import { executeLineCommand } from "../../services/lineController/lineControllerService";
+import { distributeRecipeSetByCode } from "../../services/lineController/recipeSetService";
 
 let server: Server;
 let base = "";
@@ -124,7 +131,20 @@ beforeEach(() => {
     ts: "2026-07-12T00:00:00.000Z",
     correlationId: "corr-1",
   };
+  h.recipeResult = {
+    ok: true,
+    lineId: 1,
+    recipeSetId: 3,
+    code: "MODEL-X@v3",
+    results: [
+      { itemId: 1, machineId: 5, machineCode: "M-5", recipeCode: "SCREW-01", recipeVersion: 3, required: true, status: "deployed", deploymentId: 9001 },
+    ],
+    confirmed: true,
+    missing: [],
+    locked: true,
+  };
   vi.mocked(executeLineCommand).mockClear();
+  vi.mocked(distributeRecipeSetByCode).mockClear();
 });
 
 const MASTER = { Authorization: "Bearer MASTER" };
@@ -324,6 +344,109 @@ describe("POST /v1/lines/:id/command", () => {
       method: "POST",
       headers: { ...MASTER, "content-type": "application/json" },
       body: JSON.stringify({ command: "hold" }),
+    });
+    expect(res.status).toBe(503);
+    expect((await res.json()).error.code).toBe("db_unavailable");
+  });
+});
+
+// ═══ W3-B1 (G3.3) — POST /v1/lines/:id/recipe (spec §13.2) ════════════════════
+
+describe("POST /v1/lines/:id/recipe — nạp recipe set (distribute + xác nhận + khóa)", () => {
+  it("machine key (thiếu lines:write) → 403, service KHÔNG được gọi", async () => {
+    const res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MACHINE, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(403);
+    expect(vi.mocked(distributeRecipeSetByCode)).not.toHaveBeenCalled();
+  });
+
+  it("thiếu recipeSetCode → 400 bad_request, service KHÔNG được gọi", async () => {
+    const res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("bad_request");
+    expect(vi.mocked(distributeRecipeSetByCode)).not.toHaveBeenCalled();
+  });
+
+  it("xác nhận nạp đủ → 200 {confirmed:true, locked:true, results per-máy}; actor api:master", async () => {
+    const res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toMatchObject({
+      lineId: 1,
+      recipeSet: "MODEL-X@v3",
+      confirmed: true,
+      locked: true,
+      results: [expect.objectContaining({ machineId: 5, status: "deployed" })],
+    });
+    expect(vi.mocked(distributeRecipeSetByCode)).toHaveBeenCalledWith(
+      1,
+      "MODEL-X@v3",
+      expect.objectContaining({ actor: "api:master" }),
+    );
+  });
+
+  it("chưa xác nhận đủ (máy required thiếu) → 409 recipe_not_confirmed + details {results, missing}", async () => {
+    h.recipeResult = {
+      ...h.recipeResult,
+      confirmed: false,
+      locked: false,
+      missing: [{ machineId: 5, machineCode: "M-5", recipeCode: "SCREW-01", expectedVersion: 3, reason: "active v2 ≠ phiên bản khóa v3" }],
+    };
+    const res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe("recipe_not_confirmed");
+    expect(body.error.details.missing[0].machineCode).toBe("M-5");
+  });
+
+  it("map failure: NOT_FOUND→404 recipe_set_not_found; LOCKED→409 recipe_set_locked; INVALID_STATE→409; DB→503", async () => {
+    h.recipeResult = { ok: false, code: "NOT_FOUND", message: "không thấy set" };
+    let res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "NOPE@v1" }),
+    });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("recipe_set_not_found");
+
+    h.recipeResult = { ok: false, code: "LOCKED", message: "đang khóa suốt lô" };
+    res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("recipe_set_locked");
+
+    h.recipeResult = { ok: false, code: "INVALID_STATE", message: "tuyến đang producing" };
+    res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("invalid_state");
+
+    h.recipeResult = { ok: false, code: "DB_UNAVAILABLE", message: "mất DB" };
+    res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
     });
     expect(res.status).toBe(503);
     expect((await res.json()).error.code).toBe("db_unavailable");

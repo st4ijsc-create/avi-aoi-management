@@ -26,8 +26,26 @@ import {
 } from "../services/lineController/lineControllerService";
 import { checkLineReadiness } from "../services/lineController/lineReadiness";
 import { listTransitions } from "../services/lineController/lineStateRepo";
+import {
+  listRecipeSets,
+  getRecipeSetDetail,
+  getRecipeSetLockStatus,
+  createRecipeSet,
+  addRecipeSetItem,
+  removeRecipeSetItem,
+  distributeRecipeSet,
+  unlockRecipeSet,
+} from "../services/lineController/recipeSetService";
 
 const lineIdSchema = z.number().int().positive();
+
+/** Tham chiếu một recipe set theo id HOẶC code (ít nhất một). */
+const recipeSetRefSchema = z
+  .object({
+    id: z.number().int().positive().optional(),
+    code: z.string().min(1).max(200).optional(),
+  })
+  .refine((v) => v.id != null || v.code != null, { message: "Cần id hoặc code." });
 
 export const lineControllerRouter = router({
   /** Mọi tuyến ACTIVE + trạng thái FSM (tuyến chưa có row → 'idle'). */
@@ -108,4 +126,92 @@ export const lineControllerRouter = router({
         actor: String(ctx.user.id),
       });
     }),
+
+  /**
+   * W3-B1 (G3.3) — RecipeSet cấp tuyến (spec §6.1). Read = protectedProcedure;
+   * mutation = actuationProcedure (role-floor + 2FA — pattern batch). Mutation
+   * trả result-union {ok:false, code} NGUYÊN TRẠNG cho lý do nghiệp vụ.
+   */
+  recipeSet: router({
+    /** Catalog set (mới nhất trước) + số item. */
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).optional())
+      .query(async ({ input }) => listRecipeSets(input?.limit ?? 100)),
+
+    /** Set + items (join phiên bản recipe + máy). Null khi không tồn tại. */
+    get: protectedProcedure.input(recipeSetRefSchema).query(async ({ input }) => getRecipeSetDetail(input)),
+
+    /** Trạng thái khóa (locked/lockedBy/lockedAt) + các tuyến đang dùng set. */
+    lockStatus: protectedProcedure
+      .input(recipeSetRefSchema)
+      .query(async ({ input }) => getRecipeSetLockStatus(input)),
+
+    /** Tạo set draft (khóa/active chỉ qua distribute + xác nhận nạp). */
+    create: actuationProcedure
+      .input(
+        z.object({
+          code: z.string().min(1).max(120),
+          productModelId: z.number().int().positive().nullable().optional(),
+          version: z.number().int().min(1).optional(),
+          notes: z.string().max(2000).nullable().optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) =>
+        createRecipeSet({
+          code: input.code,
+          productModelId: input.productModelId ?? null,
+          version: input.version,
+          notes: input.notes ?? null,
+          actor: String(ctx.user.id),
+        }),
+      ),
+
+    /** Thêm item: máy nào nạp recipe VERSION nào (machineRecipeId = row versioned). */
+    addItem: actuationProcedure
+      .input(
+        z.object({
+          recipeSetId: z.number().int().positive(),
+          machineId: z.number().int().positive(),
+          machineRecipeId: z.number().int().positive(),
+          stationId: z.number().int().positive().nullable().optional(),
+          required: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => addRecipeSetItem(input)),
+
+    /** Gỡ item khỏi set draft (set khóa → LOCKED). */
+    removeItem: actuationProcedure
+      .input(z.object({ recipeSetId: z.number().int().positive(), itemId: z.number().int().positive() }))
+      .mutation(async ({ input }) => removeRecipeSetItem(input.itemId, input.recipeSetId)),
+
+    /**
+     * Phân phối set tới tuyến qua đường deploy sẵn có + XÁC NHẬN NẠP (spec
+     * §6.1) — đủ máy required đúng phiên bản → set line.recipe_set_ref + KHÓA.
+     */
+    distribute: actuationProcedure
+      .input(
+        z.object({
+          lineId: lineIdSchema,
+          recipeSetId: z.number().int().positive(),
+          notes: z.string().max(2000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) =>
+        distributeRecipeSet(input.lineId, input.recipeSetId, {
+          actor: String(ctx.user.id),
+          actorId: ctx.user.id,
+          notes: input.notes ?? null,
+        }),
+      ),
+
+    /** Gỡ khóa — chỉ khi mọi tuyến dùng set ở idle/completing/fault (§6.1). */
+    unlock: actuationProcedure
+      .input(recipeSetRefSchema.and(z.object({ reason: z.string().max(500).optional() })))
+      .mutation(async ({ input, ctx }) =>
+        unlockRecipeSet(
+          { id: input.id, code: input.code },
+          { actor: String(ctx.user.id), reason: input.reason },
+        ),
+      ),
+  }),
 });

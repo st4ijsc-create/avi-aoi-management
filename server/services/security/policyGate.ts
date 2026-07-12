@@ -70,3 +70,65 @@ export function evaluateCommandPolicy(
   // "no matching policy" and policy_ref null — bit-identical to the old return.
   return { allow: true, effect: "allow", reason: d.reason, policyId: d.policy_ref };
 }
+
+/** W3-B2 (doc 44 G3.14) — verdict shape of the standardized action seam (superset of PolicyGateResult). */
+export interface ActionPolicyResult extends PolicyGateResult {
+  /** Standard reason_code (POLICY_DENIED / APPROVAL_REQUIRED / POLICY_ALLOWED / DEFAULT_ALLOW / …). */
+  reasonCode: string;
+  /** Obligations the engine attached (e.g. ["require_approval"]). */
+  obligations: string[];
+}
+
+/**
+ * W3-B2 (doc 44 G3.14 — "một cửa duy nhất: mọi nguồn lệnh qua Policy") — the SHARED
+ * policy seam for the non-OT command sources (robotCommandDispatcher, FOE command
+ * step, VDA5050 sendOrder). Thin, SYNC wrapper over the standardized
+ * evaluatePolicy(subject, action, resource, context):
+ *   • Gated by the SAME master flag as evaluateCommandPolicy: SEC_PLATFORM OFF
+ *     (default) → allow-all — callers behave bit-identically to before.
+ *   • Every non-allow verdict is emitted to the F6 decision-trace (same pattern
+ *     as evaluateCommandPolicy); the append-only policy_decision_log write happens
+ *     inside evaluatePolicy itself.
+ *   • `opts.approved` maps an EXISTING four-eyes approval onto a require_approval
+ *     obligation (mirrors evaluateCommandPolicy). Callers WITHOUT an approval
+ *     channel omit it — a require_approval verdict then returns allow:false and
+ *     the caller rejects honestly (POLICY_APPROVAL_REQUIRED).
+ */
+export function evaluateActionPolicy(
+  subject: string,
+  action: string,
+  resource: string | null,
+  context: Record<string, unknown> = {},
+  opts: { enabled?: boolean; approved?: boolean; requestId?: string | null } = {},
+): ActionPolicyResult {
+  const enabled = opts.enabled ?? secPlatformEnabled();
+  if (!enabled) {
+    return { allow: true, effect: "allow", reason: "SEC_PLATFORM off", policyId: null, reasonCode: "SEC_PLATFORM_OFF", obligations: [] };
+  }
+  const d = evaluatePolicy(subject, action, resource, context, { requestId: opts.requestId ?? null });
+  if (d.effect !== "allow") {
+    try {
+      recordDecision({
+        decisionType: "policy-gate",
+        subject: action,
+        chosen: d.effect,
+        candidates: d.matched.map((m) => ({ id: m.id, score: 0, eliminatedBy: m.effect })),
+        version: "policy-v1",
+        ts: Date.now(),
+        note: d.reason,
+      });
+    } catch {
+      /* trace is best-effort */
+    }
+  }
+  if (d.effect === "deny") {
+    return { allow: false, effect: "deny", reason: d.reason, policyId: d.policy_ref, reasonCode: d.reason_code, obligations: d.obligations };
+  }
+  if (d.effect === "require_approval") {
+    const base = { effect: "require_approval" as const, policyId: d.policy_ref, reasonCode: d.reason_code, obligations: d.obligations };
+    return opts.approved
+      ? { allow: true, reason: `approved: ${d.reason}`, ...base }
+      : { allow: false, reason: d.reason, ...base };
+  }
+  return { allow: true, effect: "allow", reason: d.reason, policyId: d.policy_ref, reasonCode: d.reason_code, obligations: d.obligations };
+}

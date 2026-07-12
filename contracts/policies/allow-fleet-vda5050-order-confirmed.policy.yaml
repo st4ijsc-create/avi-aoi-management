@@ -1,0 +1,20 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 44 W3-B2 G3.14 "một cửa duy nhất").
+# POLICY MẪU cho nhóm hành động FLEET dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "fleet.vda5050.*", mọi lệnh gửi Order/lệnh
+# fleet VDA 5050 bị TỪ CHỐI trừ khi một allow-policy tường minh match.
+# Context do Vda5050Adapter.sendOrder cung cấp: robotId, code, orderId,
+# nodesCount, triggerKind, requestedBy, confirmedBy (chỉ có khi HITL đã xác
+# nhận). Điều kiện dưới = "chỉ cho phép order đã được NGƯỜI xác nhận" — lệnh
+# tự-điền không confirmedBy sẽ không match ⇒ DENY dưới default-deny.
+# (Lệnh này sau đó còn đi qua seam robot.command.* của robotCommandDispatcher —
+# phòng thủ theo lớp, spec §17.)
+policy_id: allow-fleet-vda5050-order-confirmed
+version: 1
+effect: allow
+action_pattern: "fleet.vda5050.*"
+priority: 10
+status: active
+description: "Cho phép gửi lệnh fleet VDA5050 (fleet.vda5050.*) khi đã có người xác nhận HITL (context.confirmedBy tồn tại)."
+conditions:
+  - path: context.confirmedBy
+    op: exists

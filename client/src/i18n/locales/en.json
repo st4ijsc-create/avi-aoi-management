@@ -11219,6 +11219,114 @@
     "back": "Back",
     "confirm": "Confirm and proceed"
   },
+  "lineView": {
+    "title": "Line View",
+    "navDesc": "Line flow diagram · 7-state FSM · takt/bottleneck · readiness · line commands",
+    "subtitle": "Line flow: FSM state, takt, bottleneck, blocked/starved stations and line commands.",
+    "selectLine": "Select line",
+    "noLines": "No ACTIVE production lines yet",
+    "noLinesDesc": "Create a production line (with stations and machines) in Master Data to use Line View.",
+    "needControlPerm": "Issuing line commands requires machine_control (edit) — the server additionally enforces role floor and 2FA.",
+    "cmdNotAllowed": "Command not valid from state '{{state}}'",
+    "state": {
+      "idle": "Idle",
+      "ready": "Ready",
+      "producing": "Producing",
+      "held": "Held",
+      "completing": "Completing",
+      "changeover": "Changeover",
+      "fault": "Fault"
+    },
+    "cmd": {
+      "start": "Start",
+      "hold": "Hold",
+      "resume": "Resume",
+      "changeover": "Changeover",
+      "complete": "Complete",
+      "reset_fault": "Acknowledge fault fixed"
+    },
+    "confirm": {
+      "title": "{{command}} — line {{line}}?",
+      "desc_start": "Start the line: from Idle it passes the readiness checklist (idle→ready) then enters Producing; from Ready it goes straight to Producing.",
+      "desc_hold": "Hold the line: stations stop taking new work; WIP stays in place until Resume.",
+      "desc_resume": "Resume the line after a hold (Held → Producing).",
+      "desc_changeover": "Put the line into changeover — production stops until changeover finishes and the readiness checklist passes.",
+      "desc_complete": "Advance the completion chain by context: Producing→Completing (drain WIP), Completing→Idle (drained), Changeover→Ready (changeover done).",
+      "desc_reset_fault": "Acknowledge the fault as fixed — the line only returns to Ready when the readiness checklist PASSES (evidence of the fix).",
+      "impact_changeover": "Production on this line STOPS for the whole changeover; recipes/thresholds will follow the new product. Check remaining WIP on the line before switching.",
+      "impact_reset_fault": "Acknowledging while the fault is NOT actually fixed can put a faulty line back into operation. The server re-runs the readiness checklist before allowing Ready."
+    },
+    "kpi": {
+      "taktTarget": "Takt target",
+      "cycleAvg": "Avg cycle",
+      "behindTakt": "Actual cycle time is SLOWER than the takt target",
+      "throughput": "Throughput (window)",
+      "utilization": "Utilization",
+      "activeOrder": "Order",
+      "recipeSet": "Recipe set",
+      "heldReason": "Hold reason",
+      "inStateSince": "In state since {{time}}"
+    },
+    "flow": {
+      "title": "Line flow",
+      "window": "Dwell observation window: {{minutes}} min — blocked/starved threshold {{threshold}}",
+      "empty": "This line has no ACTIVE stations.",
+      "bottleneck": "Bottleneck",
+      "blocked": "Blocked",
+      "starved": "Starved",
+      "cycleTarget": "Cycle target",
+      "dwellAvg": "Average dwell (observation window)",
+      "dwellShort": "Dwell",
+      "noMachines": "No machines assigned"
+    },
+    "readiness": {
+      "title": "Ready to run (readiness)",
+      "ready": "READY",
+      "notReady": "NOT READY",
+      "recheck": "Re-check",
+      "skipped": "skipped",
+      "unavailable": "Readiness checklist could not be read.",
+      "checkedAt": "Checked at {{time}}"
+    },
+    "check": {
+      "machines_online": "Line machines online",
+      "no_machine_faulted": "No machine faulted",
+      "feeder_verify": "Feeder setup run-ready",
+      "safety_read": "Safety (advisory read)",
+      "recipe_loaded": "Recipe set loaded"
+    },
+    "transitions": {
+      "title": "State transition history",
+      "time": "Time",
+      "change": "Transition",
+      "by": "By",
+      "reason": "Reason",
+      "policyRef": "Policy",
+      "denied": "DENIED"
+    },
+    "result": {
+      "success": "Line {{line}}: '{{from}}' → '{{to}}'",
+      "blockedTitle": "Command blocked",
+      "blockedDesc": "The server rejected the transition — the line state did NOT change. Details below.",
+      "readinessChecks": "Readiness checklist (just ran)",
+      "allowed": "Valid transitions from '{{from}}'",
+      "policyEffect": "Effect",
+      "policyRef": "Policy ref",
+      "close": "Close"
+    },
+    "drawer": {
+      "title": "Station {{name}}",
+      "dwellAvg": "Avg dwell",
+      "samples": "{{count}} dwell samples in the observation window",
+      "machines": "Machines in station",
+      "openMachine": "Open machine cockpit",
+      "presence": {
+        "online": "Online",
+        "offline": "Offline",
+        "unknown": "Unknown"
+      }
+    }
+  },
   "interlockRules": {
     "whenToUse": "When to use — define safety rules that automatically stop or slow a machine when a limit is crossed, and review the events they fired.",
     "title": "Interlock Rule Management",

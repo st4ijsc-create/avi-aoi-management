@@ -1,23 +1,25 @@
 /**
- * doc 44 W3-A2 / G3.1 — Line Controller API (SYNAPSE LDS-L3 §13.2).
+ * doc 44 W3-A2 / G3.1 (+W3-B1 / G3.3) — Line Controller API (SYNAPSE LDS-L3 §13.2).
  *
  *   GET  /v1/lines              — danh sách tuyến + trạng thái FSM      (lines:read)
  *   GET  /v1/lines/:id/state    — trạng thái + nhịp/bottleneck + readiness cache
  *   GET  /v1/lines/:id/stages   — per-trạm: máy, op-state, dwell, blocked/starved
  *   POST /v1/lines/:id/command  — start|hold|resume|changeover|complete|reset_fault
  *                                 (qua policy seam trong lineControllerService)  (lines:write)
+ *   POST /v1/lines/:id/recipe   — nạp recipe set {recipeSetCode} (spec §13.2):
+ *                                 distribute qua đường deploy sẵn có + XÁC NHẬN
+ *                                 NẠP + khóa phiên bản suốt lô           (lines:write)
  *
- * KHÔNG tự đăng ký vào router.ts/openapi.ts/scopes.ts (thuộc batch cha) —
- * xuất `registerLineRoutes(r)` + hằng scope; snippet đăng ký trong báo cáo batch.
+ * Đăng ký: router.ts gọi registerLineRoutes(r) (đã wire ở batch W3-A2);
+ * openapi.ts path mới POST /lines/{id}/recipe = snippet trong báo cáo W3-B1
+ * (file đó ngoài phạm vi batch này).
  *
- * Scope strings: `lines:read` / `lines:write` — CHƯA có trong API_SCOPES
- * (scopes.ts out-of-scope batch này) nên khai báo tại đây và cast. Wildcard
- * grants ("*", "lines:*") và master key hoạt động ngay; sau khi cha thêm
- * LINES_READ/LINES_WRITE vào scopes.ts thì thay cast bằng API_SCOPES.*.
+ * Scopes: LINES_READ/LINES_WRITE đã CHÍNH THỨC trong API_SCOPES (scopes.ts,
+ * batch cha W3-A2 wire) — dùng thẳng, hết cast tạm.
  */
 import { type Router, type Request, type Response } from "express";
 import { requireScope } from "./auth";
-import type { ApiScope } from "./scopes";
+import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
 import {
   listLinesWithState,
@@ -28,10 +30,14 @@ import {
   type LineCommand,
   type TransitionResult,
 } from "../../services/lineController/lineControllerService";
+import {
+  distributeRecipeSetByCode,
+  type RecipeSetFailure,
+} from "../../services/lineController/recipeSetService";
 
-// Snippet cho scopes.ts (batch cha): LINES_READ: "lines:read", LINES_WRITE: "lines:write".
-export const LINES_READ_SCOPE = "lines:read" as unknown as ApiScope;
-export const LINES_WRITE_SCOPE = "lines:write" as unknown as ApiScope;
+// Scope chính thức từ scopes.ts (batch cha đã thêm LINES_READ/LINES_WRITE).
+export const LINES_READ_SCOPE = API_SCOPES.LINES_READ;
+export const LINES_WRITE_SCOPE = API_SCOPES.LINES_WRITE;
 
 /** Parse :id path param → positive int, else 400. */
 function parseLineId(req: Request): number {
@@ -69,6 +75,27 @@ function throwTransitionFailure(result: Exclude<TransitionResult, { ok: true }>)
     case "DB_UNAVAILABLE":
     default:
       throw new ApiHttpError(503, "db_unavailable", result.message);
+  }
+}
+
+/** Map một RecipeSetFailure → ApiHttpError (status + code envelope) — W3-B1. */
+function throwRecipeSetFailure(f: RecipeSetFailure): never {
+  switch (f.code) {
+    case "NOT_FOUND":
+      throw new ApiHttpError(404, "recipe_set_not_found", f.message);
+    case "LINE_NOT_FOUND":
+      throw new ApiHttpError(404, "not_found", f.message);
+    case "LOCKED":
+      throw new ApiHttpError(409, "recipe_set_locked", f.message);
+    case "INVALID_STATE":
+      throw new ApiHttpError(409, "invalid_state", f.message);
+    case "CONFLICT":
+      throw new ApiHttpError(409, "conflict", f.message);
+    case "VALIDATION":
+      throw new ApiHttpError(400, "bad_request", f.message);
+    case "DB_UNAVAILABLE":
+    default:
+      throw new ApiHttpError(503, "db_unavailable", f.message);
   }
 }
 
@@ -143,6 +170,50 @@ export function registerLineRoutes(r: Router): void {
         ts: result.ts,
         correlationId: result.correlationId,
         ...(result.readiness ? { readiness: result.readiness } : {}),
+      });
+    }),
+  );
+
+  // ── POST /v1/lines/:id/recipe — nạp recipe set, khóa phiên bản (spec §13.2) ──
+  // W3-B1 (G3.3): distribute qua đường recipe_deployments sẵn có (GIỮ
+  // second-approver gate) + XÁC NHẬN NẠP mọi máy required → set
+  // line_states.recipe_set_ref + KHÓA set suốt lô. Chưa xác nhận đủ → 409
+  // recipe_not_confirmed kèm per-máy results + missing (honest partial).
+  r.post(
+    "/lines/:id/recipe",
+    requireScope(LINES_WRITE_SCOPE),
+    wrap(async (req: Request, res: Response) => {
+      const id = parseLineId(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const code =
+        typeof body.recipeSetCode === "string" && body.recipeSetCode.trim()
+          ? body.recipeSetCode.trim().slice(0, 200)
+          : "";
+      if (!code) {
+        throw new ApiHttpError(400, "bad_request", "recipeSetCode (string) là bắt buộc — mã recipe set, vd MODEL-X@v3.");
+      }
+      const notes = typeof body.notes === "string" ? body.notes.slice(0, 2000) : undefined;
+
+      const result = await distributeRecipeSetByCode(id, code, {
+        actor: `api:${req.apiPrincipal?.name ?? "unknown"}`,
+        notes,
+      });
+      if (!result.ok) throwRecipeSetFailure(result);
+      if (!result.confirmed) {
+        throw new ApiHttpError(
+          409,
+          "recipe_not_confirmed",
+          `Recipe set '${code}' phân phối nhưng CHƯA xác nhận nạp đủ trên tuyến ${id} — ${result.missing.length} máy required chưa active đúng phiên bản.`,
+          { results: result.results, missing: result.missing },
+        );
+      }
+      sendOk(res, {
+        lineId: id,
+        recipeSet: result.code,
+        recipeSetId: result.recipeSetId,
+        confirmed: true,
+        locked: result.locked,
+        results: result.results,
       });
     }),
   );

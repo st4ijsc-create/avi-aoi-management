@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
   safetyConfigs: [] as any[],
   safetyStatus: {} as Record<string, boolean>,
   safetyReadThrows: false,
+  // W3-B1: kết quả verifyRecipeSetRef — null → {found:false} (ref text legacy).
+  recipeVerify: null as any,
 }));
 
 vi.mock("./lineStateRepo", () => ({
@@ -32,6 +34,10 @@ vi.mock("../feederVerifyService", () => ({
     if (h.feederThrows) throw new Error("DB not available");
     return h.feederGate;
   }),
+}));
+
+vi.mock("./recipeSetService", () => ({
+  verifyRecipeSetRef: vi.fn(async () => h.recipeVerify ?? { found: false }),
 }));
 
 vi.mock("../safety/plc/safetyPlcAdapter", () => ({
@@ -55,6 +61,7 @@ import {
   getCachedReadiness,
   _resetReadinessCacheForTests,
 } from "./lineReadiness";
+import { verifyRecipeSetRef } from "./recipeSetService";
 
 function machine(id: number, over: Record<string, unknown> = {}) {
   return {
@@ -93,6 +100,7 @@ beforeEach(() => {
   h.safetyConfigs = [];
   h.safetyStatus = {};
   h.safetyReadThrows = false;
+  h.recipeVerify = null;
   _resetReadinessCacheForTests();
   vi.clearAllMocks();
 });
@@ -205,16 +213,53 @@ describe("checkLineReadiness — 5 check v1", () => {
     expect(r.ready).toBe(true); // UNKNOWN không chặn khi chưa có HW
   });
 
-  it("check 5 — requireRecipe: thiếu recipe_set_ref → fail; có → pass", async () => {
+  it("check 5 — requireRecipe: thiếu recipe_set_ref → fail; có (ref text legacy) → pass", async () => {
     let r = await checkLineReadiness(7, { requireRecipe: true });
     expect(check(r, "recipe_loaded").passed).toBe(false);
     expect(r.ready).toBe(false);
 
+    // Ref text legacy — verifyRecipeSetRef trả {found:false} → hành vi cũ giữ nguyên.
     h.stateRow = { recipeSetRef: "MODEL-X@v3" };
     r = await checkLineReadiness(7, { requireRecipe: true });
     const c = check(r, "recipe_loaded");
     expect(c.passed).toBe(true);
     expect(c.detail).toContain("MODEL-X@v3");
+  });
+
+  it("check 5 — W3-B1: ref có recipe_sets record → VERIFY THẬT: đủ máy required đúng phiên bản → pass", async () => {
+    h.stateRow = { recipeSetRef: "MODEL-X@v3" };
+    h.recipeVerify = { found: true, ok: true, requiredCount: 3, missing: [] };
+    const r = await checkLineReadiness(7); // KHÔNG cần requireRecipe — tuyến đã nhận set
+    const c = check(r, "recipe_loaded");
+    expect(c.passed).toBe(true);
+    expect(c.skipped).toBeUndefined();
+    expect(c.detail).toContain("3 máy required");
+    expect(vi.mocked(verifyRecipeSetRef)).toHaveBeenCalledWith("MODEL-X@v3");
+  });
+
+  it("check 5 — W3-B1: máy required sai phiên bản → FAIL kèm máy + lý do (không chỉ check text tồn tại)", async () => {
+    h.stateRow = { recipeSetRef: "MODEL-X@v3" };
+    h.recipeVerify = {
+      found: true,
+      ok: false,
+      requiredCount: 2,
+      missing: [
+        { machineId: 5, machineCode: "M-5", recipeCode: "SCREW-01", expectedVersion: 3, reason: "active v2 ≠ phiên bản khóa v3" },
+      ],
+    };
+    // requireRecipe=true trước đây pass vì "text có mặt" — giờ verify thật → FAIL.
+    const r = await checkLineReadiness(7, { requireRecipe: true });
+    const c = check(r, "recipe_loaded");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toContain("M-5");
+    expect(c.detail).toContain("v2");
+    expect(r.ready).toBe(false);
+  });
+
+  it("check 5 — ref legacy + requireRecipe=false → skipped honest (hành vi cũ)", async () => {
+    h.stateRow = { recipeSetRef: "OLD-TEXT@v1" };
+    const r = await checkLineReadiness(7);
+    expect(check(r, "recipe_loaded")).toMatchObject({ passed: true, skipped: true });
   });
 });
 

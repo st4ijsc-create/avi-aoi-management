@@ -71,8 +71,18 @@ vi.mock("./lineStateRepo", () => {
         triggeredBy: p.triggeredBy,
         correlationId: p.correlationId,
         policyRef: p.policyRef,
+        metadata: p.metadata ?? null,
         ts: new Date(),
       });
+      return { ...row };
+    }),
+    updateLineContext: vi.fn(async (lineId: number, patch: any) => {
+      if (!h.db.states.has(lineId)) h.db.states.set(lineId, mkRow(lineId));
+      const row = h.db.states.get(lineId);
+      if (patch.recipeSetRef !== undefined) row.recipeSetRef = patch.recipeSetRef;
+      if (patch.activeOrderId !== undefined) row.activeOrderId = patch.activeOrderId;
+      if (patch.taktTargetS !== undefined) row.taktTargetS = patch.taktTargetS;
+      row.updatedAt = new Date();
       return { ...row };
     }),
     appendDeniedAudit: vi.fn(async (p: any) => {
@@ -99,8 +109,8 @@ vi.mock("./lineStateRepo", () => {
           state: r?.state ?? "idle",
           heldReason: r?.heldReason ?? null,
           recipeSetRef: r?.recipeSetRef ?? null,
-          activeOrderId: null,
-          taktTargetS: null,
+          activeOrderId: r?.activeOrderId ?? null,
+          taktTargetS: r?.taktTargetS ?? null,
           enteredAt: null,
           updatedAt: null,
         };
@@ -161,6 +171,8 @@ import {
   startLineController,
   stopLineController,
   getLineControllerStatus,
+  attachOrderToLine,
+  detachOrder,
   _resetLineControllerForTests,
 } from "./lineControllerService";
 import { LINE_STATES, LINE_STATE_TRANSITIONS, type LineControllerState } from "../../../drizzle/schema";
@@ -583,5 +595,208 @@ describe("sweep — quan sát nhịp + auto-fault", () => {
     const ev = getLineControllerStatus().recentEvents.find((e) => e.kind === "bottleneck_change");
     expect(ev?.detail).toContain("5");
     expect(ev?.detail).toContain("7");
+  });
+});
+
+// ═══ W3-B1 (G3.2) — autohold / auto-resume (gated cờ + policy) ═══════════════
+
+const BLOCKED_DWELL = [{ stationId: 9, avgDwellMs: 200_000, avgStarvedMs: 0, avgBlockedMs: 200_000, samples: 12 }];
+
+function seedProducingBlocked(id = 1) {
+  seedLine(id, "producing");
+  h.db.machinesByLine.set(id, [{ id: 6, code: "M-6", operationStatus: "running", lifecycleStatus: "active" }]);
+  h.dwell = BLOCKED_DWELL;
+}
+
+describe("autohold — blocking kéo dài → producing→held (LINE_CONTROLLER_AUTOHOLD_ENABLED)", () => {
+  it("cờ OFF (default) → observe+warn như cũ: Andon có, KHÔNG transition", async () => {
+    seedProducingBlocked();
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.stallAlerts).toBe(1);
+    expect(stats.autoholds).toBe(0);
+    expect(h.db.states.get(1).state).toBe("producing"); // KHÔNG tự giữ
+  });
+
+  it("cờ ON + policy PERMIT → held với held_reason='auto:blocking', actor 'system:autohold', event + Andon", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    seedProducingBlocked();
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.autoholds).toBe(1);
+    expect(h.db.states.get(1).state).toBe("held");
+    expect(h.db.states.get(1).heldReason).toBe("auto:blocking");
+    // Policy pre-check tường minh với context {auto:true, cause:'blocking'}.
+    expect(vi.mocked(evaluateCommandPolicy)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "line.command.hold", lineId: 1, auto: true, cause: "blocking" }),
+    );
+    // Audit transition ghi actor system:autohold.
+    const row = h.db.transitions.at(-1);
+    expect(row).toMatchObject({ fromState: "producing", toState: "held", triggeredBy: "system:autohold" });
+    // Event + Andon cho HÀNH ĐỘNG tự giữ.
+    expect(getLineControllerStatus().recentEvents.some((e) => e.kind === "autohold")).toBe(true);
+    expect(vi.mocked(routeAlert).mock.calls.some(([a]) => String((a as any).message).includes("AUTOHOLD"))).toBe(true);
+  });
+
+  it("cờ ON + policy DENY (line.command.hold auto) → observe-only, KHÔNG transition", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    h.policy = { allow: false, effect: "deny", reason: "cấm hành vi tự động", policyId: "pol-no-auto" };
+    seedProducingBlocked();
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.autoholds).toBe(0);
+    expect(h.db.states.get(1).state).toBe("producing");
+  });
+});
+
+describe("auto-resume — held bởi auto:* + hết blocking N chu kỳ liên tiếp", () => {
+  function seedAutoHeld(id = 1) {
+    seedLine(id, "held");
+    h.db.states.get(id).heldReason = "auto:blocking";
+    h.dwell = []; // hết blocking
+  }
+
+  it("resume sau đúng N chu kỳ sạch (N=2): chu kỳ 1 giữ held, chu kỳ 2 → producing (actor system:autohold)", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    vi.stubEnv("LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS", "2");
+    seedAutoHeld();
+
+    const s1 = await runLineControllerSweepOnce();
+    expect(s1.autoResumes).toBe(0);
+    expect(h.db.states.get(1).state).toBe("held"); // streak 1/2
+
+    const s2 = await runLineControllerSweepOnce();
+    expect(s2.autoResumes).toBe(1);
+    expect(h.db.states.get(1).state).toBe("producing");
+    expect(h.db.states.get(1).heldReason).toBeNull(); // rời held xóa reason
+    const row = h.db.transitions.at(-1);
+    expect(row).toMatchObject({ fromState: "held", toState: "producing", triggeredBy: "system:autohold" });
+    expect(vi.mocked(evaluateCommandPolicy)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "line.command.resume", auto: true, cause: "blocking_cleared" }),
+    );
+    expect(getLineControllerStatus().recentEvents.some((e) => e.kind === "auto_resume")).toBe(true);
+  });
+
+  it("còn blocking giữa chừng → reset streak (không resume non)", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    vi.stubEnv("LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS", "2");
+    seedAutoHeld();
+
+    await runLineControllerSweepOnce(); // sạch — streak 1
+    h.dwell = BLOCKED_DWELL;
+    await runLineControllerSweepOnce(); // còn blocking — streak reset 0
+    h.dwell = [];
+    const s3 = await runLineControllerSweepOnce(); // sạch — streak 1 (chưa đủ 2)
+    expect(s3.autoResumes).toBe(0);
+    expect(h.db.states.get(1).state).toBe("held");
+  });
+
+  it("held bởi NGƯỜI (reason không phải auto:*) → máy KHÔNG BAO GIỜ tự thả", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    vi.stubEnv("LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS", "1");
+    seedLine(1, "held");
+    h.db.states.get(1).heldReason = "quality gate — chờ QA";
+    h.dwell = [];
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.autoResumes).toBe(0);
+    expect(h.db.states.get(1).state).toBe("held");
+  });
+
+  it("cờ OFF → held auto:* cũng không tự thả", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS", "1");
+    seedAutoHeld();
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.autoResumes).toBe(0);
+    expect(h.db.states.get(1).state).toBe("held");
+  });
+
+  it("policy DENY resume → tuyến giữ held", async () => {
+    vi.stubEnv("LINE_CONTROLLER_AUTOHOLD_ENABLED", "true");
+    vi.stubEnv("LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS", "1");
+    h.policy = { allow: false, effect: "deny", reason: "cấm auto", policyId: "pol-no-auto" };
+    seedAutoHeld();
+    const stats = await runLineControllerSweepOnce();
+    expect(stats.autoResumes).toBe(0);
+    expect(h.db.states.get(1).state).toBe("held");
+  });
+});
+
+// ═══ W3-B1 — attachOrderToLine / detachOrder (ngữ cảnh đơn hàng) ══════════════
+
+describe("attachOrderToLine / detachOrder — context update, KHÔNG phải transition", () => {
+  it("attach: set active_order_id (+takt), KHÔNG đổi state, KHÔNG audit transition row", async () => {
+    seedLine(1, "ready");
+    const before = h.db.transitions.length;
+    const res = await attachOrderToLine(1, 555, 42);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.state.activeOrderId).toBe(555);
+      expect(res.state.taktTargetS).toBe(42);
+    }
+    expect(h.db.states.get(1).state).toBe("ready"); // state giữ nguyên
+    expect(h.db.transitions.length).toBe(before); // không audit transition
+  });
+
+  it("attach không truyền takt → giữ takt hiện có; detach xóa order, GIỮ takt", async () => {
+    seedLine(2, "producing");
+    h.db.states.get(2).taktTargetS = 30;
+    const res = await attachOrderToLine(2, 777);
+    expect(res.ok && res.state.taktTargetS).toBe(30);
+
+    const det = await detachOrder(2);
+    expect(det.ok).toBe(true);
+    if (det.ok) {
+      expect(det.state.activeOrderId).toBeNull();
+      expect(det.state.taktTargetS).toBe(30);
+    }
+  });
+
+  it("tuyến không tồn tại → LINE_NOT_FOUND; mất DB → DB_UNAVAILABLE", async () => {
+    const nf = await attachOrderToLine(404, 1);
+    expect(!nf.ok && nf.code).toBe("LINE_NOT_FOUND");
+    h.db.available = false;
+    seedLine(1);
+    const noDb = await detachOrder(1);
+    expect(!noDb.ok && noDb.code).toBe("DB_UNAVAILABLE");
+  });
+
+  it("attach publish UNS `_line/state` (cờ on) với active_order_id", async () => {
+    vi.stubEnv("UNS_TOPIC_V2_ENABLED", "true");
+    seedLine(3, "producing");
+    await attachOrderToLine(3, 888);
+    expect(vi.mocked(publishUnsV2)).toHaveBeenCalledTimes(1);
+    const [, payload] = vi.mocked(publishUnsV2).mock.calls[0];
+    expect((payload as any).values.active_order_id).toBe(888);
+  });
+});
+
+// ═══ W3-B1 (G3.3) — genealogy metadata trên transition ════════════════════════
+
+describe("genealogy v1 — transition dính producing + có order → metadata {orderId, recipeSetRef}", () => {
+  it("ready→producing khi tuyến có active_order_id + recipe_set_ref → audit row mang metadata", async () => {
+    seedLine(1, "ready");
+    h.db.states.get(1).activeOrderId = 555;
+    h.db.states.get(1).recipeSetRef = "MODEL-X@v3";
+    await transitionLine(1, "producing");
+    expect(h.db.transitions.at(-1).metadata).toEqual({ orderId: 555, recipeSetRef: "MODEL-X@v3" });
+  });
+
+  it("producing→held / producing→completing cũng mang metadata (rời pha producing)", async () => {
+    seedLine(1, "producing");
+    h.db.states.get(1).activeOrderId = 555;
+    h.db.states.get(1).recipeSetRef = "MODEL-X@v3";
+    await transitionLine(1, "held", { heldReason: "thiếu vật tư" });
+    expect(h.db.transitions.at(-1).metadata).toEqual({ orderId: 555, recipeSetRef: "MODEL-X@v3" });
+    await transitionLine(1, "producing");
+    await transitionLine(1, "completing");
+    expect(h.db.transitions.at(-1).metadata).toEqual({ orderId: 555, recipeSetRef: "MODEL-X@v3" });
+  });
+
+  it("không có order → metadata null; transition không dính producing → metadata null", async () => {
+    seedLine(1, "ready");
+    await transitionLine(1, "producing"); // không order
+    expect(h.db.transitions.at(-1).metadata).toBeNull();
+
+    seedLine(2, "idle");
+    h.db.states.get(2).activeOrderId = 9;
+    await transitionLine(2, "ready"); // idle→ready — không dính producing
+    expect(h.db.transitions.at(-1).metadata).toBeNull();
   });
 });

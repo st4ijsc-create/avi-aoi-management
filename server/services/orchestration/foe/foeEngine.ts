@@ -674,6 +674,44 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     return { kind: "failed", error: `Command "${step.command}" not supported by machine ${step.machineId}.` };
   }
   const idempotencyKey = `run${rc.runId}-${step.id}-a${attempt}`;
+
+  // W3-B2 (doc 44 G3.14) — "MỘT CỬA": mọi bước lệnh FOE qua policy seam TRƯỚC khi tạo
+  // ủy quyền/dispatch. SEC_PLATFORM OFF (mặc định) → bỏ qua hoàn toàn (hành vi cũ).
+  // DENY → bước FAIL với lý do honest và đi vào flow tự nhiên của engine (retry-budget
+  // → compensation qua execStep) — KHÔNG BAO GIỜ throw sập run-loop (runStepBody đã bọc
+  // try/catch, và ta return outcome chứ không throw). require_approval → FOE không có
+  // kênh phê duyệt per-step ngoài hitl_gate khai báo trong workflow ⇒ reject honest
+  // POLICY_APPROVAL_REQUIRED (tác giả workflow thêm hitl_gate TRƯỚC bước lệnh nếu muốn).
+  {
+    const { evaluateActionPolicy, secPlatformEnabled } = await import("../../security/policyGate");
+    if (secPlatformEnabled()) {
+      const verdict = evaluateActionPolicy(
+        `foe-run:${rc.runId}`,
+        `foe.command.${step.command}`,
+        `machine:${step.machineId}`,
+        {
+          runId: rc.runId,
+          workflowRef: rc.def.ref,
+          stepId: step.id,
+          stepType: step.type,
+          command: step.command,
+          machineId: step.machineId,
+          role: rc.user.role,
+          startedBy: rc.user.id,
+          attempt,
+        },
+        { requestId: idempotencyKey },
+      );
+      if (!verdict.allow) {
+        const code = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+        return {
+          kind: "failed",
+          error: `${code}: ${verdict.reason}${verdict.policyId ? ` (policy ${verdict.policyId})` : ""}`,
+        };
+      }
+    }
+  }
+
   // Doc 25 T1 — tạo ủy quyền ai_pending_actions confirmed THẬT trước khi dispatch để
   // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
   // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.

@@ -17,11 +17,21 @@
  *   • correlationId từ ALS backbone (observability/correlation) khi không truyền.
  *   • Readiness checklist v1 (lineReadiness.ts) BẮT BUỘC cho mọi transition VÀO
  *     'ready' — không đạt → giữ nguyên trạng thái + trả checks.
- *   • Vòng QUAN SÁT nhịp (spec Chương 5 — v1 observe + cảnh báo, KHÔNG tự điều
- *     tiết; hành động giữ/thả tự động = W3-B): sweep interval đọc lineBalance
- *     analytics → blocking/starving kéo dài → event + Andon (routeAlert);
- *     bottleneck đổi → event; máy fault khi line producing → auto transition
- *     'fault' (qua đúng transitionLine, actor 'system').
+ *   • Vòng QUAN SÁT nhịp (spec Chương 5 — mặc định observe + cảnh báo): sweep
+ *     interval đọc lineBalance analytics → blocking/starving kéo dài → event +
+ *     Andon (routeAlert); bottleneck đổi → event; máy fault khi line producing
+ *     → auto transition 'fault' (qua đúng transitionLine, actor 'system').
+ *   • W3-B1 (G3.2) — ĐIỀU TIẾT NHỊP MỨC-1 an toàn, gated cờ
+ *     LINE_CONTROLLER_AUTOHOLD_ENABLED (default OFF = observe+warn như cũ):
+ *     blocking kéo dài + policy PERMIT (`line.command.hold` context
+ *     {auto:true, cause:'blocking'}) → tự producing→held (held_reason
+ *     'auto:blocking', actor 'system:autohold') + Andon; held bởi auto:* mà
+ *     HẾT blocking N chu kỳ sweep LIÊN TIẾP (LINE_CONTROLLER_AUTORESUME_
+ *     CLEAR_SWEEPS, mặc định 3) → auto-resume (cũng qua policy).
+ *   • W3-B1 (G3.3 genealogy v1): transition dính pha producing khi tuyến có
+ *     active_order_id → audit row mang metadata {orderId, recipeSetRef}.
+ *   • attachOrderToLine / detachOrder — Orchestration nạp/gỡ ngữ cảnh đơn hàng
+ *     (active_order_id + takt) — context update, KHÔNG phải transition FSM.
  *
  * Cờ (đều default OFF/safe):
  *   LINE_CONTROLLER_ENABLED            "true" → bật sweep scheduler (OFF mặc định)
@@ -29,6 +39,8 @@
  *   LINE_CONTROLLER_STALL_MS           ngưỡng avg blocked/starved (mặc định 120000)
  *   LINE_CONTROLLER_DWELL_WINDOW_MS    cửa sổ dwell analytics (mặc định 900000)
  *   LINE_CONTROLLER_ALERT_COOLDOWN_MS  cooldown Andon per line+kind (mặc định 600000)
+ *   LINE_CONTROLLER_AUTOHOLD_ENABLED   "true" → autohold/auto-resume (OFF mặc định)
+ *   LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS  số chu kỳ sạch liên tiếp trước resume (3)
  *   LINE_READINESS_CACHE_MS            TTL cache readiness (lineReadiness, 30000)
  * ════════════════════════════════════════════════════════════════════════════
  */
@@ -75,6 +87,20 @@ function dwellWindowMs(): number {
 function alertCooldownMs(): number {
   const n = Number(process.env.LINE_CONTROLLER_ALERT_COOLDOWN_MS);
   return Number.isFinite(n) && n >= 0 ? n : 10 * 60 * 1000;
+}
+
+/** W3-B1 (G3.2) — autohold/auto-resume bật? Default OFF = observe+warn như cũ. */
+export function isAutoholdEnabled(): boolean {
+  return (
+    process.env.LINE_CONTROLLER_AUTOHOLD_ENABLED === "true" ||
+    process.env.LINE_CONTROLLER_AUTOHOLD_ENABLED === "1"
+  );
+}
+
+/** Số chu kỳ sweep SẠCH (không blocking) liên tiếp trước khi auto-resume. */
+function autoResumeClearSweeps(): number {
+  const n = Number(process.env.LINE_CONTROLLER_AUTORESUME_CLEAR_SWEEPS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
 }
 
 // ─── Transition API ───────────────────────────────────────────────────────────
@@ -247,6 +273,18 @@ export async function transitionLine(
     };
   }
 
+  // (d') Genealogy v1 (W3-B1 §6.3): transition dính pha SẢN XUẤT (from/to =
+  //      producing) khi tuyến có đơn hàng → audit row mang {orderId,
+  //      recipeSetRef} — truy vết lô ↔ recipe ↔ line qua sổ transition.
+  const orderIdForAudit = opts.activeOrderId !== undefined ? opts.activeOrderId : current.activeOrderId;
+  const genealogyMeta =
+    (from === "producing" || target === "producing") && orderIdForAudit != null
+      ? {
+          orderId: orderIdForAudit,
+          recipeSetRef: (opts.recipeSetRef !== undefined ? opts.recipeSetRef : current.recipeSetRef) ?? null,
+        }
+      : null;
+
   // (d) Persist transaction — race-guard: WHERE state=from.
   const updated = await repo.applyTransition({
     lineId,
@@ -257,6 +295,7 @@ export async function transitionLine(
     correlationId,
     policyRef: decision.policyId,
     heldReason: opts.heldReason ?? undefined,
+    metadata: genealogyMeta,
     ...(opts.recipeSetRef !== undefined ? { recipeSetRef: opts.recipeSetRef } : {}),
     ...(opts.activeOrderId !== undefined ? { activeOrderId: opts.activeOrderId } : {}),
     ...(opts.taktTargetS !== undefined ? { taktTargetS: opts.taktTargetS } : {}),
@@ -595,12 +634,82 @@ export async function listLinesWithState(): Promise<repo.LineWithState[]> {
   return repo.listLinesWithState();
 }
 
+// ─── Ngữ cảnh đơn hàng (W3-B1 / G3.2 — Orchestration nạp, spec §4.2) ─────────
+
+export type OrderContextResult =
+  | { ok: true; lineId: number; state: LineStateRow }
+  | { ok: false; code: "DB_UNAVAILABLE" | "LINE_NOT_FOUND"; message: string };
+
+/**
+ * Nạp ngữ cảnh đơn hàng vào tuyến (active_order_id + takt mục tiêu) khi order
+ * lifecycle → running. CONTEXT UPDATE — không phải transition FSM (state giữ
+ * nguyên, không audit transition row); genealogy v1 lấy orderId này gắn vào
+ * MỌI transition dính pha producing về sau. Caller: orderLifecycleService
+ * (wire ở batch cha — hàm export sẵn tại đây, xem báo cáo W3-B1).
+ */
+export async function attachOrderToLine(
+  lineId: number,
+  orderId: number,
+  taktTargetS?: number | null,
+): Promise<OrderContextResult> {
+  if (!(await repo.isDbAvailable())) {
+    return { ok: false, code: "DB_UNAVAILABLE", message: "Không có kết nối DB — ngữ cảnh tuyến cần trạng thái bền." };
+  }
+  const line = await repo.getLineRow(lineId);
+  if (!line) {
+    return { ok: false, code: "LINE_NOT_FOUND", message: `Không tìm thấy production line id=${lineId}.` };
+  }
+  const updated = await repo.updateLineContext(lineId, {
+    activeOrderId: orderId,
+    ...(taktTargetS !== undefined ? { taktTargetS } : {}),
+  });
+  if (!updated) {
+    return { ok: false, code: "DB_UNAVAILABLE", message: "Không cập nhật được line_states (DB unavailable)." };
+  }
+  console.log(
+    `[LineController] line ${lineId} (${line.code}): attach order ${orderId}` +
+      (taktTargetS != null ? ` (takt ${taktTargetS}s)` : ""),
+  );
+  try {
+    await publishLineStateDelta(lineId, updated, getCorrelationId() ?? null);
+  } catch (err) {
+    console.error(`[LineController] line ${lineId} context publish failed:`, (err as Error)?.message ?? err);
+  }
+  return { ok: true, lineId, state: updated };
+}
+
+/**
+ * Gỡ ngữ cảnh đơn hàng (order → done/failed/rejected hoặc compensation).
+ * Xóa active_order_id; takt mục tiêu GIỮ NGUYÊN (thuộc tính tuyến/sản phẩm —
+ * caller muốn xóa thì attach lại với taktTargetS=null).
+ */
+export async function detachOrder(lineId: number): Promise<OrderContextResult> {
+  if (!(await repo.isDbAvailable())) {
+    return { ok: false, code: "DB_UNAVAILABLE", message: "Không có kết nối DB — ngữ cảnh tuyến cần trạng thái bền." };
+  }
+  const line = await repo.getLineRow(lineId);
+  if (!line) {
+    return { ok: false, code: "LINE_NOT_FOUND", message: `Không tìm thấy production line id=${lineId}.` };
+  }
+  const updated = await repo.updateLineContext(lineId, { activeOrderId: null });
+  if (!updated) {
+    return { ok: false, code: "DB_UNAVAILABLE", message: "Không cập nhật được line_states (DB unavailable)." };
+  }
+  console.log(`[LineController] line ${lineId} (${line.code}): detach order`);
+  try {
+    await publishLineStateDelta(lineId, updated, getCorrelationId() ?? null);
+  } catch (err) {
+    console.error(`[LineController] line ${lineId} context publish failed:`, (err as Error)?.message ?? err);
+  }
+  return { ok: true, lineId, state: updated };
+}
+
 // ─── Vòng quan sát nhịp (sweep — spec Chương 5, v1 observe-only) ──────────────
 
 export interface LineControllerEvent {
   ts: string;
   lineId: number;
-  kind: "machine_fault" | "blocking" | "starving" | "bottleneck_change";
+  kind: "machine_fault" | "blocking" | "starving" | "bottleneck_change" | "autohold" | "auto_resume";
   detail: string;
 }
 
@@ -610,6 +719,10 @@ export interface SweepStats {
   faultTransitions: number;
   stallAlerts: number;
   bottleneckChanges: number;
+  /** W3-B1 (G3.2): producing→held tự động do blocking (gated cờ + policy). */
+  autoholds: number;
+  /** W3-B1 (G3.2): held(auto:*)→producing tự động khi hết blocking N chu kỳ. */
+  autoResumes: number;
   errors: number;
   ms: number;
 }
@@ -625,6 +738,8 @@ const MAX_EVENTS = 100;
 const lastBottleneck = new Map<number, number | null>();
 /** `${lineId}:${kind}` → epoch-ms lần Andon gần nhất (cooldown). */
 const lastAlertAt = new Map<string, number>();
+/** W3-B1 (G3.2): lineId (held bởi auto:*) → số chu kỳ sweep SẠCH liên tiếp. */
+const autoResumeClearStreak = new Map<number, number>();
 
 function recordEvent(ev: LineControllerEvent): void {
   recentEvents.push(ev);
@@ -659,11 +774,121 @@ async function maybeAndonAlert(
 }
 
 /**
+ * W3-B1 (G3.2) — autohold: blocking kéo dài trên tuyến producing → tự giữ.
+ * HAI cổng: (1) policy pre-check tường minh `line.command.hold` với context
+ * {auto:true, cause:'blocking'} (chính sách có thể cấm RIÊNG hành vi tự động
+ * mà vẫn cho người hold); (2) transitionLine producing→held (policy
+ * line.command.held + audit + publish như mọi transition). Không PERMIT →
+ * giữ observe-only (log, không đổi trạng thái).
+ */
+async function maybeAutoHold(line: repo.LineWithState, detail: string, stats: SweepStats): Promise<boolean> {
+  const pre = evaluateCommandPolicy({
+    action: "line.command.hold",
+    lineId: line.lineId,
+    lineCode: line.code,
+    actor: "system:autohold",
+    auto: true,
+    cause: "blocking",
+  });
+  if (!pre.allow) {
+    console.warn(
+      `[LineController] autohold line ${line.lineId} bị policy chặn (${pre.effect}): ${pre.reason} — giữ observe-only.`,
+    );
+    return false;
+  }
+  const res = await transitionLine(line.lineId, "held", {
+    actor: "system:autohold",
+    heldReason: "auto:blocking",
+    reason: `auto (sweep): blocking kéo dài — ${detail}`,
+  });
+  if (!res.ok) {
+    console.error(`[LineController] autohold line ${line.lineId} không transition được (${res.code}): ${res.message}`);
+    return false;
+  }
+  stats.autoholds += 1;
+  autoResumeClearStreak.set(line.lineId, 0);
+  recordEvent({
+    ts: new Date().toISOString(),
+    lineId: line.lineId,
+    kind: "autohold",
+    detail: `producing → held (auto:blocking): ${detail}`,
+  });
+  // Andon cho HÀNH ĐỘNG tự giữ (khác warn blocking — không cooldown: transition
+  // chỉ xảy ra một lần vì tuyến đã rời producing).
+  try {
+    const { routeAlert } = await import("../aiSmartAlertRouter");
+    await routeAlert({
+      type: "PATTERN_ANOMALY",
+      severity: "HIGH",
+      message: `[Line Controller] AUTOHOLD tuyến ${line.lineId} (${line.code}): blocking kéo dài → tự giữ (held_reason=auto:blocking). ${detail}`,
+      data: { source: "lineControllerService", lineId: line.lineId, kind: "autohold", detail },
+    });
+  } catch (err) {
+    console.error("[LineController] autohold Andon routeAlert failed:", (err as Error)?.message ?? err);
+  }
+  return true;
+}
+
+/**
+ * W3-B1 (G3.2) — auto-resume: tuyến held bởi auto:* mà HẾT blocking (không
+ * trạm nào vượt ngưỡng) trong N chu kỳ sweep LIÊN TIẾP → resume qua policy
+ * (`line.command.resume` context {auto:true}). Còn blocking → reset streak.
+ */
+async function maybeAutoResume(line: repo.LineWithState, now: Date, stats: SweepStats): Promise<void> {
+  const dwell = await getStationDwellAgg(line.lineId, new Date(now.getTime() - dwellWindowMs()));
+  const threshold = stallThresholdMs();
+  const stillBlocked = dwell.filter((d) => d.avgBlockedMs >= threshold);
+  if (stillBlocked.length > 0) {
+    autoResumeClearStreak.set(line.lineId, 0);
+    return;
+  }
+  const streak = (autoResumeClearStreak.get(line.lineId) ?? 0) + 1;
+  autoResumeClearStreak.set(line.lineId, streak);
+  const needed = autoResumeClearSweeps();
+  if (streak < needed) return;
+
+  const pre = evaluateCommandPolicy({
+    action: "line.command.resume",
+    lineId: line.lineId,
+    lineCode: line.code,
+    actor: "system:autohold",
+    auto: true,
+    cause: "blocking_cleared",
+  });
+  if (!pre.allow) {
+    console.warn(
+      `[LineController] auto-resume line ${line.lineId} bị policy chặn (${pre.effect}): ${pre.reason} — tuyến giữ nguyên held.`,
+    );
+    return;
+  }
+  const res = await transitionLine(line.lineId, "producing", {
+    actor: "system:autohold",
+    reason: `auto (sweep): hết blocking ${streak}/${needed} chu kỳ liên tiếp — tự thả (held bởi '${line.heldReason}')`,
+  });
+  if (!res.ok) {
+    console.error(`[LineController] auto-resume line ${line.lineId} không transition được (${res.code}): ${res.message}`);
+    return;
+  }
+  stats.autoResumes += 1;
+  autoResumeClearStreak.delete(line.lineId);
+  recordEvent({
+    ts: new Date().toISOString(),
+    lineId: line.lineId,
+    kind: "auto_resume",
+    detail: `held → producing (hết blocking ${streak}/${needed} chu kỳ sweep liên tiếp)`,
+  });
+}
+
+/**
  * MỘT lượt quan sát (exported cho tests / on-demand; KHÔNG gate cờ ở đây):
  *   • line 'producing' có máy operationStatus='error' → auto transition 'fault'
  *     (qua transitionLine, actor 'system' — đủ policy + audit + publish).
  *   • blocking/starving kéo dài (avg dwell vượt ngưỡng trong cửa sổ) → event +
- *     Andon (cooldown). QUAN SÁT + CẢNH BÁO — không tự giữ/thả (W3-B).
+ *     Andon (cooldown). Mặc định QUAN SÁT + CẢNH BÁO; khi
+ *     LINE_CONTROLLER_AUTOHOLD_ENABLED bật → blocking còn kích autohold
+ *     producing→held (qua policy pre-check `line.command.hold` {auto:true}).
+ *   • line 'held' bởi auto:* (cờ bật) → xét auto-resume khi hết blocking N
+ *     chu kỳ sweep liên tiếp (qua policy `line.command.resume` {auto:true}).
  *   • bottleneck đổi (line_balance_metrics) → event.
  * Mỗi tuyến isolated try/catch — một tuyến lỗi không chặn các tuyến khác.
  */
@@ -675,6 +900,8 @@ export async function runLineControllerSweepOnce(now: Date = new Date()): Promis
     faultTransitions: 0,
     stallAlerts: 0,
     bottleneckChanges: 0,
+    autoholds: 0,
+    autoResumes: 0,
     errors: 0,
     ms: 0,
   };
@@ -682,8 +909,22 @@ export async function runLineControllerSweepOnce(now: Date = new Date()): Promis
     const lines = await repo.listLinesWithState();
     stats.lines = lines.length;
     for (const line of lines) {
+      // W3-B1 (G3.2): tuyến held BỞI autohold (reason auto:*) → xét auto-resume.
+      // Held bởi NGƯỜI (reason khác) không bao giờ bị máy tự thả.
+      if (line.state === "held") {
+        if (isAutoholdEnabled() && (line.heldReason ?? "").startsWith("auto:")) {
+          try {
+            await maybeAutoResume(line, now, stats);
+          } catch (err) {
+            stats.errors += 1;
+            console.error(`[LineController] auto-resume line ${line.lineId} failed:`, (err as Error)?.message ?? err);
+          }
+        }
+        continue;
+      }
       if (line.state !== "producing") continue;
       stats.producing += 1;
+      autoResumeClearStreak.delete(line.lineId); // đang producing — streak vô nghĩa
       try {
         // 1) Máy fault khi tuyến đang producing → auto FAULT (spec §4.1 "*→fault").
         const lineMachines = await repo.getLineMachines(line.lineId);
@@ -711,18 +952,20 @@ export async function runLineControllerSweepOnce(now: Date = new Date()): Promis
           continue; // tuyến đã fault — bỏ qua quan sát nhịp lượt này
         }
 
-        // 2) Blocking/starving kéo dài (dwell analytics — quan sát, không điều tiết).
+        // 2) Blocking/starving kéo dài (dwell analytics). Mặc định quan sát;
+        //    W3-B1: blocking + cờ autohold bật → điều tiết mức-1 (giữ tuyến).
         const dwell = await getStationDwellAgg(line.lineId, new Date(now.getTime() - dwellWindowMs()));
         const threshold = stallThresholdMs();
         const blocked = dwell.filter((d) => d.avgBlockedMs >= threshold);
         const starved = dwell.filter((d) => d.avgStarvedMs >= threshold);
         if (blocked.length > 0) {
-          const fired = await maybeAndonAlert(
-            line.lineId,
-            "blocking",
-            `trạm ${blocked.map((d) => `${d.stationId} (avg blocked ${d.avgBlockedMs}ms)`).join("; ")} vượt ngưỡng ${threshold}ms`,
-          );
+          const detail = `trạm ${blocked.map((d) => `${d.stationId} (avg blocked ${d.avgBlockedMs}ms)`).join("; ")} vượt ngưỡng ${threshold}ms`;
+          const fired = await maybeAndonAlert(line.lineId, "blocking", detail);
           if (fired) stats.stallAlerts += 1;
+          if (isAutoholdEnabled()) {
+            const heldNow = await maybeAutoHold(line, detail, stats);
+            if (heldNow) continue; // tuyến đã held — bỏ qua quan sát còn lại lượt này
+          }
         }
         if (starved.length > 0) {
           const fired = await maybeAndonAlert(
@@ -799,10 +1042,18 @@ export async function startLineController(): Promise<void> {
     sweepRunning = true;
     runLineControllerSweepOnce()
       .then((s) => {
-        if (s.faultTransitions > 0 || s.stallAlerts > 0 || s.bottleneckChanges > 0 || s.errors > 0) {
+        if (
+          s.faultTransitions > 0 ||
+          s.stallAlerts > 0 ||
+          s.bottleneckChanges > 0 ||
+          s.autoholds > 0 ||
+          s.autoResumes > 0 ||
+          s.errors > 0
+        ) {
           console.log(
             `[LineController] sweep: lines=${s.lines} producing=${s.producing} faults=${s.faultTransitions} ` +
-              `stallAlerts=${s.stallAlerts} bottleneckChanges=${s.bottleneckChanges} err=${s.errors} in ${s.ms}ms`,
+              `stallAlerts=${s.stallAlerts} bottleneckChanges=${s.bottleneckChanges} ` +
+              `autoholds=${s.autoholds} autoResumes=${s.autoResumes} err=${s.errors} in ${s.ms}ms`,
           );
         }
       })
@@ -831,6 +1082,8 @@ export function getLineControllerStatus() {
     stallThresholdMs: stallThresholdMs(),
     dwellWindowMs: dwellWindowMs(),
     alertCooldownMs: alertCooldownMs(),
+    autoholdEnabled: isAutoholdEnabled(),
+    autoResumeClearSweeps: autoResumeClearSweeps(),
     running: !!sweepTimer,
     lastSweepAt,
     lastSweepStats,
@@ -847,4 +1100,5 @@ export function _resetLineControllerForTests(): void {
   recentEvents.length = 0;
   lastBottleneck.clear();
   lastAlertAt.clear();
+  autoResumeClearStreak.clear();
 }

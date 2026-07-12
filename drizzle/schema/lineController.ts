@@ -8,19 +8,30 @@
 //     │        │           └──(sự cố)──▶ FAULT ──▶ (khắc phục + xác nhận) READY
 //     └────────┴──(đổi sản phẩm)──▶ CHANGEOVER ──▶ READY
 //
-// Hai bảng:
+// Bốn bảng:
 //   line_states            — trạng thái HIỆN TẠI mỗi tuyến (1 row / line, FSM bền
 //                            qua restart — spec §7 "trạng thái bền vững").
 //   line_state_transitions — sổ append-only mọi lần chuyển (và mọi lần bị policy
 //                            DENY, đánh dấu rõ trong reason) — audit spec §19.3.
+//                            metadata (W3-B1 §6.3): {orderId, recipeSetRef} khi
+//                            transition dính pha producing — truy vết lô↔recipe↔line.
+//   recipe_sets            — RecipeSet cấp tuyến (W3-B1 / spec §6.1 + §12.3):
+//                            "MODEL-X@v3" — một bộ recipe THEO SẢN PHẨM, khóa
+//                            (locked) suốt lô để nhất quán & truy xuất.
+//   recipe_set_items       — item của set: máy nào nạp recipe VERSION nào.
+//                            machine_recipe_id trỏ thẳng machineRecipes (ot.ts) —
+//                            KHÔNG nhân đôi payload; deploy đi đường
+//                            recipe_deployments sẵn có (db/machineRecipe.ts).
 //
 // Repo convention (see hierarchy.ts MACHINE_LIFECYCLE_*): trạng thái là
 // text/varchar + app-level validation (KHÔNG pg enum) — thêm trạng thái sau này
 // không cần ALTER TYPE. Transition map tường minh sống ở đây (cạnh schema,
 // mirrors MACHINE_LIFECYCLE_TRANSITIONS) và được lineControllerService cưỡng chế.
 // ════════════════════════════════════════════════════════════════════════════
-import { pgTable, serial, integer, text, timestamp, real, index } from "drizzle-orm/pg-core";
-import { productionLines } from "./hierarchy";
+import { pgTable, serial, integer, text, timestamp, real, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
+import { productionLines, machines } from "./hierarchy";
+import { productModels } from "./product";
+import { machineRecipes } from "./ot";
 
 /** 7 trạng thái tuyến — spec LDS-L3 §4.1 (lowercase tokens; UNS publish dùng UPPERCASE). */
 export const LINE_STATES = [
@@ -112,6 +123,9 @@ export const lineStateTransitions = pgTable("line_state_transitions", {
   correlationId: text("correlation_id"),
   // policy id đã PERMIT/DENY lệnh (spec §12.3 PolicyDecision.policy_ref).
   policyRef: text("policy_ref"),
+  // W3-B1 (§6.3 genealogy v1, mig 0259): {orderId, recipeSetRef} khi transition
+  // dính pha producing và tuyến có đơn hàng — truy vết lô ↔ recipe ↔ line.
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   ts: timestamp("ts", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_line_state_transitions_line_ts").on(table.lineId, table.ts),
@@ -119,3 +133,67 @@ export const lineStateTransitions = pgTable("line_state_transitions", {
 
 export type LineStateTransitionRow = typeof lineStateTransitions.$inferSelect;
 export type InsertLineStateTransitionRow = typeof lineStateTransitions.$inferInsert;
+
+// ─── RecipeSet cấp tuyến (doc 44 W3-B1 / gap G3.3 — spec §6.1 + §12.3) ────────
+
+/** Trạng thái vòng đời một recipe set (text + app-validation, không pg enum). */
+export const RECIPE_SET_STATUSES = ["draft", "active", "retired"] as const;
+export type RecipeSetStatus = (typeof RECIPE_SET_STATUSES)[number];
+
+/**
+ * Recipe Sets — bộ recipe CẤP TUYẾN theo sản phẩm (spec §12.3 RecipeSet
+ * "MODEL-X@v3"). `code` là định danh phát hành (line_states.recipe_set_ref trỏ
+ * vào đây); `locked` = khóa phiên bản suốt lô (spec §6.1) — set bởi
+ * distributeRecipeSet khi XÁC NHẬN NẠP đủ, chỉ gỡ khi mọi tuyến dùng set ở
+ * idle/completing/fault (unlockRecipeSet — compensation dùng sau).
+ */
+export const recipeSets = pgTable("recipe_sets", {
+  id: serial("id").primaryKey(),
+  // Định danh phát hành, vd "MODEL-X@v3" — unique toàn cục.
+  code: text("code").notNull().unique(),
+  // SET NULL: xóa product model không được kéo sập catalog recipe set (item vẫn
+  // giữ nguyên tham chiếu recipe versioned — audit lineage nằm ở machineRecipes).
+  productModelId: integer("product_model_id")
+    .references(() => productModels.id, { onDelete: "set null" }),
+  version: integer("version").default(1).notNull(),
+  // Khóa phiên bản suốt lô (spec §6.1). lockedBy = actor string (user id |
+  // 'api:<key>' | 'system') — không FK, giữ được actor máy/API.
+  locked: boolean("locked").default(false).notNull(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockedBy: text("locked_by"),
+  status: text("status").$type<RecipeSetStatus>().default("draft").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_recipe_sets_status").on(table.status),
+]);
+
+export type RecipeSetRow = typeof recipeSets.$inferSelect;
+export type InsertRecipeSetRow = typeof recipeSets.$inferInsert;
+
+/**
+ * Recipe Set Items — MỖI máy của set nạp recipe VERSION nào. machine_recipe_id
+ * trỏ MỘT row machine_recipes cụ thể (một phiên bản) — tham chiếu recipe
+ * versioned SẴN CÓ, không nhân đôi payload. RESTRICT trên máy + recipe: item
+ * của set là cấu hình "khóa suốt lô" — không được rút ruột âm thầm.
+ * station_id là soft ref denormalized (máy đã ngầm định trạm) — không FK.
+ */
+export const recipeSetItems = pgTable("recipe_set_items", {
+  id: serial("id").primaryKey(),
+  recipeSetId: integer("recipe_set_id").notNull()
+    .references(() => recipeSets.id, { onDelete: "cascade" }),
+  stationId: integer("station_id"),
+  machineId: integer("machine_id").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
+  machineRecipeId: integer("machine_recipe_id").notNull()
+    .references(() => machineRecipes.id, { onDelete: "restrict" }),
+  // required=true → máy PHẢI active đúng phiên bản mới đạt "xác nhận nạp" (§6.1).
+  required: boolean("required").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("uq_recipe_set_items_set_machine").on(table.recipeSetId, table.machineId),
+  index("idx_recipe_set_items_set").on(table.recipeSetId),
+]);
+
+export type RecipeSetItemRow = typeof recipeSetItems.$inferSelect;
+export type InsertRecipeSetItemRow = typeof recipeSetItems.$inferInsert;

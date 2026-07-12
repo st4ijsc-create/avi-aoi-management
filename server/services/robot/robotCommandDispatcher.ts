@@ -11,6 +11,8 @@
  *   3. active + connected driver,
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
+ *   4a. commissioning/FAT gate, 4a-policy. policy-as-code seam (W3-B2, SEC_PLATFORM,
+ *      action robot.command.{verb} — DENY → rejected POLICY_DENIED), 4b. interlock gate,
  *   5. real run under timeout → record done/failed.
  * Every branch writes an append-only robot_jobs row.
  */
@@ -255,6 +257,52 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
       "not_commissioned: robot has no active, non-expired, signed commissioning record — real motion refused (recorded simulated)",
     );
     return { ok: true, status: "simulated", jobId };
+  }
+
+  // 4a-policy) W3-B2 (doc 44 G3.14) — "MỘT CỬA": policy-as-code seam TRƯỚC nhánh thực
+  //     thi thật, ĐỐI XỨNG với OT commandDispatcher (5a-policy: governance → safety, tức
+  //     TRƯỚC interlock 4b). Reachable CHỈ khi ROBOT_CONTROL_ENABLED==='true' VÀ đã qua
+  //     mọi gate phía trên (idempotency/HITL/authz/driver/FAT) — seam CHỈ có thể TỪ CHỐI
+  //     thêm, không bao giờ nới lỏng gate nào. SEC_PLATFORM OFF (mặc định) → bỏ qua hoàn
+  //     toàn (0 khác biệt hành vi, không thêm DB read nào). DENY → reject + ledger row
+  //     POLICY_DENIED; obligations require_approval → dispatcher robot KHÔNG có kênh
+  //     four-eyes riêng ⇒ reject honest POLICY_APPROVAL_REQUIRED (không giả vờ đã duyệt).
+  {
+    const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
+    if (secPlatformEnabled()) {
+      const actorId = input.confirmedBy ?? input.requestedBy;
+      // Best-effort role (fail-safe "user" → policy role-floor không match ⇒ hướng DENY an toàn
+      // dưới default-deny). fat = có bản ghi commissioning active (cùng nguồn với gate 4a).
+      const { userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
+      const fatPassed = await isRobotCommissioned(input.robotId);
+      const verb = input.job.jobType;
+      const verdict = evaluateActionPolicy(
+        `user:${actorId}`,
+        `robot.command.${verb}`,
+        `robot:${input.robotId}`,
+        {
+          verb,
+          argsKeys: Object.keys(input.job.params ?? {}), // args-summary: chỉ TÊN khóa, không leak giá trị
+          robotId: input.robotId,
+          triggerKind,
+          role: userRole,
+          fat_passed: fatPassed,
+          mode: "real", // nhánh này chỉ reachable khi ROBOT_CONTROL_ENABLED==='true'
+          requestedBy: input.requestedBy,
+          ...(input.confirmedBy != null ? { confirmedBy: input.confirmedBy } : {}),
+        },
+      );
+      if (!verdict.allow) {
+        const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
+        const jobId = await record(
+          input,
+          "rejected",
+          { policyRef: verdict.policyId, effect: verdict.effect, reasonCode: verdict.reasonCode },
+          `${reason}: ${verdict.reason}`,
+        );
+        return { ok: false, status: "rejected", jobId, error: reason };
+      }
+    }
   }
 
   // 4b) INTERLOCK GATE (doc 35 quy-trình-6) — fail-closed, ĐỒNG BỘ, TRƯỚC driver.runJob.

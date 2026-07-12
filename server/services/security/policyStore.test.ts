@@ -169,9 +169,11 @@ describe("parsePolicyDefinitionsYaml — as-code validation", () => {
 });
 
 describe("shipped contracts/policies files", () => {
-  it("all 5 as-code files parse; the 3 legacy conversions keep DEFAULT_POLICIES semantics", () => {
+  it("all 7 as-code files parse; the 3 legacy conversions keep DEFAULT_POLICIES semantics", () => {
     const defs = loadPolicyFiles(POLICY_CONTRACTS_DIR);
     expect(defs.map((d) => d.policyId).sort()).toEqual([
+      "allow-fleet-vda5050-order-confirmed", // W3-B2 G3.14 (fleet.vda5050.*)
+      "allow-foe-command-engineer", // W3-B2 G3.14 (foe.command.*)
       "allow-ot-command-engineer-fat",
       "allow-robot-job-engineer-fat",
       "approve-override-crowded-zone",

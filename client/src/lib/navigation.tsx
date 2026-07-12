@@ -88,6 +88,7 @@
   FolderSearch,
   Star,
   Repeat,
+  Waypoints,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -575,6 +576,21 @@ export const navGroups: NavGroup[] = [
         label: "Chỉ huy nhà máy",
         icon: <Factory className="h-4 w-4" />,
         description: "Sơ đồ 2D/3D toàn nhà máy theo Line · click máy xem chi tiết · vấn đề đang mở",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+        tier: "simple",
+      },
+      {
+        // doc 44 W3-B4 §G5.10 — Line View (SYNAPSE LDS-L5 Ch.4.2): sơ đồ tuyến +
+        // FSM 7 trạng thái + readiness + lệnh tuyến (ConfirmWithReason → lineController.
+        // command, server actuationProcedure). Xem = machine_status (vận hành/kỹ sư);
+        // lệnh tự gate machine_control/edit trong trang. Công cụ vận hành tại tuyến →
+        // tier simple (như /factory-command).
+        href: "/line-view",
+        label: "lineView.title",
+        icon: <Waypoints className="h-4 w-4" />,
+        description: "lineView.navDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "monitoring",

@@ -10,7 +10,7 @@
  *   • Audit append-only: cả transition thật lẫn attempt bị policy DENY
  *     (reason tiền tố 'POLICY_DENIED:', line_states KHÔNG đổi).
  */
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { executeRows } from "../../utils/kpi";
 import {
@@ -20,9 +20,17 @@ import {
   stations,
   machines,
   lineStages,
+  machineRecipes,
+  recipeSets,
+  recipeSetItems,
   type LineControllerState,
   type LineStateRow,
   type LineStateTransitionRow,
+  type RecipeSetRow,
+  type RecipeSetItemRow,
+  type InsertRecipeSetRow,
+  type InsertRecipeSetItemRow,
+  type RecipeSetStatus,
 } from "../../../drizzle/schema";
 import { slugSegment } from "../uns/topicV2";
 
@@ -102,6 +110,8 @@ export interface ApplyTransitionParams {
   /** Orchestration W3-B nạp; undefined = giữ nguyên. */
   activeOrderId?: number | null;
   taktTargetS?: number | null;
+  /** W3-B1 §6.3 genealogy v1: {orderId, recipeSetRef} ghi vào audit row. */
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -136,10 +146,38 @@ export async function applyTransition(p: ApplyTransitionParams): Promise<LineSta
       triggeredBy: p.triggeredBy,
       correlationId: p.correlationId,
       policyRef: p.policyRef,
+      metadata: p.metadata ?? null,
       ts: now,
     });
     return updated[0];
   });
+}
+
+/**
+ * Cập nhật NGỮ CẢNH tuyến (recipe_set_ref / active_order_id / takt) — KHÔNG
+ * phải transition FSM (state giữ nguyên, không audit row). Dùng bởi
+ * distributeRecipeSet (xác nhận nạp → set ref) và attachOrderToLine/detachOrder
+ * (orchestration nạp đơn hàng). Tự tạo row 'idle' nếu tuyến chưa có (ensure).
+ */
+export async function updateLineContext(
+  lineId: number,
+  patch: { recipeSetRef?: string | null; activeOrderId?: number | null; taktTargetS?: number | null },
+): Promise<LineStateRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await ensureLineState(lineId);
+  if (!existing) return null;
+  const rows = await db
+    .update(lineStates)
+    .set({
+      updatedAt: new Date(),
+      ...(patch.recipeSetRef !== undefined ? { recipeSetRef: patch.recipeSetRef } : {}),
+      ...(patch.activeOrderId !== undefined ? { activeOrderId: patch.activeOrderId } : {}),
+      ...(patch.taktTargetS !== undefined ? { taktTargetS: patch.taktTargetS } : {}),
+    })
+    .where(eq(lineStates.lineId, lineId))
+    .returning();
+  return rows[0] ?? null;
 }
 
 /**
@@ -341,6 +379,139 @@ export async function getStageCycleTargets(lineId: number): Promise<Map<number, 
     }
   }
   return out;
+}
+
+// ─── Recipe sets (W3-B1 / G3.3 — spec §6.1, DB-only) ─────────────────────────
+
+export async function getRecipeSetById(id: number): Promise<RecipeSetRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(recipeSets).where(eq(recipeSets.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getRecipeSetByCode(code: string): Promise<RecipeSetRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(recipeSets).where(eq(recipeSets.code, code)).limit(1);
+  return rows[0] ?? null;
+}
+
+/** Mọi recipe set (mới nhất trước) + số item — catalog view. */
+export async function listRecipeSets(limit = 100): Promise<Array<RecipeSetRow & { itemCount: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      ...getTableColumns(recipeSets),
+      itemCount: sql<number>`count(${recipeSetItems.id})::int`,
+    })
+    .from(recipeSets)
+    .leftJoin(recipeSetItems, eq(recipeSetItems.recipeSetId, recipeSets.id))
+    .groupBy(recipeSets.id)
+    .orderBy(desc(recipeSets.createdAt), desc(recipeSets.id))
+    .limit(Math.min(Math.max(limit, 1), 500));
+  return rows;
+}
+
+/** Insert set mới — unique(code) violation THROW (service map CONFLICT). */
+export async function insertRecipeSet(values: InsertRecipeSetRow): Promise<RecipeSetRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.insert(recipeSets).values(values).returning();
+  return rows[0] ?? null;
+}
+
+/** Item + recipe (code/version/status/machineId hiện tại) + máy — cho verify/distribute. */
+export interface RecipeSetItemDetail {
+  id: number;
+  recipeSetId: number;
+  stationId: number | null;
+  machineId: number;
+  required: boolean;
+  machineRecipeId: number;
+  recipeCode: string;
+  recipeVersion: number;
+  recipeStatus: string;
+  machineCode: string | null;
+  machineName: string | null;
+}
+
+export async function listRecipeSetItems(recipeSetId: number): Promise<RecipeSetItemDetail[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: recipeSetItems.id,
+      recipeSetId: recipeSetItems.recipeSetId,
+      stationId: recipeSetItems.stationId,
+      machineId: recipeSetItems.machineId,
+      required: recipeSetItems.required,
+      machineRecipeId: recipeSetItems.machineRecipeId,
+      recipeCode: machineRecipes.code,
+      recipeVersion: machineRecipes.version,
+      recipeStatus: machineRecipes.status,
+      machineCode: machines.code,
+      machineName: machines.name,
+    })
+    .from(recipeSetItems)
+    .innerJoin(machineRecipes, eq(recipeSetItems.machineRecipeId, machineRecipes.id))
+    .leftJoin(machines, eq(recipeSetItems.machineId, machines.id))
+    .where(eq(recipeSetItems.recipeSetId, recipeSetId))
+    .orderBy(asc(recipeSetItems.id));
+  return rows as RecipeSetItemDetail[];
+}
+
+/** Insert item — unique(recipe_set_id, machine_id) violation THROW (service map CONFLICT). */
+export async function insertRecipeSetItem(values: InsertRecipeSetItemRow): Promise<RecipeSetItemRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.insert(recipeSetItems).values(values).returning();
+  return rows[0] ?? null;
+}
+
+export async function deleteRecipeSetItem(itemId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db.delete(recipeSetItems).where(eq(recipeSetItems.id, itemId)).returning({ id: recipeSetItems.id });
+  return rows.length > 0;
+}
+
+/** Khóa set (spec §6.1 — suốt lô): locked=true + lockedAt/lockedBy + status='active'. */
+export async function lockRecipeSet(id: number, lockedBy: string): Promise<RecipeSetRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .update(recipeSets)
+    .set({ locked: true, lockedAt: new Date(), lockedBy, status: "active" satisfies RecipeSetStatus })
+    .where(eq(recipeSets.id, id))
+    .returning();
+  return rows[0] ?? null;
+}
+
+/** Gỡ khóa set (compensation / hết lô) — status giữ nguyên. */
+export async function unlockRecipeSetRow(id: number): Promise<RecipeSetRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .update(recipeSets)
+    .set({ locked: false, lockedAt: null, lockedBy: null })
+    .where(eq(recipeSets.id, id))
+    .returning();
+  return rows[0] ?? null;
+}
+
+/** Các tuyến đang trỏ recipe_set_ref = code (kiểm tra trước khi gỡ khóa). */
+export async function getLineStatesByRecipeRef(
+  code: string,
+): Promise<Array<{ lineId: number; state: LineControllerState }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ lineId: lineStates.lineId, state: lineStates.state })
+    .from(lineStates)
+    .where(eq(lineStates.recipeSetRef, code));
+  return rows as Array<{ lineId: number; state: LineControllerState }>;
 }
 
 // ─── ISA-95 segments cho UNS `_line/state` (cached, honest 'unassigned') ─────

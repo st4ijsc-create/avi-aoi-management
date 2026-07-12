@@ -184,6 +184,9 @@ const SEED_MODULES: SystemModule[] = [
       // below now redirect into its tabs). It MUST be owned here so the hub nav row resolves
       // to the Devices app under scopeGroupsToApp (otherwise it's silently dropped).
       "/connectivity",
+      // doc 44 W3-B4 (G5.10) — Line View HMI (LDS-L5 Ch.4.2): giám sát tuyến + lệnh tuyến
+      // (mutation tự gate actuationProcedure server-side) → app Giám sát máy.
+      "/line-view",
       "/device-monitor", "/machine-status", "/machine-registration",
       "/machine-onboarding", "/aoi-onboarding",
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",

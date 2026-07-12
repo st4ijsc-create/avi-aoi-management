@@ -18,14 +18,20 @@
  *   4. safety_read         — ĐỌC safety-PLC (advisory, read-only): BLOCKED →
  *                            fail; UNKNOWN/adapter OFF → skipped + ghi honest,
  *                            KHÔNG chặn khi chưa có HW (theo yêu cầu batch).
- *   5. recipe_loaded       — recipe_set_ref có mặt (chỉ khi requireRecipe=true;
- *                            không yêu cầu → skipped).
+ *   5. recipe_loaded       — W3-B1 (spec §6.1 "xác nhận nạp"): khi tuyến có
+ *                            recipe_set_ref trỏ tới một recipe_sets record →
+ *                            VERIFY THẬT mọi máy required của set đang active
+ *                            ĐÚNG PHIÊN BẢN (verifyRecipeSetRef — không chỉ
+ *                            check text tồn tại). Ref text legacy (không có
+ *                            record) / không có ref → hành vi cũ: requireRecipe
+ *                            =true → ref phải có mặt; false → skipped.
  *
  * Kết quả gần nhất được cache per line (LINE_READINESS_CACHE_MS, mặc định 30s)
  * cho GET /v1/lines/:id/state ("readiness cache").
  */
 import { isFeederVerifyEnforced, assertLineSetupOkForRun } from "../feederVerifyService";
 import * as repo from "./lineStateRepo";
+import { verifyRecipeSetRef } from "./recipeSetService";
 
 export interface ReadinessCheck {
   name: string;
@@ -163,31 +169,10 @@ export async function checkLineReadiness(
   // 4 — safety READ (advisory, read-only; UNKNOWN → skipped honest, KHÔNG chặn).
   checks.push(await safetyReadCheck());
 
-  // 5 — recipe_set_ref (chỉ khi yêu cầu).
-  if (!opts.requireRecipe) {
-    checks.push({
-      name: "recipe_loaded",
-      passed: true,
-      skipped: true,
-      detail: "Bỏ qua: recipe không được yêu cầu cho transition này (requireRecipe=false).",
-    });
-  } else {
-    try {
-      const row = await repo.getLineState(lineId);
-      const ref = row?.recipeSetRef ?? null;
-      checks.push({
-        name: "recipe_loaded",
-        passed: !!ref,
-        detail: ref ? `Recipe set đã nạp: ${ref}.` : "Chưa có recipe_set_ref trên tuyến (yêu cầu recipe).",
-      });
-    } catch (err) {
-      checks.push({
-        name: "recipe_loaded",
-        passed: false,
-        detail: `Không đọc được line_states: ${(err as Error)?.message ?? err}`,
-      });
-    }
-  }
+  // 5 — recipe (W3-B1, spec §6.1 "xác nhận nạp"): tuyến có recipe_set_ref trỏ
+  //     tới recipe_sets record → VERIFY THẬT phiên bản active per máy required;
+  //     ref legacy / không có ref → hành vi cũ (requireRecipe).
+  checks.push(await recipeLoadedCheck(lineId, opts.requireRecipe ?? false));
 
   const result: LineReadinessResult = {
     lineId,
@@ -197,6 +182,69 @@ export async function checkLineReadiness(
   };
   cache.set(lineId, result);
   return result;
+}
+
+/**
+ * Check 5 — recipe_loaded (W3-B1 nâng cấp, spec §6.1 "xác nhận nạp"):
+ *   • Tuyến CÓ recipe_set_ref + có recipe_sets record → verifyRecipeSetRef:
+ *     mọi máy required của set phải đang active ĐÚNG PHIÊN BẢN (id + máy) —
+ *     pass/fail THẬT bất kể requireRecipe (tuyến đã tự nhận set thì phải đúng).
+ *   • Ref text legacy (không có record) → hành vi cũ: requireRecipe=true →
+ *     pass vì ref có mặt (ghi rõ không verify được); false → skipped.
+ *   • Không có ref → hành vi cũ: requireRecipe=true → fail; false → skipped.
+ */
+async function recipeLoadedCheck(lineId: number, requireRecipe: boolean): Promise<ReadinessCheck> {
+  try {
+    const row = await repo.getLineState(lineId);
+    const ref = row?.recipeSetRef ?? null;
+    if (ref) {
+      const v = await verifyRecipeSetRef(ref);
+      if (v.found) {
+        return {
+          name: "recipe_loaded",
+          passed: v.ok,
+          detail: v.ok
+            ? `Recipe set ${ref}: ${v.requiredCount} máy required đang active đúng phiên bản (đã verify).`
+            : `Recipe set ${ref}: ${v.missing.length} máy required CHƯA nạp đúng — ${v.missing
+                .map((m) => `${m.machineCode ?? `máy ${m.machineId}`} (${m.reason})`)
+                .join("; ")}.`,
+        };
+      }
+      // Ref text legacy — không có recipe_sets record để verify phiên bản.
+      if (requireRecipe) {
+        return {
+          name: "recipe_loaded",
+          passed: true,
+          detail: `Recipe set đã nạp: ${ref} (text ref legacy — không có recipe_sets record để verify phiên bản).`,
+        };
+      }
+      return {
+        name: "recipe_loaded",
+        passed: true,
+        skipped: true,
+        detail: `Bỏ qua verify: '${ref}' là text ref legacy (không có recipe_sets record) và recipe không được yêu cầu (requireRecipe=false).`,
+      };
+    }
+    if (requireRecipe) {
+      return {
+        name: "recipe_loaded",
+        passed: false,
+        detail: "Chưa có recipe_set_ref trên tuyến (yêu cầu recipe).",
+      };
+    }
+    return {
+      name: "recipe_loaded",
+      passed: true,
+      skipped: true,
+      detail: "Bỏ qua: recipe không được yêu cầu cho transition này (requireRecipe=false).",
+    };
+  } catch (err) {
+    return {
+      name: "recipe_loaded",
+      passed: false,
+      detail: `Không đọc được line_states: ${(err as Error)?.message ?? err}`,
+    };
+  }
 }
 
 /**

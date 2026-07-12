@@ -418,6 +418,24 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[LineController] init failed:", (err as any)?.message || err);
   }
 
+  // Doc 44 W3-B3 (G3.8 + G3.9) — QT workflow templates + QT-3 material watcher.
+  //   • registerQtTemplates: đăng ký 4 template QT-1..4 (as-code) vào kho workflow FOE,
+  //     idempotent theo hash nội dung. No-op trừ khi QT_TEMPLATES_ENABLED (default OFF;
+  //     cần FOE_ENABLED — loader trả kết quả honest khi thiếu).
+  //   • startMaterialReplenishment: watcher cấp liệu QT-3 (feeder dưới reorder + Andon
+  //     'material' → transport task idempotent, KHÔNG lệnh AMR). No-op trừ khi
+  //     MATERIAL_REPLENISH_ENABLED=true (default OFF).
+  try {
+    const { registerQtTemplates } = await import("../services/orchestration/templates/registerQtTemplates");
+    void registerQtTemplates().catch((err) =>
+      console.error("[QtTemplates] register failed:", (err as any)?.message || err),
+    );
+    const { startMaterialReplenishment } = await import("../services/orchestration/materialReplenishment");
+    startMaterialReplenishment();
+  } catch (err) {
+    console.error("[W3-B3] QT templates / material replenishment init failed:", (err as any)?.message || err);
+  }
+
   // Doc 38 T-1 (P1) — SECS/GEM production bring-up. Opens an HSMS session per
   // configured equipment (SECS_GEM_EQUIPMENT JSON) and arms attachGemAlarmDispatch
   // so live S5F1 alarms reach the Andon path (EQ_INTEG_ENABLED). Honest no-op unless

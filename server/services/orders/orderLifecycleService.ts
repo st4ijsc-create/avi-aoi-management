@@ -332,6 +332,16 @@ function emitTransitionEffects(order: OrderRow, applied: AppliedTransition): voi
       console.error("[orderLifecycle] completion outbox publish failed:", (err as Error)?.message ?? err);
     }
   }
+  // W3-B1 (doc 44 G3.2) — nạp/gỡ ngữ cảnh đơn hàng trên line_states để Line
+  // Controller biết active_order_id (held giữ nguyên attach — đúng ngữ nghĩa;
+  // hàm fail-safe trả union, không throw). Dynamic import tránh vòng module.
+  if (order.lineId != null && (applied.to === "running" || TERMINAL_LIFECYCLE_STATES.has(applied.to))) {
+    void import("../lineController/lineControllerService")
+      .then(({ attachOrderToLine, detachOrder }) =>
+        applied.to === "running" ? attachOrderToLine(order.lineId!, order.id) : detachOrder(order.lineId!),
+      )
+      .catch((e) => console.error("[orderLifecycle] line ctx attach/detach failed:", (e as Error)?.message ?? e));
+  }
 }
 
 // ── Public API: generic transition ────────────────────────────────────────────

@@ -11198,6 +11198,114 @@
     "back": "Quay lại",
     "confirm": "Xác nhận thực hiện"
   },
+  "lineView": {
+    "title": "Line View",
+    "navDesc": "Sơ đồ tuyến · FSM 7 trạng thái · nhịp/nút cổ chai · readiness · lệnh tuyến",
+    "subtitle": "Sơ đồ tuyến: trạng thái FSM, nhịp, nút cổ chai, trạm nghẽn/đói liệu và lệnh tuyến.",
+    "selectLine": "Chọn tuyến",
+    "noLines": "Chưa có tuyến ACTIVE nào",
+    "noLinesDesc": "Tạo production line (kèm trạm và máy) trong Dữ liệu chủ để dùng Line View.",
+    "needControlPerm": "Cần quyền machine_control (edit) để phát lệnh tuyến — server còn yêu cầu role và 2FA.",
+    "cmdNotAllowed": "Lệnh không hợp lệ từ trạng thái '{{state}}'",
+    "state": {
+      "idle": "Idle — chờ",
+      "ready": "Ready — sẵn sàng",
+      "producing": "Producing — đang chạy",
+      "held": "Held — đang giữ",
+      "completing": "Completing — đang xả",
+      "changeover": "Changeover — đổi sản phẩm",
+      "fault": "Fault — lỗi"
+    },
+    "cmd": {
+      "start": "Chạy (Start)",
+      "hold": "Giữ (Hold)",
+      "resume": "Tiếp tục (Resume)",
+      "changeover": "Đổi sản phẩm (Changeover)",
+      "complete": "Hoàn tất (Complete)",
+      "reset_fault": "Xác nhận khắc phục lỗi"
+    },
+    "confirm": {
+      "title": "{{command}} — tuyến {{line}}?",
+      "desc_start": "Chạy tuyến: từ Idle sẽ qua checklist sẵn sàng (idle→ready) rồi vào Producing; từ Ready vào thẳng Producing.",
+      "desc_hold": "Giữ tuyến: các trạm ngừng nhận việc mới; WIP giữ nguyên tại chỗ cho tới khi Resume.",
+      "desc_resume": "Tiếp tục chạy tuyến sau khi giữ (Held → Producing).",
+      "desc_changeover": "Chuyển tuyến sang chế độ đổi sản phẩm — tuyến ngừng sản xuất cho tới khi changeover xong và đạt checklist sẵn sàng.",
+      "desc_complete": "Tiến chuỗi hoàn tất theo ngữ cảnh: Producing→Completing (xả WIP), Completing→Idle (xả xong), Changeover→Ready (đổi xong).",
+      "desc_reset_fault": "Xác nhận đã khắc phục lỗi — tuyến chỉ về Ready khi checklist sẵn sàng ĐẠT (bằng chứng khắc phục).",
+      "impact_changeover": "Sản xuất trên tuyến DỪNG trong suốt changeover; recipe/threshold sẽ theo sản phẩm mới. Kiểm tra WIP còn trên tuyến trước khi đổi.",
+      "impact_reset_fault": "Xác nhận sai khi lỗi CHƯA được khắc phục có thể đưa tuyến lỗi trở lại vận hành. Server sẽ chạy lại checklist sẵn sàng trước khi cho Ready."
+    },
+    "kpi": {
+      "taktTarget": "Takt mục tiêu",
+      "cycleAvg": "Chu kỳ TB",
+      "behindTakt": "Chu kỳ thực tế đang CHẬM hơn takt mục tiêu",
+      "throughput": "Sản lượng (cửa sổ)",
+      "utilization": "Hiệu suất sử dụng",
+      "activeOrder": "Đơn hàng",
+      "recipeSet": "Recipe set",
+      "heldReason": "Lý do giữ",
+      "inStateSince": "Vào trạng thái lúc {{time}}"
+    },
+    "flow": {
+      "title": "Sơ đồ tuyến",
+      "window": "Cửa sổ quan sát dwell: {{minutes}} phút — ngưỡng nghẽn/đói {{threshold}}",
+      "empty": "Tuyến chưa có trạm ACTIVE nào.",
+      "bottleneck": "Nút cổ chai",
+      "blocked": "Nghẽn (blocked)",
+      "starved": "Đói liệu (starved)",
+      "cycleTarget": "Chu kỳ mục tiêu",
+      "dwellAvg": "Dwell trung bình (cửa sổ quan sát)",
+      "dwellShort": "Dwell",
+      "noMachines": "Chưa gán máy"
+    },
+    "readiness": {
+      "title": "Sẵn sàng chạy (readiness)",
+      "ready": "SẴN SÀNG",
+      "notReady": "CHƯA SẴN SÀNG",
+      "recheck": "Kiểm tra lại",
+      "skipped": "bỏ qua",
+      "unavailable": "Chưa đọc được checklist readiness.",
+      "checkedAt": "Kiểm lúc {{time}}"
+    },
+    "check": {
+      "machines_online": "Máy của tuyến online",
+      "no_machine_faulted": "Không máy nào lỗi",
+      "feeder_verify": "Feeder setup run-ready",
+      "safety_read": "Safety (đọc advisory)",
+      "recipe_loaded": "Recipe set đã nạp"
+    },
+    "transitions": {
+      "title": "Lịch sử chuyển trạng thái",
+      "time": "Thời điểm",
+      "change": "Chuyển",
+      "by": "Bởi",
+      "reason": "Lý do",
+      "policyRef": "Policy",
+      "denied": "BỊ TỪ CHỐI"
+    },
+    "result": {
+      "success": "Tuyến {{line}}: '{{from}}' → '{{to}}'",
+      "blockedTitle": "Lệnh bị chặn",
+      "blockedDesc": "Server từ chối chuyển trạng thái — trạng thái tuyến KHÔNG đổi. Chi tiết bên dưới.",
+      "readinessChecks": "Checklist sẵn sàng (vừa chạy)",
+      "allowed": "Transition hợp lệ từ '{{from}}'",
+      "policyEffect": "Effect",
+      "policyRef": "Policy ref",
+      "close": "Đóng"
+    },
+    "drawer": {
+      "title": "Trạm {{name}}",
+      "dwellAvg": "Dwell TB",
+      "samples": "{{count}} mẫu dwell trong cửa sổ quan sát",
+      "machines": "Máy trong trạm",
+      "openMachine": "Mở cockpit máy",
+      "presence": {
+        "online": "Online",
+        "offline": "Offline",
+        "unknown": "Không rõ"
+      }
+    }
+  },
   "interlockRules": {
     "whenToUse": "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.",
     "title": "Quản lý quy tắc Interlock",

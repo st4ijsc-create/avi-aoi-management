@@ -145,6 +145,7 @@ const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage
 // consolidated into one lazy Device hub; legacy routes redirect into their tab.
 const DeviceHub = React.lazy(() => import("./pages/DeviceHub"));
 const FactoryCommandView = React.lazy(() => import("./pages/FactoryCommandView")); // doc 40 Wave 4d §13.1: màn hình chỉ huy toàn nhà máy (2D/3D theo Line, click máy → drawer chi tiết)
+const LineView = React.lazy(() => import("./pages/LineView")); // doc 44 W3-B4 §G5.10: Line View HMI (LDS-L5 Ch.4.2) — sơ đồ tuyến + FSM 7 trạng thái + readiness + lệnh tuyến (ConfirmWithReason → lineController.command)
 const WarRoom = React.lazy(() => import("./pages/WarRoom")); // doc 40 Wave 4c §11: "Giao ban 7h" theo ca — KPI + OEE theo line + top downtime + so sánh ca + plan-vs-actual (trpc.warRoom.briefing)
 const MaintenanceHub = React.lazy(() => import("./pages/MaintenanceHub")); // doc 40 Wave 4c §11: CMMS hub — lịch bảo trì phòng ngừa + parts/reliability (agent C)
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
@@ -309,6 +310,8 @@ function Router() {
       <Route path="/device-monitor"><RouteGuard navHref="/device-monitor"><AIPageWrapper><DeviceHub /></AIPageWrapper></RouteGuard></Route>
       {/* doc 40 Wave 4d §13.1 — Factory Command View: chỉ huy toàn nhà máy 2D/3D (xem = giám sát). */}
       <Route path="/factory-command"><RouteGuard requirePermission="machine_status"><AIPageWrapper><FactoryCommandView /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 44 W3-B4 §G5.10 — Line View (LDS-L5 Ch.4.2): xem = machine_status; lệnh tuyến tự gate machine_control/edit + server actuationProcedure (2FA). */}
+      <Route path="/line-view/:lineId?"><RouteGuard requirePermission="machine_status"><AIPageWrapper><LineView /></AIPageWrapper></RouteGuard></Route>
       {/* P3-W2 consolidation: legacy machine-status grid → unified Device Monitor. */}
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>

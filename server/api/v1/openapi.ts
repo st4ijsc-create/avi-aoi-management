@@ -1073,6 +1073,38 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           },
         },
       },
+      "/api/v1/lines/{id}/recipe": {
+        post: {
+          tags: ["Lines"],
+          summary: "Nạp recipe set vào tuyến (distribute + xác nhận nạp + khóa phiên bản suốt lô)",
+          description:
+            "Requires scope `lines:write`. Deploy per-máy qua recipe_deployments (giữ second-approver gate); " +
+            "đủ máy required đúng phiên bản → set recipe_set_ref + lock; thiếu → 409 recipe_not_confirmed kèm results+missing.",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["recipeSetCode"],
+                  properties: {
+                    recipeSetCode: { type: "string", example: "MODEL-X@v3" },
+                    notes: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Confirmed + locked", content: jsonOk() },
+            ...errResponses({
+              "404": { description: "Line/recipe set không tồn tại", content: jsonErr() },
+              "409": { description: "recipe_not_confirmed | recipe_set_locked | invalid_state", content: jsonErr() },
+            }),
+          },
+        },
+      },
       // ── W3-A3 (doc 44 G3.6/G3.7) — Order lifecycle (spec §13.1) ─────────────
       // LƯU Ý: GET /api/v1/orders (list lifecycle) được gộp vào entry POST /orders
       // của ERP intake phía trên (key trùng — object literal không cho phép 2 key).

@@ -11012,6 +11012,114 @@
     "back": "返回",
     "confirm": "确认执行"
   },
+  "lineView": {
+    "title": "产线视图",
+    "navDesc": "产线流程图 · 7 状态 FSM · 节拍/瓶颈 · 就绪检查 · 产线命令",
+    "subtitle": "产线流程：FSM 状态、节拍、瓶颈、堵塞/待料工位与产线命令。",
+    "selectLine": "选择产线",
+    "noLines": "暂无 ACTIVE 产线",
+    "noLinesDesc": "请先在主数据中创建产线（含工位与设备）后再使用产线视图。",
+    "needControlPerm": "下发产线命令需要 machine_control（编辑）权限 — 服务器还强制角色下限与 2FA。",
+    "cmdNotAllowed": "当前状态 '{{state}}' 下该命令无效",
+    "state": {
+      "idle": "Idle — 空闲",
+      "ready": "Ready — 就绪",
+      "producing": "Producing — 生产中",
+      "held": "Held — 保持",
+      "completing": "Completing — 排空中",
+      "changeover": "Changeover — 换型",
+      "fault": "Fault — 故障"
+    },
+    "cmd": {
+      "start": "启动 (Start)",
+      "hold": "保持 (Hold)",
+      "resume": "恢复 (Resume)",
+      "changeover": "换型 (Changeover)",
+      "complete": "完成 (Complete)",
+      "reset_fault": "确认故障已排除"
+    },
+    "confirm": {
+      "title": "{{command}} — 产线 {{line}}？",
+      "desc_start": "启动产线：从 Idle 先通过就绪检查（idle→ready）再进入 Producing；从 Ready 直接进入 Producing。",
+      "desc_hold": "保持产线：各工位停止接收新工件；WIP 原地保留直到 Resume。",
+      "desc_resume": "保持后恢复产线运行（Held → Producing）。",
+      "desc_changeover": "产线进入换型模式 — 换型完成并通过就绪检查前停止生产。",
+      "desc_complete": "按上下文推进完成链：Producing→Completing（排空 WIP）、Completing→Idle（排空完成）、Changeover→Ready（换型完成）。",
+      "desc_reset_fault": "确认故障已排除 — 只有就绪检查通过（排除证据）产线才回到 Ready。",
+      "impact_changeover": "换型期间本产线生产完全停止；配方/阈值将切换到新产品。切换前请确认产线上剩余 WIP。",
+      "impact_reset_fault": "故障未真正排除就确认，可能让故障产线重新投入运行。服务器会在允许 Ready 前重新运行就绪检查。"
+    },
+    "kpi": {
+      "taktTarget": "目标节拍",
+      "cycleAvg": "平均节拍",
+      "behindTakt": "实际节拍慢于目标节拍",
+      "throughput": "产量（窗口）",
+      "utilization": "利用率",
+      "activeOrder": "工单",
+      "recipeSet": "配方集",
+      "heldReason": "保持原因",
+      "inStateSince": "进入状态时间 {{time}}"
+    },
+    "flow": {
+      "title": "产线流程",
+      "window": "停留观察窗口：{{minutes}} 分钟 — 堵塞/待料阈值 {{threshold}}",
+      "empty": "该产线暂无 ACTIVE 工位。",
+      "bottleneck": "瓶颈",
+      "blocked": "堵塞 (blocked)",
+      "starved": "待料 (starved)",
+      "cycleTarget": "目标节拍",
+      "dwellAvg": "平均停留（观察窗口）",
+      "dwellShort": "停留",
+      "noMachines": "未分配设备"
+    },
+    "readiness": {
+      "title": "运行就绪检查 (readiness)",
+      "ready": "就绪",
+      "notReady": "未就绪",
+      "recheck": "重新检查",
+      "skipped": "跳过",
+      "unavailable": "无法读取就绪检查清单。",
+      "checkedAt": "检查时间 {{time}}"
+    },
+    "check": {
+      "machines_online": "产线设备在线",
+      "no_machine_faulted": "无设备故障",
+      "feeder_verify": "Feeder 校验通过",
+      "safety_read": "安全（只读咨询）",
+      "recipe_loaded": "配方集已加载"
+    },
+    "transitions": {
+      "title": "状态切换历史",
+      "time": "时间",
+      "change": "切换",
+      "by": "操作者",
+      "reason": "原因",
+      "policyRef": "策略",
+      "denied": "被拒绝"
+    },
+    "result": {
+      "success": "产线 {{line}}：'{{from}}' → '{{to}}'",
+      "blockedTitle": "命令被拦截",
+      "blockedDesc": "服务器拒绝了状态切换 — 产线状态未改变。详情见下。",
+      "readinessChecks": "就绪检查清单（刚运行）",
+      "allowed": "从 '{{from}}' 可用的切换",
+      "policyEffect": "Effect",
+      "policyRef": "Policy ref",
+      "close": "关闭"
+    },
+    "drawer": {
+      "title": "工位 {{name}}",
+      "dwellAvg": "平均停留",
+      "samples": "观察窗口内 {{count}} 条停留样本",
+      "machines": "工位设备",
+      "openMachine": "打开设备驾驶舱",
+      "presence": {
+        "online": "在线",
+        "offline": "离线",
+        "unknown": "未知"
+      }
+    }
+  },
   "interlockRules": {
     "title": "联锁规则管理",
     "subtitle": "配置 + 审批 + 启用/停用联锁规则。本页绝不向设备写入命令；写入通过已审批的 HITL/联锁流程。",
