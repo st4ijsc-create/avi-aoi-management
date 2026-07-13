@@ -2,8 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer, StatusBadge, EmptyState } from "@/components/patterns";
-import { DataTable } from "@/components/DataTable";
+import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,9 +24,6 @@ import {
   Copy,
   Loader2,
   Database,
-  Pencil,
-  Trash2,
-  MoreHorizontal,
   Clock,
   Upload,
   Image,
@@ -56,6 +52,8 @@ import { WorkshopsTab } from "@/components/factoryConfig/WorkshopsTab";
 import { LinesTab } from "@/components/factoryConfig/LinesTab";
 import { StationsTab } from "@/components/factoryConfig/StationsTab";
 import { MachinesTab } from "@/components/factoryConfig/MachinesTab";
+import { ShiftsTab } from "@/components/factoryConfig/ShiftsTab";
+import { StagesTab } from "@/components/factoryConfig/StagesTab";
 import type { NavTarget } from "@/components/factoryConfig/factoryModel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 // doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
@@ -64,9 +62,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
-import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 import { CascadeDeleteDialog } from "@/components/CascadeDeleteDialog";
 import { History } from "lucide-react";
@@ -1199,415 +1195,45 @@ export default function DataSettings() {
 
           {/* Shifts Tab */}
           <TabsContent value="shifts">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.shiftConfig")}</CardTitle>
-                    <CardDescription>{t("settings.shiftConfigDesc")}</CardDescription>
-                  </div>
-                  <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addShift")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addShiftNew")}</DialogTitle>
-                        <DialogDescription>{t("settings.addShiftDesc")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("settings.shiftCode")}<span className="text-destructive">*</span></label>
-                            <Input
-                              placeholder={t("settings.shiftCodePlaceholder")}
-                              value={shiftForm.code}
-                              onChange={(e) => setShiftForm({ ...shiftForm, code: e.target.value })}
-                              onBlur={() => shiftValidation.handleBlur("code", shiftForm.code)}
-                              className={shiftValidation.hasError("code") ? "border-destructive" : ""}
-                            />
-                            <ValidationMessage error={shiftValidation.getFieldError("code")} />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("settings.shiftName")}<span className="text-destructive">*</span></label>
-                            <Input
-                              placeholder={t("settings.shiftNamePlaceholder")}
-                              value={shiftForm.name}
-                              onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
-                              onBlur={() => shiftValidation.handleBlur("name", shiftForm.name)}
-                              className={shiftValidation.hasError("name") ? "border-destructive" : ""}
-                            />
-                            <ValidationMessage error={shiftValidation.getFieldError("name")} />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.factoryOptional")}</label>
-                          <Select value={shiftForm.factoryId} onValueChange={(v) => setShiftForm({ ...shiftForm, factoryId: v })}>
-                            <SelectTrigger><SelectValue placeholder={t("settings.allFactoriesShift")} /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">{t("settings.allFactoriesShift")}</SelectItem>
-                              {factories?.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("settings.startTime")} *</label>
-                            <div className="flex gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="23"
-                                placeholder={t("settings.hourPlaceholder")}
-                                value={shiftForm.startHour}
-                                onChange={(e) => setShiftForm({ ...shiftForm, startHour: e.target.value })}
-                                className="w-20"
-                              />
-                              <span className="self-center">:</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="59"
-                                placeholder={t("settings.minutePlaceholder")}
-                                value={shiftForm.startMinute}
-                                onChange={(e) => setShiftForm({ ...shiftForm, startMinute: e.target.value })}
-                                className="w-20"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("settings.endTime")} *</label>
-                            <div className="flex gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                max="23"
-                                placeholder={t("settings.hourPlaceholder")}
-                                value={shiftForm.endHour}
-                                onChange={(e) => setShiftForm({ ...shiftForm, endHour: e.target.value })}
-                                className="w-20"
-                              />
-                              <span className="self-center">:</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="59"
-                                placeholder={t("settings.minutePlaceholder")}
-                                value={shiftForm.endMinute}
-                                onChange={(e) => setShiftForm({ ...shiftForm, endMinute: e.target.value })}
-                                className="w-20"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.orderDisplay")}</label>
-                          <Input
-                            type="number"
-                            value={shiftForm.orderIndex}
-                            onChange={(e) => setShiftForm({ ...shiftForm, orderIndex: e.target.value })}
-                            className="w-24"
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button 
-                          onClick={() => createShiftMutation.mutate({
-                            factoryId: shiftForm.factoryId && shiftForm.factoryId !== "all" ? parseInt(shiftForm.factoryId) : undefined,
-                            code: shiftForm.code,
-                            name: shiftForm.name,
-                            startHour: parseInt(shiftForm.startHour),
-                            startMinute: parseInt(shiftForm.startMinute),
-                            endHour: parseInt(shiftForm.endHour),
-                            endMinute: parseInt(shiftForm.endMinute),
-                            orderIndex: parseInt(shiftForm.orderIndex),
-                          })}
-                          disabled={createShiftMutation.isPending || !shiftForm.code || !shiftForm.name}
-                        >
-                          {createShiftMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("settings.createShiftBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DataTable<ShiftConfig>
-                  data={(shifts ?? []) as ShiftConfig[]}
-                  getRowId={(s) => s.id}
-                  loading={shiftsLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchShiftPlaceholder", "Tìm ca theo tên hoặc mã…")}
-                  initialSort={{ columnId: "order", dir: "asc" }}
-                  emptyState={(shifts?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={Clock}
-                      title={t("settings.noShifts")}
-                      description={t("dataSettings.emptyShiftDesc", "Chưa có ca làm việc nào. Thêm ca để cấu hình lịch sản xuất.")}
-                      actionLabel={t("settings.addShift")}
-                      onAction={() => setShiftDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "code", header: t("settings.tableCode"), width: "140px", cell: (s) => <span className="font-mono text-sm">{s.code}</span>, sortValue: (s) => s.code, filterValue: (s) => s.code },
-                    { id: "name", header: t("settings.tableShiftName"), cell: (s) => <span className="font-medium">{s.name}</span>, sortValue: (s) => s.name, filterValue: (s) => s.name },
-                    { id: "factory", header: t("settings.tableFactory"), cell: (s) => s.factoryId
-                        ? <span>{factories?.find(f => f.id === s.factoryId)?.name || t('common.na')}</span>
-                        : <span className="text-muted-foreground">{t("settings.entireSystem")}</span>,
-                      sortValue: (s) => s.factoryId ? (factories?.find(f => f.id === s.factoryId)?.name || "") : "",
-                      filterValue: (s) => s.factoryId ? (factories?.find(f => f.id === s.factoryId)?.name || "") : "" },
-                    { id: "time", header: t("settings.tableTime"), width: "150px", cell: (s) => (
-                      <span className="font-mono tabular-nums">
-                        {String(s.startHour).padStart(2, '0')}:{String(s.startMinute).padStart(2, '0')}
-                        {' - '}
-                        {String(s.endHour).padStart(2, '0')}:{String(s.endMinute).padStart(2, '0')}
-                      </span>
-                    ), sortValue: (s) => s.startHour * 60 + s.startMinute },
-                    { id: "status", header: t("settings.tableStatus"), width: "130px", cell: (s) => (
-                      <StatusBadge status={s.isActive ? "active" : "paused"} tone={s.isActive ? "success" : "default"} label={s.isActive ? t('settings.shiftActive') : t('settings.shiftPaused')} />
-                    ), sortValue: (s) => s.isActive ? 1 : 0 },
-                    { id: "order", header: t("settings.orderDisplay"), align: "right", width: "80px", cell: (s) => <span className="tabular-nums text-sm text-muted-foreground">{s.orderIndex.toLocaleString('vi-VN')}</span>, sortValue: (s) => s.orderIndex },
-                    { id: "actions", header: "", align: "right", width: "64px", cell: (s) => (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => {
-                            setEditingShift(s);
-                            setEditShiftDialogOpen(true);
-                          }}>
-                            <Pencil className="h-4 w-4 mr-2" />
-                            {t("settings.edit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => {
-                              setShiftToDelete(s);
-                              setDeleteShiftDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {t("common.delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) },
-                  ]}
-                />
-              </CardContent>
-            </Card>
+            <ShiftsTab
+              shifts={shifts}
+              shiftsLoading={shiftsLoading}
+              factories={factories}
+              shiftValidation={shiftValidation}
+              shiftDialogOpen={shiftDialogOpen}
+              setShiftDialogOpen={setShiftDialogOpen}
+              shiftForm={shiftForm}
+              setShiftForm={setShiftForm}
+              createShiftMutation={createShiftMutation}
+              setEditingShift={setEditingShift}
+              setEditShiftDialogOpen={setEditShiftDialogOpen}
+              setShiftToDelete={setShiftToDelete}
+              setDeleteShiftDialogOpen={setDeleteShiftDialogOpen}
+            />
           </TabsContent>
 
           {/* Stages Tab */}
           <TabsContent value="stages">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.productionStages")}</CardTitle>
-                    <CardDescription>{t("settings.stageCount", { count: stages?.length || 0 })}</CardDescription>
-                  </div>
-                  {canManageFactory && (
-                    <Dialog open={stageDialogOpen} onOpenChange={setStageDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="gap-2">
-                          <Plus className="h-4 w-4" />
-                          {t("settings.addStage")}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>{t("settings.addStageNew")}</DialogTitle>
-                          <DialogDescription>{t("settings.addStageDesc")}</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("dashboard.line")}<span className="text-destructive">*</span></label>
-                            <Select value={stageForm.lineId} onValueChange={(v) => {
-                              setStageForm({ ...stageForm, lineId: v });
-                              stageValidation.validateSingleField("lineId", v);
-                            }}>
-                              <SelectTrigger className={stageValidation.hasError("lineId") ? "border-destructive" : ""}><SelectValue placeholder={t("settings.selectLine")} /></SelectTrigger>
-                              <SelectContent>
-                                {lines?.map((line) => (
-                                  <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <ValidationMessage error={stageValidation.getFieldError("lineId")} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">{t("settings.stageCode")}<span className="text-destructive">*</span></label>
-                              <Input 
-                                placeholder={t("settings.stageCodePlaceholder")} 
-                                value={stageForm.code} 
-                                onChange={(e) => setStageForm({ ...stageForm, code: e.target.value })}
-                                onBlur={() => stageValidation.handleBlur("code", stageForm.code)}
-                                className={stageValidation.hasError("code") ? "border-destructive" : ""}
-                              />
-                              <ValidationMessage error={stageValidation.getFieldError("code")} />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">{t("settings.stageName")}<span className="text-destructive">*</span></label>
-                              <Input 
-                                placeholder={t("settings.stageNamePlaceholder")} 
-                                value={stageForm.name} 
-                                onChange={(e) => setStageForm({ ...stageForm, name: e.target.value })}
-                                onBlur={() => stageValidation.handleBlur("name", stageForm.name)}
-                                className={stageValidation.hasError("name") ? "border-destructive" : ""}
-                              />
-                              <ValidationMessage error={stageValidation.getFieldError("name")} />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">{t("settings.order")}</label>
-                              <Input type="number" value={stageForm.orderIndex} onChange={(e) => setStageForm({ ...stageForm, orderIndex: e.target.value })} />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">{t("settings.linkedStation")}</label>
-                              <Select value={stageForm.stationId} onValueChange={(v) => setStageForm({ ...stageForm, stationId: v })}>
-                                <SelectTrigger><SelectValue placeholder={t("settings.selectStation2")} /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">{t("settings.noLink")}</SelectItem>
-                                  {stations?.filter(s => {
-                                    const line = lines?.find(l => l.id === Number(stageForm.lineId));
-                                    return line && s.lineId === line.id;
-                                  }).map((station) => (
-                                    <SelectItem key={station.id} value={String(station.id)}>{station.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">{t("common.description")}</label>
-                            <Input placeholder={t("settings.descriptionPlaceholder")} value={stageForm.description} onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })} />
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setStageDialogOpen(false)}>{t("common.cancel")}</Button>
-                          <Button onClick={() => createStageMutation.mutate({
-                            lineId: Number(stageForm.lineId),
-                            code: stageForm.code,
-                            name: stageForm.name,
-                            description: stageForm.description || undefined,
-                            orderIndex: Number(stageForm.orderIndex),
-                            stationId: stageForm.stationId && stageForm.stationId !== "none" ? Number(stageForm.stationId) : undefined,
-                          })} disabled={!stageForm.lineId || !stageForm.code || !stageForm.name || createStageMutation.isPending}>
-                            {createStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                            {t("settings.createStageBtn")}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {lines?.map((line) => {
-                    const lineStages = stages?.filter(s => s.lineId === line.id).sort((a, b) => a.orderIndex - b.orderIndex) || [];
-                    if (lineStages.length === 0) return null;
-                    return (
-                      <div key={line.id} className="border rounded-lg p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <GitBranch className="h-4 w-4 text-primary" />
-                          <span className="font-medium">{line.name}</span>
-                          <span className="text-sm text-muted-foreground">({t("settings.stageCountLabel", { count: lineStages.length })})</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {lineStages.map((stage, index) => (
-                            <div
-                              key={stage.id}
-                              draggable
-                              onDragStart={() => setDraggedStageId(stage.id)}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDrop={() => {
-                                if (draggedStageId && draggedStageId !== stage.id) {
-                                  const newOrder = lineStages.map(s => s.id);
-                                  const dragIndex = newOrder.indexOf(draggedStageId);
-                                  const dropIndex = newOrder.indexOf(stage.id);
-                                  newOrder.splice(dragIndex, 1);
-                                  newOrder.splice(dropIndex, 0, draggedStageId);
-                                  reorderStageMutation.mutate({ lineId: line.id, stageIds: newOrder });
-                                }
-                                setDraggedStageId(null);
-                              }}
-                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-move transition-all ${
-                                draggedStageId === stage.id ? 'opacity-50 border-primary' : 'hover:border-primary/50'
-                              }`}
-                            >
-                              <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center font-bold">
-                                {stage.code}
-                              </span>
-                              <span className="text-sm">{stage.name}</span>
-                              {index < lineStages.length - 1 && (
-                                <span className="text-muted-foreground">→</span>
-                              )}
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 ml-1">
-                                    <MoreHorizontal className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => {
-                                    setEditingStage(stage);
-                                    setEditStageDialogOpen(true);
-                                  }}>
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    {t("settings.edit")}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem 
-                                    className="text-destructive"
-                                    onClick={() => {
-                                      setStageToDelete(stage);
-                                      setDeleteStageDialogOpen(true);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    {t("common.delete")}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {stagesLoading && (
-                    <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      <span className="text-sm">{t("common.loading", "Đang tải…")}</span>
-                    </div>
-                  )}
-                  {!stagesLoading && (!stages || stages.length === 0) && (
-                    <EmptyState
-                      variant="no-data"
-                      icon={GitBranch}
-                      title={t("settings.noStages")}
-                      description={t("dataSettings.emptyStageDesc", "Chưa có công đoạn nào. Thêm công đoạn để định nghĩa luồng sản xuất theo dây chuyền.")}
-                      actionLabel={canManageFactory ? t("settings.addStage") : undefined}
-                      onAction={canManageFactory ? () => setStageDialogOpen(true) : undefined}
-                    />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <StagesTab
+              stages={stages}
+              stagesLoading={stagesLoading}
+              lines={lines}
+              stations={stations}
+              canManageFactory={canManageFactory}
+              stageValidation={stageValidation}
+              stageDialogOpen={stageDialogOpen}
+              setStageDialogOpen={setStageDialogOpen}
+              stageForm={stageForm}
+              setStageForm={setStageForm}
+              createStageMutation={createStageMutation}
+              reorderStageMutation={reorderStageMutation}
+              draggedStageId={draggedStageId}
+              setDraggedStageId={setDraggedStageId}
+              setEditingStage={setEditingStage}
+              setEditStageDialogOpen={setEditStageDialogOpen}
+              setStageToDelete={setStageToDelete}
+              setDeleteStageDialogOpen={setDeleteStageDialogOpen}
+            />
           </TabsContent>
 
           {/* doc 47 IA Đợt 1 — product-categories / product-machine-mapping /
