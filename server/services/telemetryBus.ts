@@ -21,6 +21,7 @@
  * persistence error never propagates into a protocol reader's poll loop.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import type { Writable } from "node:stream";
 import type { InsertOtTelemetry, OtTelemetry } from "../../drizzle/schema";
 import { createBusFanout } from "../_core/busFanout";
 // G2.6 (doc 44 W2-B2) — contract validation before enqueue/persist. Gated by
@@ -244,6 +245,188 @@ function toBroadcast(row: InsertOtTelemetry) {
   };
 }
 
+// ── R4 (doc 48) — OT INGEST COPY FAST PATH (100k throughput lever) ───────────
+// The DEFAULT persist path (further down) is a multi-row parameterised INSERT. Doc 49
+// R3 measured it topping out ~10k pts/s single-node, and it is additionally bounded by
+// Postgres' 65535 bind-parameter ceiling → with 11 columns a single statement can carry
+// at most ~5957 rows (drizzle does NOT auto-chunk), so it cannot even express a 100k
+// batch. COPY removes both limits: it STREAMS the batch (no per-row bind/parse, no
+// parameter ceiling). But a raw `COPY … INTO ot_telemetry` would THROW on the
+// uq_ot_telemetry_device_metric_ts unique index the moment a retry / store-forward
+// backfill re-sends a row — losing the silent dedup the current .onConflictDoNothing()
+// gives us. So we COPY into a per-batch, UNINDEXED TEMP table (same shape) and then
+// `INSERT … SELECT … ON CONFLICT DO NOTHING` into the canonical table: COPY's speed AND
+// the exact dedup + return contract of the INSERT path. Flag-gated + a size threshold
+// ⇒ the ONLY behavioural change (flag ON) is for LARGE batches, and it is
+// observationally identical (same rows land, same dedup, same returned count).
+
+/** COPY fast path engaged? Default OFF ⇒ the INSERT path below is byte-for-byte kept. */
+function copyEnabled(): boolean {
+  return process.env.OT_INGEST_COPY_ENABLED === "true" || process.env.OT_INGEST_COPY_ENABLED === "1";
+}
+/** Min batch size worth the COPY setup; below it we use the INSERT path. Default 200. */
+function copyMinRows(): number {
+  return intEnv("OT_INGEST_COPY_MIN_ROWS", 200);
+}
+
+// Per-batch staging table. A FIXED name is safe: every begin() reserves its OWN
+// connection and TEMP tables are connection-private, so concurrent ingests never
+// collide; ON COMMIT DROP cleans it up at the end of the transaction regardless.
+const COPY_TEMP_TABLE = "_ot_telemetry_copy_stage";
+// Ordered column list for BOTH the COPY and the INSERT…SELECT. MUST stay in lock-step
+// with encodeCopyTextRow's field order and the keys toCanonicalRow emits (= exactly the
+// columns the drizzle .values(rows) insert targets). `id` + `ingestedAt` are OMITTED on
+// purpose (DB-generated: id from the sequence, ingestedAt from DEFAULT now() at the
+// INSERT…SELECT — same as the INSERT path). Every identifier is double-quoted because
+// the camelCase columns fold to lowercase otherwise.
+const COPY_COLUMNS =
+  '"ts","machineId","deviceId","protocol","metric","numValue","textValue","boolValue","unit","quality","meta"';
+// Client-side watchdog. In a rare ordering the postgres.js COPY writable can be left
+// neither 'finish'ed nor 'error'ed (a server error arriving AFTER CopyDone, once the
+// driver has already nulled its stream ref) — this guarantees the hot ingest path can
+// NEVER hang on it. Generous vs the real streaming cost (sub-second locally) and the 30s
+// connection statement_timeout, so it only trips on a genuinely stuck stream.
+const COPY_STREAM_TIMEOUT_MS = 60_000;
+
+/** Minimal structural view of the postgres.js client we need (reached via drizzle db.$client). */
+interface CopyStreamQuery extends PromiseLike<unknown> {
+  writable(): Promise<Writable>;
+}
+interface CopyTxnSql {
+  unsafe(query: string): CopyStreamQuery;
+}
+interface CopyClient {
+  begin<T>(fn: (sql: CopyTxnSql) => Promise<T>): Promise<T>;
+}
+
+/**
+ * Reach the raw postgres.js client under the drizzle instance (db.$client, exposed by
+ * drizzle-orm's postgres-js driver). Returns null when it isn't shaped as expected so
+ * the caller falls back to the INSERT path (degrade-safe; also lets tests opt out).
+ */
+function getCopyClient(db: unknown): CopyClient | null {
+  const client = (db as { $client?: unknown } | null | undefined)?.$client as
+    | (CopyClient & { unsafe?: unknown })
+    | undefined;
+  return client && typeof client.begin === "function" && typeof client.unsafe === "function"
+    ? client
+    : null;
+}
+
+/** COPY text-format escape: backslash FIRST, then the delimiter (tab) + row (newline/CR) chars. */
+function escapeCopyText(v: string): string {
+  return v
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
+/** COPY text-format NULL marker (the two characters backslash + N). */
+const COPY_NULL = "\\N";
+
+/**
+ * Serialize ONE canonical row to a COPY text-format line: tab-separated, the 11 fields
+ * in COPY_COLUMNS order, trailing newline. null/undefined → \N (an EMPTY string stays a
+ * real empty string, never NULL); text + jsonb are backslash-escaped; ts → ISO-8601;
+ * bool → true/false; numbers → String(). Reproduces EXACTLY the columns the drizzle
+ * .values(rows) insert writes. Pure (no I/O) — exported for unit tests.
+ */
+export function encodeCopyTextRow(r: InsertOtTelemetry): string {
+  const ts = r.ts instanceof Date ? r.ts : new Date(r.ts as unknown as string | number);
+  return (
+    [
+      ts.toISOString(), //                                                    ts (NOT NULL)
+      r.machineId == null ? COPY_NULL : String(r.machineId), //               machineId
+      r.deviceId == null ? COPY_NULL : escapeCopyText(r.deviceId), //         deviceId
+      escapeCopyText(String(r.protocol)), //                                  protocol (NOT NULL)
+      escapeCopyText(r.metric), //                                            metric (NOT NULL)
+      r.numValue == null ? COPY_NULL : String(r.numValue), //                 numValue (double)
+      r.textValue == null ? COPY_NULL : escapeCopyText(r.textValue), //       textValue
+      r.boolValue == null ? COPY_NULL : r.boolValue ? "true" : "false", //    boolValue
+      r.unit == null ? COPY_NULL : escapeCopyText(r.unit), //                 unit
+      escapeCopyText(String(r.quality ?? "good")), //                         quality (NOT NULL)
+      r.meta == null ? COPY_NULL : escapeCopyText(JSON.stringify(r.meta)), // meta (jsonb)
+    ].join("\t") + "\n"
+  );
+}
+
+/**
+ * Stream the batch into the COPY writable with backpressure (chunked writes awaiting
+ * 'drain'). Resolves on 'finish' (server-confirmed CopyDone), rejects on 'error' or the
+ * watchdog — so a stuck stream can never wedge the ingest loop.
+ */
+function streamCopyRows(ws: Writable, rows: InsertOtTelemetry[]): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ws.removeListener("error", onError);
+      ws.removeListener("finish", onFinish);
+      err ? reject(err) : resolve();
+    };
+    const onError = (e: unknown) => finish(e instanceof Error ? e : new Error(String(e)));
+    const onFinish = () => finish();
+    const timer = setTimeout(() => {
+      ws.destroy();
+      finish(new Error(`[TelemetryBus] COPY stream timed out after ${COPY_STREAM_TIMEOUT_MS}ms`));
+    }, COPY_STREAM_TIMEOUT_MS);
+    if (typeof (timer as { unref?: () => void }).unref === "function") (timer as { unref: () => void }).unref();
+    ws.on("error", onError);
+    ws.on("finish", onFinish);
+
+    let i = 0;
+    const CHUNK = 2000;
+    const pump = () => {
+      try {
+        while (i < rows.length) {
+          const end = Math.min(i + CHUNK, rows.length);
+          let buf = "";
+          for (; i < end; i++) buf += encodeCopyTextRow(rows[i]);
+          if (!ws.write(buf)) {
+            ws.once("drain", pump);
+            return;
+          }
+        }
+        ws.end();
+      } catch (err) {
+        ws.destroy();
+        finish(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+    pump();
+  });
+}
+
+/**
+ * COPY-persist a batch: TEMP table → COPY (text) → INSERT…SELECT…ON CONFLICT DO NOTHING,
+ * all on ONE connection inside a transaction (TEMP tables are connection-scoped). Throws
+ * on ANY DB error (the whole txn aborts) so the caller's store-and-forward buffers the
+ * batch — the SAME throw contract as the INSERT path. Dedup is preserved by ON CONFLICT.
+ */
+async function copyPersistRows(client: CopyClient, rows: InsertOtTelemetry[]): Promise<void> {
+  await client.begin(async (sql) => {
+    // TEMP table LIKE the real one INCLUDING DEFAULTS → id/ingestedAt get their defaults
+    // on COPY (we never stream them) and the shape can NEVER diverge from the schema.
+    await sql.unsafe(
+      `CREATE TEMP TABLE ${COPY_TEMP_TABLE} (LIKE ot_telemetry INCLUDING DEFAULTS) ON COMMIT DROP`,
+    );
+    // Stream the batch into the unindexed staging table (fast — no index maintenance).
+    const ws = await sql
+      .unsafe(`COPY ${COPY_TEMP_TABLE} (${COPY_COLUMNS}) FROM STDIN WITH (FORMAT text)`)
+      .writable();
+    await streamCopyRows(ws, rows);
+    // Move staging → canonical, deduping on uq_ot_telemetry_device_metric_ts EXACTLY like
+    // the drizzle .onConflictDoNothing() path (retry / store-forward replay safe). Bare
+    // ON CONFLICT DO NOTHING infers every unique index — same inference as .onConflictDoNothing().
+    await sql.unsafe(
+      `INSERT INTO ot_telemetry (${COPY_COLUMNS}) SELECT ${COPY_COLUMNS} FROM ${COPY_TEMP_TABLE} ON CONFLICT DO NOTHING`,
+    );
+  });
+}
+
 /**
  * Bulk-persist canonical rows. PRIMARY path = the dedicated TimescaleDB hypertable
  * (mirrors energy_readings). When TSDB is disabled/degraded the helper returns null
@@ -263,20 +446,30 @@ async function persistRows(rows: InsertOtTelemetry[]): Promise<number> {
   // TSDB disabled/degraded → main-DB fallback.
   const { getDb } = await import("../db/connection");
   const db = await getDb();
-  if (db) {
-    const { otTelemetry } = await import("../../drizzle/schema");
-    // G2.9 (doc 44 W0-D) — idempotent replay: rows violating the natural key
-    // uq_ot_telemetry_device_metric_ts ("deviceId", metric, ts — migration 0247)
-    // are silently SKIPPED instead of duplicated or failing the whole batch
-    // (store-forward backfill / reader retry re-sends the same samples). Before
-    // 0247 is applied ON CONFLICT DO NOTHING is a harmless no-op. The returned
-    // count stays rows.length ("persisted or already present") ON PURPOSE: an
-    // all-duplicate replayed batch must count as success so store-and-forward
-    // does NOT re-buffer it (that would loop the replay forever).
-    await db.insert(otTelemetry).values(rows).onConflictDoNothing();
-    return rows.length;
+  if (!db) return 0; // DB absent on both paths → nothing persisted.
+  const { otTelemetry } = await import("../../drizzle/schema");
+
+  // R4 (doc 48) — COPY fast path: flag-gated + only for batches at/above the threshold.
+  // Observationally identical to the INSERT below (same rows land, same dedup, returns
+  // rows.length). If the raw pg client can't be reached, fall through (degrade-safe).
+  if (copyEnabled() && rows.length >= copyMinRows()) {
+    const client = getCopyClient(db);
+    if (client) {
+      await copyPersistRows(client, rows);
+      return rows.length;
+    }
   }
-  return 0; // DB absent on both paths → nothing persisted.
+
+  // G2.9 (doc 44 W0-D) — idempotent replay: rows violating the natural key
+  // uq_ot_telemetry_device_metric_ts ("deviceId", metric, ts — migration 0247)
+  // are silently SKIPPED instead of duplicated or failing the whole batch
+  // (store-forward backfill / reader retry re-sends the same samples). Before
+  // 0247 is applied ON CONFLICT DO NOTHING is a harmless no-op. The returned
+  // count stays rows.length ("persisted or already present") ON PURPOSE: an
+  // all-duplicate replayed batch must count as success so store-and-forward
+  // does NOT re-buffer it (that would loop the replay forever).
+  await db.insert(otTelemetry).values(rows).onConflictDoNothing();
+  return rows.length;
 }
 
 /**
