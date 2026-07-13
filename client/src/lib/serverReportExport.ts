@@ -2,8 +2,9 @@
  * doc 46 FE-W2 — client helper for the server-side FONT-SAFE report engine.
  *
  * Calls `trpc.export.renderReport` (universalExportService with embedded
- * BeVietnamPro), which renders VN/ZH diacritics correctly — unlike client-side
- * jsPDF, which lacked the glyphs and had to strip "Ngày xuất" → "Ngay xuat".
+ * BeVietnamPro for VN/Latin + Noto Sans SC for Chinese, doc 48 R4), which renders
+ * vi/en/zh with real glyphs — unlike client-side jsPDF, which lacked the glyphs
+ * and had to strip "Ngày xuất" → "Ngay xuat" (and tofu'd Chinese).
  * Returns base64; we rebuild a Blob and trigger a browser download.
  *
  * Use this for TABULAR data grids. Canvas/chart screenshot exports (dashboard

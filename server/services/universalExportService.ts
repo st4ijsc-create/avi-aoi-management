@@ -15,7 +15,13 @@
  * jsonStreamChunk) — kept here so they are unit-testable without express.
  */
 import ExcelJS from "exceljs";
-import { VN_FONT_FAMILY, registerVietnameseFontJsPDF } from "./fontAssets";
+import {
+  VN_FONT_FAMILY,
+  registerVietnameseFontJsPDF,
+  registerCjkFontJsPDF,
+  containsCjk,
+  cjkFontUnavailableMessage,
+} from "./fontAssets";
 
 export interface ExportColumn {
   key: string;
@@ -262,6 +268,43 @@ async function buildReportPdfDoc(options: ExportOptions): Promise<any> {
   // Register + activate the embedded Vietnamese font (fixes mojibake — P0 #4).
   registerVietnameseFontJsPDF(doc);
 
+  // doc 48 R4 — Chinese text needs the CJK font (Noto Sans SC); Be Vietnam Pro
+  // has no ideograph glyphs and renders them as tofu. jsPDF EMBEDS every font it
+  // is handed (no tree-shaking of unused fonts), so we register the ~10 MB CJK
+  // font ONLY when this document actually contains CJK — a pure vi/en report is
+  // byte-for-byte unchanged (no CJK-font bloat). The zh locale always qualifies
+  // (its header labels are Chinese); otherwise we scan the real content.
+  const docHasCjk =
+    language === "zh" ||
+    containsCjk(title) ||
+    containsCjk(subtitle) ||
+    containsCjk(branding.companyName) ||
+    columns.some((c) => containsCjk(c.header)) ||
+    data.some((row) => columns.some((c) => containsCjk(row[c.key] == null ? "" : String(row[c.key]))));
+
+  let cjkFamily: string | null = null;
+  if (docHasCjk) {
+    // Registered but left INACTIVE; `pickFont` swaps it in per text run wherever
+    // CJK codepoints appear (autotable does it per cell below).
+    cjkFamily = registerCjkFontJsPDF(doc);
+    if (!cjkFamily) {
+      if (language === "zh") {
+        // A Chinese report is CJK end-to-end (labels + data) — never emit a tofu PDF.
+        throw new Error(cjkFontUnavailableMessage());
+      }
+      // vi/en report with incidental CJK (e.g. a Chinese supplier name): don't break
+      // the whole report, but don't silently tofu either — warn with the fix.
+      console.warn(
+        "[universalExportService] CJK content detected but the CJK font is not " +
+          "installed; those glyphs will be blank. Run `node scripts/fetch-fonts.mjs`.",
+      );
+    }
+  }
+
+  /** Font family for a text run: the CJK font when the run has CJK + it is loaded. */
+  const pickFont = (text: string): string =>
+    cjkFamily && containsCjk(text) ? cjkFamily : VN_FONT_FAMILY;
+
   const pageWidth = doc.internal.pageSize.width;
   let yPos = 20;
 
@@ -275,7 +318,7 @@ async function buildReportPdfDoc(options: ExportOptions): Promise<any> {
   }
 
   // Title
-  doc.setFont(VN_FONT_FAMILY, "bold");
+  doc.setFont(pickFont(title), "bold");
   doc.setFontSize(18);
   doc.setTextColor(pr, pg, pb);
   doc.text(title, pageWidth / 2, yPos, { align: "center" });
@@ -283,6 +326,7 @@ async function buildReportPdfDoc(options: ExportOptions): Promise<any> {
   yPos = 28;
 
   if (subtitle) {
+    doc.setFont(pickFont(subtitle), "normal");
     doc.setFontSize(12);
     doc.setTextColor(100, 100, 100);
     doc.text(subtitle, pageWidth / 2, yPos, { align: "center" });
@@ -290,16 +334,20 @@ async function buildReportPdfDoc(options: ExportOptions): Promise<any> {
   }
 
   if (branding.companyName) {
+    const companyLine = `${labels.company}: ${branding.companyName}`;
+    doc.setFont(pickFont(companyLine), "normal");
     doc.setFontSize(10);
     doc.setTextColor(120, 120, 120);
-    doc.text(`${labels.company}: ${branding.companyName}`, 14, yPos);
+    doc.text(companyLine, 14, yPos);
     yPos += 6;
   }
 
   if (includeTimestamp) {
+    const tsLine = `${labels.generatedAt}: ${new Date().toLocaleString(localeTag(language))}`;
+    doc.setFont(pickFont(tsLine), "normal");
     doc.setFontSize(9);
     doc.setTextColor(150, 150, 150);
-    doc.text(`${labels.generatedAt}: ${new Date().toLocaleString(localeTag(language))}`, 14, yPos);
+    doc.text(tsLine, 14, yPos);
     yPos += 8;
   }
 
@@ -332,24 +380,34 @@ async function buildReportPdfDoc(options: ExportOptions): Promise<any> {
       halign: "center",
     },
     alternateRowStyles: { fillColor: [248, 249, 250] },
+    // doc 48 R4 — swap the CJK font into any header/body cell whose text contains
+    // Chinese, keeping the bold/normal style autotable already assigned. Latin/VN
+    // cells stay on Be Vietnam Pro. No-op when the CJK font is not installed.
+    didParseCell: (hookData: any) => {
+      if (!cjkFamily) return;
+      const cell = hookData.cell;
+      const text = Array.isArray(cell?.text) ? cell.text.join("") : String(cell?.text ?? "");
+      if (containsCjk(text)) cell.styles.font = cjkFamily;
+    },
     didDrawPage: (hookData: any) => {
       const pageCount = doc.getNumberOfPages();
-      doc.setFont(VN_FONT_FAMILY, "normal");
       doc.setFontSize(8);
       doc.setTextColor(150, 150, 150);
       const footer = branding.footerText
         ? `${branding.footerText}  ·  ${labels.page} ${hookData.pageNumber} / ${pageCount}`
         : `${labels.page} ${hookData.pageNumber} / ${pageCount}`;
+      doc.setFont(pickFont(footer), "normal");
       doc.text(footer, pageWidth / 2, doc.internal.pageSize.height - 10, { align: "center" });
     },
   });
 
   // Total
   const finalY = (doc as any).lastAutoTable?.finalY || yPos + 20;
-  doc.setFont(VN_FONT_FAMILY, "normal");
+  const totalLine = `${labels.total}: ${data.length} ${labels.records}`;
+  doc.setFont(pickFont(totalLine), "normal");
   doc.setFontSize(10);
   doc.setTextColor(80, 80, 80);
-  doc.text(`${labels.total}: ${data.length} ${labels.records}`, 14, finalY + 10);
+  doc.text(totalLine, 14, finalY + 10);
 
   return doc;
 }

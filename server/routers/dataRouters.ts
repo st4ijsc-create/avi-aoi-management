@@ -530,9 +530,10 @@ export const importRouter = router({
 
 export const exportRouter = router({
   // doc 46 FE-W2 — GENERIC font-safe report renderer. Reuses the canonical engine
-  // (universalExportService.renderReport) which embeds BeVietnamPro, so VN/ZH
-  // diacritics render correctly — unlike client-side jsPDF, which had no VN glyphs
-  // and stripped "Ngày xuất" → "Ngay xuat". Session-auth (protectedProcedure): any
+  // (universalExportService.renderReport), which embeds BeVietnamPro for VN/Latin
+  // and Noto Sans SC for Chinese (doc 48 R4), so vi/en/zh all render real glyphs —
+  // unlike client-side jsPDF, which had no VN glyphs and stripped "Ngày xuất" →
+  // "Ngay xuat" (and no CJK glyphs, tofuing Chinese). Session-auth (protectedProcedure): any
   // logged-in user renders their OWN already-displayed table data into a branded
   // PDF/XLSX/CSV in the language they pick. Row/col-capped to bound memory.
   renderReport: protectedProcedure

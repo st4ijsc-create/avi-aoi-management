@@ -12,7 +12,32 @@
 // @ts-ignore - pdfkit has no bundled type declarations
 import PDFDocument from "pdfkit";
 import * as db from "../db";
-import { registerVietnameseFontPdfKit } from "./fontAssets";
+import {
+  registerVietnameseFontPdfKit,
+  registerCjkFontPdfKit,
+  containsCjk,
+  VN_FONT_FAMILY,
+} from "./fontAssets";
+
+/** {regular,bold} CJK family names once registered, or null when not installed. */
+type CjkFonts = { regular: string; bold: string } | null;
+
+/**
+ * doc 48 R4 — draw `text` using the CJK font (Noto Sans SC) for runs that contain
+ * Chinese, so ideographs render instead of tofu, then restore the VN font. When
+ * the CJK font is not installed (`cjk == null`) this is a plain `doc.text(...)` —
+ * Be Vietnam Pro still covers Latin/VN. The static VN section labels keep using
+ * Be Vietnam Pro (Noto Sans SC lacks full Vietnamese coverage); only the dynamic,
+ * user-supplied fields (names, notes, measurements) are routed through here.
+ */
+function cjkText(doc: any, cjk: CjkFonts, text: string, ...args: any[]): void {
+  if (cjk && containsCjk(text)) {
+    doc.font(cjk.regular).text(text, ...args);
+    doc.font(VN_FONT_FAMILY);
+  } else {
+    doc.text(text, ...args);
+  }
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -210,6 +235,10 @@ export async function generateInspectionReportPDF(
     // Embed the Vietnamese font so diacritics render (was mojibake with the
     // WinAnsi core font — doc 32 §2 P0 #4). Sets BeVietnamPro as the default.
     registerVietnameseFontPdfKit(doc);
+    // doc 48 R4 — also register the CJK font so Chinese in user data (names,
+    // notes, measurements) renders instead of tofu. null when not installed;
+    // PDFKit only embeds a font once it is actually used, so this adds no bloat.
+    const cjk = registerCjkFontPdfKit(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -225,15 +254,11 @@ export async function generateInspectionReportPDF(
     const logoDrawn = drawHeaderLogo(doc, logoBuf, 40, 22, [46, 56]);
     const headTextX = logoDrawn ? 96 : 40;
 
-    doc
-      .fontSize(22)
-      .fillColor("white")
-      .text(config.title, headTextX, 25, { align: "left" });
+    doc.fontSize(22).fillColor("white");
+    cjkText(doc, cjk, config.title, headTextX, 25, { align: "left" });
 
-    doc
-      .fontSize(10)
-      .fillColor("rgba(255,255,255,0.8)")
-      .text(config.companyName || "SYNAPSE", headTextX, 55, { align: "left" });
+    doc.fontSize(10).fillColor("rgba(255,255,255,0.8)");
+    cjkText(doc, cjk, config.companyName || "SYNAPSE", headTextX, 55, { align: "left" });
 
     doc
       .fontSize(10)
@@ -304,10 +329,12 @@ export async function generateInspectionReportPDF(
     doc.fontSize(10);
     for (const row of infoRows) {
       doc.fillColor("#666").text(row[0].label, leftCol, y, { width: labelWidth });
-      doc.fillColor("#333").text(row[0].value, leftCol + labelWidth, y);
+      doc.fillColor("#333");
+      cjkText(doc, cjk, row[0].value, leftCol + labelWidth, y);
       if (row[1]) {
         doc.fillColor("#666").text(row[1].label, rightCol, y, { width: labelWidth });
-        doc.fillColor("#333").text(row[1].value, rightCol + labelWidth, y);
+        doc.fillColor("#333");
+        cjkText(doc, cjk, row[1].value, rightCol + labelWidth, y);
       }
       y += 18;
     }
@@ -316,7 +343,8 @@ export async function generateInspectionReportPDF(
     if (data.productModel) {
       y += 5;
       doc.fillColor("#666").text("Sản phẩm:", leftCol, y, { width: labelWidth });
-      doc.fillColor("#333").text(`${data.productModel.name} (${data.productModel.code})`, leftCol + labelWidth, y);
+      doc.fillColor("#333");
+      cjkText(doc, cjk, `${data.productModel.name} (${data.productModel.code})`, leftCol + labelWidth, y);
       y += 18;
     }
 
@@ -370,17 +398,22 @@ export async function generateInspectionReportPDF(
       let rx = tableLeft + 5;
       doc.fillColor("#666").text(String(index + 1), rx, y + 5, { width: colWidths[0] - 10 });
       rx += colWidths[0];
-      doc.fillColor("#333").text(m.pointName, rx, y + 5, { width: colWidths[1] - 10 });
+      doc.fillColor("#333");
+      cjkText(doc, cjk, m.pointName, rx, y + 5, { width: colWidths[1] - 10 });
       rx += colWidths[1];
-      doc.fillColor("#666").text(m.measurementType, rx, y + 5, { width: colWidths[2] - 10 });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.measurementType, rx, y + 5, { width: colWidths[2] - 10 });
       rx += colWidths[2];
       doc.fillColor(resultColor).text(m.result, rx, y + 5, { width: colWidths[3] - 10, align: "center" });
       rx += colWidths[3];
-      doc.fillColor("#333").text(m.measuredValue || "-", rx, y + 5, { width: colWidths[4] - 10, align: "center" });
+      doc.fillColor("#333");
+      cjkText(doc, cjk, m.measuredValue || "-", rx, y + 5, { width: colWidths[4] - 10, align: "center" });
       rx += colWidths[4];
-      doc.fillColor("#666").text(m.standardValue || "-", rx, y + 5, { width: colWidths[5] - 10, align: "center" });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.standardValue || "-", rx, y + 5, { width: colWidths[5] - 10, align: "center" });
       rx += colWidths[5];
-      doc.fillColor("#666").text(m.remark || "", rx, y + 5, { width: colWidths[6] - 10 });
+      doc.fillColor("#666");
+      cjkText(doc, cjk, m.remark || "", rx, y + 5, { width: colWidths[6] - 10 });
 
       // Bottom border
       doc.moveTo(tableLeft, y + 20).lineTo(doc.page.width - 40, y + 20).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
@@ -413,7 +446,8 @@ export async function generateInspectionReportPDF(
       y += 70;
       doc.fontSize(12).fillColor(primary).text("Ghi chú", 40, y);
       y += 20;
-      doc.fontSize(9).fillColor("#555").text(data.inspection.notes, 40, y, { width: doc.page.width - 80 });
+      doc.fontSize(9).fillColor("#555");
+      cjkText(doc, cjk, data.inspection.notes, 40, y, { width: doc.page.width - 80 });
     }
 
     // ─── Footer on all pages ─────────────────────────────
@@ -461,6 +495,8 @@ export async function generateQualityReportPDF(
 
     // Embed the Vietnamese font so diacritics render (doc 32 §2 P0 #4).
     registerVietnameseFontPdfKit(doc);
+    // doc 48 R4 — CJK font for Chinese in machine/point names (null if absent).
+    const cjk = registerCjkFontPdfKit(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -535,8 +571,10 @@ export async function generateQualityReportPDF(
       const yieldColor = machine.yieldRate >= 95 ? "#10b981" : machine.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
 
       let rx = 45;
-      doc.fillColor("#333").text(machine.machineName, rx, y + 4, { width: mWidths[0] - 10 }); rx += mWidths[0];
-      doc.fillColor("#666").text(machine.machineCode, rx, y + 4, { width: mWidths[1] - 10 }); rx += mWidths[1];
+      doc.fillColor("#333");
+      cjkText(doc, cjk, machine.machineName, rx, y + 4, { width: mWidths[0] - 10 }); rx += mWidths[0];
+      doc.fillColor("#666");
+      cjkText(doc, cjk, machine.machineCode, rx, y + 4, { width: mWidths[1] - 10 }); rx += mWidths[1];
       doc.fillColor("#333").text(String(machine.totalInspections), rx, y + 4, { width: mWidths[2] - 10, align: "center" }); rx += mWidths[2];
       doc.fillColor("#10b981").text(String(machine.okCount), rx, y + 4, { width: mWidths[3] - 10, align: "center" }); rx += mWidths[3];
       doc.fillColor("#ef4444").text(String(machine.ngCount), rx, y + 4, { width: mWidths[4] - 10, align: "center" }); rx += mWidths[4];
@@ -558,7 +596,8 @@ export async function generateQualityReportPDF(
 
       const barWidth = Math.max(5, (point.percentage / (data.topNGPoints[0]?.percentage || 1)) * 200);
       
-      doc.fontSize(9).fillColor("#333").text(`${idx + 1}. ${point.pointName}`, 40, y);
+      doc.fontSize(9).fillColor("#333");
+      cjkText(doc, cjk, `${idx + 1}. ${point.pointName}`, 40, y);
       doc.rect(200, y + 2, barWidth, 10).fill("#ef4444");
       doc.fontSize(8).fillColor("#666").text(`${point.ngCount} (${point.percentage.toFixed(1)}%)`, 200 + barWidth + 5, y + 1);
       y += 18;
