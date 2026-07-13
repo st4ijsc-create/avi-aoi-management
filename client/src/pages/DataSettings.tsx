@@ -13,8 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
-import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
-import { machineTypeLabel } from "@/lib/machineTypeLabel";
+import { type MachineType } from "@/constants/machineTypes";
 
 import {
   Building2,
@@ -24,7 +23,6 @@ import {
   Plus,
   Copy,
   Loader2,
-  Key,
   Database,
   Pencil,
   Trash2,
@@ -51,12 +49,17 @@ import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel"
 import { FactoryConfigImportExport } from "@/components/factoryConfig/FactoryConfigImportExport";
 import { FactoryConfigAudit } from "@/components/factoryConfig/FactoryConfigAudit";
 import { FactorySetupWizard } from "@/components/factoryConfig/FactorySetupWizard";
+import { SeedDataTab } from "@/components/factoryConfig/SeedDataTab";
+import { FactoriesTab } from "@/components/factoryConfig/FactoriesTab";
+import { WorkshopsTab } from "@/components/factoryConfig/WorkshopsTab";
+import { LinesTab } from "@/components/factoryConfig/LinesTab";
+import { StationsTab } from "@/components/factoryConfig/StationsTab";
+import { MachinesTab } from "@/components/factoryConfig/MachinesTab";
 import type { NavTarget } from "@/components/factoryConfig/factoryModel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 // doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
 // (/products, /product-mapping, /process-management, /workstation-management). The hub
 // links out to them via the "Liên kết nhanh" cards instead of re-embedding them here.
-import { ExcelImportExport } from "@/components/ExcelImportExport";
 
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -65,11 +68,12 @@ import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 import { CascadeDeleteDialog } from "@/components/CascadeDeleteDialog";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { RotateCcw, Eye, History } from "lucide-react";
+import { History } from "lucide-react";
 
+// Row types kept LOCAL here (identical to components/factoryConfig/entityTypes.ts, which
+// the extracted tab components import). Local `type Factory` coexists with the lucide
+// `Factory` icon value-import via TS's separate type/value namespaces; an `import type`
+// would collide. Structural typing makes both definitions interchangeable across props.
 type Factory = { id: number; code: string; name: string; address?: string | null; description?: string | null };
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
 type Line = { id: number; workshopId: number; code: string; name: string; description?: string | null };
@@ -531,22 +535,6 @@ export default function DataSettings() {
       setEditingShift(null);
       refetchShifts();
     },
-    onError: (error) => toastTrpcError(error),
-  });
-
-  // Seed Data Mutations
-  const seedDataMutation = trpc.seedData.seed.useMutation({
-    onSuccess: () => toast.success('Đã tạo dữ liệu cơ sở mẫu thành công!'),
-    onError: (error) => toastTrpcError(error),
-  });
-
-  const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
-    onSuccess: () => toast.success('Đã tạo 100 bản ghi kiểm tra mẫu thành công!'),
-    onError: (error) => toastTrpcError(error),
-  });
-
-  const seedWorkstationAnalyticsMutation = trpc.seedData.seedWorkstationAnalytics.useMutation({
-    onSuccess: () => toast.success('Đã tạo dữ liệu phân tích trạm làm việc mẫu thành công!'),
     onError: (error) => toastTrpcError(error),
   });
 
@@ -1063,909 +1051,141 @@ export default function DataSettings() {
 
           {/* Factories Tab */}
           <TabsContent value="factories">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.factoryList")}</CardTitle>
-                    <CardDescription>{t("settings.factoryCount", { count: filteredFactories.length })}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  <ExcelImportExport
-                    entityType="nhà máy"
-                    templateData={[{ code: "F001", name: "Factory 1", description: "", address: "", region: "", country: "", isActive: true }]}
-                    templateFilename="factories_template.xlsx"
-                    onImport={async (data, replaceIfExists) => importFactoriesMutation.mutateAsync({ data, replaceIfExists })}
-                    onExport={async () => exportFactoriesMutation.mutateAsync()}
-                    onImportComplete={() => refetchFactories()}
-                  />
-                  <Dialog open={factoryDialogOpen} onOpenChange={setFactoryDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addFactory")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addFactoryNew")}</DialogTitle>
-                        <DialogDescription className="sr-only">{t("settings.addFactoryNew")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.factoryCode")} *</label>
-                          <Input
-                            placeholder={t("settings.factoryCodePlaceholder")}
-                            value={factoryForm.code}
-                            onChange={(e) => setFactoryForm({ ...factoryForm, code: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.factoryName")} *</label>
-                          <Input
-                            placeholder={t("settings.factoryNamePlaceholder")}
-                            value={factoryForm.name}
-                            onChange={(e) => setFactoryForm({ ...factoryForm, name: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.address")}</label>
-                          <Input
-                            placeholder={t("settings.addressPlaceholder")}
-                            value={factoryForm.address}
-                            onChange={(e) => setFactoryForm({ ...factoryForm, address: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setFactoryDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button 
-                          onClick={() => createFactoryMutation.mutate(factoryForm)}
-                          disabled={createFactoryMutation.isPending}
-                        >
-                          {createFactoryMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("common.createBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {isAdmin && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <Switch id="show-deleted" checked={showDeleted} onCheckedChange={setShowDeleted} />
-                    <Label htmlFor="show-deleted" className="text-sm text-muted-foreground flex items-center gap-1">
-                      <Eye className="h-4 w-4" />
-                      {t("settings.showDeleted")}
-                    </Label>
-                  </div>
-                )}
-                <DataTable<Factory>
-                  data={filteredFactories}
-                  getRowId={(f) => f.id}
-                  loading={factoriesLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchFactoryPlaceholder")}
-                  emptyState={(factories?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={Building2}
-                      title={t("settings.noFactory")}
-                      description={t("dataSettings.emptyFactoryDesc", "Chưa có nhà máy nào. Tạo nhà máy đầu tiên để bắt đầu.")}
-                      actionLabel={t("settings.addFactory")}
-                      onAction={() => setFactoryDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "name", header: t("settings.factoryName"), cell: (f) => <span className="font-medium text-foreground">{f.name}</span>, sortValue: (f) => f.name, filterValue: (f) => f.name },
-                    { id: "code", header: t("settings.factoryCode"), width: "160px", cell: (f) => <span className="font-mono text-sm text-muted-foreground">{f.code}</span>, sortValue: (f) => f.code, filterValue: (f) => f.code },
-                    { id: "address", header: t("settings.address"), cell: (f) => <span className="text-sm text-muted-foreground">{f.address || t("common.na")}</span>, filterValue: (f) => f.address || "" },
-                    { id: "actions", header: "", align: "right", width: "96px", cell: (f) => (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditFactory(f)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setFactoryToDelete(f)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ) },
-                  ]}
-                />
-                {/* Deleted factories (admin) */}
-                {showDeleted && isAdmin && deletedFactories && deletedFactories.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <div className="border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                    </div>
-                    {deletedFactories.map((factory: Factory) => (
-                        <div key={factory.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                              <Building2 className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground line-through">{factory.name}</p>
-                              <p className="text-sm text-muted-foreground">{factory.code}</p>
-                            </div>
-                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => restoreFactoryMutation.mutate({ id: factory.id })}
-                            disabled={restoreFactoryMutation.isPending}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {t("settings.restore")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <FactoriesTab
+              filteredFactories={filteredFactories}
+              factories={factories}
+              factoriesLoading={factoriesLoading}
+              deletedFactories={deletedFactories}
+              isAdmin={isAdmin}
+              showDeleted={showDeleted}
+              setShowDeleted={setShowDeleted}
+              factoryDialogOpen={factoryDialogOpen}
+              setFactoryDialogOpen={setFactoryDialogOpen}
+              factoryForm={factoryForm}
+              setFactoryForm={setFactoryForm}
+              createFactoryMutation={createFactoryMutation}
+              importFactoriesMutation={importFactoriesMutation}
+              exportFactoriesMutation={exportFactoriesMutation}
+              refetchFactories={refetchFactories}
+              handleEditFactory={handleEditFactory}
+              setFactoryToDelete={setFactoryToDelete}
+              restoreFactoryMutation={restoreFactoryMutation}
+            />
           </TabsContent>
 
           {/* Workshops Tab */}
           <TabsContent value="workshops">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.workshopList")}</CardTitle>
-                    <CardDescription>{t("settings.workshopCount", { count: filteredWorkshops.length })} {workshopFilterFactory !== "all" && `(${t("common.filtered")})`}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  <ExcelImportExport
-                    entityType="phân xưởng"
-                    templateData={[{ factoryCode: "F001", code: "W001", name: "Workshop 1", description: "", isActive: true }]}
-                    templateFilename="workshops_template.xlsx"
-                    onImport={async (data, replaceIfExists) => importWorkshopsMutation.mutateAsync({ data, replaceIfExists })}
-                    onExport={async () => exportWorkshopsMutation.mutateAsync()}
-                    onImportComplete={() => refetchWorkshops()}
-                  />
-                  <Dialog open={workshopDialogOpen} onOpenChange={setWorkshopDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addWorkshop")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addWorkshopNew")}</DialogTitle>
-                        <DialogDescription className="sr-only">{t("settings.addWorkshopNew")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.factory")} *</label>
-                          <Select value={workshopForm.factoryId} onValueChange={(v) => setWorkshopForm({ ...workshopForm, factoryId: v })}>
-                            <SelectTrigger><SelectValue placeholder={t("settings.selectFactory")} /></SelectTrigger>
-                            <SelectContent>
-                              {factories?.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.workshopCode")} *</label>
-                          <Input
-                            placeholder={t("settings.workshopCodePlaceholder")}
-                            value={workshopForm.code}
-                            onChange={(e) => setWorkshopForm({ ...workshopForm, code: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.workshopName")} *</label>
-                          <Input
-                            placeholder={t("settings.workshopNamePlaceholder")}
-                            value={workshopForm.name}
-                            onChange={(e) => setWorkshopForm({ ...workshopForm, name: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setWorkshopDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button 
-                          onClick={() => createWorkshopMutation.mutate({ ...workshopForm, factoryId: parseInt(workshopForm.factoryId) })}
-                          disabled={createWorkshopMutation.isPending}
-                        >
-                          {createWorkshopMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("common.createBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DataTable<Workshop>
-                  data={filteredWorkshops}
-                  getRowId={(w) => w.id}
-                  loading={workshopsLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchWorkshopPlaceholder")}
-                  toolbar={
-                    <Select value={workshopFilterFactory} onValueChange={setWorkshopFilterFactory}>
-                      <SelectTrigger className="w-52 h-9">
-                        <SelectValue placeholder={t("dataSettings.filterByFactory")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">{t("common.all")} {t("dashboard.factory").toLowerCase()}</SelectItem>
-                        {factories?.map((f) => (
-                          <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  }
-                  emptyState={(workshops?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={Warehouse}
-                      title={t("settings.noWorkshop")}
-                      description={t("dataSettings.emptyWorkshopDesc", "Chưa có phân xưởng nào. Thêm phân xưởng để tổ chức nhà máy.")}
-                      actionLabel={t("settings.addWorkshop")}
-                      onAction={() => setWorkshopDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "name", header: t("settings.workshopName"), cell: (w) => <span className="font-medium text-foreground">{w.name}</span>, sortValue: (w) => w.name, filterValue: (w) => w.name },
-                    { id: "code", header: t("settings.workshopCode"), width: "160px", cell: (w) => <span className="font-mono text-sm text-muted-foreground">{w.code}</span>, sortValue: (w) => w.code, filterValue: (w) => w.code },
-                    { id: "factory", header: t("dashboard.factory"), cell: (w) => <span className="text-sm text-muted-foreground">{factories?.find(f => f.id === w.factoryId)?.name || t("common.na")}</span>, sortValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "", filterValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "" },
-                    { id: "actions", header: "", align: "right", width: "96px", cell: (w) => (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(w)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setWorkshopToDelete(w)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ) },
-                  ]}
-                />
-                {/* Deleted workshops (admin) */}
-                {showDeleted && isAdmin && deletedWorkshops && deletedWorkshops.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <div className="border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                    </div>
-                    {deletedWorkshops.map((workshop: Workshop) => (
-                        <div key={workshop.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                              <Warehouse className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground line-through">{workshop.name}</p>
-                              <p className="text-sm text-muted-foreground">{workshop.code}</p>
-                            </div>
-                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => restoreWorkshopMutation.mutate({ id: workshop.id })}
-                            disabled={restoreWorkshopMutation.isPending}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {t("settings.restore")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <WorkshopsTab
+              filteredWorkshops={filteredWorkshops}
+              workshops={workshops}
+              workshopsLoading={workshopsLoading}
+              deletedWorkshops={deletedWorkshops}
+              factories={factories}
+              isAdmin={isAdmin}
+              showDeleted={showDeleted}
+              workshopFilterFactory={workshopFilterFactory}
+              setWorkshopFilterFactory={setWorkshopFilterFactory}
+              workshopDialogOpen={workshopDialogOpen}
+              setWorkshopDialogOpen={setWorkshopDialogOpen}
+              workshopForm={workshopForm}
+              setWorkshopForm={setWorkshopForm}
+              createWorkshopMutation={createWorkshopMutation}
+              importWorkshopsMutation={importWorkshopsMutation}
+              exportWorkshopsMutation={exportWorkshopsMutation}
+              refetchWorkshops={refetchWorkshops}
+              handleEditWorkshop={handleEditWorkshop}
+              setWorkshopToDelete={setWorkshopToDelete}
+              restoreWorkshopMutation={restoreWorkshopMutation}
+            />
           </TabsContent>
 
           {/* Lines Tab */}
           <TabsContent value="lines">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.lineList")}</CardTitle>
-                    <CardDescription>{t("settings.lineCount", { count: filteredLines.length })} {lineFilterWorkshop !== "all" && `(${t("common.filtered")})`}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  <ExcelImportExport
-                    entityType="dây chuyền"
-                    templateData={[{ workshopCode: "W001", code: "L001", name: "Line 1", description: "", capacityPerHour: 100, maxConcurrentOrders: 1, isActive: true }]}
-                    templateFilename="lines_template.xlsx"
-                    onImport={async (data, replaceIfExists) => importLinesMutation.mutateAsync({ data, replaceIfExists })}
-                    onExport={async () => exportLinesMutation.mutateAsync()}
-                    onImportComplete={() => refetchLines()}
-                  />
-                  <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addLine")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addLineNew")}</DialogTitle>
-                        <DialogDescription className="sr-only">{t("settings.addLineNew")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.factory")} *</label>
-                          <Select value={lineForm.factoryId} onValueChange={(v) => setLineForm({ ...lineForm, factoryId: v, workshopId: "" })}>
-                            <SelectTrigger><SelectValue placeholder={t("settings.selectFactory")} /></SelectTrigger>
-                            <SelectContent>
-                              {factories?.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.workshop")} *</label>
-                          <Select value={lineForm.workshopId} onValueChange={(v) => setLineForm({ ...lineForm, workshopId: v })} disabled={!lineForm.factoryId}>
-                            <SelectTrigger><SelectValue placeholder={lineForm.factoryId ? t("settings.selectWorkshop") : t("dataSettings.selectFactoryFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {workshops?.filter(w => String(w.factoryId) === lineForm.factoryId).map((w) => (
-                                <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.lineCode")} *</label>
-                          <Input
-                            placeholder={t("settings.lineCodePlaceholder")}
-                            value={lineForm.code}
-                            onChange={(e) => setLineForm({ ...lineForm, code: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.lineName")} *</label>
-                          <Input
-                            placeholder={t("settings.lineNamePlaceholder")}
-                            value={lineForm.name}
-                            onChange={(e) => setLineForm({ ...lineForm, name: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setLineDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button
-                          onClick={() => createLineMutation.mutate({ code: lineForm.code, name: lineForm.name, description: lineForm.description, workshopId: parseInt(lineForm.workshopId) })}
-                          disabled={createLineMutation.isPending}
-                        >
-                          {createLineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("common.createBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DataTable<Line>
-                  data={filteredLines}
-                  getRowId={(l) => l.id}
-                  loading={linesLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchLinePlaceholder")}
-                  toolbar={
-                    <Select value={lineFilterWorkshop} onValueChange={setLineFilterWorkshop}>
-                      <SelectTrigger className="w-52 h-9">
-                        <SelectValue placeholder={t("dataSettings.filterByWorkshop")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">{t("common.all")} {t("dashboard.workshop").toLowerCase()}</SelectItem>
-                        {workshops?.map((w) => (
-                          <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  }
-                  emptyState={(lines?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={GitBranch}
-                      title={t("settings.noLine")}
-                      description={t("dataSettings.emptyLineDesc", "Chưa có dây chuyền nào. Thêm dây chuyền vào phân xưởng.")}
-                      actionLabel={t("settings.addLine")}
-                      onAction={() => setLineDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "name", header: t("settings.lineName"), cell: (l) => <span className="font-medium text-foreground">{l.name}</span>, sortValue: (l) => l.name, filterValue: (l) => l.name },
-                    { id: "code", header: t("settings.lineCode"), width: "160px", cell: (l) => <span className="font-mono text-sm text-muted-foreground">{l.code}</span>, sortValue: (l) => l.code, filterValue: (l) => l.code },
-                    { id: "workshop", header: t("dashboard.workshop"), cell: (l) => <span className="text-sm text-muted-foreground">{workshops?.find(w => w.id === l.workshopId)?.name || t("common.na")}</span>, sortValue: (l) => workshops?.find(w => w.id === l.workshopId)?.name || "", filterValue: (l) => workshops?.find(w => w.id === l.workshopId)?.name || "" },
-                    { id: "actions", header: "", align: "right", width: "96px", cell: (l) => (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditLine(l)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setLineToDelete(l)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ) },
-                  ]}
-                />
-                {/* Deleted lines (admin) */}
-                {showDeleted && isAdmin && deletedLines && deletedLines.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <div className="border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                    </div>
-                    {deletedLines.map((line: any) => (
-                        <div key={line.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                              <GitBranch className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground line-through">{line.name}</p>
-                              <p className="text-sm text-muted-foreground">{line.code}</p>
-                            </div>
-                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => restoreLineMutation.mutate({ id: line.id })}
-                            disabled={restoreLineMutation.isPending}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {t("settings.restore")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <LinesTab
+              filteredLines={filteredLines}
+              lines={lines}
+              linesLoading={linesLoading}
+              deletedLines={deletedLines}
+              factories={factories}
+              workshops={workshops}
+              isAdmin={isAdmin}
+              showDeleted={showDeleted}
+              lineFilterWorkshop={lineFilterWorkshop}
+              setLineFilterWorkshop={setLineFilterWorkshop}
+              lineDialogOpen={lineDialogOpen}
+              setLineDialogOpen={setLineDialogOpen}
+              lineForm={lineForm}
+              setLineForm={setLineForm}
+              createLineMutation={createLineMutation}
+              importLinesMutation={importLinesMutation}
+              exportLinesMutation={exportLinesMutation}
+              refetchLines={refetchLines}
+              handleEditLine={handleEditLine}
+              setLineToDelete={setLineToDelete}
+              restoreLineMutation={restoreLineMutation}
+            />
           </TabsContent>
 
           {/* Stations Tab */}
           <TabsContent value="stations">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.stationList")}</CardTitle>
-                    <CardDescription>{t("settings.stationCount", { count: filteredStations.length })} {stationFilterLine !== "all" && `(${t("common.filtered")})`}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  <ExcelImportExport
-                    entityType="trạm"
-                    templateData={[{ lineCode: "L001", code: "S001", name: "Station 1", description: "", orderIndex: 1, isActive: true }]}
-                    templateFilename="stations_template.xlsx"
-                    onImport={async (data, replaceIfExists) => importStationsMutation.mutateAsync({ data, replaceIfExists })}
-                    onExport={async () => exportStationsMutation.mutateAsync()}
-                    onImportComplete={() => refetchStations()}
-                  />
-                  <Dialog open={stationDialogOpen} onOpenChange={setStationDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addStation")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addStationNew")}</DialogTitle>
-                        <DialogDescription className="sr-only">{t("settings.addStationNew")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.factory")} *</label>
-                          <Select value={stationForm.factoryId} onValueChange={(v) => setStationForm({ ...stationForm, factoryId: v, workshopId: "", lineId: "" })}>
-                            <SelectTrigger><SelectValue placeholder={t("settings.selectFactory")} /></SelectTrigger>
-                            <SelectContent>
-                              {factories?.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.workshop")} *</label>
-                          <Select value={stationForm.workshopId} onValueChange={(v) => setStationForm({ ...stationForm, workshopId: v, lineId: "" })} disabled={!stationForm.factoryId}>
-                            <SelectTrigger><SelectValue placeholder={stationForm.factoryId ? t("settings.selectWorkshop") : t("dataSettings.selectFactoryFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {workshops?.filter(w => String(w.factoryId) === stationForm.factoryId).map((w) => (
-                                <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.line")} *</label>
-                          <Select value={stationForm.lineId} onValueChange={(v) => setStationForm({ ...stationForm, lineId: v })} disabled={!stationForm.workshopId}>
-                            <SelectTrigger><SelectValue placeholder={stationForm.workshopId ? t("settings.selectLine") : t("dataSettings.selectWorkshopFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {lines?.filter(l => String(l.workshopId) === stationForm.workshopId).map((l) => (
-                                <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.stationCode")} *</label>
-                          <Input
-                            placeholder={t("settings.stationCodePlaceholder")}
-                            value={stationForm.code}
-                            onChange={(e) => setStationForm({ ...stationForm, code: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.stationName")} *</label>
-                          <Input
-                            placeholder={t("settings.stationNamePlaceholder")}
-                            value={stationForm.name}
-                            onChange={(e) => setStationForm({ ...stationForm, name: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.order")}</label>
-                          <Input
-                            type="number"
-                            placeholder="0"
-                            value={stationForm.orderIndex}
-                            onChange={(e) => setStationForm({ ...stationForm, orderIndex: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setStationDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button 
-                          onClick={() => createStationMutation.mutate({ 
-                            code: stationForm.code, 
-                            name: stationForm.name, 
-                            description: stationForm.description,
-                            lineId: parseInt(stationForm.lineId),
-                            orderIndex: parseInt(stationForm.orderIndex) 
-                          })}
-                          disabled={createStationMutation.isPending}
-                        >
-                          {createStationMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("common.createBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DataTable<Station>
-                  data={filteredStations}
-                  getRowId={(s) => s.id}
-                  loading={stationsLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchStationPlaceholder")}
-                  initialSort={{ columnId: "order", dir: "asc" }}
-                  toolbar={
-                    <Select value={stationFilterLine} onValueChange={setStationFilterLine}>
-                      <SelectTrigger className="w-52 h-9">
-                        <SelectValue placeholder={t("dataSettings.filterByLine")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">{t("common.all")} {t("dashboard.line").toLowerCase()}</SelectItem>
-                        {lines?.map((l) => (
-                          <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  }
-                  emptyState={(stations?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={Cpu}
-                      title={t("settings.noStation")}
-                      description={t("dataSettings.emptyStationDesc", "Chưa có trạm nào. Thêm trạm kiểm tra vào dây chuyền.")}
-                      actionLabel={t("settings.addStation")}
-                      onAction={() => setStationDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "name", header: t("settings.stationName"), cell: (s) => <span className="font-medium text-foreground">{s.name}</span>, sortValue: (s) => s.name, filterValue: (s) => s.name },
-                    { id: "code", header: t("settings.stationCode"), width: "160px", cell: (s) => <span className="font-mono text-sm text-muted-foreground">{s.code}</span>, sortValue: (s) => s.code, filterValue: (s) => s.code },
-                    { id: "line", header: t("dashboard.line"), cell: (s) => <span className="text-sm text-muted-foreground">{lines?.find(l => l.id === s.lineId)?.name || t("common.na")}</span>, sortValue: (s) => lines?.find(l => l.id === s.lineId)?.name || "", filterValue: (s) => lines?.find(l => l.id === s.lineId)?.name || "" },
-                    { id: "order", header: t("settings.order"), align: "right", width: "100px", cell: (s) => <span className="tabular-nums text-sm text-muted-foreground">{s.orderIndex.toLocaleString('vi-VN')}</span>, sortValue: (s) => s.orderIndex },
-                    { id: "actions", header: "", align: "right", width: "96px", cell: (s) => (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditStation(s)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setStationToDelete(s)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ) },
-                  ]}
-                />
-                {/* Deleted stations (admin) */}
-                {showDeleted && isAdmin && deletedStations && deletedStations.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <div className="border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                    </div>
-                    {deletedStations.map((station: any) => (
-                        <div key={station.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                              <Cpu className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground line-through">{station.name}</p>
-                              <p className="text-sm text-muted-foreground">{station.code}</p>
-                            </div>
-                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => restoreStationMutation.mutate({ id: station.id })}
-                            disabled={restoreStationMutation.isPending}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {t("settings.restore")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <StationsTab
+              filteredStations={filteredStations}
+              stations={stations}
+              stationsLoading={stationsLoading}
+              deletedStations={deletedStations}
+              factories={factories}
+              workshops={workshops}
+              lines={lines}
+              isAdmin={isAdmin}
+              showDeleted={showDeleted}
+              stationFilterLine={stationFilterLine}
+              setStationFilterLine={setStationFilterLine}
+              stationDialogOpen={stationDialogOpen}
+              setStationDialogOpen={setStationDialogOpen}
+              stationForm={stationForm}
+              setStationForm={setStationForm}
+              createStationMutation={createStationMutation}
+              importStationsMutation={importStationsMutation}
+              exportStationsMutation={exportStationsMutation}
+              refetchStations={refetchStations}
+              handleEditStation={handleEditStation}
+              setStationToDelete={setStationToDelete}
+              restoreStationMutation={restoreStationMutation}
+            />
           </TabsContent>
 
           {/* Machines Tab */}
           <TabsContent value="machines">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{t("settings.machineList")}</CardTitle>
-                    <CardDescription>{t("settings.machineCount", { count: filteredMachines.length })} {(machineFilterStation !== "all" || machineFilterType !== "all") && `(${t("common.filtered")})`}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  <ExcelImportExport
-                    entityType="máy"
-                    templateData={[{ stationCode: "S001", code: "M001", name: "Machine 1", machineType: "AVI", model: "", manufacturer: "", isActive: true }]}
-                    templateFilename="machines_template.xlsx"
-                    onImport={async (data, replaceIfExists) => importMachinesMutation.mutateAsync({ data, replaceIfExists })}
-                    onExport={async () => exportMachinesMutation.mutateAsync()}
-                    onImportComplete={() => refetchMachines()}
-                  />
-                  <Dialog open={machineDialogOpen} onOpenChange={setMachineDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addMachine")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t("settings.addMachineNew")}</DialogTitle>
-                        <DialogDescription>{t("settings.addMachineDesc")}</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.factory")} *</label>
-                          <Select value={machineForm.factoryId} onValueChange={(v) => setMachineForm({ ...machineForm, factoryId: v, workshopId: "", lineId: "", stationId: "" })}>
-                            <SelectTrigger><SelectValue placeholder={t("settings.selectFactory")} /></SelectTrigger>
-                            <SelectContent>
-                              {factories?.map((f) => (
-                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.workshop")} *</label>
-                          <Select value={machineForm.workshopId} onValueChange={(v) => setMachineForm({ ...machineForm, workshopId: v, lineId: "", stationId: "" })} disabled={!machineForm.factoryId}>
-                            <SelectTrigger><SelectValue placeholder={machineForm.factoryId ? t("settings.selectWorkshop") : t("dataSettings.selectFactoryFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {workshops?.filter(w => String(w.factoryId) === machineForm.factoryId).map((w) => (
-                                <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("dashboard.line")} *</label>
-                          <Select value={machineForm.lineId} onValueChange={(v) => setMachineForm({ ...machineForm, lineId: v, stationId: "" })} disabled={!machineForm.workshopId}>
-                            <SelectTrigger><SelectValue placeholder={machineForm.workshopId ? t("settings.selectLine") : t("dataSettings.selectWorkshopFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {lines?.filter(l => String(l.workshopId) === machineForm.workshopId).map((l) => (
-                                <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.sidebar.workstation")} *</label>
-                          <Select value={machineForm.stationId} onValueChange={(v) => setMachineForm({ ...machineForm, stationId: v })} disabled={!machineForm.lineId}>
-                            <SelectTrigger><SelectValue placeholder={machineForm.lineId ? t("settings.selectStation") : t("dataSettings.selectLineFirst")} /></SelectTrigger>
-                            <SelectContent>
-                              {stations?.filter(s => String(s.lineId) === machineForm.lineId).map((s) => (
-                                <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.machineCode")} *</label>
-                          <Input
-                            placeholder={t("settings.machineCodePlaceholder")}
-                            value={machineForm.code}
-                            onChange={(e) => setMachineForm({ ...machineForm, code: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.machineName")} *</label>
-                          <Input
-                            placeholder={t("settings.machineNamePlaceholder")}
-                            value={machineForm.name}
-                            onChange={(e) => setMachineForm({ ...machineForm, name: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.machineType")} *</label>
-                          <Select value={machineForm.machineType} onValueChange={(v: MachineType) => setMachineForm({ ...machineForm, machineType: v })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {MACHINE_TYPES.map((mt) => (
-                                <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.model")}</label>
-                          <Input
-                            placeholder={t("settings.modelPlaceholder")}
-                            value={machineForm.model}
-                            onChange={(e) => setMachineForm({ ...machineForm, model: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">{t("settings.manufacturer")}</label>
-                          <Input
-                            placeholder={t("settings.manufacturerPlaceholder")}
-                            value={machineForm.manufacturer}
-                            onChange={(e) => setMachineForm({ ...machineForm, manufacturer: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setMachineDialogOpen(false)}>{t("common.cancel")}</Button>
-                        <Button 
-                          onClick={() => createMachineMutation.mutate({ 
-                            code: machineForm.code, 
-                            name: machineForm.name, 
-                            description: machineForm.description,
-                            machineType: machineForm.machineType,
-                            model: machineForm.model,
-                            manufacturer: machineForm.manufacturer,
-                            stationId: parseInt(machineForm.stationId)
-                          })}
-                          disabled={createMachineMutation.isPending}
-                        >
-                          {createMachineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {t("common.createBtn")}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <DataTable<Machine>
-                  data={filteredMachines}
-                  getRowId={(m) => m.id}
-                  loading={machinesLoading}
-                  searchable
-                  searchPlaceholder={t("dataSettings.searchMachinePlaceholder")}
-                  toolbar={
-                    <>
-                      <Select value={machineFilterStation} onValueChange={setMachineFilterStation}>
-                        <SelectTrigger className="w-48 h-9">
-                          <SelectValue placeholder={t("dataSettings.filterByStation")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">{t("common.all")} {t("settings.sidebar.workstation").toLowerCase()}</SelectItem>
-                          {stations?.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={machineFilterType} onValueChange={setMachineFilterType}>
-                        <SelectTrigger className="w-40 h-9">
-                          <SelectValue placeholder={t("dataSettings.filterByType")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">{t("common.all")} {t("settings.machineType").toLowerCase()}</SelectItem>
-                          {machineTypes.map((type) => (
-                            <SelectItem key={type} value={type}>{machineTypeLabel(t, type as MachineType)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  }
-                  emptyState={(machines?.length ?? 0) === 0 ? (
-                    <EmptyState
-                      variant="no-data"
-                      icon={Cpu}
-                      title={t("settings.noMachine")}
-                      description={t("dataSettings.emptyMachineDesc", "Chưa có máy nào. Thêm máy kiểm tra vào trạm.")}
-                      actionLabel={t("settings.addMachine")}
-                      onAction={() => setMachineDialogOpen(true)}
-                    />
-                  ) : undefined}
-                  columns={[
-                    { id: "name", header: t("settings.machineName"), cell: (m) => <span className="font-medium text-foreground">{m.name}</span>, sortValue: (m) => m.name, filterValue: (m) => m.name },
-                    { id: "code", header: t("settings.machineCode"), width: "160px", cell: (m) => <span className="font-mono text-sm text-muted-foreground">{m.code}</span>, sortValue: (m) => m.code, filterValue: (m) => m.code },
-                    { id: "type", header: t("settings.machineType"), width: "140px", cell: (m) => <StatusBadge status={m.machineType} tone="info" label={machineTypeLabel(t, m.machineType as MachineType)} />, sortValue: (m) => m.machineType, filterValue: (m) => `${m.machineType} ${machineTypeLabel(t, m.machineType as MachineType)}` },
-                    { id: "station", header: t("settings.sidebar.workstation"), cell: (m) => <span className="text-sm text-muted-foreground">{stations?.find(s => s.id === m.stationId)?.name || t("common.na")}</span>, sortValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "", filterValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "" },
-                    { id: "actions", header: "", align: "right", width: "180px", cell: (m) => (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1"
-                          onClick={async () => {
-                            const detail = await trpcUtils.machine.getById.fetch({ id: m.id });
-                            copyToClipboard(detail?.apiKey || '');
-                          }}
-                        >
-                          <Key className="h-3 w-3" />
-                          {t("settings.copyApiKey")}
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleEditMachine(m)}><Pencil className="h-4 w-4" /></Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => {
-                            setMachineToDelete(m);
-                            setDeleteMachineDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) },
-                  ]}
-                />
-                {/* Deleted machines (admin) */}
-                {showDeleted && isAdmin && deletedMachines && deletedMachines.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <div className="border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
-                    </div>
-                    {deletedMachines.map((machine: any) => (
-                        <div key={machine.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                              <Cpu className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-muted-foreground line-through">{machine.name}</p>
-                              <p className="text-sm text-muted-foreground">{machine.code}</p>
-                            </div>
-                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => restoreMachineMutation.mutate({ id: machine.id })}
-                            disabled={restoreMachineMutation.isPending}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            {t("settings.restore")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <MachinesTab
+              filteredMachines={filteredMachines}
+              machines={machines}
+              machinesLoading={machinesLoading}
+              deletedMachines={deletedMachines}
+              factories={factories}
+              workshops={workshops}
+              lines={lines}
+              stations={stations}
+              machineTypes={machineTypes}
+              isAdmin={isAdmin}
+              showDeleted={showDeleted}
+              machineFilterStation={machineFilterStation}
+              setMachineFilterStation={setMachineFilterStation}
+              machineFilterType={machineFilterType}
+              setMachineFilterType={setMachineFilterType}
+              machineDialogOpen={machineDialogOpen}
+              setMachineDialogOpen={setMachineDialogOpen}
+              machineForm={machineForm}
+              setMachineForm={setMachineForm}
+              createMachineMutation={createMachineMutation}
+              importMachinesMutation={importMachinesMutation}
+              exportMachinesMutation={exportMachinesMutation}
+              refetchMachines={refetchMachines}
+              copyToClipboard={copyToClipboard}
+              handleEditMachine={handleEditMachine}
+              setMachineToDelete={setMachineToDelete}
+              setDeleteMachineDialogOpen={setDeleteMachineDialogOpen}
+              restoreMachineMutation={restoreMachineMutation}
+            />
           </TabsContent>
 
           {/* Shifts Tab */}
@@ -2398,72 +1618,7 @@ export default function DataSettings() {
           </TabsContent>
 
           <TabsContent value="seed-data">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5 text-green-500" />
-                  Tạo dữ liệu mẫu
-                </CardTitle>
-                <CardDescription>
-                  Tạo dữ liệu mẫu để kiểm tra và demo hệ thống. Chỉ dùng trên môi trường phát triển.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card className="border-dashed">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Dữ liệu cơ sở</CardTitle>
-                      <CardDescription className="text-xs">Tạo nhà máy, dây chuyền, máy móc và sản phẩm mẫu</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button
-                        onClick={() => seedDataMutation.mutate()}
-                        disabled={seedDataMutation.isPending}
-                        className="w-full"
-                        variant="outline"
-                      >
-                        {seedDataMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo dữ liệu cơ sở'}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-dashed">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Dữ liệu kiểm tra</CardTitle>
-                      <CardDescription className="text-xs">Tạo 100 bản ghi kiểm tra mẫu (OK/NG)</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button
-                        onClick={() => seedInspectionsMutation.mutate({ count: 100 })}
-                        disabled={seedInspectionsMutation.isPending}
-                        className="w-full"
-                        variant="outline"
-                      >
-                        {seedInspectionsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo 100 bản ghi kiểm tra'}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-dashed">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Phân tích trạm làm việc</CardTitle>
-                      <CardDescription className="text-xs">Tạo 500 bản ghi phân tích 7 ngày gần đây</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button
-                        onClick={() => seedWorkstationAnalyticsMutation.mutate({ inspectionCount: 500, daysBack: 7 })}
-                        disabled={seedWorkstationAnalyticsMutation.isPending}
-                        className="w-full"
-                        variant="outline"
-                      >
-                        {seedWorkstationAnalyticsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang tạo...</> : 'Tạo dữ liệu phân tích'}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  ⚠️ Dữ liệu mẫu sẽ được thêm vào cơ sở dữ liệu hiện tại. Đảm bảo đã có cấu hình nhà máy và sản phẩm trước khi tạo dữ liệu kiểm tra.
-                </p>
-              </CardContent>
-            </Card>
+            <SeedDataTab />
           </TabsContent>
 
             </div>
