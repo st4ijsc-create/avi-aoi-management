@@ -1,5 +1,6 @@
 import { protectedProcedure, qualityProcedure, writeProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
@@ -281,7 +282,7 @@ export const productModelRouter = router({
       return computeProductReadinessBatch(input.ids);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
       code: z.string().min(1, "Mã sản phẩm là bắt buộc").max(100).regex(/^[A-Za-z0-9_\-]+$/, "Mã chỉ được chứa chữ, số, gạch dưới, gạch ngang"),
       name: z.string().min(1, "Tên sản phẩm là bắt buộc").max(255),
@@ -388,7 +389,7 @@ export const productModelRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_products", "canEdit"))
     .input(z.object({
       id: z.number().int().positive(),
       code: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash").optional(),
@@ -518,7 +519,7 @@ export const productModelRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_products", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.getProductModelById(input.id);
@@ -546,7 +547,7 @@ export const productModelRouter = router({
   // machine mappings (copyMappings, default false). It does NOT copy inspection
   // results, golden samples, or program releases (fresh start). Lifecycle resets to
   // 'development'; clonedFromId records provenance; the reference image is shared.
-  clone: adminProcedure
+  clone: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
       sourceId: z.number().int().positive(),
       newCode: z.string().min(1).max(100).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
@@ -858,7 +859,7 @@ export const measurementPointRouter = router({
       return db.getMeasurementPointDefById(input.id);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
     .input(z.object({
       productModelId: z.number().int().positive(),
       machineId: z.number().int().positive().optional(),
@@ -1045,7 +1046,7 @@ export const measurementPointRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
     .input(z.object({
       id: z.number().int().positive(),
       code: z.string().min(1).max(50).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash").optional(),
@@ -1364,7 +1365,7 @@ export const measurementPointRouter = router({
       return result;
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_measurement_points", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.getMeasurementPointDefById(input.id);

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import { generateInspectionReportPDF, generateQualityReportPDF } from "../services/pdfTemplateService";
 import type { PDFReportConfig, QualityReportData, InspectionReportData } from "../services/pdfTemplateService";
@@ -238,7 +238,7 @@ export const pdfReportRouter = router({
   /**
    * Save a report template
    */
-  saveTemplate: adminProcedure
+  saveTemplate: protectedProcedure.use(requirePermission("reports_templates", "canCreate"))
     .input(z.object({
       name: z.string().min(1),
       type: z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]),
@@ -276,7 +276,7 @@ export const pdfReportRouter = router({
   /**
    * Delete a report template
    */
-  deleteTemplate: adminProcedure
+  deleteTemplate: protectedProcedure.use(requirePermission("reports_templates", "canDelete"))
     .input(z.number())
     .mutation(async ({ input: id }) => {
       await db.deleteReportTemplate(id);

@@ -35,7 +35,7 @@ export const productionOrderRouter = router({
       return db.getProductionOrderByCode(input.orderCode);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("production_orders", "canCreate"))
     .input(z.object({
       orderCode: z.string().min(1).max(100),
       companyCode: z.string().min(1).max(50),
@@ -57,7 +57,7 @@ export const productionOrderRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       orderCode: z.string().min(1).max(100).optional(),
@@ -102,7 +102,7 @@ export const productionOrderRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteProductionOrder(input.id);
@@ -156,7 +156,7 @@ export const productionOrderRouter = router({
       };
     }),
 
-  reschedule: adminProcedure
+  reschedule: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       scheduledStartDate: z.date(),
@@ -287,7 +287,7 @@ export const productionOrderRouter = router({
       return db.getOrderTemplate(input.id);
     }),
 
-  createTemplate: adminProcedure
+  createTemplate: writeProcedure.use(requirePermission("production_orders", "canCreate"))
     .input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
@@ -302,7 +302,7 @@ export const productionOrderRouter = router({
       return db.createOrderTemplate({ ...input, createdBy: ctx.user.id });
     }),
 
-  updateTemplate: adminProcedure
+  updateTemplate: writeProcedure.use(requirePermission("production_orders", "canEdit"))
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
@@ -321,7 +321,7 @@ export const productionOrderRouter = router({
       return { success: true };
     }),
 
-  deleteTemplate: adminProcedure
+  deleteTemplate: writeProcedure.use(requirePermission("production_orders", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteOrderTemplate(input.id);
@@ -802,7 +802,7 @@ export const lineProductAssignmentRouter = router({
       return db.getLineProductAssignments(input);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("production_line_assignments", "canCreate"))
     .input(z.object({
       lineId: z.number(),
       productModelId: z.number(),
@@ -816,7 +816,7 @@ export const lineProductAssignmentRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("production_line_assignments", "canEdit"))
     .input(z.object({
       id: z.number(),
       lineId: z.number().optional(),
@@ -833,7 +833,7 @@ export const lineProductAssignmentRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("production_line_assignments", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteLineProductAssignment(input.id);
