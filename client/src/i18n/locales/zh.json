@@ -9248,6 +9248,54 @@
     "emptyStageDesc": "尚无工序。请添加工序以定义产线的生产流程。",
     "title": "工厂配置",
     "description": "配置工厂模型：基础设施、班次和工序",
+    "overview": {
+      "catLabel": "总览",
+      "tabLabel": "总览",
+      "treeTitle": "工厂模型",
+      "treeDesc": "层级树 工厂 → 车间 → 产线 → 工站 → 设备",
+      "healthTitle": "配置健康检查",
+      "healthDesc": "从真实数据检测配置缺口（只读）",
+      "searchPlaceholder": "按代码或名称搜索…",
+      "expandAll": "全部展开",
+      "collapseAll": "全部折叠",
+      "expand": "展开",
+      "collapse": "折叠",
+      "edit": "编辑",
+      "empty": "尚无工厂。创建第一个工厂以开始。",
+      "emptyTitle": "尚无工厂",
+      "addFactory": "添加工厂",
+      "emptyChild": "暂无子项",
+      "noMatch": "没有节点匹配 \"{{q}}\"",
+      "loadError": "无法加载工厂模型",
+      "sevDot": {
+        "0": "有效",
+        "1": "配置警告",
+        "2": "配置错误"
+      },
+      "count": {
+        "workshop": "{{count}} 个车间",
+        "line": "{{count}} 条产线",
+        "station": "{{count}} 个工站",
+        "machine": "{{count}} 台设备"
+      },
+      "health": {
+        "loadError": "无法加载配置健康检查",
+        "emptyModel": "尚无可检查的配置",
+        "ok": "配置有效 ✓",
+        "issues": "{{count}} 个配置问题",
+        "sev": {
+          "error": "错误",
+          "warning": "警告"
+        },
+        "emptyFactory": "工厂尚无车间",
+        "emptyWorkshop": "车间尚无产线",
+        "emptyLine": "产线尚无工站",
+        "emptyStation": "工站尚无设备",
+        "dupCode": "代码重复 \"{{code}}\"",
+        "machineUnapproved": "设备未批准（状态：{{status}}）",
+        "machineNoModel": "设备未声明型号"
+      }
+    },
     "quickLinks": {
       "title": "快速链接",
       "description": "拥有独立页面的相关配置",

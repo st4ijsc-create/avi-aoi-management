@@ -9444,6 +9444,54 @@
     "emptyStageDesc": "Chưa có công đoạn nào. Thêm công đoạn để định nghĩa luồng sản xuất theo dây chuyền.",
     "title": "Cấu hình nhà máy",
     "description": "Cấu hình mô hình nhà máy: cơ sở hạ tầng, ca làm việc và công đoạn",
+    "overview": {
+      "catLabel": "Tổng quan",
+      "tabLabel": "Tổng quan",
+      "treeTitle": "Mô hình nhà máy",
+      "treeDesc": "Cây phân cấp Nhà máy → Xưởng → Dây chuyền → Trạm → Máy",
+      "healthTitle": "Kiểm tra cấu hình",
+      "healthDesc": "Phát hiện lỗ hổng cấu hình từ dữ liệu thật (chỉ đọc)",
+      "searchPlaceholder": "Tìm theo mã hoặc tên…",
+      "expandAll": "Mở hết",
+      "collapseAll": "Thu hết",
+      "expand": "Mở rộng",
+      "collapse": "Thu gọn",
+      "edit": "Sửa",
+      "empty": "Chưa có nhà máy nào. Tạo nhà máy đầu tiên để bắt đầu.",
+      "emptyTitle": "Chưa có nhà máy nào",
+      "addFactory": "Thêm nhà máy",
+      "emptyChild": "Chưa có mục con",
+      "noMatch": "Không có nút nào khớp \"{{q}}\"",
+      "loadError": "Không tải được mô hình nhà máy",
+      "sevDot": {
+        "0": "Hợp lệ",
+        "1": "Cảnh báo cấu hình",
+        "2": "Lỗi cấu hình"
+      },
+      "count": {
+        "workshop": "{{count}} xưởng",
+        "line": "{{count}} dây chuyền",
+        "station": "{{count}} trạm",
+        "machine": "{{count}} máy"
+      },
+      "health": {
+        "loadError": "Không tải được kiểm tra cấu hình",
+        "emptyModel": "Chưa có cấu hình để kiểm tra",
+        "ok": "Cấu hình hợp lệ ✓",
+        "issues": "{{count}} vấn đề cấu hình",
+        "sev": {
+          "error": "Lỗi",
+          "warning": "Cảnh báo"
+        },
+        "emptyFactory": "Nhà máy chưa có phân xưởng",
+        "emptyWorkshop": "Phân xưởng chưa có dây chuyền",
+        "emptyLine": "Dây chuyền chưa có trạm",
+        "emptyStation": "Trạm chưa có máy",
+        "dupCode": "Trùng mã \"{{code}}\"",
+        "machineUnapproved": "Máy chưa được duyệt (trạng thái: {{status}})",
+        "machineNoModel": "Máy chưa khai báo model"
+      }
+    },
     "quickLinks": {
       "title": "Liên kết nhanh",
       "description": "Các trang cấu hình liên quan có trang riêng của chúng",

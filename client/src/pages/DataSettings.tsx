@@ -39,9 +39,16 @@ import {
   Cog,
   Package,
   Workflow,
-  ArrowRight
+  ArrowRight,
+  LayoutGrid,
+  Network,
+  ShieldCheck
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+// doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
+import { FactoryTree } from "@/components/factoryConfig/FactoryTree";
+import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel";
+import type { NavTarget } from "@/components/factoryConfig/factoryModel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 // doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
 // (/products, /product-mapping, /process-management, /workstation-management). The hub
@@ -79,7 +86,8 @@ export default function DataSettings() {
   // Parse tab from URL query parameter
   const getTabFromUrl = () => {
     const params = new URLSearchParams(search);
-    return params.get('tab') || 'factories';
+    // doc 47 IA Đợt 2 — "Tổng quan" là tab mặc định khi không có ?tab=.
+    return params.get('tab') || 'overview';
   };
   
   const [activeTab, setActiveTab] = useState(getTabFromUrl);
@@ -88,6 +96,32 @@ export default function DataSettings() {
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setLocation(`/datasettings?tab=${tab}`);
+  };
+
+  // doc 47 IA Đợt 2 — "Sửa →" từ cây/bảng-health: mở đúng tab CRUD + lọc sẵn theo cha
+  // (tái dùng cơ chế chuyển-tab + bộ lọc dropdown sẵn có của hub).
+  const handleConfigNavigate = (target: NavTarget) => {
+    switch (target.level) {
+      case "factory":
+        handleTabChange("factories");
+        break;
+      case "workshop":
+        if (target.factoryId != null) setWorkshopFilterFactory(String(target.factoryId));
+        handleTabChange("workshops");
+        break;
+      case "line":
+        if (target.workshopId != null) setLineFilterWorkshop(String(target.workshopId));
+        handleTabChange("lines");
+        break;
+      case "station":
+        if (target.lineId != null) setStationFilterLine(String(target.lineId));
+        handleTabChange("stations");
+        break;
+      case "machine":
+        if (target.stationId != null) setMachineFilterStation(String(target.stationId));
+        handleTabChange("machines");
+        break;
+    }
   };
   
   // Sync tab with URL on mount and URL changes. doc 47 IA Đợt 1 — the products/process
@@ -699,6 +733,14 @@ export default function DataSettings() {
   // Nhãn/icon lấy đúng từ legacy menu bên dưới để không lệch ngữ nghĩa.
   const tabGroups = [
     {
+      id: "overview",
+      label: t("dataSettings.overview.catLabel", "Tổng quan"),
+      icon: <LayoutGrid className="h-3.5 w-3.5 text-teal-500" />,
+      items: [
+        { value: "overview", label: t("dataSettings.overview.tabLabel", "Tổng quan"), icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+      ],
+    },
+    {
       id: "infrastructure",
       label: t("settings.cat.infrastructure"),
       icon: <Factory className="h-3.5 w-3.5 text-blue-500" />,
@@ -965,6 +1007,41 @@ export default function DataSettings() {
 
             {/* Main Content Area */}
             <div className="flex-1 min-w-0">
+
+          {/* doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
+              Cạnh nhau trên màn rộng (xl), xếp chồng trên màn hẹp. */}
+          <TabsContent value="overview">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Network className="h-4 w-4 text-primary" />
+                    {t("dataSettings.overview.treeTitle", "Mô hình nhà máy")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("dataSettings.overview.treeDesc", "Cây phân cấp Nhà máy → Xưởng → Dây chuyền → Trạm → Máy")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FactoryTree onNavigate={handleConfigNavigate} />
+                </CardContent>
+              </Card>
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    {t("dataSettings.overview.healthTitle", "Kiểm tra cấu hình")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("dataSettings.overview.healthDesc", "Phát hiện lỗ hổng cấu hình từ dữ liệu thật (chỉ đọc)")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ConfigHealthPanel onNavigate={handleConfigNavigate} />
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           {/* Factories Tab */}
           <TabsContent value="factories">

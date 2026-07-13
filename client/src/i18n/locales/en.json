@@ -9465,6 +9465,54 @@
     "emptyStageDesc": "No stages yet. Add a stage to define the production flow along the line.",
     "title": "Factory Configuration",
     "description": "Configure the factory model: infrastructure, shifts, and stages",
+    "overview": {
+      "catLabel": "Overview",
+      "tabLabel": "Overview",
+      "treeTitle": "Factory Model",
+      "treeDesc": "Hierarchy tree Factory → Workshop → Line → Station → Machine",
+      "healthTitle": "Config Health",
+      "healthDesc": "Detect configuration gaps from real data (read-only)",
+      "searchPlaceholder": "Search by code or name…",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "edit": "Edit",
+      "empty": "No factories yet. Create your first factory to get started.",
+      "emptyTitle": "No factories yet",
+      "addFactory": "Add factory",
+      "emptyChild": "No child items",
+      "noMatch": "No nodes match \"{{q}}\"",
+      "loadError": "Couldn't load the factory model",
+      "sevDot": {
+        "0": "Valid",
+        "1": "Configuration warning",
+        "2": "Configuration error"
+      },
+      "count": {
+        "workshop": "{{count}} workshops",
+        "line": "{{count}} lines",
+        "station": "{{count}} stations",
+        "machine": "{{count}} machines"
+      },
+      "health": {
+        "loadError": "Couldn't load the config health check",
+        "emptyModel": "No configuration to check yet",
+        "ok": "Configuration is valid ✓",
+        "issues": "{{count}} configuration issue(s)",
+        "sev": {
+          "error": "Error",
+          "warning": "Warning"
+        },
+        "emptyFactory": "Factory has no workshops",
+        "emptyWorkshop": "Workshop has no lines",
+        "emptyLine": "Line has no stations",
+        "emptyStation": "Station has no machines",
+        "dupCode": "Duplicate code \"{{code}}\"",
+        "machineUnapproved": "Machine not approved (status: {{status}})",
+        "machineNoModel": "Machine has no model declared"
+      }
+    },
     "quickLinks": {
       "title": "Quick links",
       "description": "Related configuration pages that have their own home",
