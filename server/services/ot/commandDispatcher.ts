@@ -138,6 +138,46 @@ const INTERLOCK_AUTO_ACTIONS: ReadonlySet<string> = new Set([
   "reduce_speed",
 ]);
 
+/**
+ * doc 48 R1 (T1) — SAFETY-PLC PREFLIGHT flag. Read at RUNTIME (tests/operators toggle).
+ * Default ON: safety should be on UNLESS an operator EXPLICITLY disables it
+ * (=== "false"). This is non-breaking despite being ON-by-default because an UNKNOWN
+ * safety status (no safety-PLC configured/enabled — the common case) still PASSES; only
+ * a real BLOCKED read denies. See readSafetyStateForPreflight + the (5a-safety) gate.
+ */
+export function isSafetyPreflightEnabled(): boolean {
+  return process.env.OT_SAFETY_PREFLIGHT_ENABLED !== "false";
+}
+
+/**
+ * doc 48 R1 (T1) — read the target adapter's READ-ONLY SafetyState for the pre-write
+ * preflight (spec invariant #1: a BLOCKED safety-PLC must deny actuation). Delegates to
+ * the adapter facade's getSafetyStatus (driver.getSafetyStatus → else the safety-PLC
+ * status adapter). The facade is HONEST: it returns 'UNKNOWN' (never a fabricated
+ * 'OK'/'BLOCKED') when no source is readable, and never actuates a safety function.
+ *
+ * Dynamic import avoids a STATIC module cycle (adapterFacade statically imports this
+ * dispatcher — mirrors the emitCmdAck/unsPublisher pattern). Belt-and-braces: any
+ * unexpected throw maps to 'UNKNOWN' (allow + warn), NEVER to a spurious 'BLOCKED' —
+ * a read error must not fabricate a trip, and UNKNOWN must not brick an unconfigured line.
+ */
+async function readSafetyStateForPreflight(
+  adapterId: number,
+  machineId: number | null,
+): Promise<"OK" | "BLOCKED" | "UNKNOWN"> {
+  try {
+    const { createAdapterFacade } = await import("./adapterFacade");
+    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus();
+    return state.state;
+  } catch (err) {
+    console.warn(
+      `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN, not blocked):`,
+      (err as Error)?.message || err,
+    );
+    return "UNKNOWN";
+  }
+}
+
 export type DispatchStatus = CommandLog["status"]; // simulated | sent | acked | failed | timeout | rejected
 
 export interface DispatchWrite {
@@ -180,11 +220,14 @@ export interface DispatchInput {
   /** Unique key → at most one effective dispatch. */
   idempotencyKey: string;
   /**
-   * doc 33 I2 (F5): optional policy-as-code context for the SEC_PLATFORM governance gate —
-   * `{ action, zone, product, line, approved }`. Absent → action defaults to "device_write"
-   * (no default policy matches → allow). See server/services/security/policyGate.ts.
+   * doc 33 I2 (F5): optional policy-as-code CONTEXT for the SEC_PLATFORM governance gate —
+   * `{ zone, product, line, approved, role, fat_passed, … }`. doc 48 R1 (T3): the evaluated
+   * action is ALWAYS `ot.command.<commandType>` (namespaced so POLICY_DEFAULT_DENY_ACTIONS
+   * =ot.command.* actually gates this write path); any `action` supplied here is IGNORED for
+   * the OT write. `approved` satisfies a require_approval policy (four-eyes). Absent + no
+   * matching policy → allow. See server/services/security/policyGate.ts + contracts/policies/.
    */
-  policyContext?: { action?: string; approved?: boolean } & Record<string, unknown>;
+  policyContext?: { approved?: boolean } & Record<string, unknown>;
   /**
    * G1.7 — optional cross-layer correlation id (order → work-order → command → ack).
    * Absent → the ambient AsyncLocalStorage correlation context is used (if any),
@@ -559,14 +602,66 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         is rejected unless a four-eyes approval is present. hitl-only (never self-locks an
   //         interlock action). Runs BEFORE the interlock gate (governance → safety).
   if (input.triggeredBy.kind === "hitl" && secPlatformEnabled()) {
+    // doc 48 R1 (T3) — evaluate the PER-COMMAND action `ot.command.<verb>` (verb =
+    // commandType, e.g. ot.command.tag.write) so the OT write path aligns EXACTLY with
+    // the shipped deny-group + allow-policy namespace `ot.command.*` (contracts/policies/
+    // allow-ot-command-engineer-fat.policy.yaml). The coarse legacy action "device_write"
+    // matched NO `ot.command.*` policy, so enabling POLICY_DEFAULT_DENY_ACTIONS=ot.command.*
+    // did NOT actually gate this write. The namespaced action is applied AFTER the caller
+    // context so it can NEVER be overridden away from `ot.command.*` (the caller enriches
+    // context — role/fat_passed/zone/… — but does not change WHICH action is governed).
     const verdict = evaluateCommandPolicy(
-      { action: "device_write", ...(input.policyContext ?? {}) },
+      { ...(input.policyContext ?? {}), action: `ot.command.${input.commandType}` },
       { enabled: true, approved: input.policyContext?.approved === true },
     );
     if (!verdict.allow) {
       const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
       const ids = await writeRejected(db, input, reason, verdict.reason);
       return { ok: false, simulated: false, status: "rejected", reason, results: failedResults(input, reason), commandLogIds: ids };
+    }
+  }
+
+  // ── (5a-safety) SAFETY-PLC PREFLIGHT (doc 48 R1 · T1 · spec invariant #1: "a BLOCKED
+  //         safety-PLC MUST deny actuation"). Reachable ONLY when OT_CONTROL_ENABLED==="true"
+  //         AND the adapter is commissioned (steps 5 / 5a already returned 'simulated'
+  //         otherwise) — i.e. immediately before a REAL device write. Reads the target
+  //         adapter's READ-ONLY SafetyState via the adapter facade (driver.getSafetyStatus →
+  //         else the safety-PLC status adapter); it NEVER actuates a safety function. Honest,
+  //         3-way:
+  //           • BLOCKED → REJECT (SAFETY_BLOCKED); driver.writeTags is NEVER called.
+  //           • UNKNOWN → ALLOW + WARN. UNKNOWN ≠ BLOCKED: a line with no safety-PLC
+  //                       configured/enabled must NOT be bricked (non-breaking) — the
+  //                       certified Safety-PLC still performs any rated stop in hardware.
+  //           • OK      → proceed.
+  //         Flag OT_SAFETY_PREFLIGHT_ENABLED — ON UNLESS explicitly "false" (safety should be
+  //         on by default). Because UNKNOWN passes, keeping the safety-PLC adapter's OWN flag
+  //         (SAFETY_PLC_ADAPTER_ENABLED) OFF is fully non-breaking. hitl-only (mirrors the
+  //         policy + interlock gates): a kind='interlock' command IS a safety de-energization
+  //         (block/stop/reduce) — blocking it here would self-lock the safety response. The
+  //         dry-run/simulated path never reaches here (no real write to guard).
+  if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled()) {
+    const safety = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
+    if (safety === "BLOCKED") {
+      const ids = await writeRejected(
+        db,
+        input,
+        "SAFETY_BLOCKED",
+        "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)",
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SAFETY_BLOCKED",
+        results: failedResults(input, "SAFETY_BLOCKED"),
+        commandLogIds: ids,
+      };
+    }
+    if (safety === "UNKNOWN") {
+      console.warn(
+        `[Dispatch] safety preflight: UNKNOWN safety status for adapter ${input.adapterId} ` +
+          `(no safety-PLC configured/enabled) — allowing write (honest: UNKNOWN ≠ BLOCKED).`,
+      );
     }
   }
 

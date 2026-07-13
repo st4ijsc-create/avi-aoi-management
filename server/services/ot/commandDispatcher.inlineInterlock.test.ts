@@ -127,6 +127,7 @@ beforeEach(() => {
   gateResult = { blocked: false, failClosed: false, violations: [] };
   process.env.OT_CONTROL_ENABLED = "true"; // real path armed
   process.env.OT_COMMISSIONING_REQUIRED = "false"; // bỏ qua gate commissioning (test riêng)
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): bỏ qua safety-PLC preflight (test riêng: commandDispatcher.safety.test.ts)
   delete process.env.OT_READBACK_ENABLED;
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });

@@ -1,0 +1,26 @@
+# Policy-as-code — SYNAPSE Tầng 3 §11 (doc 48 R1 · T3).
+# POLICY MẪU cho nhóm hành động LINE CONTROLLER dưới chế độ DEFAULT-DENY: khi
+# POLICY_DEFAULT_DENY_ACTIONS chứa "line.command.*", MỌI transition FSM tuyến bị
+# TỪ CHỐI (NO_MATCHING_ALLOW_POLICY) trừ khi một allow-policy tường minh như policy
+# này match. NẾU KHÔNG ship policy này, bật default-deny sẽ VỠ Line Controller FSM
+# (mọi start/hold/resume/completing/changeover/fault bị chặn).
+#
+# Context do lineControllerService cung cấp (transitionLine / autohold / auto-resume):
+#   action = line.command.{to|hold|resume}, lineId, lineCode, from, to,
+#   actor (người dùng HOẶC định danh hệ 'system' / 'system:autohold'), reason?, auto?, cause?.
+# Điều kiện = "phải có actor định danh": mọi transition hợp lệ (thủ công LẪN tự động)
+# đều mang actor — kể cả 2 pre-check auto (line.command.hold / line.command.resume) vốn
+# KHÔNG đặt `to`; nên gate theo `actor` (không theo `to`) mới PERMIT trọn vẹn cả FSM.
+# Lệnh dị dạng thiếu actor sẽ KHÔNG match ⇒ DENY dưới default-deny.
+# (FSM hợp lệ + readiness vẫn được kiểm tại lineControllerService — phòng thủ theo lớp,
+# spec §17. Có thể siết thành role-based khi context RBAC được luồng qua seam.)
+policy_id: allow-line-command-fsm
+version: 1
+effect: allow
+action_pattern: "line.command.*"
+priority: 10
+status: active
+description: "Cho phép transition Line Controller (line.command.*) khi có actor định danh (người hoặc hệ)."
+conditions:
+  - path: context.actor
+    op: exists

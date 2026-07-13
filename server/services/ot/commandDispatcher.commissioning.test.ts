@@ -159,6 +159,7 @@ beforeEach(() => {
   delete process.env.OT_CONTROL_TIMEOUT_MS;
   delete process.env.OT_READBACK_ENABLED;
   delete process.env.OT_COMMISSIONING_REQUIRED; // DEFAULT = ON
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): opt the safety-PLC preflight OUT (own suite: commandDispatcher.safety.test.ts)
   writeTagsSpy.mockImplementation(async (writes: any[]) => writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
   // default: enabled adapter + writable tag + confirmed action
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });

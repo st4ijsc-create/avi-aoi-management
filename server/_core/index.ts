@@ -4835,6 +4835,43 @@ async function startServer() {
     console.error("[DeviceStream] gateway start failed:", (err as any)?.message || err);
   }
 
+  // doc 48 R1 (T2 / doc 44 G2.7) — SYNAPSE telemetry STREAM TAP: bridge telemetryBus
+  // → StreamBridge (the durable NATS JetStream bus when STREAM_BRIDGE_BACKEND=nats +
+  // NATS_URL; the in-process ring otherwise). Taps the SAME unified telemetry bus as
+  // the twin/device gateways above (registerTelemetryTap — fired AFTER canonical
+  // persist + broadcast) and republishes each ingested batch as one
+  // `syn/telemetry/{line}` message so the StreamProcessor / consumer groups / lake
+  // sink can replay-reprocess WITHOUT a second reader. Opens NO control path
+  // (telemetry replay only; same invariant as the twin/device taps).
+  //
+  // HONEST-DEGRADE: a clean no-op unless STREAM_TELEMETRY_TAP_ENABLED=true (default
+  // OFF — the orchestrator flips it on during staged activation). When enabled with
+  // the nats backend unreachable, the adapter refuses each publish with
+  // NATS_NOT_AVAILABLE (never fakes durability); a publish error is isolated from
+  // ingest and a bad broker never blocks boot. ONE honest boot status line below:
+  // disabled | installed (transport ready) | installed (transport UNAVAILABLE).
+  try {
+    const { installTelemetryStreamTap } = await import("../services/streaming/telemetryStreamTap");
+    const handle = await installTelemetryStreamTap();
+    if (!handle) {
+      console.log("[StreamTelemetryTap] disabled (set STREAM_TELEMETRY_TAP_ENABLED=true to enable)");
+    } else {
+      // Enabled: report the SELECTED backend + whether its transport is actually
+      // usable right now (nats connect probe is fail-safe → false, never throws).
+      const { getStreamBridge } = await import("../services/streaming/streamBridge");
+      const bridge = await getStreamBridge();
+      const usable = await bridge.available().catch(() => false);
+      console.log(
+        `[StreamTelemetryTap] installed → StreamBridge backend=${bridge.backend} ` +
+          `(durable=${bridge.crossProcessDurable}, transport ${
+            usable ? "ready" : "UNAVAILABLE — publishes refuse with NATS_NOT_AVAILABLE until reachable"
+          })`,
+      );
+    }
+  } catch (err) {
+    console.error("[StreamTelemetryTap] install failed:", (err as any)?.message || err);
+  }
+
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
   // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 

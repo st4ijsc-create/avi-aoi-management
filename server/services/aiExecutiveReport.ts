@@ -417,6 +417,12 @@ export async function generateExecutiveSummary(
     const result = await generateNarrative({
       systemPrompt: buildSystemPrompt(lang),
       prompt: buildUserPrompt(kpis),
+      // doc 48 R1 — PIN the deep model the router chose for task:"report" (Tier 2 / deep, or the
+      // Thinking model when that tier is on). Without this the engine's getOrLoadModel(undefined)
+      // reuses whatever is RESIDENT — at boot that is the RAG embedder → "PPT slide slide…"
+      // gibberish. Mirrors how RCA/codegen pass decision.modelId to the engine. The embedding-model
+      // reject + degenerate-loop guard below still catch the honest-degrade (VRAM) path.
+      modelId: decision.modelId,
       maxTokens,
       temperature: decision.temperature,
       language: lang,

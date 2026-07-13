@@ -149,6 +149,7 @@ beforeEach(() => {
   // their legacy real-write semantics are preserved exactly (the new gate has its own
   // suite in commandDispatcher.commissioning.test.ts, including an interlock case).
   process.env.OT_COMMISSIONING_REQUIRED = "false";
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): interlock-kind skips it anyway (hitl-only) — opt OUT for consistency
   seedAuthorized();
 });
 

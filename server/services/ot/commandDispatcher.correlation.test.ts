@@ -146,6 +146,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.OT_CONTROL_ENABLED = "false";
   process.env.OT_COMMISSIONING_REQUIRED = "false";
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): opt safety-PLC preflight OUT (own suite: commandDispatcher.safety.test.ts)
   delete process.env.OT_CONTROL_TIMEOUT_MS;
   delete process.env.OT_CONTROL_TIMEOUT_MAX_MS;
   delete process.env.UNS_CMD_ACK_ENABLED;

@@ -141,6 +141,7 @@ beforeEach(() => {
   _resetAdapterCommandQueuesForTests();
   process.env.OT_CONTROL_ENABLED = "true";
   process.env.OT_COMMISSIONING_REQUIRED = "false";
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false"; // doc 48 R1 (T1): opt safety-PLC preflight OUT (avoid perturbing per-adapter queue timing)
   delete process.env.OT_CMD_SERIALIZE_ENABLED;
   delete process.env.OT_CMD_QUEUE_MAX;
   delete process.env.UNS_CMD_ACK_ENABLED;

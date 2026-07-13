@@ -169,11 +169,13 @@ describe("parsePolicyDefinitionsYaml — as-code validation", () => {
 });
 
 describe("shipped contracts/policies files", () => {
-  it("all 7 as-code files parse; the 3 legacy conversions keep DEFAULT_POLICIES semantics", () => {
+  it("all 9 as-code files parse; the 3 legacy conversions keep DEFAULT_POLICIES semantics", () => {
     const defs = loadPolicyFiles(POLICY_CONTRACTS_DIR);
     expect(defs.map((d) => d.policyId).sort()).toEqual([
       "allow-fleet-vda5050-order-confirmed", // W3-B2 G3.14 (fleet.vda5050.*)
       "allow-foe-command-engineer", // W3-B2 G3.14 (foe.command.*)
+      "allow-line-command-fsm", // doc 48 R1 T3 (line.command.*)
+      "allow-order-command-lifecycle", // doc 48 R1 T3 (order.command.*)
       "allow-ot-command-engineer-fat",
       "allow-robot-job-engineer-fat",
       "approve-override-crowded-zone",
@@ -209,6 +211,27 @@ describe("shipped contracts/policies files", () => {
     const recipe = evaluatePolicy("t", "recipe_write", null, { line: { state: "running" } }, { policies: rules, skipAudit: true });
     expect(recipe.obligations).toEqual(["require_approval"]);
     expect(recipe.policy_ref).toBe("approve-recipe-write-production");
+
+    // doc 48 R1 (T3): under default-deny for line/order namespaces, the new allow
+    // policies PERMIT legitimate FSM/lifecycle transitions (so flipping default-deny
+    // won't break the Line Controller / order lifecycle), while malformed commands DENY.
+    process.env.POLICY_DEFAULT_DENY_ACTIONS = "line.command.*,order.command.*";
+    try {
+      const lineOk = evaluatePolicy("command", "line.command.producing", null, { actor: "u42", lineId: 1, from: "ready", to: "producing" }, { policies: rules, skipAudit: true });
+      expect(lineOk.decision).toBe("PERMIT");
+      expect(lineOk.policy_ref).toBe("allow-line-command-fsm");
+      // auto pre-check (line.command.hold, no `to`) is still PERMITted → autohold survives default-deny.
+      const lineHold = evaluatePolicy("command", "line.command.hold", null, { actor: "system:autohold", lineId: 1, auto: true }, { policies: rules, skipAudit: true });
+      expect(lineHold.decision).toBe("PERMIT");
+      const orderOk = evaluatePolicy("command", "order.command.running", null, { actor: "u42", orderId: 9, fromState: "allocated", toState: "running" }, { policies: rules, skipAudit: true });
+      expect(orderOk.decision).toBe("PERMIT");
+      expect(orderOk.policy_ref).toBe("allow-order-command-lifecycle");
+      // malformed line command (no actor) → NO_MATCHING_ALLOW_POLICY → DENY.
+      const lineBad = evaluatePolicy("command", "line.command.producing", null, { lineId: 1 }, { policies: rules, skipAudit: true });
+      expect(lineBad.decision).toBe("DENY");
+    } finally {
+      delete process.env.POLICY_DEFAULT_DENY_ACTIONS;
+    }
   });
 });
 

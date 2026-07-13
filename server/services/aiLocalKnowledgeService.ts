@@ -1095,13 +1095,19 @@ async function generateWithOllama(
     try {
       const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
+        // doc 48 R1 — PIN a generative model. Without a modelId the engine's
+        // getOrLoadModel(undefined) reuses the FIRST resident model, which is the RAG
+        // embedder → gibberish answers. Mirror the chat path (aiChatAssistant): let the
+        // Model Router pick the tier by difficulty and pass decision.modelId to the engine.
+        const { route } = await import("./aiModelRouter");
+        const decision = route({ task: "chat", text: question });
         const result = await ggufGen({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        });
+        }, decision.modelId);
         // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
         return guardKbAnswer(result.text);
       }
@@ -1204,13 +1210,17 @@ export async function* generateWithOllamaStream(
     try {
       const { generateTextStream: ggufStream, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
+        // doc 48 R1 — PIN a generative model (see generateWithOllama above). modelId is the 2nd
+        // arg to generateTextStream; without it the stream lands on the resident embedder.
+        const { route } = await import("./aiModelRouter");
+        const decision = route({ task: "chat", text: question });
         for await (const chunk of ggufStream({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        })) {
+        }, decision.modelId)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
@@ -2053,7 +2063,30 @@ export function warmUpOllamaModels(): void {
   if (warmupStarted) return;
   warmupStarted = true;
   setTimeout(() => {
-    void embedQuestion("warmup").catch(() => {});
+    // doc 48 R1 — WARM ORDER FIX: make a GENERATIVE model resident BEFORE the RAG embedder.
+    // The embedder warm below (embedQuestion) loads the small embedding model; if it lands first
+    // it becomes the FIRST resident GGUF model, and any generate call that does NOT pin a model
+    // (engine getOrLoadModel(undefined)) reuses it → gibberish narratives/chat. Warming the deep
+    // model first also avoids VRAM fragmentation (load the large model before small ones; see
+    // aiGgufEngine.warmModel docs / doc 34 §P4). Best-effort + fail-safe: if the deep model cannot
+    // load (VRAM), warmModel returns false and the callers' honest-degrade guards still render the
+    // offline template — never gibberish. Embedder is still warmed right after (RAG needs it).
+    void (async () => {
+      if (!USE_LEGACY_OLLAMA) {
+        try {
+          const { warmModel } = await import("./aiGgufEngine");
+          // Basename sans ".gguf" — the engine appends it, matching the Model Router's basenames
+          // so a later route({task:"report"|"chat"}).modelId pin finds this exact model resident.
+          const deep = (process.env.GGUF_DEFAULT_MODEL || process.env.GGUF_FAST_MODEL || "")
+            .trim()
+            .replace(/\.gguf$/i, "");
+          await warmModel(deep || undefined);
+        } catch { /* best-effort — never blocks the embedder warm below */ }
+      }
+      // Keep the embedder warm too (RAG retrieval needs it resident).
+      await embedQuestion("warmup").catch(() => {});
+    })().catch(() => {});
+    // Legacy Ollama QA warm — a no-op unless USE_LEGACY_OLLAMA (nothing listens on the GGUF path).
     void fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

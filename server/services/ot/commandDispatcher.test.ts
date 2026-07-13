@@ -139,6 +139,9 @@ beforeEach(() => {
   // the mode-gate behaviour directly. Opt the NEW gate OUT so their legacy semantics
   // are preserved exactly (dedicated coverage lives in commandDispatcher.commissioning.test.ts).
   process.env.OT_COMMISSIONING_REQUIRED = "false";
+  // doc 48 R1 (T1): these F4a/F4b/G2.1 tests predate the safety-PLC preflight; opt it OUT
+  // so their legacy real-write semantics stay exact (dedicated coverage: commandDispatcher.safety.test.ts).
+  process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
   delete process.env.OT_READBACK_ENABLED;
   delete process.env.OT_READBACK_FLOAT_TOLERANCE;
   // restore default writeTags impl after clearAllMocks wiped it.
