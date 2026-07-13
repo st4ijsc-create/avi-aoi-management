@@ -9454,6 +9454,202 @@
     "minValue": "Minimum value is {{min}}",
     "maxValue": "Maximum value is {{max}}"
   },
+  "factorySetup": {
+    "noCode": "(no code)",
+    "noName": "(no name)",
+    "remove": "Remove",
+    "title": "Factory Setup Wizard",
+    "subtitle": "Build the factory top-down: Factory → Workshop → Line → Station → Machine. You can skip the rest at any step.",
+    "skipRemaining": "Skip the rest",
+    "startOver": "Build another factory",
+    "retryFailed": "Retry failed items",
+    "createAll": "Create all",
+    "fields": {
+      "code": "Code",
+      "name": "Name",
+      "address": "Address",
+      "description": "Description",
+      "orderIndex": "Order",
+      "machineType": "Machine type",
+      "model": "Model",
+      "manufacturer": "Manufacturer"
+    },
+    "factory": {
+      "modeCreate": "Create a new factory",
+      "modeExisting": "Select an existing factory",
+      "namePlaceholder": "Main factory",
+      "pickLabel": "Factory",
+      "pickPlaceholder": "Select a factory…",
+      "noneExisting": "No factories yet — create one."
+    },
+    "steps": {
+      "factory": "Factory",
+      "workshops": "Workshops",
+      "lines": "Lines",
+      "stations": "Stations",
+      "machines": "Machines",
+      "review": "Review"
+    },
+    "workshops": {
+      "subtitle": "Add one or more workshops under the factory.",
+      "add": "Add workshop",
+      "empty": "No workshops yet. Click “Add workshop”, or skip to create just the factory."
+    },
+    "lines": {
+      "subtitle": "Each line belongs to a workshop.",
+      "add": "Add line",
+      "needWorkshop": "Add a workshop first",
+      "needWorkshopBody": "Add at least one workshop in the previous step.",
+      "empty": "No lines yet."
+    },
+    "stations": {
+      "subtitle": "Each station belongs to a line.",
+      "add": "Add station",
+      "needLine": "Add a line first",
+      "needLineBody": "Add at least one line in the previous step.",
+      "empty": "No stations yet."
+    },
+    "machines": {
+      "subtitle": "Each machine belongs to a station.",
+      "add": "Add machine",
+      "needStation": "Add a station first",
+      "needStationBody": "Add at least one station in the previous step.",
+      "empty": "No machines yet."
+    },
+    "parent": {
+      "workshop": "Workshop",
+      "line": "Line",
+      "station": "Station"
+    },
+    "review": {
+      "pickFactory": "No factory selected",
+      "nothing": "You selected an existing factory but added no child items — nothing to create.",
+      "factories": "Factories",
+      "invalid": "Some rows are missing a code or name. Go back and complete them before creating.",
+      "result": "Created {{ok}} item(s), {{fail}} error/blocked."
+    },
+    "run": {
+      "existingFactory": "Using existing factory",
+      "parentFailed": "Blocked: parent not created"
+    }
+  },
+  "factoryIO": {
+    "tabLabel": "Import / Export",
+    "loadError": "Couldn't load configuration data",
+    "level": {
+      "factory": "Factory",
+      "workshop": "Workshop",
+      "line": "Line",
+      "station": "Station",
+      "machine": "Machine"
+    },
+    "field": {
+      "code": "Code",
+      "name": "Name",
+      "description": "Description",
+      "address": "Address",
+      "region": "Region",
+      "country": "Country",
+      "isActive": "Active",
+      "factoryCode": "Factory code",
+      "workshopCode": "Workshop code",
+      "capacityPerHour": "Capacity/hour",
+      "maxConcurrentOrders": "Max concurrent orders",
+      "lineCode": "Line code",
+      "orderIndex": "Order",
+      "stationCode": "Station code",
+      "machineType": "Machine type",
+      "model": "Model",
+      "manufacturer": "Manufacturer"
+    },
+    "export": {
+      "title": "Export configuration",
+      "desc": "Export each level to PDF/Excel/CSV (Vietnamese-safe fonts). Columns match the import format, so exported files can be reused to migrate to another factory.",
+      "rows": "{{count}} rows",
+      "empty": "No data yet",
+      "reportTitle": "{{level}} configuration"
+    },
+    "import": {
+      "title": "Import configuration",
+      "desc": "Select a level, upload a CSV/Excel file, then validate before importing. Import in order: Factory → Workshop → Line → Station → Machine (the parent code must exist first).",
+      "level": "Data level",
+      "template": "Download template",
+      "replace": "Overwrite on duplicate code",
+      "columns": "Required columns",
+      "file": "Choose file (.csv / .xlsx)",
+      "fileLabel": "File",
+      "parseError": "Couldn't read the file",
+      "submit": "Import {{count}} valid rows",
+      "skipInvalid": "{{count}} invalid rows will be skipped",
+      "empty": "The file has no data rows",
+      "valid": "{{count}} valid",
+      "invalid": "{{count}} errors",
+      "willUpdate": "{{count}} duplicate code(s) → update",
+      "willConflict": "{{count}} duplicate code(s) → will error (enable overwrite to update)",
+      "status": "Status",
+      "rowExists": "Duplicate code",
+      "rowNew": "New",
+      "rowError": "Error",
+      "previewLimit": "Showing only the first {{shown}}/{{total}} rows (all will still be imported)"
+    },
+    "result": {
+      "title": "Import result",
+      "success": "{{count}} succeeded (created/updated)",
+      "failed": "{{count}} failed"
+    }
+  },
+  "factoryConfigAudit": {
+    "tabLabel": "Change log",
+    "fields": "fields",
+    "system": "System",
+    "failed": "Failed",
+    "changedFields": "Changed",
+    "title": "Configuration change log",
+    "subtitle": "Who changed the factory structure, when, and what — read-only.",
+    "adminOnly": "Only administrators can view the configuration change log.",
+    "error": "Couldn't load the configuration change log",
+    "entity": {
+      "factory": "Factory",
+      "workshop": "Workshop",
+      "line": "Line",
+      "station": "Station",
+      "machine": "Machine"
+    },
+    "action": {
+      "created": "Created",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "restored": "Restored",
+      "other": "Other"
+    },
+    "filter": {
+      "search": "Search",
+      "searchPlaceholder": "Actor, code/name, action…",
+      "entityType": "Config level",
+      "all": "All",
+      "action": "Action",
+      "window": "Time range"
+    },
+    "col": {
+      "time": "Time",
+      "actor": "Actor",
+      "action": "Action",
+      "entityType": "Level",
+      "entity": "Object",
+      "summary": "Change summary"
+    },
+    "stat": {
+      "shown": "Showing",
+      "matched": "Loaded",
+      "total": "Total in range",
+      "cappedHint": "Only the most recent changes are loaded — narrow the time range to see more."
+    },
+    "empty": {
+      "title": "No configuration changes yet",
+      "filtered": "No configuration changes match the current filters.",
+      "desc": "No changes recorded for factories, workshops, lines, stations, or machines."
+    }
+  },
   "dataSettings": {
     "emptyFactoryDesc": "No factories yet. Create your first factory to get started.",
     "emptyWorkshopDesc": "No workshops yet. Add a workshop to organize the factory.",
@@ -9468,6 +9664,8 @@
     "overview": {
       "catLabel": "Overview",
       "tabLabel": "Overview",
+      "wizardHint": "Build a new factory top-down with the wizard — Factory → Workshop → Line → Station → Machine.",
+      "wizardBtn": "Build factory",
       "treeTitle": "Factory Model",
       "treeDesc": "Hierarchy tree Factory → Workshop → Line → Station → Machine",
       "healthTitle": "Config Health",
@@ -9529,11 +9727,13 @@
       "productMappingDesc": "Map products to machines and programs"
     },
     "cat": {
-      "process": "Process Management"
+      "process": "Process Management",
+      "tools": "Tools & Logs"
     },
     "sidebar": {
       "processManagement": "Process Management",
-      "workstationManagement": "Workstation Management"
+      "workstationManagement": "Workstation Management",
+      "seedData": "Seed sample data"
     },
     "searchFactoryPlaceholder": "Search factories by name, code, address...",
     "searchWorkshopPlaceholder": "Search workshops by name, code...",

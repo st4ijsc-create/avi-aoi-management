@@ -9237,6 +9237,202 @@
     "minValue": "最小值为 {{min}}",
     "maxValue": "最大值为 {{max}}"
   },
+  "factorySetup": {
+    "noCode": "（无代码）",
+    "noName": "（无名称）",
+    "remove": "删除",
+    "title": "工厂搭建向导",
+    "subtitle": "自上而下搭建工厂：工厂 → 车间 → 产线 → 工站 → 设备。可在任意步骤跳过其余部分。",
+    "skipRemaining": "跳过其余",
+    "startOver": "搭建另一个工厂",
+    "retryFailed": "重试失败项",
+    "createAll": "全部创建",
+    "fields": {
+      "code": "代码",
+      "name": "名称",
+      "address": "地址",
+      "description": "描述",
+      "orderIndex": "顺序",
+      "machineType": "设备类型",
+      "model": "型号",
+      "manufacturer": "制造商"
+    },
+    "factory": {
+      "modeCreate": "创建新工厂",
+      "modeExisting": "选择现有工厂",
+      "namePlaceholder": "主工厂",
+      "pickLabel": "工厂",
+      "pickPlaceholder": "选择工厂…",
+      "noneExisting": "尚无工厂 — 请创建一个。"
+    },
+    "steps": {
+      "factory": "工厂",
+      "workshops": "车间",
+      "lines": "产线",
+      "stations": "工站",
+      "machines": "设备",
+      "review": "复核"
+    },
+    "workshops": {
+      "subtitle": "在工厂下添加一个或多个车间。",
+      "add": "添加车间",
+      "empty": "尚无车间。点击“添加车间”，或跳过以仅创建工厂。"
+    },
+    "lines": {
+      "subtitle": "每条产线属于一个车间。",
+      "add": "添加产线",
+      "needWorkshop": "需先添加车间",
+      "needWorkshopBody": "请在上一步添加至少一个车间。",
+      "empty": "尚无产线。"
+    },
+    "stations": {
+      "subtitle": "每个工站属于一条产线。",
+      "add": "添加工站",
+      "needLine": "需先添加产线",
+      "needLineBody": "请在上一步添加至少一条产线。",
+      "empty": "尚无工站。"
+    },
+    "machines": {
+      "subtitle": "每台设备属于一个工站。",
+      "add": "添加设备",
+      "needStation": "需先添加工站",
+      "needStationBody": "请在上一步添加至少一个工站。",
+      "empty": "尚无设备。"
+    },
+    "parent": {
+      "workshop": "车间",
+      "line": "产线",
+      "station": "工站"
+    },
+    "review": {
+      "pickFactory": "未选择工厂",
+      "nothing": "您选择了现有工厂但未添加任何子项 — 无内容可创建。",
+      "factories": "工厂",
+      "invalid": "部分行缺少代码或名称。请返回补全后再创建。",
+      "result": "已创建 {{ok}} 项，{{fail}} 项错误/被阻止。"
+    },
+    "run": {
+      "existingFactory": "使用现有工厂",
+      "parentFailed": "已阻止：父级未创建"
+    }
+  },
+  "factoryIO": {
+    "tabLabel": "导入 / 导出",
+    "loadError": "无法加载配置数据",
+    "level": {
+      "factory": "工厂",
+      "workshop": "车间",
+      "line": "产线",
+      "station": "工站",
+      "machine": "设备"
+    },
+    "field": {
+      "code": "代码",
+      "name": "名称",
+      "description": "描述",
+      "address": "地址",
+      "region": "区域",
+      "country": "国家",
+      "isActive": "启用",
+      "factoryCode": "工厂代码",
+      "workshopCode": "车间代码",
+      "capacityPerHour": "每小时产能",
+      "maxConcurrentOrders": "最大并发工单数",
+      "lineCode": "产线代码",
+      "orderIndex": "顺序",
+      "stationCode": "工站代码",
+      "machineType": "设备类型",
+      "model": "型号",
+      "manufacturer": "制造商"
+    },
+    "export": {
+      "title": "导出配置",
+      "desc": "将每个层级导出为 PDF/Excel/CSV（越南语字体安全）。列与导入格式一致，因此导出文件可重复用于迁移到其他工厂。",
+      "rows": "{{count}} 行",
+      "empty": "尚无数据",
+      "reportTitle": "{{level}} 配置"
+    },
+    "import": {
+      "title": "导入配置",
+      "desc": "选择层级，上传 CSV/Excel 文件，然后在导入前进行校验。按顺序导入：工厂 → 车间 → 产线 → 工站 → 设备（父级代码须先存在）。",
+      "level": "数据层级",
+      "template": "下载模板",
+      "replace": "代码重复时覆盖",
+      "columns": "必填列",
+      "file": "选择文件（.csv / .xlsx）",
+      "fileLabel": "文件",
+      "parseError": "无法读取文件",
+      "submit": "导入 {{count}} 行有效数据",
+      "skipInvalid": "将跳过 {{count}} 行错误数据",
+      "empty": "文件没有数据行",
+      "valid": "{{count}} 有效",
+      "invalid": "{{count}} 错误",
+      "willUpdate": "{{count}} 个代码重复 → 更新",
+      "willConflict": "{{count}} 个代码重复 → 将报错（启用覆盖以更新）",
+      "status": "状态",
+      "rowExists": "代码重复",
+      "rowNew": "新增",
+      "rowError": "错误",
+      "previewLimit": "仅显示前 {{shown}}/{{total}} 行（全部仍会导入）"
+    },
+    "result": {
+      "title": "导入结果",
+      "success": "{{count}} 成功（创建/更新）",
+      "failed": "{{count}} 失败"
+    }
+  },
+  "factoryConfigAudit": {
+    "tabLabel": "变更日志",
+    "fields": "字段",
+    "system": "系统",
+    "failed": "失败",
+    "changedFields": "变更",
+    "title": "配置变更日志",
+    "subtitle": "谁在何时更改了工厂结构、更改了什么 — 只读。",
+    "adminOnly": "只有管理员才能查看配置变更日志。",
+    "error": "无法加载配置变更日志",
+    "entity": {
+      "factory": "工厂",
+      "workshop": "车间",
+      "line": "产线",
+      "station": "工站",
+      "machine": "设备"
+    },
+    "action": {
+      "created": "创建",
+      "updated": "更新",
+      "deleted": "删除",
+      "restored": "恢复",
+      "other": "其他"
+    },
+    "filter": {
+      "search": "搜索",
+      "searchPlaceholder": "操作人、代码/名称、操作…",
+      "entityType": "配置层级",
+      "all": "全部",
+      "action": "操作",
+      "window": "时间范围"
+    },
+    "col": {
+      "time": "时间",
+      "actor": "操作人",
+      "action": "操作",
+      "entityType": "层级",
+      "entity": "对象",
+      "summary": "变更摘要"
+    },
+    "stat": {
+      "shown": "正在显示",
+      "matched": "已加载",
+      "total": "范围内总数",
+      "cappedHint": "仅加载最近的变更 — 缩小时间范围以查看更多。"
+    },
+    "empty": {
+      "title": "尚无配置变更",
+      "filtered": "没有配置变更符合当前筛选条件。",
+      "desc": "尚未记录工厂、车间、产线、工站或设备的任何变更。"
+    }
+  },
   "dataSettings": {
     "emptyFactoryDesc": "尚无工厂。创建第一个工厂以开始。",
     "emptyWorkshopDesc": "尚无车间。请添加车间以组织工厂结构。",
@@ -9251,6 +9447,8 @@
     "overview": {
       "catLabel": "总览",
       "tabLabel": "总览",
+      "wizardHint": "使用向导自上而下搭建新工厂 — 工厂 → 车间 → 产线 → 工站 → 设备。",
+      "wizardBtn": "搭建工厂",
       "treeTitle": "工厂模型",
       "treeDesc": "层级树 工厂 → 车间 → 产线 → 工站 → 设备",
       "healthTitle": "配置健康检查",
@@ -9312,11 +9510,13 @@
       "productMappingDesc": "将产品映射到设备和程序"
     },
     "cat": {
-      "process": "流程管理"
+      "process": "流程管理",
+      "tools": "工具与日志"
     },
     "sidebar": {
       "processManagement": "流程管理",
-      "workstationManagement": "工作站管理"
+      "workstationManagement": "工作站管理",
+      "seedData": "生成示例数据"
     },
     "searchFactoryPlaceholder": "按名称、代码、地址搜索工厂...",
     "searchWorkshopPlaceholder": "按名称、代码搜索车间...",

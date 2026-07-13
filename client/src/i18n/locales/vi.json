@@ -9433,6 +9433,202 @@
     "minValue": "Giá trị tối thiểu là {{min}}",
     "maxValue": "Giá trị tối đa là {{max}}"
   },
+  "factorySetup": {
+    "noCode": "(chưa có mã)",
+    "noName": "(chưa có tên)",
+    "remove": "Xoá",
+    "title": "Trình dựng nhà máy",
+    "subtitle": "Dựng nhà máy từ trên xuống: Nhà máy → Xưởng → Dây chuyền → Trạm → Máy. Có thể bỏ qua phần còn lại ở bất kỳ bước nào.",
+    "skipRemaining": "Bỏ qua phần còn lại",
+    "startOver": "Dựng nhà máy khác",
+    "retryFailed": "Thử lại mục lỗi",
+    "createAll": "Tạo tất cả",
+    "fields": {
+      "code": "Mã",
+      "name": "Tên",
+      "address": "Địa chỉ",
+      "description": "Mô tả",
+      "orderIndex": "Thứ tự",
+      "machineType": "Loại máy",
+      "model": "Model",
+      "manufacturer": "Hãng sản xuất"
+    },
+    "factory": {
+      "modeCreate": "Tạo nhà máy mới",
+      "modeExisting": "Chọn nhà máy có sẵn",
+      "namePlaceholder": "Nhà máy chính",
+      "pickLabel": "Nhà máy",
+      "pickPlaceholder": "Chọn nhà máy…",
+      "noneExisting": "Chưa có nhà máy nào — hãy tạo mới."
+    },
+    "steps": {
+      "factory": "Nhà máy",
+      "workshops": "Xưởng",
+      "lines": "Dây chuyền",
+      "stations": "Trạm",
+      "machines": "Máy",
+      "review": "Xem lại"
+    },
+    "workshops": {
+      "subtitle": "Thêm một hoặc nhiều xưởng dưới nhà máy.",
+      "add": "Thêm xưởng",
+      "empty": "Chưa có xưởng nào. Bấm “Thêm xưởng”, hoặc bỏ qua để chỉ tạo nhà máy."
+    },
+    "lines": {
+      "subtitle": "Mỗi dây chuyền thuộc một xưởng.",
+      "add": "Thêm dây chuyền",
+      "needWorkshop": "Cần có xưởng trước",
+      "needWorkshopBody": "Hãy thêm ít nhất một xưởng ở bước trước.",
+      "empty": "Chưa có dây chuyền nào."
+    },
+    "stations": {
+      "subtitle": "Mỗi trạm thuộc một dây chuyền.",
+      "add": "Thêm trạm",
+      "needLine": "Cần có dây chuyền trước",
+      "needLineBody": "Hãy thêm ít nhất một dây chuyền ở bước trước.",
+      "empty": "Chưa có trạm nào."
+    },
+    "machines": {
+      "subtitle": "Mỗi máy thuộc một trạm.",
+      "add": "Thêm máy",
+      "needStation": "Cần có trạm trước",
+      "needStationBody": "Hãy thêm ít nhất một trạm ở bước trước.",
+      "empty": "Chưa có máy nào."
+    },
+    "parent": {
+      "workshop": "Xưởng",
+      "line": "Dây chuyền",
+      "station": "Trạm"
+    },
+    "review": {
+      "pickFactory": "Chưa chọn nhà máy",
+      "nothing": "Bạn đã chọn nhà máy có sẵn nhưng chưa thêm mục con nào — không có gì để tạo.",
+      "factories": "Nhà máy",
+      "invalid": "Một số dòng còn thiếu mã hoặc tên. Hãy quay lại và điền đủ trước khi tạo.",
+      "result": "Đã tạo {{ok}} mục, {{fail}} lỗi/bị chặn."
+    },
+    "run": {
+      "existingFactory": "Dùng nhà máy có sẵn",
+      "parentFailed": "Bị chặn: cha chưa được tạo"
+    }
+  },
+  "factoryIO": {
+    "tabLabel": "Nhập / Xuất",
+    "loadError": "Không tải được dữ liệu cấu hình",
+    "level": {
+      "factory": "Nhà máy",
+      "workshop": "Phân xưởng",
+      "line": "Dây chuyền",
+      "station": "Trạm",
+      "machine": "Máy"
+    },
+    "field": {
+      "code": "Mã",
+      "name": "Tên",
+      "description": "Mô tả",
+      "address": "Địa chỉ",
+      "region": "Khu vực",
+      "country": "Quốc gia",
+      "isActive": "Kích hoạt",
+      "factoryCode": "Mã nhà máy",
+      "workshopCode": "Mã xưởng",
+      "capacityPerHour": "Công suất/giờ",
+      "maxConcurrentOrders": "Số lệnh tối đa",
+      "lineCode": "Mã dây chuyền",
+      "orderIndex": "Thứ tự",
+      "stationCode": "Mã trạm",
+      "machineType": "Loại máy",
+      "model": "Model",
+      "manufacturer": "Hãng SX"
+    },
+    "export": {
+      "title": "Xuất cấu hình",
+      "desc": "Xuất từng cấp ra PDF/Excel/CSV (font tiếng Việt chuẩn). Cột khớp định dạng nhập nên file xuất có thể dùng lại để di chuyển sang nhà máy khác.",
+      "rows": "{{count}} dòng",
+      "empty": "Chưa có dữ liệu",
+      "reportTitle": "Cấu hình {{level}}"
+    },
+    "import": {
+      "title": "Nhập cấu hình",
+      "desc": "Chọn cấp, tải file CSV/Excel rồi kiểm tra trước khi nhập. Nhập theo thứ tự Nhà máy → Xưởng → Dây chuyền → Trạm → Máy (mã cha phải tồn tại trước).",
+      "level": "Cấp dữ liệu",
+      "template": "Tải mẫu",
+      "replace": "Ghi đè khi trùng mã",
+      "columns": "Cột yêu cầu",
+      "file": "Chọn file (.csv / .xlsx)",
+      "fileLabel": "File",
+      "parseError": "Không đọc được file",
+      "submit": "Nhập {{count}} dòng hợp lệ",
+      "skipInvalid": "{{count}} dòng lỗi sẽ bị bỏ qua",
+      "empty": "File không có dòng dữ liệu",
+      "valid": "{{count}} hợp lệ",
+      "invalid": "{{count}} lỗi",
+      "willUpdate": "{{count}} trùng mã → cập nhật",
+      "willConflict": "{{count}} trùng mã → sẽ báo lỗi (bật ghi đè để cập nhật)",
+      "status": "Trạng thái",
+      "rowExists": "Trùng mã",
+      "rowNew": "Mới",
+      "rowError": "Lỗi",
+      "previewLimit": "Chỉ hiện {{shown}}/{{total}} dòng đầu (tất cả vẫn được nhập)"
+    },
+    "result": {
+      "title": "Kết quả nhập",
+      "success": "{{count}} thành công (tạo/cập nhật)",
+      "failed": "{{count}} thất bại"
+    }
+  },
+  "factoryConfigAudit": {
+    "tabLabel": "Nhật ký thay đổi",
+    "fields": "trường",
+    "system": "Hệ thống",
+    "failed": "Thất bại",
+    "changedFields": "Đổi",
+    "title": "Nhật ký thay đổi cấu hình",
+    "subtitle": "Ai đổi cấu trúc nhà máy, khi nào, đổi gì — chỉ đọc.",
+    "adminOnly": "Chỉ quản trị viên mới xem được nhật ký thay đổi cấu hình.",
+    "error": "Không tải được nhật ký thay đổi cấu hình",
+    "entity": {
+      "factory": "Nhà máy",
+      "workshop": "Phân xưởng",
+      "line": "Dây chuyền",
+      "station": "Trạm",
+      "machine": "Máy"
+    },
+    "action": {
+      "created": "Tạo",
+      "updated": "Cập nhật",
+      "deleted": "Xoá",
+      "restored": "Khôi phục",
+      "other": "Khác"
+    },
+    "filter": {
+      "search": "Tìm kiếm",
+      "searchPlaceholder": "Người thực hiện, mã/tên, hành động…",
+      "entityType": "Cấp cấu hình",
+      "all": "Tất cả",
+      "action": "Hành động",
+      "window": "Khoảng thời gian"
+    },
+    "col": {
+      "time": "Thời gian",
+      "actor": "Người thực hiện",
+      "action": "Hành động",
+      "entityType": "Cấp",
+      "entity": "Đối tượng",
+      "summary": "Tóm tắt thay đổi"
+    },
+    "stat": {
+      "shown": "Đang hiển thị",
+      "matched": "Đã tải",
+      "total": "Tổng trong khoảng",
+      "cappedHint": "Chỉ tải các thay đổi gần nhất — thu hẹp khoảng thời gian để xem thêm."
+    },
+    "empty": {
+      "title": "Chưa có thay đổi cấu hình",
+      "filtered": "Không có thay đổi cấu hình nào khớp bộ lọc hiện tại.",
+      "desc": "Chưa ghi nhận thay đổi nào về nhà máy, phân xưởng, dây chuyền, trạm hay máy."
+    }
+  },
   "dataSettings": {
     "emptyFactoryDesc": "Chưa có nhà máy nào. Tạo nhà máy đầu tiên để bắt đầu.",
     "emptyWorkshopDesc": "Chưa có phân xưởng nào. Thêm phân xưởng để tổ chức nhà máy.",
@@ -9447,6 +9643,8 @@
     "overview": {
       "catLabel": "Tổng quan",
       "tabLabel": "Tổng quan",
+      "wizardHint": "Dựng nhà máy mới từ trên xuống bằng trình hướng dẫn — Nhà máy → Xưởng → Dây chuyền → Trạm → Máy.",
+      "wizardBtn": "Dựng nhà máy",
       "treeTitle": "Mô hình nhà máy",
       "treeDesc": "Cây phân cấp Nhà máy → Xưởng → Dây chuyền → Trạm → Máy",
       "healthTitle": "Kiểm tra cấu hình",
@@ -9508,11 +9706,13 @@
       "productMappingDesc": "Ánh xạ sản phẩm với máy và chương trình"
     },
     "cat": {
-      "process": "Quản lý quy trình"
+      "process": "Quản lý quy trình",
+      "tools": "Công cụ & Nhật ký"
     },
     "sidebar": {
       "processManagement": "Quản lý quy trình",
-      "workstationManagement": "Quản lý trạm làm việc"
+      "workstationManagement": "Quản lý trạm làm việc",
+      "seedData": "Tạo dữ liệu mẫu"
     },
     "searchFactoryPlaceholder": "Tìm nhà máy theo tên, mã, địa chỉ...",
     "searchWorkshopPlaceholder": "Tìm phân xưởng theo tên, mã...",
