@@ -115,7 +115,7 @@ export const factoryRouter = router({
       return db.getFactoryById(input.id);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       code: z.string().min(1, "Mã nhà máy là bắt buộc").max(50),
       name: z.string().min(1, "Tên nhà máy là bắt buộc").max(255),
@@ -128,7 +128,7 @@ export const factoryRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),
@@ -150,7 +150,7 @@ export const factoryRouter = router({
       return { success: true };
     }),
 
-  updateMapPosition: adminProcedure
+  updateMapPosition: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       mapPositionX: z.number().min(0).max(1),
@@ -213,7 +213,7 @@ export const factoryRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
       const before = await db.getFactoryById(input.id);
@@ -227,17 +227,17 @@ export const factoryRouter = router({
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getFactoryCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedFactories();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       await db.restoreFactory(input.id);
@@ -322,7 +322,7 @@ export const workshopRouter = router({
       return db.getWorkshopsByFactory(input.factoryId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       factoryId: z.number({ error: "Vui lòng chọn nhà máy" }),
       code: z.string().min(1, "Mã xưởng là bắt buộc").max(50),
@@ -335,7 +335,7 @@ export const workshopRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       factoryId: z.number().optional(),
@@ -350,7 +350,7 @@ export const workshopRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
       const before = await db.getWorkshopById(input.id);
@@ -364,17 +364,17 @@ export const workshopRouter = router({
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getWorkshopCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedWorkshops();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       await db.restoreWorkshop(input.id);
@@ -395,7 +395,7 @@ export const lineRouter = router({
       return db.getProductionLinesByWorkshop(input.workshopId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       workshopId: z.number({ error: "Vui lòng chọn xưởng" }),
       code: z.string().min(1, "Mã line là bắt buộc").max(50),
@@ -408,7 +408,7 @@ export const lineRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       workshopId: z.number().optional(),
@@ -423,7 +423,7 @@ export const lineRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
       const before = await db.getLineById(input.id);
@@ -437,17 +437,17 @@ export const lineRouter = router({
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getLineCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedLines();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       await db.restoreLine(input.id);
@@ -468,7 +468,7 @@ export const stationRouter = router({
       return db.getStationsByLine(input.lineId);
     }),
 
-  create: adminProcedure
+  create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       lineId: z.number({ error: "Vui lòng chọn line" }),
       code: z.string().min(1, "Mã trạm là bắt buộc").max(50),
@@ -482,7 +482,7 @@ export const stationRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       lineId: z.number().optional(),
@@ -498,7 +498,7 @@ export const stationRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) => {
       const before = await db.getStationById(input.id);
@@ -512,17 +512,17 @@ export const stationRouter = router({
       return { success: true };
     }),
 
-  cascadeInfo: adminProcedure
+  cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       return db.getStationCascadeInfo(input.id);
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedStations();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       await db.restoreStation(input.id);
@@ -940,7 +940,7 @@ export const machineRouter = router({
       return { apiKey };
     }),
 
-  update: adminProcedure
+  update: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       stationId: z.number().optional(),
@@ -1076,7 +1076,7 @@ export const machineRouter = router({
       return { url, key: fileKey };
     }),
 
-  delete: adminProcedure
+  delete: protectedProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       // M3: soft-delete keeps the code as a tombstone (partial unique index
@@ -1090,11 +1090,11 @@ export const machineRouter = router({
       return { success: true };
     }),
 
-  listDeleted: adminProcedure.query(async () => {
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
     return db.getDeletedMachines();
   }),
 
-  restore: adminProcedure
+  restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       // M3: restoring a tombstone whose code was reused by a newer active

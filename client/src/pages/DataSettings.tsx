@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, StatusBadge, EmptyState } from "@/components/patterns";
@@ -86,6 +87,14 @@ export default function DataSettings() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  // doc 47 RBAC — factory config is gated by the `settings_factory` permission (per the
+  // matrix: admin + engineer), not a hardcoded admin-role check. Server hierarchy CRUD is
+  // aligned to requirePermission("settings_factory", …). canView opens the hub;
+  // canManage (canEdit) shows create/edit/delete + deleted-items controls (server still
+  // enforces canCreate/canEdit/canDelete per action).
+  const { hasPermission } = usePermissions();
+  const canViewFactoryConfig = isAdmin || hasPermission("settings_factory", "canView");
+  const canManageFactory = isAdmin || hasPermission("settings_factory", "canEdit");
 
   const search = useSearch();
   const [location, setLocation] = useLocation();
@@ -308,11 +317,11 @@ export default function DataSettings() {
   );
 
   // Deleted items queries (admin only, enabled when toggle is on)
-  const { data: deletedFactories, refetch: refetchDeletedFactories } = trpc.factory.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
-  const { data: deletedWorkshops, refetch: refetchDeletedWorkshops } = trpc.workshop.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
-  const { data: deletedLines, refetch: refetchDeletedLines } = trpc.line.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
-  const { data: deletedStations, refetch: refetchDeletedStations } = trpc.station.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
-  const { data: deletedMachines, refetch: refetchDeletedMachines } = trpc.machine.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
+  const { data: deletedFactories, refetch: refetchDeletedFactories } = trpc.factory.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
+  const { data: deletedWorkshops, refetch: refetchDeletedWorkshops } = trpc.workshop.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
+  const { data: deletedLines, refetch: refetchDeletedLines } = trpc.line.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
+  const { data: deletedStations, refetch: refetchDeletedStations } = trpc.station.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
+  const { data: deletedMachines, refetch: refetchDeletedMachines } = trpc.machine.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
 
   // Dữ liệu đã lọc theo bộ lọc dropdown (tìm-kiếm-văn-bản do DataTable đảm nhận).
   const filteredFactories = useMemo(() => (factories ?? []) as Factory[], [factories]);
@@ -777,7 +786,7 @@ export default function DataSettings() {
     { href: "/product-mapping", title: t("dataSettings.quickLinks.productMapping"), description: t("dataSettings.quickLinks.productMappingDesc"), icon: <Cpu className="h-5 w-5" /> },
   ];
 
-  if (!isAdmin) {
+  if (!canViewFactoryConfig) {
     return (
       <DashboardLayout title={t("dataSettings.title")} navItems={navItems} currentPath="/datasettings">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -1056,7 +1065,7 @@ export default function DataSettings() {
               factories={factories}
               factoriesLoading={factoriesLoading}
               deletedFactories={deletedFactories}
-              isAdmin={isAdmin}
+              isAdmin={canManageFactory}
               showDeleted={showDeleted}
               setShowDeleted={setShowDeleted}
               factoryDialogOpen={factoryDialogOpen}
@@ -1081,7 +1090,7 @@ export default function DataSettings() {
               workshopsLoading={workshopsLoading}
               deletedWorkshops={deletedWorkshops}
               factories={factories}
-              isAdmin={isAdmin}
+              isAdmin={canManageFactory}
               showDeleted={showDeleted}
               workshopFilterFactory={workshopFilterFactory}
               setWorkshopFilterFactory={setWorkshopFilterFactory}
@@ -1108,7 +1117,7 @@ export default function DataSettings() {
               deletedLines={deletedLines}
               factories={factories}
               workshops={workshops}
-              isAdmin={isAdmin}
+              isAdmin={canManageFactory}
               showDeleted={showDeleted}
               lineFilterWorkshop={lineFilterWorkshop}
               setLineFilterWorkshop={setLineFilterWorkshop}
@@ -1136,7 +1145,7 @@ export default function DataSettings() {
               factories={factories}
               workshops={workshops}
               lines={lines}
-              isAdmin={isAdmin}
+              isAdmin={canManageFactory}
               showDeleted={showDeleted}
               stationFilterLine={stationFilterLine}
               setStationFilterLine={setStationFilterLine}
@@ -1166,7 +1175,7 @@ export default function DataSettings() {
               lines={lines}
               stations={stations}
               machineTypes={machineTypes}
-              isAdmin={isAdmin}
+              isAdmin={canManageFactory}
               showDeleted={showDeleted}
               machineFilterStation={machineFilterStation}
               setMachineFilterStation={setMachineFilterStation}
@@ -1409,7 +1418,7 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.productionStages")}</CardTitle>
                     <CardDescription>{t("settings.stageCount", { count: stages?.length || 0 })}</CardDescription>
                   </div>
-                  {isAdmin && (
+                  {canManageFactory && (
                     <Dialog open={stageDialogOpen} onOpenChange={setStageDialogOpen}>
                       <DialogTrigger asChild>
                         <Button className="gap-2">
@@ -1592,8 +1601,8 @@ export default function DataSettings() {
                       icon={GitBranch}
                       title={t("settings.noStages")}
                       description={t("dataSettings.emptyStageDesc", "Chưa có công đoạn nào. Thêm công đoạn để định nghĩa luồng sản xuất theo dây chuyền.")}
-                      actionLabel={isAdmin ? t("settings.addStage") : undefined}
-                      onAction={isAdmin ? () => setStageDialogOpen(true) : undefined}
+                      actionLabel={canManageFactory ? t("settings.addStage") : undefined}
+                      onAction={canManageFactory ? () => setStageDialogOpen(true) : undefined}
                     />
                   )}
                 </div>

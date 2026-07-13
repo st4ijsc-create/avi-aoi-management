@@ -1,4 +1,5 @@
 import { moduleProcedure, moduleGate, writeProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 // Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
@@ -738,7 +739,7 @@ export const lineStageRouter = router({
       return db.getLineStageById(input.id);
     }),
 
-  create: adminProcedure
+  create: writeProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       lineId: z.number(),
       code: z.string().min(1).max(20),
@@ -753,7 +754,7 @@ export const lineStageRouter = router({
       return { id };
     }),
 
-  update: adminProcedure
+  update: writeProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(20).optional(),
@@ -770,14 +771,14 @@ export const lineStageRouter = router({
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: writeProcedure.use(requirePermission("settings_factory", "canDelete"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteLineStage(input.id);
       return { success: true };
     }),
 
-  reorder: adminProcedure
+  reorder: writeProcedure.use(requirePermission("settings_factory", "canEdit"))
     .input(z.object({
       lineId: z.number(),
       stageIds: z.array(z.number()),
