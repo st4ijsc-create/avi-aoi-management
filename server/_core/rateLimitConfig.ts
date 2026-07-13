@@ -59,6 +59,35 @@ export const AUTH_RATE_LIMIT = {
   max: AUTH_PER_15MIN,
 };
 
+// ── OT machine-ingest tier (doc 48 R3) ───────────────────────────────────────
+// Machine→server telemetry ingest (POST /api/ot/ingest) is machine-to-machine
+// (authenticated by a per-machine key), NOT browser traffic — so it must NOT ride
+// the 300/60 `/api` browser bucket that throttled a real benchmark to ~2541 pts/s.
+// It gets its OWN limiter: keyed per machine-key (apiKeyGenerator), a much higher
+// but still FINITE default so a legitimate high-rate gateway is un-throttled while a
+// runaway client stays capped (never unlimited). ONE knob: OT_INGEST_RATE_MAX =
+// requests per 60s window PER machine key. Default 300k/min (≈5000 req/s/key).
+const OT_INGEST_PER_MIN = envInt("OT_INGEST_RATE_MAX", 300_000);
+
+export const OT_INGEST_RATE_LIMIT = {
+  windowMs: 60 * 1000,
+  max: OT_INGEST_PER_MIN,
+};
+
+/**
+ * The exact path(s) that carry machine telemetry ingest. Shared so the general
+ * `/api` limiter can `skip` EXACTLY these paths while the dedicated ingest limiter
+ * mounts on them — the exemption and the high tier can never drift apart.
+ */
+export const OT_INGEST_PATHS = ["/api/ot/ingest"] as const;
+
+/** True when a request targets the high-throughput OT ingest tier (query-string safe). */
+export function isOtIngestRequest(req: Request): boolean {
+  const raw = req.originalUrl || req.url || "";
+  const p = raw.split("?", 1)[0];
+  return OT_INGEST_PATHS.some((base) => p === base || p.startsWith(base + "/"));
+}
+
 // ── Store selection (B6) ─────────────────────────────────────────────────────
 
 export type RateLimitStoreKind = "redis" | "memory";
@@ -202,6 +231,10 @@ export function createApiLimiter() {
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later" },
     keyGenerator: apiKeyGenerator,
+    // doc 48 R3: EXEMPT the machine telemetry ingest path from the 300/60 browser
+    // tier — it is governed by the dedicated createOtIngestLimiter high tier instead.
+    // Browser/tRPC traffic is unaffected (skip returns false for every other path).
+    skip: isOtIngestRequest,
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
     ...storeOption("rl:api:"),
   });
@@ -217,5 +250,25 @@ export function createAuthLimiter() {
     // any credential exists to key on.
     passOnStoreError: true,
     ...storeOption("rl:auth:"),
+  });
+}
+
+/**
+ * doc 48 R3 — the DEDICATED machine telemetry ingest limiter. Keyed per machine-key
+ * (apiKeyGenerator → hashed x-api-key; IP fallback for the keyless case), high default
+ * (OT_INGEST_RATE_MAX, 300k/min) so a gateway pushing hundreds of thousands of
+ * points/sec is NOT throttled, yet a runaway client is still capped (finite, never
+ * unlimited). Mounted on OT_INGEST_PATHS BEFORE the general `/api` limiter (which
+ * `skip`s those same paths). Auth (machine key) is enforced by the route handler.
+ */
+export function createOtIngestLimiter() {
+  return rateLimit({
+    ...OT_INGEST_RATE_LIMIT,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "OT ingest rate limit exceeded" },
+    keyGenerator: apiKeyGenerator,
+    passOnStoreError: true, // Redis down → allow (fail-open), never 500 the ingest path
+    ...storeOption("rl:otingest:"),
   });
 }

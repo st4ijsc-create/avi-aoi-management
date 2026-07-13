@@ -166,10 +166,16 @@ async function runLoad(cfg, outDir) {
   let driver;
   if (cfg.mode === "http") {
     if (!cfg.target) { console.error("[bench-ingest] --mode http requires --target"); return 1; }
+    // doc 48 R3: the /api/ot/ingest tier authenticates by per-machine key. Present it
+    // as x-api-key when OT_BENCH_API_KEY is set, so an AUTHENTICATED (legitimate)
+    // high-rate client is benchmarked. Unset → no key header (unchanged behaviour).
+    const headers = { "content-type": "application/json" };
+    if (process.env.OT_BENCH_API_KEY) headers["x-api-key"] = process.env.OT_BENCH_API_KEY;
     driver = httpDriver({
       target: cfg.target,
       queryUrl: cfg.queryUrl,
       probeIntervalBatches: cfg.queryUrl ? 10 : 0,
+      headers,
     });
   } else {
     driver = nullDriver({ syntheticDelayMs: cfg.syntheticDelayMs });

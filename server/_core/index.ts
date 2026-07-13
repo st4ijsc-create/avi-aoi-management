@@ -40,7 +40,8 @@ import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
+import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
@@ -240,8 +241,11 @@ async function startServer() {
   // large base64/JSON bodies, and cap everything else at a sane default so a
   // single oversized POST to a generic endpoint can't force a 200MB in-memory
   // parse (memory-exhaustion DoS). Large-body prefixes:
-  //   /trpc/        — tRPC mutations incl. documents.upload (base64 files) and
-  //                   AOI package commit metadata.
+  //   /api/trpc/    — tRPC mutations incl. twin.models.uploadAndRegister /
+  //                   documents.upload (base64 files) and AOI package commit
+  //                   metadata. (The tRPC router is mounted at /api/trpc — the bare
+  //                   /trpc/ prefix never matched req.path, so large uploads were
+  //                   silently capped at DEFAULT and 413'd. doc 48 fix.)
   //   /api/machine/ — machine REST proxies that embed base64 images
   //                   (submit-inspection, upload-image, sync-*-image).
   //   /api/ai/      — local-KB / streaming endpoints that accept an inline
@@ -251,7 +255,7 @@ async function startServer() {
   // default with HTTP_BODY_LIMIT.
   const LARGE_BODY_LIMIT = "200mb";
   const DEFAULT_BODY_LIMIT = process.env.HTTP_BODY_LIMIT || "25mb";
-  const largeBodyPrefixes = ["/trpc/", "/api/machine/", "/api/ai/"];
+  const largeBodyPrefixes = ["/api/trpc/", "/trpc/", "/api/machine/", "/api/ai/"];
   const bodyLimitFor = (p: string): string =>
     largeBodyPrefixes.some((x) => p.startsWith(x)) ? LARGE_BODY_LIMIT : DEFAULT_BODY_LIMIT;
   app.use((req, res, next) => {
@@ -281,6 +285,14 @@ async function startServer() {
 
   // Rate limiting for API endpoints
   const apiLimiter = createApiLimiter();
+  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
+  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
+  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
+  // hit that ceiling at ~2541 pts/s). Mount its own per-machine high limiter BEFORE
+  // the general /api limiter; the general limiter `skip`s these exact paths
+  // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
+  const otIngestLimiter = createOtIngestLimiter();
+  app.use([...OT_INGEST_PATHS], otIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 
@@ -303,6 +315,82 @@ async function startServer() {
     app.get("/api/stream", sseHandler);
   } catch (err) {
     console.error("[SSE] route wiring failed:", (err as any)?.message || err);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // doc 48 R3 — HIGH-THROUGHPUT OT TELEMETRY INGEST (machine-to-machine).
+  //   POST /api/ot/ingest     Body: { samples: CanonicalSample[] }
+  // Auth: per-machine key (x-api-key header / body.apiKey / machineCode), scope
+  //   "ingest:write" — the SAME credential model every other machine endpoint uses;
+  //   NOT weakened to raise throughput. Rate limit: the dedicated high tier mounted
+  //   above (createOtIngestLimiter), NOT the 300/60 browser /api limiter (which skips
+  //   this path). Samples funnel straight into the ONE unified telemetry bus
+  //   (ingestTelemetry) → one bulk insert per batch. Module resolved ONCE at boot.
+  // ────────────────────────────────────────────────────────────────────────────
+  {
+    const { authenticateMachine } = await import("../services/machineAuthService");
+    const { ingestTelemetry } = await import("../services/telemetryBus");
+    const OT_PROTOCOLS = new Set<string>([
+      "mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other",
+    ]);
+    const OT_QUALITY = new Set<string>(["good", "bad", "uncertain"]);
+    const normProtocol = (p: unknown): TelemetryProtocol =>
+      typeof p === "string" && OT_PROTOCOLS.has(p) ? (p as TelemetryProtocol) : "other";
+    const normQuality = (q: unknown): TelemetryQuality =>
+      typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
+
+    app.post("/api/ot/ingest", async (req, res) => {
+      try {
+        const body = (req.body ?? {}) as any;
+        const rawSamples = Array.isArray(body) ? body : body.samples;
+        if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "Body must be { samples: [ ... ] } with at least one sample" });
+        }
+
+        // Auth (per-machine key) — preserved, NOT weakened. Throws TRPCError on failure.
+        const auth = await authenticateMachine({
+          headerKey: req.header("x-api-key") || null,
+          apiKey: typeof body.apiKey === "string" ? body.apiKey : null,
+          machineCode:
+            typeof body.machineCode === "string" ? body.machineCode : req.header("x-machine-code") || null,
+          scope: "ingest:write",
+        });
+
+        // Map → CanonicalSample[]. deviceId is preserved so the bus resolves the soft
+        // machineId itself (one gateway credential forwards many devices).
+        const samples: CanonicalSample[] = rawSamples.map((s: any): CanonicalSample => ({
+          ts: s?.ts ? new Date(s.ts) : undefined,
+          machineId: typeof s?.machineId === "number" ? s.machineId : null,
+          deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
+          protocol: normProtocol(s?.protocol),
+          metric: String(s?.metric ?? ""),
+          value:
+            typeof s?.value === "number" || typeof s?.value === "string" || typeof s?.value === "boolean"
+              ? s.value
+              : null,
+          unit: typeof s?.unit === "string" ? s.unit : null,
+          quality: normQuality(s?.quality),
+          meta: s?.meta && typeof s.meta === "object" ? s.meta : null,
+        }));
+
+        const accepted = await ingestTelemetry(samples);
+        res.json({ ok: true, accepted, received: samples.length, machine: auth.machine.code });
+      } catch (error: any) {
+        // Auth failures (TRPCError) → 401/403; DB down → 503; everything else → 500.
+        const code = error?.code;
+        if (code === "UNAUTHORIZED")
+          return res.status(401).json({ ok: false, error: error?.message || "Unauthorized" });
+        if (code === "FORBIDDEN")
+          return res.status(403).json({ ok: false, error: error?.message || "Forbidden" });
+        if (error?.name === "DbUnavailableError")
+          return res.status(503).json({ ok: false, error: "Database unavailable — retry" });
+        console.error("[OT ingest] error:", error?.message || error);
+        res.status(500).json({ ok: false, error: error?.message || "Ingest failed" });
+      }
+    });
+    console.log("[OT] high-throughput ingest route ready: POST /api/ot/ingest (dedicated rate tier)");
   }
 
   // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
@@ -4870,6 +4958,36 @@ async function startServer() {
     }
   } catch (err) {
     console.error("[StreamTelemetryTap] install failed:", (err as any)?.message || err);
+  }
+
+  // doc 48 R3 — COLD-TIER LAKE SINK: a DURABLE NATS JetStream consumer that archives
+  // the telemetry stream (the `syn/telemetry/{line}` messages the tap above publishes)
+  // into a time-partitioned, columnar-ready COLD TIER — gzipped-NDJSON files under
+  // LAKE_DIR (default ./data/lake) or MinIO/S3 (LAKE_S3_ENDPOINT). Closes the L2 audit
+  // gap "no lake/Parquet cold tier for telemetry; marts are plain-PG". Reads the durable
+  // log ONLY (never a control path; same invariant as the tap).
+  //
+  // HONEST-DEGRADE: clean no-op unless LAKE_SINK_ENABLED=true (default OFF — the
+  // orchestrator flips it on). With nats selected but unreachable it refuses cleanly
+  // (never fakes a lake, never falls back to the in-process ring pretending durability,
+  // never blocks boot). On the in-process backend it archives as a NON-durable source
+  // (labelled). ONE honest boot status line below.
+  try {
+    const { startLakeSink } = await import("../services/streaming/lakeSink");
+    const res = await startLakeSink();
+    if (!res) {
+      console.log("[LakeSink] disabled (set LAKE_SINK_ENABLED=true to archive telemetry → cold-tier lake)");
+    } else if (res.mode === "nats-durable") {
+      console.log(`[LakeSink] ENABLED — durable NATS consumer → ${res.target}`);
+    } else if (res.mode === "bridge") {
+      console.log(`[LakeSink] ENABLED — in-process NON-durable source → ${res.target}`);
+    } else {
+      console.log(
+        `[LakeSink] enabled but source UNAVAILABLE (${res.mode}) — NATS unreachable; no files written until it is`,
+      );
+    }
+  } catch (err) {
+    console.error("[LakeSink] start failed:", (err as any)?.message || err);
   }
 
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:

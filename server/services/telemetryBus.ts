@@ -122,35 +122,63 @@ export function clearMachineIdCache(): void {
   machineIdCache.clear();
 }
 
-/** Resolve a deviceId to a platform machineId via machines.code (cached). */
+/** Resolve a single deviceId to a platform machineId via machines.code (cached).
+ *  Thin convenience over resolveMachineIds so there is ONE resolution code path. */
 async function resolveMachineId(deviceId: string | null | undefined): Promise<number | null> {
   if (!deviceId) return null;
-  const cached = machineIdCache.get(deviceId);
-  if (cached && (cached.value !== null || cached.expires > Date.now())) {
-    return cached.value; // positive: dùng luôn; negative: dùng khi chưa hết TTL
+  return (await resolveMachineIds([deviceId])).get(deviceId) ?? null;
+}
+
+/**
+ * Bulk-resolve many deviceIds in ONE query (cache-aware). Returns a Map
+ * deviceId→machineId|null with the SAME semantics as resolveMachineId (positive
+ * cached forever, negative cached for NEG_CACHE_TTL_MS), but collapses the
+ * per-sample N+1 into a single `code IN (...)` lookup. Without this, a firehose of
+ * not-yet-mapped devices (each a cache miss) issues one sequential DB round-trip
+ * per sample and starves the connection pool (doc 48 R3 scale finding).
+ */
+async function resolveMachineIds(
+  deviceIds: (string | null | undefined)[],
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const now = Date.now();
+  const misses: string[] = [];
+  for (const d of deviceIds) {
+    if (!d || out.has(d)) continue;
+    const cached = machineIdCache.get(d);
+    if (cached && (cached.value !== null || cached.expires > now)) {
+      out.set(d, cached.value); // positive forever; negative within TTL
+    } else if (!misses.includes(d)) {
+      misses.push(d);
+    }
   }
-  let resolved: number | null = null;
+  if (misses.length === 0) return out;
   try {
     const { getDb } = await import("../db/connection");
     const db = await getDb();
     if (db) {
       const { machines } = await import("../../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
+      const { inArray } = await import("drizzle-orm");
       const rows = await db
-        .select({ id: machines.id })
+        .select({ id: machines.id, code: machines.code })
         .from(machines)
-        .where(eq(machines.code, deviceId))
-        .limit(1);
-      resolved = rows.length > 0 ? rows[0].id : null;
+        .where(inArray(machines.code, misses));
+      const found = new Map<string, number>();
+      for (const r of rows) if (!found.has(r.code)) found.set(r.code, r.id); // keep-first, mirrors limit(1)
+      const negExpires = now + NEG_CACHE_TTL_MS;
+      for (const code of misses) {
+        const id = found.get(code) ?? null;
+        out.set(code, id);
+        machineIdCache.set(code, { value: id, expires: id === null ? negExpires : Infinity });
+      }
+    } else {
+      // DB absent → ingest unmapped; do NOT poison the cache (retry when DB returns).
+      for (const code of misses) out.set(code, null);
     }
   } catch {
-    resolved = null; // resolution failure → ingest as unmapped (machineId null)
+    for (const code of misses) if (!out.has(code)) out.set(code, null);
   }
-  machineIdCache.set(deviceId, {
-    value: resolved,
-    expires: resolved === null ? Date.now() + NEG_CACHE_TTL_MS : Infinity,
-  });
-  return resolved;
+  return out;
 }
 
 // ── U6-b (G-10) — optional cross-instance fan-out for telemetry ──────────────
@@ -417,11 +445,20 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
 async function ingestNow(samples: CanonicalSample[]): Promise<number> {
   if (!samples || samples.length === 0) return 0;
 
-  // 1+2: normalize + resolve machineId for each sample.
+  // 1+2: normalize + resolve machineId for each sample. Bulk-resolve every
+  // unmapped deviceId in ONE query (not N sequential awaits) so a firehose of
+  // not-yet-mapped devices can't starve the connection pool (doc 48 R3).
+  const resolvedMap = await resolveMachineIds(
+    samples.filter((s) => s.machineId == null).map((s) => s.deviceId),
+  );
   const rows: InsertOtTelemetry[] = [];
   for (const s of samples) {
     const machineId =
-      s.machineId != null ? s.machineId : await resolveMachineId(s.deviceId);
+      s.machineId != null
+        ? s.machineId
+        : s.deviceId
+          ? (resolvedMap.get(s.deviceId) ?? null)
+          : null;
     rows.push(toCanonicalRow(s, machineId));
   }
 

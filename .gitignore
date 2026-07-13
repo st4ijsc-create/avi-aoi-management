@@ -109,6 +109,10 @@ temp/
 *.sqlite
 *.sqlite3
 
+# doc48 R3 — cold-tier lake sink output (LAKE_DIR); never commit archived telemetry
+data/lake/
+/data/
+
 # FactoryAlertSystem (production mobile app) — SOURCE IS TRACKED (MB1, doc 27).
 # Only dependencies, build outputs, binaries and signing material are ignored.
 FactoryAlertSystem/node_modules/
