@@ -39,7 +39,19 @@ User duyệt D1-D6: **R1-R4 · dev-DB · WORM+bypass+RBAC · llama-server**. Đ�
 
 **2 phát hiện HONEST quan trọng (R2):** (1) 14,730 inspection ảnh **orphaned từ DB trước** — data-provenance gap, không phải chỉ seed cũ. (2) Ingest path dùng chung /api rate-limit 300/min = **nút cổ chai scale** (100 máy vượt dễ) → cần ingest-tier riêng.
 
+## ✅ R3 (Infra HA & Scale) — DONE, commit `a335ec1a` + verify LIVE
+| Món | Kết quả LIVE |
+|---|---|
+| **Ingest tier riêng** | `OT_INGEST_RATE_LIMIT` 300k/min keyed-per-máy; `/api` tier chung **skip** path ingest (browser/tRPC nguyên vẹn). **Phát hiện:** route `/api/ot/ingest` TRƯỚC ĐÂY KHÔNG tồn tại (200 fall-through, 0 persist) → lý do R2 benchmark ot_telemetry=0. Tạo route THẬT (auth máy→map→ingestTelemetry persist). Auth verify: no-key/bad-key→401, valid→200+persist. +7 test. |
+| **Bulk-resolve N+1** (phát hiện khi benchmark) | `resolveMachineIds()` gộp mọi deviceId chưa-map của batch vào **1 query** `code IN (...)` thay N await tuần tự (tới 500 round-trip/batch → cạn pool → 4s/query). Giữ nguyên cache+neg-TTL. **errors 500→0.** |
+| **Benchmark THẬT** (authed, ingest tier) | **at-capacity 5k target → 4691 pts/s @ ack P95 56ms, 0 err, 101MiB** (khoẻ). **over-drive 100k target → 9742 pts/s** (trần single-node, backpressure KHÔNG mất data, 0 err). **2.9M row synthetic persist THẬT** vào hypertable rồi dọn sạch. Trần = index-maintenance-bound (6 index/2 unique arbiter) → **đường tới 100k = COPY-ingest (R4) + scale-out** (honest, không giả 100k). |
+| **Timescale hardening** (0271) | ot_telemetry→hypertable (PK mở rộng (id,ts)); compression bật measurement_results+product_inspections. **7 hypertable đều compression-enabled.** Chạy bằng owner `aoi`. Boot log xác nhận native retention ot_telemetry. |
+| **Lake cold-tier** (lakeSink.ts, flag OFF) | NATS JetStream pull consumer bền→NDJSON gzip phân vùng date/hour/aspect (local FS/MinIO/S3). `npm lake:verify` drain 5 sample→file gzip hợp lệ. docker-compose.lake.yml + 11 test. |
+| **Tự làm** | read-replica seam `getReadDb` xác nhận tồn tại (DB_POOL_MAX_READ pool riêng); uns-ha compose validate (cần EMQX_CLUSTER_COOKIE deploy); DR pg_dump backup OK (219MB DB). |
+
+**Phát hiện HONEST R3:** (1) route ingest THẬT chưa từng tồn tại → R2 "endpoint 200" là fall-through giả. (2) N+1 resolve = nút cổ chai thật, đã sửa. (3) trần single-node ~10k pts/s (index-bound) — 100k cần COPY+scale, KHÔNG giả số.
+
 ## Kế tiếp
-R3 infra HA (EMQX-3node/PG-replica/lake/mTLS/ot_telemetry-hypertable/ingest-tier). R4 correctness+RBAC (fork-fix/leader-election/COPY/RBAC-40-proc/scoped-admin/CJK/monolith). R5 llama-server. **HOÃN staging:** OT_GATEWAY (adapter thật), tắt LICENSE_BYPASS/MACHINE_SHARED_KEY (license/xoay-khoá), default-deny ot.command.* (chờ gateway).
+R4 correctness+RBAC (fork-fix genealogy/leader-election/COPY-ingest/RBAC-40-proc→requirePermission+scoped-admin/CJK-font/tách ApiDocs+ProductModels). R5 llama-server. **HOÃN staging:** OT_GATEWAY (adapter thật), tắt LICENSE_BYPASS/MACHINE_SHARED_KEY (license/xoay-khoá), default-deny ot.command.* (chờ gateway), EMQX-3node deploy (cần cluster cookie).
 
 **Backup:** `.env` gốc lưu tại scratchpad `.env.pre-r1-activation.bak` (rollback nếu cần). avi_app password dev: `avi_app_worm_2026` (dev-only, đổi ở production).
