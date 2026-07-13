@@ -37,18 +37,15 @@ import {
   ChevronRight,
   Factory,
   Cog,
-  Award,
-  FolderTree,
   Package,
   Workflow,
-  Wrench
+  ArrowRight
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import WorkstationManagement from "@/components/WorkstationManagement";
-import { ProcessManagementContent } from "@/pages/ProcessManagement";
-import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
-import { ProductMachineMappingContent } from "@/components/ProductMachineMappingContent";
+// doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
+// (/products, /product-mapping, /process-management, /workstation-management). The hub
+// links out to them via the "Liên kết nhanh" cards instead of re-embedding them here.
 import { ExcelImportExport } from "@/components/ExcelImportExport";
 
 import { useState, useEffect, useMemo } from "react";
@@ -93,19 +90,23 @@ export default function DataSettings() {
     setLocation(`/datasettings?tab=${tab}`);
   };
   
-  // Sync tab with URL on mount and URL changes
+  // Sync tab with URL on mount and URL changes. doc 47 IA Đợt 1 — the products/process
+  // managers no longer live here; old deep-links redirect to their single-home routes so
+  // no ?tab= link lands on a dead/empty tab.
+  const TAB_REDIRECTS: Record<string, string> = {
+    'mapping': '/monitoring-setting?tab=device-management',
+    'product-models': '/products',
+    'product-categories': '/products',
+    'product-machine-mapping': '/product-mapping',
+    'process-management': '/process-management',
+    'workstations': '/workstation-management',
+    'workstation-mgmt': '/workstation-management',
+  };
   useEffect(() => {
     const tabFromUrl = getTabFromUrl();
-    if (tabFromUrl === 'mapping') {
-      setLocation('/monitoring-setting?tab=device-management');
-      return;
-    }
-    if (tabFromUrl === 'workstations') {
-      setLocation('/datasettings?tab=workstation-mgmt');
-      return;
-    }
-    if (tabFromUrl === 'product-models') {
-      setLocation('/products');
+    const redirect = TAB_REDIRECTS[tabFromUrl];
+    if (redirect) {
+      setLocation(redirect);
       return;
     }
     if (tabFromUrl !== activeTab) {
@@ -719,24 +720,6 @@ export default function DataSettings() {
       ],
     },
     {
-      id: "products",
-      label: t("settings.cat.products"),
-      icon: <Award className="h-3.5 w-3.5 text-orange-500" />,
-      items: [
-        { value: "product-categories", label: t("settings.sidebar.productCategory"), icon: <FolderTree className="h-3.5 w-3.5" /> },
-        { value: "product-machine-mapping", label: t("settings.sidebar.productMapping"), icon: <Cpu className="h-3.5 w-3.5" /> },
-      ],
-    },
-    {
-      id: "process",
-      label: t("dataSettings.cat.process"),
-      icon: <Workflow className="h-3.5 w-3.5 text-purple-500" />,
-      items: [
-        { value: "process-management", label: t("dataSettings.sidebar.processManagement"), icon: <Workflow className="h-3.5 w-3.5" /> },
-        { value: "workstation-mgmt", label: t("dataSettings.sidebar.workstationManagement"), icon: <Wrench className="h-3.5 w-3.5" /> },
-      ],
-    },
-    {
       id: "tools",
       label: "Công cụ",
       icon: <Database className="h-3.5 w-3.5 text-green-500" />,
@@ -744,6 +727,16 @@ export default function DataSettings() {
         { value: "seed-data", label: "Tạo dữ liệu mẫu", icon: <Plus className="h-3.5 w-3.5" /> },
       ],
     },
+  ];
+
+  // doc 47 IA Đợt 1 — the hub LINKS OUT to config pages that have their own single home
+  // (instead of re-embedding their managers, which caused menu/route duplication).
+  const quickLinks = [
+    { href: "/layout", title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> },
+    { href: "/workstation-management", title: t("dataSettings.quickLinks.workstation"), description: t("dataSettings.quickLinks.workstationDesc"), icon: <Warehouse className="h-5 w-5" /> },
+    { href: "/process-management", title: t("dataSettings.quickLinks.process"), description: t("dataSettings.quickLinks.processDesc"), icon: <Workflow className="h-5 w-5" /> },
+    { href: "/products", title: t("dataSettings.quickLinks.products"), description: t("dataSettings.quickLinks.productsDesc"), icon: <Package className="h-5 w-5" /> },
+    { href: "/product-mapping", title: t("dataSettings.quickLinks.productMapping"), description: t("dataSettings.quickLinks.productMappingDesc"), icon: <Cpu className="h-5 w-5" /> },
   ];
 
   if (!isAdmin) {
@@ -766,6 +759,42 @@ export default function DataSettings() {
           title={t("dataSettings.title")}
           description={t("dataSettings.description")}
         />
+
+        {/* doc 47 IA Đợt 1 — "Liên kết nhanh": the hub links out to config pages that
+            have their own single home, instead of re-embedding their managers. */}
+        <Card className="glass-card mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ArrowRight className="h-4 w-4 text-primary" />
+              {t("dataSettings.quickLinks.title")}
+            </CardTitle>
+            <CardDescription>{t("dataSettings.quickLinks.description")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {quickLinks.map((link) => (
+                <button
+                  key={link.href}
+                  type="button"
+                  onClick={() => setLocation(link.href)}
+                  className="group flex items-start gap-3 rounded-lg border border-border bg-card/50 p-4 text-left transition-colors hover:border-primary hover:bg-accent"
+                >
+                  <span className="mt-0.5 shrink-0 text-primary">{link.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">{link.title}</span>
+                      <span className="inline-flex shrink-0 items-center gap-0.5 text-sm text-primary opacity-70 transition-opacity group-hover:opacity-100">
+                        {t("dataSettings.quickLinks.open")}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-sm text-muted-foreground">{link.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -902,75 +931,8 @@ export default function DataSettings() {
                 )}
               </div>
 
-              {/* Category: Products */}
-              <div className="space-y-1">
-                <button
-                  onClick={() => toggleCategory('products')}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Award className="h-4 w-4 text-orange-500" />
-                    <span>{t("settings.cat.products")}</span>
-                  </div>
-                  {collapsedCategories['products'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-                {!collapsedCategories['products'] && (
-                  <div className="ml-6 space-y-1">
-                    <button
-                      onClick={() => handleTabChange('product-categories')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${activeTab === 'product-categories' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-                    >
-                      <FolderTree className="h-4 w-4" />
-                      {t("settings.sidebar.productCategory")}
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('product-machine-mapping')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-                        activeTab === 'product-machine-mapping' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                      }`}
-                    >
-                      <Cpu className="h-4 w-4" />
-                      {t("settings.sidebar.productMapping")}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Category: Process Management */}
-              <div className="space-y-1">
-                <button
-                  onClick={() => toggleCategory('process')}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Workflow className="h-4 w-4 text-purple-500" />
-                    <span>{t("dataSettings.cat.process")}</span>
-                  </div>
-                  {collapsedCategories['process'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-                {!collapsedCategories['process'] && (
-                  <div className="ml-6 space-y-1">
-                    <button
-                      onClick={() => handleTabChange('process-management')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-                        activeTab === 'process-management' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                      }`}
-                    >
-                      <Workflow className="h-4 w-4" />
-                      {t("dataSettings.sidebar.processManagement")}
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('workstation-mgmt')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-                        activeTab === 'workstation-mgmt' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                      }`}
-                    >
-                      <Wrench className="h-4 w-4" />
-                      {t("dataSettings.sidebar.workstationManagement")}
-                    </button>
-                  </div>
-                )}
-              </div>
+              {/* doc 47 IA Đợt 1 — Products + Process categories removed here (moved to
+                  their own routes; the hub links out via the Quick-links cards). */}
 
               {/* Category: Tools */}
               <div className="space-y-1">
@@ -2324,25 +2286,10 @@ export default function DataSettings() {
             </Card>
           </TabsContent>
 
-          {/* Product Categories Tab */}
-          <TabsContent value="product-categories">
-            <ProductCategoryManagement />
-          </TabsContent>
-
-          {/* Product Machine Mapping Tab */}
-          <TabsContent value="product-machine-mapping">
-            <ProductMachineMappingContent />
-          </TabsContent>
-
-          {/* Process Management Tab */}
-          <TabsContent value="process-management">
-            <ProcessManagementContent />
-          </TabsContent>
-
-          {/* Workstation Management Tab */}
-          <TabsContent value="workstation-mgmt">
-            <WorkstationManagement />
-          </TabsContent>
+          {/* doc 47 IA Đợt 1 — product-categories / product-machine-mapping /
+              process-management / workstation-mgmt tab bodies removed; those managers
+              now live only at their own routes and are reached via the Quick-links cards.
+              Old ?tab= deep-links redirect (see TAB_REDIRECTS above). */}
 
           {/* Seed Data Tab */}
           <TabsContent value="seed-data">

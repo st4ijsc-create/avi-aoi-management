@@ -1757,6 +1757,17 @@ export const navGroups: NavGroup[] = [
         section: "productProgram", // Doc 31 UX7
       },
       {
+        // doc 47 IA Đợt 1 — hub landing for factory-model config; it LINKS OUT to the
+        // single-home pages below instead of re-embedding their managers. First in section.
+        href: "/datasettings",
+        label: "nav.dataSettingsPage",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+        section: "factoryConfig",
+      },
+      {
         href: "/layout",
         label: "nav.factoryLayout",
         icon: <LayoutGrid className="h-4 w-4" />,
@@ -1783,17 +1794,8 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "settings",
         section: "factoryConfig",
       },
-      {
-        href: "/datasettings",
-        label: "nav.dataSettingsPage",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.dataSettingsPageDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-        section: "factoryConfig",
-      },
-      // doc 39 — DataSettings ?tab= deep-link rows removed (redundant with in-page tabs);
-      // the plain /datasettings entry above is the single menu row.
+      // doc 39/47 — DataSettings ?tab= deep-link rows removed (redundant with in-page tabs);
+      // the /datasettings hub entry (first in this section) is the single menu row.
     ],
   },
 
