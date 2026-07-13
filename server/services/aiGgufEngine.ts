@@ -730,6 +730,23 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
  * Generate text using a loaded GGUF model
  */
 export async function generateText(options: GgufGenerateOptions, modelId?: string): Promise<GgufGenerateResult> {
+  // R5 — offload deep-model text generation to a PERSISTENT llama-server (own
+  // VRAM) when configured, keeping the in-process embedder free of contention.
+  // OFF by default → falls straight through to the in-process path below.
+  {
+    const srv = await import("./aiLlamaServerClient");
+    if (srv.shouldUseServerForText(modelId)) {
+      try {
+        return await srv.serverGenerateText(options, modelId);
+      } catch (e) {
+        if (srv.llamaServerStrict()) throw e;
+        console.warn(
+          `[aiGgufEngine] llama-server generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+        );
+      }
+    }
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
@@ -863,6 +880,22 @@ export async function generateJSON<T = unknown>(
   options: GgufGenerateOptions,
   modelId?: string,
 ): Promise<{ data: T; raw: string; tokensGenerated: number; tokensPrompt: number; totalTimeMs: number; tokensPerSecond: number; modelId: string; }> {
+  // R5 — schema-constrained JSON via the PERSISTENT llama-server when configured
+  // (own VRAM), keeping the in-process embedder free. OFF by default → in-process.
+  {
+    const srv = await import("./aiLlamaServerClient");
+    if (srv.shouldUseServerForText(modelId)) {
+      try {
+        return await srv.serverGenerateJSON<T>(jsonSchema, options, modelId);
+      } catch (e) {
+        if (srv.llamaServerStrict()) throw e;
+        console.warn(
+          `[aiGgufEngine] llama-server JSON generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+        );
+      }
+    }
+  }
+
   const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
