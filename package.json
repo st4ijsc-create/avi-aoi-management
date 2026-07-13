@@ -37,9 +37,12 @@
     "kb:eval": "node scripts/ai-kb/eval-rag.mjs",
     "kb:stale-check": "node scripts/ai-kb/check-kb-stale.mjs",
     "hooks:install": "node scripts/ai-kb/install-git-hooks.mjs",
+    "ai:backfill": "tsx scripts/ai/backfill-ai-data.mjs",
     "sim:factory": "node scripts/sim-factory/seed.mjs",
     "sim:production": "node scripts/sim-factory/seed-production.mjs",
     "sim:scenario": "node scripts/sim-factory/scenario.mjs",
+    "sim:esop": "tsx scripts/sim-factory/seed-esop.mjs",
+    "sim:live": "node scripts/sim-factory/sim-live-daemon.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "ai:bench": "node scripts/ai-bench/bench.mjs"
