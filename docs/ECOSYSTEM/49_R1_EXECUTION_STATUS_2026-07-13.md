@@ -27,7 +27,19 @@ User duyệt D1-D6: **R1-R4 · dev-DB · WORM+bypass+RBAC · llama-server**. Đ�
 - **Tắt MACHINE_SHARED_KEY_ALLOWED**: cần xoay khoá mọi máy sang per-device → **staging** (trên dev tắt = rớt auth máy sim).
 - **SECRET_MANAGER/SIEM**: cần OpenBao nạp secret + SIEM endpoint → R1-tiếp/R3.
 
+## ✅ R2 (Data & Proof) — DONE, commit `5013a0bc` + verify LIVE
+| Món | Kết quả LIVE |
+|---|---|
+| **Rolling-sim daemon** (`npm sim:live`) | Dashboard render LIVE: **warRoom OEE 84.4, output 2755, asOf 2026-07-13** (hết stale 07-12); andon=5; **planVsActual 93.96%** (trước 1557%). ~8265 SIM-LIVE row/tick, rotation 7d, --purge. |
+| **e-SOP** (`npm sim:esop`) | 5 SOP thật/31 step + **1 execution end-to-end qua state-machine THẬT** (gate INCOMPLETE + INPUT_MISMATCH → completed). sops/steps/exec **0/0/0→5/31/1**. |
+| **AI backfill** (`npm ai:backfill`) | Service THẬT: ai_image_embeddings **0→990** · anomaly_bank **0→49** · ai_models **0→2** · model_versions **0→1 staged** · feature_cache **0→390** · rul→145. **HONEST: 14,730 inspection KHÔNG có ảnh (orphaned từ DB trước) → embed ảnh THẬT có sẵn, KHÔNG bịa.** |
+| **POLICY_DEFAULT_DENY** (line/order) | BẬT + app healthy no-break; **transition THẬT idle→ready ok:true qua policy-gate** (9 rule loaded); **line_states/transitions 0/0→1/1** (đóng "LC never executed"). |
+| **pg_stat_statements** | CREATE EXTENSION OK (query-perf telemetry). |
+| **Benchmark** | Endpoint 200 nhưng /api rate-limit 300/min chặn bulk → **cần ingest-tier riêng (R4)** đo 100k thật. RLS-0125 blocked (Timescale hypertable). |
+
+**2 phát hiện HONEST quan trọng (R2):** (1) 14,730 inspection ảnh **orphaned từ DB trước** — data-provenance gap, không phải chỉ seed cũ. (2) Ingest path dùng chung /api rate-limit 300/min = **nút cổ chai scale** (100 máy vượt dễ) → cần ingest-tier riêng.
+
 ## Kế tiếp
-R2 (rolling-sim + seed e-SOP/AI + benchmark) → sẽ có trigger để bật+chứng minh POLICY_DEFAULT_DENY + FSM runtime evidence. R3 infra. R4 correctness+RBAC. R5 llama-server.
+R3 infra HA (EMQX-3node/PG-replica/lake/mTLS/ot_telemetry-hypertable/ingest-tier). R4 correctness+RBAC (fork-fix/leader-election/COPY/RBAC-40-proc/scoped-admin/CJK/monolith). R5 llama-server. **HOÃN staging:** OT_GATEWAY (adapter thật), tắt LICENSE_BYPASS/MACHINE_SHARED_KEY (license/xoay-khoá), default-deny ot.command.* (chờ gateway).
 
 **Backup:** `.env` gốc lưu tại scratchpad `.env.pre-r1-activation.bak` (rollback nếu cần). avi_app password dev: `avi_app_worm_2026` (dev-only, đổi ở production).
