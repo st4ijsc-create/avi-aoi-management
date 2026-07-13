@@ -48,6 +48,9 @@ import { navItems } from "@/lib/navigation";
 // doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
 import { FactoryTree } from "@/components/factoryConfig/FactoryTree";
 import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel";
+import { FactoryConfigImportExport } from "@/components/factoryConfig/FactoryConfigImportExport";
+import { FactoryConfigAudit } from "@/components/factoryConfig/FactoryConfigAudit";
+import { FactorySetupWizard } from "@/components/factoryConfig/FactorySetupWizard";
 import type { NavTarget } from "@/components/factoryConfig/factoryModel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 // doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
@@ -65,7 +68,7 @@ import { CascadeDeleteDialog } from "@/components/CascadeDeleteDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { RotateCcw, Eye } from "lucide-react";
+import { RotateCcw, Eye, History } from "lucide-react";
 
 type Factory = { id: number; code: string; name: string; address?: string | null; description?: string | null };
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
@@ -91,6 +94,8 @@ export default function DataSettings() {
   };
   
   const [activeTab, setActiveTab] = useState(getTabFromUrl);
+  // doc 47 Đợt 3 — guided top-down factory-setup wizard (opened from Overview).
+  const [wizardOpen, setWizardOpen] = useState(false);
   
   // Update URL when tab changes
   const handleTabChange = (tab: string) => {
@@ -763,10 +768,13 @@ export default function DataSettings() {
     },
     {
       id: "tools",
-      label: "Công cụ",
+      label: t("dataSettings.cat.tools", "Công cụ & Nhật ký"),
       icon: <Database className="h-3.5 w-3.5 text-green-500" />,
       items: [
-        { value: "seed-data", label: "Tạo dữ liệu mẫu", icon: <Plus className="h-3.5 w-3.5" /> },
+        // doc 47 Đợt 3 — bulk import/export (round-trip Excel/CSV) + config change audit.
+        { value: "import-export", label: t("factoryIO.tabLabel", "Nhập / Xuất"), icon: <ArrowRight className="h-3.5 w-3.5" /> },
+        { value: "config-audit", label: t("factoryConfigAudit.tabLabel", "Nhật ký thay đổi"), icon: <History className="h-3.5 w-3.5" /> },
+        { value: "seed-data", label: t("dataSettings.sidebar.seedData", "Tạo dữ liệu mẫu"), icon: <Plus className="h-3.5 w-3.5" /> },
       ],
     },
   ];
@@ -1011,6 +1019,16 @@ export default function DataSettings() {
           {/* doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
               Cạnh nhau trên màn rộng (xl), xếp chồng trên màn hẹp. */}
           <TabsContent value="overview">
+            {/* doc 47 Đợt 3 — guided factory-setup wizard trigger */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="text-sm text-muted-foreground">
+                {t("dataSettings.overview.wizardHint", "Dựng nhà máy mới từ trên xuống bằng trình hướng dẫn — Nhà máy → Xưởng → Dây chuyền → Trạm → Máy.")}
+              </div>
+              <Button onClick={() => setWizardOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {t("dataSettings.overview.wizardBtn", "Dựng nhà máy")}
+              </Button>
+            </div>
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <Card className="glass-card">
                 <CardHeader>
@@ -2369,6 +2387,16 @@ export default function DataSettings() {
               Old ?tab= deep-links redirect (see TAB_REDIRECTS above). */}
 
           {/* Seed Data Tab */}
+          {/* doc 47 Đợt 3 — bulk import/export (round-trip Excel/CSV) */}
+          <TabsContent value="import-export">
+            <FactoryConfigImportExport />
+          </TabsContent>
+
+          {/* doc 47 Đợt 3 — factory-config change audit (read-only, from audit_logs) */}
+          <TabsContent value="config-audit">
+            <FactoryConfigAudit />
+          </TabsContent>
+
           <TabsContent value="seed-data">
             <Card className="glass-card">
               <CardHeader>
@@ -2442,6 +2470,13 @@ export default function DataSettings() {
           </div>
         </Tabs>
         </ErrorBoundary>
+
+        {/* doc 47 Đợt 3 — guided factory-setup wizard (top-down create) */}
+        <FactorySetupWizard
+          open={wizardOpen}
+          onOpenChange={setWizardOpen}
+          onComplete={() => refetchFactories()}
+        />
       </PageContainer>
 
       {/* Edit Stage Dialog */}
