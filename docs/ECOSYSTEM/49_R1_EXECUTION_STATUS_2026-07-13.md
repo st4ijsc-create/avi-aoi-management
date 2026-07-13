@@ -52,6 +52,37 @@ User duyệt D1-D6: **R1-R4 · dev-DB · WORM+bypass+RBAC · llama-server**. Đ�
 **Phát hiện HONEST R3:** (1) route ingest THẬT chưa từng tồn tại → R2 "endpoint 200" là fall-through giả. (2) N+1 resolve = nút cổ chai thật, đã sửa. (3) trần single-node ~10k pts/s (index-bound) — 100k cần COPY+scale, KHÔNG giả số.
 
 ## Kế tiếp
-R4 correctness+RBAC (fork-fix genealogy/leader-election/COPY-ingest/RBAC-40-proc→requirePermission+scoped-admin/CJK-font/tách ApiDocs+ProductModels). R5 llama-server. **HOÃN staging:** OT_GATEWAY (adapter thật), tắt LICENSE_BYPASS/MACHINE_SHARED_KEY (license/xoay-khoá), default-deny ot.command.* (chờ gateway), EMQX-3node deploy (cần cluster cookie).
+*(đã thực thi — xem dưới)*
+
+## ✅ R4 (Correctness + RBAC + Nợ) — DONE, 6 commit, MỖI cái PROVEN LIVE
+| Món | Commit | Verify LIVE |
+|---|---|---|
+| **Genealogy fork-fix** | `96042ef8` | Chuỗi hash tamper-evident forkable (read-tail+insert 2 lệnh). Nay `appendGenealogyChainRow` = tx + `pg_advisory_xact_lock` (mirror control-audit). **A/B DB thật: OLD 40 append đồng thời→1 FORK; NEW→0 FORK.** 3 call-site. |
+| **Worker leader-election** | `77f18831` | Đóng "SINGLE-WORKER no leader election". Advisory-lock session trên reserve() conn + heartbeat pg_locks + fail-stop chống split-brain. Cờ `WORKER_LEADER_ELECTION_ENABLED` OFF. **2 tiến-trình thật: đúng 1 leader + standby failover.** |
+| **Scoped-admin** | `0ffd4ab4` | "admin=god" → cờ `RBAC_SCOPED_ADMIN` OFF-default; ON: admin chịu restriction row tường minh (no-row/expired/db-down→vẫn pass, KHÔNG lockout). **6/6 check DB thật; non-admin byte-identical.** |
+| **RBAC 19 procedure** | `66963230` | 19 business-CRUD `_shared.adminProcedure`(no-2FA)→`requirePermission` (production_orders/settings_products/settings_measurement_points/reports_templates). **RỚT 0 guard 2FA; module đều tồn tại.** Live: supervisor1(grant)→PASS, operator1→DENY, admin→PASS. **Part B ~55 + allowlist CHỜ DUYỆT (doc 50).** |
+| **CJK font** | `4b3fc774` | Export PDF nhúng chỉ Be Vietnam Pro (0 CJK)→zh tofu. Nay lazy Noto Sans SC khi có CJK (vi/en byte-identical). Verify round-trip pdfjs ToUnicode + CID-subset. 14/14 test. |
+| **Tách monolith** | `419abd75` | ApiDocs 7251→3556 (−51%), ProductModels 5085→3496 (−31%), pure relocation. tsc/build/i18n 0. |
+
+## ✅ R5 (llama-server) — DONE, commit `c14e0e07`
+Deep model load in-process tranh VRAM embedder→degrade offline. Nay opt-in chạy
+deep model trong llama-server BỀN (OpenAI-compat, tự giữ VRAM) — API chỉ giữ
+embedder, forward text-gen qua HTTP. Cờ `LLAMA_SERVER_ENABLED` OFF. **PROVEN 10/10
+(mock server): routing model-scoped, generateText/JSON via server, STRICT honest-
+degrade, flag-off bypass.** Runbook `scripts/ai/llama-server.md` (build CUDA, VRAM
+32GB co-reside, wire). GPU-gen thật = runtime operator.
+
+## ✅ Bonus scale (R4/R3) — ingest COPY, commit `530255a0`
+persistRows INSERT tham-số CHẠM TRẦN 65534 param ở batch dày ~5957 hàng→THROW→
+KHÔNG persist (chặn cứng 100k). Nay COPY→temp→INSERT-SELECT-ON-CONFLICT (cờ
+`OT_INGEST_COPY_ENABLED` OFF, giữ dedup/return/throw). **PROVEN DB thật: 7000 hàng
+dày INSERT persist 0/7000 (tràn), COPY 7000/7000, replay dedup giữ 7000.**
+
+## Tồn đọng CHỜ USER
+- **RBAC Part B** (~55 candidate) + allowlist CI-lint (doc 50) — cần quyết per-cụm; cụm 2FA `(T)` phải gắn lại 2FA nếu migrate.
+- **Bật cờ ở staging:** RBAC_SCOPED_ADMIN, WORKER_LEADER_ELECTION (khi >1 worker), OT_INGEST_COPY, LLAMA_SERVER (khi có llama-server), LAKE_SINK.
+- **HOÃN staging (không đổi):** OT_GATEWAY (adapter thật), tắt LICENSE_BYPASS/MACHINE_SHARED_KEY (license/xoay-khoá), default-deny ot.command.* (chờ gateway), EMQX-3node deploy (cần cluster cookie), benchmark 100k HTTP end-to-end (sau bật COPY).
+
+**Verify artifacts** (re-run bất kỳ lúc nào): `scripts/verify/genealogy-fork-proof.ts`, `worker-leader-proof.run.mjs`, `scoped-admin-proof.ts`, `rbac-migration-proof.ts`, `llama-server-proof.mts`, `ingest-copy-proof.ts`.
 
 **Backup:** `.env` gốc lưu tại scratchpad `.env.pre-r1-activation.bak` (rollback nếu cần). avi_app password dev: `avi_app_worm_2026` (dev-only, đổi ở production).
