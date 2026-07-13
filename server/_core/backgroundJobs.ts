@@ -650,10 +650,6 @@ export function stopBackgroundSchedulers(): void {
  */
 export async function runWorkerProcess(): Promise<void> {
   console.log("[Worker] Starting scheduler-only worker (no HTTP listener).");
-  console.log(
-    "[Worker] SINGLE-WORKER ASSUMPTION: run exactly ONE worker — the schedulers " +
-      "have no leader election (doc 27 B7: out of scope this wave).",
-  );
 
   // Observability bootstrap (Sentry/OTel) — no-op unless configured.
   try {
@@ -679,6 +675,35 @@ export async function runWorkerProcess(): Promise<void> {
     console.error("[Worker] email transporter init failed:", (err as any)?.message || err);
   }
 
+  // doc 48 R4 — optional cluster leader election. OFF (default) preserves the
+  // historical single-worker behaviour exactly (schedulers start immediately, no
+  // lock). ON: block until THIS instance wins the cluster-wide advisory lock;
+  // standby replicas wait here and take over automatically if the leader dies.
+  const { leaderElectionEnabled, acquireWorkerLeadership, releaseWorkerLeadership } = await import(
+    "./workerLeader"
+  );
+  if (leaderElectionEnabled()) {
+    console.log("[Worker] leader-election ON — acquiring cluster leadership before starting schedulers…");
+    await acquireWorkerLeadership({
+      onLost: () => {
+        console.error(
+          "[Worker] leadership lost — fail-stopping to avoid split-brain (supervisor restarts us as a standby).",
+        );
+        try {
+          stopBackgroundSchedulers();
+        } catch {
+          /* ignore */
+        }
+        setTimeout(() => process.exit(1), 500).unref();
+      },
+    });
+  } else {
+    console.log(
+      "[Worker] SINGLE-WORKER ASSUMPTION: leader-election OFF — run exactly ONE worker " +
+        "(set WORKER_LEADER_ELECTION_ENABLED=true to run HA replicas).",
+    );
+  }
+
   await startBackgroundSchedulers();
 
   // Most schedulers use unref'd timers — hold the event loop open explicitly
@@ -695,6 +720,9 @@ export async function runWorkerProcess(): Promise<void> {
     console.log(`[Worker] ${signal} received — stopping schedulers...`);
     clearInterval(keepAlive);
     stopBackgroundSchedulers();
+    // Release cluster leadership so a standby can take over immediately (no-op
+    // when leader-election is OFF or this instance never became leader).
+    void releaseWorkerLeadership();
     // Give in-flight sweeps a moment to finish their current batch, then exit.
     setTimeout(() => process.exit(0), 3000).unref();
   };
