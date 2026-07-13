@@ -14,7 +14,6 @@
  */
 import * as db from "../db";
 import {
-  GENESIS_HASH,
   hashEntry,
   type GenealogyInput,
 } from "../utils/genealogyChain";
@@ -72,7 +71,6 @@ export async function recordProcessResult(
   let genealogy: RecordProcessResultOutput["genealogy"] = null;
   try {
     const recordedAt = new Date();
-    const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
     const eventInput: GenealogyInput = {
       serialNumber: input.serialNumber,
       eventType: "station",
@@ -87,12 +85,14 @@ export async function recordProcessResult(
       },
       recordedAt,
     };
-    const currHash = hashEntry(prevHash, eventInput);
     // G5.17 (0255) — trace id; null outside an ALS context. NOT hashed.
     const correlationId = getCorrelationId() ?? null;
-    const inserted = await db.insertGenealogyChainRow({
+    // R4 fork-fix: read-tail → compute currHash → insert ATOMICALLY (serialised
+    // advisory lock inside appendGenealogyChainRow) so concurrent station events
+    // cannot fork the tamper-evident hash-chain.
+    const inserted = await db.appendGenealogyChainRow((prevHash) => ({
       prevHash,
-      currHash,
+      currHash: hashEntry(prevHash, eventInput),
       serialNumber: input.serialNumber,
       parentSerial: null,
       eventType: "station",
@@ -104,8 +104,8 @@ export async function recordProcessResult(
       recordedAt,
       // Conditional so pre-0255 databases keep working when no context is active.
       ...(correlationId ? { correlationId } : {}),
-    });
-    genealogy = { id: inserted.id, prevHash, currHash };
+    }));
+    genealogy = { id: inserted.id, prevHash: inserted.prevHash, currHash: inserted.currHash };
   } catch (err) {
     console.error(
       `[processResultService] genealogy append failed for processResult ${processResultId}:`,

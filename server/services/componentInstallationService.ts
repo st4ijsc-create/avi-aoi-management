@@ -20,7 +20,6 @@
  */
 import * as db from "../db";
 import {
-  GENESIS_HASH,
   hashEntry,
   type GenealogyInput,
 } from "../utils/genealogyChain";
@@ -111,7 +110,6 @@ export async function recordComponentInstallation(
   let genealogy: RecordComponentInstallationOutput["genealogy"] = null;
   try {
     const recordedAt = new Date();
-    const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
     const eventInput: GenealogyInput = {
       serialNumber: input.serialNumber,
       parentSerial: input.componentSerial ?? null,
@@ -131,12 +129,14 @@ export async function recordComponentInstallation(
       },
       recordedAt,
     };
-    const currHash = hashEntry(prevHash, eventInput);
     // G5.17 (0255) — trace id; null outside an ALS context. NOT hashed.
     const correlationId = getCorrelationId() ?? null;
-    const inserted = await db.insertGenealogyChainRow({
+    // R4 fork-fix: read-tail → compute currHash → insert ATOMICALLY (serialised
+    // advisory lock inside appendGenealogyChainRow) so concurrent installs cannot
+    // fork the tamper-evident hash-chain.
+    const inserted = await db.appendGenealogyChainRow((prevHash) => ({
       prevHash,
-      currHash,
+      currHash: hashEntry(prevHash, eventInput),
       serialNumber: input.serialNumber,
       parentSerial: input.componentSerial ?? null,
       eventType: "merge",
@@ -148,7 +148,8 @@ export async function recordComponentInstallation(
       recordedAt,
       // Conditional so pre-0255 databases keep working when no context is active.
       ...(correlationId ? { correlationId } : {}),
-    });
+    }));
+    const { prevHash, currHash } = inserted;
     genealogy = { id: inserted.id, prevHash, currHash };
 
     // K0+-c: ADDITIVELY publish the genealogy (merge) record to the durable ERP

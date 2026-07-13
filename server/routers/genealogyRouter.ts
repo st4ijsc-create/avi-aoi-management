@@ -14,7 +14,6 @@ const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
 import {
-  GENESIS_HASH,
   hashEntry,
   verifyChain,
   type ChainRow,
@@ -71,20 +70,21 @@ export const genealogyRouter = router({
       // G5.17 (0255) — trace id from the ALS backbone; null outside a context.
       // NOT part of hashEntry's input (fixed field list) → chain hashes unchanged.
       const correlationId = getCorrelationId() ?? null;
-      const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
-      const currHash = hashEntry(prevHash, {
-        serialNumber: input.serialNumber,
-        parentSerial: input.parentSerial ?? null,
-        eventType: input.eventType,
-        stationCode: input.stationCode ?? null,
-        lotCode: input.lotCode ?? null,
-        productModelId: input.productModelId ?? null,
-        payload: input.payload,
-        recordedAt,
-      });
-      const inserted = await db.insertGenealogyChainRow({
+      // R4 fork-fix: read-tail → compute currHash → insert ATOMICALLY (serialised
+      // advisory lock inside appendGenealogyChainRow) so concurrent manual appends
+      // cannot fork the tamper-evident hash-chain.
+      const inserted = await db.appendGenealogyChainRow((prevHash) => ({
         prevHash,
-        currHash,
+        currHash: hashEntry(prevHash, {
+          serialNumber: input.serialNumber,
+          parentSerial: input.parentSerial ?? null,
+          eventType: input.eventType,
+          stationCode: input.stationCode ?? null,
+          lotCode: input.lotCode ?? null,
+          productModelId: input.productModelId ?? null,
+          payload: input.payload,
+          recordedAt,
+        }),
         serialNumber: input.serialNumber,
         parentSerial: input.parentSerial ?? null,
         eventType: input.eventType,
@@ -96,8 +96,13 @@ export const genealogyRouter = router({
         recordedAt,
         // Conditional so pre-0255 databases keep working when no context is active.
         ...(correlationId ? { correlationId } : {}),
-      });
-      return { id: inserted.id, prevHash, currHash, correlationId };
+      }));
+      return {
+        id: inserted.id,
+        prevHash: inserted.prevHash,
+        currHash: inserted.currHash,
+        correlationId,
+      };
     }),
 
   /** Get the full chain for a serial. */

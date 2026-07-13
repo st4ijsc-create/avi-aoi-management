@@ -34,6 +34,7 @@ import {
   productPanelBoards,
 } from "../../drizzle/schema";
 import { measurementResults, productInspections } from "../../drizzle/schema/inspection";
+import { GENESIS_HASH } from "../utils/genealogyChain";
 
 // ============ PRODUCT MODEL FUNCTIONS ============
 export async function createProductModel(data: InsertProductModel) {
@@ -2611,6 +2612,51 @@ export async function insertGenealogyChainRow(row: InsertGenealogyChain) {
     .values(row)
     .returning({ id: genealogyChain.id, currHash: genealogyChain.currHash });
   return inserted;
+}
+
+// Distinct from AUDIT_CHAIN_LOCK (918_273_645) / RUN_EVENT_LOCK_NS (771_004_221).
+const GENEALOGY_CHAIN_LOCK = 615_243_870;
+
+/**
+ * ATOMIC append to the genealogy hash-chain (doc 48 R4 fork-fix).
+ *
+ * The chain is tamper-evident: each row links to the previous via
+ * prevHash = tail.currHash. Doing "read tail" and "insert new row" as TWO
+ * separate statements (getLastGenealogyHash + insertGenealogyChainRow) lets two
+ * concurrent appends both read the SAME tail and both link to it → the chain
+ * FORKS (two rows sharing one prevHash), silently breaking verification.
+ *
+ * This mirrors the control-audit hash-chain (controlAuditService): a single
+ * transaction takes a transaction-scoped advisory lock (auto-released on
+ * commit/rollback) so read-tail → compute → insert is atomic and appends
+ * serialise. `build(prevHash)` receives the resolved tail hash (or GENESIS on an
+ * empty chain) and returns the full row to insert, so the caller can compute
+ * currHash = hashEntry(prevHash, ...) inside the critical section.
+ *
+ * Note: genealogy appends serialise globally (one chain, one tail). That is
+ * inherent to a single linear tamper-evident chain and acceptable — correctness
+ * over throughput; genealogy events are per-unit-station, not a firehose.
+ */
+export async function appendGenealogyChainRow(
+  build: (prevHash: string) => InsertGenealogyChain,
+): Promise<{ id: number; prevHash: string; currHash: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${GENEALOGY_CHAIN_LOCK})`);
+    const [tail] = await tx
+      .select({ currHash: genealogyChain.currHash })
+      .from(genealogyChain)
+      .orderBy(desc(genealogyChain.id))
+      .limit(1);
+    const prevHash = tail?.currHash ?? GENESIS_HASH;
+    const row = build(prevHash);
+    const [inserted] = await tx
+      .insert(genealogyChain)
+      .values(row)
+      .returning({ id: genealogyChain.id, currHash: genealogyChain.currHash });
+    return { id: inserted.id, prevHash, currHash: inserted.currHash };
+  });
 }
 
 export async function listGenealogyChainAll(limit = 100000) {
