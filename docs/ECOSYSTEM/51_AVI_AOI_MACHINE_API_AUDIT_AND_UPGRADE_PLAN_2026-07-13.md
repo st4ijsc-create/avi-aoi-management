@@ -484,8 +484,15 @@ Version pinning + gate-by-snapshot (QĐ#2) · clock-skew · image atomicity · r
 | 5 | Migration 0281 **phải áp bằng role `aoi`** (avi_app thiếu DDL). `suspectedDuplicateSerial` fail-open tới khi áp. | 🟠 | Việc operator. |
 | 6 | Test DB: `avi_app` **thiếu quyền DELETE** trên `product_inspections` (WORM doc 35) → afterAll cleanup của integration test fail khi chạy role avi_app; chạy role `aoi` thì xanh. | 🟡 | Môi trường, không phải code. |
 
-### 12.3 — Còn lại chưa làm (P2 batch sau / P3)
-Version-exact gate (thay instant-based) · optimistic lock máy-push · getPoints geometry parity · WIP out-of-order guard · station_traces scope theo (serial+productModel) · bump-path residual ở `statusTemplateRouters`/`dataRouters`/`aiLocalTools` (**hoãn — user đang sửa các file này**) · fake-UTC-shift cutover · benchmark 100 máy thật (QĐ#7) · toàn bộ **P3** (streaming NATS, presence, zero-touch, key-expiry, batch-ingest, product-variant, multi-factory doc, fiducial registration).
+### 12.3 — Còn lại
+
+**✅ P2 batch-2 XONG (commit `982cc916`, mig 0282, tsc 0 + 121 test):**
+Version-exact gate (stamp `productPointsConfigVersion`, chấm theo version máy khai + fallback instant/live) · optimistic lock máy-push (`MACHINE_SYNC_OPTIMISTIC_LOCK` + blind-overwrite audit) · getPoints geometry parity (projector chung với deltaSync) · WIP out-of-order guard (`WIP_OUT_OF_ORDER_GUARD` default ON).
+
+**⏳ Còn lại:**
+- **Residual nhỏ:** `syncMeasurementPoints` bump vẫn read-modify-write (→ `bumpPointsConfigVersion` atomic) · station_traces scope theo (serial+productModel) · image single-tx thật · fake-UTC-shift cutover · bump-path ở `statusTemplateRouters`/`dataRouters`/`aiLocalTools` (**hoãn — vùng user**).
+- **QĐ#7:** benchmark 100 máy thật (cần server live).
+- **P3 (initiative lớn riêng):** streaming NATS + wiring StreamProcessor (QĐ#5) · presence unification · zero-touch onboarding · key-expiry + rotation signal · batch-ingest endpoint · product-variant · multi-factory doc (QĐ#4 federation) · fiducial registration · orphan-reaper · version-rollback API · heartbeat rate-limit.
 
 ---
 
