@@ -1615,6 +1615,49 @@ export function isStaleUpdate(
   return cur.getTime() !== exp.getTime();
 }
 
+/**
+ * Doc 51 P2 batch-2 (§12.2 #2, migration 0282) — cached probe for the guarded
+ * `measurement_point_versions."productPointsConfigVersion"` column.
+ *
+ * 0282 is guarded (may record 'partial' when a chunk blocks the ALTER), so the
+ * column can be ABSENT at runtime. If we unconditionally put it in the drizzle
+ * insert values, that INSERT would fail on a DB without the migration and take the
+ * whole point-edit path down — the exact fail-open trap 0281's header warns about.
+ * So we probe once (information_schema), cache the answer, and only STAMP when the
+ * column exists. Absent ⇒ stamp omitted, snapshot written exactly as before, and
+ * the spec-gate falls back to the instant-based reconstruction (0276/P1).
+ *
+ * Returns false — WITHOUT caching — when the executor cannot answer (a faked db in
+ * unit tests has no `.execute`), so a real probe still runs later in production.
+ */
+let mpvConfigVersionColumn: boolean | null = null;
+/** Test seam — reset the 0282 column probe between suites. */
+export function _resetMpvConfigVersionColumnProbe(): void {
+  mpvConfigVersionColumn = null;
+}
+export async function measurementPointVersionsHasConfigVersionColumn(
+  // Loose on purpose: callers pass a real drizzle db (whose `execute` signature
+  // differs structurally) or nothing; the body probes `.execute` at runtime and
+  // degrades safely, so a narrow compile-time shape only fought the drizzle type.
+  exec?: unknown,
+): Promise<boolean> {
+  if (mpvConfigVersionColumn !== null) return mpvConfigVersionColumn;
+  const runner = exec ?? (await getDb());
+  const execFn = (runner as { execute?: (q: unknown) => Promise<unknown> } | null)?.execute;
+  if (!runner || typeof execFn !== "function") return false; // can't tell (mock) → treat absent, don't cache
+  try {
+    const res = await execFn.call(
+      runner,
+      sql`SELECT 1 FROM information_schema.columns WHERE table_name = 'measurement_point_versions' AND column_name = 'productPointsConfigVersion' LIMIT 1`,
+    );
+    const rows = Array.isArray(res) ? res : ((res as { rows?: unknown[] } | null)?.rows ?? []);
+    mpvConfigVersionColumn = rows.length > 0;
+    return mpvConfigVersionColumn;
+  } catch {
+    return false; // transient failure — don't cache, retry next time
+  }
+}
+
 export async function updateMeasurementPointDef(
   id: number,
   data: Partial<InsertMeasurementPointDef>,
@@ -1629,6 +1672,11 @@ export async function updateMeasurementPointDef(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Doc 51 P2 batch-2 — is the 0282 provenance column present? Probed once (cached)
+  // OUTSIDE the tx so a missing column never aborts the transaction; only when true
+  // do we read the product version and stamp the snapshot.
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
 
   // Do the snapshot + compare-and-set + write in ONE transaction. The previous
   // row is locked FOR UPDATE so two concurrent editors serialize (mirrors the
@@ -1654,13 +1702,38 @@ export async function updateMeasurementPointDef(
 
       const nextVersion = Number(maxVersion ?? 0) + 1;
 
-      await tx.insert(measurementPointVersions).values({
+      // Doc 51 P2 batch-2 (§12.2 #2, 0282) — VERSION-EXACT stamp. The pre-edit
+      // limits captured in this snapshot were live UNDER the product's CURRENT
+      // pointsConfigVersion (read here, in-tx, BEFORE the router bumps it +1). So
+      // the stamp is exactly "the last product version these limits were live for"
+      // → resolveGateLimitsForBoard picks the smallest stamp >= the declared V.
+      let productPointsConfigVersion: number | null = null;
+      if (stampConfigVersion && previous.productModelId != null) {
+        try {
+          const [pm] = await tx
+            .select({ v: productModels.pointsConfigVersion })
+            .from(productModels)
+            .where(eq(productModels.id, previous.productModelId))
+            .limit(1);
+          productPointsConfigVersion = pm?.v != null ? Number(pm.v) : null;
+        } catch {
+          productPointsConfigVersion = null; // best-effort — never fail the edit
+        }
+      }
+
+      const versionRow: Record<string, unknown> = {
         pointDefId: id,
         version: nextVersion,
         snapshotJson: previous as unknown as Record<string, any>,
         changedBy: options?.changedBy ?? null,
         changeReason: options?.changeReason ?? null,
-      });
+      };
+      // Only reference the 0282 column when it exists — otherwise drizzle would
+      // emit it into the INSERT and break on a DB without the migration.
+      if (stampConfigVersion) {
+        versionRow.productPointsConfigVersion = productPointsConfigVersion;
+      }
+      await tx.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
     }
 
     // Bump updatedAt so the NEXT editor's compare-and-set detects this change

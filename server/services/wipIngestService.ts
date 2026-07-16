@@ -75,6 +75,35 @@ function hourBucket(d: Date): Date {
 }
 
 /**
+ * doc 51 CASE #2 — OUT-OF-ORDER GUARD.
+ *
+ * When a machine loses network then replays a burst of buffered inspections, the
+ * events arrive out of chronological order (e.g. T3 then T1 then T2). The old
+ * upsertWipUnit used a plain onConflictDoUpdate that is LAST-WRITE-WINS: the
+ * LAST row processed (T2) overwrote currentStationId/status, so wip_tracking
+ * ended up reflecting a STALE station instead of the newest event (T3). Likewise
+ * recordDwell clamped `Math.max(0, at - enteredAt)` which silently hid the
+ * negative gap of a late arrival.
+ *
+ * The guard makes the write MONOTONIC in the inspection time `at`: the current
+ * station/machine/status is advanced ONLY when the incoming `at` is >= the time
+ * of the row that currently holds the state. `enteredAt` is the ordering key —
+ * it stores the inspection time of the event that set the current station, so a
+ * late (older `at`) event can no longer regress the live state. In-order flow is
+ * unaffected: `at` is always >= the stored enteredAt, so the guarded branch
+ * advances exactly like the legacy path (only enteredAt now moves forward to the
+ * true station-entry time, which is what dwell/aging readers actually want).
+ *
+ * FLAG: WIP_OUT_OF_ORDER_GUARD — DEFAULT ON. Last-write-wins on replay is a clear
+ * data-integrity bug, and the guard is a no-op for in-order traffic, so it is on
+ * by default. Set WIP_OUT_OF_ORDER_GUARD=false to restore the exact legacy
+ * last-write-wins behaviour (enteredAt frozen at first-seen) if ever needed.
+ */
+export function isWipOutOfOrderGuardEnabled(): boolean {
+  return process.env.WIP_OUT_OF_ORDER_GUARD !== "false";
+}
+
+/**
  * Resolve the lineId for a station id. Returns null when unknown so the rest of
  * the pipeline degrades gracefully (WIP row still written without a line).
  */
@@ -244,21 +273,63 @@ async function upsertWipUnit(
 ): Promise<void> {
   const status = result === "NG" ? HELD_WIP_STATUS : result === "NTF" ? HELD_WIP_STATUS : "in_process";
 
+  const values = {
+    serialNumber: input.serialNumber!,
+    lotNumber: input.lotNumber ?? null,
+    productId: input.productModelId ?? null,
+    productCode: input.productCode ?? null,
+    lineId: lineId ?? null,
+    currentStationId: stationId ?? null,
+    currentMachineId: input.machineId,
+    status: status as any,
+    quantity: 1,
+    // The inspection time is the ordering key on conflict (see the guard below):
+    // excluded."enteredAt" carries this value into the ON CONFLICT comparison.
+    enteredAt: at,
+    updatedAt: new Date(),
+  };
+
+  // GUARDED (doc 51 CASE #2, default ON): advance the live state (station /
+  // machine / status / enteredAt) ONLY when the incoming inspection time `at`
+  // (excluded."enteredAt") is >= the enteredAt of the row that currently holds
+  // the state. A late-replayed (older) event therefore keeps its metadata
+  // enrichment (lot/product coalesced in) but CANNOT regress the current station
+  // or status. Equal timestamps advance (last-write-wins on a genuine tie — a
+  // documented limitation). When the flag is OFF we fall back to the exact
+  // legacy last-write-wins set (enteredAt frozen).
+  if (isWipOutOfOrderGuardEnabled()) {
+    // Incoming `at` is newer-or-equal than the stored state's enteredAt.
+    const isNewer = sql`excluded."enteredAt" >= ${wipTracking.enteredAt}`;
+    await database
+      .insert(wipTracking)
+      .values(values)
+      .onConflictDoUpdate({
+        target: wipTracking.serialNumber,
+        targetWhere: sql`${wipTracking.serialNumber} IS NOT NULL`,
+        set: {
+          // Metadata: safe to backfill on ANY arrival (identity of a serial is
+          // immutable); coalesce so we never null-out an existing value.
+          lotNumber: input.lotNumber ?? sql`${wipTracking.lotNumber}`,
+          productId: input.productModelId ?? sql`${wipTracking.productId}`,
+          productCode: input.productCode ?? sql`${wipTracking.productCode}`,
+          // Live-state fields: advance only on a newer-or-equal event.
+          lineId: sql`CASE WHEN ${isNewer} THEN COALESCE(excluded."lineId", ${wipTracking.lineId}) ELSE ${wipTracking.lineId} END`,
+          currentStationId: sql`CASE WHEN ${isNewer} THEN COALESCE(excluded."currentStationId", ${wipTracking.currentStationId}) ELSE ${wipTracking.currentStationId} END`,
+          currentMachineId: sql`CASE WHEN ${isNewer} THEN excluded."currentMachineId" ELSE ${wipTracking.currentMachineId} END`,
+          status: sql`CASE WHEN ${isNewer} THEN excluded."status" ELSE ${wipTracking.status} END`,
+          // Ordering key advances with the state so multi-station in-order flow
+          // and future replays compare against the CURRENT station's time.
+          enteredAt: sql`CASE WHEN ${isNewer} THEN excluded."enteredAt" ELSE ${wipTracking.enteredAt} END`,
+          updatedAt: new Date(),
+        },
+      });
+    return;
+  }
+
+  // LEGACY (WIP_OUT_OF_ORDER_GUARD=false): byte-identical to the pre-guard path.
   await database
     .insert(wipTracking)
-    .values({
-      serialNumber: input.serialNumber!,
-      lotNumber: input.lotNumber ?? null,
-      productId: input.productModelId ?? null,
-      productCode: input.productCode ?? null,
-      lineId: lineId ?? null,
-      currentStationId: stationId ?? null,
-      currentMachineId: input.machineId,
-      status: status as any,
-      quantity: 1,
-      enteredAt: at,
-      updatedAt: new Date(),
-    })
+    .values(values)
     .onConflictDoUpdate({
       target: wipTracking.serialNumber,
       // Partial unique index (uq_wip_serial WHERE serialNumber IS NOT NULL) —
@@ -302,6 +373,16 @@ async function recordDwell(
     )
     .orderBy(desc(stationDwellTime.enteredAt))
     .limit(1);
+
+  // doc 51 CASE #2 — dwell out-of-order guard. A late-replayed inspection whose
+  // `at` predates the currently-open dwell row would compute a NEGATIVE gap that
+  // Math.max(0,…) silently clamps to 0, corrupting the dwell record and opening a
+  // backwards-dated leg. When the guard is ON we skip the dwell mutation for such
+  // an arrival (the live WIP state is already handled monotonically in
+  // upsertWipUnit); the open row is left intact for the correct in-order close.
+  if (open && isWipOutOfOrderGuardEnabled() && at.getTime() < new Date(open.enteredAt).getTime()) {
+    return;
+  }
 
   if (open) {
     const dwellMs = Math.max(0, at.getTime() - new Date(open.enteredAt).getTime());

@@ -46,10 +46,10 @@ import {
   evaluatePointResult,
   isPointLimitEvalEnabled,
   isUnitConvertEnabled,
-  resolveLimitsAtInstant,
+  resolveGateLimitsForBoard,
   type PointLimitSnapshot,
   type PointLimitSource,
-} from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate; Doc 51 P1 QĐ#2 — snapshot gate; P2 CASE #11 unit convert
+} from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate; Doc 51 P1 QĐ#2 — snapshot gate; P2 batch-2 §12.2#2 — version-exact gate; P2 CASE #11 unit convert
 import * as aiAdvancedDb from "../db/aiAdvanced";
 import { confirmDeployment as svcConfirmDeployment, recordEdgeHeartbeat as svcRecordHeartbeat, syncEdgeResults as svcSyncEdgeResults } from "../services/aiEdgeEnhanced";
 import {
@@ -139,6 +139,12 @@ const measurementPointSyncSchema = z.object({
   // P1: optional shape + geometry (additive). When present, server persists them.
   shape: pointShapeEnum.optional(),
   geometry: measurementGeometrySchema.optional(),
+  // Doc 51 P2 batch-2 (§5.2 P2) — the point's updatedAt the machine last CACHED
+  // (ISO string or epoch ms). Optional/additive. When present the server can
+  // optimistic-lock the write-back (enforced under MACHINE_SYNC_OPTIMISTIC_LOCK)
+  // so two machines / machine+engineer don't silently clobber each other; when the
+  // lock is off a stale value still raises a 'blind-overwrite' audit.
+  expectedUpdatedAt: z.union([z.string(), z.number()]).optional(),
 });
 
 // ============ MACHINE API ROUTER (for external machine integration) ============
@@ -215,6 +221,20 @@ function serialCollisionDetectEnabled(): boolean {
 /** CASE #8 — look-back window (seconds) for a colliding serial. Default 1h. */
 function serialCollisionWindowSeconds(): number {
   return envInt("INGEST_SERIAL_COLLISION_WINDOW_SEC", 3600);
+}
+
+/**
+ * Doc 51 P2 batch-2 (§5.2 P2) — ENFORCE optimistic lock on the machine POINTS_PUSH
+ * write-back. Default OFF (QĐ#1 backward-compat: today's machines push blind and a
+ * flip-to-enforce before they cache/send updatedAt would start rejecting legit
+ * syncs). When ON *and* a point carries `expectedUpdatedAt`, syncMeasurementPoints
+ * threads it into updateMeasurementPointDef → a stale write is a per-point CONFLICT
+ * instead of a silent last-writer-wins overwrite of a def another machine/engineer
+ * just changed. When OFF (or the point omits it) the write stays blind, but a stale
+ * `expectedUpdatedAt` still emits a 'blind-overwrite' audit so the drift is VISIBLE.
+ */
+function machineSyncOptimisticLockEnabled(): boolean {
+  return envTrue(process.env.MACHINE_SYNC_OPTIMISTIC_LOCK);
 }
 
 /**
@@ -574,19 +594,38 @@ async function loadPointLimitSnapshots(
   try {
     const dbi = await getDb();
     if (dbi) {
+      // Doc 51 P2 batch-2 (§12.2 #2, 0282) — project the version-provenance column
+      // ONLY when it exists (guarded migration); a bare projection on a DB without
+      // 0282 would throw and blank the whole (P1 instant-based) history for this
+      // point. Probe is cached and its OWN failure must NOT lose the snapshot rows —
+      // a probe error just degrades to "no stamp" (instant path), never to [].
+      let hasConfigVersionCol = false;
+      try {
+        hasConfigVersionCol = await db.measurementPointVersionsHasConfigVersionColumn(dbi);
+      } catch {
+        hasConfigVersionCol = false;
+      }
+      const projection: Record<string, unknown> = {
+        changedAt: measurementPointVersions.changedAt,
+        snapshotJson: measurementPointVersions.snapshotJson,
+      };
+      if (hasConfigVersionCol) {
+        projection.productPointsConfigVersion = measurementPointVersions.productPointsConfigVersion;
+      }
       const rows = await dbi
-        .select({
-          changedAt: measurementPointVersions.changedAt,
-          snapshotJson: measurementPointVersions.snapshotJson,
-        })
+        .select(projection as any)
         .from(measurementPointVersions)
         .where(drizzleEq(measurementPointVersions.pointDefId, pointDefId))
         .orderBy(drizzleAsc(measurementPointVersions.changedAt));
-      snaps = rows
+      snaps = (rows as Array<Record<string, unknown>>)
         .filter((r) => r.changedAt instanceof Date)
         .map((r) => ({
           changedAt: r.changedAt as Date,
           limits: (r.snapshotJson ?? {}) as PointLimitSource,
+          productPointsConfigVersion:
+            hasConfigVersionCol && r.productPointsConfigVersion != null
+              ? Number(r.productPointsConfigVersion)
+              : null,
         }));
     }
   } catch (err) {
@@ -928,8 +967,10 @@ export async function processInspectionSubmission(
       // Per-submission cache of a point's edit-snapshot history (only touched for
       // stale boards under the flag → normally never queried).
       const pointSnapshotCache = new Map<number, PointLimitSnapshot[]>();
-      let snapshotGatedPoints = 0;   // points gated by a reconstructed snapshot
-      let snapshotMissingPoints = 0; // stale points with no usable snapshot → gate SKIPPED
+      let snapshotGatedPoints = 0;       // points gated by an INSTANT-reconstructed snapshot (P1)
+      let snapshotMissingPoints = 0;     // stale points with no usable snapshot → gate SKIPPED
+      let versionGatedPoints = 0;        // P2 batch-2 — points gated by a VERSION-EXACT snapshot (0282)
+      let versionLivePoints = 0;         // P2 batch-2 — points unchanged since declared V → gated by LIVE
 
       // W8-B seam (doc 29 §3.2, migration 0192) — resolve the machine-sent
       // operatorId (BADGE CODE) to a canonical users.id and stamp it. Dynamic
@@ -1257,13 +1298,26 @@ export async function processInspectionSubmission(
           let gateLimits: PointLimitSource | null = pointDef as unknown as PointLimitSource;
           if (useSnapshotGate) {
             const snaps = await loadPointLimitSnapshots(resolvedPointDefId, pointSnapshotCache);
-            const resolved = resolveLimitsAtInstant(snaps, serverReceivedAt);
-            if (resolved.basis === "missing") {
-              gateLimits = null; // no usable snapshot → do NOT gate this stale point
-              snapshotMissingPoints++;
+            // Doc 51 P2 batch-2 (§12.2 #2) — prefer VERSION-EXACT (0282) over the P1
+            // instant proxy. `declaredConfigVersion` is the exact config the machine
+            // graded under; when a snapshot carries the 0282 stamp we gate by the
+            // limits live at THAT version, else fall back to instant, else (no usable
+            // history) SKIP the gate (safe: machine verdict stands).
+            const resolved = resolveGateLimitsForBoard({
+              snapshots: snaps,
+              liveLimits: pointDef as unknown as PointLimitSource,
+              declaredVersion: declaredConfigVersion ?? null,
+              atInstant: serverReceivedAt,
+            });
+            gateLimits = resolved.limits;
+            if (resolved.limits === null) {
+              snapshotMissingPoints++; // no usable snapshot → do NOT gate this stale point
+            } else if (resolved.basis === "version") {
+              versionGatedPoints++;
+            } else if (resolved.basis === "live") {
+              versionLivePoints++;     // point unchanged since declared V → live == V-era limits
             } else {
-              gateLimits = resolved.limits;
-              snapshotGatedPoints++;
+              snapshotGatedPoints++;   // instant-based reconstruction (P1)
             }
           }
           if (gateLimits) {
@@ -1532,11 +1586,13 @@ export async function processInspectionSubmission(
       if (useSnapshotGate) {
         await persistGateConfigVersion(inspectionId, gateConfigVersion);
       }
-      if (useSnapshotGate && (snapshotGatedPoints > 0 || snapshotMissingPoints > 0)) {
+      if (useSnapshotGate && (snapshotGatedPoints > 0 || snapshotMissingPoints > 0 || versionGatedPoints > 0 || versionLivePoints > 0)) {
         console.warn(
           `[submitInspection] SNAPSHOT SPEC-GATE — inspection=${inspectionId} ` +
             `serial=${input.serialNumber} graded under declared config v${gateConfigVersion} ` +
-            `(live v${liveConfigVersion}): ${snapshotGatedPoints} point(s) gated by snapshot, ` +
+            `(live v${liveConfigVersion}): ${versionGatedPoints} point(s) gated VERSION-EXACT (0282), ` +
+            `${versionLivePoints} point(s) unchanged since v${gateConfigVersion} → gated LIVE, ` +
+            `${snapshotGatedPoints} point(s) gated by INSTANT snapshot (fallback), ` +
             `${snapshotMissingPoints} point(s) had no usable snapshot → gate SKIPPED (safe).`,
         );
       }
@@ -1773,6 +1829,108 @@ export async function processInspectionSubmission(
       return { success: true as const, inspectionId };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P2 batch-2 (§5.2 P2, CASE khởi tạo) — SHARED point/fiducial projectors.
+//
+// getPoints (full pull) and deltaSyncPoints (incremental pull) MUST hand a machine
+// the SAME geometry so a machine that initialises via getPoints is not blind to
+// shape/geometry/cells/fiducials/coordinateMode (previously getPoints shipped only
+// legacy circle fields → every non-circle point was mis-inspected as a circle).
+// One projector, one source of truth — no copy-paste drift.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Project one measurement_point_defs row into the machine sync payload (geometry-
+ *  complete). `lighting` is the point's illumination recipe rows (may be empty). */
+function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    description: p.description,
+    measurementType: p.measurementType,
+    // Fine-grained catalog type (SOLDER/XRAY/POSITION/…).
+    measurementTypeCode: p.measurementTypeCode ?? null,
+    unit: p.unit,
+    lowerLimit: p.lowerLimit,
+    upperLimit: p.upperLimit,
+    nominalValue: p.nominalValue,
+    positionX: p.positionX,
+    positionY: p.positionY,
+    radius: p.radius,
+    normalizedX: p.normalizedX,
+    normalizedY: p.normalizedY,
+    normalizedRadius: p.normalizedRadius,
+    cropWidth: p.cropWidth,
+    cropHeight: p.cropHeight,
+    orderIndex: p.orderIndex,
+    isActive: p.isActive,
+    // P1: shape + geometry (additive) — the fields getPoints previously omitted.
+    shape: p.shape ?? "circle",
+    geometry: p.geometry ?? null,
+    // 3D/solder/xray/position limits + criteria (same limits the server gates with).
+    positionZ: p.positionZ ?? null,
+    heightMin: p.heightMin ?? null,
+    heightMax: p.heightMax ?? null,
+    heightNominal: p.heightNominal ?? null,
+    areaMin: p.areaMin ?? null,
+    areaMax: p.areaMax ?? null,
+    volumeMin: p.volumeMin ?? null,
+    volumeMax: p.volumeMax ?? null,
+    coplanarityMax: p.coplanarityMax ?? null,
+    warpageMax: p.warpageMax ?? null,
+    voidPctMax: p.voidPctMax ?? null,
+    offsetXMax: p.offsetXMax ?? null,
+    offsetYMax: p.offsetYMax ?? null,
+    tiltMax: p.tiltMax ?? null,
+    thicknessMin: p.thicknessMin ?? null,
+    thicknessMax: p.thicknessMax ?? null,
+    criteria: p.criteria ?? null,
+    // Multi-shot lighting recipe for this point (may be []).
+    lighting: (lighting ?? []).map((l: any) => ({
+      shotIndex: l.shotIndex,
+      name: l.name ?? null,
+      lightSource: l.lightSource,
+      color: l.color,
+      colorHex: l.colorHex ?? null,
+      intensityPct: l.intensityPct,
+      angleDeg: l.angleDeg ?? null,
+      exposureUs: l.exposureUs ?? null,
+      gain: l.gain ?? null,
+      focusOffsetUm: l.focusOffsetUm ?? null,
+      opticalFilter: l.opticalFilter ?? null,
+      purpose: l.purpose ?? null,
+    })),
+    lastModifiedAt: p.lastModifiedAt?.toISOString?.() ?? null,
+  };
+  // P1: server-side expansion of an array shape into individual cells.
+  if (p.shape === "array" && p.geometry) {
+    try {
+      base.cells = expandArrayGeometry(p.geometry as any);
+    } catch {
+      base.cells = [];
+    }
+  }
+  return base;
+}
+
+/** Project fiducial_marks rows into the machine sync payload. */
+function projectFiducials(rows: any[]): Array<Record<string, unknown>> {
+  return (rows ?? []).map((f: any) => ({
+    id: f.id,
+    code: f.code,
+    name: f.name,
+    type: f.type,
+    positionX: f.positionX,
+    positionY: f.positionY,
+    normalizedX: f.normalizedX != null ? Number(f.normalizedX) : null,
+    normalizedY: f.normalizedY != null ? Number(f.normalizedY) : null,
+    searchWindowW: f.searchWindowW,
+    searchWindowH: f.searchWindowH,
+    templateImageUrl: f.templateImageUrl ?? null,
+    orderIndex: f.orderIndex,
+  }));
+}
+
 export const machineApiRouter = router({
   // Submit inspection data from machine — DURABLE (doc 27 W2-C, gap C3/R11):
   // a transient failure (DB down) buffers the full payload to the disk WAL and
@@ -2004,6 +2162,10 @@ export const machineApiRouter = router({
       // the lifecycle gate (live product). Geometry/image still sync; only the
       // approved LSL/USL/target are protected. Surfaced in the sync log + response.
       let limitGateBlockedCount = 0;
+      // Doc 51 P2 batch-2 (§5.2 P2) — optimistic-lock telemetry on the write-back.
+      const lockEnforced = machineSyncOptimisticLockEnabled();
+      let staleConflictCount = 0;   // enforced writes rejected as stale (CONFLICT)
+      let blindOverwriteCount = 0;  // blind writes over a point changed since the machine cached it
 
       // Coordinate normalization helpers
       const serverW = productModel.imageWidth;
@@ -2176,7 +2338,49 @@ export const machineApiRouter = router({
               }
             }
 
-            await db.updateMeasurementPointDef(existing.id, updatePayload);
+            // ── Doc 51 P2 batch-2 (§5.2 P2) — optimistic lock on the write-back ──
+            // A machine may cache updatedAt and send it as `expectedUpdatedAt`.
+            //   • lock ENFORCED + value present → compare-and-set: a stale value
+            //     throws MeasurementPointConflictError (caught below → CONFLICT, that
+            //     point is NOT overwritten).
+            //   • otherwise (blind, back-compat) → still write, but if the cached
+            //     value is stale vs the live row, record a 'blind-overwrite' audit so
+            //     the silent clobber is visible.
+            const knownUpdatedAt =
+              point.expectedUpdatedAt != null ? new Date(point.expectedUpdatedAt) : undefined;
+            const enforceLock = lockEnforced && knownUpdatedAt !== undefined;
+            if (
+              knownUpdatedAt !== undefined &&
+              !enforceLock &&
+              db.isStaleUpdate(existing.updatedAt, knownUpdatedAt)
+            ) {
+              blindOverwriteCount++;
+              db.createAuditLog({
+                action: "measurementPoint.blindOverwrite",
+                entityType: "measurement_point_def",
+                entityId: existing.id,
+                entityName: existing.code ?? point.code,
+                details: {
+                  source: "machineSync.syncMeasurementPoints",
+                  machineId: machine.id,
+                  productModelId: productModel.id,
+                  expectedUpdatedAt: Number.isNaN(knownUpdatedAt.getTime())
+                    ? String(point.expectedUpdatedAt)
+                    : knownUpdatedAt.toISOString(),
+                  actualUpdatedAt:
+                    existing.updatedAt instanceof Date
+                      ? existing.updatedAt.toISOString()
+                      : (existing.updatedAt ?? null),
+                  note: "machine overwrote a point changed since its last sync (optimistic lock not enforced)",
+                },
+                status: "success",
+              }).catch(() => {});
+            }
+            await db.updateMeasurementPointDef(
+              existing.id,
+              updatePayload,
+              enforceLock ? { expectedUpdatedAt: knownUpdatedAt } : undefined,
+            );
             results.push({ code: point.code, id: existing.id, action: 'updated', coordTransformed: transformed, limitBlocked });
           } else {
             const newPoint = {
@@ -2220,14 +2424,28 @@ export const machineApiRouter = router({
             results.push({ code: point.code, id, action: 'created', coordTransformed: transformed });
           }
         } catch (error) {
-          errors.push({
-            code: point.code,
-            message: error instanceof TRPCError
-              ? error.message
-              : error instanceof Error
+          // Doc 51 P2 batch-2 (§5.2 P2) — a rejected optimistic-lock write surfaces
+          // as MeasurementPointConflictError (duck-typed by `.code`, never
+          // instanceof — db is mocked in tests). Count it + give a clear message;
+          // the rest of the batch still processes (per-point isolation).
+          if (error && (error as { code?: string }).code === "MP_STALE_WRITE") {
+            staleConflictCount++;
+            errors.push({
+              code: point.code,
+              message:
+                "CONFLICT: điểm đo đã bị thay đổi kể từ lần máy đồng bộ gần nhất — bỏ qua ghi đè (optimistic lock). " +
+                "Point was changed since the machine last synced; write skipped.",
+            });
+          } else {
+            errors.push({
+              code: point.code,
+              message: error instanceof TRPCError
                 ? error.message
-                : 'Unknown error',
-          });
+                : error instanceof Error
+                  ? error.message
+                  : 'Unknown error',
+            });
+          }
         }
       }
 
@@ -2290,6 +2508,14 @@ export const machineApiRouter = router({
         // Doc 31 B.6 — # of points whose incoming limit change was blocked by the
         // lifecycle gate (approved limits protected; geometry/image still synced).
         limitChangesBlocked: limitGateBlockedCount,
+        // Doc 51 P2 batch-2 (§5.2 P2) — optimistic-lock outcomes on the write-back.
+        // `staleConflicts`: writes rejected because the point moved since the machine
+        // cached it (only when MACHINE_SYNC_OPTIMISTIC_LOCK is on + machine sent
+        // expectedUpdatedAt). `blindOverwrites`: writes that clobbered a since-changed
+        // point while the lock was off (audited, still applied).
+        optimisticLockEnforced: lockEnforced,
+        staleConflicts: staleConflictCount,
+        blindOverwrites: blindOverwriteCount,
         points: results,
         errors,
       };
@@ -2385,6 +2611,43 @@ export const machineApiRouter = router({
       // Update heartbeat
       await db.updateMachineHeartbeat(machine.id);
 
+      // Doc 51 P2 batch-2 (§5.2 P2, CASE khởi tạo) — build ONE product-model entry
+      // with geometry parity to deltaSyncPoints: the SHARED projectSyncPoint (shape/
+      // geometry/cells/3D-limits/criteria/lighting) + fiducials + coordinateMode, so
+      // a machine that initialises via getPoints is not blind to non-circle points.
+      // Legacy fields are preserved verbatim (normalizedX/Y/R kept as Number|null;
+      // referenceImageUrl + workstationId still present) — additive, never breaking.
+      async function buildModelEntry(pm: any, points: any[]) {
+        const [fiducialRows, lightingByPoint] = await Promise.all([
+          db.getFiducialMarksByProductModel(pm.id).catch(() => [] as any[]),
+          db
+            .listMpLightingProfilesByPointDefIds(points.map((p) => p.id))
+            .catch(() => new Map<number, any[]>()),
+        ]);
+        return {
+          productModelId: pm.id,
+          productModelCode: pm.code,
+          productModelName: pm.name,
+          referenceImageUrl: pm.referenceImageUrl,
+          imageWidth: pm.imageWidth,
+          imageHeight: pm.imageHeight,
+          pointsConfigVersion: pm.pointsConfigVersion,
+          // Additive parity fields (deltaSyncPoints already returns these).
+          coordinateMode: pm.coordinateMode ?? "pixel",
+          fiducials: projectFiducials(fiducialRows),
+          totalPoints: points.length,
+          points: points.map((p) => ({
+            ...projectSyncPoint(p, lightingByPoint.get(p.id) ?? []),
+            // Preserve getPoints' legacy field types + extra fields (back-compat).
+            normalizedX: p.normalizedX ? Number(p.normalizedX) : null,
+            normalizedY: p.normalizedY ? Number(p.normalizedY) : null,
+            normalizedRadius: p.normalizedRadius ? Number(p.normalizedRadius) : null,
+            referenceImageUrl: p.referenceImageUrl,
+            workstationId: p.workstationId,
+          })),
+        };
+      }
+
       // If productModelCode is provided, get points for that specific product model
       if (input.productModelCode) {
         const normalizedModelCode = input.productModelCode.trim();
@@ -2399,93 +2662,18 @@ export const machineApiRouter = router({
           success: true,
           machineId: machine.id,
           machineCode: machine.code,
-          productModels: [{
-            productModelId: productModel.id,
-            productModelCode: productModel.code,
-            productModelName: productModel.name,
-            referenceImageUrl: productModel.referenceImageUrl,
-            imageWidth: productModel.imageWidth,
-            imageHeight: productModel.imageHeight,
-            pointsConfigVersion: productModel.pointsConfigVersion,
-            totalPoints: points.length,
-            points: points.map((p) => ({
-              id: p.id,
-              code: p.code,
-              name: p.name,
-              description: p.description,
-              measurementType: p.measurementType,
-              unit: p.unit,
-              lowerLimit: p.lowerLimit,
-              upperLimit: p.upperLimit,
-              nominalValue: p.nominalValue,
-              positionX: p.positionX,
-              positionY: p.positionY,
-              radius: p.radius,
-              normalizedX: p.normalizedX ? Number(p.normalizedX) : null,
-              normalizedY: p.normalizedY ? Number(p.normalizedY) : null,
-              normalizedRadius: p.normalizedRadius ? Number(p.normalizedRadius) : null,
-              cropWidth: p.cropWidth,
-              cropHeight: p.cropHeight,
-              orderIndex: p.orderIndex,
-              referenceImageUrl: p.referenceImageUrl,
-              isActive: p.isActive,
-              workstationId: p.workstationId,
-            })),
-          }],
+          productModels: [await buildModelEntry(productModel, points)],
         };
       }
 
       // No productModelCode: get all points for all product models mapped to this machine
       const mappings = await db.getMappingsByMachine(machine.id);
-      const productModels: Array<{
-        productModelId: number;
-        productModelCode: string;
-        productModelName: string;
-        referenceImageUrl: string | null;
-        imageWidth: number | null;
-        imageHeight: number | null;
-        pointsConfigVersion: number;
-        totalPoints: number;
-        points: Array<Record<string, unknown>>;
-      }> = [];
+      const productModels: Array<Record<string, unknown>> = [];
 
       for (const { product: pm } of mappings) {
         if (!pm) continue;
-
         const points = await db.getMeasurementPointDefsByProductModel(pm.id);
-        productModels.push({
-          productModelId: pm.id,
-          productModelCode: pm.code,
-          productModelName: pm.name,
-          referenceImageUrl: pm.referenceImageUrl,
-          imageWidth: pm.imageWidth,
-          imageHeight: pm.imageHeight,
-          pointsConfigVersion: pm.pointsConfigVersion,
-          totalPoints: points.length,
-          points: points.map((p) => ({
-            id: p.id,
-            code: p.code,
-            name: p.name,
-            description: p.description,
-            measurementType: p.measurementType,
-            unit: p.unit,
-            lowerLimit: p.lowerLimit,
-            upperLimit: p.upperLimit,
-            nominalValue: p.nominalValue,
-            positionX: p.positionX,
-            positionY: p.positionY,
-            radius: p.radius,
-            normalizedX: p.normalizedX ? Number(p.normalizedX) : null,
-            normalizedY: p.normalizedY ? Number(p.normalizedY) : null,
-            normalizedRadius: p.normalizedRadius ? Number(p.normalizedRadius) : null,
-            cropWidth: p.cropWidth,
-            cropHeight: p.cropHeight,
-            orderIndex: p.orderIndex,
-            referenceImageUrl: p.referenceImageUrl,
-            isActive: p.isActive,
-            workstationId: p.workstationId,
-          })),
-        });
+        productModels.push(await buildModelEntry(pm, points));
       }
 
       return {
@@ -2913,20 +3101,7 @@ export const machineApiRouter = router({
 
       // P1: load fiducial marks (additive top-level field)
       const fiducialRows = await db.getFiducialMarksByProductModel(productModel.id).catch(() => [] as any[]);
-      const fiducials = fiducialRows.map((f: any) => ({
-        id: f.id,
-        code: f.code,
-        name: f.name,
-        type: f.type,
-        positionX: f.positionX,
-        positionY: f.positionY,
-        normalizedX: f.normalizedX != null ? Number(f.normalizedX) : null,
-        normalizedY: f.normalizedY != null ? Number(f.normalizedY) : null,
-        searchWindowW: f.searchWindowW,
-        searchWindowH: f.searchWindowH,
-        templateImageUrl: f.templateImageUrl ?? null,
-        orderIndex: f.orderIndex,
-      }));
+      const fiducials = projectFiducials(fiducialRows);
 
       // Doc 31 MP6 (decision #2) — batch-load per-point lighting recipes so the
       // machine can apply the multi-shot illumination profile. Best-effort (an
@@ -2935,79 +3110,10 @@ export const machineApiRouter = router({
         .listMpLightingProfilesByPointDefIds(points.map((p) => p.id))
         .catch(() => new Map<number, any[]>());
 
-      const projectedPoints = points.map((p) => {
-        const base: Record<string, unknown> = {
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          description: p.description,
-          measurementType: p.measurementType,
-          // Doc 31 MP6 — fine-grained catalog type (SOLDER/XRAY/POSITION/…).
-          measurementTypeCode: (p as any).measurementTypeCode ?? null,
-          unit: p.unit,
-          lowerLimit: p.lowerLimit,
-          upperLimit: p.upperLimit,
-          nominalValue: p.nominalValue,
-          positionX: p.positionX,
-          positionY: p.positionY,
-          radius: p.radius,
-          normalizedX: p.normalizedX,
-          normalizedY: p.normalizedY,
-          normalizedRadius: p.normalizedRadius,
-          cropWidth: p.cropWidth,
-          cropHeight: p.cropHeight,
-          orderIndex: p.orderIndex,
-          isActive: p.isActive,
-          // P1: shape + geometry (additive)
-          shape: (p as any).shape ?? "circle",
-          geometry: (p as any).geometry ?? null,
-          // Doc 31 MP6 (decision #2) — 3D/solder/xray/position limits + criteria so
-          // the same limits the server now gates with (pointResultEvaluator) are
-          // also transported to the machine. All additive; null when unset.
-          positionZ: (p as any).positionZ ?? null,
-          heightMin: (p as any).heightMin ?? null,
-          heightMax: (p as any).heightMax ?? null,
-          heightNominal: (p as any).heightNominal ?? null,
-          areaMin: (p as any).areaMin ?? null,
-          areaMax: (p as any).areaMax ?? null,
-          volumeMin: (p as any).volumeMin ?? null,
-          volumeMax: (p as any).volumeMax ?? null,
-          coplanarityMax: (p as any).coplanarityMax ?? null,
-          warpageMax: (p as any).warpageMax ?? null,
-          voidPctMax: (p as any).voidPctMax ?? null,
-          offsetXMax: (p as any).offsetXMax ?? null,
-          offsetYMax: (p as any).offsetYMax ?? null,
-          tiltMax: (p as any).tiltMax ?? null,
-          thicknessMin: (p as any).thicknessMin ?? null,
-          thicknessMax: (p as any).thicknessMax ?? null,
-          criteria: (p as any).criteria ?? null,
-          // Doc 31 MP6 — multi-shot lighting recipe for this point (may be []).
-          lighting: (lightingByPoint.get(p.id) ?? []).map((l: any) => ({
-            shotIndex: l.shotIndex,
-            name: l.name ?? null,
-            lightSource: l.lightSource,
-            color: l.color,
-            colorHex: l.colorHex ?? null,
-            intensityPct: l.intensityPct,
-            angleDeg: l.angleDeg ?? null,
-            exposureUs: l.exposureUs ?? null,
-            gain: l.gain ?? null,
-            focusOffsetUm: l.focusOffsetUm ?? null,
-            opticalFilter: l.opticalFilter ?? null,
-            purpose: l.purpose ?? null,
-          })),
-          lastModifiedAt: p.lastModifiedAt?.toISOString() ?? null,
-        };
-        // P1: server-side expansion of array shape into individual cells.
-        if ((p as any).shape === "array" && (p as any).geometry) {
-          try {
-            base.cells = expandArrayGeometry((p as any).geometry as any);
-          } catch {
-            base.cells = [];
-          }
-        }
-        return base;
-      });
+      // Doc 51 P2 batch-2 — shared projector (parity with getPoints).
+      const projectedPoints = points.map((p) =>
+        projectSyncPoint(p as any, lightingByPoint.get(p.id) ?? []),
+      );
 
       return {
         success: true,

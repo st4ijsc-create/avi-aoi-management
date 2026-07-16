@@ -261,6 +261,16 @@ export const measurementPointVersions = pgTable("measurement_point_versions", {
   snapshotJson: json("snapshotJson").$type<Record<string, any>>().notNull(),
   changedBy: integer("changedBy"),             // users.id (nullable for system edits)
   changeReason: varchar("changeReason", { length: 500 }),
+  // Doc 51 P2 batch-2 (§12.2 #2, migration 0282) — VERSION-EXACT spec-gate
+  // provenance. The product's pointsConfigVersion that the pre-edit limits in
+  // snapshotJson were live UNDER (read inside updateMeasurementPointDef's tx, just
+  // before the router bumps the product +1). Lets the spec-gate reconstruct limits
+  // by the MACHINE-DECLARED version V (smallest stamp >= V) rather than by the
+  // server-received instant. NULL = snapshot written before 0282 (unknown version)
+  // → the gate falls back to the instant-based reconstruction (0276/P1), no
+  // regression. ⚠ May be ABSENT at runtime (0282 guarded): writers only include it
+  // when a probe detects the column, and the read path projects it conditionally.
+  productPointsConfigVersion: integer("productPointsConfigVersion"),
   changedAt: timestamp("changedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_point_versions_point").on(table.pointDefId),

@@ -474,6 +474,15 @@ export interface PointLimitSnapshot {
   changedAt: Date;
   /** The point def's previous state (measurement_point_versions.snapshotJson). */
   limits: PointLimitSource;
+  /**
+   * Doc 51 P2 batch-2 (§12.2 #2, migration 0282) — the product's pointsConfigVersion
+   * that `limits` were live UNDER (the last product version before the edit that
+   * created this snapshot bumped it +1). Enables VERSION-EXACT reconstruction:
+   * gate a board declaring version V with the snapshot whose stamp is the smallest
+   * value >= V. NULL/absent (legacy rows, or 0282 not applied) ⇒ this snapshot is
+   * invisible to the version path and the caller falls back to the instant path.
+   */
+  productPointsConfigVersion?: number | null;
 }
 
 export type SnapshotGateBasis = "snapshot" | "missing";
@@ -518,4 +527,77 @@ export function resolveLimitsAtInstant(
   }
   if (best === null) return { limits: null, basis: "missing" };
   return { limits: best.limits ?? {}, basis: "snapshot" };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P2 batch-2 (§12.2 #2) — VERSION-EXACT reconstruction (completes QĐ#2).
+//
+// P1 (resolveLimitsAtInstant) anchors on the board's server-received INSTANT
+// because measurement_point_versions had no product-version mapping. Migration
+// 0282 adds `productPointsConfigVersion` to each snapshot (the product version the
+// pre-edit limits were live UNDER), so we can now gate a board by the EXACT config
+// version the machine declared, not by an instant proxy.
+//
+// THE PICK (mirror of the instant rule, in version space):
+//   Each stamped snapshot holds the limits live UP TO its stamp `s` (they were
+//   replaced when the product moved to s+1). A board declaring version V used the
+//   limits whose covering snapshot is the one with the SMALLEST stamp s >= V.
+//     • found            → gate by that snapshot's limits            (basis "version").
+//     • stamped exist but none >= V → the point was NOT edited since V, so its LIVE
+//       limits ARE the V-era limits → gate by live                  (basis "live").
+//     • no stamped snapshots at all (legacy/unmigrated data)        → fall back to the
+//       instant reconstruction (basis "instant"/"missing" from resolveLimitsAtInstant).
+//
+// Pure — no DB, never throws.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type GateLimitBasis = "version" | "live" | "instant" | "missing";
+
+export interface GateLimitResolution {
+  /** Limits to gate with, or `null` when the caller MUST skip the gate (basis "missing"). */
+  limits: PointLimitSource | null;
+  basis: GateLimitBasis;
+}
+
+/**
+ * Resolve the limits to spec-gate a board with, preferring VERSION-EXACT (0282)
+ * over the instant proxy (P1) and falling back safely when neither can confirm an
+ * older config.
+ */
+export function resolveGateLimitsForBoard(args: {
+  snapshots: PointLimitSnapshot[];
+  /** The point def's CURRENT (live) limits — used when the point is unchanged since V. */
+  liveLimits: PointLimitSource;
+  /** The machine-declared product pointsConfigVersion, or null when unknown. */
+  declaredVersion?: number | null;
+  /** The board's server-received instant — the P1 fallback anchor. */
+  atInstant: Date;
+}): GateLimitResolution {
+  const { snapshots, liveLimits, declaredVersion, atInstant } = args;
+
+  // VERSION path — only when we know the declared version AND at least one snapshot
+  // carries a 0282 stamp (otherwise this point's history predates the provenance).
+  if (declaredVersion != null && Number.isFinite(declaredVersion) && Array.isArray(snapshots)) {
+    const stamped = snapshots.filter(
+      (s): s is PointLimitSnapshot & { productPointsConfigVersion: number } =>
+        !!s && typeof s.productPointsConfigVersion === "number" && Number.isFinite(s.productPointsConfigVersion),
+    );
+    if (stamped.length > 0) {
+      let best: (PointLimitSnapshot & { productPointsConfigVersion: number }) | null = null;
+      for (const s of stamped) {
+        const v = s.productPointsConfigVersion;
+        if (v >= declaredVersion && (best === null || v < best.productPointsConfigVersion)) {
+          best = s;
+        }
+      }
+      if (best !== null) return { limits: best.limits ?? {}, basis: "version" };
+      // Stamped snapshots exist but none covers V ⇒ the point has not been edited
+      // since version V ⇒ its live limits ARE the limits it had at V.
+      return { limits: liveLimits, basis: "live" };
+    }
+  }
+
+  // FALLBACK — instant-based reconstruction (P1). Unchanged behaviour.
+  const inst = resolveLimitsAtInstant(snapshots, atInstant);
+  return { limits: inst.limits, basis: inst.basis === "snapshot" ? "instant" : "missing" };
 }
