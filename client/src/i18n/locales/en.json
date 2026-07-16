@@ -476,6 +476,12 @@
     "noProduct": "None / not product-specific",
     "empty": "No engineering changes yet.",
     "rejectReason": "Reason for rejection:",
+    "rejectReasonRequired": "A rejection reason is required",
+    "rejectTitle": "Reject engineering change",
+    "rejectPrompt": "State the reason for rejecting {{key}}. The reason is recorded in the decision log.",
+    "rejectPlaceholder": "e.g. Missing impact analysis; risk needs re-assessment…",
+    "emptyFiltered": "No changes match the filter.",
+    "userFallback": "User #{{id}}",
     "field": {
       "title": "Title",
       "type": "Change type",
@@ -483,7 +489,10 @@
       "product": "Target product (optional)",
       "target": "Target description (optional)",
       "reason": "Reason",
-      "impact": "Impact analysis notes"
+      "impact": "Impact analysis notes",
+      "titlePlaceholder": "e.g. Update R12 tolerance on model A",
+      "targetPlaceholder": "e.g. BOM v3 line R12 / recipe SMT-01",
+      "impactPlaceholder": "Affected products / programs / lines, risks, rollback plan…"
     },
     "col": {
       "key": "ECN",
@@ -492,6 +501,59 @@
       "effectivity": "Effectivity",
       "status": "Status",
       "actions": "Actions"
+    },
+    "filter": {
+      "allStatuses": "All statuses",
+      "allTypes": "All types"
+    },
+    "status": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "in_review": "In review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "implemented": "Implemented",
+      "closed": "Closed"
+    },
+    "type": {
+      "product": "Product",
+      "bom": "BOM",
+      "recipe": "Recipe",
+      "program": "Program",
+      "process": "Process",
+      "document": "Document"
+    },
+    "action": {
+      "submit": "Submit for approval",
+      "review": "Start review",
+      "reject": "Reject",
+      "approve": "Approve",
+      "implement": "Mark deployed",
+      "close": "Close"
+    },
+    "timeline": {
+      "created": "Created (draft)",
+      "submitted": "Submitted",
+      "reviewed": "Reviewed",
+      "approved": "Approved",
+      "implemented": "Implemented",
+      "closed": "Closed"
+    },
+    "detail": {
+      "impact": "Impact analysis",
+      "affectedProducts": "Affected products",
+      "affectedPrograms": "Affected programs",
+      "affectedLines": "Affected lines",
+      "noImpact": "No impact analysis recorded.",
+      "actors": "People involved",
+      "requestedBy": "Requested by",
+      "reviewedBy": "Reviewed by",
+      "approvedBy": "Approved by",
+      "implementedBy": "Implemented by",
+      "closedBy": "Closed by",
+      "decisionComment": "Decision comment",
+      "timeline": "Timeline",
+      "noTimeline": "No timeline events yet."
     },
     "backfill": {
       "title": "Backfill componentCode from BOM",

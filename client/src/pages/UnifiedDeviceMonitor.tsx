@@ -25,6 +25,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -174,11 +175,18 @@ export function UnifiedDeviceMonitorContent() {
   const [, forceSpark] = useState(0); // bump to re-render sparklines
   const [liveStatus, setLiveStatus] = useState<Record<number, { status: string; ts: number }>>({});
 
+  // doc 54 cosmetic — the OT adapter + edge-runtime queries require machine_control;
+  // gate them so a machine_monitoring-only role (e.g. operator) doesn't fire a query it
+  // can't read → no 403 console noise. The machines/health data (machine_monitoring)
+  // still loads for everyone.
+  const { hasPermission } = usePermissions();
+  const canReadControl = hasPermission("machine_control", "canView");
+
   // ── Data sources (slow refetch only for membership; live bits come via socket) ──
   const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 60_000 });
-  const adaptersQ = trpc.deviceAdapter.list.useQuery(undefined, { refetchInterval: 60_000 });
-  const edgeStatusQ = trpc.edgeRuntime.status.useQuery();
-  const edgeNodesQ = trpc.edgeRuntime.listNodes.useQuery(undefined, { refetchInterval: 60_000 });
+  const adaptersQ = trpc.deviceAdapter.list.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });
+  const edgeStatusQ = trpc.edgeRuntime.status.useQuery(undefined, { enabled: canReadControl });
+  const edgeNodesQ = trpc.edgeRuntime.listNodes.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });
 
   // ── Protocol framework status strip (real flag state) ──
   const mtconnectQ = trpc.mtconnect.status.useQuery(undefined, { retry: false });

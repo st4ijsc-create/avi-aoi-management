@@ -47,6 +47,16 @@ export function ProgrammingCopilotDock() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
+  // doc 54 cosmetic — PUSH the page instead of overlaying it: when the rail is open on a
+  // programming surface, reserve its width on the right so the editor/inspector isn't
+  // hidden underneath. On narrow viewports (rail is 92vw) we don't push (it's a takeover).
+  useEffect(() => {
+    const canPush = open && !!binding && typeof window !== "undefined" && window.innerWidth >= 900;
+    document.body.style.transition = "padding-right 0.2s ease";
+    document.body.style.paddingRight = canPush ? "min(420px, 92vw)" : "";
+    return () => { document.body.style.paddingRight = ""; };
+  }, [open, binding]);
+
   // Only present on programming surfaces (a surface published a binding).
   if (!binding) return null;
 

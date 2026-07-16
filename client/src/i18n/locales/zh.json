@@ -476,6 +476,12 @@
     "noProduct": "无 / 非特定产品",
     "empty": "暂无工程变更。",
     "rejectReason": "拒绝原因：",
+    "rejectReasonRequired": "拒绝原因为必填项",
+    "rejectTitle": "拒绝工程变更",
+    "rejectPrompt": "请说明拒绝 {{key}} 的原因。该原因将记录到决策日志中。",
+    "rejectPlaceholder": "例如：缺少影响分析；风险需重新评估…",
+    "emptyFiltered": "没有符合筛选条件的变更。",
+    "userFallback": "用户 #{{id}}",
     "field": {
       "title": "标题",
       "type": "变更类型",
@@ -483,7 +489,10 @@
       "product": "目标产品（可选）",
       "target": "目标描述（可选）",
       "reason": "原因",
-      "impact": "影响分析备注"
+      "impact": "影响分析备注",
+      "titlePlaceholder": "例如：更新 A 型号上 R12 的公差",
+      "targetPlaceholder": "例如：BOM v3 R12 行 / recipe SMT-01",
+      "impactPlaceholder": "受影响的产品 / 程序 / 产线、风险、回滚方案…"
     },
     "col": {
       "key": "ECN",
@@ -492,6 +501,59 @@
       "effectivity": "生效",
       "status": "状态",
       "actions": "操作"
+    },
+    "filter": {
+      "allStatuses": "所有状态",
+      "allTypes": "所有类型"
+    },
+    "status": {
+      "draft": "草稿",
+      "submitted": "已提交审批",
+      "in_review": "审核中",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "implemented": "已实施",
+      "closed": "已关闭"
+    },
+    "type": {
+      "product": "产品",
+      "bom": "BOM",
+      "recipe": "配方",
+      "program": "程序",
+      "process": "工艺",
+      "document": "文档"
+    },
+    "action": {
+      "submit": "提交审批",
+      "review": "开始审核",
+      "reject": "拒绝",
+      "approve": "批准",
+      "implement": "标记为已部署",
+      "close": "关闭"
+    },
+    "timeline": {
+      "created": "创建（草稿）",
+      "submitted": "提交审批",
+      "reviewed": "审核",
+      "approved": "批准",
+      "implemented": "实施",
+      "closed": "关闭"
+    },
+    "detail": {
+      "impact": "影响分析",
+      "affectedProducts": "受影响产品",
+      "affectedPrograms": "受影响程序",
+      "affectedLines": "受影响产线",
+      "noImpact": "尚未记录影响分析。",
+      "actors": "相关人员",
+      "requestedBy": "请求人",
+      "reviewedBy": "审核人",
+      "approvedBy": "批准人",
+      "implementedBy": "实施人",
+      "closedBy": "关闭人",
+      "decisionComment": "决策备注",
+      "timeline": "时间线",
+      "noTimeline": "暂无时间线事件。"
     },
     "backfill": {
       "title": "从BOM回填componentCode",

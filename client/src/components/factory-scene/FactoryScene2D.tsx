@@ -172,8 +172,10 @@ export function FactoryScene2D(props: FactorySceneProps) {
     return Array.from(byLine.values());
   }, [layout]);
 
-  // Ngưỡng hiện nhãn code: khi zoom đủ gần (viewBox nhỏ) hoặc luôn cho selected/hover.
-  const showAllCodes = view.w < layout.radius * 1.6;
+  // Ngưỡng hiện nhãn code. doc 54 cosmetic — trước chỉ hiện khi zoom RẤT gần
+  // (view.w < radius*1.6) → ở fit-all các máy trông như "ô màu trơ". Giờ: fleet nhỏ
+  // (≤60 máy) LUÔN hiện mã ở mọi zoom; fleet lớn vẫn gate theo zoom (chống rối).
+  const showAllCodes = machines.length <= 60 || view.w < layout.radius * 2.6;
 
   const strokeSel = theme === "dark" ? "#f8fafc" : "#0f172a";
 
@@ -305,7 +307,7 @@ export function FactoryScene2D(props: FactorySceneProps) {
                 <text
                   x={p.x}
                   y={p.z}
-                  fontSize={Math.min(0.6, p.w * 0.28)}
+                  fontSize={Math.min(0.95, Math.max(0.44, p.w * 0.34))}
                   fontWeight={700}
                   textAnchor="middle"
                   dominantBaseline="middle"

@@ -476,6 +476,12 @@
     "noProduct": "Không / không riêng sản phẩm",
     "empty": "Chưa có thay đổi kỹ thuật nào.",
     "rejectReason": "Lý do từ chối:",
+    "rejectReasonRequired": "Bắt buộc nhập lý do từ chối",
+    "rejectTitle": "Từ chối thay đổi kỹ thuật",
+    "rejectPrompt": "Nêu rõ lý do từ chối {{key}}. Lý do được ghi vào nhật ký quyết định.",
+    "rejectPlaceholder": "VD: Thiếu phân tích tác động; cần đánh giá lại rủi ro…",
+    "emptyFiltered": "Không có thay đổi nào khớp bộ lọc.",
+    "userFallback": "Người dùng #{{id}}",
     "field": {
       "title": "Tiêu đề",
       "type": "Loại thay đổi",
@@ -483,7 +489,10 @@
       "product": "Sản phẩm đích (tùy chọn)",
       "target": "Mô tả đối tượng (tùy chọn)",
       "reason": "Lý do",
-      "impact": "Ghi chú phân tích tác động"
+      "impact": "Ghi chú phân tích tác động",
+      "titlePlaceholder": "VD: Cập nhật dung sai R12 trên model A",
+      "targetPlaceholder": "VD: BOM v3 dòng R12 / recipe SMT-01",
+      "impactPlaceholder": "Sản phẩm / chương trình / dây chuyền ảnh hưởng, rủi ro, phương án khôi phục…"
     },
     "col": {
       "key": "ECN",
@@ -492,6 +501,59 @@
       "effectivity": "Hiệu lực",
       "status": "Trạng thái",
       "actions": "Thao tác"
+    },
+    "filter": {
+      "allStatuses": "Mọi trạng thái",
+      "allTypes": "Mọi loại"
+    },
+    "status": {
+      "draft": "Bản nháp",
+      "submitted": "Đã gửi duyệt",
+      "in_review": "Đang xem xét",
+      "approved": "Đã phê duyệt",
+      "rejected": "Đã từ chối",
+      "implemented": "Đã triển khai",
+      "closed": "Đã đóng"
+    },
+    "type": {
+      "product": "Sản phẩm",
+      "bom": "BOM",
+      "recipe": "Recipe",
+      "program": "Chương trình",
+      "process": "Quy trình",
+      "document": "Tài liệu"
+    },
+    "action": {
+      "submit": "Gửi duyệt",
+      "review": "Bắt đầu xem xét",
+      "reject": "Từ chối",
+      "approve": "Phê duyệt",
+      "implement": "Đánh dấu triển khai",
+      "close": "Đóng"
+    },
+    "timeline": {
+      "created": "Tạo (bản nháp)",
+      "submitted": "Gửi duyệt",
+      "reviewed": "Xem xét",
+      "approved": "Phê duyệt",
+      "implemented": "Triển khai",
+      "closed": "Đóng"
+    },
+    "detail": {
+      "impact": "Phân tích tác động",
+      "affectedProducts": "Sản phẩm ảnh hưởng",
+      "affectedPrograms": "Chương trình ảnh hưởng",
+      "affectedLines": "Dây chuyền ảnh hưởng",
+      "noImpact": "Chưa ghi nhận phân tích tác động.",
+      "actors": "Người liên quan",
+      "requestedBy": "Người yêu cầu",
+      "reviewedBy": "Người xem xét",
+      "approvedBy": "Người duyệt",
+      "implementedBy": "Người triển khai",
+      "closedBy": "Người đóng",
+      "decisionComment": "Ghi chú quyết định",
+      "timeline": "Dòng thời gian",
+      "noTimeline": "Chưa có mốc thời gian."
     },
     "backfill": {
       "title": "Bổ sung componentCode từ BOM",
