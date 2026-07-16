@@ -30,7 +30,7 @@ import { getJobsDb as getDb } from "../db/connection";
 
 // ─── Relationship catalogue (single source of truth on the app side) ──────────
 
-export type IntegrityKind = "fk-orphan" | "unique-duplicate";
+export type IntegrityKind = "fk-orphan" | "unique-duplicate" | "fk-soft-orphan";
 /** How scripts/repair-orphans.mjs may fix violations of this relationship. */
 export type RepairStrategy =
   | "set-null"      // safe auto-fix: NULL out the dangling soft reference
@@ -200,6 +200,47 @@ export const INTEGRITY_RELATIONSHIPS: IntegrityRelationship[] = [
   },
 ];
 
+// ─── Soft-orphan checks (doc 51 P2 — CASE #6) ────────────────────────────────
+//
+// DISTINCT from INTEGRITY_RELATIONSHIPS above: those model REAL foreign keys that
+// migrations 0179/0180 audit + enforce, and a contract test asserts the app list
+// matches 0179 and repair-orphans.mjs verbatim. A "soft orphan" is NOT an FK
+// violation — it is a RECOVERABLE dangling soft-link that no constraint can catch:
+//
+//   An AOI/AVI machine posts an inspection for a product model that does not exist
+//   yet. Ingest stores productModelId = NULL but keeps the raw `productModel` code
+//   string. Later an engineer creates that model — but the historical inspections
+//   stay NULL forever, so they vanish from every by-model report (all of which
+//   GROUP/JOIN on productModelId). The row is not an FK orphan (NULL FKs are legal);
+//   it is a link that BECAME resolvable and nobody re-anchored it.
+//
+// These live in a SEPARATE list (and a SEPARATE `softResults` bucket on the run)
+// precisely so they do NOT enter the 0179/0180/repair-script key contract. They
+// are surfaced (count + sample) and persisted to integrity_scan_results like the
+// FK scans, and are auto-repaired going forward by the model-create backfill in
+// productRouters (and in bulk by `repair-orphans.mjs` over the historical backlog).
+export const SOFT_INTEGRITY_CHECKS: IntegrityRelationship[] = [
+  {
+    key: "soft:product_inspections.productModel->product_models.code",
+    kind: "fk-soft-orphan",
+    childTable: "product_inspections", childColumn: "productModel",
+    parentTable: "product_models", parentColumn: "code",
+    // No DB constraint exists for this relationship — enforcement is documentation
+    // only (a NULL productModelId is a legal FK state). Repaired by backfill.
+    constraintName: "(none — recoverable soft link; backfilled on model create)",
+    enforcement: "SET NULL", repair: "manual",
+    countSql:
+      'SELECT count(*)::bigint AS n FROM product_inspections c ' +
+      'WHERE c."productModelId" IS NULL AND c."productModel" IS NOT NULL ' +
+      'AND EXISTS (SELECT 1 FROM product_models p WHERE p.code = c."productModel")',
+    sampleSql:
+      'SELECT c.id, c."productModel" AS "productModel" FROM product_inspections c ' +
+      'WHERE c."productModelId" IS NULL AND c."productModel" IS NOT NULL ' +
+      'AND EXISTS (SELECT 1 FROM product_models p WHERE p.code = c."productModel") ' +
+      'ORDER BY c.id LIMIT 20',
+  },
+];
+
 // ─── Scan execution ───────────────────────────────────────────────────────────
 
 export interface RelationshipScanResult {
@@ -220,6 +261,12 @@ export interface IntegrityScanRunResult {
   totalViolations: number;
   dirtyRelationships: number;
   results: RelationshipScanResult[];
+  /**
+   * doc 51 P2 (CASE #6) — soft-orphan checks (SOFT_INTEGRITY_CHECKS). Kept OUT of
+   * `results` so the 0179/0180/repair-script key-contract test (which asserts
+   * results.length === INTEGRITY_RELATIONSHIPS.length) is unaffected.
+   */
+  softResults: RelationshipScanResult[];
   durationMs: number;
   scannedAt: string;
 }
@@ -241,17 +288,20 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
   const start = Date.now();
   const scannedAt = new Date().toISOString();
   if (running) {
-    return { ok: true, skipped: true, reason: "already_running", totalViolations: 0, dirtyRelationships: 0, results: [], durationMs: 0, scannedAt };
+    return { ok: true, skipped: true, reason: "already_running", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], durationMs: 0, scannedAt };
   }
   running = true;
   const results: RelationshipScanResult[] = [];
+  const softResults: RelationshipScanResult[] = [];
   try {
     const db = await getDb();
     if (!db) {
-      return { ok: false, skipped: true, reason: "db_unavailable", totalViolations: 0, dirtyRelationships: 0, results: [], durationMs: Date.now() - start, scannedAt };
+      return { ok: false, skipped: true, reason: "db_unavailable", totalViolations: 0, dirtyRelationships: 0, results: [], softResults: [], durationMs: Date.now() - start, scannedAt };
     }
 
-    for (const rel of INTEGRITY_RELATIONSHIPS) {
+    // Scan ONE relationship (count + sample + best-effort persist) into `bucket`.
+    // Shared by the FK/unique scans and the doc 51 P2 soft-orphan checks.
+    const scanInto = async (rel: IntegrityRelationship, bucket: RelationshipScanResult[]) => {
       try {
         const countRows = (await db.execute(sql.raw(rel.countSql))) as unknown as Array<{ n: string | number | bigint }>;
         const violationCount = Number(countRows?.[0]?.n ?? 0);
@@ -259,7 +309,7 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
         if (violationCount > 0) {
           samples = (await db.execute(sql.raw(rel.sampleSql))) as unknown as unknown[];
         }
-        results.push({ key: rel.key, kind: rel.kind, childTable: rel.childTable, violationCount, samples, degraded: false });
+        bucket.push({ key: rel.key, kind: rel.kind, childTable: rel.childTable, violationCount, samples, degraded: false });
 
         // Persist (best-effort — report table comes from 0179).
         try {
@@ -275,20 +325,26 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
       } catch (err) {
         const msg = (err as Error)?.message ?? String(err);
         console.error(`[integrityScan] scan failed for ${rel.key}:`, msg);
-        results.push({ key: rel.key, kind: rel.kind, childTable: rel.childTable, violationCount: 0, samples: [], degraded: true, error: msg });
+        bucket.push({ key: rel.key, kind: rel.kind, childTable: rel.childTable, violationCount: 0, samples: [], degraded: true, error: msg });
       }
-    }
+    };
+
+    for (const rel of INTEGRITY_RELATIONSHIPS) await scanInto(rel, results);
+    // doc 51 P2 (CASE #6): soft-orphan checks — separate bucket (see interface).
+    for (const rel of SOFT_INTEGRITY_CHECKS) await scanInto(rel, softResults);
   } finally {
     running = false;
   }
 
   const dirty = results.filter((r) => r.violationCount > 0);
+  const softDirty = softResults.filter((r) => r.violationCount > 0);
   const totalViolations = dirty.reduce((s, r) => s + r.violationCount, 0);
   const run: IntegrityScanRunResult = {
-    ok: results.every((r) => !r.degraded),
+    ok: results.every((r) => !r.degraded) && softResults.every((r) => !r.degraded),
     totalViolations,
     dirtyRelationships: dirty.length,
     results,
+    softResults,
     durationMs: Date.now() - start,
     scannedAt,
   };
@@ -303,6 +359,14 @@ export async function runIntegrityScanNow(scanSource: string = "service"): Promi
     );
   } else {
     console.log(`[integrityScan] clean — ${results.length} relationships scanned in ${run.durationMs}ms`);
+  }
+  if (softDirty.length > 0) {
+    console.warn(
+      `[integrityScan] soft-orphan(s) recoverable — ` +
+      softDirty.map((r) => `${r.key}=${r.violationCount}`).join(", ") +
+      ` — inspections predating their product model; repair: node scripts/repair-orphans.mjs --fix ` +
+      `--rel "soft:product_inspections.productModel->product_models.code".`,
+    );
   }
   return run;
 }
@@ -388,6 +452,7 @@ export function getIntegrityScanSchedulerStatus() {
     cron: process.env.INTEGRITY_SCAN_CRON || "30 3 * * 0",
     timezone: process.env.INTEGRITY_SCAN_TZ || "Asia/Ho_Chi_Minh",
     relationshipCount: INTEGRITY_RELATIONSHIPS.length,
+    softCheckCount: SOFT_INTEGRITY_CHECKS.length,
     running: !!job,
     scanInFlight: running,
     lastRunAt,

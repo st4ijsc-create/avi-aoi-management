@@ -2,7 +2,7 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { and as drizzleAnd, eq as drizzleEq, asc as drizzleAsc, sql } from "drizzle-orm";
+import { and as drizzleAnd, eq as drizzleEq, ne as drizzleNe, gte as drizzleGte, asc as drizzleAsc, sql } from "drizzle-orm";
 import * as db from "../db";
 import { getDb } from "../db";
 // Doc 51 P0 (R2) — out-param type for the idempotent inspection-header insert.
@@ -45,10 +45,11 @@ import { resolveThresholdEditGate } from "../services/thresholdGovernanceService
 import {
   evaluatePointResult,
   isPointLimitEvalEnabled,
+  isUnitConvertEnabled,
   resolveLimitsAtInstant,
   type PointLimitSnapshot,
   type PointLimitSource,
-} from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate; Doc 51 P1 QĐ#2 — snapshot gate
+} from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate; Doc 51 P1 QĐ#2 — snapshot gate; P2 CASE #11 unit convert
 import * as aiAdvancedDb from "../db/aiAdvanced";
 import { confirmDeployment as svcConfirmDeployment, recordEdgeHeartbeat as svcRecordHeartbeat, syncEdgeResults as svcSyncEdgeResults } from "../services/aiEdgeEnhanced";
 import {
@@ -183,6 +184,46 @@ function clockSkewWarnSeconds(): number {
  */
 function requireTimeOffset(): boolean {
   return envTrue(process.env.INGEST_REQUIRE_TIME_OFFSET);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P2 flags (QĐ#1 — every behavioural change carries a flag + a
+// backward-compatible default).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * §11.2 residual #1 — on a measurement-transaction failure, DELETE the orphaned
+ * inspection header (+ its idempotency-ledger claim) so a retry re-inserts a
+ * COMPLETE board instead of the P0 short-circuit resolving to an empty header.
+ * Default ON: it fires ONLY on the error path and is strictly safer there. Set
+ * INGEST_COMPENSATE_ORPHAN_HEADER=false to revert to leave-the-empty-header.
+ */
+function compensateOrphanHeaderEnabled(): boolean {
+  return envTrue(process.env.INGEST_COMPENSATE_ORPHAN_HEADER ?? "true");
+}
+
+/**
+ * CASE #8 — soft cross-machine serial-collision detection. Default OFF: it costs
+ * one extra indexed read per NEW board on the hottest table (100 boards/s, QĐ#7),
+ * so it is opt-in. When on, a serial already seen from a DIFFERENT machine in the
+ * recent window TAGS the row (never rejects — QĐ#3) + raises one throttled alert.
+ */
+function serialCollisionDetectEnabled(): boolean {
+  return envTrue(process.env.INGEST_SERIAL_COLLISION_DETECT);
+}
+
+/** CASE #8 — look-back window (seconds) for a colliding serial. Default 1h. */
+function serialCollisionWindowSeconds(): number {
+  return envInt("INGEST_SERIAL_COLLISION_WINDOW_SEC", 3600);
+}
+
+/**
+ * §5.6 — request-level ingest audit. Default OFF: an audit row PER submission on
+ * the hottest ingest path is heavy (100/s ⇒ 100 audit inserts/s), so ops opts in
+ * deliberately. Best-effort + fire-and-forget regardless (never affects ingest).
+ */
+function requestAuditEnabled(): boolean {
+  return envTrue(process.env.INGEST_REQUEST_AUDIT_ENABLED);
 }
 
 /**
@@ -387,6 +428,14 @@ const submitInspectionInputSchema = z.object({
         pointId: z.string().optional(), // ID điểm đo (new)
         pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
         measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (number hoặc string)
+        // Doc 51 P2 (CASE #11) — the unit the machine measured `measuredValue` in
+        // (e.g. "mil"). Optional + additive: absent ⇒ exactly today's behaviour.
+        // When it differs from the point def's unit, the server converts the value
+        // into the def's unit BEFORE the spec gate so a mil-vs-mm mismatch cannot
+        // silently downgrade a good board. `unitScaleToCanonical` optionally gives
+        // an explicit factor to mm for a non-standard unit the table doesn't know.
+        unit: z.string().trim().max(20).optional(),
+        unitScaleToCanonical: z.union([z.number(), z.string()]).optional(),
         result: z.enum(["OK", "NG", "NTF"]), // Kết quả
         remark: z.string().optional(), // Ghi chú
         imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(), // Hình ảnh base64 (optional)
@@ -590,6 +639,116 @@ async function persistGateConfigVersion(
       msg,
     );
   }
+}
+
+/**
+ * Doc 51 P2 (CASE #8) — suspectedDuplicateSerial persist probe. Mirrors the
+ * gateConfigVersion probe: once the 0281 column proves absent, stop retrying the
+ * UPDATE (avoids per-board warn spam until the migration is applied).
+ */
+let suspectedDuplicateColumnMissing = false;
+export function _resetSuspectedDuplicateProbe(): void {
+  suspectedDuplicateColumnMissing = false;
+}
+
+/**
+ * Doc 51 P2 (CASE #8) — TAG a saved inspection whose serial collided with another
+ * machine's recent board (product_inspections.suspectedDuplicateSerial, 0281).
+ * Raw UPDATE + best-effort (the drizzle table type gains the column via the schema
+ * edit, but the migration may not be applied yet); a missing column or transient
+ * error must NEVER fail a board that already committed.
+ */
+async function persistSuspectedDuplicateSerial(inspectionId: number): Promise<void> {
+  if (suspectedDuplicateColumnMissing) return;
+  const dbi = await getDb();
+  // fakeDb in unit tests has no .execute → cleanly skip.
+  if (!dbi || typeof (dbi as { execute?: unknown }).execute !== "function") return;
+  try {
+    await (dbi as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(
+      sql`UPDATE product_inspections SET "suspectedDuplicateSerial" = now() WHERE id = ${inspectionId}`,
+    );
+  } catch (err) {
+    const msg = String((err as Error)?.message ?? err);
+    if (/suspectedDuplicateSerial|does not exist|column/i.test(msg)) {
+      suspectedDuplicateColumnMissing = true; // 0281 not applied — stop trying.
+    }
+    console.warn(
+      `[submitInspection] suspectedDuplicateSerial persist skipped (non-fatal) for inspection=${inspectionId}:`,
+      msg,
+    );
+  }
+}
+
+/**
+ * Doc 51 P2 (CASE #8) — is `serialNumber` already on record from a DIFFERENT
+ * machine within [since, now]? Returns the OTHER machine's id, or null. Best-effort
+ * read: a DB hiccup yields null (⇒ no tag), never an ingest failure. The machineId
+ * inequality alone excludes THIS machine's own retries/rework (those are either a
+ * P0 duplicate short-circuit or a legitimate same-machine re-scan).
+ */
+async function findCollidingSerialMachine(params: {
+  serialNumber: string;
+  machineId: number;
+  since: Date;
+}): Promise<number | null> {
+  try {
+    const dbi = await getDb();
+    if (!dbi) return null;
+    const rows = await dbi
+      .select({ machineId: productInspections.machineId })
+      .from(productInspections)
+      .where(drizzleAnd(
+        drizzleEq(productInspections.serialNumber, params.serialNumber),
+        drizzleNe(productInspections.machineId, params.machineId),
+        drizzleGte(productInspections.inspectionTime, params.since),
+      ))
+      .limit(1);
+    return rows[0]?.machineId ?? null;
+  } catch (err) {
+    console.warn(
+      `[submitInspection] serial-collision lookup failed (skipped) for serial=${params.serialNumber}:`,
+      (err as Error)?.message ?? err,
+    );
+    return null;
+  }
+}
+
+/**
+ * Doc 51 P2 (§5.6) — request-level ingest audit. Fire-and-forget + error-isolated;
+ * NEVER logs images or heavy payload — only who/what/when. Gated (default OFF).
+ */
+function auditInspectionSubmission(params: {
+  machineId: number;
+  machineCode: string;
+  serialNumber: string;
+  overallResult: string;
+  inspectionId: number;
+  authMethod: string;
+  duplicate: boolean;
+}): void {
+  if (!requestAuditEnabled()) return;
+  void db.createAuditLog({
+    userId: null,
+    userName: `machine:${params.machineCode}`,
+    action: "machine.inspection.submit",
+    entityType: "product_inspection",
+    entityId: params.inspectionId,
+    entityName: params.serialNumber,
+    details: {
+      machineId: params.machineId,
+      machineCode: params.machineCode,
+      serialNumber: params.serialNumber,
+      overallResult: params.overallResult,
+      authMethod: params.authMethod,
+      duplicate: params.duplicate,
+    },
+    status: "success",
+  }).catch((err) => {
+    console.error(
+      "[submitInspection] request audit failed (non-fatal):",
+      (err as Error)?.message ?? err,
+    );
+  });
 }
 
 /**
@@ -848,39 +1007,28 @@ export async function processInspectionSubmission(
             `machine=${machine.code} serial=${input.serialNumber} ` +
             `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
         );
+        // Doc 51 P2 (§5.6) — the retry is still a request worth auditing (default OFF).
+        auditInspectionSubmission({
+          machineId: machine.id,
+          machineCode: machine.code,
+          serialNumber: input.serialNumber,
+          overallResult: input.overallResult,
+          inspectionId,
+          authMethod: auth.method,
+          duplicate: true,
+        });
         return { success: true as const, inspectionId, duplicate: true as const };
       }
       // ═══════════════════════════════════════════════════════════════════════
-
-      // K0+-c: ADDITIVELY publish the quality result to the durable ERP outbox.
-      // Fire-and-forget + error-isolated (never blocks/affects the ingest path);
-      // gated by ERP_OUTBOX_ENABLED (no-op when off). Idempotent per inspectionId.
-      publishToOutbox({
-        eventType: "quality-result",
-        payload: {
-          inspectionId,
-          serialNumber: input.serialNumber,
-          machineId: machine.id,
-          machineCode: machine.code,
-          overallResult: input.overallResult,
-          productModelId: productModelRecord?.id ?? null,
-          productionOrderCode: input.productionOrderCode ?? null,
-          inspectionTime: localInspTime.toISOString(),
-        },
-        idempotencyKey: `qr-${inspectionId}`,
-        corporateCode: input.companyCode ?? null,
-      });
-
-      // Update production order quantities if linked
-      if (productionOrderId) {
-        const updateData: any = { completedQuantity: 1 };
-        if (input.overallResult === 'OK') {
-          updateData.okQuantity = 1;
-        } else {
-          updateData.ngQuantity = 1;
-        }
-        await db.updateProductionOrderQuantities(productionOrderId, updateData);
-      }
+      //
+      // ⚠ Doc 51 P2 (§11.2 residual #1) — the ERP outbox publish and the
+      // production-order quantity bump USED to run HERE, between the header commit
+      // and the measurement-rows transaction. That made them fire even when the
+      // measurement transaction subsequently FAILED, and (worse) the order bump
+      // committed a +1 that a retry — short-circuited by P0 to the empty header —
+      // could never reconcile. They are now deferred to AFTER the measurement
+      // transaction commits (see below), so a failed board leaves NO side-effect
+      // to unwind and header compensation can simply delete the orphan.
 
       // Process measurements - support both pointId and pointCode
       const measurementResults: (typeof measurementResultsTable.$inferInsert)[] = [];
@@ -892,6 +1040,12 @@ export async function processInspectionSubmission(
       // inspection's overallResult can be reconciled after the batch insert.
       let serverDowngradeCount = 0;
       const pointLimitEvalOn = isPointLimitEvalEnabled();
+      // Doc 51 P2 (CASE #11) — convert the machine's measured unit into the point
+      // def's unit before the 1D spec gate (default ON; inert unless the machine
+      // actually sends a `unit`). Count points whose unit couldn't be reconciled.
+      const unitConvertOn = isUnitConvertEnabled();
+      let unitMismatchCount = 0;
+      const unitMismatchPoints: string[] = [];
       // Doc 51 P1 (CASE #5) — count measurements whose image upload FAILED so the
       // silence is broken: those rows are marked (remark sentinel) + telemetry.
       let imageUploadFailures = 0;
@@ -1113,12 +1267,21 @@ export async function processInspectionSubmission(
             }
           }
           if (gateLimits) {
-            const evalRes = evaluatePointResult(gateLimits, measurement, measurement.result);
+            const evalRes = evaluatePointResult(gateLimits, measurement, measurement.result, {
+              convertUnits: unitConvertOn,
+            });
             effectiveResult = evalRes.result;
             if (evalRes.overridden) {
               serverDowngradeCount++;
               const vtag = gateConfigVersion != null ? ` v${gateConfigVersion}` : "";
               specGateRemark = `Spec gate${vtag}: ${evalRes.violations.join("; ")}`.slice(0, 480);
+            }
+            // Doc 51 P2 (CASE #11) — the machine's unit couldn't be reconciled with
+            // the def's unit, so the 1D gate was SKIPPED for this point (never a
+            // silent NG). Surface it, do not fail the board.
+            if (evalRes.unitMismatch) {
+              unitMismatchCount++;
+              unitMismatchPoints.push(`${pointCode}(${measurement.unit ?? "?"}→${(gateLimits.unit ?? "?")})`);
             }
           }
         }
@@ -1241,10 +1404,122 @@ export async function processInspectionSubmission(
               }),
             );
           }
+          // ── Doc 51 P2 (§11.2 residual #1) — HEADER COMPENSATION ───────────────
+          // The header committed in its own transaction (db.createProductInspection)
+          // but the measurement rows did NOT persist. Without cleanup the P0
+          // duplicate short-circuit would resolve every retry to this EMPTY header
+          // and the board would never get its measurements. Delete the orphan (and
+          // its idempotency-ledger claim, so the retry re-inserts fresh) BEFORE
+          // re-throwing. Best-effort — a cleanup failure must not mask the original
+          // error, and no side-effects (ERP outbox / order bump) have run yet.
+          if (compensateOrphanHeaderEnabled()) {
+            try {
+              await db.deleteInspectionForCompensation({
+                inspectionId,
+                machineId: machine.id,
+                idempotencyKey: input.idempotencyKey,
+              });
+              console.warn(
+                `[submitInspection] measurement tx failed for inspection=${inspectionId} — ` +
+                  `deleted orphaned header so retry re-inserts a complete board.`,
+              );
+            } catch (compErr) {
+              console.error(
+                `[submitInspection] header compensation FAILED for inspection=${inspectionId} ` +
+                  `(empty header may persist; retry will short-circuit to it):`,
+                (compErr as Error)?.message ?? compErr,
+              );
+            }
+          }
           throw txErr;
         }
         if (promoteOverallToNg) {
           console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+        }
+      }
+
+      // ══ Doc 51 P2 (§11.2 residual #1) — DEFERRED SIDE-EFFECTS ══════════════════
+      // Now that the measurement rows have COMMITTED (or there were none to write),
+      // the board is fully persisted — run the ERP outbox publish and the
+      // production-order quantity bump. Moved here from before the measurement
+      // transaction so that a measurement failure (which compensated the header
+      // above) leaves NO ERP event and NO phantom order increment behind.
+      publishToOutbox({
+        eventType: "quality-result",
+        payload: {
+          inspectionId,
+          serialNumber: input.serialNumber,
+          machineId: machine.id,
+          machineCode: machine.code,
+          overallResult: input.overallResult,
+          productModelId: productModelRecord?.id ?? null,
+          productionOrderCode: input.productionOrderCode ?? null,
+          inspectionTime: localInspTime.toISOString(),
+        },
+        idempotencyKey: `qr-${inspectionId}`,
+        corporateCode: input.companyCode ?? null,
+      });
+
+      // Update production order quantities if linked
+      if (productionOrderId) {
+        const updateData: any = { completedQuantity: 1 };
+        if (input.overallResult === 'OK') {
+          updateData.okQuantity = 1;
+        } else {
+          updateData.ngQuantity = 1;
+        }
+        await db.updateProductionOrderQuantities(productionOrderId, updateData);
+      }
+
+      // ══ Doc 51 P2 (CASE #11) — surface unit-conversion mismatches ══════════════
+      if (unitMismatchCount > 0) {
+        console.warn(
+          `[submitInspection] ${unitMismatchCount} measurement(s) had an UNCONVERTIBLE unit for inspection=${inspectionId} ` +
+            `serial=${input.serialNumber} — 1D spec gate SKIPPED for: ${unitMismatchPoints.join(", ")} ` +
+            `(machine unit vs point-def unit incompatible; board NOT failed on it).`,
+        );
+      }
+
+      // ══ Doc 51 P2 (CASE #8) — SERIAL-COLLISION SOFT DETECT (QĐ#3) ══════════════
+      // A serial already seen from a DIFFERENT machine in the recent window ⇒ two
+      // machines reporting one serial, or a mis-scan. TAG the row (never reject) +
+      // one throttled alert. Opt-in (one extra read/board on the hot path). This
+      // is NOT an idempotency retry: same machine + same key already short-circuited.
+      if (serialCollisionDetectEnabled()) {
+        const since = new Date(localInspTime.getTime() - serialCollisionWindowSeconds() * 1000);
+        const otherMachineId = await findCollidingSerialMachine({
+          serialNumber: input.serialNumber,
+          machineId: machine.id,
+          since,
+        });
+        if (otherMachineId != null) {
+          await persistSuspectedDuplicateSerial(inspectionId);
+          console.warn(
+            `[submitInspection] SUSPECTED DUPLICATE SERIAL — serial=${input.serialNumber} was already ` +
+              `reported by machineId=${otherMachineId} within ${serialCollisionWindowSeconds()}s; ` +
+              `machine=${machine.code} (id=${machine.id}) board inspection=${inspectionId} TAGGED, NOT rejected (QĐ#3).`,
+          );
+          void import("../services/aiSmartAlertRouter")
+            .then(({ routeAlert }) =>
+              routeAlert({
+                type: "PATTERN_ANOMALY",
+                machineId: machine.id,
+                severity: "MEDIUM",
+                message:
+                  `Serial ${input.serialNumber} bị BÁO TRÙNG giữa máy ${machine.code} và machineId=${otherMachineId} ` +
+                  `trong ${serialCollisionWindowSeconds()}s — có thể quét trùng hoặc hai máy cùng serial. Board VẪN được lưu, đã gắn cờ.`,
+                data: {
+                  reason: "serial_collision",
+                  serialNumber: input.serialNumber,
+                  machineId: machine.id,
+                  otherMachineId,
+                  inspectionId,
+                },
+              }),
+            )
+            .catch((err) => {
+              console.error("[submitInspection] serial-collision alert routing failed (non-fatal):", err);
+            });
         }
       }
 
@@ -1483,6 +1758,17 @@ export async function processInspectionSubmission(
             });
         });
       }
+
+      // Doc 51 P2 (§5.6) — request-level audit of the fully-persisted board (default OFF).
+      auditInspectionSubmission({
+        machineId: machine.id,
+        machineCode: machine.code,
+        serialNumber: input.serialNumber,
+        overallResult: input.overallResult,
+        inspectionId,
+        authMethod: auth.method,
+        duplicate: false,
+      });
 
       return { success: true as const, inspectionId };
 }

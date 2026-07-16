@@ -94,6 +94,69 @@ async function bumpAndNotifyPointsConfig(productModelId: number | null | undefin
   return bumped;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Doc 51 P2 (CASE #6) — recover inspections that arrived BEFORE their product model
+// ──────────────────────────────────────────────────────────────────────────────
+// THE BUG this closes: an AOI/AVI machine can post an inspection for a product
+// model that does not exist in the DB yet (new SKU on the line before engineering
+// onboards it). The machine-API ingest stores `productModelId = NULL` but keeps the
+// raw `productModel` code string for backward compatibility. When the engineer
+// later creates that model, the historical inspections STAY NULL forever — and
+// every by-model report GROUP/JOINs on `productModelId`, so those inspections
+// silently vanish from the model's yield/defect/SPC history.
+//
+// Fix: the moment a model with code `C` exists (create — and, defensively, an
+// update that touches an existing model), stamp `productModelId` onto every
+// inspection whose raw `productModel = C` and whose id is still NULL. This is a
+// pure data-RECOVERY UPDATE (NULL → the now-known id); it never overwrites an
+// existing link and cannot change any already-attributed row.
+//
+// Isolation contract: best-effort. It is awaited (so the count is logged
+// deterministically and it is testable end-to-end) but wrapped so it can NEVER
+// throw into — or otherwise fail — the model create/update mutation. Gated by
+// INSPECTION_MODEL_BACKFILL_ENABLED (default "true"; QĐ#1 controllable switch) so
+// ops can disable it if the sweep is ever too heavy on a very large hypertable.
+export function isInspectionModelBackfillEnabled(): boolean {
+  return String(process.env.INSPECTION_MODEL_BACKFILL_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
+/**
+ * Backfill `product_inspections.productModelId` for a newly-known model.
+ * Returns the number of inspection rows re-anchored (0 on any failure / when
+ * disabled). NEVER throws — safe to call from inside a mutation.
+ */
+export async function backfillInspectionsForModel(
+  productModelId: number,
+  code: string,
+): Promise<number> {
+  if (!isInspectionModelBackfillEnabled()) return 0;
+  if (!Number.isInteger(productModelId) || productModelId <= 0 || !code) return 0;
+  try {
+    const { sql } = await import("drizzle-orm");
+    const database = await db.getDb();
+    if (!database) return 0;
+    // CTE so a single round-trip both UPDATEs and returns the affected count,
+    // without RETURNING every id of a potentially large backlog.
+    const rows = (await database.execute(sql`
+      WITH upd AS (
+        UPDATE product_inspections
+           SET "productModelId" = ${productModelId}
+         WHERE "productModel" = ${code}
+           AND "productModelId" IS NULL
+        RETURNING 1
+      )
+      SELECT count(*)::int AS n FROM upd`)) as unknown as Array<{ n: number }>;
+    const n = Number(rows?.[0]?.n ?? 0);
+    if (n > 0) {
+      console.log(`[doc51 P2] backfilled ${n} orphan inspection(s) → productModelId=${productModelId} (code='${code}')`);
+    }
+    return n;
+  } catch (err) {
+    console.warn(`[doc51 P2] inspection backfill failed for code='${code}' (best-effort, ignored)`, (err as Error)?.message);
+    return 0;
+  }
+}
+
 const legacyMeasurementTypeValues = ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"] as const;
 const legacyMeasurementTypeSchema = z.enum(legacyMeasurementTypeValues);
 
@@ -413,6 +476,10 @@ export const productModelRouter = router({
         imageWidth: input.imageWidth ?? autoImageWidth,
         imageHeight: input.imageHeight ?? autoImageHeight,
       }), { conflictMessage: `Mã sản phẩm '${input.code}' đã tồn tại` });
+      // Doc 51 P2 (CASE #6): re-anchor any inspections that arrived before this
+      // model existed. Best-effort + error-isolated (never blocks the create); the
+      // recovered row count is logged inside the helper. Return shape unchanged.
+      await backfillInspectionsForModel(id, input.code);
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -534,6 +601,10 @@ export const productModelRouter = router({
       }
 
       await withDbErrors(() => db.updateProductModel(id, finalData), { conflictMessage: "Mã sản phẩm đã tồn tại" });
+      // Doc 51 P2 (CASE #6): defensive backfill for models that already existed
+      // before this fix shipped (e.g. now being activated/renamed) — re-anchor any
+      // still-NULL inspections carrying this model's code. Best-effort + isolated.
+      await backfillInspectionsForModel(id, finalData.code ?? existing.code);
       // PM8: when dims are now known, recompute normalized coords for all points
       // (+ fiducials) so existing pixel coordinates become resolution-independent.
       if (finalData.imageWidth && finalData.imageHeight) {

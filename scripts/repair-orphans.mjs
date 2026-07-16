@@ -205,6 +205,22 @@ const RELATIONSHIPS = [
     sampleSql: 'SELECT "productModelId", "machineId", count(*)::int AS n, array_agg(id ORDER BY id) AS ids FROM product_machine_mappings GROUP BY "productModelId", "machineId" HAVING count(*) > 1 ORDER BY 1, 2 LIMIT 20',
     guidance: "Keep the newest row per pair, delete the rest: DELETE FROM product_machine_mappings a USING product_machine_mappings b WHERE a.\"productModelId\" = b.\"productModelId\" AND a.\"machineId\" = b.\"machineId\" AND a.id < b.id; then re-run 0180.",
   },
+  // ── soft-orphan (doc 51 P2 — CASE #6) — recoverable, NOT an FK violation ──────
+  // Inspections that arrived before their product model existed keep the raw
+  // `productModel` code but productModelId=NULL. Once the model exists the link
+  // is derivable — backfill it so by-model reports stop dropping the rows. SAFE
+  // (NULL → the now-known id, only when the code maps to exactly ONE model), so it
+  // runs under plain --fix. productRouters does this automatically on model create;
+  // this entry recovers the historical backlog. NOTE: key is prefixed "soft:" (not
+  // "fk:"/"uq:") because it is deliberately OUTSIDE the 0179/0180 constraint contract.
+  {
+    key: "soft:product_inspections.productModel->product_models.code",
+    constraint: null, strategy: "backfill",
+    countSql: 'SELECT count(*)::bigint AS n FROM product_inspections c WHERE c."productModelId" IS NULL AND c."productModel" IS NOT NULL AND EXISTS (SELECT 1 FROM product_models p WHERE p.code = c."productModel")',
+    sampleSql: 'SELECT c.id, c."productModel" FROM product_inspections c WHERE c."productModelId" IS NULL AND c."productModel" IS NOT NULL AND EXISTS (SELECT 1 FROM product_models p WHERE p.code = c."productModel") ORDER BY c.id LIMIT 20',
+    fixSql: 'UPDATE product_inspections c SET "productModelId" = (SELECT p.id FROM product_models p WHERE p.code = c."productModel" ORDER BY p.id DESC LIMIT 1) WHERE c."productModelId" IS NULL AND c."productModel" IS NOT NULL AND (SELECT count(*) FROM product_models p WHERE p.code = c."productModel") = 1',
+    guidance: "Backfill productModelId from the matching product_models.code (only where the code maps to exactly one model). Restores these inspections to by-model yield/defect/SPC reports.",
+  },
 ];
 
 const { default: postgres } = await import("postgres");
@@ -250,13 +266,15 @@ try {
     const canFix =
       FIX &&
       ((rel.strategy === "set-null" && rel.fixSql) ||
+        (rel.strategy === "backfill" && rel.fixSql) ||
         (rel.strategy === "delete-row" && rel.fixSql && ALLOW_DELETE));
 
     if (canFix) {
       const res = await sql.unsafe(rel.fixSql);
       const affected = res.count ?? 0;
       totalFixed += affected;
-      console.log(`          FIXED: ${affected} row(s) ${rel.strategy === "set-null" ? "NULLed" : "deleted"}`);
+      const verb = rel.strategy === "set-null" ? "NULLed" : rel.strategy === "backfill" ? "backfilled" : "deleted";
+      console.log(`          FIXED: ${affected} row(s) ${verb}`);
       // Try to validate the now-clean FK so enforcement is complete.
       if (rel.constraint) {
         const [tbl, con] = rel.constraint;

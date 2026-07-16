@@ -30,6 +30,15 @@ export type ResultVerdict = "OK" | "NG" | "NTF";
 export interface PointLimitSource {
   lowerLimit?: string | number | null;
   upperLimit?: string | number | null;
+  /**
+   * Doc 51 P2 (CASE #11) — the ENGINEERING unit the point def's limits are
+   * expressed in (measurement_point_defs.unit, e.g. "mm"). The gate below only
+   * compares `measuredValue` against lowerLimit/upperLimit AFTER the measured
+   * value has been converted into THIS unit (see evaluatePointResult opts).
+   * Absent/empty ⇒ no target unit known ⇒ the value is gated as-received (exact
+   * legacy behaviour — no machine sends a unit today).
+   */
+  unit?: string | null;
   heightMin?: string | number | null;
   heightMax?: string | number | null;
   areaMin?: string | number | null;
@@ -51,6 +60,19 @@ export interface PointLimitSource {
 export interface MeasurementValues {
   measuredValue?: string | number | null;
   measuredValueText?: string | null;
+  /**
+   * Doc 51 P2 (CASE #11) — the unit the MACHINE measured `measuredValue` in
+   * (e.g. "mil"). When it differs from the point def's unit, `measuredValue` is
+   * converted to the def's unit BEFORE the spec gate so a mil-vs-mm mismatch
+   * cannot silently downgrade a good board to NG. Absent ⇒ no conversion.
+   */
+  unit?: string | null;
+  /**
+   * Optional explicit scale factor from the machine's unit to the canonical unit
+   * (mm for lengths). Overrides the built-in unit table for `unit` — lets a
+   * machine emitting a non-standard/custom unit still be converted correctly.
+   */
+  unitScaleToCanonical?: string | number | null;
   valueZ?: string | number | null;
   valueHeight?: string | number | null;
   valueArea?: string | number | null;
@@ -73,6 +95,110 @@ export interface PointEvalResult {
   overridden: boolean;
   /** Human-readable violation reasons (empty when all judged dimensions passed). */
   violations: string[];
+  /**
+   * Doc 51 P2 (CASE #11) — the measured value carried a unit that could NOT be
+   * reconciled with the point def's unit (different dimensions, or an unknown
+   * unit with no explicit scale), so the 1D `value` spec gate was SKIPPED for
+   * this point (never silently NG). The caller surfaces this as telemetry.
+   */
+  unitMismatch: boolean;
+}
+
+/** Feature flag — convert `measuredValue` into the point def's unit before the
+ *  1D spec gate. Default ON: it is inert for every machine that does not send a
+ *  `unit` (i.e. the entire installed base today), and only ever CORRECTS a gate
+ *  for a machine that opts into declaring units, so ON is backward-compatible. */
+export function isUnitConvertEnabled(): boolean {
+  return (process.env.INGEST_UNIT_CONVERT_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
+/**
+ * Doc 51 P2 (CASE #11) — LENGTH unit → millimetres (the canonical length unit).
+ * Returns null for an unknown unit (⇒ not convertible via the table). Only LENGTH
+ * units live here on purpose: converting across dimensions (e.g. a volume unit to
+ * mm) is a category error the gate must REFUSE, not fudge.
+ */
+export function lengthUnitToMm(unit: string | null | undefined): number | null {
+  if (unit == null) return null;
+  const u = String(unit).trim().toLowerCase().replace(/[\s.]/g, "");
+  switch (u) {
+    case "mm":
+    case "millimeter":
+    case "millimetre":
+    case "millimeters":
+    case "millimetres":
+      return 1;
+    case "mil":
+    case "mils":
+    case "thou":
+      return 0.0254; // 1 mil = 1/1000 inch
+    case "micron":
+    case "microns":
+    case "um":
+    case "µm":
+    case "μm":
+    case "micrometer":
+    case "micrometre":
+      return 0.001;
+    case "nm":
+    case "nanometer":
+    case "nanometre":
+      return 0.000001;
+    case "cm":
+    case "centimeter":
+    case "centimetre":
+      return 10;
+    case "m":
+    case "meter":
+    case "metre":
+      return 1000;
+    case "in":
+    case "inch":
+    case "inches":
+    case "\"":
+      return 25.4;
+    default:
+      return null;
+  }
+}
+
+/** Normalised (trimmed/lowercased) unit token, or "" when absent. */
+function normUnit(u: string | null | undefined): string {
+  return u == null ? "" : String(u).trim().toLowerCase();
+}
+
+export interface UnitConversion {
+  /** measuredValue expressed in the point def's unit, or null when skipped. */
+  value: number | null;
+  /** true ⇒ units differ but could not be reconciled → caller SKIPS the value gate. */
+  mismatch: boolean;
+}
+
+/**
+ * Doc 51 P2 (CASE #11) — express `value` (measured in `m.unit`) in the point
+ * def's `def.unit`. Rules:
+ *   • either unit absent, or the two are the SAME token ⇒ no conversion (gate as-is).
+ *   • both LENGTH units (or an explicit unitScaleToCanonical) ⇒ convert.
+ *   • otherwise (different dimension / unknown unit, no explicit scale) ⇒ REFUSE:
+ *     return mismatch=true so the caller skips the 1D gate instead of comparing
+ *     raw-vs-raw and downgrading a good board to NG.
+ * Pure — never throws.
+ */
+export function convertMeasuredValueToDefUnit(
+  value: number,
+  m: MeasurementValues,
+  def: PointLimitSource,
+): UnitConversion {
+  const mu = normUnit(m.unit);
+  const du = normUnit(def.unit);
+  if (mu === "" || du === "" || mu === du) return { value, mismatch: false };
+  const explicit = toNum(m.unitScaleToCanonical);
+  const fromCanon = explicit !== null && explicit > 0 ? explicit : lengthUnitToMm(mu);
+  const toCanon = lengthUnitToMm(du);
+  if (fromCanon == null || toCanon == null || toCanon === 0) {
+    return { value: null, mismatch: true };
+  }
+  return { value: (value * fromCanon) / toCanon, mismatch: false };
 }
 
 /** Feature flag — default ON so authored 3D limits actually gate results. */
@@ -236,9 +362,11 @@ export function evaluatePointResult(
   def: PointLimitSource,
   m: MeasurementValues,
   machineResult: ResultVerdict,
+  opts?: { convertUnits?: boolean },
 ): PointEvalResult {
   const violations: string[] = [];
   let evaluated = false;
+  let unitMismatch = false;
 
   const judge = (label: string, value: number | null, min: number | null, max: number | null) => {
     if (value === null) return;
@@ -249,7 +377,20 @@ export function evaluatePointResult(
   };
 
   // 1D dimensional / electrical spec (measuredValue vs LSL/USL).
-  judge("value", toNum(m.measuredValue), toNum(def.lowerLimit), toNum(def.upperLimit));
+  // Doc 51 P2 (CASE #11) — reconcile the measured unit with the def's unit first.
+  // When they cannot be reconciled we SKIP this gate (unitMismatch) rather than
+  // compare a mil reading against an mm limit and downgrade a good board.
+  let valueForGate = toNum(m.measuredValue);
+  if (opts?.convertUnits && valueForGate !== null) {
+    const conv = convertMeasuredValueToDefUnit(valueForGate, m, def);
+    if (conv.mismatch) {
+      unitMismatch = true;
+      valueForGate = null; // do NOT gate this point on incomparable units
+    } else {
+      valueForGate = conv.value;
+    }
+  }
+  judge("value", valueForGate, toNum(def.lowerLimit), toNum(def.upperLimit));
   // 3D / solder / SPI ranges.
   judge("height", toNum(m.valueHeight), toNum(def.heightMin), toNum(def.heightMax));
   judge("area", toNum(m.valueArea), toNum(def.areaMin), toNum(def.areaMax));
@@ -288,7 +429,7 @@ export function evaluatePointResult(
     overridden = true;
   }
 
-  return { result, evaluated, overridden, violations };
+  return { result, evaluated, overridden, violations, unitMismatch };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

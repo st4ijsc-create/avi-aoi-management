@@ -13,6 +13,7 @@ import { appRouter } from "../routers";
 import { getDb } from "../db";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { createContext } from "./context";
+import { sendMachineProxyError, safeMachineLogMeta } from "./machineProxyError";
 import { isValidMasterKey } from "./masterKey";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
@@ -568,29 +569,33 @@ async function startServer() {
     console.log(`[Storage] FactoryAlertSystem releases folder: ${factoryAlertReleasesDir}`);
   }
 
-  // REST endpoints for external machines (proxy to tRPC machineApi router)
+  // REST endpoints for external machines (proxy to tRPC machineApi router).
+  // Error contract + safe logging live in ./machineProxyError (doc 51 P2, CASE #2).
   app.post("/api/machine/submit-inspection", async (req, res) => {
-    let input: any;
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
 
       const apiKey = req.header("x-api-key") || req.body.apiKey;
-      input = { ...req.body, apiKey };
+      const input = { ...req.body, apiKey };
 
-      // DEBUG: Log measurements to find invalid result value
-      console.log("[MachineAPI] submit-inspection request:");
-      console.log("  - measurements count:", input.measurements?.length);
-      input.measurements?.forEach((m: any, idx: number) => {
-        console.log(`  - measurements[${idx}].result:`, JSON.stringify(m.result), `(type: ${typeof m.result})`);
-      });
+      // Safe metadata only — NEVER log the payload: measurements carry base64 image
+      // data and `input.apiKey` is a live credential (doc 51 P2 / CASE #2).
+      const meta = safeMachineLogMeta(req.body);
+      console.log(
+        "[MachineAPI] submit-inspection:",
+        `machine=${meta.machineCode}`,
+        `serial=${meta.serialNumber}`,
+        `measurements=${meta.measurements}`,
+      );
 
       const result = await caller.machineApi.submitInspection(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] submit-inspection error:", error);
-      console.error("[MachineAPI] Invalid input was:", JSON.stringify(input, null, 2));
-      res.status(400).json({ success: false, message: error?.message || "Submit inspection failed" });
+      // Log the code/message only — the caught error's context may reference the
+      // base64 payload; do NOT stringify the input.
+      console.error("[MachineAPI] submit-inspection error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Submit inspection failed");
     }
   });
 
@@ -605,8 +610,9 @@ async function startServer() {
       const result = await caller.machineApi.uploadImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] upload-image error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Upload image failed" });
+      // Error message only — the request body carries base64 image data.
+      console.error("[MachineAPI] upload-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Upload image failed");
     }
   });
 
@@ -876,8 +882,8 @@ async function startServer() {
       const result = await caller.machineApi.syncMeasurementPoints(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-points error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Sync points failed" });
+      console.error("[MachineAPI] sync-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync points failed");
     }
   });
 
@@ -896,8 +902,8 @@ async function startServer() {
       const result = await caller.machineApi.getPoints(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-points error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Get points failed" });
+      console.error("[MachineAPI] get-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get points failed");
     }
   });
 
@@ -911,9 +917,8 @@ async function startServer() {
       const result = await caller.machine.register(req.body as any);
       res.json({ success: true, ...result });
     } catch (error: any) {
-      console.error("[MachineAPI] register error:", error);
-      const status = error?.code === 'BAD_REQUEST' ? 400 : error?.code === 'NOT_FOUND' ? 404 : 500;
-      res.status(status).json({ success: false, message: error?.message || "Registration failed" });
+      console.error("[MachineAPI] register error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Registration failed");
     }
   });
 
@@ -929,9 +934,8 @@ async function startServer() {
       const result = await caller.machine.config({ serialNumber } as any);
       res.json({ success: true, ...result });
     } catch (error: any) {
-      console.error("[MachineAPI] config error:", error);
-      const status = error?.code === 'NOT_FOUND' ? 404 : 500;
-      res.status(status).json({ success: false, message: error?.message || "Config fetch failed" });
+      console.error("[MachineAPI] config error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config fetch failed");
     }
   });
 
@@ -977,8 +981,8 @@ async function startServer() {
       const result = await caller.machineApi.heartbeat({ apiKey } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] heartbeat error:", error);
-      res.status(400).json({ success: false, message: error?.message || "Heartbeat failed" });
+      console.error("[MachineAPI] heartbeat error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Heartbeat failed");
     }
   });
 
@@ -1367,9 +1371,8 @@ async function startServer() {
       const result = await caller.machineApi.getProductImage({ apiKey, machineCode, productModelCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-product-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get product image failed" });
+      console.error("[MachineAPI] get-product-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get product image failed");
     }
   });
 
@@ -1385,9 +1388,8 @@ async function startServer() {
       const result = await caller.machineApi.syncProductImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-product-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Sync product image failed" });
+      console.error("[MachineAPI] sync-product-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync product image failed");
     }
   });
 
@@ -1403,9 +1405,8 @@ async function startServer() {
       const result = await caller.machineApi.syncPointImage(input as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-point-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Sync point image failed" });
+      console.error("[MachineAPI] sync-point-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Sync point image failed");
     }
   });
 
@@ -1430,9 +1431,8 @@ async function startServer() {
       const result = await caller.machineApi.getPointImage({ apiKey, machineCode, productModelCode, pointCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] get-point-image error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get point image failed" });
+      console.error("[MachineAPI] get-point-image error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get point image failed");
     }
   });
 
@@ -1450,9 +1450,8 @@ async function startServer() {
       const result = await caller.machineApi.checkPointsVersion({ apiKey, machineCode, productModelCode } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] check-points-version error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Check points version failed" });
+      console.error("[MachineAPI] check-points-version error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Check points version failed");
     }
   });
 
@@ -1478,9 +1477,8 @@ async function startServer() {
       const result = await caller.machineApi.deltaSyncPoints({ apiKey, machineCode, productModelCode, sinceVersion } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] delta-sync-points error:", error);
-      const status = error?.code === "NOT_FOUND" ? 404 : error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Delta sync points failed" });
+      console.error("[MachineAPI] delta-sync-points error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Delta sync points failed");
     }
   });
 
@@ -1505,9 +1503,8 @@ async function startServer() {
       } as any);
       res.json(result);
     } catch (error: any) {
-      console.error("[MachineAPI] sync-history error:", error);
-      const status = error?.code === "UNAUTHORIZED" ? 401 : 400;
-      res.status(status).json({ success: false, message: error?.message || "Get sync history failed" });
+      console.error("[MachineAPI] sync-history error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Get sync history failed");
     }
   });
 

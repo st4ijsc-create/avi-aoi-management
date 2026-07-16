@@ -484,6 +484,12 @@ export function derToPem(der: Buffer): string {
 
 /** Property stamped on the aedes client at authenticate time (the AUTHENTICATED deviceId). */
 export const MQTT_ACL_DEVICE_ID_PROP = '__aviAclDeviceId';
+/**
+ * doc 51 P1 (§5.3) — the device's approvalStatus at authenticate time, stamped on the aedes
+ * client so the admission gate can confine an un-APPROVED device to the pairing scope WITHOUT
+ * a DB round-trip per message (per-connection cache; see staleness note on the gate below).
+ */
+export const MQTT_ACL_APPROVAL_PROP = '__aviAclApprovalStatus';
 
 /** Who is asking. `deviceId` is the value proven at authenticate, NOT a client-supplied id. */
 export interface MqttAclContext {
@@ -492,6 +498,12 @@ export interface MqttAclContext {
   deviceId?: string;
   /** Trusted in-process publisher. Only ever set by server-side code, never inferred. */
   isServer?: boolean;
+  /**
+   * doc 51 P1 (§5.3) — the device's approval status as of authenticate. When present and NOT
+   * 'APPROVED' the admission gate confines the device to pairing/enrollment topics. ABSENT →
+   * gate does not apply (backward-compatible: server callers and legacy contexts are untouched).
+   */
+  approvalStatus?: string;
 }
 
 export interface MqttAclDecision {
@@ -512,6 +524,66 @@ export function mqttTopicAclEnabled(env: NodeJS.ProcessEnv = process.env): boole
 export function mqttTopicAclWarnOnly(env: NodeJS.ProcessEnv = process.env): boolean {
   const v = String(env.MQTT_TOPIC_ACL_WARN_ONLY ?? '').trim().toLowerCase();
   return v === 'true' || v === '1' || v === 'on';
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// doc 51 P1 (§5.3) — ADMISSION GATE. Even after P0's topic ACL, a device that
+// self-registers stays `approvalStatus='PENDING'` yet can pub/sub its OWN branch
+// and read broadcast alert topics — i.e. an unapproved tablet joins the business
+// data flow before an operator ever admits it. This gate confines a not-yet-
+// APPROVED device to a minimal PAIRING/ENROLLMENT scope (announce itself + learn
+// its pairing status), blocking business traffic (configure/ack, model-update,
+// errors/summary/bulletin broadcasts, …).
+//
+// QĐ#1 (controlled tightening): gated by MQTT_ADMISSION_ENFORCE. DEFAULT FALSE =
+// keep today's behaviour (allow) but FLAG+LOG every admission violation so ops can
+// watch for a shift before flipping to TRUE = block. A PENDING device mid-demo is
+// never cut off until the operator opts in. The global MQTT_TOPIC_ACL_WARN_ONLY /
+// MQTT_TOPIC_ACL_ENABLED escape hatches still apply on top.
+//
+// STALENESS (accepted, documented): approvalStatus is read ONCE at authenticate and
+// cached on the connection (no per-message DB query, per the touchLastUsed pattern).
+// A device APPROVED while connected keeps its stamped PENDING until it reconnects,
+// so under enforce it stays in pairing scope until the next connect. MQTT clients
+// reconnect readily; the gate defaults to warn, so this bites only after opt-in.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Admission-gate ENFORCEMENT. DEFAULT FALSE = flag+log only (backward-compatible). */
+export function mqttAdmissionEnforce(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_ADMISSION_ENFORCE ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'on';
+}
+
+/**
+ * Leaves under the device's OWN `avi/client/{ownId}/…` branch that constitute PAIRING/
+ * ENROLLMENT (safe for a not-yet-APPROVED device). `info` is how the device announces itself
+ * so it appears in the approval queue (the real enrollment channel); `pairing`/`enroll`/
+ * `enrollment`/`heartbeat` are reserved minimal channels. Everything else on the branch
+ * (`configure`, `commands`, `ack`, …) is BUSINESS flow → denied until APPROVED.
+ */
+const ACL_PAIRING_LEAVES = new Set(['info', 'pairing', 'enroll', 'enrollment', 'heartbeat']);
+
+/** Is `approvalStatus` a value that must be gated (present and not APPROVED)? */
+function isUnapproved(status: string | undefined): boolean {
+  return typeof status === 'string' && status.length > 0 && status.toUpperCase() !== 'APPROVED';
+}
+
+/**
+ * Is the CANONICAL `avi/…` topic/filter a pairing-scope address on the device's OWN branch?
+ * Requires an EXACT 4-segment `avi/client/{own}/{pairingLeaf}` — no wildcard can widen this
+ * (a `+`/`#` segment never equals `own` nor a literal pairing leaf), so a PENDING device
+ * cannot use pairing scope to fan out onto foreign/business topics.
+ */
+function isPairingScope(own: string | undefined, canonical: string): boolean {
+  if (!own) return false;
+  const segs = canonical.split('/');
+  return (
+    segs.length === 4 &&
+    segs[0] === LEGACY_TOPIC_ROOT &&
+    segs[1] === 'client' &&
+    segs[2] === own &&
+    ACL_PAIRING_LEAVES.has(segs[3])
+  );
 }
 
 /** Leaves under `avi/client/{id}/…` only the SERVER may publish (they are commands). */
@@ -640,9 +712,33 @@ function reachesForeignPrivateBranch(filter: string, own: string | undefined): b
 }
 
 /**
- * Decide whether `ctx` may PUBLISH `topic`. Honours MQTT_TOPIC_ACL_ENABLED (default on) and
- * MQTT_TOPIC_ACL_WARN_ONLY (default off). In warn-only mode `allow` is true while `violation`
- * stays true, so the caller still logs it.
+ * Apply the rollout flags to a raw policy decision. A non-violation passes through untouched.
+ * A violation is softened to `allow:true` (while KEEPING `violation:true` so the caller still
+ * logs it) when the relevant warn switch is on:
+ *   • base ACL violation  → softened by MQTT_TOPIC_ACL_WARN_ONLY.
+ *   • admission violation  → softened by MQTT_ADMISSION_ENFORCE=false (its default) OR the
+ *                            global MQTT_TOPIC_ACL_WARN_ONLY.
+ */
+function finalizeAclDecision(
+  decision: MqttAclDecision,
+  isAdmission: boolean,
+  env: NodeJS.ProcessEnv,
+): MqttAclDecision {
+  if (!decision.violation) return decision;
+  const globalWarn = mqttTopicAclWarnOnly(env);
+  const admissionSoft = isAdmission && !mqttAdmissionEnforce(env);
+  if (globalWarn || admissionSoft) {
+    const tag = admissionSoft && !globalWarn ? 'admission warn → allowed' : 'warn-only → allowed';
+    return { ...decision, allow: true, reason: `${decision.reason} [${tag}]` };
+  }
+  return decision;
+}
+
+/**
+ * Decide whether `ctx` may PUBLISH `topic`. Honours MQTT_TOPIC_ACL_ENABLED (default on),
+ * MQTT_TOPIC_ACL_WARN_ONLY (default off) and — for an un-APPROVED device — the doc 51 P1
+ * admission gate under MQTT_ADMISSION_ENFORCE (default off = flag+log). In any warn mode
+ * `allow` is true while `violation` stays true, so the caller still logs it.
  */
 export function canPublish(
   ctx: MqttAclContext,
@@ -652,16 +748,31 @@ export function canPublish(
   if (!mqttTopicAclEnabled(env)) return { allow: true, violation: false, reason: 'acl-disabled' };
   if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal publish)' };
 
-  const decision = evaluatePublishPolicy(ctx, canonicalizeInboundTopic(topic));
-  if (decision.violation && mqttTopicAclWarnOnly(env)) {
-    return { ...decision, allow: true, reason: `${decision.reason} [warn-only → allowed]` };
+  const canonical = canonicalizeInboundTopic(topic);
+  const base = evaluatePublishPolicy(ctx, canonical);
+
+  // doc 51 P1 — admission gate. Applies ONLY when the base policy already allows (a base
+  // violation — impersonation / server-only — is the stronger verdict and keeps its own path).
+  // A not-yet-APPROVED device is confined to its own pairing scope.
+  if (!base.violation && isUnapproved(ctx.approvalStatus) && !isPairingScope(ctx.deviceId, canonical)) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: `device not approved (status=${ctx.approvalStatus}) — publish outside pairing scope`,
+      },
+      true,
+      env,
+    );
   }
-  return decision;
+  return finalizeAclDecision(base, false, env);
 }
 
 /**
- * Decide whether `ctx` may SUBSCRIBE to `filter`. Only a filter that can reach ANOTHER
- * device's private branch is denied — broadcast alert wildcards keep working (see POLICY).
+ * Decide whether `ctx` may SUBSCRIBE to `filter`. A filter that can reach ANOTHER device's
+ * private branch is denied (broadcast alert wildcards keep working — see POLICY). Additionally,
+ * per the doc 51 P1 admission gate, a not-yet-APPROVED device may subscribe ONLY its own pairing
+ * scope — the business broadcast topics (errors/summary/bulletin) are withheld until approval.
  */
 export function canSubscribe(
   ctx: MqttAclContext,
@@ -672,23 +783,36 @@ export function canSubscribe(
   if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal subscribe)' };
 
   const canonical = canonicalizeInboundTopic(filter);
-  let decision: MqttAclDecision;
+
   if (reachesForeignPrivateBranch(canonical, ctx.deviceId)) {
-    decision = {
-      allow: false,
-      violation: true,
-      reason: ctx.deviceId
-        ? `device ${ctx.deviceId} may not subscribe to another device's private branch`
-        : 'client has no authenticated deviceId — cannot subscribe to a per-device branch',
-    };
-  } else {
-    decision = { allow: true, violation: false, reason: 'in scope' };
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: ctx.deviceId
+          ? `device ${ctx.deviceId} may not subscribe to another device's private branch`
+          : 'client has no authenticated deviceId — cannot subscribe to a per-device branch',
+      },
+      false,
+      env,
+    );
   }
 
-  if (decision.violation && mqttTopicAclWarnOnly(env)) {
-    return { ...decision, allow: true, reason: `${decision.reason} [warn-only → allowed]` };
+  // doc 51 P1 — admission gate on subscribe: an un-APPROVED device is confined to its own
+  // pairing scope; every business/broadcast filter is an admission violation.
+  if (isUnapproved(ctx.approvalStatus) && !isPairingScope(ctx.deviceId, canonical)) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: `device not approved (status=${ctx.approvalStatus}) — subscribe outside pairing scope`,
+      },
+      true,
+      env,
+    );
   }
-  return decision;
+
+  return { allow: true, violation: false, reason: 'in scope' };
 }
 
 /**
@@ -700,9 +824,11 @@ export function aclContextFromClient(client: unknown): MqttAclContext {
   if (!client) return { clientId: '<internal>', isServer: true };
   const c = client as { id?: string; [k: string]: unknown };
   const deviceId = c[MQTT_ACL_DEVICE_ID_PROP];
+  const approval = c[MQTT_ACL_APPROVAL_PROP];
   return {
     clientId: c.id ?? '<unknown>',
     deviceId: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : undefined,
+    approvalStatus: typeof approval === 'string' && approval.length > 0 ? approval : undefined,
   };
 }
 
@@ -1159,6 +1285,10 @@ function setupEventHandlers() {
           .set(reactivateFields)
           .where(eq(schema.mqttClients.id, mqttClient.id));
 
+        // doc 51 P1 (§5.3) — stamp the effective approval status for the admission gate. A
+        // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
+        (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
+
         console.log(`[MQTT] Client reconnected${!mqttClient.isActive ? ' (re-activated)' : ''}: ${client.id} (${deviceId})`);
         callback(null, true);
       } else {
@@ -1175,6 +1305,10 @@ function setupEventHandlers() {
           lastHeartbeat: new Date(),
           isActive: true,
         });
+
+        // doc 51 P1 (§5.3) — a freshly self-registered device is PENDING → admission gate confines
+        // it to pairing scope (under MQTT_ADMISSION_ENFORCE; flag+log only by default).
+        (client as any)[MQTT_ACL_APPROVAL_PROP] = 'PENDING';
 
         console.log(`[MQTT] New client registered (pending approval): ${client.id} (${deviceId})`);
         callback(null, true);

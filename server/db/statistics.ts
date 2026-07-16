@@ -319,6 +319,201 @@ export async function getStatsWithComparison(filters?: {
   };
 }
 
+// ============ PANEL-LEVEL YIELD (doc 51 CASE #7) ============
+/**
+ * Panel-level yield, surfaced ALONGSIDE the existing board-level yield (this
+ * function ADDS panel numbers; getDashboardStats/getMachineStats are unchanged).
+ *
+ * WHY: SMT lines panelize (one physical panel carries N boards). Line KPIs are
+ * booked per PANEL — a panel is scrapped/reworked as a unit, so a panel is NG
+ * if ANY of its boards is NG. The board-level yield the dashboard already shows
+ * over-counts good units (7/8 boards OK on a scrapped panel still reads 87.5%
+ * board yield while the panel is 0% good). Both numbers are legitimate; the
+ * factory wants them side by side.
+ *
+ * Definitions (aligned with utils/kpi.ts decision #4):
+ *  - Panel identity  = product_inspections.panelSerial. Rows with panelSerial
+ *    NULL or '' are single-board / legacy ingest — they are EXCLUDED from every
+ *    panel metric (a board with no panel cannot form a panel) and reported
+ *    separately as `boardsWithoutPanel`.
+ *  - Panel FINAL yield: a panel PASSES iff none of its boards is 'NG'
+ *    (BOOL_OR(result='NG') = false). NTF counts as pass, exactly like the
+ *    board-level final yield — a panel of OK+NTF boards is a good panel.
+ *  - Panel FPY (true first pass): take the FIRST inspection per BOARD, where a
+ *    board is keyed by (panelSerial, boardIndex) — the documented panel-board
+ *    identity (schema comment: COALESCE(boardIndex,1) for null-safety), NOT the
+ *    row serial. Group those first-boards by panel; a panel first-passes iff
+ *    every one of its boards passed OK on its first inspection (NTF and any
+ *    retest-that-was-needed break the panel's first pass).
+ *
+ * LIMITATIONS (honest): when boardIndex is NULL for a panel's rows they all
+ * COALESCE to board 1 and collapse to a single logical board (documented
+ * null-safe degradation). "First inspection" is first-in-window (no retest
+ * linkage column exists — same caveat as board FPY). Board-side
+ * numbers here are computed over the SAME whereClause as the panel numbers so
+ * the two are directly comparable; they equal getDashboardStats for an identical
+ * filter.
+ *
+ * Purely additive + read-only; not wired to any router yet (see doc 51 report
+ * for the proposed wiring into the dashboard KPI endpoint).
+ */
+export interface PanelYieldStats {
+  // Board-level (ALL inspections in the slice; same math as getDashboardStats).
+  boardTotal: number;
+  boardOk: number;
+  boardNg: number;
+  boardNtf: number;
+  /** Board final yield % (OK+NTF)/total. */
+  boardYieldRate: number;
+  /** Board true FPY %. */
+  boardFpy: number;
+  boardFirstPass: number;
+  boardFirstTotal: number;
+  // Panel-level (panelSerial non-null/non-empty only).
+  /** Distinct panels in the slice. */
+  panelTotal: number;
+  /** Panels with NO NG board. */
+  panelPass: number;
+  /** Panels with ≥1 NG board. */
+  panelNg: number;
+  /** Panel final yield % = panelPass/panelTotal. */
+  panelYieldRate: number;
+  /** Panel true FPY % = panels whose every board first-passed / panels(first). */
+  panelFpy: number;
+  panelFirstPass: number;
+  panelFirstTotal: number;
+  /** Inspections with no panelSerial (single-board / legacy), for transparency. */
+  boardsWithoutPanel: number;
+}
+
+export async function getPanelYieldStats(filters?: {
+  factoryId?: number;
+  workshopId?: number;
+  machineId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: string;
+}): Promise<PanelYieldStats> {
+  const empty: PanelYieldStats = {
+    boardTotal: 0, boardOk: 0, boardNg: 0, boardNtf: 0, boardYieldRate: 0,
+    boardFpy: 0, boardFirstPass: 0, boardFirstTotal: 0,
+    panelTotal: 0, panelPass: 0, panelNg: 0, panelYieldRate: 0,
+    panelFpy: 0, panelFirstPass: 0, panelFirstTotal: 0,
+    boardsWithoutPanel: 0,
+  };
+  const db = await getDb();
+  if (!db) return empty;
+
+  // Build the SAME inspection where-clause getDashboardStats uses so the board
+  // and panel numbers here are directly comparable.
+  const conditions: SQL[] = [];
+  if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (filters?.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
+
+  if (filters?.userId && filters?.userRole !== 'admin') {
+    const { getAccessFilterConditions } = await import("../_core/accessControl");
+    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
+    if (accessFilter) conditions.push(accessFilter);
+  }
+  if (filters?.factoryId || filters?.workshopId) {
+    conditions.push(inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, {
+      factoryId: filters.factoryId,
+      workshopId: filters.workshopId,
+    })));
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // panelBase = whereClause AND has a real panel serial.
+  const hasPanel = sql`${productInspections.panelSerial} IS NOT NULL AND ${productInspections.panelSerial} <> ''`;
+  const panelBase = whereClause ? sql`(${whereClause}) AND ${hasPanel}` : hasPanel;
+
+  const [boardResult, boardFpyResult, panelYieldResult, panelFpyResult, noPanelResult] = await Promise.all([
+    // Board-level counts over the whole slice.
+    db.select({
+      total: sql<number>`count(*)`,
+      ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+      ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+      ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+    }).from(productInspections).where(whereClause),
+    // Board true FPY (first inspection per serial), same helper as the dashboard.
+    db.execute(fpyAggregateSql({ where: whereClause })),
+    // Panel final yield: one row per panel, NG if any board NG.
+    db.execute(sql`
+      SELECT
+        COUNT(*)::int AS panel_total,
+        COUNT(*) FILTER (WHERE panel_has_ng)::int AS panel_ng
+      FROM (
+        SELECT ${productInspections.panelSerial} AS panel_serial,
+               BOOL_OR(${productInspections.overallResult} = 'NG') AS panel_has_ng
+        FROM ${productInspections}
+        WHERE ${panelBase}
+        GROUP BY ${productInspections.panelSerial}
+      ) AS panels
+    `),
+    // Panel FPY: first inspection per board (panelSerial, boardIndex); panel
+    // first-passes iff every one of its boards' first inspection was OK.
+    db.execute(sql`
+      SELECT
+        COUNT(*)::int AS panel_first_total,
+        COUNT(*) FILTER (WHERE panel_all_ok)::int AS panel_first_pass
+      FROM (
+        SELECT panel_serial, BOOL_AND(result = 'OK') AS panel_all_ok
+        FROM (
+          SELECT DISTINCT ON (${productInspections.panelSerial}, COALESCE(${productInspections.boardIndex}, 1))
+                 ${productInspections.panelSerial} AS panel_serial,
+                 ${productInspections.overallResult} AS result
+          FROM ${productInspections}
+          WHERE ${panelBase}
+          ORDER BY ${productInspections.panelSerial}, COALESCE(${productInspections.boardIndex}, 1), ${productInspections.inspectionTime} ASC, ${productInspections.id} ASC
+        ) AS first_boards
+        GROUP BY panel_serial
+      ) AS panels
+    `),
+    // Boards with no panel (single-board / legacy), for transparency.
+    db.execute(
+      whereClause
+        ? sql`SELECT COUNT(*)::int AS c FROM ${productInspections} WHERE (${whereClause}) AND (${productInspections.panelSerial} IS NULL OR ${productInspections.panelSerial} = '')`
+        : sql`SELECT COUNT(*)::int AS c FROM ${productInspections} WHERE ${productInspections.panelSerial} IS NULL OR ${productInspections.panelSerial} = ''`,
+    ),
+  ]);
+
+  const b = boardResult[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
+  const boardTotal = Number(b.total) || 0;
+  const boardOk = Number(b.ok) || 0;
+  const boardNg = Number(b.ng) || 0;
+  const boardNtf = Number(b.ntf) || 0;
+
+  const bFpy = executeRows(boardFpyResult)[0] || {};
+  const boardFirstTotal = Number(bFpy.first_total) || 0;
+  const boardFirstPass = Number(bFpy.first_pass) || 0;
+
+  const py = executeRows(panelYieldResult)[0] || {};
+  const panelTotal = Number(py.panel_total) || 0;
+  const panelNg = Number(py.panel_ng) || 0;
+  const panelPass = panelTotal - panelNg;
+
+  const pf = executeRows(panelFpyResult)[0] || {};
+  const panelFirstTotal = Number(pf.panel_first_total) || 0;
+  const panelFirstPass = Number(pf.panel_first_pass) || 0;
+
+  const boardsWithoutPanel = Number(executeRows(noPanelResult)[0]?.c) || 0;
+
+  return {
+    boardTotal, boardOk, boardNg, boardNtf,
+    boardYieldRate: roundPct(finalYield({ ok: boardOk, ntf: boardNtf, total: boardTotal }), 2),
+    boardFpy: roundPct(fpyFromFirstInspections({ firstPass: boardFirstPass, firstTotal: boardFirstTotal }), 2),
+    boardFirstPass, boardFirstTotal,
+    panelTotal, panelPass, panelNg,
+    // Panel final yield: passing panels / total panels.
+    panelYieldRate: panelTotal > 0 ? roundPct((panelPass / panelTotal) * 100, 2) : 0,
+    panelFpy: roundPct(fpyFromFirstInspections({ firstPass: panelFirstPass, firstTotal: panelFirstTotal }), 2),
+    panelFirstPass, panelFirstTotal,
+    boardsWithoutPanel,
+  };
+}
+
 // ============ SHIFT STATS ============
 /**
  * Resolve a factory id → its code (product_inspections stores factoryCode, a

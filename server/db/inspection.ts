@@ -233,6 +233,58 @@ export async function createProductInspection(
   return id;
 }
 
+/**
+ * Doc 51 P2 (§11.2 residual #1) — COMPENSATE an orphaned inspection header.
+ *
+ * THE RESIDUAL P1 GAP: createProductInspection commits the header in its own
+ * transaction; the measurement rows are then written in a SEPARATE transaction by
+ * the ingest router. If that second transaction fails, the header is already
+ * committed — an EMPTY inspection — and the P0 duplicate short-circuit means a
+ * retry resolves to that empty header and never writes the measurements.
+ *
+ * A single physical transaction spanning both writes is not reachable from the
+ * ingest path (the image object-storage uploads that populate the measurement
+ * rows must stay OUTSIDE any DB transaction, and they are keyed by the header's
+ * generated id — so the header must be inserted first to obtain the id). This
+ * helper instead COMPENSATES: when the measurement transaction throws, the caller
+ * deletes the just-created header so the next retry re-inserts a COMPLETE board
+ * (header + measurements) rather than short-circuiting to the empty one.
+ *
+ * It also removes the idempotency-ledger claim (0275) for the same key: the claim
+ * points at the header we are deleting, so leaving it would make every retry
+ * resolve to a now-nonexistent id. Best-effort, transactional, never throws for a
+ * missing ledger/row; the ONLY id deleted is the one passed in.
+ *
+ * ⚠ Residual after compensation: a process crash in the window between the header
+ * commit and this delete still leaves an empty header (documented; the crash-safe
+ * fix is a schema/flow change tracked in the P2 report). This closes the dominant
+ * failure mode — a measurement-write error while the process is alive.
+ */
+export async function deleteInspectionForCompensation(params: {
+  inspectionId: number;
+  machineId: number;
+  idempotencyKey?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const key = params.idempotencyKey?.trim() || undefined;
+  await db.transaction(async (tx) => {
+    // measurement_results has an ON DELETE CASCADE FK to product_inspections (when
+    // not on a hypertable); explicitly clear them too so the delete is clean under
+    // the hypertable path where the FK is skipped (see schema file header).
+    await tx.delete(measurementResults).where(eq(measurementResults.inspectionId, params.inspectionId));
+    await tx.delete(productInspections).where(eq(productInspections.id, params.inspectionId));
+    if (key) {
+      await tx
+        .delete(inspectionIdempotencyKeys)
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, params.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, key),
+        ));
+    }
+  });
+}
+
 export async function getProductInspections(filters: {
   machineId?: number;
   corporateCode?: string;

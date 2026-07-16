@@ -144,6 +144,16 @@ export const productInspections = pgTable("product_inspections", {
   // newer than the server — config rollback / lying machine / restored DB) |
   // 'unknown' (machine didn't declare, or no product model resolved).
   configVersionStatus: varchar("configVersionStatus", { length: 20 }),
+  // ── Doc 51 P2 (CASE #8, migration 0281) — SERIAL-COLLISION SOFT DETECT. ──────
+  // The column `suspectedDuplicateSerial timestamp` is provisioned by migration
+  // 0281 and written BEST-EFFORT via a raw UPDATE (machineApiRouters.
+  // persistSuspectedDuplicateSerial), NOT declared here — same fail-open pattern
+  // as gateConfigVersion (0276): keeping it out of the drizzle table means the
+  // generated INSERT never references it, so ingest cannot break on a DB where
+  // 0281 has not been applied yet. It records the instant the SAME serial was
+  // already on record from a DIFFERENT machine in the recent window (QĐ#3: the
+  // board is TAGGED, never rejected). Distinct from an idempotency retry (same
+  // machine + same key ⇒ short-circuited as a duplicate long before this check).
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
