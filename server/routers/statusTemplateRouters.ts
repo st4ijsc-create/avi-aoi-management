@@ -1,4 +1,8 @@
 import { protectedProcedure, router } from "../_core/trpc";
+// doc 54 Wave B — these machineStatus reads expose whole-plant inventory (status/logs/
+// heartbeats/uptime). Gate them behind machine_monitoring/canView so plain `user` (and
+// unassigned) roles can't enumerate the fleet.
+import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -13,11 +17,14 @@ import {
 import { resolveProductThresholdGate } from "../services/thresholdGovernanceService";
 
 export const machineStatusRouter = router({
-  listWithStatus: protectedProcedure.query(async () => {
+  listWithStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async () => {
     return db.getAllMachinesWithStatus();
   }),
 
   getLogs: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({
       machineId: z.number(),
       limit: z.number().min(1).max(1000).default(100),
@@ -27,6 +34,7 @@ export const machineStatusRouter = router({
     }),
 
   getHeartbeats: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({
       machineId: z.number(),
       hours: z.number().min(1).max(168).default(24),
@@ -36,6 +44,7 @@ export const machineStatusRouter = router({
     }),
 
   getUptimeStats: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({
       machineId: z.number(),
       hours: z.number().min(1).max(720).default(24),

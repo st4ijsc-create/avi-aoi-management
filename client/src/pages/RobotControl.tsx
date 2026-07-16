@@ -79,11 +79,15 @@ export default function RobotControl() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isAdmin } = usePermissions();
   // doc 40 ENG-F3 — bỏ hardgate role==='admin'. Bật/tắt thiết bị + test kết nối là hành
   // vi điều khiển OT → gate theo permission bit machine_control/canEdit (admin bypass sẵn
   // trong hasPermission). Engineer/supervisor có machine_control giờ không bị khóa oan.
   const canControl = hasPermission("machine_control", "canEdit");
+  // doc 54 Wave B — the enable-toggle + connection-test SERVER procedures (setEnabled/
+  // testConnection) are adminProcedure (admin-only), so a non-admin with machine_control
+  // would see the affordance but hit a 403. Gate THESE two controls on isAdmin to match the
+  // server; the other affordances (Command Console / Điều khiển / Cockpit) stay on canControl.
 
   // Deep-link params. `?robotId=` auto-focuses the row (still useful). `?command=` is a
   // LEGACY shape (cockpit Propose now targets /command-console directly) — we forward it
@@ -255,18 +259,18 @@ export default function RobotControl() {
                         >
                           <Send className="mr-1 h-3.5 w-3.5" />{t("robot.control", "Điều khiển")}
                         </Button>
-                        <div className="flex items-center gap-1.5" title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : undefined}>
+                        <div className="flex items-center gap-1.5" title={!isAdmin ? t("robot.adminRequired", "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị") : undefined}>
                           <Switch
                             checked={r.isEnabled}
-                            disabled={!canControl || setEnabledM.isPending}
+                            disabled={!isAdmin || setEnabledM.isPending}
                             onCheckedChange={(v) => setEnabledM.mutate({ id: r.id, enabled: v })}
                           />
                         </div>
                         <Button
                           size="sm" variant="outline" className="h-7"
-                          disabled={!canControl || testM.isPending}
+                          disabled={!isAdmin || testM.isPending}
                           onClick={() => testM.mutate({ id: r.id })}
-                          title={t("robot.testConnTip", "Kiểm tra kết nối — chỉ đọc trạng thái, không chuyển động")}
+                          title={!isAdmin ? t("robot.adminRequired", "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị") : t("robot.testConnTip", "Kiểm tra kết nối — chỉ đọc trạng thái, không chuyển động")}
                         >
                           <Plug className="mr-1 h-3.5 w-3.5" />{t("robot.testConn", "Kiểm tra")}
                         </Button>

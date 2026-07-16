@@ -5,7 +5,13 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+// doc 54 Wave B — write-floor + module-permission gate for OEE/downtime/health/target
+// mutations that were bare protectedProcedure (P1-3/P1-5: any authenticated user, incl.
+// viewer, could write business data). writeProcedure blocks read-only roles; the
+// requirePermission bit adds a machine_monitoring module check. testNGAlert (MQTT+FCM
+// publish) is gated to qualityProcedure (admin/supervisor/quality_inspector + 2FA).
+import { protectedProcedure, writeProcedure, qualityProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import * as db from "../db";
 
@@ -189,7 +195,9 @@ export const mqttClientRouter = router({
     }),
 
   // Test NG Alert - Send test NG alert with full hierarchy and product measurement points
-  testNGAlert: protectedProcedure
+  // doc 54 Wave B — publishes to MQTT + FCM → gate to quality-floor (admin/supervisor/
+  // quality_inspector + 2FA) instead of any authenticated user.
+  testNGAlert: qualityProcedure
     .input(z.object({
       factoryId: z.number(),
       workshopId: z.number(),
@@ -419,7 +427,8 @@ export const mqttClientRouter = router({
   // `calculateOEE` is kept for backward-compat with manual/explicit inputs
   // (planned/run time + counts) — it persists a SEMI-E10 breakdown via the
   // canonical computeOEE rather than the old socket in-memory formula.
-  calculateOEE: protectedProcedure
+  calculateOEE: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -557,7 +566,8 @@ export const mqttClientRouter = router({
     }),
 
   // ============ DOWNTIME TRACKING ============
-  startDowntime: protectedProcedure
+  startDowntime: writeProcedure
+    .use(requirePermission("machine_monitoring", "canCreate"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -569,7 +579,8 @@ export const mqttClientRouter = router({
       return startDowntime(input.machineId, input.machineCode, input.category, input.reason, ctx.user?.name ?? undefined);
     }),
 
-  endDowntime: protectedProcedure
+  endDowntime: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       notes: z.string().optional(),
@@ -599,7 +610,8 @@ export const mqttClientRouter = router({
     }),
 
   // ============ PREDICTIVE MAINTENANCE ============
-  calculateMachineHealth: protectedProcedure
+  calculateMachineHealth: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
@@ -953,7 +965,8 @@ export const oeeRouter = router({
   }),
 
   // Create OEE target
-  createTarget: protectedProcedure
+  createTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canCreate"))
     .input(z.object({
       machineId: z.number().optional(),
       lineId: z.number().optional(),
@@ -990,7 +1003,8 @@ export const oeeRouter = router({
     }),
 
   // Update OEE target
-  updateTarget: protectedProcedure
+  updateTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({
       id: z.number(),
       machineId: z.number().optional(),
@@ -1029,8 +1043,9 @@ export const oeeRouter = router({
       return { success: true };
     }),
 
-  // Delete OEE target
-  deleteTarget: protectedProcedure
+  // Delete OEE target (soft-delete via isActive=false → canEdit floor)
+  deleteTarget: writeProcedure
+    .use(requirePermission("machine_monitoring", "canEdit"))
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('../db');

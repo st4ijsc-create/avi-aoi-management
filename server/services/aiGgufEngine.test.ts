@@ -46,9 +46,14 @@ function makeFakeModel(id: string) {
 
 const grammarObj = { parse: (s: string) => JSON.parse(s) };
 
+const GiB = 1024 * 1024 * 1024;
 const fakeLlama = {
   loadModel: vi.fn(async (opts: any) => makeFakeModel(opts.modelPath)),
-  getVramState: vi.fn(async () => ({ total: 0, used: 0, free: 0, unifiedSize: 0 })),
+  // Report a realistic IDLE GPU (total>0, ~6% used) so readVramState uses this mock
+  // instead of falling through to the host's REAL nvidia-smi — otherwise the VRAM
+  // guard reads whatever the machine's GPU is doing and evicts non-deterministically
+  // (a `total:0` here silently made these tests flaky on GPU-busy hosts).
+  getVramState: vi.fn(async () => ({ total: 32 * GiB, used: 2 * GiB, free: 30 * GiB, unifiedSize: 0 })),
   createGrammarForJsonSchema: vi.fn(async () => grammarObj),
 };
 
@@ -197,6 +202,34 @@ describe("LRU eviction", () => {
     expect(eng.getLoadedGgufModelNames()).toContain("m1");
     release();
     await inFlight;
+  });
+});
+
+describe("VRAM OOM fallback", () => {
+  it("retries with gpuLayers:'auto' when a full GPU offload runs out of VRAM", async () => {
+    const eng = await freshEngine();
+    // First load attempt OOMs on the full ("max") offload; the retry succeeds.
+    fakeLlama.loadModel
+      .mockRejectedValueOnce(
+        new Error("ggml_backend_cuda_buffer_type_alloc_buffer: cudaMalloc failed: out of memory"),
+      )
+      .mockImplementationOnce(async (opts: any) => makeFakeModel(opts.modelPath));
+
+    await eng.loadGgufModel({ modelPath: "big.gguf" });
+
+    // Model still loaded despite the initial OOM.
+    expect(eng.getLoadedGgufModelNames()).toContain("big");
+    // Two attempts: first "max" (default), retry "auto".
+    expect(fakeLlama.loadModel).toHaveBeenCalledTimes(2);
+    expect(fakeLlama.loadModel.mock.calls[0][0].gpuLayers).toBe("max");
+    expect(fakeLlama.loadModel.mock.calls[1][0].gpuLayers).toBe("auto");
+  });
+
+  it("rethrows a non-OOM load error without retrying", async () => {
+    const eng = await freshEngine();
+    fakeLlama.loadModel.mockRejectedValueOnce(new Error("corrupt gguf header"));
+    await expect(eng.loadGgufModel({ modelPath: "bad.gguf" })).rejects.toThrow("corrupt gguf header");
+    expect(fakeLlama.loadModel).toHaveBeenCalledTimes(1); // no retry
   });
 });
 

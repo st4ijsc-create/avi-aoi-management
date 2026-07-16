@@ -587,13 +587,41 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
   console.log(`[aiGgufEngine] Loading model: ${resolvedPath}`);
   const startTime = Date.now();
 
-  const model = await llama.loadModel({
-    modelPath: resolvedPath,
-    // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
-    // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
-    // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
-    gpuLayers: config.gpuLayers ?? "max",
-  } as any);
+  const requestedGpuLayers = config.gpuLayers ?? "max";
+  let model;
+  try {
+    model = await llama.loadModel({
+      modelPath: resolvedPath,
+      // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
+      // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
+      // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
+      gpuLayers: requestedGpuLayers,
+    } as any);
+  } catch (err: any) {
+    // VRAM OOM on a FULL GPU offload — the VRAM guard only checks current-usage %,
+    // it can't know the incoming model's size, so a large model (e.g. the 30B deep
+    // tier) can still exceed free VRAM. Recover instead of failing the load: free
+    // every idle model, then retry with gpuLayers:"auto" so node-llama-cpp offloads
+    // as many layers as fit and runs the rest on CPU (slower, but the model loads).
+    const msg = String(err?.message ?? err).toLowerCase();
+    const isOom =
+      msg.includes("out of memory") ||
+      msg.includes("cudamalloc") ||
+      msg.includes("failed to allocate") ||
+      msg.includes("unable to allocate");
+    if (!isOom || requestedGpuLayers === "auto" || requestedGpuLayers === 0) throw err;
+
+    console.warn(
+      `[aiGgufEngine] ${modelId}: full GPU offload ran out of VRAM — freeing idle models and retrying with gpuLayers:"auto" (partial offload, CPU fallback for the rest).`,
+    );
+    while (await evictLRU()) {
+      /* evict every idle (refCount===0) model to reclaim maximum VRAM */
+    }
+    model = await llama.loadModel({
+      modelPath: resolvedPath,
+      gpuLayers: "auto",
+    } as any);
+  }
 
   // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
   const resolvedCtx = resolveContextSize(config.contextSize);

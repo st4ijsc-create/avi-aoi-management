@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc 54 — Live Completion Audit: Thiết bị & Giám sát + Kỹ thuật & Điều khiển</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --border:#1e2a36;
+    --ink:#e6edf3; --muted:#8b9aa8; --accent:#2dd4bf; --accent-ink:#053b34;
+    --p0:#f43f5e; --p1:#fb923c; --p2:#fbbf24; --ok:#34d399; --info:#38bdf8;
+    --chip:#16212c;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f5f7f9; --panel:#ffffff; --panel2:#f0f3f6; --border:#dde4ea;
+      --ink:#0f1a24; --muted:#5b6b78; --accent:#0d9488; --accent-ink:#ffffff; --chip:#eef2f5; }
+  }
+  :root[data-theme="dark"]{ --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --border:#1e2a36; --ink:#e6edf3; --muted:#8b9aa8; --accent:#2dd4bf; --chip:#16212c; }
+  :root[data-theme="light"]{ --bg:#f5f7f9; --panel:#ffffff; --panel2:#f0f3f6; --border:#dde4ea; --ink:#0f1a24; --muted:#5b6b78; --accent:#0d9488; --accent-ink:#fff; --chip:#eef2f5; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;}
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 20px 80px}
+  header.top{border-left:3px solid var(--accent);padding:6px 0 6px 16px;margin-bottom:8px}
+  h1{font-size:26px;line-height:1.25;margin:0 0 6px;text-wrap:balance}
+  .sub{color:var(--muted);font-size:13.5px}
+  h2{font-size:19px;margin:38px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:15.5px;margin:22px 0 8px;color:var(--accent)}
+  p{margin:10px 0}
+  code{background:var(--chip);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:14px 0}
+  .grid{display:grid;gap:12px}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin:12px 0}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td.num{font-variant-numeric:tabular-nums;text-align:right;font-weight:700}
+  .b{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11.5px;font-weight:700;white-space:nowrap}
+  .p0{background:color-mix(in srgb,var(--p0) 18%,transparent);color:var(--p0);border:1px solid color-mix(in srgb,var(--p0) 40%,transparent)}
+  .p1{background:color-mix(in srgb,var(--p1) 16%,transparent);color:var(--p1);border:1px solid color-mix(in srgb,var(--p1) 40%,transparent)}
+  .p2{background:color-mix(in srgb,var(--p2) 16%,transparent);color:var(--p2);border:1px solid color-mix(in srgb,var(--p2) 40%,transparent)}
+  .ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+  .info{background:color-mix(in srgb,var(--info) 16%,transparent);color:var(--info);border:1px solid color-mix(in srgb,var(--info) 40%,transparent)}
+  .accentbar{height:8px;border-radius:6px;background:var(--panel2);overflow:hidden;min-width:70px}
+  .accentbar>span{display:block;height:100%;background:var(--accent)}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:5px 0}
+  .kv{color:var(--muted)}
+  .callout{border-left:3px solid var(--p1);background:var(--panel2);border-radius:0 10px 10px 0;padding:10px 14px;margin:12px 0;font-size:13.5px}
+  .callout.warn{border-color:var(--p0)}
+  .callout.good{border-color:var(--ok)}
+  .toc{columns:2;column-gap:24px;font-size:13.5px}
+  .toc a{color:var(--accent);text-decoration:none}
+  .small{font-size:12.5px;color:var(--muted)}
+  .foot{margin-top:40px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--border);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>Doc 54 — Đánh giá hoàn thiện LIVE</h1>
+  <div class="sub">Module <b>Thiết bị &amp; Giám sát</b> + <b>Kỹ thuật &amp; Điều khiển</b> · 2026-07-16 · nhánh <code>automation-orchestration-r0</code> · 3 subagent code/backend/DB + Playwright đa persona (~15 màn) · <b>CHỜ DUYỆT</b></div>
+</header>
+
+<div class="panel">
+  <div class="toc">
+    <a href="#env">0 · Điều kiện môi trường</a><br>
+    <a href="#sum">1 · Tóm tắt + scorecard</a><br>
+    <a href="#mine">2 · Thay đổi doc-41 (đã kiểm chứng)</a><br>
+    <a href="#dev">3 · Module Thiết bị &amp; Giám sát</a><br>
+    <a href="#eng">4 · Module Kỹ thuật &amp; Điều khiển</a><br>
+    <a href="#empty">5 · Màn rỗng vì thiếu seed</a><br>
+    <a href="#cross">6 · Cross-cutting</a><br>
+    <a href="#plan">7 · Kế hoạch nâng cấp</a><br>
+    <a href="#dec">8 · Quyết định cần chốt</a>
+  </div>
+</div>
+
+<h2 id="env">0 · Điều kiện môi trường</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Điều kiện</th><th>Ảnh hưởng</th></tr></thead>
+<tbody>
+<tr><td>Model AI GGUF fail load (CUDA OOM)</td><td>AI chat, Copilot <i>generate</i>, embedding, orchestration advisor <b>offline</b> — nút "AI" lỗi = điều kiện HW, <b>không tính bug UI</b>.</td></tr>
+<tr><td>Seed chỉ phủ module Thiết bị</td><td><code>seed-test-data.mjs</code> seed <b>0 bảng Engineering</b>; automation-demo chưa chạy → nhiều màn Engineering/MQTT/Edge/UNS/Recipe <b>rỗng</b>.</td></tr>
+<tr><td><code>.env</code> "không có timescaledb" là SAI</td><td>DB thật CÓ timescaledb + 7 hypertable + retention/compression. Comment lỗi thời.</td></tr>
+<tr><td>Bất thường git với <code>client/</code></td><td>git báo file client vừa sửa là "sạch"/do commit cũ thêm — bất khả thi. <b>Git không đáng tin cho <code>client/</code></b> ở môi trường này.</td></tr>
+<tr><td>Locale test = English</td><td>Bộc lộ nhãn hardcode VN + raw i18n key (§6).</td></tr>
+</tbody></table></div>
+
+<h2 id="sum">1 · Tóm tắt điều hành + scorecard</h2>
+<p>Hai module là <b>phần lõi và được xây tốt nhất</b>. Backend Engineering đặc biệt vững về an toàn (gate deploy/actuation thật nhiều lớp; preview không chạm thiết bị; copilot từ chối logic an toàn). Backend Devices phần lớn REAL và đã đóng lỗ hổng doc-51 (MQTT ACL, claim-token). Còn lại: <b>2 P0 credential máy</b>, chuỗi <b>RBAC "chỉ bit, không sàn role"</b>, data-integrity (thiếu UNIQUE, WORM chưa thực thi, N+1), và FE (1 bug OEE user thấy được, nhiều màn rỗng, i18n hỗn hợp).</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Trục (thang 100, production-ready)</th><th>Thiết bị &amp; Giám sát</th><th>Kỹ thuật &amp; Điều khiển</th></tr></thead>
+<tbody>
+<tr><td>Backend đúng đắn / REAL</td><td class="num">74</td><td class="num">82</td></tr>
+<tr><td>An toàn / RBAC</td><td class="num">55</td><td class="num">68</td></tr>
+<tr><td>Data-integrity</td><td class="num">60</td><td class="num">66</td></tr>
+<tr><td>Frontend render / UX</td><td class="num">72</td><td class="num">78</td></tr>
+<tr><td>Độ đầy dữ liệu (live)</td><td class="num">62</td><td class="num">40</td></tr>
+<tr><td>Thiết kế / bố cục / màu</td><td class="num">80</td><td class="num">82</td></tr>
+<tr><td>i18n hoàn chỉnh</td><td class="num">55</td><td class="num">58</td></tr>
+<tr><td><b>Tổng ~</b></td><td class="num">~65</td><td class="num">~68</td></tr>
+</tbody></table></div>
+<p class="small">Khoảng cách tới "chuyên nghiệp hoá" = an ninh hoá RBAC + đóng 2 P0 + seed đủ để hết rỗng + i18n + vài bug FE. <b>Không phải viết lại.</b></p>
+
+<h2 id="mine">2 · Thay đổi doc-41 của tôi — đã kiểm chứng LIVE</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Thay đổi</th><th>Trạng thái</th></tr></thead>
+<tbody>
+<tr><td>Programming Copilot <b>Dock</b> (extension)</td><td><span class="b ok">✅ end-to-end</span> Rail phải: Engineering Workspace (có Apply), IR/POU (badge "Advisory" + copy-only), persist mở khi chuyển trang, ẩn ở hub. i18n EN đúng.</td></tr>
+<tr><td>Dedupe menu Copilot</td><td><span class="b ok">✅</span> Sidebar còn 1 "Programming Copilot".</td></tr>
+<tr><td>Menu Devices tái cấu trúc</td><td><span class="b ok">✅</span> Sections mới render; connectivity trong "Connect &amp; Setup" (breadcrumb xác nhận).</td></tr>
+<tr><td>Connectivity tab 2 tầng</td><td><span class="b p2">⚠️ chưa xem live</span> engineer/operator đều Access Denied (thiếu <code>mqtt_monitoring</code>). Code compile + logic đúng. Cần supervisor/admin để kiểm thị giác.</td></tr>
+<tr><td>i18n connectivity/dock (vừa thêm)</td><td><span class="b ok">✅</span> 4 nhóm + 9 tab + 10 key dock cho vi/en/zh; JSON hợp lệ.</td></tr>
+<tr><td>Menu quirk cần soi</td><td><span class="b p2">⚠️</span> 3 item đều <code>section:"control"</code> nhưng sidebar render "Device Control" = {Robot, Control Plane}, "Edge Nodes" tách leaf. Quirk render (data đúng).</td></tr>
+</tbody></table></div>
+
+<h2 id="dev">3 · Module "Thiết bị &amp; Giám sát"</h2>
+<h3>3.1 P0/P1 Bảo mật &amp; RBAC (backend — đã tự kiểm chứng)</h3>
+<ul>
+<li><span class="b p0">P0-1</span> Rò <code>apiKey</code> máy plaintext cho MỌI user (kể cả viewer). <code>machine.getById</code> bare procedure trả <code>SELECT *</code> gồm apiKey (<code>hierarchy.ts:444</code>). Mở lại lớp lỗ hổng doc-51.</li>
+<li><span class="b p0">P0-2</span> Phi-admin đặt <code>apiKey</code> tuỳ ý + tự duyệt đăng ký. <code>machine.update</code> nhận apiKey+registrationStatus dưới <code>settings_factory/canEdit</code> (mở cho engineer). Audit che value → vô hình.</li>
+<li><span class="b p1">P1-3</span> OEE/downtime/health viewer ghi được, một cái tới ERP outbox (<code>mqttOeeRouters.ts:422…</code>).</li>
+<li><span class="b p1">P1-4</span> Ngưỡng chất lượng toàn nhà máy + ack chéo-user ai cũng ghi (<code>alertRouters.ts:394,347</code>). UI gate nhưng server không.</li>
+<li><span class="b p1">P1-5</span> Publish MQTT + config + analytics ai đăng nhập cũng chạy (nhiều bare procedure) → đầu độc dữ liệu.</li>
+<li><span class="b info">RBAC</span> Đọc inventory fleet không gate; broker auth auto-accept PENDING; robot-control <b>"403 lệch"</b> (engineer thấy nút Điều khiển/Test → bấm 403, <b>kiểm chứng live</b>).</li>
+</ul>
+<h3>3.2 Data-integrity</h3>
+<ul>
+<li>N+1 @60s <code>getAllMachinesWithStatus</code> = 1+3N không cap; OEE-health + MQTT-replay in-memory (rỗng sau restart); analytics reconnect success==fail==total + heatmap bỏ Chủ nhật; thiếu UNIQUE <code>oee_metrics</code>; secret at-rest plaintext.</li>
+</ul>
+<h3>3.3 Frontend LIVE</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Màn</th><th>Render</th><th>Phát hiện</th></tr></thead>
+<tbody>
+<tr><td>/factory-command</td><td><span class="b ok">REAL</span></td><td>KPI + rail "Vấn đề mở" đầy data thật. Lưới 2D <b>rất tối giản</b>. Nhãn hardcode VN.</td></tr>
+<tr><td>/device-monitor</td><td><span class="b p2">HOLLOW telemetry</span></td><td>Cấu trúc xuất sắc (51 device, tabs, adapters) nhưng ONLINE 0, "no telemetry yet" (heartbeats=0).</td></tr>
+<tr><td>/oee-dashboard</td><td><span class="b p1">BUG DỮ LIỆU</span></td><td>Avg OEE 0.0%, "0/36 machines", "No OEE data" <b>dù có 897 dòng seed</b>; downtime cùng trang lại load. Header hiện literal "Subtitle".</td></tr>
+<tr><td>/cmms</td><td><span class="b ok">REAL</span></td><td>13 WO, badge P1-P3, status. Trùng lối vào Work Orders (item + tab).</td></tr>
+<tr><td>/robot-control</td><td><span class="b ok">REAL</span></td><td>3 robot. "403 lệch". Mixed i18n trong 1 hàng.</td></tr>
+<tr><td>/connectivity</td><td><span class="b p0">Access Denied</span></td><td>engineer + operator đều thiếu <code>mqtt_monitoring</code> → không persona vận hành nào mở được.</td></tr>
+<tr><td>/operator (home)</td><td><span class="b ok">Thiết kế tốt</span></td><td>Touch-first, nút to, welcome guide, shift session. Mixed EN/VN.</td></tr>
+</tbody></table></div>
+
+<h2 id="eng">4 · Module "Kỹ thuật &amp; Điều khiển"</h2>
+<div class="callout good"><b>An toàn — điểm mạnh (đã kiểm chứng):</b> gate deploy nằm ở <i>service</i>: four-eyes → build-ok → SoD → Simulation Gate → <code>adapter.deploy</code> chỉ khi <code>DPC_DEPLOY_ENABLED &amp;&amp; confirmedBy</code> → verify-after-download. IR/POU/copilot thuần preview. Copilot hard-refuse logic an toàn (regex gồm CJK). <b>Chuẩn mực cho phần còn lại.</b></div>
+<h3>4.1 RBAC &amp; governance</h3>
+<ul>
+<li><span class="b p1">P1</span> Interlock thiếu sàn role — mọi mutation chỉ bit per-user; <code>enable</code> bật rule an toàn-kề; <code>approve</code> bỏ qua 2FA (<code>interlockRouter.ts:66-192,136</code>). Surface điều khiển DUY NHẤT không sau <code>actuationProcedure</code>.</li>
+<li><span class="b p2">P2</span> Governance equipment không maker/checker; authoring program chỉ bit không sàn; copilot review/explain không refuse logic an toàn.</li>
+</ul>
+<h3>4.2 Data-integrity</h3>
+<ul><li>Đua số version (<code>max()+1</code> không txn → 500 thô); idempotency nuốt reject; <code>orchestration.simulate</code> nạp cả bảng machines.</li></ul>
+<h3>4.3 Frontend LIVE</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Màn</th><th>Render</th><th>Phát hiện</th></tr></thead>
+<tbody>
+<tr><td>/engineering-home</td><td><span class="b ok">Đẹp</span></td><td>Hub-and-spoke, card+Beta, golden-thread, empty-state gọn.</td></tr>
+<tr><td>/engineering (Workspace)</td><td><span class="b ok">✅ + Dock</span></td><td>Chỉ 1 project "DEMO" tag stub → gần rỗng.</td></tr>
+<tr><td>/ir-editor</td><td><span class="b ok">Functional</span></td><td>Block palette + canvas + lint + transpile. <b>Dock overlay che ~30% phải</b>.</td></tr>
+<tr><td>/pou-studio</td><td><span class="b ok">Tốt</span></td><td>KPI + LAD/FBD/SFC + Transpile→ST sinh code thật. Không rỗng.</td></tr>
+<tr><td>/engineering-changes (ECN)</td><td><span class="b p1">Access Denied</span></td><td><b>engineer bị chặn</b> — ECN gate <code>masterdata</code> (kỹ sư không có). Người đáng lẽ tạo ECN không mở được.</td></tr>
+<tr><td>/recipes</td><td><span class="b p2">HOLLOW</span></td><td>"Recipe codes (0)", "Deployment history (0)".</td></tr>
+<tr><td>/interlock-rules</td><td><span class="b p2">RBAC UI</span></td><td>badge "View Only" nhưng vẫn hiện nút New/Disable/edit.</td></tr>
+<tr><td>/orchestration-studio</td><td><span class="b ok">Functional</span></td><td>Visual builder + AI advisor (fail — AI offline).</td></tr>
+<tr><td>/fleet-orchestration</td><td><span class="b p2">HOLLOW</span></td><td>9 KPI đều 0, task queue rỗng (fleet_* trống).</td></tr>
+</tbody></table></div>
+
+<h2 id="empty">5 · Màn rỗng vì thiếu seed (nguyên nhân chính "cảm giác chưa hoàn thiện")</h2>
+<div class="callout">Seed hiện chỉ phủ Devices. Chạy seed Engineering + automation-demo sẽ lấp phần lớn: Engineering Workspace (builds/deploy/sim=0), Recipes, Interlock events, <b>ECN</b>, Fleet (tất cả 0), Equipment standards, <b>MQTT dashboards</b>, Edge, UNS, Changeover mapping. Device-Monitor telemetry (heartbeats=0). OEE dashboard rỗng là <b>bug đọc, không phải thiếu data</b> (897 dòng tồn tại).</div>
+
+<h2 id="cross">6 · Cross-cutting</h2>
+<ul>
+<li><b>i18n:</b> raw key ở Login ("Login subtitle/Username placeholder"), Account ("Title"), OEE ("Subtitle"); hardcode VN ở FactoryCommand/CMMS/ECN/War-room/Feeder/Changeover; mixed EN/VN trong 1 hàng.</li>
+<li><b>RBAC pattern hệ thống:</b> "chỉ bit per-user, không sàn role" + route-guard chỉ ở client → biên thật là procedure server, mà nhiều mutation là bare <code>protectedProcedure</code>.</li>
+<li><b>2FA không đồng nhất:</b> engineer1 bị hỏi OTP, operator1 không (dù seed đặt bật cả hai).</li>
+<li><b>Thiết kế/màu:</b> nhất quán dark+teal, spacing tốt, empty/denied-state đẹp — <b>~8/10</b>. Trừ: lưới 2D quá tối giản; dock overlay che editor; vài nhãn lowercase.</li>
+</ul>
+
+<h2 id="plan">7 · Kế hoạch nâng cấp &amp; hoàn thiện (đề xuất — chờ duyệt)</h2>
+<p class="small">Sắp theo rủi ro giảm dần. Mỗi đợt = một lô agent chuyên môn, green-gate (<code>NODE_OPTIONS=--max-old-space-size=8192 tsc</code> + build) sau mỗi đợt.</p>
+<div class="grid">
+<div class="panel"><b>Đợt A — P0 bảo mật credential (chặn ship)</b><ul>
+<li>Strip <code>apiKey</code> khỏi <code>getById</code>/<code>getStats</code>/mọi full-row (P0-1).</li>
+<li>Gỡ apiKey+registrationStatus khỏi <code>machine.update</code>, chuyển admin-only + step-up (P0-2).</li>
+<li>Hash <code>machines.apiKey</code> + broker password at-rest.</li></ul></div>
+<div class="panel"><b>Đợt B — an ninh hoá RBAC đồng bộ</b><ul>
+<li><code>writeProcedure</code>/sàn role dưới MỌI mutation: OEE/downtime/health, yieldThreshold+alert, MQTT publish/config, device-config.</li>
+<li>Interlock → <code>actuationProcedure</code>; approve → <code>adminProcedure</code>.</li>
+<li>Gate đọc inventory fleet; sửa "403 lệch" robot (ẩn nút); ECN gate lại theo engineering; SoD governance.</li></ul></div>
+<div class="panel"><b>Đợt C — data-integrity &amp; correctness</b><ul>
+<li><b>Fix OEE dashboard đọc rỗng</b> (P1 FE — ưu tiên: user thấy ngay).</li>
+<li>UNIQUE chống trùng OEE/health; WORM thực thi (REVOKE/trigger); robot_telemetry retention 365d.</li>
+<li>Version-race → txn+retry; fix analytics reconnect/heatmap; persist OEE-health + replay; N+1 fleet set-based.</li></ul></div>
+<div class="panel"><b>Đợt D — lấp dữ liệu (hết rỗng)</b><ul>
+<li>Seed Engineering (projects/builds/deploy/sim, recipes, interlock events, ECN, equipment) + automation-demo (fleet) + MQTT/edge/uns + heartbeats + changeover.</li></ul></div>
+<div class="panel"><b>Đợt E — i18n &amp; FE polish</b><ul>
+<li>Điền raw key Login/Account/OEE; i18n-hoá các trang hardcode VN; dứt mixed EN/VN.</li>
+<li>Nâng lưới 2D factory-command (nhãn/nhóm Line/mini-KPI); dock overlay→push/resizable; gỡ trùng Work Orders; chuẩn 2FA.</li></ul></div>
+<div class="panel"><b>Đợt F — (không code) chủ nhà máy/HW</b><ul>
+<li>Bật cờ an toàn đúng thứ tự TRƯỚC <code>DPC_DEPLOY_ENABLED</code>; default-deny broker; dọn <code>.env</code>.</li></ul></div>
+</div>
+
+<h2 id="dec">8 · Quyết định cần anh chốt</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Quyết định</th></tr></thead>
+<tbody>
+<tr><td>Đ1</td><td>Thực thi ngay <b>A+B+C</b> (bảo mật+RBAC+correctness) hay <b>A→E</b> (thêm seed+i18n+polish)?</td></tr>
+<tr><td>Đ2</td><td>ECN mở cho <b>engineer</b> (gate machine_control) hay giữ <code>masterdata</code>?</td></tr>
+<tr><td>Đ3</td><td>Connectivity/MQTT hub cho <b>operator/engineer xem read-only</b> hay giữ admin/supervisor?</td></tr>
+<tr><td>Đ4</td><td>Đợt D seed <b>rộng</b> (demo đầy đủ) hay <b>tối thiểu</b> cho QA?</td></tr>
+<tr><td>Đ5</td><td>WORM (C) làm bằng <b>REVOKE grant</b> hay <b>trigger append-only</b>?</td></tr>
+</tbody></table></div>
+
+<div class="foot">Nguồn: 3 subagent audit code/backend/DB (đọc mã + SQL live) + audit Playwright đa persona (engineer1/operator1, ~15 màn, ảnh + console + network). Chi tiết backend/DB lưu ở scratchpad phiên. Bản Markdown song song: <code>docs/ECOSYSTEM/54_*.md</code>.</div>
+</div>
+<script>
+// Theme toggle hook: honor a data-theme set by host; default follows prefers-color-scheme.
+</script>
+</body>
+</html>

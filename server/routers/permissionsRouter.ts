@@ -219,6 +219,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    // doc 54 Wave B (Đ3) — read-only visibility of the MQTT/Connectivity hub. View ONLY;
+    // every mqtt mutation stays gated (writeProcedure + mqtt permission bit).
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // doc 40 Lan-P0 — operator TỰ mở/tạm dừng/kết thúc/bàn giao ca của mình (không cần
     // quyền tạo đơn sản xuất). Mở khóa OperatorSessionControl + ShiftHandoverDialog.
@@ -273,6 +276,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // doc 54 Wave B (Đ3) — read-only visibility of the MQTT/Connectivity hub. View ONLY;
+    // every mqtt mutation stays gated (writeProcedure + mqtt permission bit).
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Machine Control (Sprint F4a) — engineer can execute (canCreate) + set param/ack (canEdit)
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Andon (F5a) — engineer raises/ack/resolve

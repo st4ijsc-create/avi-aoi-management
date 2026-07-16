@@ -215,7 +215,7 @@ export const enhancedAuditRouter = router({
           COUNT(*) FILTER (WHERE action = 'delete')::int as "deletes",
           COUNT(*) FILTER (WHERE action LIKE 'login%')::int as "logins"
         FROM audit_logs
-        WHERE "createdAt" >= ${since}
+        WHERE "createdAt" >= ${since.toISOString()}
       `);
       const summaryRows = summaryResult.rows || summaryResult;
       const summary = summaryRows[0] || {};
@@ -230,7 +230,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY DATE_TRUNC('day', "createdAt")
             ORDER BY label DESC
           `;
@@ -242,7 +242,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY DATE_TRUNC('week', "createdAt")
             ORDER BY label DESC
           `;
@@ -254,7 +254,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY "entityType"
             ORDER BY count DESC
             LIMIT 20
@@ -267,7 +267,7 @@ export const enhancedAuditRouter = router({
               COUNT(*)::int as count,
               COUNT(*) FILTER (WHERE status = 'failure')::int as "failureCount"
             FROM audit_logs
-            WHERE "createdAt" >= ${since}
+            WHERE "createdAt" >= ${since.toISOString()}
             GROUP BY "action"
             ORDER BY count DESC
             LIMIT 20
@@ -281,7 +281,7 @@ export const enhancedAuditRouter = router({
               COUNT(*) FILTER (WHERE al.status = 'failure')::int as "failureCount"
             FROM audit_logs al
             LEFT JOIN users u ON u.id = al."userId"
-            WHERE al."createdAt" >= ${since}
+            WHERE al."createdAt" >= ${since.toISOString()}
             GROUP BY COALESCE(u."name", 'System')
             ORDER BY count DESC
             LIMIT 20

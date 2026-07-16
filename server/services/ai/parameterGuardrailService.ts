@@ -344,7 +344,7 @@ export async function computeMachineMetrics(machineId: number, windowHours = 24)
       })
       .from(measurementResults)
       .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-      .where(and(eq(productInspections.machineId, machineId), sql`${productInspections.inspectionTime} >= ${since}`));
+      .where(and(eq(productInspections.machineId, machineId), sql`${productInspections.inspectionTime} >= ${since.toISOString()}`));
     const total = Number(row?.total ?? 0);
     const ng = Number(row?.ng ?? 0);
     if (total <= 0) return { total: 0, computedAt: new Date().toISOString() };

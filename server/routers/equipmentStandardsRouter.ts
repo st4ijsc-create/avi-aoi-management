@@ -481,6 +481,11 @@ export const equipmentStandardsRouter = router({
       const d = await db();
       const [cr] = await d.select().from(deviceTypeChangeRequests).where(eq(deviceTypeChangeRequests.id, input.crId)).limit(1);
       if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+      // Doc 54 Wave B — Separation of Duties: the reviewer (reviewedBy=ctx.user) MUST
+      // differ from the requester (requestedBy). A requester cannot self-review/approve.
+      if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự review/duyệt." });
+      }
       const ns = nextStatus(cr.status as CrStatus, input.to);
       if (!ns) throw new TRPCError({ code: "CONFLICT", message: `Illegal CR transition ${cr.status} → ${input.to}` });
       // Conformance được tính ở SERVER khi duyệt — bỏ hoàn toàn self-attest từ client.
@@ -518,6 +523,11 @@ export const equipmentStandardsRouter = router({
         const [cr] = await tx.select().from(deviceTypeChangeRequests)
           .where(eq(deviceTypeChangeRequests.id, input.crId)).for("update").limit(1);
         if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+        // Doc 54 Wave B — Separation of Duties: the publisher (ctx.user) MUST differ
+        // from the requester (requestedBy). A requester cannot self-publish their CR.
+        if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự publish." });
+        }
         if (cr.status !== "approved") {
           throw new TRPCError({ code: "CONFLICT", message: `CR must be 'approved' to publish (is '${cr.status}')` });
         }

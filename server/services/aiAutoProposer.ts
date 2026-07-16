@@ -573,17 +573,17 @@ async function collectSweepMetrics(now: Date): Promise<MachineSweepMetrics[]> {
     const result = await (db as any).execute(sql`
       SELECT pi."machineId" AS machine_id,
              MAX(m."code") AS machine_code,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart}) AS recent_total,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart} AND pi."overallResult" IN ('OK','NTF')) AS recent_pass,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart} AND pi."overallResult" = 'NTF') AS recent_ntf,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart}) AS base_total,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart} AND pi."overallResult" IN ('OK','NTF')) AS base_pass,
-             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart} AND pi."overallResult" = 'NTF') AS base_ntf
+             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart.toISOString()}) AS recent_total,
+             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart.toISOString()} AND pi."overallResult" IN ('OK','NTF')) AS recent_pass,
+             COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart.toISOString()} AND pi."overallResult" = 'NTF') AS recent_ntf,
+             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart.toISOString()}) AS base_total,
+             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart.toISOString()} AND pi."overallResult" IN ('OK','NTF')) AS base_pass,
+             COUNT(*) FILTER (WHERE pi."inspectionTime" < ${recentStart.toISOString()} AND pi."overallResult" = 'NTF') AS base_ntf
       FROM product_inspections pi
       JOIN machines m ON m."id" = pi."machineId"
-      WHERE pi."inspectionTime" >= ${baselineStart}
+      WHERE pi."inspectionTime" >= ${baselineStart.toISOString()}
       GROUP BY pi."machineId"
-      ORDER BY COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart}) DESC
+      ORDER BY COUNT(*) FILTER (WHERE pi."inspectionTime" >= ${recentStart.toISOString()}) DESC
       LIMIT ${cap}
     `);
     const rows = ((result as { rows?: unknown[] })?.rows ?? result ?? []) as Array<Record<string, unknown>>;
@@ -634,10 +634,10 @@ async function collectCorrectionsRate(machineId: number, recentStart: Date): Pro
         (SELECT COUNT(*) FROM measurement_corrections mc
            JOIN measurement_results mr ON mr."id" = mc."measurementResultId"
            JOIN product_inspections pi ON pi."id" = mr."inspectionId"
-          WHERE pi."machineId" = ${machineId} AND mc."createdAt" >= ${recentStart}) AS corrections,
+          WHERE pi."machineId" = ${machineId} AND mc."createdAt" >= ${recentStart.toISOString()}) AS corrections,
         (SELECT COUNT(*) FROM measurement_results mr
            JOIN product_inspections pi ON pi."id" = mr."inspectionId"
-          WHERE pi."machineId" = ${machineId} AND pi."inspectionTime" >= ${recentStart}) AS results
+          WHERE pi."machineId" = ${machineId} AND pi."inspectionTime" >= ${recentStart.toISOString()}) AS results
     `);
     const rows = ((result as { rows?: unknown[] })?.rows ?? result ?? []) as Array<Record<string, unknown>>;
     const row = rows[0];

@@ -16,8 +16,9 @@
 import { z } from "zod";
 import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase, writeProcedure as writeBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { isUniqueViolation } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 // Doc 38 Đợt Q — license-gate the whole programming surface behind MOD_ENGINEERING
 // (moduleGate is pass-through until the deployment's SKU is configured — no-brick).
@@ -26,6 +27,11 @@ const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // Deploy/rollback of a built program to a device is an ACTUATION path → role-floor
 // (admin/supervisor/engineer) + 2FA, plus the same MOD_ENGINEERING license gate.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
+// Doc 54 Wave B — authoring/compile writes (createArtifact/buildArtifact/upsertSymbol)
+// get a write floor (blocks read-only roles viewer/user) so a stray machine_control
+// bit can't author+compile, plus the same MOD_ENGINEERING license gate. The per-user
+// `requirePermission("machine_control", ...)` bit still composes on top.
+const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
 import {
   programProjects,
   programArtifacts,
@@ -223,7 +229,7 @@ export const programmingRouter = router({
     }),
 
   /** Create a NEW version of a project's program on a branch (append-version). */
-  createArtifact: protectedProcedure
+  createArtifact: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -238,26 +244,52 @@ export const programmingRouter = router({
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
       if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
 
-      // Next version on this branch.
-      const existing = await d.select().from(programArtifacts).where(eq(programArtifacts.projectId, input.projectId));
-      const onBranch = existing.filter((a) => a.branch === input.branch);
-      const nextVersion = onBranch.reduce((m, a) => Math.max(m, a.version), 0) + 1;
+      // Next version on this branch = max(existing)+1. doc 54 Wave C — this read-max
+      // then-insert is NOT atomic: two concurrent saves on the same (projectId, branch)
+      // compute the same nextVersion and one loses on the unique index
+      // uq_prog_artifact_version, which previously surfaced as a raw 500. Recompute the
+      // max and retry the insert on a unique violation (bounded); the monotonic max+1
+      // SEMANTICS are unchanged — the loser simply converges onto the next free version.
+      // After MAX_ATTEMPTS collisions we return a clean CONFLICT instead of a 500.
+      const contentHash = hashContent(input.content);
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const existing = await d.select().from(programArtifacts).where(eq(programArtifacts.projectId, input.projectId));
+        const onBranch = existing.filter((a) => a.branch === input.branch);
+        const nextVersion = onBranch.reduce((m, a) => Math.max(m, a.version), 0) + 1;
 
-      const [row] = await d
-        .insert(programArtifacts)
-        .values({
-          projectId: input.projectId,
-          branch: input.branch,
-          version: nextVersion,
-          kind: proj.kind,
-          language: input.language,
-          content: input.content,
-          contentHash: hashContent(input.content),
-          status: "draft",
-          createdBy: ctx.user.id,
-        })
-        .returning();
-      return row;
+        try {
+          const [row] = await d
+            .insert(programArtifacts)
+            .values({
+              projectId: input.projectId,
+              branch: input.branch,
+              version: nextVersion,
+              kind: proj.kind,
+              language: input.language,
+              content: input.content,
+              contentHash,
+              status: "draft",
+              createdBy: ctx.user.id,
+            })
+            .returning();
+          return row;
+        } catch (err) {
+          if (isUniqueViolation(err) && attempt < MAX_ATTEMPTS) continue; // recompute max + retry
+          if (isUniqueViolation(err)) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
+            });
+          }
+          throw err;
+        }
+      }
+      // Unreachable: the loop always returns a row or throws.
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
+      });
     }),
 
   validateArtifact: protectedProcedure
@@ -286,7 +318,7 @@ export const programmingRouter = router({
       return d.select().from(programBuilds).where(eq(programBuilds.artifactId, input.artifactId)).orderBy(desc(programBuilds.id));
     }),
 
-  buildArtifact: protectedProcedure
+  buildArtifact: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ artifactId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => buildArtifact(input.artifactId, toDpcUser(ctx.user))),
@@ -601,7 +633,7 @@ export const programmingRouter = router({
       return d.select().from(programSymbols).where(eq(programSymbols.projectId, input.projectId)).orderBy(programSymbols.name);
     }),
 
-  upsertSymbol: protectedProcedure
+  upsertSymbol: writeProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(
       z.object({

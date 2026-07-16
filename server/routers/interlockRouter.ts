@@ -19,7 +19,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, desc } from "drizzle-orm";
-import { router, moduleProcedure } from "../_core/trpc";
+import {
+  router,
+  moduleProcedure,
+  moduleGate,
+  actuationProcedure as actuationBase,
+  adminProcedure as adminBase,
+} from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
 // Doc 37 P0-3 — gate every procedure in this OT-control router behind the
@@ -27,6 +33,13 @@ import { getDb as getDbRaw } from "../db";
 // Shadowing `protectedProcedure` keeps existing procedure definitions untouched;
 // RBAC via `.use(requirePermission(...))` still composes on top.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
+// Doc 54 Wave B (P1) — interlock rule writes are OT-control actuation surfaces:
+// add a role-floor (admin/supervisor/engineer) + 2FA ON TOP of the per-user
+// `interlock` bit, keeping the MOD_OT_CONTROL license gate. `approve` is a
+// privileged safety decision → admin + 2FA (adminProcedure enforces 2FA,
+// replacing the old inline `role !== "admin"` check that BYPASSED 2FA).
+const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
+const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
@@ -81,7 +94,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  create: protectedProcedure
+  create: actuationProcedure
     .use(requirePermission("interlock", "canCreate"))
     .input(ruleInput)
     .mutation(async ({ input, ctx }) => {
@@ -104,7 +117,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  update: protectedProcedure
+  update: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(ruleInput.partial().extend({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -120,7 +133,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  delete: protectedProcedure
+  delete: actuationProcedure
     .use(requirePermission("interlock", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -133,13 +146,12 @@ export const interlockRouter = router({
       return { success: true };
     }),
 
-  approve: protectedProcedure
+  approve: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
-      // ADMIN-ONLY: approving a rule is a privileged safety decision.
-      if (ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin được duyệt interlock rule." });
-      }
+      // ADMIN-ONLY + 2FA: approving a rule is a privileged safety decision.
+      // adminProcedure enforces role==='admin' AND twoFactorEnabled (doc 54 Wave B),
+      // closing the old inline check that bypassed the 2FA requirement.
       const db = await getDb();
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
@@ -153,7 +165,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  enable: protectedProcedure
+  enable: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -174,7 +186,7 @@ export const interlockRouter = router({
       return row;
     }),
 
-  disable: protectedProcedure
+  disable: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
@@ -207,7 +219,7 @@ export const interlockRouter = router({
         .limit(input?.limit ?? 100);
     }),
 
-  resolveEvent: protectedProcedure
+  resolveEvent: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
     .input(z.object({ id: z.number().int().positive(), notes: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {

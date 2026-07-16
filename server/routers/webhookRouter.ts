@@ -381,7 +381,7 @@ export const webhookRouter = router({
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - input.olderThanDays);
 
-      let conditions = [sql`${webhookDeliveryLogs.createdAt} < ${cutoffDate}`];
+      let conditions = [sql`${webhookDeliveryLogs.createdAt} < ${cutoffDate.toISOString()}`];
       if (input.webhookId) {
         conditions.push(eq(webhookDeliveryLogs.webhookId, input.webhookId));
       }

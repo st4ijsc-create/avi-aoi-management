@@ -128,9 +128,12 @@ function actionsFor(status: string): Array<{ action: string; labelKey: string; f
 export default function EngineeringChanges() {
   const { t } = useTranslation();
   const { hasPermission, isAdmin } = usePermissions();
-  const canView = isAdmin || hasPermission("masterdata", "canView");
-  const canCreate = isAdmin || hasPermission("masterdata", "canCreate");
-  const canDecide = isAdmin || hasPermission("masterdata", "canEdit");
+  // doc 54 Đ2 — ECN is an engineering task: gate on machine_control (engineer has it)
+  // instead of masterdata. Server (ecnRouter MOD_ENGINEERING + roleProcedure incl.
+  // engineer) already allows it; SoD (requester≠approver) is enforced server-side.
+  const canView = isAdmin || hasPermission("machine_control", "canView");
+  const canCreate = isAdmin || hasPermission("machine_control", "canCreate");
+  const canDecide = isAdmin || hasPermission("machine_control", "canEdit");
 
   const utils = trpc.useUtils();
   const listQ = trpc.ecn.list.useQuery({ limit: 200 }, { enabled: canView });

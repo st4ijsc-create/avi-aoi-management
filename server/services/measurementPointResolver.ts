@@ -73,7 +73,10 @@ async function ensureUnmappedProductModelId(): Promise<number> {
     unmappedProductModelIdCache = existing.id;
     return existing.id;
   }
-  const id = await db.createProductModel({
+  // Doc 51 P2 fix — resurrect-or-create (ON CONFLICT). A plain create threw a
+  // unique violation whenever the sentinel had been soft-deleted, crashing every
+  // ingest of an unresolved product.
+  const id = await db.ensureSystemProductModel({
     code: UNMAPPED_PRODUCT_MODEL_CODE,
     name: "Unmapped (auto-provisioned) measurement points",
     description:

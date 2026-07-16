@@ -161,7 +161,7 @@ export async function runOeeSnapshotNow(opts?: {
                SUM(CASE WHEN "overallResult" IN ('OK','NTF') THEN 1 ELSE 0 END)::int AS good,
                AVG(NULLIF("cycleTime", 0))::float                                   AS avg_cycle
         FROM product_inspections
-        WHERE "inspectionTime" >= ${from} AND "inspectionTime" < ${to}
+        WHERE "inspectionTime" >= ${from.toISOString()} AND "inspectionTime" < ${to.toISOString()}
         GROUP BY "machineId"
       `),
     ) as Array<{ machine_id: number; total: number; good: number; avg_cycle: number | null }>;

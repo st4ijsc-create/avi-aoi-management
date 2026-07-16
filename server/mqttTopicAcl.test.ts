@@ -19,7 +19,9 @@ import {
   aclContextFromClient,
   mqttTopicAclEnabled,
   mqttTopicAclWarnOnly,
+  mqttAdmissionEnforce,
   MQTT_ACL_DEVICE_ID_PROP,
+  MQTT_ACL_APPROVAL_PROP,
   type MqttAclContext,
 } from './services/mqttService';
 
@@ -29,10 +31,16 @@ const ENFORCE: NodeJS.ProcessEnv = {} as NodeJS.ProcessEnv;
 const WARN_ONLY: NodeJS.ProcessEnv = { MQTT_TOPIC_ACL_WARN_ONLY: 'true' } as NodeJS.ProcessEnv;
 /** Escape hatch: enforcement off entirely. */
 const DISABLED: NodeJS.ProcessEnv = { MQTT_TOPIC_ACL_ENABLED: 'false' } as NodeJS.ProcessEnv;
+/** doc 51 P1 — admission gate ENFORCING (blocks an un-APPROVED device outside pairing). */
+const ADMIT_ENFORCE: NodeJS.ProcessEnv = { MQTT_ADMISSION_ENFORCE: 'true' } as NodeJS.ProcessEnv;
 
 const deviceA: MqttAclContext = { clientId: 'tablet-a-1', deviceId: 'A' };
 const deviceB: MqttAclContext = { clientId: 'tablet-b-1', deviceId: 'B' };
 const server: MqttAclContext = { clientId: '<internal>', isServer: true };
+/** doc 51 P1 — device A, self-registered but not yet approved. */
+const pendingA: MqttAclContext = { clientId: 'tablet-a-1', deviceId: 'A', approvalStatus: 'PENDING' };
+/** doc 51 P1 — device A after an operator approved it. */
+const approvedA: MqttAclContext = { clientId: 'tablet-a-1', deviceId: 'A', approvalStatus: 'APPROVED' };
 
 describe('flag defaults (doc 51 P0 — secure by default)', () => {
   it('ACL is ENABLED by default (no env set)', () => {
@@ -349,5 +357,157 @@ describe('aclContextFromClient — trust binding', () => {
   it('ignores a non-string / empty stamped deviceId', () => {
     expect(aclContextFromClient({ id: 'x', [MQTT_ACL_DEVICE_ID_PROP]: '' }).deviceId).toBeUndefined();
     expect(aclContextFromClient({ id: 'x', [MQTT_ACL_DEVICE_ID_PROP]: 42 }).deviceId).toBeUndefined();
+  });
+
+  it('reads the approvalStatus stamped at authenticate (doc 51 P1)', () => {
+    const client = { id: 'c', [MQTT_ACL_DEVICE_ID_PROP]: 'A', [MQTT_ACL_APPROVAL_PROP]: 'PENDING' };
+    expect(aclContextFromClient(client)).toEqual({ clientId: 'c', deviceId: 'A', approvalStatus: 'PENDING' });
+  });
+
+  it('ignores a non-string / empty stamped approvalStatus (→ gate does not apply)', () => {
+    expect(aclContextFromClient({ id: 'x', [MQTT_ACL_APPROVAL_PROP]: '' }).approvalStatus).toBeUndefined();
+    expect(aclContextFromClient({ id: 'x', [MQTT_ACL_APPROVAL_PROP]: 1 }).approvalStatus).toBeUndefined();
+    // A server/internal context (missing client) has no approvalStatus at all.
+    expect(aclContextFromClient(null).approvalStatus).toBeUndefined();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 51 P1 (§5.3) — ADMISSION GATE. An un-APPROVED device is confined to pairing
+// scope; business traffic is withheld until an operator approves it. Gated by
+// MQTT_ADMISSION_ENFORCE (default OFF = flag+log; ON = block).
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('admission-gate flag (doc 51 P1 — off by default)', () => {
+  it('MQTT_ADMISSION_ENFORCE defaults to FALSE, on only for explicit truthy values', () => {
+    expect(mqttAdmissionEnforce({} as NodeJS.ProcessEnv)).toBe(false);
+    for (const v of ['true', '1', 'on', 'TRUE']) {
+      expect(mqttAdmissionEnforce({ MQTT_ADMISSION_ENFORCE: v } as NodeJS.ProcessEnv)).toBe(true);
+    }
+    for (const v of ['false', '0', '', 'nope']) {
+      expect(mqttAdmissionEnforce({ MQTT_ADMISSION_ENFORCE: v } as NodeJS.ProcessEnv)).toBe(false);
+    }
+  });
+});
+
+describe('admission gate — ENFORCE confines an un-APPROVED device to pairing', () => {
+  it('PENDING device CANNOT publish business topics on its OWN branch (ack)', () => {
+    const d = canPublish(pendingA, 'avi/client/A/ack', ADMIT_ENFORCE);
+    expect(d.allow).toBe(false);
+    expect(d.violation).toBe(true);
+    expect(d.reason).toContain('not approved');
+  });
+
+  it('PENDING device CANNOT subscribe its OWN configure command channel (business)', () => {
+    const d = canSubscribe(pendingA, 'avi/client/A/configure', ADMIT_ENFORCE);
+    expect(d.allow).toBe(false);
+    expect(d.violation).toBe(true);
+    expect(d.reason).toContain('not approved');
+  });
+
+  it('PENDING device CANNOT subscribe the broadcast NG-alert data flow', () => {
+    for (const f of [
+      'avi/factory/+/workshop/+/station/+/errors',
+      'avi/factory/+/workshop/+/station/+/summary/daily',
+      'avi/escalations/#',
+    ]) {
+      const d = canSubscribe(pendingA, f, ADMIT_ENFORCE);
+      expect(d.allow, `filter ${f} must be blocked for PENDING`).toBe(false);
+      expect(d.violation).toBe(true);
+    }
+  });
+
+  it('PENDING device CANNOT read its OWN branch broadly (avi/client/A/#) — would leak configure', () => {
+    expect(canSubscribe(pendingA, 'avi/client/A/#', ADMIT_ENFORCE).allow).toBe(false);
+  });
+});
+
+describe('admission gate — pairing scope is ALWAYS open to a PENDING device', () => {
+  it('PENDING device CAN publish its enrollment announcement (info) + reserved pairing leaves', () => {
+    for (const t of ['avi/client/A/info', 'avi/client/A/pairing', 'avi/client/A/heartbeat']) {
+      const d = canPublish(pendingA, t, ADMIT_ENFORCE);
+      expect(d.allow, `topic ${t} must stay open for pairing`).toBe(true);
+      expect(d.violation).toBe(false);
+    }
+  });
+
+  it('PENDING device CAN subscribe its own pairing channel', () => {
+    expect(canSubscribe(pendingA, 'avi/client/A/pairing', ADMIT_ENFORCE).allow).toBe(true);
+    expect(canSubscribe(pendingA, 'avi/client/A/enroll', ADMIT_ENFORCE).allow).toBe(true);
+  });
+
+  it('pairing scope is its OWN branch only — not another device (base rule still wins)', () => {
+    const d = canPublish(pendingA, 'avi/client/B/info', ADMIT_ENFORCE);
+    expect(d.allow).toBe(false);
+    // The stronger BASE verdict (impersonation) is reported, not the admission one.
+    expect(d.reason).toContain('another device');
+  });
+
+  it('the synapse/ twin of a pairing topic is also open (rebrand cannot change the verdict)', () => {
+    expect(canPublish(pendingA, 'synapse/client/A/info', ADMIT_ENFORCE).allow).toBe(true);
+    // …but the synapse twin of a business topic is still gated.
+    expect(canPublish(pendingA, 'synapse/client/A/ack', ADMIT_ENFORCE).allow).toBe(false);
+  });
+});
+
+describe('admission gate — an APPROVED device is UNAFFECTED', () => {
+  it('APPROVED device keeps full P0 device rights (ack, configure sub, broadcast sub)', () => {
+    expect(canPublish(approvedA, 'avi/client/A/ack', ADMIT_ENFORCE).allow).toBe(true);
+    expect(canPublish(approvedA, 'avi/client/A/info', ADMIT_ENFORCE).allow).toBe(true);
+    expect(canSubscribe(approvedA, 'avi/client/A/configure', ADMIT_ENFORCE).allow).toBe(true);
+    expect(canSubscribe(approvedA, 'avi/factory/+/workshop/+/station/+/errors', ADMIT_ENFORCE).allow).toBe(true);
+  });
+
+  it('case-insensitive: a lowercase "approved" is NOT gated either', () => {
+    const lower: MqttAclContext = { clientId: 'c', deviceId: 'A', approvalStatus: 'approved' };
+    expect(canPublish(lower, 'avi/client/A/ack', ADMIT_ENFORCE).allow).toBe(true);
+  });
+
+  it('the APPROVED device still cannot do things NO device may (base ACL intact)', () => {
+    expect(canPublish(approvedA, 'avi/client/A/configure', ADMIT_ENFORCE).allow).toBe(false); // server-only
+    expect(canPublish(approvedA, 'avi/client/B/info', ADMIT_ENFORCE).allow).toBe(false); // impersonation
+  });
+});
+
+describe('admission gate — backward compatibility (QĐ#1)', () => {
+  it('a context WITHOUT approvalStatus is never gated, even under ENFORCE (server/legacy callers)', () => {
+    // deviceA carries no approvalStatus → the gate must not invent a violation.
+    expect(canPublish(deviceA, 'avi/client/A/ack', ADMIT_ENFORCE)).toMatchObject({
+      allow: true,
+      violation: false,
+    });
+    expect(canSubscribe(deviceA, 'avi/factory/+/workshop/+/station/+/errors', ADMIT_ENFORCE)).toMatchObject({
+      allow: true,
+      violation: false,
+    });
+  });
+
+  it('DEFAULT (MQTT_ADMISSION_ENFORCE unset) — a PENDING violation is FLAGGED but ALLOWED', () => {
+    // This is the "keep running the demo + log" contract. Mutation guard: flipping the gate to
+    // enforce-by-default would turn allow→false and fail this test.
+    const pub = canPublish(pendingA, 'avi/client/A/ack', ENFORCE);
+    expect(pub.allow).toBe(true);
+    expect(pub.violation).toBe(true);
+    expect(pub.reason).toContain('admission warn');
+
+    const sub = canSubscribe(pendingA, 'avi/client/A/configure', ENFORCE);
+    expect(sub.allow).toBe(true);
+    expect(sub.violation).toBe(true);
+  });
+
+  it('global WARN-ONLY softens an admission violation too, even with ENFORCE set', () => {
+    const env = { MQTT_ADMISSION_ENFORCE: 'true', MQTT_TOPIC_ACL_WARN_ONLY: 'true' } as NodeJS.ProcessEnv;
+    const d = canPublish(pendingA, 'avi/client/A/ack', env);
+    expect(d.allow).toBe(true);
+    expect(d.violation).toBe(true);
+  });
+
+  it('DISABLED overrides the admission gate entirely', () => {
+    expect(canPublish(pendingA, 'avi/client/A/ack', DISABLED)).toMatchObject({
+      allow: true,
+      violation: false,
+      reason: 'acl-disabled',
+    });
+    expect(canSubscribe(pendingA, 'avi/factory/+/workshop/+/station/+/errors', DISABLED).allow).toBe(true);
   });
 });

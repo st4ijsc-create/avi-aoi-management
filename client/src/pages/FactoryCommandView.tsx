@@ -135,12 +135,12 @@ interface MachineDetailSummary {
 // ── Bảng màu trạng thái (doc 44 G5.12: dot/badge từ nguồn canonical, token oklch) ──
 // ISA-101: idle/offline = trung tính (xám); running=success; down=danger;
 // maintenance=info. Chỉ label giữ tại chỗ; MÀU đi qua canonicalStatusColor.
-const STATUS_META: Record<MachineStatus, { labelVi: string; dot: string; badge: string }> = {
-  running: { labelVi: "Đang chạy", dot: canonicalDotClass("running"), badge: canonicalBadgeClass("running") },
-  idle: { labelVi: "Chờ", dot: canonicalDotClass("idle"), badge: canonicalBadgeClass("idle") },
-  down: { labelVi: "Lỗi/Dừng", dot: canonicalDotClass("down"), badge: canonicalBadgeClass("down") },
-  maintenance: { labelVi: "Bảo trì", dot: canonicalDotClass("maintenance"), badge: canonicalBadgeClass("maintenance") },
-  offline: { labelVi: "Mất kết nối", dot: canonicalDotClass("offline"), badge: canonicalBadgeClass("offline") },
+const STATUS_META: Record<MachineStatus, { labelKey: string; labelVi: string; dot: string; badge: string }> = {
+  running: { labelKey: "factoryCommand.statusRunning", labelVi: "Đang chạy", dot: canonicalDotClass("running"), badge: canonicalBadgeClass("running") },
+  idle: { labelKey: "factoryCommand.statusIdle", labelVi: "Chờ", dot: canonicalDotClass("idle"), badge: canonicalBadgeClass("idle") },
+  down: { labelKey: "factoryCommand.statusDown", labelVi: "Lỗi/Dừng", dot: canonicalDotClass("down"), badge: canonicalBadgeClass("down") },
+  maintenance: { labelKey: "factoryCommand.statusMaintenance", labelVi: "Bảo trì", dot: canonicalDotClass("maintenance"), badge: canonicalBadgeClass("maintenance") },
+  offline: { labelKey: "factoryCommand.statusOffline", labelVi: "Mất kết nối", dot: canonicalDotClass("offline"), badge: canonicalBadgeClass("offline") },
 };
 
 const SEVERITY_RANK: Record<IssueSeverity, number> = { critical: 0, warning: 1, info: 2 };
@@ -643,7 +643,7 @@ export default function FactoryCommandView() {
                       return (
                         <span className="flex items-center gap-2">
                           <span className={cn("h-2.5 w-2.5 rounded-full", meta.dot)} />
-                          <Badge variant="outline" className={meta.badge}>{meta.labelVi}</Badge>
+                          <Badge variant="outline" className={meta.badge}>{t(meta.labelKey, meta.labelVi)}</Badge>
                         </span>
                       );
                     })()}

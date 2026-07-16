@@ -823,8 +823,8 @@ async function toolGetTopDefects(
     FROM measurement_results mr
     JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
     JOIN product_inspections pi ON mr."inspectionId" = pi.id
-    WHERE pi."inspectionTime" >= ${startDate}
-      AND pi."inspectionTime" <= ${endDate}
+    WHERE pi."inspectionTime" >= ${startDate.toISOString()}
+      AND pi."inspectionTime" <= ${endDate.toISOString()}
       AND pi."overallResult" = 'NG'
       AND mr.result = 'NG'
       ${machineCondition}

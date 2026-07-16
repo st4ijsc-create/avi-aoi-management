@@ -1,5 +1,6 @@
 import { eq, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
 import { getDb } from "./connection";
+import { executeRows } from "../utils/kpi";
 import {
   machines,
   stations,
@@ -66,11 +67,71 @@ export async function getAllMachinesWithStatus() {
     .innerJoin(factories, eq(workshops.factoryId, factories.id))
     .where(eq(machines.isActive, true));
 
-  const statusPromises = allMachines.map(async (m) => {
-    const latestStatus = await getLatestMachineStatus(m.machine.id);
-    const latestHeartbeat = await getLatestMachineHeartbeat(m.machine.id);
-    const uptimeStats = await getMachineUptimeStats(m.machine.id, 24);
-    
+  if (allMachines.length === 0) return [];
+
+  // doc 54 Wave C — SET-BASED fleet status. The old path fanned out one
+  // getLatestMachineStatus + getLatestMachineHeartbeat + getMachineUptimeStats PER
+  // machine inside .map() → 1 + 3N queries, uncapped, re-run every 60s (won't scale).
+  // This computes the whole fleet with a FIXED handful of grouped queries (latest
+  // status + latest heartbeat via DISTINCT ON, and windowed uptime via a LEAD window),
+  // regardless of fleet size. Mirrors getAllMachinesOEELive in oeeService. The return
+  // shape is IDENTICAL to the per-machine path.
+  const machineIds = allMachines.map((m) => m.machine.id);
+  const idList = sql.join(machineIds.map((id) => sql`${id}`), sql`, `);
+
+  // Latest status per machine (DISTINCT ON → newest row per machineId).
+  const latestStatusRows = executeRows(await db.execute(sql`
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
+    FROM machine_status_logs
+    WHERE "machineId" IN (${idList})
+    ORDER BY "machineId", "timestamp" DESC
+  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+  const latestStatusByMachine = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of latestStatusRows) latestStatusByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  // Latest heartbeat per machine (DISTINCT ON → newest heartbeat per machineId).
+  const latestHeartbeatRows = executeRows(await db.execute(sql`
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
+    FROM machine_heartbeats
+    WHERE "machineId" IN (${idList})
+    ORDER BY "machineId", "timestamp" DESC
+  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+  const latestHeartbeatByMachine = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of latestHeartbeatRows) latestHeartbeatByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  // Uptime over the last 24h, set-based — mirrors getMachineUptimeStats exactly: only
+  // rows inside the window count, each row's interval runs to the next row (LEAD) and
+  // the last row's interval extends to NOW(). 'online' → online seconds, else offline.
+  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const durationRows = executeRows(await db.execute(sql`
+    WITH ordered AS (
+      SELECT "machineId" AS machine_id, status, "timestamp" AS ts,
+             LEAD("timestamp") OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
+      FROM machine_status_logs
+      WHERE "timestamp" >= ${startTime.toISOString()} AND "machineId" IN (${idList})
+    )
+    SELECT machine_id,
+      COALESCE(SUM(CASE WHEN status = 'online'
+        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS online_sec,
+      COALESCE(SUM(CASE WHEN status <> 'online'
+        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS offline_sec
+    FROM ordered
+    GROUP BY machine_id
+  `)) as Array<{ machine_id: number; online_sec: number; offline_sec: number }>;
+  const uptimeByMachine = new Map<number, { online: number; offline: number }>();
+  for (const r of durationRows) {
+    uptimeByMachine.set(Number(r.machine_id), { online: Number(r.online_sec) || 0, offline: Number(r.offline_sec) || 0 });
+  }
+
+  // Assemble in JS — SAME output shape/type as the per-machine path.
+  return allMachines.map((m) => {
+    const latestStatus = latestStatusByMachine.get(m.machine.id);
+    const latestHeartbeat = latestHeartbeatByMachine.get(m.machine.id);
+    const up = uptimeByMachine.get(m.machine.id) ?? { online: 0, offline: 0 };
+    const totalTime = up.online + up.offline;
+    // Percent from UNROUNDED seconds (round only for output), exactly as getMachineUptimeStats.
+    const uptimePercent = totalTime > 0 ? Math.round((up.online / totalTime) * 1000) / 10 : 0;
+
     return {
       ...m.machine,
       station: m.station,
@@ -78,16 +139,14 @@ export async function getAllMachinesWithStatus() {
       workshop: m.workshop,
       factory: m.factory,
       latestStatus: latestStatus?.status || 'offline',
-      lastStatusChange: latestStatus?.timestamp || null,
-      latestHeartbeat: latestHeartbeat?.timestamp || m.machine.lastHeartbeat || null,
+      lastStatusChange: latestStatus?.ts || null,
+      latestHeartbeat: latestHeartbeat?.ts || m.machine.lastHeartbeat || null,
       heartbeatStatus: latestHeartbeat?.status || 'stopped',
-      uptimePercent: uptimeStats.uptimePercent,
-      totalOnlineTime: uptimeStats.totalOnlineTime,
-      totalOfflineTime: uptimeStats.totalOfflineTime,
+      uptimePercent,
+      totalOnlineTime: Math.round(up.online),
+      totalOfflineTime: Math.round(up.offline),
     };
   });
-
-  return Promise.all(statusPromises);
 }
 
 export async function getMachineUptimeStats(machineId: number, hours: number = 24) {

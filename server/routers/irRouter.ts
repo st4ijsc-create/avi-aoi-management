@@ -30,11 +30,17 @@
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, writeProcedure as writeBase } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_ENGINEERING (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
+// Doc 54 Wave B — IR authoring writes (saveFlow/requestBuild) get a write floor
+// (blocks read-only roles viewer/user) so a stray machine_control bit can't
+// author+compile, plus the same MOD_ENGINEERING license gate. The per-user
+// `requirePermission("machine_control", ...)` bit still composes on top.
+const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
 import { requirePermission } from "../_core/accessControl";
+import { isUniqueViolation } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import { programProjects, programArtifacts } from "../../drizzle/schema";
 import {
@@ -232,7 +238,7 @@ export const irRouter = router({
    * via the EXISTING programmingService (shape + semantic linter). REUSES the gated
    * programming path — no new gate. Requires the project to be of kind "ir-flow".
    */
-  saveFlow: protectedProcedure
+  saveFlow: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({
       projectId: z.number().int().positive(),
@@ -249,25 +255,54 @@ export const irRouter = router({
       }
 
       const content = JSON.stringify(input.flow);
-      // Next version on this branch (mirrors programmingRouter.createArtifact).
-      const existing = await d.select().from(programArtifacts).where(eq(programArtifacts.projectId, input.projectId));
-      const onBranch = existing.filter((a) => a.branch === input.branch);
-      const nextVersion = onBranch.reduce((m, a) => Math.max(m, a.version), 0) + 1;
+      const contentHash = hashContent(content);
 
-      const [row] = await d
-        .insert(programArtifacts)
-        .values({
-          projectId: input.projectId,
-          branch: input.branch,
-          version: nextVersion,
-          kind: "ir-flow",
-          language: "ir-json",
-          content,
-          contentHash: hashContent(content),
-          status: "draft",
-          createdBy: ctx.user.id,
-        })
-        .returning();
+      // Next version on this branch = max(existing)+1 (mirrors programmingRouter.createArtifact).
+      // doc 54 Wave C — the read-max-then-insert is NOT atomic: two concurrent saveFlow
+      // calls on the same (projectId, branch) compute the same version and one loses on the
+      // unique index uq_prog_artifact_version (previously a raw 500). Recompute the max and
+      // retry the insert on a unique violation (bounded); monotonic max+1 SEMANTICS are
+      // unchanged. After MAX_ATTEMPTS collisions we surface a clean CONFLICT.
+      const insertVersioned = async () => {
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          const existing = await d.select().from(programArtifacts).where(eq(programArtifacts.projectId, input.projectId));
+          const onBranch = existing.filter((a) => a.branch === input.branch);
+          const version = onBranch.reduce((m, a) => Math.max(m, a.version), 0) + 1;
+          try {
+            const [inserted] = await d
+              .insert(programArtifacts)
+              .values({
+                projectId: input.projectId,
+                branch: input.branch,
+                version,
+                kind: "ir-flow",
+                language: "ir-json",
+                content,
+                contentHash,
+                status: "draft",
+                createdBy: ctx.user.id,
+              })
+              .returning();
+            return { row: inserted, version };
+          } catch (err) {
+            if (isUniqueViolation(err) && attempt < MAX_ATTEMPTS) continue; // recompute max + retry
+            if (isUniqueViolation(err)) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
+              });
+            }
+            throw err;
+          }
+        }
+        // Unreachable: the loop always returns or throws.
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
+        });
+      };
+      const { row, version: nextVersion } = await insertVersioned();
 
       // Validate through the EXISTING service (persists diagnostics + status).
       const validation = await validateArtifact(row.id);
@@ -299,7 +334,7 @@ export const irRouter = router({
    * semantic-linter HARD GATE runs inside the IR adapter's compile() — an error blocks
    * codegen and yields a non-ok build (which the deploy gate then refuses).
    */
-  requestBuild: protectedProcedure
+  requestBuild: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ artifactId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {

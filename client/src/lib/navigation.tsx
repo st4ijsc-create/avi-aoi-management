@@ -905,8 +905,10 @@ export const navGroups: NavGroup[] = [
         label: "Thay đổi kỹ thuật (ECN)",
         icon: <GitCompare className="h-4 w-4" />,
         description: "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
-        requiredPermission: "masterdata",
-        permissionCategory: "masterdata",
+        // doc 54 Đ2 — ECN là tác vụ kỹ thuật: gate theo machine_control (engineer có)
+        // thay masterdata (kỹ sư không có → trước bị Access Denied). SoD vẫn ở service.
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
         section: "authoring",
         engineerOriented: true,
       },

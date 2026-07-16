@@ -1,4 +1,5 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -257,7 +258,8 @@ export const alertRouter = router({
       return alert;
     }),
 
-  create: protectedProcedure
+  // doc 54 Wave B — write-floor so read-only roles (viewer/user) can't create alerts.
+  create: writeProcedure
     .input(z.object({
       name: z.string().min(1).max(255),
       alertType: z.enum(['yield_rate', 'ng_count', 'machine_status']),
@@ -347,6 +349,20 @@ export const alertRouter = router({
   acknowledge: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
+      // doc 54 Wave B — mirror the owner-or-admin scope check used by update/delete.
+      // `id` is an alert_history row; resolve its parent alert setting to find the
+      // owner and reject anyone who is neither the owner nor an admin.
+      const historyRow = await db.getAlertHistoryById(input.id);
+      if (!historyRow) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
+      }
+      const alert = await db.getAlertSettingById(historyRow.alertSettingId);
+      if (!alert) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+      }
+      if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+      }
       await db.acknowledgeAlert(input.id, ctx.user.id);
       return { success: true };
     }),
@@ -391,7 +407,9 @@ export const yieldThresholdRouter = router({
       return db.getYieldAlertThresholdByType(input.metricType);
     }),
 
-  update: protectedProcedure
+  // doc 54 Wave B — factory-wide thresholds: write-floor + settings_yield_thresholds gate.
+  update: writeProcedure
+    .use(requirePermission("settings_yield_thresholds", "canEdit"))
     .input(z.object({
       id: z.number(),
       warningThreshold: z.number().optional(),
@@ -447,7 +465,9 @@ export const yieldThresholdRouter = router({
     }),
 
   // Update with history tracking
-  updateWithHistory: protectedProcedure
+  // doc 54 Wave B — factory-wide thresholds: write-floor + settings_yield_thresholds gate.
+  updateWithHistory: writeProcedure
+    .use(requirePermission("settings_yield_thresholds", "canEdit"))
     .input(z.object({
       id: z.number(),
       warningThreshold: z.number().optional(),

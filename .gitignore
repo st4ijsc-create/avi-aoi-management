@@ -185,3 +185,7 @@ scripts/ai-eval/reports/
 
 # FE live-verify session cookies (never commit — contain auth tokens)
 scripts/.fe-auth/
+
+# doc 54 — tool output + local model binaries (not source)
+.playwright-mcp/
+uploads/models/

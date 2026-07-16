@@ -23,10 +23,14 @@
  *    electronic traceability for control actions. Other compliance-ish tables
  *    (genealogy_chain, interlock_events, license_sync_logs,
  *    production_sessions, …) also remain excluded.
- *  - `audit_logs` WAS excluded pre-doc-27; decision #2 sets a 12-month window
- *    for ALL logs, so it is now pruned at 365 days (env-overridable — set
- *    RETENTION_AUDIT_LOGS_DAYS=0 if a site's compliance regime needs longer,
- *    and archive externally).
+ *  - `audit_logs` WAS excluded pre-doc-27; decision #2 sets a 12-month window,
+ *    but doc-27 ALSO hardened audit_logs into a WORM table (RLS insert/select-only
+ *    + the app role `avi_app` granted only INSERT/SELECT). WORM wins: an app-role
+ *    DELETE is rejected (permission denied 42501) and would break the immutability
+ *    guarantee, so the sweep now SKIPS audit_logs gracefully (logged once). The
+ *    365-day target is kept only as intent — a real legal-hold window must be
+ *    enforced by a privileged archival job (partition drop / external archive),
+ *    not by app-level pruning. Set RETENTION_AUDIT_LOGS_DAYS=0 to drop the target.
  *
  * IMAGE LIFECYCLE COUPLING (doc 27 gap R6 · decision #5): pruning
  * product_inspections / measurement_results rows would orphan their image
@@ -129,6 +133,10 @@ export function getRetentionTargets(): ReadonlyArray<Readonly<RetentionTarget>> 
 
 let timer: NodeJS.Timeout | null = null;
 let loggedNativeSkips = false;
+// Tables that rejected DELETE because they are WORM/immutable (RLS insert/select-only
+// + app role without a DELETE grant, e.g. audit_logs). Logged once, then skipped every
+// sweep so an immutable audit ledger never spams an error each run.
+const wormSkippedTables = new Set<string>();
 
 function envInt(key: string, fallback: number): number {
   const v = Number(process.env[key]);
@@ -230,7 +238,28 @@ export async function runRetentionOnce(): Promise<void> {
     try {
       await pruneTarget(t, dryRun, batch);
     } catch (err: any) {
-      console.error(`[Retention] ${t.table} failed:`, err?.message ?? err);
+      // The real Postgres error is wrapped by drizzle in `err.cause` — unwrap it
+      // so diagnosis isn't blind (the drizzle wrapper only echoes the SQL text).
+      const cause: any = err?.cause ?? err;
+      // WORM / immutable table (e.g. audit_logs: RLS insert/select-only + the app
+      // role has no DELETE grant). Deleting an append-only audit ledger contradicts
+      // its immutability guarantee, so skip it gracefully — audit retention must be
+      // a privileged archival job, not an app-role DELETE (resolves the doc-27
+      // WORM-vs-decision-#2 conflict in favour of WORM). Log ONCE, never error-spam.
+      if (cause?.code === "42501") {
+        if (!wormSkippedTables.has(t.table)) {
+          wormSkippedTables.add(t.table);
+          console.log(
+            `[Retention] ${t.table} is WORM/immutable (app role lacks DELETE) — app-level pruning skipped; use a privileged archival job if a legal-hold window is required.`,
+          );
+        }
+        continue;
+      }
+      console.error(
+        `[Retention] ${t.table} failed:`,
+        cause?.message ?? err?.message ?? err,
+        cause?.detail ? `(${cause.detail})` : "",
+      );
     }
   }
 }

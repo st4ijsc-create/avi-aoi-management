@@ -495,7 +495,7 @@ async function buildOeeDataset(from: Date, to: Date, machineId?: number): Promis
       SUM("goodCount")::int   AS good_count,
       SUM("rejectCount")::int AS reject_count
     FROM oee_metrics
-    WHERE "timestamp" >= ${from} AND "timestamp" < ${to}${machineFilter}
+    WHERE "timestamp" >= ${from.toISOString()} AND "timestamp" < ${to.toISOString()}${machineFilter}
     GROUP BY 1, 2, 3
     ORDER BY 1, 2
   `);

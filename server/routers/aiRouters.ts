@@ -511,7 +511,7 @@ export const predictiveAlertRouter = router({
         LEFT JOIN machines m ON i.machineId = m.id
         LEFT JOIN product_models pm ON i.productModelId = pm.id
         LEFT JOIN factories f ON m.factoryId = f.id
-        WHERE i."createdAt" >= ${daysAgo}
+        WHERE i."createdAt" >= ${daysAgo.toISOString()}
       `;
       
       if (input?.machineId) {

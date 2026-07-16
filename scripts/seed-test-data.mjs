@@ -28,15 +28,23 @@ function extractRolePerms(role) {
 
 async function ensureUser(username, role, name) {
   const bcrypt = await import('bcryptjs');
+  // doc 54 fix — 2FA lockout: seed users had two_factor_enabled=true but
+  // two_factor_secret=null → login prompts 2FA with NO valid code → locked out.
+  // Generate a real TOTP secret and store it (idempotent: only backfill when null,
+  // so a pre-existing secret e.g. engineer1's is preserved). `print-otp.mjs <user>`
+  // then works for every seeded persona.
+  const speakeasy = (await import('speakeasy')).default;
+  const newSecret = speakeasy.generateSecret({ length: 20 }).base32;
   const [existing] = await sql`SELECT id FROM users WHERE username=${username}`;
   let id;
   if (existing) {
     id = existing.id;
-    await sql`UPDATE users SET role=${role}, "isActive"=true, two_factor_enabled=true WHERE id=${id}`;
+    await sql`UPDATE users SET role=${role}, "isActive"=true, two_factor_enabled=true,
+      two_factor_secret = COALESCE(two_factor_secret, ${newSecret}) WHERE id=${id}`;
   } else {
     const hash = await bcrypt.default.hash('Test@1234', 10);
-    const [row] = await sql`INSERT INTO users ("openId", username, "passwordHash", name, role, "isActive", two_factor_enabled, "loginMethod")
-      VALUES (${'seed-' + username}, ${username}, ${hash}, ${name}, ${role}, true, true, 'password') RETURNING id`;
+    const [row] = await sql`INSERT INTO users ("openId", username, "passwordHash", name, role, "isActive", two_factor_enabled, two_factor_secret, "loginMethod")
+      VALUES (${'seed-' + username}, ${username}, ${hash}, ${name}, ${role}, true, true, ${newSecret}, 'password') RETURNING id`;
     id = row.id;
   }
   // permissions từ template thật

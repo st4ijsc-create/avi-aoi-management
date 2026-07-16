@@ -90,6 +90,9 @@ export function MachinesTab({
 }: MachinesTabProps) {
   const { t } = useTranslation();
   const trpcUtils = trpc.useUtils();
+  // doc 54 P0-1 — read paths no longer return the plaintext apiKey. The only way to
+  // obtain a key is the admin-only rotate (returns it once).
+  const regenApiKey = trpc.machine.regenerateApiKey.useMutation();
   return (
     <Card className="glass-card">
               <CardHeader>
@@ -286,12 +289,16 @@ export function MachinesTab({
                           size="sm"
                           className="gap-1"
                           onClick={async () => {
-                            const detail = await trpcUtils.machine.getById.fetch({ id: m.id });
-                            copyToClipboard(detail?.apiKey || '');
+                            // doc 54 P0-1 — cannot read the stored key; rotate to reveal
+                            // once. Warn: this invalidates the machine's current key.
+                            if (!window.confirm(t("settings.regenApiKeyConfirm", "Tạo lại API key sẽ VÔ HIỆU key hiện tại của máy cho tới khi cấu hình lại. Tiếp tục?"))) return;
+                            const res = await regenApiKey.mutateAsync({ id: m.id });
+                            copyToClipboard(res?.apiKey || '');
                           }}
+                          disabled={regenApiKey.isPending}
                         >
-                          <Key className="h-3 w-3" />
-                          {t("settings.copyApiKey")}
+                          <RotateCcw className="h-3 w-3" />
+                          {t("settings.regenApiKey", "Tạo lại & sao chép key")}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleEditMachine(m)}><Pencil className="h-4 w-4" /></Button>
                         <Button

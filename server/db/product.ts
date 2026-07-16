@@ -44,6 +44,30 @@ export async function createProductModel(data: InsertProductModel) {
   return result.id;
 }
 
+/**
+ * Doc 51 P2 fix — idempotent get-or-RESURRECT for a system-managed product model
+ * (the __UNMAPPED__ sentinel). Unlike createProductModel's plain INSERT, this
+ * survives the row already existing but SOFT-DELETED: `product_models_code_unique`
+ * ignores deletedAt, so a plain insert would throw a unique violation and take the
+ * whole auto-provision ingest path down with it (observed: __UNMAPPED__ was
+ * soft-deleted, breaking every submitInspection for an unresolved product). ON
+ * CONFLICT clears the tombstone and reactivates the row instead of failing.
+ * Race-safe: two concurrent ingests converge on the same row.
+ */
+export async function ensureSystemProductModel(data: InsertProductModel): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db
+    .insert(productModels)
+    .values(data)
+    .onConflictDoUpdate({
+      target: productModels.code,
+      set: { deletedAt: null, isActive: true, updatedAt: new Date() },
+    })
+    .returning({ id: productModels.id });
+  return result.id;
+}
+
 export async function getProductModels(options?: {
   search?: string;
   lifecycleStatus?: "development" | "active" | "eol" | "archived";

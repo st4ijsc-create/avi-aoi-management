@@ -67,7 +67,10 @@ export const robotRouter = router({
     .use(requirePermission("machine_control", "canView"))
     .query(() => ROBOT_VENDOR_VALIDATION),
 
+  // doc 54 Wave B — telemetry + job log were ungated while list/get are gated; require the
+  // machine_monitoring/canView read floor so fleet observation isn't open to every user.
   telemetry: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number(), limit: z.number().min(1).max(500).default(100) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -79,6 +82,7 @@ export const robotRouter = router({
     }),
 
   jobs: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ robotId: z.number(), limit: z.number().min(1).max(200).default(50) }))
     .query(async ({ input }) => {
       const db = await getDb();

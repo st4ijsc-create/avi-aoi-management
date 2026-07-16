@@ -22,6 +22,7 @@ import {
   Cpu,
   Plus,
   Copy,
+  RotateCcw,
   Loader2,
   Database,
   Clock,
@@ -306,11 +307,14 @@ export default function DataSettings() {
     { id: stationToDelete?.id ?? 0 },
     { enabled: !!stationToDelete }
   );
-  // apiKey cho dialog sửa máy — fetch theo-máy (list đã bỏ apiKey khỏi payload)
+  // apiKey cho dialog sửa máy — fetch theo-máy (chi tiết khác apiKey; doc 54 P0-1
+  // getById KHÔNG còn trả apiKey — key chỉ lộ 1 lần qua regenerate admin bên dưới).
   const { data: editingMachineDetail } = trpc.machine.getById.useQuery(
     { id: editingMachine?.id ?? 0 },
     { enabled: !!editingMachine }
   );
+  // doc 54 P0-1 — the only way to obtain a machine key is the admin-only rotate.
+  const regenApiKeyMutation = trpc.machine.regenerateApiKey.useMutation();
 
   // Deleted items queries (admin only, enabled when toggle is on)
   const { data: deletedFactories, refetch: refetchDeletedFactories } = trpc.factory.listDeleted.useQuery(undefined, { enabled: showDeleted && canManageFactory });
@@ -1791,9 +1795,21 @@ export default function DataSettings() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("settings.apiKey")}</label>
                 <div className="flex gap-2">
-                  <Input value={editingMachineDetail?.apiKey || ''} disabled className="bg-muted font-mono text-xs" />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(editingMachineDetail?.apiKey || '')}>
-                    <Copy className="h-4 w-4" />
+                  {/* doc 54 P0-1 — stored key is never read back; show masked + rotate-to-reveal. */}
+                  <Input value={"•••••••• (ẩn — bấm tạo lại để lộ 1 lần)"} disabled className="bg-muted font-mono text-xs" />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!editingMachineDetail?.id || regenApiKeyMutation.isPending}
+                    title={t("settings.regenApiKey", "Tạo lại & sao chép key")}
+                    onClick={async () => {
+                      if (!editingMachineDetail?.id) return;
+                      if (!window.confirm(t("settings.regenApiKeyConfirm", "Tạo lại API key sẽ VÔ HIỆU key hiện tại của máy cho tới khi cấu hình lại. Tiếp tục?"))) return;
+                      const res = await regenApiKeyMutation.mutateAsync({ id: editingMachineDetail.id });
+                      copyToClipboard(res?.apiKey || '');
+                    }}
+                  >
+                    <RotateCcw className="h-4 w-4" />
                   </Button>
                 </div>
               </div>

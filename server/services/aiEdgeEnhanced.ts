@@ -431,7 +431,7 @@ export async function getFleetOverview(): Promise<FleetOverview> {
             AVG(processing_time_ms)::float as avg_time
           FROM edge_inference_sync
           WHERE device_id = ${row.device_id}
-            AND created_at >= ${todayStart}`
+            AND created_at >= ${todayStart.toISOString()}`
     )) as any;
 
     const stats = (inferenceStats.rows ?? inferenceStats)[0] ?? {};
@@ -467,7 +467,7 @@ export async function getFleetOverview(): Promise<FleetOverview> {
 
   // Get today's total inferences
   const todayInferences = (await database.execute(
-    sql`SELECT COUNT(*)::int as count FROM edge_inference_sync WHERE created_at >= ${todayStart}`
+    sql`SELECT COUNT(*)::int as count FROM edge_inference_sync WHERE created_at >= ${todayStart.toISOString()}`
   )) as any;
   const totalInferencesToday = (todayInferences.rows ?? todayInferences)[0]?.count ?? 0;
 

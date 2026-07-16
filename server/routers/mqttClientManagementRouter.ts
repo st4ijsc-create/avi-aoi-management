@@ -4,7 +4,15 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+// doc 54 Wave B — createAlert/logConnectionEvent/updateConnectionStatus/logReconnectEvent
+// accept arbitrary input on a bare protectedProcedure → any authenticated user (incl.
+// viewer) could poison connection logs/alerts. writeProcedure blocks read-only roles;
+// requirePermission("mqtt_monitoring", ...) adds the module check (admin-effective by
+// default; the Đ3 grant is canView-only so these mutations stay gated). Analytics query
+// logic (COUNT/heatmap) is untouched — only the procedure builder changes.
+import { router, protectedProcedure, writeProcedure, adminProcedure } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
+import { encryptSecret } from "../services/security/secretBox";
 import { getDb } from "../db";
 import { 
   mqttClientProfiles, 
@@ -142,11 +150,17 @@ export const mqttClientManagementRouter = router({
         : [];
       
       const countMap = new Map(assignmentCounts.map((a: { profileId: number; count: number }) => [a.profileId, Number(a.count)]));
-      
-      return profiles.map((p: { id: number }) => ({
-        ...p,
-        assignmentCount: countMap.get(p.id) || 0,
-      }));
+
+      // doc 54 A3 — NEVER return the broker `password` on a read path (any authed user
+      // could read the plaintext broker credential). Strip it; expose only `hasPassword`.
+      return profiles.map((p) => {
+        const { password: _pw, ...safe } = p;
+        return {
+          ...safe,
+          hasPassword: Boolean(p.password),
+          assignmentCount: countMap.get(p.id) || 0,
+        };
+      });
     }),
 
   // Get single profile
@@ -162,7 +176,7 @@ export const mqttClientManagementRouter = router({
       if (!profile) {
         throw new Error("Profile not found");
       }
-      
+
       // Get assignments
       const assignments = await db.select()
         .from(mqttProfileAssignments)
@@ -170,8 +184,11 @@ export const mqttClientManagementRouter = router({
           eq(mqttProfileAssignments.profileId, input.id),
           eq(mqttProfileAssignments.isActive, true)
         ));
-      
-      return { ...profile, assignments };
+
+      // doc 54 A3 — strip the plaintext broker `password` (leak on a read path); the
+      // client only needs to know whether one is set (hasPassword) for the edit form.
+      const { password: _pw, ...safeProfile } = profile;
+      return { ...safeProfile, hasPassword: Boolean(profile.password), assignments };
     }),
 
   // Create profile
@@ -191,6 +208,9 @@ export const mqttClientManagementRouter = router({
 
         const [result] = await tx.insert(mqttClientProfiles).values({
           ...input,
+          // doc 54 A3 — encrypt the broker password at rest (AES-256-GCM). Reversible
+          // (the server may need it to connect outbound); never stored plaintext.
+          password: input.password ? encryptSecret(input.password) : input.password,
           subscribeTopics: input.subscribeTopics,
           publishTopics: input.publishTopics,
           createdBy: ctx.user.id,
@@ -206,6 +226,8 @@ export const mqttClientManagementRouter = router({
     .mutation(async ({ input }) => {
       const db = await requireDb();
       const { id, ...data } = input;
+      // doc 54 A3 — encrypt broker password at rest when it is being (re)set.
+      const patch = data.password != null ? { ...data, password: encryptSecret(data.password) } : data;
 
       // W2-D: unset-other-defaults + update are dependent writes → one transaction.
       return db.transaction(async (tx) => {
@@ -220,7 +242,7 @@ export const mqttClientManagementRouter = router({
         }
 
         await tx.update(mqttClientProfiles)
-          .set(data)
+          .set(patch)
           .where(eq(mqttClientProfiles.id, id));
 
         return { success: true };
@@ -478,7 +500,8 @@ export const mqttClientManagementRouter = router({
   // ============= CONNECTION LOGS =============
   
   // Log connection event
-  logConnectionEvent: protectedProcedure
+  logConnectionEvent: writeProcedure
+    .use(requirePermission("mqtt_monitoring", "canEdit"))
     .input(z.object({
       profileId: z.number().int().optional(),
       assignmentId: z.number().int().optional(),
@@ -621,8 +644,11 @@ export const mqttClientManagementRouter = router({
         version: "1.0",
         exportedAt: new Date().toISOString(),
         profiles: profiles.map(p => {
-          const { id, createdAt, updatedAt, ...rest } = p;
-          return rest;
+          // doc 54 A3 — NEVER export the broker password (a credential; exportProfiles is
+          // protectedProcedure = any authed user). Export a null placeholder; the operator
+          // re-enters the password after import.
+          const { id, createdAt, updatedAt, password: _pw, ...rest } = p;
+          return { ...rest, password: null };
         }),
       };
       
@@ -697,17 +723,21 @@ export const mqttClientManagementRouter = router({
       // Import profiles
       for (const profile of data.profiles) {
         try {
+          // doc 54 A3 — encrypt any broker password carried in the imported bundle at
+          // rest (idempotent: an already-`enc:v1:` value passes through).
+          const encPassword = profile.password ? encryptSecret(profile.password) : profile.password;
           // Check if profile with same name exists
           const [existing] = await db.select()
             .from(mqttClientProfiles)
             .where(eq(mqttClientProfiles.name, profile.name))
             .limit(1);
-          
+
           if (existing) {
             if (overwriteExisting) {
               await db.update(mqttClientProfiles)
                 .set({
                   ...profile,
+                  password: encPassword,
                   updatedAt: new Date(),
                 })
                 .where(eq(mqttClientProfiles.id, existing.id));
@@ -720,6 +750,7 @@ export const mqttClientManagementRouter = router({
           } else {
             await db.insert(mqttClientProfiles).values({
               ...profile,
+              password: encPassword,
               isActive: true,
             });
             results.profilesImported++;
@@ -1217,7 +1248,8 @@ export const mqttClientManagementRouter = router({
     }),
 
   // Update connection status (for internal use)
-  updateConnectionStatus: protectedProcedure
+  updateConnectionStatus: writeProcedure
+    .use(requirePermission("mqtt_monitoring", "canEdit"))
     .input(z.object({
       profileId: z.number().int(),
       assignmentId: z.number().int().optional(),
@@ -1316,7 +1348,8 @@ export const mqttClientManagementRouter = router({
   // ============= RECONNECT HISTORY =============
   
   // Log reconnect event
-  logReconnectEvent: protectedProcedure
+  logReconnectEvent: writeProcedure
+    .use(requirePermission("mqtt_monitoring", "canEdit"))
     .input(z.object({
       profileId: z.number().int(),
       assignmentId: z.number().int().optional(),
@@ -1777,7 +1810,8 @@ export const mqttClientManagementRouter = router({
     }),
   
   // Create alert (internal use)
-  createAlert: protectedProcedure
+  createAlert: writeProcedure
+    .use(requirePermission("mqtt_monitoring", "canEdit"))
     .input(z.object({
       profileId: z.number().int(),
       assignmentId: z.number().int().optional(),
@@ -1831,7 +1865,10 @@ export const mqttClientManagementRouter = router({
       let maxCount = 0;
       
       heatmapData.forEach(row => {
-        const dayIndex = Number(row.dayOfWeek) - 1; // 0-6 (Sunday-Saturday)
+        // Postgres EXTRACT(DOW) is 0=Sun..6=Sat, which already lines up with the
+        // `days` label array below — use it directly. The previous `-1` dropped
+        // Sunday (0 → -1, filtered out) and mislabelled every other day by one.
+        const dayIndex = Number(row.dayOfWeek); // 0=Sun .. 6=Sat
         const hourIndex = Number(row.hourOfDay); // 0-23
         const cnt = Number(row.count);
         if (dayIndex >= 0 && dayIndex < 7 && hourIndex >= 0 && hourIndex < 24) {
@@ -1914,8 +1951,11 @@ export const mqttClientManagementRouter = router({
       const trendData = await db.select({
         date: sql.raw("timestamp::date"),
         totalAttempts: count(),
-        successCount: count(mqttReconnectLogs.eventType),
-        failureCount: count(mqttReconnectLogs.eventType),
+        // Count by OUTCOME, not total: the previous count(eventType) counted every
+        // non-null eventType, so success == failure == total. Match the eventType enum
+        // values ('success'/'failure') used by getTopReconnectProfiles above.
+        successCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
+        failureCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
         avgDelay: avg(mqttReconnectLogs.reconnectDelay),
       })
         .from(mqttReconnectLogs)
@@ -1947,8 +1987,10 @@ export const mqttClientManagementRouter = router({
       const stats = await db.select({
         targetId: mqttReconnectLogs.targetId,
         totalAttempts: count(),
-        successCount: count(mqttReconnectLogs.eventType),
-        failureCount: count(mqttReconnectLogs.eventType),
+        // Count by OUTCOME, not total (see getReconnectTrend): count(eventType) made
+        // success == failure == total. 'success'/'failure' are the eventType enum values.
+        successCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
+        failureCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
       })
         .from(mqttReconnectLogs)
         .where(and(

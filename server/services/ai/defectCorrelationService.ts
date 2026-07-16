@@ -360,7 +360,7 @@ async function readCache(db: any, signature: string): Promise<CorrelateResult | 
     const res = await db.execute(sql`
       SELECT machine_id, defect_type, window_days, total_units, defect_units, factors, notes
       FROM defect_correlation_cache
-      WHERE signature = ${signature} AND computed_at >= ${cutoff}
+      WHERE signature = ${signature} AND computed_at >= ${cutoff.toISOString()}
       LIMIT 1
     `);
     const rows = ((res as { rows?: unknown[] })?.rows ?? res ?? []) as Array<Record<string, unknown>>;

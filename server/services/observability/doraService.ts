@@ -103,7 +103,7 @@ export async function listDeployments(opts: { environment?: string; limit?: numb
     const res = await db.execute(sql`
       SELECT id, version, commit_sha, environment, service, status, deployed_by, deployed_at, lead_time_ms
       FROM deployment_events
-      WHERE deployed_at >= ${cutoff}
+      WHERE deployed_at >= ${cutoff.toISOString()}
         AND (${env}::text IS NULL OR environment = ${env})
       ORDER BY deployed_at DESC
       LIMIT ${limit}

@@ -8,7 +8,11 @@
  */
 
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+// doc 54 Wave B — NG-alert config writers were bare protectedProcedure (any authenticated
+// user, incl. viewer, could rewire alert routing). writeProcedure blocks read-only roles;
+// requirePermission("mqtt_alerts", ...) adds the module check (admin-effective by default).
+import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
 import { mqttNgAlertSettings, stations } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
@@ -75,7 +79,8 @@ export const mqttNgAlertSettingsRouter = router({
   /**
    * Create or update NG alert setting for a station (upsert)
    */
-  upsertSetting: protectedProcedure
+  upsertSetting: writeProcedure
+    .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({
       stationId: z.number(),
       enabled: z.boolean().default(true),
@@ -150,7 +155,8 @@ export const mqttNgAlertSettingsRouter = router({
   /**
    * Delete NG alert setting for a station
    */
-  deleteSetting: protectedProcedure
+  deleteSetting: writeProcedure
+    .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({ stationId: z.number() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
@@ -164,7 +170,8 @@ export const mqttNgAlertSettingsRouter = router({
   /**
    * Toggle NG alert enabled/disabled for a station
    */
-  toggleEnabled: protectedProcedure
+  toggleEnabled: writeProcedure
+    .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({ stationId: z.number(), enabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = (await getDb())!;
@@ -179,7 +186,8 @@ export const mqttNgAlertSettingsRouter = router({
   /**
    * Bulk enable/disable NG alerts for multiple stations
    */
-  bulkToggle: protectedProcedure
+  bulkToggle: writeProcedure
+    .use(requirePermission("mqtt_alerts", "canEdit"))
     .input(z.object({
       stationIds: z.array(z.number()),
       enabled: z.boolean(),

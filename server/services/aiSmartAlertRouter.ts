@@ -477,7 +477,11 @@ export async function processAutoEscalation(): Promise<number> {
         eq(predictiveAlerts.status, "ACTIVE"),
         isNull(predictiveAlerts.acknowledgedAt),
         sql`${predictiveAlerts.escalationLevel} < 3`,
-        sql`COALESCE(${predictiveAlerts.lastEscalatedAt}, ${predictiveAlerts.createdAt}) <= ${cutoff}`,
+        // NOTE: pass the cutoff as an ISO string, not a JS Date. Inside a raw `sql`
+        // fragment drizzle's postgres-js prepared path cannot serialize a Date
+        // (postgres.js falls back to its string writer → Buffer.byteLength(Date)
+        // throws ERR_INVALID_ARG_TYPE). Postgres coerces the ISO text to timestamp.
+        sql`COALESCE(${predictiveAlerts.lastEscalatedAt}, ${predictiveAlerts.createdAt}) <= ${cutoff.toISOString()}`,
       ),
     );
 
@@ -566,7 +570,7 @@ async function checkPatterns(
       COUNT(*) as occurrences
     FROM ${predictiveAlerts}
     WHERE ${predictiveAlerts.alertType} = ${event.type}
-      AND ${predictiveAlerts.createdAt} >= ${thirtyDaysAgo}
+      AND ${predictiveAlerts.createdAt} >= ${thirtyDaysAgo.toISOString()}
       ${event.machineId ? sql`AND ${predictiveAlerts.machineId} = ${event.machineId}` : sql``}
     GROUP BY day_of_week, hour_of_day
     HAVING COUNT(*) >= 4
