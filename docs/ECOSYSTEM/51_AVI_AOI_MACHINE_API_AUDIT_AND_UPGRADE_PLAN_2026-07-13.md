@@ -454,7 +454,42 @@ Version pinning + gate-by-snapshot (QĐ#2) · clock-skew · image atomicity · r
 
 ---
 
-## 12. Bước tiếp theo
+## 12. TRẠNG THÁI THỰC THI — P2  ✅ **CODE XONG, ĐÃ KIỂM CHỨNG THẬT** (commit `cfb6fa9f`)
+
+> 5 agent (4 song song file-rời + 1 tuần tự ingest) + điều phối viên verify độc lập. **Đã commit** (chỉ file của tôi; 15 file song song của user giữ nguyên staged).
+
+### 12.1 — Đã làm & bằng chứng
+
+| Hạng mục P2 | Trạng thái | Ghi chú |
+|---|:--:|---|
+| **Panel-yield/FPY** (CASE #7) | ✅ | `getPanelYieldStats` (db/statistics): panel NG nếu ≥1 board NG, panel-FPY theo first-inspection per `(panelSerial,boardIndex)`, song song board-yield, loại `panelSerial` NULL/''. **Chưa wire router** (dormant, đề xuất). |
+| **Error-contract** (§5.6) | ✅ | REST proxy `/api/machine/*` map `TRPCError.code`→HTTP thật (401/403/404/409/413/429+Retry-After/**503 retryable**) + field `retryable` + **gỡ log base64** (`machineProxyError.ts`, 21 test). |
+| **MQTT admission** (§5.3) | ✅ | Device chưa APPROVED chỉ topic pairing (cờ `MQTT_ADMISSION_ENFORCE` default OFF — warn trước). |
+| **Reconciliation `productModelId`** (CASE #6) | ✅ | Backfill khi tạo/kích hoạt model (cờ `INSPECTION_MODEL_BACKFILL_ENABLED`) + fk-soft-orphan check (bucket riêng, không phá scan-key contract) + repair-orphans soft. Mutation-proven. |
+| **Image atomicity** (§11.2 #1) | 🟡 | Reorder side-effect (outbox/order-qty) SAU measurement-tx + `deleteInspectionForCompensation` (xoá header rỗng + **ledger claim** khi tx fail) → **đóng phần lớn residual empty-header**. KHÔNG phải single physical tx thật (kiến trúc test P0/P1 mock header/measurement 2 bề mặt riêng) — residual: crash đúng khe header-commit..compensation (nhỏ hơn nhiều trước đó). |
+| **Unit conversion** (CASE #11) | ✅ | Convert `measuredValue` về đơn vị point-def TRƯỚC gate (mm/mil/thou/micron/inch); không quy đổi được → skip gate + cờ `unitMismatch` (không âm thầm NG). Cờ `INGEST_UNIT_CONVERT_ENABLED` default ON. |
+| **Serial-collision** (CASE #8, QĐ#3) | ✅ | Cùng serial từ machineId KHÁC → cờ `suspectedDuplicateSerial` [mig 0281, raw guarded, fail-open như 0276] + alert, **VẪN lưu**; phân biệt retry cùng-máy. Cờ `INGEST_SERIAL_COLLISION_DETECT` default OFF. |
+| **Request-level audit** (§5.6) | ✅ | `createAuditLog` best-effort sau auth (không log ảnh). Cờ `INGEST_REQUEST_AUDIT_ENABLED` default OFF. |
+
+**Verify tổng:** `tsc` (heap 8GB) = **0 lỗi** · **sweep 23 file = 249 pass / 7 skip** (role owner `aoi`) · mig **0281** áp dev + test DB.
+
+### 12.2 — ⚠️ RESIDUAL & PHÁT HIỆN MỚI
+
+| # | Vấn đề | Mức | Ghi chú |
+|:--:|---|:--:|---|
+| 1 | **🆕 LATENT BUG: `__UNMAPPED__` product model đang bị SOFT-DELETED** (từ 2026-07-10) trong DB. Resolver get-or-create lọc `deletedAt IS NULL` → miss → INSERT → **vỡ unique(code)**. Ở prod: máy gửi inspection cho product CHƯA resolve → auto-provision `__UNMAPPED__` **GÃY** (không phải chỉ test). | 🔴 | **Cần fix**: un-soft-delete `__UNMAPPED__` (`UPDATE product_models SET deletedAt=NULL WHERE code='__UNMAPPED__'`) HOẶC resolver dùng ON CONFLICT/resurrect. Ngoài vùng P2 (resolver). Đã un-delete ở **test DB** để verify. |
+| 2 | **Image single-tx thật** vẫn chưa (compensation thay thế) — residual crash-window nhỏ. | 🟠 | Cần đổi flow (reserve-id) — phá durability-test model. Defer. |
+| 3 | `measurement_results.unit` **descoped** — đơn vị gốc chỉ ở telemetry, không persist (batch insert không vừa fail-open vừa ghi cột). | 🟡 | Đơn vị đã convert đúng ở gate; chỉ thiếu audit-trail đơn vị gốc. |
+| 4 | `__UNMAPPED__` **re-anchor** point-def (hypertable-heavy) chưa làm — backfill P2 chỉ sửa CASE #6 ở mức inspection, point-level analytics vẫn ở `__UNMAPPED__`. | 🟠 | Cần thiết kế + migration riêng. |
+| 5 | Migration 0281 **phải áp bằng role `aoi`** (avi_app thiếu DDL). `suspectedDuplicateSerial` fail-open tới khi áp. | 🟠 | Việc operator. |
+| 6 | Test DB: `avi_app` **thiếu quyền DELETE** trên `product_inspections` (WORM doc 35) → afterAll cleanup của integration test fail khi chạy role avi_app; chạy role `aoi` thì xanh. | 🟡 | Môi trường, không phải code. |
+
+### 12.3 — Còn lại chưa làm (P2 batch sau / P3)
+Version-exact gate (thay instant-based) · optimistic lock máy-push · getPoints geometry parity · WIP out-of-order guard · station_traces scope theo (serial+productModel) · bump-path residual ở `statusTemplateRouters`/`dataRouters`/`aiLocalTools` (**hoãn — user đang sửa các file này**) · fake-UTC-shift cutover · benchmark 100 máy thật (QĐ#7) · toàn bộ **P3** (streaming NATS, presence, zero-touch, key-expiry, batch-ingest, product-variant, multi-factory doc, fiducial registration).
+
+---
+
+## 13. Bước tiếp theo
 
 Sau khi bạn review & duyệt (đặc biệt **§8 các quyết định**), tôi sẽ gọi các **AI Agent chuyên môn** thực thi theo đúng thứ tự **P0 → P1 → P2 → P3**, mỗi đợt kèm migration + test tích hợp + verify LIVE, commit xanh theo convention hiện có.
 
