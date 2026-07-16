@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { rethrowDbError } from "../_core/dbErrors";
-import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gte, inArray, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL } from "drizzle-orm";
 import {
   productModels, InsertProductModel,
   measurementPointDefs, InsertMeasurementPointDef, MeasurementPointDef,
@@ -145,6 +145,69 @@ export async function updateProductModel(id: number, data: Partial<InsertProduct
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(productModels).set(data).where(eq(productModels.id, id));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (R4) — pointsConfigVersion propagation
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Result of {@link bumpPointsConfigVersion}. `null` ⇒ no live product matched. */
+export interface PointsConfigBump {
+  productModelId: number;
+  /** product_models.code — the key `publishPointsConfigChanged` broadcasts on. */
+  code: string;
+  /** The version AFTER the increment (what machines must converge to). */
+  version: number;
+}
+
+/**
+ * Executor accepted by {@link bumpPointsConfigVersion}: the pooled db handle OR a
+ * live transaction, so the bump can be made atomic *together with* the point
+ * mutation that caused it (see deleteMeasurementPointDef).
+ */
+type PointsBumpExecutor = { update: NonNullable<Awaited<ReturnType<typeof getDb>>>["update"] };
+
+/**
+ * Doc 51 P1 (R4) — increment a product's pointsConfigVersion so AOI/AVI machines
+ * re-fetch the point set on their next checkPointsVersion / deltaSyncPoints poll.
+ *
+ * ONE atomic statement:
+ *     UPDATE product_models SET "pointsConfigVersion" = "pointsConfigVersion" + 1 ... RETURNING
+ *
+ * NOT read-modify-write. Doc 51 CASE #12 pins the read-modify-write shape
+ * (`const next = (pm?.pointsConfigVersion ?? 1) + 1; update(..., next)`, as CAD
+ * applyJob did at productRouters.ts:3531) as a LOST-UPDATE race: two editors that
+ * read version 7 both write 8, so two distinct config changes ship under ONE
+ * version number. A machine that already holds 8 then skips the second change and
+ * inspects against a stale spec FOREVER (the version never moves again on its own).
+ * `col = col + 1` is resolved by the row lock inside PostgreSQL → N concurrent
+ * bumps always yield +N, and each caller's RETURNING sees its own distinct value.
+ *
+ * Skips soft-deleted products (a deleted model has no machines to notify).
+ * Returns the new version + the product CODE, because publishPointsConfigChanged
+ * (mqttService) broadcasts by code, not id.
+ */
+export async function bumpPointsConfigVersion(
+  productModelId: number,
+  executor?: PointsBumpExecutor,
+): Promise<PointsConfigBump | null> {
+  const exec = executor ?? (await getDb());
+  if (!exec) throw new Error("Database not available");
+
+  const [row] = await exec
+    .update(productModels)
+    .set({
+      pointsConfigVersion: sql`${productModels.pointsConfigVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(productModels.id, productModelId), isNull(productModels.deletedAt)))
+    .returning({
+      productModelId: productModels.id,
+      code: productModels.code,
+      version: productModels.pointsConfigVersion,
+    });
+
+  return row ? { ...row, version: Number(row.version) } : null;
 }
 
 export async function deleteProductModel(id: number) {
@@ -387,11 +450,87 @@ export async function backfillNormalizedCoordsForProduct(
 }
 
 // ============ MEASUREMENT POINT DEFINITION FUNCTIONS ============
-export async function createMeasurementPointDef(data: InsertMeasurementPointDef) {
+
+/**
+ * Doc 51 P2 (§5.2) — OPTIONAL out-param of {@link createMeasurementPointDef}.
+ *
+ * Mirrors CreateInspectionOutcome (server/db/inspection.ts, doc 51 P0/R2): the
+ * return type stays `Promise<number>` because ~15 seeds/tests/services consume it
+ * as a bare id; only callers that care about de-duplication pass this object and
+ * read `.duplicate` after the await.
+ */
+export interface CreateMeasurementPointOutcome {
+  /**
+   * true ⇒ an ACTIVE def with this (productModelId, code) already existed and the
+   * returned id is THAT row's — nothing was written. The caller's field values
+   * were NOT applied (the pre-existing definition wins; see below).
+   */
+  duplicate: boolean;
+}
+
+/**
+ * Doc 51 P2 (§5.2) — race-safe create.
+ *
+ * Was a plain INSERT with no unique key behind it: two requests carrying the same
+ * new code (double-clicked Save, retried tRPC batch, two ingest workers hitting
+ * measurementPointResolver's check-then-insert TOCTOU at once) produced TWO rows
+ * with the same code under one product = "ghost points". Every by-code lookup
+ * (getMeasurementPointDefByCode, the resolver) then LIMIT-1s onto an arbitrary
+ * one of them, so half the results attach to a def nobody is editing.
+ *
+ * `ON CONFLICT DO NOTHING` with **no conflict target** (same choice as
+ * createProductInspection): a bare DO NOTHING needs no index to exist, so this is
+ * a plain no-op-equivalent INSERT in any environment where migration 0274's
+ * partial unique index (productModelId, code) WHERE "deletedAt" IS NULL failed to
+ * apply (pre-existing duplicates → 'partial'). Naming a conflict target would
+ * instead make EVERY insert throw there — a hard regression. No behaviour change
+ * without the index; full protection with it.
+ *
+ * On conflict we resolve the EXISTING active row (lowest id = the original) and
+ * return its id, rather than DO UPDATE: a losing racer must not silently overwrite
+ * a definition that a real engineer may have already tuned. Callers wanting
+ * update-on-existing should call updateMeasurementPointDef explicitly.
+ */
+export async function createMeasurementPointDef(
+  data: InsertMeasurementPointDef,
+  outcome?: CreateMeasurementPointOutcome,
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(measurementPointDefs).values(data).returning({ id: measurementPointDefs.id });
-  return result.id;
+
+  const inserted = await db
+    .insert(measurementPointDefs)
+    .values(data)
+    .onConflictDoNothing()
+    .returning({ id: measurementPointDefs.id });
+
+  if (outcome) outcome.duplicate = false;
+  const id: number | undefined = inserted[0]?.id;
+  if (id !== undefined) return id;
+
+  // Conflict → (productModelId, code) is already live. Resolve the original.
+  const [existing] = await db
+    .select({ id: measurementPointDefs.id })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, data.productModelId),
+      eq(measurementPointDefs.code, data.code),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .orderBy(asc(measurementPointDefs.id))
+    .limit(1);
+
+  if (!existing) {
+    // Insert was swallowed but no active twin exists — the conflict came from a
+    // constraint we do NOT model here. Fail loudly instead of inventing an id.
+    throw new Error(
+      `[createMeasurementPointDef] insert of code '${data.code}' (productModelId=${data.productModelId}) ` +
+      `hit a unique conflict but no active row with that (productModelId, code) could be resolved.`,
+    );
+  }
+
+  if (outcome) outcome.duplicate = true;
+  return existing.id;
 }
 
 export async function listAllMeasurementPointDefs() {
@@ -1509,14 +1648,51 @@ export async function updateMeasurementPointDef(
   });
 }
 
-export async function deleteMeasurementPointDef(id: number) {
+/**
+ * P0 soft-delete via deletedAt (also flips isActive=false to keep legacy
+ * active-only consumers consistent with the soft-delete model).
+ *
+ * Doc 51 P1 (R4 + CASE #4): the delete, the pointsConfigVersion bump and the
+ * tombstone's `deletedAtVersion` stamp happen in ONE transaction. They cannot be
+ * split: `deletedAtVersion` must be exactly the version at which the point
+ * disappeared, or getPointsChangedSinceVersion would hand a machine a tombstone
+ * it has already applied (harmless) — or, far worse, withhold one it has not
+ * (the machine keeps inspecting a retired point forever).
+ *
+ * Returns the bump (new version + product code) so the caller can fire
+ * publishPointsConfigChanged; `null` ⇒ the point was already deleted (idempotent
+ * re-delete: no version churn, no spurious machine re-fetch).
+ */
+export async function deleteMeasurementPointDef(id: number): Promise<PointsConfigBump | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // P0 soft-delete via deletedAt. Also flips isActive=false to keep legacy
-  // active-only consumers consistent with the new soft-delete model.
-  await db.update(measurementPointDefs)
-    .set({ deletedAt: new Date(), isActive: false })
-    .where(eq(measurementPointDefs.id, id));
+
+  return db.transaction(async (tx) => {
+    const [point] = await tx
+      .select({ productModelId: measurementPointDefs.productModelId })
+      .from(measurementPointDefs)
+      .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt)))
+      .limit(1);
+
+    if (!point) return null; // already deleted / never existed → nothing to bump
+
+    const bump = await bumpPointsConfigVersion(
+      point.productModelId,
+      tx as unknown as PointsBumpExecutor,
+    );
+
+    await tx.update(measurementPointDefs)
+      .set({
+        deletedAt: new Date(),
+        isActive: false,
+        // NULL when the product row is gone (bump === null) — treated as
+        // "unknown version" (always shipped) by getPointsChangedSinceVersion.
+        deletedAtVersion: bump?.version ?? null,
+      })
+      .where(eq(measurementPointDefs.id, id));
+
+    return bump;
+  });
 }
 
 // ============ BULK MEASUREMENT POINT FUNCTIONS ============
@@ -1880,20 +2056,56 @@ export async function getPointsModifiedSince(productModelId: number, sinceDate: 
     .orderBy(asc(measurementPointDefs.orderIndex));
 }
 
+/** A retired measurement point a machine must STOP inspecting (doc 51 CASE #4). */
+export interface PointTombstone {
+  id: number;
+  code: string;
+  deletedAt: Date | null;
+  /** Version at which the point disappeared. NULL = deleted before doc 51 P1. */
+  deletedAtVersion: number | null;
+}
+
+/**
+ * Doc 51 P1 (CASE #4) — delta sync payload for a machine sitting at `sinceVersion`.
+ *
+ * Previously returned ACTIVE points only, so a deleted point simply vanished from
+ * the list — and a machine that merges rather than replaces its point set (or that
+ * caches per code) never learns the point is retired: it keeps inspecting it and
+ * keeps failing boards on a spec that no longer exists.
+ *
+ * Now also returns `deletedCodes` / `deletedPoints`.
+ *
+ * ⚠ Two deliberate correctness choices:
+ *
+ *  1. `deletedAtVersion IS NULL` tombstones are ALWAYS shipped. Rows soft-deleted
+ *     before this change carry no version stamp, so "was it deleted after the
+ *     machine's version?" is unanswerable for them. A tombstone shipped twice is a
+ *     no-op for the machine; one withheld leaves a retired point live. Over-ship.
+ *     ⇒ Payload cost: a model with a long deletion history re-ships those legacy
+ *       codes on every delta until they are hard-purged. Bounded by the number of
+ *       points ever deleted, and it shrinks to 0 for points deleted from now on.
+ *
+ *  2. A code that was deleted and LATER RE-CREATED is excluded from the tombstone
+ *     list. Both rows legitimately exist (old = soft-deleted, new = active) and the
+ *     machine keys on CODE — shipping the code in both `points` and `deletedCodes`
+ *     would let it delete the point it just installed. Active always wins.
+ */
 export async function getPointsChangedSinceVersion(productModelId: number, sinceVersion: number) {
   const db = await getDb();
-  if (!db) return { points: [], currentVersion: 0 };
+  if (!db) return { points: [], deletedPoints: [] as PointTombstone[], deletedCodes: [] as string[], currentVersion: 0 };
 
   const product = await db.select({ pointsConfigVersion: productModels.pointsConfigVersion })
     .from(productModels)
     .where(and(eq(productModels.id, productModelId), isNull(productModels.deletedAt)))
     .limit(1);
 
-  if (product.length === 0) return { points: [], currentVersion: 0 };
+  if (product.length === 0) {
+    return { points: [], deletedPoints: [] as PointTombstone[], deletedCodes: [] as string[], currentVersion: 0 };
+  }
 
   const currentVersion = product[0].pointsConfigVersion;
   if (currentVersion <= sinceVersion) {
-    return { points: [], currentVersion };
+    return { points: [], deletedPoints: [] as PointTombstone[], deletedCodes: [] as string[], currentVersion };
   }
 
   // Return all active points (version-based diff = get all if version differs)
@@ -1906,7 +2118,29 @@ export async function getPointsChangedSinceVersion(productModelId: number, since
     ))
     .orderBy(asc(measurementPointDefs.orderIndex));
 
-  return { points, currentVersion };
+  const tombstones = await db.select({
+      id: measurementPointDefs.id,
+      code: measurementPointDefs.code,
+      deletedAt: measurementPointDefs.deletedAt,
+      deletedAtVersion: measurementPointDefs.deletedAtVersion,
+    })
+    .from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, productModelId),
+      isNotNull(measurementPointDefs.deletedAt),
+      or(
+        isNull(measurementPointDefs.deletedAtVersion),                     // legacy → always ship (see note 1)
+        gt(measurementPointDefs.deletedAtVersion, sinceVersion),           // retired after the machine's version
+      ),
+    ))
+    .orderBy(asc(measurementPointDefs.code));
+
+  // Note 2 — never tombstone a code that is currently live under this product.
+  const activeCodes = new Set(points.map((p) => p.code));
+  const deletedPoints: PointTombstone[] = tombstones.filter((t) => !activeCodes.has(t.code));
+  const deletedCodes = [...new Set(deletedPoints.map((t) => t.code))];
+
+  return { points, deletedPoints, deletedCodes, currentVersion };
 }
 
 export async function updatePointLastModified(pointId: number) {
@@ -2466,14 +2700,26 @@ export async function applyCadImportJob(jobId: number, appliedBy: number) {
     geometry: c.geometry as any,
   } as any));
 
-  await db.insert(measurementPointDefs).values(inserts);
+  // Doc 51 P2 — 0274's partial unique (productModelId, code) WHERE "deletedAt" IS
+  // NULL would make this whole multi-row INSERT throw if ONE candidate collides
+  // with a point that already exists on the product (re-import of an overlapping
+  // CAD file — a normal engineering workflow). Bare DO NOTHING (no conflict
+  // target ⇒ works with or without the index) skips the colliding rows and lets
+  // the rest apply, which is what applying a job already meant. Count what
+  // actually landed instead of assuming inserts.length.
+  const applied = await db
+    .insert(measurementPointDefs)
+    .values(inserts)
+    .onConflictDoNothing()
+    .returning({ id: measurementPointDefs.id });
+
   await updateCadImportJob(jobId, {
     status: "applied",
     appliedBy,
     appliedAt: new Date(),
-    appliedPointCount: inserts.length,
+    appliedPointCount: applied.length,
   });
-  return inserts.length;
+  return applied.length;
 }
 
 // ============================================================

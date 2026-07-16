@@ -14,6 +14,20 @@
  * owner sets MQTT_TOPIC_LEGACY_DISABLE after all field clients migrate). Inbound topics are
  * canonicalised synapse/→avi/ (dual-subscribe). Both flags default OFF = legacy-only. See
  * ./mqtt/topicRebrand.ts and docs/REBRAND_R3.md.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * doc 51 P0 (R3) — TOPIC ACL.  ENV FLAGS (add to .env.example — see report):
+ *
+ *   MQTT_TOPIC_ACL_ENABLED    default TRUE  — secure-by-default. Set "false"/"0"/"off"
+ *                                             to disable enforcement entirely (escape hatch).
+ *   MQTT_TOPIC_ACL_WARN_ONLY  default FALSE — when "true"/"1"/"on", a violation is LOGGED
+ *                                             but ALLOWED. Rollout aid per QĐ#1: run
+ *                                             warn-only first, watch the logs for a shift,
+ *                                             then flip to enforce.
+ *
+ * Before this, the broker had NO authorizePublish/authorizeSubscribe → every authenticated
+ * client could pub/sub EVERY topic, including command topics (`avi/client/{any}/configure`).
+ * See ./mqtt/topicAcl policy summary in the ACL section below.
  */
 
 import Aedes from 'aedes';
@@ -428,6 +442,279 @@ export function derToPem(der: Buffer): string {
   return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 51 P0 (R3) — MQTT TOPIC ACL  (authorizePublish / authorizeSubscribe)
+//
+// VERIFIED GAP: `grep authorizePublish|authorizeSubscribe server/` = 0 → aedes ran its
+// defaults, which allow EVERY authenticated client to pub/sub EVERY topic. A tablet could
+// publish `avi/client/{someone-else}/configure` (a COMMAND to another device) or subscribe
+// to another device's private branch. This section closes that.
+//
+// POLICY (evaluated on the CANONICAL `avi/` form, so `synapse/…` is covered identically):
+//
+//   PUBLISH — a device may publish ONLY:
+//     • `avi/client/{ownDeviceId}/…`  minus the server-only leaves (configure, commands)
+//     • `avi/edge/{ownDeviceId}/…`    minus the server-only leaf  (model-update)
+//     • `avi/test/…`                  (explicit test namespace)
+//     • anything NOT rooted at `avi`  → OUT OF SCOPE, allowed (see SCOPE note below)
+//     Everything else under `avi/` (factory/…/errors|summary|bulletin, escalations/,
+//     system/, points-config-changed/, factory-alert/update) is SERVER-ONLY → denied.
+//
+//   SUBSCRIBE — a device may subscribe to anything EXCEPT a filter that can reach ANOTHER
+//     device's private branch (`avi/client/{other}/…`, `avi/edge/{other}/…`). This is
+//     deliberately narrow: the FactoryAlertSystem APK legitimately subscribes with broad
+//     wildcards (`avi/factory/+/workshop/+/station/+/errors`, `avi/escalations/#`, …) —
+//     those are BROADCAST alert topics and keep working. But `avi/client/+/configure`,
+//     `avi/client/B/#` and `avi/#` are denied because they span foreign devices.
+//
+// SCOPE note (deliberate, QĐ#1 — do not kill machines mid-shift): topics NOT rooted at the
+// brand namespace are untouched. That keeps the sensor-ingest path
+// (`factory/{fId}/{machineCode}/sensor/{type}`) and the `syn/…` contract topics working.
+// Tightening those is a separate, later step.
+//
+// SERVER identity is NEVER derived from a client-supplied clientId — that would be trivially
+// spoofable (a device could just connect as `avi-aoi-server-1` and gain full rights). The
+// server publishes via `aedes.publish()` (Aedes.prototype.publish), which does NOT route
+// through authorizePublish at all; when a hook IS invoked with no client context we treat it
+// as internal → allowed. `isServer` can only be set by trusted in-process code.
+//
+// Overriding aedes' defaults also drops its built-in `$SYS/` publish guard, so it is
+// re-implemented here (defaultAuthorizePublish in aedes/aedes.js).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Property stamped on the aedes client at authenticate time (the AUTHENTICATED deviceId). */
+export const MQTT_ACL_DEVICE_ID_PROP = '__aviAclDeviceId';
+
+/** Who is asking. `deviceId` is the value proven at authenticate, NOT a client-supplied id. */
+export interface MqttAclContext {
+  clientId: string;
+  /** The authenticated deviceId. Absent → unscoped client → strictest device rules. */
+  deviceId?: string;
+  /** Trusted in-process publisher. Only ever set by server-side code, never inferred. */
+  isServer?: boolean;
+}
+
+export interface MqttAclDecision {
+  /** May the action proceed? (true in warn-only mode even when `violation` is true.) */
+  allow: boolean;
+  /** Did this BREAK the policy? Stays true in warn-only mode — that is the whole point. */
+  violation: boolean;
+  reason: string;
+}
+
+/** Is topic-ACL enforcement wired in? DEFAULT TRUE (secure by default). */
+export function mqttTopicAclEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_TOPIC_ACL_ENABLED ?? '').trim().toLowerCase();
+  return !(v === 'false' || v === '0' || v === 'off');
+}
+
+/** Warn-only rollout mode: violations are LOGGED but ALLOWED. DEFAULT FALSE (enforce). */
+export function mqttTopicAclWarnOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_TOPIC_ACL_WARN_ONLY ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'on';
+}
+
+/** Leaves under `avi/client/{id}/…` only the SERVER may publish (they are commands). */
+const ACL_SERVER_ONLY_CLIENT_LEAVES = new Set(['configure', 'commands']);
+/** Leaves under `avi/edge/{id}/…` only the SERVER may publish. */
+const ACL_SERVER_ONLY_EDGE_LEAVES = new Set(['model-update']);
+/** Second segment of the two per-device PRIVATE branches (`avi/client/…`, `avi/edge/…`). */
+const ACL_PRIVATE_BRANCHES = ['client', 'edge'] as const;
+
+/**
+ * Standard MQTT topic-filter match (`+` = one level, `#` = zero-or-more trailing levels).
+ * Exported because the subscribe policy is only as good as this matcher.
+ */
+export function matchesMqttFilter(filter: string, topic: string): boolean {
+  const f = filter.split('/');
+  const t = topic.split('/');
+  for (let i = 0; i < f.length; i++) {
+    if (f[i] === '#') return i === f.length - 1; // '#' is only legal as the last level
+    if (i >= t.length) return false;
+    if (f[i] !== '+' && f[i] !== t[i]) return false;
+  }
+  return f.length === t.length;
+}
+
+/**
+ * PUBLISH policy for one already-canonical (`avi/…`) topic. Pure; no flags, no logging —
+ * `canPublish` layers the enabled/warn-only flags on top.
+ */
+function evaluatePublishPolicy(ctx: MqttAclContext, topic: string): MqttAclDecision {
+  const allow = (reason: string): MqttAclDecision => ({ allow: true, violation: false, reason });
+  const deny = (reason: string): MqttAclDecision => ({ allow: false, violation: true, reason });
+
+  // Re-implement aedes' default `$SYS/` guard (we replaced the default hook).
+  if (topic.startsWith('$SYS/')) return deny('$SYS/ topic is reserved');
+  // A PUBLISH may never carry wildcards (aedes rejects these earlier; defence in depth).
+  if (topic.includes('+') || topic.includes('#')) return deny('wildcard not allowed in PUBLISH');
+
+  const segs = topic.split('/');
+  if (segs[0] !== LEGACY_TOPIC_ROOT) return allow('outside brand namespace (out of ACL scope)');
+  if (segs[1] === 'test') return allow('test namespace');
+
+  const branch = segs[1];
+  if (branch === 'client' || branch === 'edge') {
+    const ownerId = segs[2];
+    const leaf = segs[3];
+    const serverOnly = branch === 'client' ? ACL_SERVER_ONLY_CLIENT_LEAVES : ACL_SERVER_ONLY_EDGE_LEAVES;
+    if (leaf !== undefined && serverOnly.has(leaf)) {
+      return deny(`avi/${branch}/*/${leaf} is server-only`);
+    }
+    if (!ctx.deviceId) return deny(`client has no authenticated deviceId — cannot own avi/${branch}/${ownerId}`);
+    if (ownerId !== ctx.deviceId) {
+      return deny(`device ${ctx.deviceId} may not publish on another device's branch (${ownerId})`);
+    }
+    return allow('own device branch');
+  }
+
+  // avi/factory/…, avi/escalations/…, avi/system/…, avi/points-config-changed/…,
+  // avi/factory-alert/… — all server-published broadcast namespaces.
+  return deny(`avi/${branch ?? ''} is a server-only namespace`);
+}
+
+/**
+ * The per-device topics that actually exist on this broker, used as probes below.
+ * `{leaf}` values come from the real clients: FactoryAlertSystem publishes info/ack and
+ * subscribes configure; edge devices subscribe model-update.
+ */
+const ACL_PRIVATE_LEAVES: Record<(typeof ACL_PRIVATE_BRANCHES)[number], string[]> = {
+  client: ['info', 'ack', 'configure', 'commands'],
+  edge: ['model-update'],
+};
+/** A device id no real device can have — stands in for "some other device" when probing. */
+const ACL_FOREIGN_PROBE_ID = '__acl_probe_foreign_device__';
+
+/**
+ * Can this SUBSCRIBE filter reach a private branch belonging to a device OTHER than `own`?
+ *
+ * Two complementary rules — being merely "conservative" here is NOT free: over-denying breaks
+ * shipping clients (QĐ#1). Notably `avi/+/workshop/+/station/+/errors` (the APK's legacy,
+ * factory-segment-less broadcast filter) has `+` in the branch slot yet can only ever reach a
+ * *private* topic of a device literally named "workshop" — it must stay ALLOWED.
+ *
+ *   Rule A (structural) — the filter PINS the branch slot to the literal `client`/`edge`
+ *     (or swallows it with `#`). Then the id slot decides: `+`/`#` spans every device, and a
+ *     literal id other than our own is impersonation. Catches `avi/client/B/#`,
+ *     `avi/client/+/configure`, `avi/#`, `#`, `+/client/B/info`.
+ *   Rule B (probe) — the branch slot is a `+`, so the shape is ambiguous. Instead of guessing,
+ *     test the filter against the private topics that REALLY exist for a foreign id. Catches
+ *     `avi/+/B/info` (which does match `avi/client/B/info`) while clearing the APK filter
+ *     above (7 levels deep — it matches none of the real 4-level private topics).
+ *
+ * Residual, accepted: an exotic filter that both wildcards the branch slot AND targets a
+ * non-standard deep sub-topic of a foreign device (`avi/+/B/deep/custom`). No such topic is
+ * produced by this system; the direct form (`avi/client/B/deep/custom`) IS caught by Rule A.
+ */
+function reachesForeignPrivateBranch(filter: string, own: string | undefined): boolean {
+  const segs = filter.split('/');
+  const idSeg = segs[2];
+
+  for (const branch of ACL_PRIVATE_BRANCHES) {
+    // ── Rule A: branch slot pinned to a literal (or swallowed by '#').
+    const s0 = segs[0];
+    if (s0 === '#') return true; // '#' → literally everything
+    if (s0 === LEGACY_TOPIC_ROOT || s0 === '+') {
+      const s1 = segs[1];
+      if (s1 === '#') return true; // 'avi/#' → everything under the brand root
+      // length 1 ('avi') matches only the topic 'avi'; length 2 ('avi/client') is not a
+      // per-device topic — neither reaches a private branch.
+      if (s1 === branch && segs.length > 2) {
+        if (idSeg === '#' || idSeg === '+') return true; // spans EVERY device id
+        if (own === undefined || idSeg !== own) return true; // literal id that isn't ours
+        // idSeg === own → legitimately this client's own branch.
+      }
+    }
+
+    // ── Rule B: ambiguous branch slot → probe the private topics that really exist.
+    const candidateIds: string[] = [];
+    if (idSeg === undefined || idSeg === '+' || idSeg === '#') candidateIds.push(ACL_FOREIGN_PROBE_ID);
+    else if (idSeg !== own) candidateIds.push(idSeg);
+    for (const id of candidateIds) {
+      for (const leaf of ACL_PRIVATE_LEAVES[branch]) {
+        if (matchesMqttFilter(filter, `${LEGACY_TOPIC_ROOT}/${branch}/${id}/${leaf}`)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Decide whether `ctx` may PUBLISH `topic`. Honours MQTT_TOPIC_ACL_ENABLED (default on) and
+ * MQTT_TOPIC_ACL_WARN_ONLY (default off). In warn-only mode `allow` is true while `violation`
+ * stays true, so the caller still logs it.
+ */
+export function canPublish(
+  ctx: MqttAclContext,
+  topic: string,
+  env: NodeJS.ProcessEnv = process.env,
+): MqttAclDecision {
+  if (!mqttTopicAclEnabled(env)) return { allow: true, violation: false, reason: 'acl-disabled' };
+  if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal publish)' };
+
+  const decision = evaluatePublishPolicy(ctx, canonicalizeInboundTopic(topic));
+  if (decision.violation && mqttTopicAclWarnOnly(env)) {
+    return { ...decision, allow: true, reason: `${decision.reason} [warn-only → allowed]` };
+  }
+  return decision;
+}
+
+/**
+ * Decide whether `ctx` may SUBSCRIBE to `filter`. Only a filter that can reach ANOTHER
+ * device's private branch is denied — broadcast alert wildcards keep working (see POLICY).
+ */
+export function canSubscribe(
+  ctx: MqttAclContext,
+  filter: string,
+  env: NodeJS.ProcessEnv = process.env,
+): MqttAclDecision {
+  if (!mqttTopicAclEnabled(env)) return { allow: true, violation: false, reason: 'acl-disabled' };
+  if (ctx.isServer) return { allow: true, violation: false, reason: 'server (internal subscribe)' };
+
+  const canonical = canonicalizeInboundTopic(filter);
+  let decision: MqttAclDecision;
+  if (reachesForeignPrivateBranch(canonical, ctx.deviceId)) {
+    decision = {
+      allow: false,
+      violation: true,
+      reason: ctx.deviceId
+        ? `device ${ctx.deviceId} may not subscribe to another device's private branch`
+        : 'client has no authenticated deviceId — cannot subscribe to a per-device branch',
+    };
+  } else {
+    decision = { allow: true, violation: false, reason: 'in scope' };
+  }
+
+  if (decision.violation && mqttTopicAclWarnOnly(env)) {
+    return { ...decision, allow: true, reason: `${decision.reason} [warn-only → allowed]` };
+  }
+  return decision;
+}
+
+/**
+ * Build the ACL context from an aedes client. A missing client means the publish came from
+ * `aedes.publish()` (in-process server code) → trusted. The deviceId is read from the
+ * property stamped by `aedes.authenticate`, never from the client-chosen clientId.
+ */
+export function aclContextFromClient(client: unknown): MqttAclContext {
+  if (!client) return { clientId: '<internal>', isServer: true };
+  const c = client as { id?: string; [k: string]: unknown };
+  const deviceId = c[MQTT_ACL_DEVICE_ID_PROP];
+  return {
+    clientId: c.id ?? '<unknown>',
+    deviceId: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : undefined,
+  };
+}
+
+/** One-line structured warning for an ACL violation (device, topic, action). */
+function logAclViolation(action: 'publish' | 'subscribe', ctx: MqttAclContext, topic: string, decision: MqttAclDecision): void {
+  console.warn(
+    `[MQTT ACL] ${decision.allow ? 'WARN' : 'DENY'} ${action} ` +
+      `device=${ctx.deviceId ?? '<unauthenticated>'} clientId=${ctx.clientId} ` +
+      `topic="${topic}" reason=${decision.reason}`,
+  );
+}
+
 // External MQTT broker configuration (HiveMQ Public or custom)
 const EXTERNAL_MQTT_ENABLED = process.env.EXTERNAL_MQTT_ENABLED === 'true';
 const EXTERNAL_MQTT_BROKER = process.env.EXTERNAL_MQTT_BROKER || 'mqtt://broker.hivemq.com';
@@ -806,6 +1093,12 @@ function setupEventHandlers() {
         return;
       }
 
+      // doc 51 P0 (R3) — stamp the AUTHENTICATED deviceId on the client so the topic ACL can
+      // scope it to its own branch. This is the ONLY trusted binding between a connection and
+      // a deviceId: `client.id` (clientId) is chosen freely by the device and must never be
+      // used for authorisation. Stamped before any callback(null, true) below.
+      (client as any)[MQTT_ACL_DEVICE_ID_PROP] = deviceId;
+
       // Check if client exists in database
       const existingClient = await db!.select()
         .from(schema.mqttClients)
@@ -890,6 +1183,42 @@ function setupEventHandlers() {
       console.error('[MQTT] Authentication error:', error);
       callback({ returnCode: 4 } as any, false);
     }
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  // doc 51 P0 (R3) — TOPIC ACL hooks. Replaces aedes' allow-everything defaults.
+  // Both are no-ops when MQTT_TOPIC_ACL_ENABLED=false, and log-only when
+  // MQTT_TOPIC_ACL_WARN_ONLY=true (QĐ#1 rollout: observe a full shift, then enforce).
+  // ────────────────────────────────────────────────────────────────────────
+
+  // Denying a PUBLISH via callback(Error) is the aedes-documented refusal and closes the
+  // offending connection — intended: a device publishing another device's command topic is
+  // either misconfigured or hostile. Use warn-only mode to find such clients without cutting
+  // them off. NOTE: `client` is null for `aedes.publish()` (server-internal) → allowed.
+  aedes.authorizePublish = (client, packet, callback) => {
+    const ctx = aclContextFromClient(client);
+    const decision = canPublish(ctx, packet.topic);
+    if (decision.violation) logAclViolation('publish', ctx, packet.topic, decision);
+    if (!decision.allow) {
+      callback(new Error(`[MQTT ACL] publish denied on ${packet.topic}: ${decision.reason}`));
+      return;
+    }
+    callback(null);
+  };
+
+  // Denying a SUBSCRIBE via callback(null, null) makes aedes return SUBACK 0x80 (failure) for
+  // that filter WITHOUT dropping the connection, so a client with one bad filter among many
+  // keeps its good subscriptions. Gentler than the publish path — and correct per MQTT 3.1.1
+  // §3.9.3 (aedes/lib/handlers/subscribe.js storeSubscriptions → granted = 128).
+  aedes.authorizeSubscribe = (client, sub, callback) => {
+    const ctx = aclContextFromClient(client);
+    const decision = canSubscribe(ctx, sub.topic);
+    if (decision.violation) logAclViolation('subscribe', ctx, sub.topic, decision);
+    if (!decision.allow) {
+      callback(null, null);
+      return;
+    }
+    callback(null, sub);
   };
 
   // R-2a (doc 38 P1-I) — coalesce the per-keepalive heartbeat write. A client PING

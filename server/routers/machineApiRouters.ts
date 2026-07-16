@@ -2,10 +2,16 @@ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { and as drizzleAnd, eq as drizzleEq } from "drizzle-orm";
+import { and as drizzleAnd, eq as drizzleEq, asc as drizzleAsc, sql } from "drizzle-orm";
 import * as db from "../db";
 import { getDb } from "../db";
-import { productInspections, measurementResults as measurementResultsTable } from "../../drizzle/schema";
+// Doc 51 P0 (R2) — out-param type for the idempotent inspection-header insert.
+import type { CreateInspectionOutcome } from "../db/inspection";
+import {
+  productInspections,
+  measurementResults as measurementResultsTable,
+  measurementPointVersions,
+} from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
@@ -29,14 +35,20 @@ import {
   setProcessFn as walSetProcessFn,
   setDedupFn as walSetDedupFn,
 } from "../services/inspection/inspectionStoreForward";
-import { storagePut, storageGet, resolveImageToDataUrl } from "../storage";
+import { storagePut, storageGet, storageDelete, resolveImageToDataUrl } from "../storage";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/socket";
 import { statsCache, CACHE_KEYS } from "../_core/cache";
 import * as cachedStats from "../functions/cachedStatistics";
 import { publishPointsConfigChanged } from "../services/mqttService";
 import { publishToOutbox } from "../services/integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import { resolveThresholdEditGate } from "../services/thresholdGovernanceService"; // Doc 31 B.6 — gate machine limit write-back
-import { evaluatePointResult, isPointLimitEvalEnabled } from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate
+import {
+  evaluatePointResult,
+  isPointLimitEvalEnabled,
+  resolveLimitsAtInstant,
+  type PointLimitSnapshot,
+  type PointLimitSource,
+} from "../services/pointResultEvaluator"; // Doc 31 MP6 — server-side 3D/criteria spec gate; Doc 51 P1 QĐ#2 — snapshot gate
 import * as aiAdvancedDb from "../db/aiAdvanced";
 import { confirmDeployment as svcConfirmDeployment, recordEdgeHeartbeat as svcRecordHeartbeat, syncEdgeResults as svcSyncEdgeResults } from "../services/aiEdgeEnhanced";
 import {
@@ -60,6 +72,30 @@ import {
   resolveOrCreateMeasurementPointDefId,
   assertValidPointDefId,
 } from "../services/measurementPointResolver";
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (CASE #5) — per-image base64 size cap.
+//
+// The gap: `imageBase64` had NO bound. The only backstop was the 200MB HTTP body
+// limit, so a single field could carry a ~40MB image and the server decoded ALL
+// of them into RAM (Buffer.from) before uploading — a submission with a handful
+// of large images could pin tens/hundreds of MB per request. A bounded field
+// fails fast at parse time (BAD_REQUEST) instead.
+//
+// The default is deliberately GENEROUS (per-measurement images on the ingest path
+// are defect crops, typically well under 1MB) so it cannot line-stop a real
+// machine; ops can widen/narrow it via MACHINE_INGEST_MAX_IMAGE_B64 (QĐ#1). Read
+// at import time so the value is a compile-time constant for zod's `.max()`.
+// ════════════════════════════════════════════════════════════════════════════
+function maxImageBase64Chars(): number {
+  const raw = process.env.MACHINE_INGEST_MAX_IMAGE_B64;
+  const n = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+  // Default 20,000,000 base64 chars ≈ ~15MB decoded — far above any real crop,
+  // far below the 200MB body limit.
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20_000_000;
+}
+const MAX_IMAGE_B64 = maxImageBase64Chars();
+const IMAGE_B64_TOO_LARGE = `image exceeds MACHINE_INGEST_MAX_IMAGE_B64 (${MAX_IMAGE_B64} base64 chars)`;
 
 const measurementTypeValueList = [
   "DIMENSION",
@@ -96,7 +132,7 @@ const measurementPointSyncSchema = z.object({
   orderIndex: z.number().int().nonnegative().optional(),
   workstationCode: z.string().trim().optional(),
   isActive: z.boolean().optional(),
-  imageBase64: z.string().optional(),
+  imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(),
   imageMimeType: z.string().optional(),
   imageUrl: z.string().url().optional(),
   // P1: optional shape + geometry (additive). When present, server persists them.
@@ -105,6 +141,169 @@ const measurementPointSyncSchema = z.object({
 });
 
 // ============ MACHINE API ROUTER (for external machine integration) ============
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (CASE #3) — CLOCK-SKEW POLICY
+//
+// The gap: `inspectionTime` is whatever the machine says. Nothing validated it,
+// nothing compared it to the server clock, and no column recorded when the server
+// actually received the board. A machine 6h off (dead RTC, no NTP, someone "fixed"
+// the clock) files boards into the WRONG SHIFT / WRONG DAY, silently — and after
+// the fact you cannot even enumerate the damage.
+//
+// The response is deliberately staged (QĐ#1 — every tightening needs a flag, a
+// backward-compatible default, and telemetry BEFORE enforcement):
+//   1. ALWAYS: stamp serverReceivedAt + measure signed skew + flag outliers.
+//      Costs nothing, breaks nothing, and makes the blind spot measurable today.
+//   2. FLAGGED: INGEST_REQUIRE_TIME_OFFSET=true rejects naive timestamps. Default
+//      FALSE — flipping this on before the fleet emits offsets would stop the line.
+//      Run stage 1 first, read the telemetry, then enforce.
+// ════════════════════════════════════════════════════════════════════════════
+
+function envTrue(v: string | undefined): boolean {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "on";
+}
+
+function envInt(name: string, dflt: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || String(raw).trim() === "") return dflt;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : dflt;
+}
+
+/** |skew| above this ⇒ clockSkewFlagged + ops alert. Default 5 minutes. */
+function clockSkewWarnSeconds(): number {
+  return envInt("INGEST_CLOCK_SKEW_WARN_SECONDS", 300);
+}
+
+/**
+ * ENFORCEMENT flag (default OFF). ON ⇒ an inspectionTime without an explicit UTC
+ * offset is a BAD_REQUEST. OFF ⇒ accepted and TAGGED timeSource='machine_naive'.
+ */
+function requireTimeOffset(): boolean {
+  return envTrue(process.env.INGEST_REQUIRE_TIME_OFFSET);
+}
+
+/**
+ * Does an ISO-8601 datetime string carry an EXPLICIT UTC offset ('Z' or ±HH[:]MM)?
+ *
+ * This is THE question that decides whether a timestamp is an absolute instant or
+ * merely a wall-clock reading. Without an offset, `new Date(s)` interprets the
+ * string in the SERVER's zone — so a machine in a different zone (or one whose
+ * clock is off by a whole number of hours) yields a measured skew of ≈ 0 while
+ * being completely wrong. Naive stamps are the silent half of CASE #3.
+ */
+export function hasExplicitUtcOffset(value: string): boolean {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+}
+
+export type InspectionTimeSource = "machine_utc" | "machine_naive" | "server";
+
+/** Provenance of a submission's inspectionTime, derived from the ORIGINAL input. */
+export function classifyInspectionTime(raw: string | undefined): InspectionTimeSource {
+  if (!raw) return "server";
+  return hasExplicitUtcOffset(raw) ? "machine_utc" : "machine_naive";
+}
+
+export interface ClockSkewAssessment {
+  /** Signed: machineTime − serverReceivedAt, seconds. Negative = machine behind. */
+  skewSeconds: number;
+  flagged: boolean;
+}
+
+/** Signed skew + threshold verdict. Pure — the whole point is that it is testable. */
+export function assessClockSkew(
+  machineTime: Date,
+  serverReceivedAt: Date,
+  source: InspectionTimeSource,
+): ClockSkewAssessment {
+  // The server stamped the time itself → zero skew BY DEFINITION. Measuring the
+  // server against its own clock and "finding" drift would be noise.
+  if (source === "server") return { skewSeconds: 0, flagged: false };
+  const skewSeconds = Math.round((machineTime.getTime() - serverReceivedAt.getTime()) / 1000);
+  return { skewSeconds, flagged: Math.abs(skewSeconds) > clockSkewWarnSeconds() };
+}
+
+/**
+ * Per-machine cooldown for the skew alert. A machine with a broken clock submits
+ * at line rate (QĐ#7: 1 board/s), and EVERY board is skewed — without this, one
+ * dead RTC buries the ops surface under ~3600 identical alerts an hour.
+ */
+const skewAlertLastSent = new Map<number, number>();
+function skewAlertCooldownMs(): number {
+  return envInt("INGEST_CLOCK_SKEW_ALERT_COOLDOWN_SEC", 900) * 1000;
+}
+
+/** Test seam — the cooldown map is module state. */
+export function _resetClockSkewAlertCooldown(): void {
+  skewAlertLastSent.clear();
+}
+
+/**
+ * Route a clock-skew condition to the EXISTING ops alert surface
+ * (aiSmartAlertRouter → predictive_alerts + in-app/email), reusing the pattern of
+ * spcCentralAlertBridge. Fire-and-forget, fully guarded, cooldown-bounded.
+ *
+ * INGEST_CLOCK_SKEW_ALERT_ENABLED default TRUE — unlike a tightening, an alert
+ * cannot break ingest, and a silent detector would leave CASE #3 exactly as blind
+ * as it is today. The console.warn below is unconditional regardless.
+ */
+function raiseClockSkewAlert(params: {
+  machineId: number;
+  machineCode: string;
+  machineName: string;
+  serialNumber: string;
+  skewSeconds: number;
+  timeSource: InspectionTimeSource;
+  machineTime: Date;
+  serverReceivedAt: Date;
+}): void {
+  const drift = params.skewSeconds >= 0 ? "AHEAD OF" : "BEHIND";
+  console.warn(
+    `[submitInspection] CLOCK SKEW — machine=${params.machineCode} is ` +
+      `${Math.abs(params.skewSeconds)}s ${drift} the server ` +
+      `(machineTime=${params.machineTime.toISOString()}, ` +
+      `serverReceivedAt=${params.serverReceivedAt.toISOString()}, ` +
+      `timeSource=${params.timeSource}, serial=${params.serialNumber}) — ` +
+      `boards from this machine may be filed into the WRONG SHIFT/DAY.`,
+  );
+
+  if (!envTrue(process.env.INGEST_CLOCK_SKEW_ALERT_ENABLED ?? "true")) return;
+
+  const now = Date.now();
+  const last = skewAlertLastSent.get(params.machineId) ?? 0;
+  if (now - last < skewAlertCooldownMs()) return;
+  skewAlertLastSent.set(params.machineId, now);
+
+  void import("../services/aiSmartAlertRouter")
+    .then(({ routeAlert }) =>
+      routeAlert({
+        // No dedicated clock-skew AlertType exists; PATTERN_ANOMALY is the
+        // catch-all the router already understands. The message carries the truth.
+        type: "PATTERN_ANOMALY",
+        machineId: params.machineId,
+        severity: "HIGH",
+        message:
+          `Đồng hồ máy ${params.machineName} (${params.machineCode}) lệch ` +
+          `${Math.abs(params.skewSeconds)}s so với server — dữ liệu kiểm tra có thể bị ` +
+          `ghi SAI CA/SAI NGÀY. Kiểm tra NTP/RTC của máy.`,
+        data: {
+          reason: "clock_skew",
+          machineCode: params.machineCode,
+          skewSeconds: params.skewSeconds,
+          thresholdSeconds: clockSkewWarnSeconds(),
+          timeSource: params.timeSource,
+          machineTime: params.machineTime.toISOString(),
+          serverReceivedAt: params.serverReceivedAt.toISOString(),
+          serialNumber: params.serialNumber,
+        },
+      }),
+    )
+    .catch((err) => {
+      console.error("[submitInspection] clock-skew alert routing failed (non-fatal):", err);
+    });
+}
 
 /**
  * Doc 27 W2-C — submitInspection input, extracted to a named schema so the
@@ -117,15 +316,54 @@ const submitInspectionInputSchema = z.object({
       apiKey: z.string().optional(), // API key (backward compatible)
       
       // Product information
-      serialNumber: z.string(), // Số serial sản phẩm
+      // Doc 51 P0 — bounded to the varchar(100) column and never blank: a blank
+      // serial is unroutable (no traceability) AND is exempted from the ingest
+      // idempotency key (uq_inspections_machine_serial_time is partial on
+      // serialNumber <> ''), so accepting one would silently re-open the
+      // double-count hole. `.trim()` normalises before both checks.
+      serialNumber: z.string().trim().min(1).max(100), // Số serial sản phẩm
       productModel: z.string().optional(), // Model sản phẩm
       batchNumber: z.string().optional(), // Số lô
       
       // Inspection results
       cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
       overallResult: z.enum(["OK", "NG", "NTF"]), // Kết quả tổng thể
-      inspectionTime: z.string().optional(), // Thời gian kiểm tra
-      
+      // Thời gian kiểm tra (ISO-8601). Doc 51 P1 / CASE #3 — validated by the
+      // superRefine on the object below (parseability ALWAYS; explicit UTC offset
+      // only under INGEST_REQUIRE_TIME_OFFSET). Left as a bare string here on
+      // purpose: z.string().datetime({offset:true}) would be a HARD tightening
+      // applied at import time, killing every machine that sends naive stamps —
+      // QĐ#1 requires the flag + a backward-compatible default.
+      inspectionTime: z.string().optional(),
+
+      // Doc 51 P1 — EXPLICIT INGEST IDEMPOTENCY KEY (closes the 0272 hole).
+      // CLIENT-generated and STABLE across retries of the SAME board (e.g. a UUID
+      // minted once when the board is inspected, reused by every retry of that
+      // submission). This is the ONLY thing that protects a machine which does not
+      // send inspectionTime: the server then stamps now() per receive, so 0272's
+      // natural key differs on every retry and catches nothing.
+      // Optional (QĐ#1: machines that don't send one keep exactly today's
+      // behaviour). min(8) so a machine cannot "adopt" idempotency with a
+      // low-entropy counter that collides across boards.
+      idempotencyKey: z.string().trim().min(8).max(200).optional(),
+
+      // Doc 51 P1 / CASE #12 — the points-config version the machine DECLARES it
+      // is grading with. Stamped VERBATIM (machine's claim ≠ server's verdict) and
+      // compared against the product's live pointsConfigVersion to TAG (never
+      // reject — QĐ#3) boards graded on stale thresholds.
+      // ★ QĐ#2 seam: re-grading must use the SNAPSHOT of THIS version, not live limits.
+      pointsConfigVersion: z.number().int().nonnegative().optional(),
+
+      // ── SERVER-STAMPED, NOT part of the machine contract ────────────────────
+      // These exist because the store-and-forward WAL replays the payload through
+      // processInspectionSubmission MINUTES-TO-HOURS later: without them a replay
+      // would re-derive provenance from the replay clock and report every buffered
+      // board as wildly clock-skewed. The mutation OVERWRITES both unconditionally
+      // from the ORIGINAL request, so a machine cannot forge either one.
+      serverReceivedAt: z.string().optional(),
+      timeSource: z.enum(["machine_utc", "machine_naive", "server"]).optional(),
+
+
       // Enterprise hierarchy (top-down)
       companyCode: z.string().optional(), // Mã tập đoàn/công ty
       factoryCode: z.string().optional(), // Mã nhà máy
@@ -151,7 +389,7 @@ const submitInspectionInputSchema = z.object({
         measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (number hoặc string)
         result: z.enum(["OK", "NG", "NTF"]), // Kết quả
         remark: z.string().optional(), // Ghi chú
-        imageBase64: z.string().optional(), // Hình ảnh base64 (optional)
+        imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(), // Hình ảnh base64 (optional)
         valueZ: z.union([z.number(), z.string()]).optional(),
         valueHeight: z.union([z.number(), z.string()]).optional(),
         valueArea: z.union([z.number(), z.string()]).optional(),
@@ -168,6 +406,42 @@ const submitInspectionInputSchema = z.object({
       })),
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided"
+    })
+    // ── Doc 51 P1 (CASE #3) — inspectionTime validation ──────────────────────
+    // Deliberately a superRefine and not `z.string().datetime({offset:true})`:
+    // the offset requirement must read process.env AT PARSE TIME so it can be a
+    // flag (QĐ#1) and so tests can exercise both sides. The parseability check is
+    // NOT flagged — see below.
+    .superRefine((data, ctx) => {
+      if (data.inspectionTime === undefined) return;
+      // (1) PARSEABLE — always enforced, no flag. This is not a tightening of
+      //     working behaviour: an unparseable stamp produced an Invalid Date that
+      //     blew up at insert time and was classified TRANSIENT, so the payload
+      //     was buffered to the WAL and retried FOREVER (a poison entry that can
+      //     never succeed). A clean BAD_REQUEST is strictly better for every
+      //     party — no machine that works today starts failing.
+      if (Number.isNaN(new Date(data.inspectionTime).getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["inspectionTime"],
+          message: `inspectionTime is not a parseable date-time: "${data.inspectionTime}"`,
+        });
+        return;
+      }
+      // (2) EXPLICIT UTC OFFSET — flagged, default OFF (accept + tag as
+      //     'machine_naive'). Turning this ON before every machine emits an
+      //     offset would reject real production boards, so it stays opt-in until
+      //     the timeSource telemetry says the fleet is ready.
+      if (requireTimeOffset() && !hasExplicitUtcOffset(data.inspectionTime)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["inspectionTime"],
+          message:
+            `inspectionTime must carry an explicit UTC offset (e.g. 2026-07-15T08:00:00+07:00 ` +
+            `or ...Z) when INGEST_REQUIRE_TIME_OFFSET is on — got "${data.inspectionTime}", ` +
+            `which the server can only interpret in its OWN timezone.`,
+        });
+      }
     });
 
 export type SubmitInspectionInput = z.infer<typeof submitInspectionInputSchema>;
@@ -236,6 +510,89 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
 }
 
 /**
+ * Doc 51 P1 (QĐ#2) — load a point's edit-snapshot history (measurement_point_versions)
+ * for the spec-gate reconstruction. Best-effort + memoised per submission: a DB
+ * hiccup yields [] (⇒ the caller skips the gate for that point — safe), never an
+ * error that fails ingest. Only called for STALE boards under the snapshot flag.
+ */
+async function loadPointLimitSnapshots(
+  pointDefId: number,
+  cache: Map<number, PointLimitSnapshot[]>,
+): Promise<PointLimitSnapshot[]> {
+  const hit = cache.get(pointDefId);
+  if (hit) return hit;
+  let snaps: PointLimitSnapshot[] = [];
+  try {
+    const dbi = await getDb();
+    if (dbi) {
+      const rows = await dbi
+        .select({
+          changedAt: measurementPointVersions.changedAt,
+          snapshotJson: measurementPointVersions.snapshotJson,
+        })
+        .from(measurementPointVersions)
+        .where(drizzleEq(measurementPointVersions.pointDefId, pointDefId))
+        .orderBy(drizzleAsc(measurementPointVersions.changedAt));
+      snaps = rows
+        .filter((r) => r.changedAt instanceof Date)
+        .map((r) => ({
+          changedAt: r.changedAt as Date,
+          limits: (r.snapshotJson ?? {}) as PointLimitSource,
+        }));
+    }
+  } catch (err) {
+    console.warn(
+      `[submitInspection] snapshot history load failed for pointDef=${pointDefId} (gate skipped for it):`,
+      (err as Error)?.message ?? err,
+    );
+    snaps = [];
+  }
+  cache.set(pointDefId, snaps);
+  return snaps;
+}
+
+/**
+ * Doc 51 P1 (QĐ#2) — module flag: once a gateConfigVersion persist fails because
+ * the 0276 column is absent, stop retrying it (avoids per-board warn spam until
+ * the migration is applied). Reset via _resetGateConfigVersionProbe() in tests.
+ */
+let gateConfigVersionColumnMissing = false;
+export function _resetGateConfigVersionProbe(): void {
+  gateConfigVersionColumnMissing = false;
+}
+
+/**
+ * Doc 51 P1 (QĐ#2) — persist which config version the spec-gate used, for
+ * traceability (product_inspections.gateConfigVersion, migration 0276). Written
+ * with a raw statement because the drizzle table type (out of this zone) has no
+ * such column yet; wholly best-effort — a missing column or transient error must
+ * NEVER fail an inspection that already committed.
+ */
+async function persistGateConfigVersion(
+  inspectionId: number,
+  gateConfigVersion: number | null,
+): Promise<void> {
+  if (gateConfigVersion == null || gateConfigVersionColumnMissing) return;
+  const dbi = await getDb();
+  // fakeDb in unit tests has no .execute → cleanly skip (nothing to assert there).
+  if (!dbi || typeof (dbi as { execute?: unknown }).execute !== "function") return;
+  try {
+    await (dbi as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(
+      sql`UPDATE product_inspections SET "gateConfigVersion" = ${gateConfigVersion} WHERE id = ${inspectionId}`,
+    );
+  } catch (err) {
+    const msg = String((err as Error)?.message ?? err);
+    if (/gateConfigVersion|does not exist|column/i.test(msg)) {
+      gateConfigVersionColumnMissing = true; // 0276 not applied — stop trying.
+    }
+    console.warn(
+      `[submitInspection] gateConfigVersion persist skipped (non-fatal) for inspection=${inspectionId}:`,
+      msg,
+    );
+  }
+}
+
+/**
  * The FULL submit pipeline (auth → inspection row → measurements/images →
  * alerts/side-effects). Extracted from the mutation so the store-forward WAL
  * can replay a buffered payload through EXACTLY the same code path. Throws on
@@ -244,7 +601,7 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
 export async function processInspectionSubmission(
   input: SubmitInspectionInput,
   opts?: { headerKey?: string | null; rateLimit?: boolean },
-): Promise<{ success: true; inspectionId: number }> {
+): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
       // Validate machine — per-machine scoped key (Authorization header or apiKey
       // field), legacy shared apiKey (flag-gated), or machineCode. Throws
       // UNAUTHORIZED/FORBIDDEN, or DbUnavailableError when the DB is down.
@@ -313,8 +670,107 @@ export async function processInspectionSubmission(
       // Fix timezone: Drizzle ORM serializes Date via .toISOString() (UTC),
       // but timestamp without time zone strips Z → stores UTC value.
       // Shift to "fake UTC" so PostgreSQL stores local time.
+      //
+      // ⚠ Doc 51 P1 (CASE #3) — THIS SHIFT IS LEFT IN PLACE ON PURPOSE. It is
+      // process-TZ dependent and the read layer (server/utils/kpi.ts
+      // getDbStorageTimezone) defaults to assuming UTC, so the two only agree when
+      // FACTORY_DB_STORAGE_TZ is set to the server's zone. Removing the shift here
+      // would silently re-interpret EVERY historical row (22,995 on dev) that was
+      // written WITH it — a data-corruption event dressed as a bug fix. The cutover
+      // needs its own migration (rewrite stored values + flip FACTORY_DB_STORAGE_TZ
+      // atomically); see the doc 51 P1 report. What P1 adds is the ability to SEE
+      // the problem: serverReceivedAt + signed skew + timeSource, below.
       const rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date();
       const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+
+      // ══ Doc 51 P1 (CASE #3) — PROVENANCE + CLOCK-SKEW ══════════════════════
+      // serverReceivedAt/timeSource are normally stamped by the mutation from the
+      // ORIGINAL request and carried through the WAL, so a replay reports the
+      // receive time of the BOARD, not of the replay. Direct callers (hot-folder,
+      // acquisition worker, tests) omit them → derive honestly from what we have.
+      const serverReceivedAt = input.serverReceivedAt
+        ? new Date(input.serverReceivedAt)
+        : new Date();
+      const timeSource: InspectionTimeSource =
+        input.timeSource ?? classifyInspectionTime(input.inspectionTime);
+      const skew = assessClockSkew(rawInspTime, serverReceivedAt, timeSource);
+      if (skew.flagged) {
+        raiseClockSkewAlert({
+          machineId: machine.id,
+          machineCode: machine.code,
+          machineName: machine.name,
+          serialNumber: input.serialNumber,
+          skewSeconds: skew.skewSeconds,
+          timeSource,
+          machineTime: rawInspTime,
+          serverReceivedAt,
+        });
+      }
+      // serverReceivedAt is stored with the SAME fake-UTC shift as inspectionTime.
+      // Not because the shift is right — because a column in a different time base
+      // than the one it is compared against is worse than a consistently-wrong one.
+      // Both move together at cutover. timeSkewSeconds is a DURATION, so it is
+      // immune to all of this: it stays correct across the cutover either way.
+      const localServerReceivedAt = new Date(
+        serverReceivedAt.getTime() - serverReceivedAt.getTimezoneOffset() * 60000,
+      );
+
+      // ══ Doc 51 P1 (CASE #12) — CONFIG VERSION PIN ══════════════════════════
+      // Which thresholds graded this board? Unanswerable until now: the machine's
+      // config version was never recorded and product_models.pointsConfigVersion is
+      // LIVE — it moves every time an engineer edits a limit. Stamp the machine's
+      // DECLARED version verbatim, and tag (never reject — QĐ#3) how it compares.
+      // ★ QĐ#2 rests on this column: a re-grade reads the SNAPSHOT of THIS version.
+      const declaredConfigVersion = input.pointsConfigVersion;
+      let configVersionStatus: "current" | "stale" | "ahead" | "unknown" = "unknown";
+      if (declaredConfigVersion !== undefined && productModelRecord) {
+        const liveVersion = productModelRecord.pointsConfigVersion ?? 1;
+        configVersionStatus =
+          declaredConfigVersion === liveVersion
+            ? "current"
+            : declaredConfigVersion < liveVersion
+              ? "stale"
+              : "ahead";
+        if (configVersionStatus === "stale") {
+          // The board was graded against thresholds the engineers have already
+          // moved on from. Soft signal: ops pushes a sync, nobody's line stops.
+          console.warn(
+            `[submitInspection] STALE CONFIG — machine=${machine.code} graded ` +
+              `serial=${input.serialNumber} with pointsConfigVersion=${declaredConfigVersion} ` +
+              `but product=${resolvedProductModelCode} is at ${liveVersion} — ` +
+              `board TAGGED 'stale_config', NOT rejected (QĐ#3). Machine needs a points sync.`,
+          );
+        } else if (configVersionStatus === "ahead") {
+          // Machine claims a version the server has never issued. Either the config
+          // was rolled back / the DB restored, or the machine is reporting garbage.
+          console.warn(
+            `[submitInspection] CONFIG VERSION AHEAD — machine=${machine.code} claims ` +
+              `pointsConfigVersion=${declaredConfigVersion} but product=${resolvedProductModelCode} ` +
+              `is only at ${liveVersion}. Config rollback, restored DB, or a lying machine.`,
+          );
+        }
+      }
+
+      // ══ Doc 51 P1 (QĐ#2) — SPEC-GATE VERSION SELECTION ═════════════════════
+      // Flag-gated (SPEC_GATE_SNAPSHOT_ENABLED, default OFF ⇒ exact current
+      // behaviour: gate by LIVE limits). When ON *and* the board is STALE (it
+      // declares an older config than the product now holds), the spec-gate below
+      // reconstructs each point's limits AS THEY WERE when the board was measured
+      // (from measurement_point_versions) instead of gating it against the newer
+      // live limits — that is the split-brain this closes. `gateConfigVersion`
+      // records which version the gate actually used, so a re-grade is traceable
+      // (persisted best-effort to product_inspections.gateConfigVersion, 0276).
+      const snapshotGateOn = envTrue(process.env.SPEC_GATE_SNAPSHOT_ENABLED);
+      const useSnapshotGate = snapshotGateOn && configVersionStatus === "stale";
+      const liveConfigVersion = productModelRecord?.pointsConfigVersion ?? null;
+      const gateConfigVersion: number | null = useSnapshotGate
+        ? declaredConfigVersion ?? null
+        : liveConfigVersion;
+      // Per-submission cache of a point's edit-snapshot history (only touched for
+      // stale boards under the flag → normally never queried).
+      const pointSnapshotCache = new Map<number, PointLimitSnapshot[]>();
+      let snapshotGatedPoints = 0;   // points gated by a reconstructed snapshot
+      let snapshotMissingPoints = 0; // stale points with no usable snapshot → gate SKIPPED
 
       // W8-B seam (doc 29 §3.2, migration 0192) — resolve the machine-sent
       // operatorId (BADGE CODE) to a canonical users.id and stamp it. Dynamic
@@ -331,6 +787,11 @@ export async function processInspectionSubmission(
         }
       }
 
+      // Doc 51 P0 (R2) — idempotent header insert. `insertOutcome.duplicate`
+      // comes back true when the natural key (machineId, serialNumber,
+      // inspectionTime) was ALREADY persisted, i.e. this is a machine retry /
+      // WAL replay of a board we have already fully processed.
+      const insertOutcome: CreateInspectionOutcome = { duplicate: false };
       const inspectionId = await db.createProductInspection({
         machineId: machine.id,
         ingestMode: aoiIngestMode === "commissioning" ? "commissioning" : undefined,
@@ -354,8 +815,42 @@ export async function processInspectionSubmission(
         boardIndex: input.boardIndex,
         inspectionTime: localInspTime,
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
+        // Doc 51 P1 (0275) — provenance. Written on EVERY row, flags off or on:
+        // the measurement is what makes CASE #3 / CASE #12 visible at all.
+        serverReceivedAt: localServerReceivedAt,
+        timeSkewSeconds: skew.skewSeconds,
+        clockSkewFlagged: skew.flagged,
+        timeSource,
+        // Audit trail for the ledger-enforced key (see db/inspection.ts).
+        idempotencyKey: input.idempotencyKey,
+        // CASE #12 — machine's claim, verbatim + the server's soft verdict on it.
+        pointsConfigVersion: declaredConfigVersion,
+        configVersionStatus,
+      }, insertOutcome);
 
-      });
+      // ══ Doc 51 P0 (R2) — DUPLICATE SHORT-CIRCUIT ═══════════════════════════
+      // The board is already on record: the header insert was a no-op and
+      // `inspectionId` is the ORIGINAL row's id. EVERY side-effect below has
+      // ALREADY run for that row, so re-running them is precisely the damage the
+      // idempotency key exists to prevent:
+      //   • updateProductionOrderQuantities → +2 completedQuantity per board
+      //   • publishToOutbox (ERP quality-result)
+      //   • measurement_results insert       → duplicated per-point rows
+      //   • emitNGAlert / publishNGAlert     → the operator's Andon fires twice
+      //   • stats/cache/WIP/quality-gate/inline-AI hooks
+      // ACK honestly with the ORIGINAL inspectionId + duplicate:true so the
+      // machine stops retrying and can reconcile. NOTE the caller path stays
+      // intact: this is a SUCCESS return, so the mutation still ledgers
+      // markSubmissionApplied() and the WAL replay still drains the entry.
+      if (insertOutcome.duplicate) {
+        console.warn(
+          `[submitInspection] duplicate submission ignored (idempotency key hit) — ` +
+            `machine=${machine.code} serial=${input.serialNumber} ` +
+            `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+        );
+        return { success: true as const, inspectionId, duplicate: true as const };
+      }
+      // ═══════════════════════════════════════════════════════════════════════
 
       // K0+-c: ADDITIVELY publish the quality result to the durable ERP outbox.
       // Fire-and-forget + error-isolated (never blocks/affects the ingest path);
@@ -397,6 +892,9 @@ export async function processInspectionSubmission(
       // inspection's overallResult can be reconciled after the batch insert.
       let serverDowngradeCount = 0;
       const pointLimitEvalOn = isPointLimitEvalEnabled();
+      // Doc 51 P1 (CASE #5) — count measurements whose image upload FAILED so the
+      // silence is broken: those rows are marked (remark sentinel) + telemetry.
+      let imageUploadFailures = 0;
       // Doc 31 Đợt B (OP3): defect codes reported but NOT found in defect_catalog.
       // Collected here and rolled up ONCE after the loop (best-effort telemetry —
       // never blocks ingest) so engineers see "code X seen N× but not in catalog".
@@ -552,6 +1050,19 @@ export async function processInspectionSubmission(
         const uploadedImageUrl: string | undefined = uploaded?.url;
         const uploadedImageKey: string | undefined = uploaded?.key;
 
+        // Doc 51 P1 (CASE #5) — an image the machine SENT that produced neither a
+        // URL nor a key means the upload FAILED (storage down / decode error). The
+        // old code swallowed it (console.error → imageUrl left undefined), so a NG
+        // point lost its evidence image SILENTLY. Detect it here so the row can be
+        // marked instead: same predicate the pre-upload pass used to enqueue a job.
+        const intendedUpload =
+          !!measurement.imageBase64 &&
+          measurement.imageBase64.length > 200 &&
+          !measurement.imageBase64.startsWith("http") &&
+          !measurement.imageBase64.startsWith("/uploads");
+        const imageUploadFailed = intendedUpload && !uploaded;
+        if (imageUploadFailed) imageUploadFailures++;
+
         let defectCatalogId: number | undefined;
         let defectCodeRaw: string | undefined;
         if (measurement.defectCatalogCode) {
@@ -578,14 +1089,37 @@ export async function processInspectionSubmission(
         // the evaluator can DOWNGRADE a machine "OK" to "NG" on a real violation
         // (never upgrades, never touches NTF). Auto-provisioned points (no
         // pointDef) have no limits → machine verdict passes through untouched.
+        //
+        // Doc 51 P1 (QĐ#2) — LIMIT SOURCE SELECTION. By default (or for a
+        // current/ahead board, or when the flag is off) the gate uses the LIVE
+        // pointDef, exactly as before. For a STALE board under
+        // SPEC_GATE_SNAPSHOT_ENABLED, it instead uses the limits reconstructed
+        // for the instant the board was received — and when that history can't
+        // confirm the older limits, it SKIPS the gate for this point (safe: the
+        // machine's verdict stands) rather than gate a stale board by newer limits.
         let effectiveResult = measurement.result;
         let specGateRemark: string | undefined;
         if (pointDef && pointLimitEvalOn) {
-          const evalRes = evaluatePointResult(pointDef as any, measurement, measurement.result);
-          effectiveResult = evalRes.result;
-          if (evalRes.overridden) {
-            serverDowngradeCount++;
-            specGateRemark = `Spec gate: ${evalRes.violations.join("; ")}`.slice(0, 480);
+          let gateLimits: PointLimitSource | null = pointDef as unknown as PointLimitSource;
+          if (useSnapshotGate) {
+            const snaps = await loadPointLimitSnapshots(resolvedPointDefId, pointSnapshotCache);
+            const resolved = resolveLimitsAtInstant(snaps, serverReceivedAt);
+            if (resolved.basis === "missing") {
+              gateLimits = null; // no usable snapshot → do NOT gate this stale point
+              snapshotMissingPoints++;
+            } else {
+              gateLimits = resolved.limits;
+              snapshotGatedPoints++;
+            }
+          }
+          if (gateLimits) {
+            const evalRes = evaluatePointResult(gateLimits, measurement, measurement.result);
+            effectiveResult = evalRes.result;
+            if (evalRes.overridden) {
+              serverDowngradeCount++;
+              const vtag = gateConfigVersion != null ? ` v${gateConfigVersion}` : "";
+              specGateRemark = `Spec gate${vtag}: ${evalRes.violations.join("; ")}`.slice(0, 480);
+            }
           }
         }
 
@@ -609,7 +1143,15 @@ export async function processInspectionSubmission(
           defectCodeRaw,
           defectSeverity: measurement.defectSeverity,
           result: effectiveResult,
-          remark: specGateRemark ?? measurement.remark ?? (pointDef ? undefined : `Point: ${pointCode}`),
+          // Doc 51 P1 (CASE #5) — when the evidence image failed to upload, stamp a
+          // queryable sentinel into remark (LIKE '%[IMG_UPLOAD_FAILED]%') so the
+          // missing image is VISIBLE, never silent. Preserves any spec-gate/machine
+          // remark alongside it.
+          remark: (() => {
+            const base = specGateRemark ?? measurement.remark ?? (pointDef ? undefined : `Point: ${pointCode}`);
+            if (!imageUploadFailed) return base;
+            return `${base ? base + " " : ""}[IMG_UPLOAD_FAILED]`.slice(0, 480);
+          })(),
           imageUrl: uploadedImageUrl,
           imageKey: uploadedImageKey,
         });
@@ -651,26 +1193,84 @@ export async function processInspectionSubmission(
       // (input.overallResult) — a server-downgraded board is reflected in stored
       // data/analytics but does not retro-fire the live NG alert.
       const promoteOverallToNg = serverDowngradeCount > 0 && input.overallResult === "OK";
+      // Doc 51 P1 (CASE #5) — keys of images ALREADY uploaded to object storage for
+      // THIS submission. If the measurement transaction below fails, these are
+      // orphans (bytes in storage, no DB row pointing at them) → we compensate by
+      // deleting them so a failed insert can't silently accrete dead objects.
+      const uploadedStorageKeys = uploadedImages
+        .map((u) => u?.key)
+        .filter((k): k is string => typeof k === "string" && k.length > 0);
       if (measurementResults.length > 0 || promoteOverallToNg) {
         const dbInstance = await getDb();
         if (!dbInstance) throw new Error("Database not available");
-        await dbInstance.transaction(async (tx) => {
-          if (measurementResults.length > 0) {
-            await tx.insert(measurementResultsTable).values(measurementResults);
+        try {
+          await dbInstance.transaction(async (tx) => {
+            if (measurementResults.length > 0) {
+              await tx.insert(measurementResultsTable).values(measurementResults);
+            }
+            if (promoteOverallToNg) {
+              await tx
+                .update(productInspections)
+                .set({ overallResult: "NG", updatedAt: new Date() })
+                .where(drizzleAnd(
+                  drizzleEq(productInspections.id, inspectionId),
+                  drizzleEq(productInspections.overallResult, "OK"),
+                ));
+            }
+          });
+        } catch (txErr) {
+          // COMPENSATION — the measurement rows did NOT persist, so every image we
+          // pre-uploaded for this board is now orphaned. Delete them (best-effort,
+          // storageDelete never throws) BEFORE re-throwing so the caller's WAL
+          // buffer / retry path re-uploads cleanly instead of leaking objects.
+          if (uploadedStorageKeys.length > 0) {
+            console.warn(
+              `[submitInspection] measurement tx failed for inspection=${inspectionId} — ` +
+                `compensating ${uploadedStorageKeys.length} orphaned image(s).`,
+            );
+            await Promise.all(
+              uploadedStorageKeys.map(async (key) => {
+                try {
+                  const res = await storageDelete(key);
+                  if (!res.deleted && res.error) {
+                    console.error(`[submitInspection] orphan image cleanup failed for ${key}:`, res.error);
+                  }
+                } catch (delErr) {
+                  console.error(`[submitInspection] orphan image cleanup threw for ${key}:`, delErr);
+                }
+              }),
+            );
           }
-          if (promoteOverallToNg) {
-            await tx
-              .update(productInspections)
-              .set({ overallResult: "NG", updatedAt: new Date() })
-              .where(drizzleAnd(
-                drizzleEq(productInspections.id, inspectionId),
-                drizzleEq(productInspections.overallResult, "OK"),
-              ));
-          }
-        });
+          throw txErr;
+        }
         if (promoteOverallToNg) {
           console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
         }
+      }
+
+      // Doc 51 P1 (QĐ#2) — record which config version the spec-gate used (0276)
+      // ONLY in snapshot mode (the divergent case worth tracing). Flag OFF / a
+      // current board gates by LIVE by definition, so a NULL gateConfigVersion
+      // means exactly that — and the default hot path (QĐ#7: 100 boards/s) takes
+      // ZERO extra writes, honouring QĐ#1's "flag off ⇒ no perf change". Best-effort
+      // AFTER the measurements committed; never fails ingest.
+      if (useSnapshotGate) {
+        await persistGateConfigVersion(inspectionId, gateConfigVersion);
+      }
+      if (useSnapshotGate && (snapshotGatedPoints > 0 || snapshotMissingPoints > 0)) {
+        console.warn(
+          `[submitInspection] SNAPSHOT SPEC-GATE — inspection=${inspectionId} ` +
+            `serial=${input.serialNumber} graded under declared config v${gateConfigVersion} ` +
+            `(live v${liveConfigVersion}): ${snapshotGatedPoints} point(s) gated by snapshot, ` +
+            `${snapshotMissingPoints} point(s) had no usable snapshot → gate SKIPPED (safe).`,
+        );
+      }
+      // Doc 51 P1 (CASE #5) — surface silent image-upload losses.
+      if (imageUploadFailures > 0) {
+        console.error(
+          `[submitInspection] ${imageUploadFailures} image upload(s) FAILED for inspection=${inspectionId} ` +
+            `serial=${input.serialNumber} — those measurement rows are tagged [IMG_UPLOAD_FAILED] (no evidence image).`,
+        );
       }
 
       // Emit realtime alerts if NG
@@ -900,9 +1500,23 @@ export const machineApiRouter = router({
       // Stamp receive-time when the machine omitted inspectionTime so a WAL
       // replay reproduces the same timestamp (stable idempotency key) and the
       // persisted row keeps the ORIGINAL receive time, not the replay time.
+      //
+      // ⚠ Doc 51 P1 — this `?? new Date()` is EXACTLY the hole 0272 could not
+      // close: a machine that omits inspectionTime gets a NEW stamp on every
+      // receive, so each retry lands on a different natural key and inserts a
+      // fresh row. Only `input.idempotencyKey` (ledger-enforced, 0275) protects
+      // those machines. Nothing here can fix it — two independent HTTP requests
+      // carry no shared identity unless the CLIENT provides one.
+      const receivedAt = new Date();
       const payload: SubmitInspectionInput = {
         ...input,
-        inspectionTime: input.inspectionTime ?? new Date().toISOString(),
+        inspectionTime: input.inspectionTime ?? receivedAt.toISOString(),
+        // Doc 51 P1 (CASE #3) — provenance stamped from the ORIGINAL request and
+        // carried through the WAL. Assigned AFTER the spread so a machine that
+        // tries to send these cannot forge its own receive time or hide a naive
+        // timestamp behind timeSource:'machine_utc'.
+        serverReceivedAt: receivedAt.toISOString(),
+        timeSource: classifyInspectionTime(input.inspectionTime),
       };
       // The WAL entry must be self-authenticating on replay: fold a header
       // credential into the payload's apiKey field (never persisted to the DB).
@@ -992,7 +1606,7 @@ export const machineApiRouter = router({
       apiKey: z.string(),
       inspectionId: z.number(),
       pointCode: z.string(),
-      imageBase64: z.string(),
+      imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE),
       mimeType: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -1657,7 +2271,7 @@ export const machineApiRouter = router({
       machineCode: z.string().optional(),
       apiKey: z.string().optional(),
       productModelCode: z.string().trim().min(1),
-      imageBase64: z.string().optional(),
+      imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(),
       imageMimeType: z.string().optional(),
       imageUrl: z.string().url().optional(),
       imageWidth: z.number().int().positive().optional(),
@@ -1786,7 +2400,7 @@ export const machineApiRouter = router({
       apiKey: z.string().optional(),
       productModelCode: z.string().trim().min(1),
       pointCode: z.string().trim().min(1),
-      imageBase64: z.string().optional(),
+      imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(),
       imageMimeType: z.string().optional(),
       imageUrl: z.string().url().optional(),
     }).refine((data) => data.apiKey || data.machineCode, {
@@ -1984,11 +2598,19 @@ export const machineApiRouter = router({
           currentVersion,
           sinceVersion: input.sinceVersion,
           points: [],
+          // Doc 51 P1 (CASE #4) — shape parity with the has-changes branch.
+          deletedCodes: [] as string[],
+          deletedPoints: [] as Array<{ id: number; code: string; deletedAt: string | null; deletedAtVersion: number | null }>,
         };
       }
 
-      // Get changed points
-      const { points } = await db.getPointsChangedSinceVersion(productModel.id, input.sinceVersion);
+      // Get changed points + tombstones (doc 51 CASE #4). deletedCodes lets a
+      // machine that MERGES its point set (or caches per code) learn which points
+      // are RETIRED and STOP inspecting them — previously they just vanished from
+      // `points`, so the machine kept grading boards against a spec that no longer
+      // exists. Additive: existing consumers that read only `points` are untouched.
+      const { points, deletedPoints, deletedCodes } =
+        await db.getPointsChangedSinceVersion(productModel.id, input.sinceVersion);
 
       // Log delta sync pull
       db.createProductSyncLog({
@@ -2111,6 +2733,17 @@ export const machineApiRouter = router({
         coordinateMode: (productModel as any).coordinateMode ?? "pixel",
         fiducials,
         points: projectedPoints,
+        // Doc 51 P1 (CASE #4) — retired points the machine must STOP inspecting.
+        // `deletedCodes` is the flat code list (most machines key on code);
+        // `deletedPoints` carries id/code/deletedAt/deletedAtVersion for richer
+        // clients. Both additive; empty arrays when nothing was retired.
+        deletedCodes,
+        deletedPoints: deletedPoints.map((t) => ({
+          id: t.id,
+          code: t.code,
+          deletedAt: t.deletedAt ? t.deletedAt.toISOString() : null,
+          deletedAtVersion: t.deletedAtVersion,
+        })),
       };
     }),
 

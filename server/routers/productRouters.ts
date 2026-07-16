@@ -52,6 +52,47 @@ import {
 } from "../services/lotAcceptanceService";
 // Doc 42 Đợt 4A (APPLY-B) — engine import/export dùng chung cho danh sách sản phẩm.
 import { exportRows, type MasterDataColumn } from "../services/masterDataIO";
+// Doc 51 P1 (R4) — machines learn about point-config changes off this MQTT topic.
+import { publishPointsConfigChanged } from "../services/mqttService";
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (R4) — pointsConfigVersion propagation
+// ──────────────────────────────────────────────────────────────────────────────
+// THE BUG this closes: `pointsConfigVersion` was bumped in exactly ONE place in
+// this file — CAD applyJob — so measurementPoint.create / update / delete through
+// the UI left the version untouched. checkPointsVersion then answered "no changes"
+// and deltaSyncPoints returned an empty set FOREVER: every AOI/AVI machine kept
+// inspecting against the config it happened to fetch first. New points never got
+// inspected, retired points kept failing boards, and re-tuned limits never landed —
+// silently, with a green UI telling the engineer the edit was saved.
+//
+// Every mutation that touches measurement_point_defs MUST route through here.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bump a product's pointsConfigVersion and tell the machines to re-fetch.
+ *
+ * Failure policy is deliberately split:
+ *  • The DB bump PROPAGATES. Swallowing it would silently reproduce the exact bug
+ *    this fixes. It is safe to surface: the point write itself is now idempotent
+ *    (0274 + ON CONFLICT), so the client's retry converges instead of duplicating.
+ *  • The MQTT publish is BEST-EFFORT. It is only a latency optimisation — machines
+ *    also poll checkPointsVersion, so a dead broker delays convergence to the next
+ *    poll rather than losing it. Never fail an engineer's save over that.
+ *
+ * `bumped === null` ⇒ the product row is gone (soft-deleted) → nothing to notify.
+ */
+async function bumpAndNotifyPointsConfig(productModelId: number | null | undefined) {
+  if (productModelId == null) return null;
+  const bumped = await db.bumpPointsConfigVersion(productModelId);
+  if (!bumped) return null;
+  try {
+    publishPointsConfigChanged(bumped.code, bumped.version);
+  } catch (err) {
+    console.warn("[doc51 R4] publishPointsConfigChanged failed (machines will pick it up on next poll)", err);
+  }
+  return bumped;
+}
 
 const legacyMeasurementTypeValues = ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"] as const;
 const legacyMeasurementTypeSchema = z.enum(legacyMeasurementTypeValues);
@@ -1011,6 +1052,9 @@ export const measurementPointRouter = router({
         upperLimit: input.upperLimit,
       });
 
+      // Doc 51 P2 — out-param: `duplicate` ⇒ an active def with this code already
+      // existed and `id` is ITS id; nothing was written (see createMeasurementPointDef).
+      const createOutcome = { duplicate: false };
       const id = await db.createMeasurementPointDef({
         ...input,
         measurementType: legacyMeasurementType,
@@ -1022,7 +1066,14 @@ export const measurementPointRouter = router({
         normalizedX,
         normalizedY,
         normalizedRadius,
-      });
+      }, createOutcome);
+
+      // Doc 51 P1 (R4) — a NEW point the machines cannot see is a point that never
+      // gets inspected. Skip the bump when nothing was actually written: a losing
+      // racer must not churn the version and trigger a pointless fleet re-fetch.
+      if (!createOutcome.duplicate) {
+        await bumpAndNotifyPointsConfig(input.productModelId);
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -1037,13 +1088,17 @@ export const measurementPointRouter = router({
             measurementType: legacyMeasurementType,
             measurementTypeCode: input.measurementTypeCode,
             shape: input.shape ?? "circle",
+            // Doc 51 P2 — audit must not claim a create that never happened.
+            duplicate: createOutcome.duplicate,
           },
           status: "success",
         });
       } catch (err) {
         console.warn("audit log failed (measurementPoint.create)", err);
       }
-      return { id };
+      // `duplicate` is ADDITIVE (existing clients read only `id`): true ⇒ the code
+      // was already live and `id` points at the pre-existing def.
+      return { id, duplicate: createOutcome.duplicate };
     }),
 
   update: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
@@ -1268,6 +1323,11 @@ export const measurementPointRouter = router({
         }
         throw err;
       }
+      // Doc 51 P1 (R4) — THE fix: an edited limit/position/name that machines never
+      // re-fetch means the engineer's change exists only in the UI while the fleet
+      // keeps grading boards against the old spec. Bump AFTER the write succeeds
+      // (a rejected optimistic-lock write above threw, so no version churn for it).
+      await bumpAndNotifyPointsConfig(existingPoint.productModelId);
       // Doc 31 OP2 — every DIRECT limit change leaves a dedicated audit row with
       // before/after limits + the gate decision (development-direct or override).
       if (touchesLimits) {
@@ -1342,6 +1402,10 @@ export const measurementPointRouter = router({
     .mutation(async ({ ctx, input }) => {
       const result = await backfillComponentCodesFromBom(input.productModelId, { dryRun: input.dryRun });
       if (!input.dryRun && result.updated > 0) {
+        // Doc 51 P1 (R4) — componentCode is carried on the point def the machine
+        // syncs. dryRun writes nothing and updated===0 changed nothing → no bump
+        // (a version bump with no payload change is a wasted fleet-wide re-fetch).
+        await bumpAndNotifyPointsConfig(input.productModelId);
         try {
           await db.createAuditLog({
             userId: ctx.user.id,
@@ -1369,7 +1433,19 @@ export const measurementPointRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.getMeasurementPointDefById(input.id);
-      await db.deleteMeasurementPointDef(input.id);
+      // Doc 51 P1 (R4 + CASE #4): deleteMeasurementPointDef bumps pointsConfigVersion
+      // and stamps the tombstone's deletedAtVersion INSIDE its own transaction — the
+      // two must never diverge, so the bump cannot be lifted out to this layer.
+      // Returns the new version (null = the point was already deleted → no-op).
+      const bumped = await db.deleteMeasurementPointDef(input.id);
+      if (bumped) {
+        // Best-effort nudge; machines otherwise converge on their next poll.
+        try {
+          publishPointsConfigChanged(bumped.code, bumped.version);
+        } catch (err) {
+          console.warn("[doc51 R4] publishPointsConfigChanged failed after point delete", err);
+        }
+      }
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -1378,13 +1454,19 @@ export const measurementPointRouter = router({
           entityType: "product",
           entityId: input.id,
           entityName: existing?.code ?? undefined,
-          details: { soft: true, productModelId: existing?.productModelId },
+          details: {
+            soft: true,
+            productModelId: existing?.productModelId,
+            // Doc 51 — which config version retired this point (answers
+            // "the machine was still on v7, did it ever get the tombstone?").
+            pointsConfigVersion: bumped?.version ?? null,
+          },
           status: "success",
         });
       } catch (err) {
         console.warn("audit log failed (measurementPoint.delete)", err);
       }
-      return { success: true };
+      return { success: true, pointsConfigVersion: bumped?.version ?? null };
     }),
 
   // Upload cropped reference image for measurement point
@@ -1416,6 +1498,11 @@ export const measurementPointRouter = router({
         changedBy: ctx.user.id,
         changeReason: "uploadCroppedImage",
       });
+
+      // Doc 51 P1 (R4) — the crop IS part of the point config the machine syncs
+      // (referenceImageUrl/Key); without a bump the fleet keeps matching against
+      // the previous template image.
+      await bumpAndNotifyPointsConfig(point.productModelId);
 
       try {
         await db.createAuditLog({
@@ -1492,6 +1579,15 @@ export const measurementPointRouter = router({
         unmappedModelId,
         targetMachineId: input.targetMachineId ?? undefined,
       });
+      // Doc 51 P1 (R4) — a MOVE adds real defs to the target product's point set,
+      // so the machines running that product must re-fetch. Only when something
+      // actually landed. (MERGE re-points results onto an existing target def and
+      // changes nothing the machine reads, but it is cheaper to bump once than to
+      // reason per-branch.) The __UNMAPPED__ source is a synthetic placeholder no
+      // machine ever syncs against → deliberately not bumped.
+      if (summary.moved > 0 || summary.merged > 0) {
+        await bumpAndNotifyPointsConfig(input.targetProductModelId);
+      }
       await db.createAuditLog({
         userId: ctx.user.id,
         userName: ctx.user.name ?? undefined,
@@ -3525,15 +3621,13 @@ export const cadImportRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "CAD import job already applied" });
       }
       const count = await db.applyCadImportJob(input.jobId, ctx.user.id);
-      // Bump pointsConfigVersion so machines re-fetch
-      try {
-        const pm = await db.getProductModelById(job.productModelId);
-        const next = (pm?.pointsConfigVersion ?? 1) + 1;
-        await db.updateProductModel(job.productModelId, {
-          pointsConfigVersion: next,
-          updatedAt: new Date(),
-        } as any);
-      } catch {}
+      // Doc 51 P1 (R4 / CASE #12) — was a READ-MODIFY-WRITE (read version, +1,
+      // write it back) wrapped in a bare `try {} catch {}`: two concurrent config
+      // changes both reading v7 both wrote v8, so one change shipped under a
+      // version some machine already held and was never re-fetched — and the empty
+      // catch hid every failure. Now one atomic `col = col + 1` (+ MQTT nudge),
+      // and a bump failure surfaces instead of silently stranding the fleet.
+      await bumpAndNotifyPointsConfig(job.productModelId);
       await db.createAuditLog({
         userId: ctx.user.id,
         userName: ctx.user.name ?? undefined,

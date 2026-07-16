@@ -32,6 +32,7 @@ import {
 } from "../services/auditTrailService";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { withDbErrors, rethrowDbError } from "../_core/dbErrors";
+import { logger } from "../logger";
 import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
 
 // ── Doc 27 Đợt 3 / W3-B — M5 audit helpers ──────────────────────────────────
@@ -553,33 +554,105 @@ function registerPendingCap(): number {
   return Number.isFinite(n) && n >= 0 ? n : 200;
 }
 
-function enforceRegisterThrottle(ip: string | undefined | null): void {
-  const limit = registerRateLimitPerHour();
-  if (limit <= 0) return;
+/** Shared fixed-window per-IP throttle body (register + claimKey both use it). */
+function enforceIpWindow(
+  windows: Map<string, { start: number; count: number }>,
+  ip: string | undefined | null,
+  limit: number,
+  windowMs: number,
+  message: string,
+): void {
   const key = ip && ip.length > 0 ? ip : "unknown";
   const now = Date.now();
-  const win = registerIpWindows.get(key);
-  if (!win || now - win.start >= REGISTER_WINDOW_MS) {
-    registerIpWindows.set(key, { start: now, count: 1 });
-    if (registerIpWindows.size > 10_000) {
-      for (const [k, v] of registerIpWindows) {
-        if (now - v.start >= REGISTER_WINDOW_MS) registerIpWindows.delete(k);
+  const win = windows.get(key);
+  if (!win || now - win.start >= windowMs) {
+    windows.set(key, { start: now, count: 1 });
+    if (windows.size > 10_000) {
+      for (const [k, v] of windows) {
+        if (now - v.start >= windowMs) windows.delete(k);
       }
     }
     return;
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Too many machine registrations from this address (limit ${limit}/hour)`,
-    });
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message });
   }
+}
+
+function enforceRegisterThrottle(ip: string | undefined | null): void {
+  const limit = registerRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(registerIpWindows, ip, limit, REGISTER_WINDOW_MS,
+    `Too many machine registrations from this address (limit ${limit}/hour)`);
 }
 
 /** Test helper — clears the per-IP registration throttle windows. */
 export function _resetRegisterThrottle(): void {
   registerIpWindows.clear();
+}
+
+// ── Doc 51 P0 / R1 — machine credential delivery ────────────────────────────
+// `config` is a publicProcedure keyed ONLY by serialNumber (a number printed on
+// the machine's label) and it used to return machines.apiKey in PLAINTEXT — an
+// unauthenticated credential leak to anyone who can read a label or guess a
+// serial. It no longer returns the key. A machine now redeems a short-lived,
+// SINGLE-USE claim token (issued to the admin at approval) via `claimKey`.
+//
+// QĐ#1 (siết auth máy theo MIGRATION CÓ KIỂM SOÁT): flipping this off could
+// brick a fleet whose firmware still polls `config` for its key, so
+// MACHINE_CONFIG_EXPOSE_APIKEY=true is a controlled way back. It is OFF by
+// default (safe), and every use logs a throttled warning naming the machine so
+// the dependency is visible instead of silent.
+
+/** Legacy: does `config` still hand out the plaintext apiKey? Default FALSE. */
+function machineConfigExposesApiKey(): boolean {
+  return process.env.MACHINE_CONFIG_EXPOSE_APIKEY === "true";
+}
+
+/** Claim attempts allowed per IP per hour (brute-force floor). 0 disables. */
+function claimRateLimitPerHour(): number {
+  const n = parseInt(process.env.MACHINE_CLAIM_RATE_LIMIT_PER_HOUR || "30", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+const claimIpWindows = new Map<string, { start: number; count: number }>();
+const CLAIM_WINDOW_MS = 60 * 60 * 1000;
+
+function enforceClaimThrottle(ip: string | undefined | null): void {
+  const limit = claimRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(claimIpWindows, ip, limit, CLAIM_WINDOW_MS,
+    `Too many claim attempts from this address (limit ${limit}/hour)`);
+}
+
+/** Test helper — clears the per-IP claim throttle windows. */
+export function _resetClaimThrottle(): void {
+  claimIpWindows.clear();
+  legacyConfigKeyWarnAt.clear();
+}
+
+/** Throttled legacy-exposure warnings: one per machine per 10 min. */
+const legacyConfigKeyWarnAt = new Map<string, number>();
+const LEGACY_CONFIG_WARN_MIN_MS = 10 * 60 * 1000;
+
+function warnLegacyConfigApiKey(serialNumber: string, code: string): void {
+  const now = Date.now();
+  const prev = legacyConfigKeyWarnAt.get(serialNumber) ?? 0;
+  if (now - prev < LEGACY_CONFIG_WARN_MIN_MS) return;
+  legacyConfigKeyWarnAt.set(serialNumber, now);
+  if (legacyConfigKeyWarnAt.size > 10_000) {
+    for (const [k, t] of legacyConfigKeyWarnAt) {
+      if (now - t >= LEGACY_CONFIG_WARN_MIN_MS) legacyConfigKeyWarnAt.delete(k);
+    }
+  }
+  logger.warn(
+    { machineCode: code, serialNumber },
+    "[MachineConfig] INSECURE: MACHINE_CONFIG_EXPOSE_APIKEY=true — machine.config served a plaintext apiKey " +
+      "to an UNAUTHENTICATED caller that only knew the serial number (doc 51 P0/R1). This is a temporary " +
+      "compatibility escape hatch: migrate this machine to the claim-token flow (machine.issueClaimToken → " +
+      "machine.claimKey) and unset the flag.",
+  );
 }
 
 export const machineRouter = router({
@@ -702,7 +775,14 @@ export const machineRouter = router({
       }
     }),
 
-  // Lấy cấu hình máy (trả về mapping, APIKey, trạng thái, ...)
+  // Lấy cấu hình máy (trả về mapping, trạng thái, ... — KHÔNG trả APIKey).
+  //
+  // Doc 51 P0 / R1: this endpoint is PUBLIC and keyed only by serialNumber, so
+  // it must never carry a secret. The mapping/status fields stay exactly as they
+  // were (clients poll this every 10s for approval state + station mapping); the
+  // credential now travels the `claimKey` path instead. `apiKey` is KEPT in the
+  // response shape as `null` so existing clients keep parsing — they just stop
+  // receiving a usable secret.
   config: publicProcedure
     .input(z.object({
       serialNumber: z.string().min(1).max(100),
@@ -714,12 +794,19 @@ export const machineRouter = router({
       const station = await db.getStationById(machine.stationId);
       const line = await db.getLineByStationId(machine.stationId);
 
+      const isApproved = machine.registrationStatus === "approved";
+      // Compat escape hatch ONLY (default off) — QĐ#1, loudly logged per use.
+      const legacyExposure = machineConfigExposesApiKey() && isApproved && !!machine.apiKey;
+      if (legacyExposure) warnLegacyConfigApiKey(input.serialNumber, machine.code);
+
       return {
         machineId: machine.id,
         name: machine.name,
         code: machine.code,
         serialNumber: machine.serialNumber || input.serialNumber,
-        apiKey: machine.registrationStatus === "approved" ? machine.apiKey : null, // Chỉ trả APIKey nếu đã duyệt
+        apiKey: legacyExposure ? machine.apiKey : null,
+        /** The machine must exchange an admin-issued claim token for its key. */
+        requiresClaim: !legacyExposure,
         machineType: machine.machineType,
         model: machine.model,
         manufacturer: machine.manufacturer,
@@ -779,14 +866,122 @@ export const machineRouter = router({
         apiKey,
       });
 
-      // M5: audit — snapshots NEVER include the apiKey.
+      // Doc 51 P0 / R1: mint the ONE-TIME claim token the technician types into
+      // the machine (the machine can no longer read its key off `config`).
+      // Best-effort BY DESIGN: the approval is already committed, so a token
+      // failure must not 500 the admin — the token is re-mintable at any time
+      // via `issueClaimToken`.
+      let claim: { token: string; tokenPrefix: string; expiresAt: Date } | null = null;
+      try {
+        claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
+      } catch (e) {
+        logger.warn(
+          { err: e, machineId: input.id },
+          "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
+        );
+      }
+
+      // M5: audit — snapshots NEVER include the apiKey, and NEVER the claim
+      // token plaintext (only its non-secret prefix + expiry).
       await auditAction(ctx, {
         action: "machine.approve", entityType: ENTITY_TYPES.MACHINE, entityId: input.id, entityName: input.code || machine.code,
         before: { code: machine.code, name: machine.name, stationId: machine.stationId, registrationStatus: machine.registrationStatus },
         after: { code: input.code || machine.code, name: input.name || machine.name, stationId: input.stationId || machine.stationId, registrationStatus: "approved" },
+        metadata: claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined,
       });
 
-      return { success: true, apiKey, message: "Machine approved and mapped" };
+      return {
+        success: true,
+        apiKey,
+        /** Shown to the admin ONCE — hand to the technician, expires shortly. */
+        claimToken: claim?.token ?? null,
+        claimExpiresAt: claim?.expiresAt ?? null,
+        message: "Machine approved and mapped",
+      };
+    }),
+
+  // ── Doc 51 P0 / R1 — (re)issue a one-time claim token ────────────────────
+  // Needed independently of `approve`: tokens are short-lived, so the token
+  // minted at approval is usually dead by the time a technician reaches the
+  // machine. Admin-only; the plaintext is returned EXACTLY ONCE.
+  issueClaimToken: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id);
+      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (machine.registrationStatus !== "approved") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Machine must be approved before a claim token can be issued",
+        });
+      }
+      if (machine.isActive === false) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Machine is deleted" });
+      }
+      const lifecycle = (machine as { lifecycleStatus?: string | null }).lifecycleStatus;
+      if (lifecycle === "retired" || lifecycle === "decommissioned") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
+        });
+      }
+
+      const claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
+
+      // Audit the ISSUANCE (prefix only — never the plaintext).
+      await auditAction(ctx, {
+        action: "machine.issueClaimToken", entityType: ENTITY_TYPES.MACHINE,
+        entityId: input.id, entityName: machine.code,
+        metadata: { prefix: claim.tokenPrefix, expiresAt: claim.expiresAt.toISOString() },
+      });
+
+      return { claimToken: claim.token, prefix: claim.tokenPrefix, expiresAt: claim.expiresAt };
+    }),
+
+  // ── Doc 51 P0 / R1 — redeem a claim token for the machine's apiKey ───────
+  // The ONLY unauthenticated way to obtain a machine credential, and it costs a
+  // single-use, short-lived, high-entropy secret that an admin handed out
+  // out-of-band. Every attempt (success AND failure) is audited.
+  claimKey: publicProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(100),
+      claimToken: z.string().min(8).max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
+      enforceClaimThrottle(ip);
+
+      try {
+        const claimed = await db.redeemMachineClaimToken({
+          serialNumber: input.serialNumber,
+          claimToken: input.claimToken,
+          fromIp: ip ?? null,
+        });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE,
+          entityId: claimed.machineId, entityName: claimed.machineCode,
+          metadata: { outcome: "success", serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        return {
+          apiKey: claimed.apiKey,
+          machineId: claimed.machineId,
+          code: claimed.machineCode,
+          message: "API key claimed — store it securely; this token is now spent",
+        };
+      } catch (e) {
+        if (!isErrorNamed(e, "ClaimTokenError")) throw e;
+        const reason = (e as { reason?: string }).reason ?? "invalid";
+        // A failed claim is the signal that matters for detecting brute force —
+        // audit it BEFORE bouncing the caller.
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+          metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        throw new TRPCError({
+          code: reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
+          message: (e as Error).message,
+        });
+      }
     }),
 
   // Admin từ chối máy
@@ -862,7 +1057,15 @@ export const machineRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      return db.getMachineById(input.id);
+      const m = await db.getMachineById(input.id);
+      if (!m) return m;
+      // doc 54 P0-1 — NEVER expose the plaintext ingest apiKey on a read path. The
+      // sibling `list` already strips it; `getById` did not, leaking the machine
+      // credential to any authenticated user (incl. viewer). Only the admin-only
+      // regenerateApiKey / claim-token flow may ever reveal a key. Strip it here
+      // (destructure the TYPED row so callers keep the full non-secret shape).
+      const { apiKey: _omitApiKey, ...safe } = m;
+      return safe;
     }),
 
   getStats: protectedProcedure
@@ -956,7 +1159,11 @@ export const machineRouter = router({
       syncMode: z.enum(["online", "offline"]).optional(),
       serialNumber: z.string().optional(),
       firmwareVersion: z.string().optional(),
-      apiKey: z.string().optional(), // Cho phép admin mapping/gán APIKey
+      // doc 54 P0-2 — `apiKey` REMOVED from the general update. Setting an arbitrary
+      // ingest credential here (settings_factory = engineer-reachable) let a non-admin
+      // pin a known key and impersonate the machine. Key rotation is admin-only via
+      // `regenerateApiKey` (generates a strong key, never accepts one).
+      // `registrationStatus` stays but is admin-gated inside the mutation below.
       // W8-A (M13): capability flags. When present the payload is validated
       // against the deviceTypes attributesSchema contract (doc 29 §4.2) —
       // warning-only by default; CAPABILITIES_VALIDATION_ENFORCED rejects on
@@ -965,6 +1172,15 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, capabilities, ...data } = input;
+      // doc 54 P0-2 — registrationStatus is a lifecycle/approval write: gate it to
+      // admin so a non-admin (engineer via settings_factory) cannot self-approve a
+      // machine registration, bypassing the admin-only `approve` path.
+      if (data.registrationStatus !== undefined && ctx.user.role !== "admin") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
+        });
+      }
       const before = await db.getMachineById(id);
 
       // ── M13 tier-1/tier-2 soft gate (only when the caller touches capabilities) ──
@@ -1153,12 +1369,20 @@ export const machineRouter = router({
         throw e;
       }
 
+      // Doc 51 P0 / R2: retiring/decommissioning ALSO revoked every credential
+      // (atomically, in the db layer) — record WHAT was killed so the trail
+      // explains why the machine stopped authenticating.
+      const revoked = result.revoked;
+
       await auditAction(ctx, {
         action: "machine.setLifecycleStatus", entityType: ENTITY_TYPES.MACHINE,
         entityId: input.id, entityName: result.after.code,
         before: { lifecycleStatus: result.before.lifecycleStatus },
         after: { lifecycleStatus: result.after.lifecycleStatus },
-        metadata: { reason: input.reason ?? null },
+        metadata: {
+          reason: input.reason ?? null,
+          ...(revoked ? { credentialsRevoked: revoked } : {}),
+        },
       });
 
       // Control-grade append-only ledger (doc 25 T6 mechanism).
@@ -1175,7 +1399,9 @@ export const machineRouter = router({
         });
       }
 
-      return { success: true, lifecycleStatus: result.after.lifecycleStatus };
+      // `credentialsRevoked` is UNDEFINED (absent) for transitions that revoke
+      // nothing — only retired/decommissioned carry it.
+      return { success: true, lifecycleStatus: result.after.lifecycleStatus, credentialsRevoked: revoked };
     }),
 
   // Legal next lifecycle states for a machine (single source of truth for the UI).

@@ -2,6 +2,7 @@ import { getDb } from "./connection";
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, inArray, SQL } from "drizzle-orm";
 import {
   productInspections, InsertProductInspection,
+  inspectionIdempotencyKeys,
   measurementResults, InsertMeasurementResult,
   measurementPointDefs,
   productModels,
@@ -59,10 +60,164 @@ export type InspectionListRow = Pick<
 >;
 
 // ============ PRODUCT INSPECTION FUNCTIONS ============
-export async function createProductInspection(data: InsertProductInspection) {
+
+/**
+ * Doc 51 P0 (R2) — OPTIONAL out-param of {@link createProductInspection}.
+ *
+ * WHY an out-param and not a richer return type: `createProductInspection` is
+ * called by ~20 seeds/tests/analytics fixtures that all consume `Promise<number>`.
+ * Widening the return would churn every one of them; the ingest path is the ONLY
+ * caller that needs to know an insert was swallowed by the idempotency index.
+ * Pass an object, read `.duplicate` after the await. Callers that don't care stay
+ * byte-for-byte unchanged.
+ */
+export interface CreateInspectionOutcome {
+  /**
+   * true ⇒ the row ALREADY existed (natural key uq_inspections_machine_serial_time
+   * from 0272, or — doc 51 P1 — the explicit idempotency ledger from 0275) and the
+   * returned id is the ORIGINAL row's — the caller MUST skip every side-effect
+   * (order quantities, ERP outbox, NG alerts, measurement inserts), otherwise the
+   * de-duplication is pointless.
+   */
+  duplicate: boolean;
+}
+
+/**
+ * Minimal surface of a drizzle db/tx handle used by the insert helpers below, so
+ * the SAME code runs on the pooled handle and inside a transaction.
+ */
+type InsertRunner = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "insert" | "select">;
+
+/**
+ * Doc 51 P0 (R2) — the idempotent header insert, shared by both paths below.
+ *
+ * ON CONFLICT DO NOTHING with NO conflict target: ANY unique violation (in
+ * practice uq_inspections_machine_serial_time, the partial natural key from
+ * migration 0272) returns zero rows instead of throwing. Inert when the index is
+ * absent — then nothing ever conflicts and this behaves exactly like a plain
+ * insert. On conflict, resolves the EXISTING row (lowest id = the original) so
+ * the machine gets the same inspectionId back.
+ */
+async function insertInspectionHeader(
+  runner: InsertRunner,
+  data: InsertProductInspection,
+): Promise<{ id: number; duplicate: boolean }> {
+  const inserted = await runner
+    .insert(productInspections)
+    .values(data)
+    .onConflictDoNothing()
+    .returning({ id: productInspections.id });
+
+  const newId: number | undefined = inserted[0]?.id;
+  if (newId !== undefined) return { id: newId, duplicate: false };
+
+  const existing = await runner
+    .select({ id: productInspections.id })
+    .from(productInspections)
+    .where(and(
+      eq(productInspections.machineId, data.machineId),
+      eq(productInspections.serialNumber, data.serialNumber),
+      eq(productInspections.inspectionTime, data.inspectionTime as Date),
+    ))
+    .orderBy(asc(productInspections.id))
+    .limit(1);
+  const existingId: number | undefined = existing[0]?.id;
+  if (existingId === undefined) {
+    // Conflicted on something OTHER than the natural key (or the row vanished
+    // between the two statements). Never invent an id — fail loudly; the ingest
+    // path treats this as transient and buffers to the WAL.
+    throw new Error(
+      `createProductInspection: insert conflicted but no existing row for ` +
+        `(machineId=${data.machineId}, serialNumber=${data.serialNumber}, ` +
+        `inspectionTime=${String(data.inspectionTime)})`,
+    );
+  }
+  return { id: existingId, duplicate: true };
+}
+
+export async function createProductInspection(
+  data: InsertProductInspection,
+  outcome?: CreateInspectionOutcome,
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(productInspections).values(data).returning({ id: productInspections.id });
+
+  const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  let id: number;
+  let duplicate: boolean;
+
+  if (idempotencyKey) {
+    // ══ Doc 51 P1 — EXPLICIT IDEMPOTENCY KEY (closes the 0272 hole) ═════════
+    // 0272's natural key needs inspectionTime; a machine that omits it gets a
+    // fresh now() per retry ⇒ a different key per retry ⇒ no protection at all.
+    // A client-generated key is stable across retries, but CANNOT be a unique
+    // index on product_inspections (Timescale hypertable — every unique index
+    // must carry the partition column inspectionTime; see the ledger's doc
+    // comment in drizzle/schema/inspection.ts). So the constraint lives in the
+    // plain ledger table and the two writes are made atomic here.
+    //
+    // Ordering is deliberate: CLAIM FIRST. Postgres' ON CONFLICT DO NOTHING
+    // waits on an in-flight conflicting insert before deciding, so two
+    // concurrent retries of the same key serialise — the loser sees the winner's
+    // COMMITTED row (inspectionId already back-filled in the same transaction)
+    // and reports duplicate. A crash mid-way rolls the claim back with the
+    // header, so a lost board never leaves a poisoned key behind.
+    ({ id, duplicate } = await db.transaction(async (tx) => {
+      const claimed = await tx
+        .insert(inspectionIdempotencyKeys)
+        .values({
+          machineId: data.machineId,
+          idempotencyKey,
+          inspectionTime: (data.inspectionTime as Date | undefined) ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ machineId: inspectionIdempotencyKeys.machineId });
+
+      if (claimed.length === 0) {
+        // Key already used by a COMMITTED submission → this is a retry.
+        const prior = await tx
+          .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+          .from(inspectionIdempotencyKeys)
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ))
+          .limit(1);
+        const priorId = prior[0]?.inspectionId;
+        if (priorId == null) {
+          // A committed claim with no inspectionId breaks the write protocol's
+          // invariant. Never invent an id — throw; the ingest path treats this
+          // as transient and buffers to the WAL.
+          throw new Error(
+            `createProductInspection: idempotency key claimed but unresolved ` +
+              `(machineId=${data.machineId}, idempotencyKey=${idempotencyKey})`,
+          );
+        }
+        return { id: priorId, duplicate: true };
+      }
+
+      // We own the key. The header can STILL collide on 0272's natural key (same
+      // serial+time re-sent under a NEW idempotency key) — then we point this
+      // key at the original row and report duplicate, which is exactly right.
+      const header = await insertInspectionHeader(tx, data);
+      await tx
+        .update(inspectionIdempotencyKeys)
+        .set({ inspectionId: header.id })
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, data.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+        ));
+      return header;
+    }));
+  } else {
+    // No explicit key → 0272 natural-key protection only. Byte-for-byte the P0
+    // behaviour (single statement, no transaction) for the ~20 seed/test/
+    // analytics callers and every machine that hasn't adopted the key yet.
+    ({ id, duplicate } = await insertInspectionHeader(db, data));
+  }
+
+  if (outcome) outcome.duplicate = duplicate;
 
   // Doc 38 T-1 (P0 #3) — an inspection submit is also machine "activity". Feed the
   // downtime auto-detector so machines that report only via inspection (no separate
@@ -75,7 +230,7 @@ export async function createProductInspection(data: InsertProductInspection) {
       .catch(() => {});
   }
 
-  return result.id;
+  return id;
 }
 
 export async function getProductInspections(filters: {

@@ -18,7 +18,10 @@ const getViewSpy = vi.fn();
 const getTypeCatalogSpy = vi.fn(async () => undefined);
 const createPointSpy = vi.fn(async () => 501);
 const getPointSpy = vi.fn();
-const deletePointSpy = vi.fn(async () => {});
+// Doc 51 P1 (R4 + CASE #4): deleteMeasurementPointDef now bumps pointsConfigVersion
+// and stamps the tombstone version INSIDE its own tx, returning the new version
+// (null = already deleted). The router surfaces it + publishes it.
+const deletePointSpy = vi.fn(async () => ({ id: 501, code: "MP-1", version: 8 }));
 const remapSpy = vi.fn();
 const auditSpy = vi.fn(async () => ({ id: 1 }));
 
@@ -29,6 +32,7 @@ vi.mock("../db", () => ({
   getProductViewById: (...a: any[]) => getViewSpy(...a),
   getMeasurementTypeCatalogByCode: (...a: any[]) => getTypeCatalogSpy(...a),
   createMeasurementPointDef: (...a: any[]) => createPointSpy(...a),
+  bumpPointsConfigVersion: vi.fn(async (id: number) => ({ productModelId: id, code: "PM-TEST", version: 2 })),
   getMeasurementPointDefById: (...a: any[]) => getPointSpy(...a),
   deleteMeasurementPointDef: (...a: any[]) => deletePointSpy(...a),
   remapMeasurementPoints: (...a: any[]) => remapSpy(...a),
@@ -70,7 +74,8 @@ beforeEach(() => {
 describe("measurementPoint.create — referential guards", () => {
   it("happy path returns the new id", async () => {
     const res = await caller.create({ ...basePoint });
-    expect(res).toEqual({ id: 501 });
+    // Doc 51 P1 (§5.2): create is now an idempotent upsert → surfaces duplicate flag.
+    expect(res).toEqual({ id: 501, duplicate: false });
   });
 
   it("unknown preferredInstrumentId → NOT_FOUND", async () => {
@@ -105,7 +110,8 @@ describe("measurementPoint.delete — soft + audit", () => {
   it("soft-deletes and records the code + productModelId", async () => {
     getPointSpy.mockResolvedValue({ id: 501, code: "MP-1", productModelId: 1 });
     const res = await caller.delete({ id: 501 });
-    expect(res).toEqual({ success: true });
+    // Doc 51 P1: delete now also returns the config version that retired the point.
+    expect(res).toEqual({ success: true, pointsConfigVersion: 8 });
     expect(deletePointSpy).toHaveBeenCalledWith(501);
     const audit = auditSpy.mock.calls[0][0] as any;
     expect(audit).toMatchObject({ action: "measurementPoint.delete", entityName: "MP-1" });

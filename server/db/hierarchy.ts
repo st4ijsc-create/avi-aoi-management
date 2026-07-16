@@ -1,4 +1,6 @@
-import { eq, and, desc, like, or, sql, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray, ne, isNull, isNotNull } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
+import { pgTable, serial, integer, varchar, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { getDb } from "./connection";
 import {
   factories, InsertFactory,
@@ -8,6 +10,7 @@ import {
   machines, InsertMachine,
   workstations, InsertWorkstation,
   factoryZones, InsertFactoryZone,
+  apiKeys,
   MACHINE_LIFECYCLE_TRANSITIONS,
   MACHINE_LIFECYCLE_EXCLUDED,
   isLegalLifecycleTransition,
@@ -34,6 +37,22 @@ export class MachineCodeCollisionError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "MachineCodeCollisionError";
+  }
+}
+
+/**
+ * Doc 51 P0 / R1 — a claim token could not be redeemed. `reason` drives the
+ * router's status mapping AND the audit row; the MESSAGE is deliberately vague
+ * for every reason except `no_key` so a caller cannot enumerate serial numbers
+ * or distinguish "wrong token" from "unknown machine".
+ */
+export class ClaimTokenError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: "invalid" | "used" | "expired" | "no_key",
+  ) {
+    super(message);
+    this.name = "ClaimTokenError";
   }
 }
 
@@ -452,11 +471,241 @@ export async function updateMachine(id: number, data: Partial<InsertMachine>) {
   if (data.code !== undefined || data.stationId !== undefined) queueUrnSync(id);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P0 / R1 — ONE-TIME CLAIM TOKENS + CREDENTIAL REVOCATION
+// ════════════════════════════════════════════════════════════════════════════
+// `machine.config` used to hand out machines.apiKey in plaintext to anyone who
+// knew the serial number (printed on the machine's label). It no longer does;
+// a machine now exchanges a short-lived, single-use CLAIM TOKEN for its key.
+//
+// NOTE (schema location): the canonical home for a pgTable in this repo is
+// drizzle/schema/*. This table is declared here because migration 0273 and this
+// module are the only code that touch it and the schema dir was out of scope
+// for this change — see the hand-off note. Nothing breaks either way:
+// `db:push` runs scripts/migrate-standalone.mjs (plain SQL files), NOT
+// drizzle-kit push, so a table outside drizzle/schema is never dropped.
+
+export const machineClaimTokens = pgTable("machine_claim_tokens", {
+  id: serial("id").primaryKey(),
+  machineId: integer("machineId").notNull(),
+  /** SHA-256 hex of the plaintext — the plaintext is NEVER stored. */
+  tokenHash: varchar("tokenHash", { length: 128 }).notNull(),
+  /** Short, NON-SECRET display prefix (e.g. "mct_3f9c") for audit correlation. */
+  tokenPrefix: varchar("tokenPrefix", { length: 32 }),
+  expiresAt: timestamp("expiresAt").notNull(),
+  /** The single-use enforcement bit (claimed under `WHERE usedAt IS NULL`). */
+  usedAt: timestamp("usedAt"),
+  usedFromIp: varchar("usedFromIp", { length: 64 }),
+  /** Superseded by a newer token, or burned by a credential revocation. */
+  invalidatedAt: timestamp("invalidatedAt"),
+  issuedBy: integer("issuedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_machine_claim_tokens_hash").on(table.tokenHash),
+  index("idx_machine_claim_tokens_machine").on(table.machineId),
+]);
+
+export type MachineClaimToken = typeof machineClaimTokens.$inferSelect;
+
+// Handle usable for both the top-level db and a transaction handle — derived
+// from the db's own transaction callback so the query-builder surface stays
+// fully typed (same idiom as server/db/machineRecipe.ts).
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** Claim-token lifetime in minutes. Default 15; clamped to (0, 24h]. */
+export function machineClaimTokenTtlMinutes(): number {
+  const n = parseInt(process.env.MACHINE_CLAIM_TOKEN_TTL_MINUTES || "15", 10);
+  return Number.isFinite(n) && n > 0 && n <= 24 * 60 ? n : 15;
+}
+
+/**
+ * SHA-256 hex. The token is 256 bits of CSPRNG output, so a plain hash is the
+ * right primitive here (no KDF needed — there is no low-entropy secret to
+ * stretch, and this runs on the machine-facing hot path).
+ */
+function hashClaimToken(plaintext: string): string {
+  return createHash("sha256").update(plaintext, "utf8").digest("hex");
+}
+
+/** `mct_<64 hex>` — distinct from mk_ (machine keys) and ak_ (admin keys). */
+function generateClaimToken(): { plaintext: string; prefix: string } {
+  const secret = randomBytes(32).toString("hex");
+  return { plaintext: `mct_${secret}`, prefix: `mct_${secret.slice(0, 6)}` };
+}
+
+/**
+ * Mint a one-time claim token for a machine. Any token still open for that
+ * machine is invalidated first, so AT MOST ONE token is redeemable at a time
+ * (a re-issue must not leave an older token alive in a technician's inbox).
+ *
+ * The PLAINTEXT is returned EXACTLY ONCE and never persisted.
+ */
+export async function issueMachineClaimToken(opts: {
+  machineId: number;
+  issuedBy?: number | null;
+  ttlMinutes?: number;
+}): Promise<{ token: string; tokenPrefix: string; expiresAt: Date }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineClaimTokenTtlMinutes();
+  const expiresAt = new Date(Date.now() + ttl * 60_000);
+  const { plaintext, prefix } = generateClaimToken();
+
+  await db.transaction(async (tx) => {
+    await tx.update(machineClaimTokens)
+      .set({ invalidatedAt: new Date() })
+      .where(and(
+        eq(machineClaimTokens.machineId, opts.machineId),
+        isNull(machineClaimTokens.usedAt),
+        isNull(machineClaimTokens.invalidatedAt),
+      ));
+    await tx.insert(machineClaimTokens).values({
+      machineId: opts.machineId,
+      tokenHash: hashClaimToken(plaintext),
+      tokenPrefix: prefix,
+      expiresAt,
+      issuedBy: opts.issuedBy ?? null,
+    });
+  });
+
+  return { token: plaintext, tokenPrefix: prefix, expiresAt };
+}
+
+/**
+ * Redeem a claim token for the machine's apiKey — EXACTLY ONCE.
+ *
+ * The whole exchange runs in ONE transaction: the token is burned
+ * (`usedAt` stamped under `WHERE usedAt IS NULL`, so two concurrent claims
+ * cannot both win) and the key is read in the same unit of work. Any failure
+ * AFTER the burn rolls it back, so a token is only ever consumed by a redemption
+ * that actually handed a key back.
+ *
+ * Throws ClaimTokenError (router → UNAUTHORIZED / PRECONDITION_FAILED).
+ */
+export async function redeemMachineClaimToken(opts: {
+  serialNumber: string;
+  claimToken: string;
+  fromIp?: string | null;
+}): Promise<{ machineId: number; machineCode: string; apiKey: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Uniform error: never reveal whether the SERIAL or the TOKEN was the problem.
+  const invalid = () => new ClaimTokenError("Invalid or expired claim token", "invalid");
+
+  const machine = await getMachineBySerialNumber(opts.serialNumber);
+  if (!machine) throw invalid();
+
+  const tokenHash = hashClaimToken(opts.claimToken);
+
+  return db.transaction(async (tx) => {
+    const [token] = await tx.select().from(machineClaimTokens)
+      .where(and(
+        eq(machineClaimTokens.tokenHash, tokenHash),
+        eq(machineClaimTokens.machineId, machine.id),
+      ))
+      .limit(1);
+
+    // Hash miss, or a token minted for a DIFFERENT machine (never usable here).
+    if (!token) throw invalid();
+    if (token.usedAt) throw new ClaimTokenError("Claim token has already been used", "used");
+    if (token.invalidatedAt) throw invalid(); // superseded / burned by a revoke
+    if (new Date(token.expiresAt).getTime() <= Date.now()) {
+      throw new ClaimTokenError("Claim token has expired — ask an admin to issue a new one", "expired");
+    }
+
+    // Single-use: the row is only claimed if it is STILL unused. A concurrent
+    // redemption that lost the race gets 0 rows back and is rejected.
+    const claimed = await tx.update(machineClaimTokens)
+      .set({ usedAt: new Date(), usedFromIp: opts.fromIp ?? null })
+      .where(and(
+        eq(machineClaimTokens.id, token.id),
+        isNull(machineClaimTokens.usedAt),
+      ))
+      .returning({ id: machineClaimTokens.id });
+    if (claimed.length === 0) {
+      throw new ClaimTokenError("Claim token has already been used", "used");
+    }
+
+    // Re-read the machine INSIDE the transaction: the key may have been rotated
+    // or revoked between the serial lookup and the burn.
+    const [fresh] = await tx.select().from(machines).where(eq(machines.id, machine.id)).limit(1);
+    if (!fresh || fresh.isActive === false) throw invalid();
+    if (fresh.registrationStatus !== "approved" || !fresh.apiKey) {
+      // Rolls the burn back — a token must not die for a server-side gap.
+      throw new ClaimTokenError(
+        "Machine has no active credential to claim — an admin must approve it first",
+        "no_key",
+      );
+    }
+
+    return { machineId: fresh.id, machineCode: fresh.code, apiKey: fresh.apiKey };
+  });
+}
+
+type MachineCredentialRevocation = { apiKeysRevoked: number; sharedKeyCleared: boolean };
+
+/**
+ * Revoke EVERY credential a machine can authenticate with, on an open tx:
+ *   1. api_keys rows bound to it   → isActive=false + revokedAt (machineAuthService
+ *      denies both bits, resolution step 1)
+ *   2. machines.apiKey             → NULL (the legacy shared-key path, step 2)
+ *   3. any open claim token        → invalidated (nothing left to exchange)
+ *
+ * Callers MUST run this inside the same transaction as the state change that
+ * justifies it, so a machine can never be left retired-but-authenticating.
+ */
+async function revokeMachineCredentialsTx(
+  tx: DbOrTx,
+  machineId: number,
+): Promise<MachineCredentialRevocation> {
+  const now = new Date();
+
+  const revokedKeys = await tx.update(apiKeys)
+    .set({ isActive: false, revokedAt: now, updatedAt: now })
+    .where(and(eq(apiKeys.machineId, machineId), eq(apiKeys.isActive, true)))
+    .returning({ id: apiKeys.id });
+
+  const clearedShared = await tx.update(machines)
+    .set({ apiKey: null, updatedAt: now })
+    .where(and(eq(machines.id, machineId), isNotNull(machines.apiKey)))
+    .returning({ id: machines.id });
+
+  await tx.update(machineClaimTokens)
+    .set({ invalidatedAt: now })
+    .where(and(
+      eq(machineClaimTokens.machineId, machineId),
+      isNull(machineClaimTokens.usedAt),
+      isNull(machineClaimTokens.invalidatedAt),
+    ));
+
+  return { apiKeysRevoked: revokedKeys.length, sharedKeyCleared: clearedShared.length > 0 };
+}
+
+/** Standalone credential revocation (own transaction) — for admin tooling/rotation. */
+export async function revokeMachineCredentials(machineId: number): Promise<MachineCredentialRevocation> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
+}
+
+/** Lifecycle states after which a machine must NOT be able to authenticate. */
+export const MACHINE_LIFECYCLE_REVOKES_CREDENTIALS: readonly MachineLifecycleStatus[] = [
+  "retired",
+  "decommissioned",
+];
+
 /**
  * M3 soft-delete: the code column is kept INTACT as a tombstone (the partial
  * unique index uq_machines_code_active makes the code reusable by a new active
  * machine), and the asset is force-stamped 'retired' (M2 out-of-band stamp —
  * delete is terminal unless the row is explicitly restored).
+ *
+ * NOTE: this path does NOT revoke credentials, and does not need to —
+ * machineAuthService rejects any machine whose `isActive` is false (step 1 of
+ * its resolution order), which is exactly what a tombstone is.
  */
 export async function deleteMachine(id: number) {
   const db = await getDb();
@@ -524,6 +773,13 @@ export async function approveMachine(id: number, data: {
  * between asset lifecycle states. Validates against MACHINE_LIFECYCLE_TRANSITIONS
  * and returns minimal before/after snapshots for the audit trail.
  *
+ * Doc 51 P0 / R2 — CREDENTIAL REVOCATION IS PART OF THE TRANSITION. Moving to
+ * 'retired'/'decommissioned' previously only stamped lifecycleStatus, while
+ * machineAuthService gates on `machines.isActive` — so a retired machine kept
+ * ingesting with a live key forever. The revoke now happens in the SAME
+ * transaction as the state change: either the machine is retired AND cannot
+ * authenticate, or neither.
+ *
  * Throws:
  *  - Error("Machine not found")     — unknown id (router → NOT_FOUND)
  *  - LifecycleTransitionError       — illegal transition (router → CONFLICT)
@@ -534,6 +790,7 @@ export async function transitionMachineLifecycle(
 ): Promise<{
   before: { id: number; code: string; name: string; lifecycleStatus: string };
   after: { id: number; code: string; name: string; lifecycleStatus: string };
+  revoked?: MachineCredentialRevocation;
 }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -552,14 +809,25 @@ export async function transitionMachineLifecycle(
     );
   }
 
-  await db.update(machines)
-    .set({ lifecycleStatus: to, updatedAt: new Date() })
-    .where(eq(machines.id, id));
-
   const snapshot = { id: machine.id, code: machine.code, name: machine.name };
+  const setState = { lifecycleStatus: to, updatedAt: new Date() };
+
+  let revoked: MachineCredentialRevocation | undefined;
+  if (MACHINE_LIFECYCLE_REVOKES_CREDENTIALS.includes(to)) {
+    // Multi-statement → needs a transaction (state + every credential, atomically).
+    revoked = await db.transaction(async (tx) => {
+      await tx.update(machines).set(setState).where(eq(machines.id, id));
+      return revokeMachineCredentialsTx(tx, id);
+    });
+  } else {
+    // Single statement — atomic on its own; no transaction needed.
+    await db.update(machines).set(setState).where(eq(machines.id, id));
+  }
+
   return {
     before: { ...snapshot, lifecycleStatus: from },
     after: { ...snapshot, lifecycleStatus: to },
+    revoked,
   };
 }
 

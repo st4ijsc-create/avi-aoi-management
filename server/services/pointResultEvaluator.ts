@@ -290,3 +290,91 @@ export function evaluatePointResult(
 
   return { result, evaluated, overridden, violations };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P1 (QĐ#2) — SPEC-GATE BY THE CONFIG SNAPSHOT, not by LIVE limits.
+//
+// THE SPLIT-BRAIN this addresses: `evaluatePointResult` above is fed the point
+// def resolved LIVE from the DB — i.e. the limits AS THEY ARE NOW. But a board
+// may have been graded by the machine under an OLDER recipe (it declares
+// pointsConfigVersion=V, the product has since moved to a newer version) and
+// then buffered / retried / re-graded. Gating that board against the CURRENT
+// (often tightened) limits retro-fails boards the machine legitimately passed —
+// the server's OK/NG stops reflecting the config the board was actually measured
+// under.
+//
+// ⚠ HONEST LIMITATION (documented, by design of the existing schema):
+//   `measurement_point_versions` records a PER-POINT edit history (its `version`
+//   is a per-point counter) with a `changedAt` timestamp. It does NOT record the
+//   product's `pointsConfigVersion` at each edit, so there is NO stored mapping
+//   from a declared product-version V to an exact snapshot. A precise "limits at
+//   product-version V" reconstruction would need a schema change (record the
+//   product version on each snapshot row, or a product-config-version history
+//   table) — OUT OF THIS ZONE; see the P1 report.
+//
+//   What we CAN do without a schema change: reconstruct the limits that were
+//   LIVE at a given INSTANT from the per-point edit history, and use the board's
+//   server-received instant as that anchor. This closes the most common and most
+//   damaging case — a limit TIGHTENED after a board was measured (board still in
+//   flight / buffered / being re-graded) — because that edit's snapshot carries a
+//   `changedAt` AFTER the board's instant. When the history cannot confirm the
+//   older limits (no snapshot at/after the board's instant), we return `null` so
+//   the caller SKIPS the gate for that point (safe: the machine's verdict stands)
+//   rather than silently gating a stale board against newer limits.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** One edit-history row: the point's state BEFORE the edit + when it was replaced. */
+export interface PointLimitSnapshot {
+  /**
+   * measurement_point_versions.changedAt — the instant this snapshot's state was
+   * OVERWRITTEN by an edit. The snapshot therefore holds the limits that were
+   * LIVE up TO this instant.
+   */
+  changedAt: Date;
+  /** The point def's previous state (measurement_point_versions.snapshotJson). */
+  limits: PointLimitSource;
+}
+
+export type SnapshotGateBasis = "snapshot" | "missing";
+
+export interface SnapshotGateResolution {
+  /** Limits to gate with, or `null` when the caller MUST skip the gate (basis "missing"). */
+  limits: PointLimitSource | null;
+  basis: SnapshotGateBasis;
+}
+
+/**
+ * Reconstruct the limit-bearing config that was LIVE at `atInstant` for ONE point
+ * from its ordered edit-snapshot history.
+ *
+ * Rule: the limits live at instant t = the snapshotJson of the EARLIEST snapshot
+ * whose `changedAt >= t` (that snapshot is precisely the state that was live up to
+ * that edit). If NO snapshot exists at/after t — the point was never edited, or
+ * every edit predates the board — we CANNOT prove the board's older limits differ
+ * from live, and we refuse to gate a stale board against limits that may be newer
+ * than the era it was measured in. Return `null` ⇒ caller skips the gate.
+ *
+ * Pure — no DB, never throws. `snapshots` may be in any order.
+ */
+export function resolveLimitsAtInstant(
+  snapshots: PointLimitSnapshot[],
+  atInstant: Date,
+): SnapshotGateResolution {
+  if (!Array.isArray(snapshots) || snapshots.length === 0) {
+    return { limits: null, basis: "missing" };
+  }
+  const t = atInstant.getTime();
+  if (!Number.isFinite(t)) return { limits: null, basis: "missing" };
+
+  let best: PointLimitSnapshot | null = null;
+  for (const s of snapshots) {
+    if (!s || !(s.changedAt instanceof Date)) continue;
+    const c = s.changedAt.getTime();
+    if (!Number.isFinite(c)) continue;
+    if (c >= t && (best === null || c < best.changedAt.getTime())) {
+      best = s;
+    }
+  }
+  if (best === null) return { limits: null, basis: "missing" };
+  return { limits: best.limits ?? {}, basis: "snapshot" };
+}

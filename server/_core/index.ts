@@ -40,7 +40,7 @@ import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
@@ -293,6 +293,19 @@ async function startServer() {
   // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
   const otIngestLimiter = createOtIngestLimiter();
   app.use([...OT_INGEST_PATHS], otIngestLimiter);
+  // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
+  // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
+  // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
+  // BODY (not a header) fell through to the IP key, so 100 machines behind ONE factory
+  // NAT shared ONE 300/min bucket against ~6000 req/min offered → ~95% 429. The 429
+  // fires here, BEFORE tRPC, so the inspection store-forward WAL cannot buffer it →
+  // inspections LOST. This limiter keys per machine credential (header/body/query) and
+  // raises the ceiling for credentialed machines only; keyless callers keep 300/min.
+  // Mounted BEFORE the general limiter, which `skip`s these exact requests (no
+  // double-counting). Tune via MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false
+  // restores pre-R6 header-only keying.
+  const machineIngestLimiter = createMachineIngestLimiter();
+  app.use('/api/', machineIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 
@@ -919,6 +932,36 @@ async function startServer() {
       console.error("[MachineAPI] config error:", error);
       const status = error?.code === 'NOT_FOUND' ? 404 : 500;
       res.status(status).json({ success: false, message: error?.message || "Config fetch failed" });
+    }
+  });
+
+  // REST proxy: Machine key claim (doc 51 P0 / R1).
+  // Counterpart of GET /api/machine/config — which NO LONGER returns apiKey (it
+  // leaked a plaintext credential to anyone who knew the serialNumber). Machines
+  // on the REST path redeem their one-time claim token here instead; without this
+  // proxy a REST client would have no way to obtain its key at all.
+  app.post("/api/machine/claim", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const serialNumber = req.body?.serialNumber;
+      const claimToken = req.body?.claimToken;
+      if (!serialNumber || !claimToken) {
+        return res.status(400).json({ success: false, message: "serialNumber and claimToken are required" });
+      }
+      const result = await caller.machine.claimKey({ serialNumber, claimToken } as any);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      // Map the tRPC code to a real HTTP status: a claim failure is the client's
+      // (bad/burnt/expired token → 400), not a server fault, and throttling must
+      // surface as 429 so clients back off instead of hammering.
+      console.error("[MachineAPI] claim error:", error?.code || error?.message);
+      const status =
+        error?.code === "NOT_FOUND" ? 404 :
+        error?.code === "TOO_MANY_REQUESTS" ? 429 :
+        error?.code === "UNAUTHORIZED" || error?.code === "BAD_REQUEST" ? 400 :
+        500;
+      res.status(status).json({ success: false, message: error?.message || "Claim failed" });
     }
   });
 

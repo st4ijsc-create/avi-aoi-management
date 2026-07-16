@@ -16,6 +16,8 @@ const auditSpy = vi.fn(async () => ({ id: 1 }));
 vi.mock("../db", () => ({
   createMeasurementPointDef: vi.fn(async () => 1),
   updateMeasurementPointDef: (...a: any[]) => updateSpy(...a),
+  // Doc 51 P1 (R4): point mutations bump pointsConfigVersion via bumpAndNotifyPointsConfig().
+  bumpPointsConfigVersion: vi.fn(async (id: number) => ({ productModelId: id, code: "PM-TEST", version: 2 })),
   getMeasurementPointDefById: (...a: any[]) => getPointSpy(...a),
   getProductModelById: (...a: any[]) => getProductSpy(...a),
   getMeasurementTypeCatalogByCode: vi.fn(async () => undefined),

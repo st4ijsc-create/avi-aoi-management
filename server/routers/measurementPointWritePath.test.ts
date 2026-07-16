@@ -20,6 +20,9 @@ const auditSpy = vi.fn(async () => ({ id: 1 }));
 vi.mock("../db", () => ({
   createMeasurementPointDef: (...a: any[]) => createSpy(...a),
   updateMeasurementPointDef: (...a: any[]) => updateSpy(...a),
+  // Doc 51 P1 (R4): every point mutation now bumps pointsConfigVersion so
+  // machines re-fetch. The router calls this via bumpAndNotifyPointsConfig().
+  bumpPointsConfigVersion: vi.fn(async (id: number) => ({ productModelId: id, code: "PM-TEST", version: 2 })),
   getMeasurementPointDefById: (...a: any[]) => getPointSpy(...a),
   getProductModelById: (...a: any[]) => getProductSpy(...a),
   getMeasurementTypeCatalogByCode: vi.fn(async () => undefined),
@@ -87,7 +90,8 @@ describe("create — componentCode / refDesignator write path", () => {
       componentCode: "C-0402-10K",
       refDesignator: "C12",
     });
-    expect(res).toEqual({ id: 777 });
+    // Doc 51 P1 (§5.2): create is now an idempotent upsert → surfaces duplicate flag.
+    expect(res).toEqual({ id: 777, duplicate: false });
     expect(createSpy).toHaveBeenCalledTimes(1);
     const inserted = createSpy.mock.calls[0][0] as any;
     expect(inserted.componentCode).toBe("C-0402-10K");

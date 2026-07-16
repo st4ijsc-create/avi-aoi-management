@@ -8,7 +8,7 @@
 // weekly integrityScanService orphan scan covers it. The .references() here are
 // metadata-only for runtime queries (migrations are hand-written SQL).
 import { sql } from "drizzle-orm";
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json, jsonb, real } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, uniqueIndex, primaryKey, json, jsonb, real } from "drizzle-orm/pg-core";
 import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
 import { machines } from "./hierarchy";
 import { measurementPointDefs, defectCatalog } from "./product";
@@ -100,6 +100,50 @@ export const productInspections = pgTable("product_inspections", {
   // processInspectionSubmission via operatorBadgeService; NULL = badge unknown/
   // unassigned or pre-0192 row (those resolve on read).
   operatorUserId: integer("operatorUserId"),
+  // ── Doc 51 P1 (migration 0275) — INGEST PROVENANCE. All nullable, never
+  // backfilled: a NULL means "this row predates 0275 / was never measured",
+  // which is the truth. See drizzle/0275_inspection_provenance.sql.
+  //
+  // CASE #3 (clock skew). `inspectionTime` is whatever the MACHINE said; nothing
+  // ever compared it to the server's clock, so a machine 6h off silently filed
+  // boards into the wrong shift/day and no column could even identify the damage
+  // afterwards. These four make it measurable on EVERY row:
+  //   serverReceivedAt — when the SERVER received the submission. The one clock a
+  //     machine cannot lie about. For a WAL replay this is the ORIGINAL receive
+  //     time (stamped by the mutation BEFORE buffering), not the replay time.
+  serverReceivedAt: timestamp("serverReceivedAt"),
+  //   timeSkewSeconds — SIGNED (machineTime − serverReceivedAt). The sign matters:
+  //     "machine runs behind" and "machine runs ahead" are different faults.
+  timeSkewSeconds: integer("timeSkewSeconds"),
+  //   clockSkewFlagged — |skew| exceeded INGEST_CLOCK_SKEW_WARN_SECONDS (default
+  //     300) at ingest. NULL ≠ false: NULL = never evaluated (pre-0275 row).
+  clockSkewFlagged: boolean("clockSkewFlagged"),
+  //   timeSource — 'machine_utc' (timestamp carried an offset/Z → absolute instant,
+  //     skew is trustworthy) | 'machine_naive' (no offset → the server had to ASSUME
+  //     its own local zone, so a machine off by a whole number of hours measures
+  //     skew ≈ 0 — this is exactly what INGEST_REQUIRE_TIME_OFFSET exists to stop)
+  //     | 'server' (machine sent no time; server stamped now() — skew 0 by
+  //     definition, and this board is NOT covered by 0272's natural key).
+  timeSource: varchar("timeSource", { length: 20 }),
+  // Idempotency (doc 51 P1, closing the 0272 hole) — AUDIT ONLY. The ENFORCEMENT
+  // lives in `inspectionIdempotencyKeys` below: product_inspections is a Timescale
+  // hypertable, and a unique index on it MUST contain the partition column
+  // `inspectionTime` — the very column that changes on every retry of a machine
+  // that omits it. Verified on the dev DB: "cannot create a unique index without
+  // the column inspectionTime (used in partitioning)".
+  idempotencyKey: varchar("idempotencyKey", { length: 200 }),
+  // CASE #12 (version pinning) — the points-config version the MACHINE DECLARED it
+  // was grading with, stamped VERBATIM (it is the machine's claim, not the server's
+  // verdict). Without it "which thresholds graded this board?" is unanswerable,
+  // because product_models.pointsConfigVersion is LIVE and moves under your feet.
+  // ★ This column is the seam QĐ#2 rests on: re-grade against the SNAPSHOT of THIS
+  //   version — never against the live limits.
+  pointsConfigVersion: integer("pointsConfigVersion"),
+  // Server's SOFT verdict on that claim: 'current' | 'stale' (machine grading with
+  // outdated thresholds — TAGGED, never rejected, QĐ#3) | 'ahead' (machine claims
+  // newer than the server — config rollback / lying machine / restored DB) |
+  // 'unknown' (machine didn't declare, or no product model resolved).
+  configVersionStatus: varchar("configVersionStatus", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -117,10 +161,80 @@ export const productInspections = pgTable("product_inspections", {
   index("idx_inspections_line").on(table.lineCode),
   index("idx_inspections_production_order").on(table.productionOrderCode),
   index("idx_inspections_type").on(table.inspectionType),
+  // Doc 51 P0 (R2, migration 0272) — INGEST IDEMPOTENCY natural key. A machine
+  // that retries the SAME board (network timeout on the ACK, agent restart, WAL
+  // replay racing a live retry) must never produce a SECOND product_inspections
+  // row: that double-counts completedQuantity/yield and re-fires the NG alert.
+  //   • Partition column `inspectionTime` IS in the key → valid on plain PG AND
+  //     on the Timescale hypertable (0172: every unique index must carry the
+  //     partition column). Equal inspectionTime ⇒ same chunk ⇒ uniqueness is
+  //     global, not per-chunk.
+  //   • PARTIAL (serialNumber <> ''): legacy/empty-serial rows are EXEMPT so a
+  //     pre-existing batch of blank serials can never collide with each other.
+  //     New ingest can't create them anyway (submitInspection zod min(1)).
+  //   • App side: createProductInspection uses ON CONFLICT DO NOTHING and
+  //     resolves the existing row — inert (harmless no-op) if the DB index is
+  //     not in force yet (0272 records 'partial' in db_feature_status then).
+  // ⚠ LIMIT: keyed on the machine-sent inspectionTime. A machine that OMITS it
+  // gets a fresh receive-time stamp per retry → different key → NOT caught here.
+  // That case is doc 51 P1 (explicit idempotencyKey in the machine contract).
+  uniqueIndex("uq_inspections_machine_serial_time")
+    .on(table.machineId, table.serialNumber, table.inspectionTime)
+    .where(sql`${table.serialNumber} <> ''`),
 ]);
 
 export type ProductInspection = typeof productInspections.$inferSelect;
 export type InsertProductInspection = typeof productInspections.$inferInsert;
+
+/**
+ * Doc 51 P1 (migration 0275) — EXPLICIT INGEST IDEMPOTENCY LEDGER.
+ *
+ * WHY A SEPARATE TABLE AND NOT AN INDEX ON product_inspections:
+ * 0272 keys idempotency on (machineId, serialNumber, inspectionTime). A machine
+ * that OMITS inspectionTime gets a fresh now() stamp on every retry → a different
+ * key each time → 0272 never fires and the board is double-counted. The fix is a
+ * client-generated key that is STABLE across retries — but it cannot be a unique
+ * index on product_inspections, because that table is a TimescaleDB hypertable and
+ * Timescale requires every unique index to carry the partition column
+ * `inspectionTime`. Verified directly against the dev DB:
+ *
+ *     CREATE UNIQUE INDEX ... ON product_inspections ("machineId", <col>)
+ *     → ERROR: cannot create a unique index without the column "inspectionTime"
+ *              (used in partitioning)
+ *
+ * (Same rule forced 0172 to rewrite the PK to (id, inspectionTime).) Putting
+ * inspectionTime back into the key defeats the entire purpose. So the constraint
+ * moves to a PLAIN table where PK (machineId, idempotencyKey) is legal and global.
+ *
+ * ⚠ NEVER convert this table to a hypertable — that would silently re-open the hole.
+ *
+ * Write protocol (server/db/inspection.ts createProductInspection): claim → insert
+ * header → back-fill inspectionId, ALL in ONE transaction. Postgres' ON CONFLICT
+ * DO NOTHING waits on an in-flight conflicting insert before deciding, so two
+ * concurrent retries of the same key serialise correctly and exactly one wins.
+ */
+export const inspectionIdempotencyKeys = pgTable("inspection_idempotency_keys", {
+  machineId: integer("machineId").notNull(),
+  /** Client-generated, stable across retries of the SAME board. */
+  idempotencyKey: varchar("idempotencyKey", { length: 200 }).notNull(),
+  /**
+   * The inspection this key produced. NULL exists ONLY inside the claiming
+   * transaction; a COMMITTED row with NULL here means the invariant broke — the
+   * app throws (transient → WAL buffers) rather than invent an id.
+   */
+  inspectionId: integer("inspectionId"),
+  /** Copy of the header's inspectionTime so the ledger can be pruned on the same
+   *  horizon as product_inspections without joining back into the hypertable. */
+  inspectionTime: timestamp("inspectionTime"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.machineId, table.idempotencyKey] }),
+  // Age-based pruning (retention). Without it, cleaning the ledger seq-scans.
+  index("idx_inspection_idem_created").on(table.createdAt),
+]);
+
+export type InspectionIdempotencyKey = typeof inspectionIdempotencyKeys.$inferSelect;
+export type InsertInspectionIdempotencyKey = typeof inspectionIdempotencyKeys.$inferInsert;
 
 /**
  * Measurement Result - Kết quả đo thực tế

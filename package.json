@@ -43,6 +43,7 @@
     "sim:scenario": "node scripts/sim-factory/scenario.mjs",
     "sim:esop": "tsx scripts/sim-factory/seed-esop.mjs",
     "sim:live": "node scripts/sim-factory/sim-live-daemon.mjs",
+    "bench:ingest": "node scripts/bench/bench-inspection-ingest.mjs",
     "lake:verify": "tsx scripts/streaming/lake-verify.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

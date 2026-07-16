@@ -88,6 +88,105 @@ export function isOtIngestRequest(req: Request): boolean {
   return OT_INGEST_PATHS.some((base) => p === base || p.startsWith(base + "/"));
 }
 
+// ── Machine data-plane ingest tier (doc 51 R6 — CASE #2/#9 data loss) ────────
+// AVI/AOI machines submit inspections over tRPC (/api/trpc/machineApi.*) and the
+// REST proxies (/api/machine/*). Both rode the 300/60 BROWSER bucket: 100 machines
+// behind ONE factory NAT offering ~6000 req/min shared a single 300/min bucket →
+// ~95% 429. The 429 fires in middleware BEFORE tRPC, so the inspection store-forward
+// WAL (which only buffers DbUnavailableError) cannot catch it → inspections are LOST.
+// This tier keys per machine credential (see credentialKey) and raises the ceiling.
+// ONE knob: MACHINE_INGEST_RATE_MAX = requests per 60s window PER machine key.
+// Default 60k/min (1000 req/s per machine) — generous but FINITE (never unlimited).
+const MACHINE_INGEST_PER_MIN = envInt("MACHINE_INGEST_RATE_MAX", 60_000);
+
+export const MACHINE_INGEST_RATE_LIMIT = {
+  windowMs: 60 * 1000,
+  max: MACHINE_INGEST_PER_MIN,
+};
+
+/** REST prefix carrying the machine data plane. */
+const MACHINE_REST_PREFIX = "/api/machine";
+
+/**
+ * Machine REST endpoints that are UNAUTHENTICATED bootstrap surface and therefore
+ * must KEEP the general 300/min tier — never the high ingest tier:
+ *   - /api/machine/claim    redeems a one-time claim token → brute-force target.
+ *   - /api/machine/register self-registration (no key).
+ *   - /api/machine/config   public config poll keyed only by serialNumber.
+ * Raising these to 60k/min would hand an attacker a 200× brute-force amplifier.
+ */
+export const MACHINE_BOOTSTRAP_PATHS: readonly string[] = [
+  "/api/machine/claim",
+  "/api/machine/register",
+  "/api/machine/config",
+];
+
+/**
+ * ALLOWLIST of tRPC procedures on the machine data plane. Deliberately an allowlist,
+ * NOT a `machineApi.*` prefix match: machineApi ALSO exposes admin key-management
+ * (listKeys/issueKey/rotateKey/revokeKey, protectedProcedure) which is browser traffic
+ * and must never inherit the high ingest ceiling.
+ */
+export const MACHINE_INGEST_TRPC_PROCEDURES: ReadonlySet<string> = new Set([
+  "machineApi.submitInspection",
+  "machineApi.uploadImage",
+  "machineApi.syncMeasurementPoints",
+  "machineApi.heartbeat",
+  "machineApi.checkPointsVersion",
+  "machineApi.getPoints",
+  "machineApi.getProductImage",
+  "machineApi.syncProductImage",
+  "machineApi.syncPointImage",
+  "machineApi.getPointImage",
+  "machineApi.deltaSyncPoints",
+  "machineApi.getSyncHistory",
+  "machineApi.checkModelVersion",
+  "machineApi.getModelPackage",
+  "machineApi.confirmDeployment",
+  "machineApi.edgeHeartbeat",
+  "machineApi.syncEdgeResults",
+]);
+
+/** Procedure names in a tRPC URL, or null when the path is not tRPC. */
+function trpcProcedures(pathname: string): string[] | null {
+  const base = "/api/trpc/";
+  if (!pathname.startsWith(base)) return null;
+  const seg = pathname.slice(base.length);
+  if (!seg) return null;
+  // httpBatchLink packs a batch as comma-separated procedure names.
+  return seg
+    .split(",")
+    .map((s) => {
+      try {
+        return decodeURIComponent(s.trim());
+      } catch {
+        return s.trim();
+      }
+    })
+    .filter(Boolean);
+}
+
+/**
+ * True when a request belongs to the machine ingest tier (query-string safe).
+ * A tRPC BATCH qualifies only when EVERY procedure in it is an allowlisted machine
+ * procedure — otherwise a caller could smuggle expensive browser calls into the high
+ * tier by bundling them with one machine procedure.
+ */
+export function isMachineIngestRequest(req: Request): boolean {
+  const raw = req.originalUrl || req.url || "";
+  const p = raw.split("?", 1)[0];
+
+  if (p === MACHINE_REST_PREFIX || p.startsWith(MACHINE_REST_PREFIX + "/")) {
+    return !MACHINE_BOOTSTRAP_PATHS.includes(p);
+  }
+
+  const procs = trpcProcedures(p);
+  if (procs && procs.length > 0) {
+    return procs.every((name) => MACHINE_INGEST_TRPC_PROCEDURES.has(name));
+  }
+  return false;
+}
+
 // ── Store selection (B6) ─────────────────────────────────────────────────────
 
 export type RateLimitStoreKind = "redis" | "memory";
@@ -197,14 +296,76 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex").slice(0, 32);
 }
 
+/** Longest credential we will hash — a real key is ~40-200 chars. */
+const MAX_CREDENTIAL_LEN = 512;
+/** Upper bound on tRPC batch entries scanned for a credential. */
+const MAX_BATCH_SCAN = 20;
+
+function cleanCredential(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t ? t.slice(0, MAX_CREDENTIAL_LEN) : null;
+}
+
+/** Read `field` off one payload node, unwrapping the tRPC `{ json: ... }` envelope. */
+function pickFromNode(node: unknown, field: string): string | null {
+  if (!node || typeof node !== "object") return null;
+  const o = node as Record<string, unknown>;
+  const direct = cleanCredential(o[field]);
+  if (direct) return direct;
+  const j = o.json; // tRPC / superjson envelope: { json: { apiKey, ... } }
+  if (j && typeof j === "object") {
+    const nested = cleanCredential((j as Record<string, unknown>)[field]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 /**
- * Per-client key for the general API limiter: API-key > bearer token >
- * session cookie > IP. Credentials are hashed — never stored/logged raw.
- * The IP fallback is deliberately UN-prefixed (bare ipKeyGenerator output) so
- * it stays compatible with pre-B6 behaviour (`limiter.resetKey("<ip>")`).
- * Exported for tests.
+ * Read `field` from a parsed request body, covering every shape a machine uses:
+ *   REST proxy       → { apiKey, ... }
+ *   tRPC httpLink    → { json: { apiKey, ... } }
+ *   tRPC batchLink   → { "0": { json: { apiKey, ... } }, "1": ... }
  */
-export function apiKeyGenerator(req: Request): string {
+function pickFromBody(body: unknown, field: string): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const direct = pickFromNode(body, field);
+  if (direct) return direct;
+
+  const o = body as Record<string, unknown>;
+  let scanned = 0;
+  for (const k of Object.keys(o)) {
+    if (!/^\d+$/.test(k)) continue;
+    if (++scanned > MAX_BATCH_SCAN) break;
+    const v = pickFromNode(o[k], field);
+    if (v) return v;
+  }
+  return null;
+}
+
+/**
+ * doc 51 R6 rollback switch. Body/query credential keying only ever SPLITS a shared
+ * bucket into per-machine buckets (strictly more permissive — it can never throttle a
+ * client that today passes), so the default is ON. Set RATE_LIMIT_BODY_KEY=false to
+ * restore the exact pre-R6 header-only behaviour.
+ */
+function bodyKeyEnabled(): boolean {
+  return process.env.RATE_LIMIT_BODY_KEY !== "false";
+}
+
+/**
+ * The credential-derived bucket key, or null when the request carries no credential
+ * at all. Order: x-api-key header > Bearer > session cookie > body apiKey >
+ * query apiKey > machineCode. Credentials are hashed — never stored/logged raw.
+ *
+ * doc 51 R6: the header-only version silently fell through to the client IP for
+ * machines that send their key in the tRPC BODY (`{json:{apiKey}}`) or the query
+ * string (the GET machine endpoints) — which the machine contract explicitly allows.
+ * Every machine behind one factory NAT then collapsed into ONE IP bucket. Body/query
+ * keys reuse the `key:` prefix so a machine that switches transport (header ⇄ body)
+ * keeps the SAME bucket identity instead of being double-counted.
+ */
+function credentialKey(req: Request): string | null {
   const apiKey = req.headers["x-api-key"];
   if (typeof apiKey === "string" && apiKey.length > 0) return `key:${hashToken(apiKey)}`;
 
@@ -219,7 +380,35 @@ export function apiKeyGenerator(req: Request): string {
     if (m?.[1]) return `sess:${hashToken(m[1])}`;
   }
 
-  return ipKeyGenerator(req.ip ?? "", 56);
+  if (!bodyKeyEnabled()) return null;
+  try {
+    const q = req.query as Record<string, unknown> | undefined;
+    const bodyKey = pickFromBody(req.body, "apiKey") ?? cleanCredential(q?.apiKey);
+    if (bodyKey) return `key:${hashToken(bodyKey)}`;
+    // machineCode-only is a WEAK auth path (machineAuthService) but still identifies a
+    // single machine — far better than collapsing the whole factory onto one IP bucket.
+    const code = pickFromBody(req.body, "machineCode") ?? cleanCredential(q?.machineCode);
+    if (code) return `mcode:${hashToken(code)}`;
+  } catch {
+    // Key extraction must NEVER break the limiter — fall through to the IP bucket.
+  }
+  return null;
+}
+
+/** True when the request carries an identifying credential (i.e. is not IP-keyed). */
+export function hasCredentialKey(req: Request): boolean {
+  return credentialKey(req) !== null;
+}
+
+/**
+ * Per-client key for the general API limiter: API-key > bearer token >
+ * session cookie > body/query machine credential > IP. Credentials are hashed —
+ * never stored/logged raw. The IP fallback is deliberately UN-prefixed (bare
+ * ipKeyGenerator output) so it stays compatible with pre-B6 behaviour
+ * (`limiter.resetKey("<ip>")`). Exported for tests.
+ */
+export function apiKeyGenerator(req: Request): string {
+  return credentialKey(req) ?? ipKeyGenerator(req.ip ?? "", 56);
 }
 
 // ── Limiter factories ────────────────────────────────────────────────────────
@@ -233,8 +422,11 @@ export function createApiLimiter() {
     keyGenerator: apiKeyGenerator,
     // doc 48 R3: EXEMPT the machine telemetry ingest path from the 300/60 browser
     // tier — it is governed by the dedicated createOtIngestLimiter high tier instead.
+    // doc 51 R6: likewise EXEMPT the machine data plane (/api/machine/*, allowlisted
+    // machineApi tRPC procedures) — governed by createMachineIngestLimiter. Each path
+    // is counted by EXACTLY ONE limiter, so the tiers can never double-count.
     // Browser/tRPC traffic is unaffected (skip returns false for every other path).
-    skip: isOtIngestRequest,
+    skip: (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req),
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
     ...storeOption("rl:api:"),
   });
@@ -270,5 +462,33 @@ export function createOtIngestLimiter() {
     keyGenerator: apiKeyGenerator,
     passOnStoreError: true, // Redis down → allow (fail-open), never 500 the ingest path
     ...storeOption("rl:otingest:"),
+  });
+}
+
+/**
+ * doc 51 R6 — the DEDICATED machine data-plane limiter (inspection submit, image
+ * upload, point sync, heartbeat …). Mounted on `/api/` BEFORE the general limiter and
+ * `skip`ping everything that is not machine ingest, so ONE mount covers both the REST
+ * proxies and the tRPC procedures while the general limiter skips those exact requests.
+ *
+ * The ceiling is CREDENTIAL-DEPENDENT on purpose (QĐ#1 — siết phải có kiểm soát):
+ *   - credentialed (real machine, per-key bucket) → MACHINE_INGEST_RATE_MAX (60k/min)
+ *   - keyless (IP-keyed) → API_PER_MIN, i.e. EXACTLY today's 300/min
+ * Without that split, exempting /api/machine/* from the general tier would have handed
+ * an anonymous attacker a 200× amplifier on the un-authenticated machine surface.
+ * `standardHeaders: true` makes express-rate-limit emit `Retry-After` on every 429, so
+ * a client draining a backlog after an outage knows how long to back off (CASE #2).
+ */
+export function createMachineIngestLimiter() {
+  return rateLimit({
+    ...MACHINE_INGEST_RATE_LIMIT,
+    max: (req: Request) => (hasCredentialKey(req) ? MACHINE_INGEST_PER_MIN : API_PER_MIN),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Machine ingest rate limit exceeded" },
+    keyGenerator: apiKeyGenerator,
+    skip: (req: Request) => !isMachineIngestRequest(req),
+    passOnStoreError: true, // Redis down → allow (fail-open), never 500 the ingest path
+    ...storeOption("rl:machingest:"),
   });
 }

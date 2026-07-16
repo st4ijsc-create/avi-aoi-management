@@ -214,12 +214,28 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   isActive: boolean("isActive").default(true).notNull(),
   // P0 soft-delete marker. NULL = live row. Set when row is logically deleted.
   deletedAt: timestamp("deletedAt"),
+  // Doc 51 P1 / CASE #4 (0274) — the product's pointsConfigVersion AT THE MOMENT
+  // this point was soft-deleted. Lets deltaSync ship a tombstone only to machines
+  // still below that version. NULL = deleted before 0274 (version unknown) → the
+  // tombstone is shipped unconditionally (over-ship beats a point that never dies).
+  deletedAtVersion: integer("deletedAtVersion"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_point_defs_product").on(table.productModelId),
   index("idx_point_defs_machine").on(table.machineId),
   index("idx_point_defs_code").on(table.code),
+  // Doc 51 P2 (0274) — a product may hold only ONE live def per code. PARTIAL on
+  // "deletedAt" IS NULL so soft-deleted history never blocks re-creating a code.
+  // Matches the identity the app already assumes (getMeasurementPointDefByCode,
+  // measurementPointResolver, remapMeasurementPoints all key on productModelId+code)
+  // — this only stops the check-then-insert race from minting a second live row.
+  // ⚠ May be ABSENT at runtime: 0274 is guarded and records 'partial' in
+  //   db_feature_status when pre-existing duplicates block it. All writers use bare
+  //   ON CONFLICT DO NOTHING so they behave identically either way.
+  uniqueIndex("uq_point_defs_product_code")
+    .on(table.productModelId, table.code)
+    .where(sql`${table.deletedAt} IS NULL`),
   index("idx_point_defs_last_modified").on(table.lastModifiedAt),
   index("idx_point_defs_product_modified").on(table.productModelId, table.lastModifiedAt),
   index("idx_point_defs_image_hash").on(table.imageHash),

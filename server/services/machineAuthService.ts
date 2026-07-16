@@ -14,17 +14,46 @@
  *   1. `api_keys` row (hash match) WITH a machineId → machine-scoped key:
  *      revoked/expired → UNAUTHORIZED (no fallthrough — a revoked key must die),
  *      scope check, throttled lastUsedAt bump.
- *   2. Legacy shared plaintext `machines.apiKey` — kept for backward compat
- *      behind MACHINE_SHARED_KEY_ALLOWED (default TRUE for now) with a throttled
- *      deprecation warning. Set MACHINE_SHARED_KEY_ALLOWED=false once every
- *      machine has been rotated to a scoped key.
- *   3. machineCode-only identification (existing weak path, unchanged).
+ *   2. Legacy shared plaintext `machines.apiKey` — WEAK path, gated by
+ *      MACHINE_SHARED_KEY_ALLOWED (default `allow` for backward compat).
+ *   3. machineCode-only identification — WEAK path (NO secret at all), gated by
+ *      MACHINE_CODE_ONLY_ALLOWED (default `allow` for backward compat).
  *
- * ROTATION FLOW (used by the AOI onboarding wizard, W2-D):
- *   issueMachineKey → configure the machine with the plaintext (shown ONCE) →
- *   verify traffic arrives with method="machine-key" → revoke the old key
- *   (rotateMachineKey does both) → finally clear machines.apiKey / flip the
- *   shared-key flag off.
+ * ════════════════════════════════════════════════════════════════════════════
+ * DOC 51 P0 / QĐ#1 — CONTROLLED MIGRATION OFF THE WEAK PATHS
+ *
+ * Both weak paths carry the same doc-51-R1 risk: anyone on the LAN who learns a
+ * machineCode (or scrapes the plaintext shared key) can forge a machine and inject
+ * inspection/NG data. The owner approved CONTROLLED migration — NOT a hard flip
+ * that kills machines mid-shift. So each weak path is a TRI-STATE policy flag:
+ *
+ *   allow      (default) — accepted everywhere, telemetry recorded on every use.
+ *   read-only            — accepted for READ scopes (equipment:read) only; every
+ *                          WRITE (ingest:write / edge:sync / unknown) is denied.
+ *                          The graduated middle step: forged ingest stops NOW while
+ *                          un-rotated machines keep polling config and surface as
+ *                          loud, diagnosable write-401s instead of a blackout.
+ *   deny                 — accepted nowhere (the pre-existing `false` semantics,
+ *                          preserved bit-for-bit so a deployment already shipping
+ *                          MACHINE_SHARED_KEY_ALLOWED=false is NEVER weakened).
+ *
+ * WARN-THEN-DENY: a weak path can only be flipped safely if ops knows WHICH
+ * machines still use it. Every weak-path attempt (allowed AND denied) increments
+ * an in-process counter keyed machine+method+endpoint (getWeakAuthUsage(), exact,
+ * unthrottled) and emits a Prometheus security event; the human-readable pino line
+ * stays throttled so a chatty machine cannot flood the log. Denied attempts are
+ * recorded TOO — that is the rollback signal after a flip.
+ *
+ * Fleet-wide, cross-restart visibility comes from `scripts/machine-key-rotation-report.mjs`
+ * (DB-only inference: mk_ key present + lastUsedAt vs machines.lastHeartbeat).
+ *
+ * ROTATION FLOW (runbook: docs/ECOSYSTEM/52_P0_MACHINE_AUTH_ROTATION_RUNBOOK.md):
+ *   report → issueMachineKey → configure the machine with the plaintext (shown
+ *   ONCE) via `Authorization: Bearer` / `X-API-Key` → verify traffic arrives with
+ *   method="machine-key" AND getWeakAuthUsage() is clean → revoke the old key
+ *   (rotateMachineKey does both) → flip the flags to `deny` in production →
+ *   finally clear machines.apiKey.
+ * ════════════════════════════════════════════════════════════════════════════
  *
  * DB-health awareness: when the machine cannot be resolved AND the DB is
  * positively unreachable, DbUnavailableError is thrown instead of UNAUTHORIZED
@@ -45,13 +74,86 @@ import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { apiKeys } from "../../drizzle/schema";
-import { ALL_SCOPES, scopeSatisfied, type ApiScope } from "../api/v1/scopes";
+import { logger } from "../logger";
+import { API_SCOPES, ALL_SCOPES, scopeSatisfied, type ApiScope } from "../api/v1/scopes";
 
 // ── flags / config ───────────────────────────────────────────────────────────
 
-/** Legacy shared plaintext machines.apiKey accepted? Default TRUE (compat). */
+/**
+ * Doc 51 P0 (QĐ#1) — how far a WEAK (non-`mk_`) machine credential is trusted.
+ * See the header block: `allow` (compat default) → `read-only` (graduated) →
+ * `deny` (rotation complete).
+ */
+export type WeakAuthPolicy = "allow" | "read-only" | "deny";
+
+/**
+ * Parse a weak-auth flag. Accepts the LEGACY boolean vocabulary (`true`/`false`)
+ * so pre-doc-51 .env files keep their exact meaning, plus the new `read-only`.
+ *
+ * Unrecognised values fall back to the flag's DEFAULT and log ONCE at error level
+ * rather than throwing or failing closed: throwing/denying on a typo would kill a
+ * running line, which is exactly what QĐ#1 forbids. The fallback is never MORE
+ * permissive than leaving the flag unset, and the loud log + the rotation report
+ * are how a typo gets caught. Verify with telemetry — never assume a flip landed.
+ */
+function parseWeakAuthPolicy(name: string, raw: string | undefined, fallback: WeakAuthPolicy): WeakAuthPolicy {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "") return fallback;
+  if (v === "false" || v === "0" || v === "off" || v === "no" || v === "deny") return "deny";
+  if (v === "true" || v === "1" || v === "on" || v === "yes" || v === "allow") return "allow";
+  if (v === "read-only" || v === "readonly" || v === "read_only") return "read-only";
+  warnBadPolicyValueOnce(name, v, fallback);
+  return fallback;
+}
+
+const badPolicyValueWarned = new Set<string>();
+function warnBadPolicyValueOnce(name: string, value: string, fallback: WeakAuthPolicy): void {
+  if (badPolicyValueWarned.has(name)) return;
+  badPolicyValueWarned.add(name);
+  logger.error(
+    { flag: name, value, fallback, doc: "51-P0" },
+    `[MachineAuth] ${name}="${value}" không hợp lệ — chỉ nhận allow|read-only|deny (hoặc true|false). ` +
+      `Đang dùng mặc định "${fallback}". SỬA .env rồi restart: giá trị sai KHÔNG siết được đường yếu.`,
+  );
+}
+
+/**
+ * Legacy shared plaintext `machines.apiKey` policy. Default `allow` (compat).
+ * `MACHINE_SHARED_KEY_ALLOWED=false` keeps its original meaning: deny everywhere.
+ */
+export function sharedMachineKeyPolicy(): WeakAuthPolicy {
+  return parseWeakAuthPolicy("MACHINE_SHARED_KEY_ALLOWED", process.env.MACHINE_SHARED_KEY_ALLOWED, "allow");
+}
+
+/**
+ * machineCode-only (NO secret) policy. Default `allow` (compat — doc 51 §5.6:
+ * this is still the primary DOCUMENTED method, so production flips it, not dev).
+ */
+export function machineCodeOnlyPolicy(): WeakAuthPolicy {
+  return parseWeakAuthPolicy("MACHINE_CODE_ONLY_ALLOWED", process.env.MACHINE_CODE_ONLY_ALLOWED, "allow");
+}
+
+/**
+ * BACK-COMPAT shim for callers/tests that only ask "is the shared key accepted at
+ * all?". TRUE for both `allow` and `read-only` — use sharedMachineKeyPolicy() when
+ * the read/write distinction matters.
+ */
 export function sharedMachineKeyAllowed(): boolean {
-  return process.env.MACHINE_SHARED_KEY_ALLOWED !== "false";
+  return sharedMachineKeyPolicy() !== "deny";
+}
+
+/**
+ * Scopes a WEAK credential may still satisfy under `read-only`. Deliberately a
+ * tiny allowlist: everything else (ingest:write, edge:sync, an unknown scope, or
+ * NO scope at all) counts as a WRITE and is denied — fail-closed, so a caller that
+ * forgets to declare its scope cannot silently keep write access.
+ */
+const WEAK_AUTH_READ_SCOPES: ReadonlySet<string> = new Set<string>([API_SCOPES.EQUIPMENT_READ]);
+
+function weakAuthDecision(policy: WeakAuthPolicy, scope?: ApiScope): "allowed" | "denied" {
+  if (policy === "allow") return "allowed";
+  if (policy === "deny") return "denied";
+  return scope && WEAK_AUTH_READ_SCOPES.has(scope) ? "allowed" : "denied";
 }
 
 /** Ingest requests allowed per machine key per minute. 0 disables. */
@@ -121,20 +223,148 @@ function touchLastUsed(keyId: number): void {
   })();
 }
 
-/** Throttled shared-key deprecation warnings: one per machine per 10 min. */
-const sharedKeyWarnAt = new Map<string, number>();
-const SHARED_KEY_WARN_MIN_MS = 10 * 60 * 1000;
+// ── weak-auth telemetry (doc 51 P0 / QĐ#1 — WARN-THEN-DENY prerequisite) ─────
+//
+// The COUNTER is the product here, not the log line: ops must be able to answer
+// "which machines still use a weak path, on which endpoint?" BEFORE flipping a
+// flag, and "what broke?" straight after. The old throttled console.warn could
+// not answer either (throttling DROPS the evidence, and a warn is not queryable).
+//
+// In-process + exact + unthrottled. Cleared on restart by design — the durable,
+// fleet-wide view is scripts/machine-key-rotation-report.mjs (DB-only). Bounded
+// so a hostile scanner cannot grow it without limit.
 
-function warnSharedKeyDeprecated(machineCode: string): void {
+/** One machine × method × endpoint × outcome bucket. */
+export interface WeakAuthUsageRow {
+  machineId: number;
+  machineCode: string;
+  /** Which weak path: legacy shared plaintext key, or bare machineCode (no secret). */
+  method: "shared-key" | "machine-code";
+  /** Caller-supplied label, else the required scope, else "unknown". */
+  endpoint: string;
+  /** Was it let through (flag still open) or refused (flag already flipped)? */
+  outcome: "allowed" | "denied";
+  count: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+const weakAuthUsage = new Map<string, WeakAuthUsageRow>();
+/** Bound: ~real fleets are 10²; 2000 buckets is unreachable in normal operation. */
+const WEAK_AUTH_USAGE_MAX = 2000;
+let weakAuthUsageOverflow = 0;
+
+/** Throttled HUMAN log: one line per machine+method+endpoint+outcome per 10 min. */
+const weakAuthLogAt = new Map<string, number>();
+const WEAK_AUTH_LOG_MIN_MS = 10 * 60 * 1000;
+
+/** Lazily-bridged Prometheus security counter — never a hard dep of auth. */
+let incSecurityEventFn: ((type: string, mode: string) => void) | null = null;
+let metricsBridgeRequested = false;
+
+function emitWeakAuthMetric(method: string, outcome: string): void {
+  if (incSecurityEventFn) {
+    try {
+      // Reuses the EXISTING avi_aoi_security_events_total counter (labels type/mode)
+      // — no change to _core/metrics.ts. Per-machine detail lives in the registry
+      // above; a machineId label would blow up Prometheus cardinality.
+      incSecurityEventFn(`machine_weak_auth_${outcome}`, method);
+    } catch {
+      /* metrics must never break auth */
+    }
+    return;
+  }
+  if (metricsBridgeRequested) return;
+  metricsBridgeRequested = true;
+  // Dynamic: keeps _core/metrics (and its prom-client / SLO chain) off the auth
+  // module graph. Fire-and-forget — the first weak hit may miss the metric; the
+  // in-memory registry is exact regardless, so nothing is lost.
+  void import("../_core/metrics")
+    .then((m) => {
+      incSecurityEventFn = m.incSecurityEvent;
+    })
+    .catch(() => {
+      /* metrics unavailable → registry + log remain authoritative */
+    });
+}
+
+/**
+ * Record ONE weak-path attempt. Called on BOTH outcomes — a denied attempt after
+ * a flag flip is precisely the signal that says "roll back / go rotate that machine".
+ */
+function recordWeakAuthUse(opts: {
+  machineId: number;
+  machineCode: string;
+  method: "shared-key" | "machine-code";
+  endpoint: string;
+  outcome: "allowed" | "denied";
+}): void {
+  const { machineId, machineCode, method, endpoint, outcome } = opts;
+  const key = `${machineId}|${method}|${endpoint}|${outcome}`;
+  const nowIso = new Date().toISOString();
+  const existing = weakAuthUsage.get(key);
+  if (existing) {
+    existing.count += 1;
+    existing.lastSeenAt = nowIso;
+  } else if (weakAuthUsage.size < WEAK_AUTH_USAGE_MAX) {
+    weakAuthUsage.set(key, {
+      machineId,
+      machineCode,
+      method,
+      endpoint,
+      outcome,
+      count: 1,
+      firstSeenAt: nowIso,
+      lastSeenAt: nowIso,
+    });
+  } else {
+    // Full: keep the established buckets (the rotation signal) rather than evict
+    // them for a flood of new ones. Overflow is surfaced, not swallowed.
+    weakAuthUsageOverflow += 1;
+  }
+
+  emitWeakAuthMetric(method, outcome);
+
   const now = Date.now();
-  const prev = sharedKeyWarnAt.get(machineCode) ?? 0;
-  if (now - prev < SHARED_KEY_WARN_MIN_MS) return;
-  sharedKeyWarnAt.set(machineCode, now);
-  console.warn(
-    `[MachineAuth] DEPRECATED shared plaintext apiKey used by machine ${machineCode}. ` +
-      `Issue a per-machine scoped key (machineApi.issueKey / onboarding wizard) and set ` +
-      `MACHINE_SHARED_KEY_ALLOWED=false once all machines are rotated.`,
-  );
+  const prevLog = weakAuthLogAt.get(key) ?? 0;
+  if (now - prevLog >= WEAK_AUTH_LOG_MIN_MS) {
+    weakAuthLogAt.set(key, now);
+    if (weakAuthLogAt.size > WEAK_AUTH_USAGE_MAX) weakAuthLogAt.clear(); // bound
+    const meta = { machineId, machineCode, method, endpoint, outcome, doc: "51-P0" };
+    if (outcome === "denied") {
+      logger.warn(
+        meta,
+        `[MachineAuth] TỪ CHỐI đường yếu "${method}" của máy ${machineCode} tại ${endpoint} — ` +
+          `máy này CHƯA rotate sang khoá mk_. Cấp khoá (machineApi.issueKey) hoặc nới cờ để lùi. ` +
+          `Runbook: docs/ECOSYSTEM/52_P0_MACHINE_AUTH_ROTATION_RUNBOOK.md`,
+      );
+    } else {
+      logger.warn(
+        meta,
+        `[MachineAuth] Đường yếu "${method}" (DEPRECATED) đang được máy ${machineCode} dùng tại ${endpoint}. ` +
+          `Cấp khoá mk_ per-máy rồi siết cờ về deny. Xem getWeakAuthUsage() / ` +
+          `node scripts/machine-key-rotation-report.mjs`,
+      );
+    }
+  }
+}
+
+/**
+ * Snapshot of every weak-auth bucket seen since boot (newest activity first).
+ * Read-only copy — mutating it cannot corrupt the registry.
+ *
+ * NOTE (coordinator): not surfaced over HTTP yet. A read-only admin endpoint (or a
+ * /metrics gauge) is the natural follow-up — both touch files outside this zone.
+ */
+export function getWeakAuthUsage(): WeakAuthUsageRow[] {
+  return [...weakAuthUsage.values()]
+    .map((r) => ({ ...r }))
+    .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+}
+
+/** Attempts dropped because the registry hit WEAK_AUTH_USAGE_MAX (0 = full fidelity). */
+export function getWeakAuthUsageOverflow(): number {
+  return weakAuthUsageOverflow;
 }
 
 /**
@@ -162,8 +392,16 @@ export async function authenticateMachine(opts: {
   machineCode?: string | null;
   headerKey?: string | null;
   scope?: ApiScope;
+  /**
+   * Doc 51 P0 — label for weak-auth telemetry (e.g. "submitInspection"). Optional
+   * and additive: callers that omit it fall back to the required scope, so no
+   * existing call site breaks. Pass it from the machine router to get per-endpoint
+   * rotation evidence instead of per-scope.
+   */
+  endpoint?: string;
 }): Promise<MachineAuthResult> {
   const key = (opts.headerKey ?? opts.apiKey ?? "").trim();
+  const endpoint = opts.endpoint?.trim() || opts.scope || "unknown";
 
   if (key) {
     // 1) Machine-scoped key in api_keys (hash-at-rest, migration 0126+0178).
@@ -216,33 +454,78 @@ export async function authenticateMachine(opts: {
       return { machine, method: "machine-key", keyId: row.id, scopes };
     }
 
-    // 2) Legacy shared plaintext machines.apiKey (backward compat, flag-gated).
-    if (sharedMachineKeyAllowed()) {
-      let machine: MachineRow | undefined;
-      try {
-        machine = await db.getMachineByApiKey(key);
-      } catch {
-        throw new DbUnavailableError();
-      }
-      if (machine) {
-        warnSharedKeyDeprecated(machine.code);
-        return { machine, method: "shared-key" };
-      }
+    // 2) Legacy shared plaintext machines.apiKey — WEAK path (doc 51 R1).
+    //    The lookup runs even when the policy will DENY: resolving the machine is
+    //    what lets telemetry name it, and "machine X denied on submitInspection"
+    //    is the whole point of warn-then-deny (it drives rotate-vs-rollback). The
+    //    extra query only resolves for a REAL shared key, and a bogus key costs
+    //    exactly what it costs today on the allow path.
+    const sharedPolicy = sharedMachineKeyPolicy();
+    let sharedMachine: MachineRow | undefined;
+    try {
+      sharedMachine = await db.getMachineByApiKey(key);
+    } catch {
+      // Only the allow path can distinguish "DB down" from "bad key"; when the
+      // policy denies we must not turn a deny into a buffered 503, so fall
+      // through to the shared dbPositivelyDown()/UNAUTHORIZED handling below.
+      if (sharedPolicy === "allow") throw new DbUnavailableError();
+      sharedMachine = undefined;
+    }
+    if (sharedMachine) {
+      const decision = weakAuthDecision(sharedPolicy, opts.scope);
+      recordWeakAuthUse({
+        machineId: sharedMachine.id,
+        machineCode: sharedMachine.code,
+        method: "shared-key",
+        endpoint,
+        outcome: decision,
+      });
+      if (decision === "allowed") return { machine: sharedMachine, method: "shared-key" };
+      // Explicit, diagnosable message. It does reveal "this key WAS a valid shared
+      // key" to whoever already holds that key — accepted: they cannot use it for
+      // anything, and a vendor tech reading "Invalid API key" would otherwise hunt
+      // a key that is not the problem. Doc 52 §5 documents the trade-off.
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message:
+          `Shared machine apiKey authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
+          `Configure machine ${sharedMachine.code} with its per-machine key (mk_...) sent as ` +
+          `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
+      });
     }
 
     if (await dbPositivelyDown()) throw new DbUnavailableError();
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
   }
 
-  // 3) machineCode-only identification (existing weak path — unchanged).
+  // 3) machineCode-only identification — WEAK path, NO secret whatsoever (doc 51 R1).
   if (opts.machineCode && opts.machineCode.trim()) {
+    const codePolicy = machineCodeOnlyPolicy();
     let machine: MachineRow | undefined;
     try {
       machine = await db.getMachineByCode(opts.machineCode.trim());
     } catch {
-      throw new DbUnavailableError();
+      if (codePolicy === "allow") throw new DbUnavailableError();
+      machine = undefined;
     }
-    if (machine) return { machine, method: "machine-code" };
+    if (machine) {
+      const decision = weakAuthDecision(codePolicy, opts.scope);
+      recordWeakAuthUse({
+        machineId: machine.id,
+        machineCode: machine.code,
+        method: "machine-code",
+        endpoint,
+        outcome: decision,
+      });
+      if (decision === "allowed") return { machine, method: "machine-code" };
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message:
+          `machineCode-only authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
+          `Configure machine ${machine.code} with its per-machine key (mk_...) sent as ` +
+          `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
+      });
+    }
     if (await dbPositivelyDown()) throw new DbUnavailableError();
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
   }
@@ -418,5 +701,8 @@ export async function rotateMachineKey(
 export function _resetMachineAuthState(): void {
   rateWindows.clear();
   lastUsedWriteAt.clear();
-  sharedKeyWarnAt.clear();
+  weakAuthUsage.clear();
+  weakAuthLogAt.clear();
+  weakAuthUsageOverflow = 0;
+  badPolicyValueWarned.clear();
 }
