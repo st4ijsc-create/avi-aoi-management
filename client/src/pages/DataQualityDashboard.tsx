@@ -16,7 +16,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { ShieldCheck, Check, AlertTriangle, ArrowRight, Database } from "lucide-react";
+import { ShieldCheck, Check, AlertTriangle, ArrowRight, Database, ListTree } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -46,6 +46,16 @@ interface QualityEntity {
   total: number;
   issues: QualityIssue[];
 }
+/** Doc 54 §11 P0.4b — a concrete offending row for the drill list. */
+interface QualityDrillSample {
+  id: number;
+  label: string;
+  reasonCodes: string[];
+}
+/** Engineering/hierarchy DQ card: issue counts + a bounded drill list. */
+interface QualityEntityExtended extends QualityEntity {
+  samples: QualityDrillSample[];
+}
 
 /** entity → tab /master-data để "mở lọc sẵn". */
 const ENTITY_TAB: Record<string, string> = {
@@ -69,9 +79,17 @@ export default function DataQualityDashboard() {
     enabled: canView,
     staleTime: 60_000,
   });
+  // Doc 54 §11 P0.4b — measurement-point + hierarchy DQ (with drill lists).
+  const engineeringQuery = trpc.masterData.quality.engineering.useQuery(undefined, {
+    enabled: canView,
+    staleTime: 60_000,
+  });
 
   const rollup = useMemo(() => {
-    const data = (summaryQuery.data ?? []) as QualityEntity[];
+    const data = [
+      ...((summaryQuery.data ?? []) as QualityEntity[]),
+      ...((engineeringQuery.data ?? []) as QualityEntityExtended[]),
+    ];
     let totalRecords = 0;
     let totalIssues = 0;
     let affectedEntities = 0;
@@ -82,7 +100,7 @@ export default function DataQualityDashboard() {
       if (issueSum > 0) affectedEntities += 1;
     }
     return { totalRecords, totalIssues, affectedEntities, entityCount: data.length };
-  }, [summaryQuery.data]);
+  }, [summaryQuery.data, engineeringQuery.data]);
 
   if (!canView) {
     return (
@@ -150,6 +168,32 @@ export default function DataQualityDashboard() {
             </div>
           )}
         </QueryBoundary>
+
+        {/* Doc 54 §11 P0.4b — điểm đo + phân cấp (kèm drill list). */}
+        <div className="mt-8">
+          <PageHeader
+            icon={<ListTree className="h-6 w-6" />}
+            title={t("dataQuality.engSection.title", "Điểm đo & phân cấp")}
+            description={t(
+              "dataQuality.engSection.subtitle",
+              "Điểm đo thiếu ngưỡng / toạ độ gốc / thiếu linh kiện và các mắt xích phân cấp bị mồ côi (chỉ đọc).",
+            )}
+          />
+          <QueryBoundary
+            query={engineeringQuery}
+            preset="cards"
+            isEmpty={(d) => !d || (d as QualityEntityExtended[]).length === 0}
+            errorTitle={t("dataQuality.error", "Không tải được chỉ số chất lượng dữ liệu")}
+          >
+            {(data) => (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {(data as QualityEntityExtended[]).map((e) => (
+                  <EntityQualityCard key={e.entity} entity={e} samples={e.samples} />
+                ))}
+              </div>
+            )}
+          </QueryBoundary>
+        </div>
       </PageContainer>
     </DashboardLayout>
   );
@@ -158,13 +202,17 @@ export default function DataQualityDashboard() {
 function EntityQualityCard({
   entity,
   onOpen,
+  samples,
 }: {
   entity: QualityEntity;
   onOpen?: () => void;
+  /** Doc 54 §11 P0.4b — optional bounded drill list of concrete offenders. */
+  samples?: QualityDrillSample[];
 }) {
   const { t } = useTranslation();
   const issueSum = entity.issues.reduce((s, i) => s + i.count, 0);
   const entityLabel = t(`dataQuality.entity.${entity.entity}`, entity.label);
+  const drill = (samples ?? []).filter((s) => s.reasonCodes.length > 0);
 
   return (
     <SectionCard
@@ -229,6 +277,34 @@ function EntityQualityCard({
             );
           })}
         </ul>
+      )}
+
+      {drill.length > 0 && (
+        <details className="mt-3 border-t border-border pt-2">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+            {t("dataQuality.drill.show", "Xem {{n}} bản ghi cần dọn").replace(
+              "{{n}}",
+              String(drill.length),
+            )}
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {drill.map((s) => (
+              <li key={s.id} className="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between">
+                <span className="truncate font-mono text-muted-foreground">{s.label}</span>
+                <span className="flex flex-wrap gap-1">
+                  {s.reasonCodes.map((code) => (
+                    <span
+                      key={code}
+                      className="rounded bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning"
+                    >
+                      {t(`dataQuality.issue.${entity.entity}.${code}`, code)}
+                    </span>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </SectionCard>
   );

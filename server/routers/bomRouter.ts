@@ -22,9 +22,24 @@ import { router, moduleProcedure } from "../_core/trpc";
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
+import { getDb } from "../db/connection";
+import { materials } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
 import { recordComponentInstallation } from "../services/componentInstallationService";
 
 const MODULE = "mes_bom";
+
+/** Best-effort resolve a componentCode → materials.id (nullable — never throws). */
+async function lookupMaterialId(code: string): Promise<number | null> {
+  try {
+    const d = await getDb();
+    if (!d) return null;
+    const [row] = await d.select({ id: materials.id }).from(materials).where(eq(materials.code, code)).limit(1);
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const bomRouter = router({
   // ─── BOM definitions ──────────────────────────────────────────────────────
@@ -295,5 +310,122 @@ export const bomRouter = router({
         serials: Array.from(new Set(installations.map((r) => r.serialNumber))),
         installations,
       };
+    }),
+
+  /**
+   * Doc 54 §11 P0.5 — bulk-import BOM from a FLAT CSV/array (one row per line
+   * item). Gated on the SAME permission as create (mes_bom.canCreate) — NOT
+   * adminProcedure (mirrors doc-54 P0.3). Rows group by (productCode, bomCode)
+   * into one BOM definition each; productCode resolves to productModelId (unknown
+   * product → the whole group's rows fail). materialCode → componentCode, with a
+   * best-effort materials.id link; refDes → refDesignator; qty → qtyPer.
+   * Idempotent per line by (bomId, componentCode, refDesignator): existing line
+   * UPDATED, new line CREATED. Counts are at the LINE level. Returns
+   * {inserted, updated, failed, errors[]}.
+   */
+  importBom: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      rows: z.array(z.object({
+        productCode: z.string().trim().min(1).max(100),
+        bomCode: z.string().trim().max(100).optional(),
+        bomName: z.string().max(255).optional(),
+        materialCode: z.string().trim().min(1).max(100),
+        componentName: z.string().max(255).optional(),
+        refDes: z.string().max(255).optional(),
+        qty: z.number().positive().default(1),
+        unit: z.string().max(16).optional(),
+        isOptional: z.boolean().optional(),
+        notes: z.string().max(2000).optional(),
+      })).min(1).max(20000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = { inserted: 0, updated: 0, failed: 0, errors: [] as string[] };
+      // Group flat rows by (productCode, bomCode).
+      type Group = { productCode: string; bomCode: string; bomName?: string; rows: typeof input.rows };
+      const groups = new Map<string, Group>();
+      for (const row of input.rows) {
+        const productCode = row.productCode.trim();
+        const bomCode = (row.bomCode?.trim() || `${productCode}-IMPORT`);
+        const key = `${productCode}::${bomCode}`;
+        let g = groups.get(key);
+        if (!g) {
+          g = { productCode, bomCode, bomName: row.bomName, rows: [] };
+          groups.set(key, g);
+        }
+        g.rows.push(row);
+      }
+
+      for (const g of groups.values()) {
+        let bomId: number;
+        let lineCache: any[];
+        try {
+          const product = await db.getProductModelByCode(g.productCode);
+          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          const defs = await db.listBomDefinitionsByProduct(product.id, false);
+          const existingDef = defs.find((d) => d.code === g.bomCode);
+          if (existingDef) {
+            bomId = existingDef.id;
+          } else {
+            bomId = await db.createBomDefinition({
+              productModelId: product.id,
+              code: g.bomCode,
+              version: 1,
+              name: g.bomName ?? null,
+              status: "draft",
+              notes: null,
+              createdBy: ctx.user.id,
+            });
+          }
+          lineCache = await db.listBomLineItemsByBom(bomId);
+        } catch (err) {
+          // Header resolution failed → all this group's rows fail.
+          result.failed += g.rows.length;
+          result.errors.push(`${g.productCode}/${g.bomCode}: ${err instanceof Error ? err.message : "lỗi import"}`);
+          continue;
+        }
+
+        for (const row of g.rows) {
+          const componentCode = row.materialCode.trim();
+          const refDesignator = row.refDes?.trim() || null;
+          try {
+            const materialId = await lookupMaterialId(componentCode);
+            const existingLine = lineCache.find(
+              (l) => l.componentCode === componentCode && (l.refDesignator ?? null) === refDesignator,
+            );
+            if (existingLine) {
+              await db.updateBomLineItem(existingLine.id, {
+                ...(materialId != null ? { materialId } : {}),
+                ...(row.componentName != null ? { componentName: row.componentName } : {}),
+                qtyPer: String(row.qty),
+                ...(row.unit != null ? { unit: row.unit } : {}),
+                ...(row.isOptional != null ? { isOptional: row.isOptional } : {}),
+                ...(row.notes != null ? { notes: row.notes } : {}),
+              });
+              result.updated++;
+            } else {
+              const id = await db.createBomLineItem({
+                bomId,
+                componentCode,
+                materialId: materialId ?? null,
+                componentName: row.componentName ?? null,
+                qtyPer: String(row.qty),
+                unit: row.unit ?? "pcs",
+                refDesignator,
+                alternateGroup: null,
+                isOptional: row.isOptional ?? false,
+                notes: row.notes ?? null,
+              });
+              // Track within this batch so a duplicate row updates, not double-inserts.
+              lineCache.push({ id, componentCode, refDesignator });
+              result.inserted++;
+            }
+          } catch (err) {
+            result.failed++;
+            result.errors.push(`${g.productCode}/${componentCode}: ${err instanceof Error ? err.message : "lỗi import"}`);
+          }
+        }
+      }
+      return result;
     }),
 });

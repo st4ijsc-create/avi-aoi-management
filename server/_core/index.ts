@@ -5093,6 +5093,28 @@ async function startServer() {
     } catch (err) {
       console.error("[BackgroundJobs] start failed:", (err as any)?.message || err);
     }
+
+    // doc 54 §11 P1.2 ⭐ — LIVE daily_statistics rollup writer. Populates
+    // daily_statistics (source for getAllOEE / OEE dashboards / warRoom line-OEE)
+    // from REAL ingested product_inspections per ACTIVE machine (absolute,
+    // idempotent, self-healing) — previously only the sim-daemon wrote this table.
+    // Cron-like data writer → belongs with the ROLE=api-skipped scheduler set (only
+    // runs in default all-in-one / worker, not in the stateless api tier). Self-gates
+    // LIVE_STATS_ROLLUP_ENABLED (default OFF) + is idempotent, so this is safe when
+    // the flag is off. ⚠ Do NOT enable alongside the sim-live-daemon (double-write —
+    // cumulative vs absolute); the two are mutually exclusive sources (see .env).
+    try {
+      const { startLiveStatsRollup } = await import("../services/liveStatsRollupService");
+      startLiveStatsRollup();
+    } catch (err) {
+      console.error("[liveStatsRollup] start failed:", (err as any)?.message || err);
+    }
+
+    // doc 40 MON-F1 — machine presence sweep (ot_telemetry recency → machine_status_logs
+    // for EVERY transport, feeding OEE availability/health). CONFIRMED already wired at
+    // boot inside startBackgroundSchedulers() above (backgroundJobs.ts, with its stop
+    // counterpart). It self-gates MACHINE_PRESENCE_ENABLED (default OFF) + is idempotent,
+    // so it is NOT re-called here — backgroundJobs.ts owns its start/stop lifecycle.
   }
 
   // Initialize MQTT broker (if enabled)
@@ -5559,6 +5581,11 @@ async function startServer() {
     cacheWarmingService.stop();
     stopEscalationScheduler();
     stopAlertEvaluatorScheduler();
+    // doc 54 §11 P1.2 — stop LIVE daily_statistics rollup (idempotent no-op if the
+    // flag was off / it never started). Started in the ROLE!=api block above.
+    import("../services/liveStatsRollupService")
+      .then((m) => m.stopLiveStatsRollup())
+      .catch(() => {});
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC
       // khi đóng UNS publisher (xem mqttService.shutdownMqttBroker). NBIRTH-on-connect

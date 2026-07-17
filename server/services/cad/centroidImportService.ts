@@ -24,7 +24,7 @@
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { createAuditLog, getProductModelById } from "../../db";
+import { createAuditLog, getProductModelById, bumpPointsConfigVersion } from "../../db";
 import {
   cadImportJobs,
   cadImportCandidates,
@@ -517,5 +517,340 @@ export async function applyCentroidImport(input: CentroidApplyInput): Promise<Ce
     skipped: result.skippedCodes.length,
     skippedCodes: result.skippedCodes,
     warnings,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 54 §11 P0.1 — APPLY COORDINATES ONTO EXISTING measurement points.
+// ────────────────────────────────────────────────────────────────────────────
+// The commit/apply flow above CREATES new points and SKIPS refdes that already
+// exist. But the failure doc 54 P0.1 targets is the OPPOSITE: points were bulk-
+// created earlier (dataRouters.importMeasurementPoints) with NO coordinate source
+// and landed at (0,0). This flow takes the SAME centroid / pick-place file,
+// MATCHES each parsed component to an EXISTING point by refDesignator/code (with
+// a unique-only componentCode fallback), then WRITES the real positionX/positionY
+// (+ normalized + rotation) onto the matched points — in ONE transaction, bumping
+// pointsConfigVersion so machines re-fetch. Unmatched rows are reported, never
+// invented; matched points are consumed at most once so coords never double-write.
+// ════════════════════════════════════════════════════════════════════════════
+
+export const CENTROID_COORDS_VERSION = "centroid-coords-1.0";
+
+/** Minimal projection of an existing point used by the matcher (pure, no DB). */
+export interface ExistingPointLite {
+  id: number;
+  code: string;
+  refDesignator: string | null;
+  componentCode: string | null;
+  positionX: number;
+  positionY: number;
+  geometry: Record<string, any> | null;
+}
+
+export interface CoordinateMatchRow {
+  candidateIndex: number;
+  refDesignator: string;
+  code: string;
+  componentCode?: string;
+  pointId: number;
+  pointCode: string;
+  matchedBy: "refDesignator" | "code" | "componentCode";
+  oldX: number;
+  oldY: number;
+  newX: number;
+  newY: number;
+  rotation?: number;
+  normalizedX?: number;
+  normalizedY?: number;
+}
+
+export interface CoordinateUnmatchedRow {
+  candidateIndex: number;
+  refDesignator: string;
+  code: string;
+  componentCode?: string;
+  newX: number;
+  newY: number;
+  reason: string;
+}
+
+export interface CoordinateMatchResult {
+  matched: CoordinateMatchRow[];
+  unmatched: CoordinateUnmatchedRow[];
+}
+
+/**
+ * PURE matcher (unit-tested; no DB). Maps centroid candidates onto existing
+ * points. Priority per candidate:
+ *   1. refDesignator (candidate.refDesignator || candidate.code) → point.refDesignator
+ *   2. same key → point.code
+ *   3. UNIQUE componentCode (a value shared by many refdes is skipped as ambiguous)
+ * All matches are case-insensitive. A point is consumed by at most one candidate
+ * (first-match wins). Everything unmatched is reported with a reason.
+ */
+export function matchCandidatesToPoints(
+  candidates: CentroidCandidate[],
+  points: ExistingPointLite[],
+): CoordinateMatchResult {
+  const byRef = new Map<string, ExistingPointLite>();
+  const byCode = new Map<string, ExistingPointLite>();
+  const byComponent = new Map<string, ExistingPointLite | null>(); // null = ambiguous (>1)
+  for (const p of points) {
+    const code = (p.code || "").toLowerCase();
+    if (code && !byCode.has(code)) byCode.set(code, p);
+    const ref = (p.refDesignator || "").toLowerCase();
+    if (ref && !byRef.has(ref)) byRef.set(ref, p);
+    const cc = (p.componentCode || "").toLowerCase();
+    if (cc) byComponent.set(cc, byComponent.has(cc) ? null : p);
+  }
+
+  const consumed = new Set<number>();
+  const matched: CoordinateMatchRow[] = [];
+  const unmatched: CoordinateUnmatchedRow[] = [];
+
+  const free = (m: Map<string, ExistingPointLite>, key: string): ExistingPointLite | undefined => {
+    const hit = m.get(key);
+    return hit && !consumed.has(hit.id) ? hit : undefined;
+  };
+
+  for (const c of candidates) {
+    const refKey = (c.refDesignator || c.code || "").toLowerCase();
+    const codeKey = (c.code || "").toLowerCase();
+
+    let hit: ExistingPointLite | undefined;
+    let matchedBy: CoordinateMatchRow["matchedBy"] = "refDesignator";
+    if (refKey && (hit = free(byRef, refKey))) {
+      matchedBy = "refDesignator";
+    } else if (codeKey && (hit = free(byCode, codeKey))) {
+      matchedBy = "code";
+    } else if (refKey && (hit = free(byCode, refKey))) {
+      matchedBy = "code";
+    } else if (c.componentCode) {
+      const uniq = byComponent.get(c.componentCode.toLowerCase());
+      if (uniq && !consumed.has(uniq.id)) { hit = uniq; matchedBy = "componentCode"; }
+    }
+
+    const newX = Math.max(0, Math.round(c.positionX));
+    const newY = Math.max(0, Math.round(c.positionY));
+
+    if (hit) {
+      consumed.add(hit.id);
+      matched.push({
+        candidateIndex: c.candidateIndex,
+        refDesignator: c.refDesignator,
+        code: c.code,
+        componentCode: c.componentCode,
+        pointId: hit.id,
+        pointCode: hit.code,
+        matchedBy,
+        oldX: Number(hit.positionX) || 0,
+        oldY: Number(hit.positionY) || 0,
+        newX,
+        newY,
+        rotation: c.rotation,
+        normalizedX: c.normalizedX,
+        normalizedY: c.normalizedY,
+      });
+    } else {
+      unmatched.push({
+        candidateIndex: c.candidateIndex,
+        refDesignator: c.refDesignator,
+        code: c.code,
+        componentCode: c.componentCode,
+        newX,
+        newY,
+        reason: "no existing measurement point with this RefDes / code",
+      });
+    }
+  }
+
+  return { matched, unmatched };
+}
+
+function toExistingPointLite(r: any): ExistingPointLite {
+  return {
+    id: r.id,
+    code: r.code,
+    refDesignator: r.refDesignator ?? null,
+    componentCode: r.componentCode ?? null,
+    positionX: Number(r.positionX) || 0,
+    positionY: Number(r.positionY) || 0,
+    geometry: (r.geometry ?? null) as Record<string, any> | null,
+  };
+}
+
+const EXISTING_POINT_COLUMNS = {
+  id: measurementPointDefs.id,
+  code: measurementPointDefs.code,
+  refDesignator: measurementPointDefs.refDesignator,
+  componentCode: measurementPointDefs.componentCode,
+  positionX: measurementPointDefs.positionX,
+  positionY: measurementPointDefs.positionY,
+  geometry: measurementPointDefs.geometry,
+};
+
+/** Parse + transform + match — NO persistence (live wizard preview). */
+export async function previewCoordinateApply(input: CentroidPreviewInput) {
+  const db = await requireDb();
+  const product = await getProductModelById(input.productModelId);
+  const productInfo = productInfoFrom(product);
+  const buildOptions = assembleBuildOptions(
+    input.text, productInfo, input.columnMap, input.parseOptions, input.transformOptions,
+  );
+  const built = buildCentroidCandidates(input.text, buildOptions, productInfo);
+
+  const rows = await db.select(EXISTING_POINT_COLUMNS).from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, input.productModelId),
+      isNull(measurementPointDefs.deletedAt),
+    ));
+  const points = rows.map(toExistingPointLite);
+  const match = matchCandidatesToPoints(built.candidates, points);
+
+  return {
+    headers: built.parse.headers,
+    detectedDelimiter: built.parse.detectedDelimiter,
+    stats: built.parse.stats,
+    warnings: built.warnings,
+    coordinateMode: productInfo.coordinateMode,
+    hasImageDimensions: !!(productInfo.imageWidth && productInfo.imageHeight),
+    appliedColumnMap: buildOptions.parse.columnMap,
+    appliedTransform: buildOptions.transform,
+    existingPointCount: points.length,
+    parsedCount: built.candidates.length,
+    matchedCount: match.matched.length,
+    unmatchedCount: match.unmatched.length,
+    // Cap the payloads; the full set is re-matched at apply.
+    matched: match.matched.slice(0, 1000),
+    unmatched: match.unmatched.slice(0, 1000),
+  };
+}
+
+export type CoordinateApplyInput = CentroidCommitInput;
+
+export interface CoordinateApplyResult {
+  matched: number;
+  applied: number;
+  unmatched: number;
+  errors: string[];
+  jobId: number | null;
+  warnings: string[];
+  /** Non-null when the config version was bumped — router publishes the MQTT nudge. */
+  bumped: { code: string; version: number } | null;
+}
+
+/**
+ * Match the file to existing points and WRITE coordinates onto the matches, in
+ * ONE transaction: bumps pointsConfigVersion (atomic col+1) and records a
+ * cad_import_job (format 'centroid' — the only value 0196's CHECK allows besides
+ * step/dxf/gerber) for traceability. Idempotent: re-running rewrites the same
+ * coords (a no-op) and never duplicates points. Returns {matched, applied,
+ * unmatched, errors}.
+ */
+export async function applyCoordinatesToPoints(input: CoordinateApplyInput): Promise<CoordinateApplyResult> {
+  const db = await requireDb();
+  const errors: string[] = [];
+  const product = await getProductModelById(input.productModelId);
+  const productInfo = productInfoFrom(product);
+  const buildOptions = assembleBuildOptions(
+    input.text, productInfo, input.columnMap, input.parseOptions, input.transformOptions,
+  );
+  const built = buildCentroidCandidates(input.text, buildOptions, productInfo);
+
+  const result = await db.transaction(async (tx: any) => {
+    // Snapshot existing points inside the txn for a consistent match.
+    const rows = await tx.select(EXISTING_POINT_COLUMNS).from(measurementPointDefs)
+      .where(and(
+        eq(measurementPointDefs.productModelId, input.productModelId),
+        isNull(measurementPointDefs.deletedAt),
+      ));
+    const points = rows.map(toExistingPointLite);
+    const byId = new Map<number, ExistingPointLite>(points.map((p: ExistingPointLite) => [p.id, p]));
+    const match = matchCandidatesToPoints(built.candidates, points);
+
+    let applied = 0;
+    for (const m of match.matched) {
+      try {
+        const set: Record<string, any> = {
+          positionX: m.newX,
+          positionY: m.newY,
+          lastModifiedAt: new Date(),
+          updatedAt: new Date(),
+        };
+        if (m.normalizedX != null) set.normalizedX = m.normalizedX.toFixed(8);
+        if (m.normalizedY != null) set.normalizedY = m.normalizedY.toFixed(8);
+        // Merge into any existing geometry so non-circle shapes / other keys survive.
+        const prev = byId.get(m.pointId);
+        const geom: Record<string, any> = { ...(prev?.geometry ?? {}) };
+        geom.shape = geom.shape ?? "circle";
+        geom.x = m.newX;
+        geom.y = m.newY;
+        if (m.rotation != null) {
+          geom.centroid = { ...(geom.centroid ?? {}), rotation: m.rotation };
+        }
+        set.geometry = geom;
+        await tx.update(measurementPointDefs).set(set).where(eq(measurementPointDefs.id, m.pointId));
+        applied++;
+      } catch (e: any) {
+        errors.push(`${m.pointCode}: ${e?.message ?? "update failed"}`);
+      }
+    }
+
+    let bumped: { code: string; version: number } | null = null;
+    if (applied > 0) {
+      const b = await bumpPointsConfigVersion(input.productModelId, tx);
+      bumped = b ? { code: b.code, version: b.version } : null;
+    }
+
+    const [jobRow] = await tx.insert(cadImportJobs).values({
+      productModelId: input.productModelId,
+      format: "centroid",
+      fileName: input.fileName.slice(0, 255),
+      fileSizeBytes: input.fileSizeBytes,
+      fileSha256: input.fileSha256,
+      status: applied > 0 ? "applied" : "parsed",
+      parserVersion: CENTROID_COORDS_VERSION,
+      entityCounts: {
+        parsed: built.parse.stats.parsed,
+        matched: match.matched.length,
+        applied,
+        unmatched: match.unmatched.length,
+      },
+      candidatePointCount: built.candidates.length,
+      appliedPointCount: applied,
+      appliedBy: applied > 0 ? (input.uploadedBy ?? undefined) : undefined,
+      appliedAt: applied > 0 ? new Date() : undefined,
+      uploadedBy: input.uploadedBy,
+    }).returning({ id: cadImportJobs.id });
+
+    return { match, applied, bumped, jobId: (jobRow?.id ?? null) as number | null };
+  });
+
+  await createAuditLog({
+    userId: input.uploadedBy ?? 0,
+    action: "centroidImport.applyCoordinates",
+    entityType: "product",
+    entityId: input.productModelId,
+    entityName: input.fileName,
+    details: {
+      jobId: result.jobId,
+      matched: result.match.matched.length,
+      applied: result.applied,
+      unmatched: result.match.unmatched.length,
+      unmatchedRefDes: result.match.unmatched.slice(0, 50).map((u) => u.refDesignator),
+      columnMap: buildOptions.parse.columnMap,
+      transform: buildOptions.transform,
+    },
+    status: "success",
+  }).catch(() => undefined);
+
+  return {
+    matched: result.match.matched.length,
+    applied: result.applied,
+    unmatched: result.match.unmatched.length,
+    errors,
+    jobId: result.jobId,
+    warnings: built.warnings,
+    bumped: result.bumped,
   };
 }

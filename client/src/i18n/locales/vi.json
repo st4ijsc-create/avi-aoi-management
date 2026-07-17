@@ -394,12 +394,23 @@
       "issues": "Tổng vấn đề",
       "entities": "Thực thể cần chú ý"
     },
+    "engSection": {
+      "title": "Điểm đo & phân cấp",
+      "subtitle": "Điểm đo thiếu ngưỡng / toạ độ gốc / thiếu linh kiện và các mắt xích phân cấp bị mồ côi (chỉ đọc)."
+    },
+    "drill": {
+      "show": "Xem {{n}} bản ghi cần dọn"
+    },
     "entity": {
       "suppliers": "Nhà cung cấp",
       "materials": "Vật tư / linh kiện",
       "customers": "Khách hàng",
       "tools": "Dụng cụ / đồ gá",
-      "uom": "Quy đổi đơn vị"
+      "uom": "Quy đổi đơn vị",
+      "points": "Điểm đo",
+      "machines": "Máy (phân cấp)",
+      "stations": "Trạm (phân cấp)",
+      "products": "Sản phẩm (phân cấp)"
     },
     "issue": {
       "suppliers": {
@@ -424,6 +435,21 @@
       "uom": {
         "orphanFrom": "Đơn vị nguồn không tồn tại",
         "orphanTo": "Đơn vị đích không tồn tại"
+      },
+      "points": {
+        "noThreshold": "Không có ngưỡng (dưới/trên/tiêu chí đều trống)",
+        "originCoord": "Toạ độ tại gốc (0,0)",
+        "noComponent": "Thiếu mã linh kiện (componentCode)"
+      },
+      "machines": {
+        "noStation": "Trạm cha đã ngừng / không tồn tại",
+        "noProduct": "Chưa gán sản phẩm nào"
+      },
+      "stations": {
+        "noLine": "Dây chuyền cha đã ngừng / không tồn tại"
+      },
+      "products": {
+        "noPoints": "Chưa có điểm đo nào"
       }
     }
   },
@@ -6664,7 +6690,22 @@
       "noDims": "chưa có kích thước ảnh",
       "warnings": "Cảnh báo",
       "importResult": "Kết quả nhập",
-      "resultLine": "Đã tạo {{a}} điểm, bỏ qua {{s}} (đã tồn tại)."
+      "resultLine": "Đã tạo {{a}} điểm, bỏ qua {{s}} (đã tồn tại).",
+      "modeCreate": "Tạo điểm đo mới",
+      "modeCreateHint": "Sinh một điểm đo cho mỗi linh kiện trong tệp.",
+      "modeApply": "Gán toạ độ vào điểm sẵn có",
+      "modeApplyHint": "Khớp theo RefDes và sửa điểm đang kẹt ở 0,0.",
+      "matchedN": "Khớp {{n}}",
+      "unmatchedN": "Không khớp {{n}}",
+      "colPoint": "Điểm đo",
+      "colOldXY": "X,Y cũ",
+      "colNewXY": "X,Y mới",
+      "colMatchedBy": "Theo",
+      "unmatchedRow": "không khớp — {{r}}",
+      "appliedCoords": "Đã cập nhật {{a}} điểm; {{u}} không khớp",
+      "noMatches": "Không có điểm nào khớp — hãy tạo điểm trước, hoặc kiểm tra ánh xạ RefDes.",
+      "applyCoordsBtn": "Gán toạ độ",
+      "resultLineApply": "Đã cập nhật {{a}} điểm · khớp {{m}} · không khớp {{u}}."
     },
     "bulkImport": {
       "invalidMeasurementType": "Không hợp lệ Phép đo Loại",

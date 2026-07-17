@@ -269,6 +269,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Settings — engineer authors measurement points, products + alert thresholds
+    // doc 54 P0.3 — settings_factory in the DEFAULT matrix too (existing engineers got it
+    // via mig 0269; this keeps freshly-seeded engineers consistent for factory-config +
+    // hierarchy bulk-import). canDelete stays admin-only.
+    { category: 'settings', moduleName: 'settings_factory', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },

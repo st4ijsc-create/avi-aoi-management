@@ -1243,10 +1243,29 @@ export interface QualityEntity {
   issues: QualityIssue[];
 }
 
+// Doc 54 §11 P0.4b — chất lượng KỸ THUẬT + PHÂN CẤP (điểm đo + mồ côi phân cấp).
+/** Một bản ghi vi phạm cụ thể cho "drill list" (giới hạn số lượng). */
+export interface QualityDrillSample {
+  id: number;
+  /** Nhãn hiển thị (mã điểm/máy/trạm/sản phẩm) — client hiện nguyên văn. */
+  label: string;
+  /** Các mã vấn đề dòng này dính (client i18n qua dataQuality.issue.<entity>.<code>). */
+  reasonCodes: string[];
+}
+/** Thẻ thực thể kèm danh sách drill các bản ghi vi phạm cụ thể. */
+export interface QualityEntityExtended extends QualityEntity {
+  samples: QualityDrillSample[];
+}
+
 /** Lấy 1 dòng tổng hợp đầu tiên (object cột→giá trị) từ kết quả db.execute. */
 function firstRow(res: any): Record<string, any> {
   const rows = (res?.rows ?? res) as any[];
   return (Array.isArray(rows) ? rows[0] : undefined) ?? {};
+}
+/** Lấy TẤT CẢ dòng (mảng object) từ kết quả db.execute — cho drill list. */
+function allRows(res: any): Record<string, any>[] {
+  const rows = (res?.rows ?? res) as any[];
+  return Array.isArray(rows) ? rows : [];
 }
 const n = (v: unknown) => Number(v ?? 0) || 0;
 
@@ -1353,6 +1372,165 @@ const qualityRouter = router({
             { code: "orphanFrom", label: "Đơn vị nguồn không tồn tại", count: n(rConv.orphan_from) },
             { code: "orphanTo", label: "Đơn vị đích không tồn tại", count: n(rConv.orphan_to) },
           ],
+        },
+      ];
+    }),
+
+  /**
+   * Doc 54 §11 P0.4b — chất lượng KỸ THUẬT + PHÂN CẤP (canView). Điểm đo thiếu
+   * ngưỡng / toạ độ tại gốc (0,0) / thiếu componentCode, và các "mồ côi" phân cấp
+   * (máy dưới trạm đã ngừng, trạm dưới line đã ngừng, sản phẩm chưa có điểm đo,
+   * máy chưa gán sản phẩm). Mỗi thẻ = 1 truy vấn ĐẾM + 1 truy vấn LIMIT lấy mẫu
+   * drill (≤25 dòng). DB offline → [] (fail-safe như toàn router).
+   */
+  engineering: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .query(async (): Promise<QualityEntityExtended[]> => {
+      const db = await getDb();
+      if (!db) return [];
+
+      const [ptCnt, ptRows, mcCnt, mcRows, stCnt, stRows, pmCnt, pmRows] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            (COUNT(*))::int AS total,
+            (COUNT(*) FILTER (WHERE pd."lowerLimit" IS NULL AND pd."upperLimit" IS NULL AND pd."criteria" IS NULL))::int AS no_threshold,
+            (COUNT(*) FILTER (WHERE pd."positionX" = 0 AND pd."positionY" = 0))::int AS origin_coord,
+            (COUNT(*) FILTER (WHERE pd."componentCode" IS NULL OR pd."componentCode" = ''))::int AS no_component
+          FROM measurement_point_defs pd
+          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true
+        `),
+        db.execute(sql`
+          SELECT pd.id, pd.code, pd."productModelId" AS pmid,
+            CASE WHEN pd."lowerLimit" IS NULL AND pd."upperLimit" IS NULL AND pd."criteria" IS NULL THEN 1 ELSE 0 END AS f_thr,
+            CASE WHEN pd."positionX" = 0 AND pd."positionY" = 0 THEN 1 ELSE 0 END AS f_origin,
+            CASE WHEN pd."componentCode" IS NULL OR pd."componentCode" = '' THEN 1 ELSE 0 END AS f_comp
+          FROM measurement_point_defs pd
+          WHERE pd."deletedAt" IS NULL AND pd."isActive" = true
+            AND ( (pd."lowerLimit" IS NULL AND pd."upperLimit" IS NULL AND pd."criteria" IS NULL)
+               OR (pd."positionX" = 0 AND pd."positionY" = 0)
+               OR (pd."componentCode" IS NULL OR pd."componentCode" = '') )
+          ORDER BY pd.id
+          LIMIT 25
+        `),
+        db.execute(sql`
+          SELECT
+            (COUNT(*))::int AS total,
+            (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true)))::int AS no_station,
+            (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true)))::int AS no_product
+          FROM machines m
+          WHERE m."isActive" = true
+        `),
+        db.execute(sql`
+          SELECT m.id, m.code, m.name,
+            CASE WHEN NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true) THEN 1 ELSE 0 END AS f_station,
+            CASE WHEN NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true) THEN 1 ELSE 0 END AS f_product
+          FROM machines m
+          WHERE m."isActive" = true
+            AND ( NOT EXISTS (SELECT 1 FROM stations s WHERE s.id = m."stationId" AND s."isActive" = true)
+               OR NOT EXISTS (SELECT 1 FROM product_machine_mappings pmm WHERE pmm."machineId" = m.id AND pmm."isActive" = true) )
+          ORDER BY m.id
+          LIMIT 25
+        `),
+        db.execute(sql`
+          SELECT
+            (COUNT(*))::int AS total,
+            (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM production_lines l WHERE l.id = st."lineId" AND l."isActive" = true)))::int AS no_line
+          FROM stations st
+          WHERE st."isActive" = true
+        `),
+        db.execute(sql`
+          SELECT st.id, st.code, st.name
+          FROM stations st
+          WHERE st."isActive" = true
+            AND NOT EXISTS (SELECT 1 FROM production_lines l WHERE l.id = st."lineId" AND l."isActive" = true)
+          ORDER BY st.id
+          LIMIT 25
+        `),
+        db.execute(sql`
+          SELECT
+            (COUNT(*))::int AS total,
+            (COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM measurement_point_defs pd WHERE pd."productModelId" = pm.id AND pd."deletedAt" IS NULL AND pd."isActive" = true)))::int AS no_points
+          FROM product_models pm
+          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL
+        `),
+        db.execute(sql`
+          SELECT pm.id, pm.code, pm.name
+          FROM product_models pm
+          WHERE pm."isActive" = true AND pm."deletedAt" IS NULL
+            AND NOT EXISTS (SELECT 1 FROM measurement_point_defs pd WHERE pd."productModelId" = pm.id AND pd."deletedAt" IS NULL AND pd."isActive" = true)
+          ORDER BY pm.id
+          LIMIT 25
+        `),
+      ]);
+
+      const rPt = firstRow(ptCnt);
+      const rMc = firstRow(mcCnt);
+      const rSt = firstRow(stCnt);
+      const rPm = firstRow(pmCnt);
+
+      const pointSamples: QualityDrillSample[] = allRows(ptRows).map((r) => {
+        const reasonCodes: string[] = [];
+        if (n(r.f_thr)) reasonCodes.push("noThreshold");
+        if (n(r.f_origin)) reasonCodes.push("originCoord");
+        if (n(r.f_comp)) reasonCodes.push("noComponent");
+        return { id: n(r.id), label: `${r.code ?? "#" + r.id} · SP#${n(r.pmid)}`, reasonCodes };
+      });
+      const machineSamples: QualityDrillSample[] = allRows(mcRows).map((r) => {
+        const reasonCodes: string[] = [];
+        if (n(r.f_station)) reasonCodes.push("noStation");
+        if (n(r.f_product)) reasonCodes.push("noProduct");
+        return { id: n(r.id), label: `${r.code ?? "#" + r.id}${r.name ? " · " + r.name : ""}`, reasonCodes };
+      });
+      const stationSamples: QualityDrillSample[] = allRows(stRows).map((r) => ({
+        id: n(r.id),
+        label: `${r.code ?? "#" + r.id}${r.name ? " · " + r.name : ""}`,
+        reasonCodes: ["noLine"],
+      }));
+      const productSamples: QualityDrillSample[] = allRows(pmRows).map((r) => ({
+        id: n(r.id),
+        label: `${r.code ?? "#" + r.id}${r.name ? " · " + r.name : ""}`,
+        reasonCodes: ["noPoints"],
+      }));
+
+      return [
+        {
+          entity: "points",
+          label: "Điểm đo",
+          total: n(rPt.total),
+          issues: [
+            { code: "noThreshold", label: "Không có ngưỡng (dưới/trên/tiêu chí đều trống)", count: n(rPt.no_threshold) },
+            { code: "originCoord", label: "Toạ độ tại gốc (0,0)", count: n(rPt.origin_coord) },
+            { code: "noComponent", label: "Thiếu mã linh kiện (componentCode)", count: n(rPt.no_component) },
+          ],
+          samples: pointSamples,
+        },
+        {
+          entity: "machines",
+          label: "Máy (phân cấp)",
+          total: n(rMc.total),
+          issues: [
+            { code: "noStation", label: "Trạm cha đã ngừng / không tồn tại", count: n(rMc.no_station) },
+            { code: "noProduct", label: "Chưa gán sản phẩm nào", count: n(rMc.no_product) },
+          ],
+          samples: machineSamples,
+        },
+        {
+          entity: "stations",
+          label: "Trạm (phân cấp)",
+          total: n(rSt.total),
+          issues: [
+            { code: "noLine", label: "Dây chuyền cha đã ngừng / không tồn tại", count: n(rSt.no_line) },
+          ],
+          samples: stationSamples,
+        },
+        {
+          entity: "products",
+          label: "Sản phẩm (phân cấp)",
+          total: n(rPm.total),
+          issues: [
+            { code: "noPoints", label: "Chưa có điểm đo nào", count: n(rPm.no_points) },
+          ],
+          samples: productSamples,
         },
       ];
     }),

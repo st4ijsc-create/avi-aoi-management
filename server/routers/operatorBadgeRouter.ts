@@ -14,6 +14,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+import { getUserByUsername } from "../db/auth";
 import { operatorBadges, users } from "../../drizzle/schema";
 import {
   issueBadge,
@@ -180,6 +181,79 @@ export const operatorBadgeRouter = router({
       const row = await revokeBadge(input.id, input.validTo ?? undefined);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Badge not found" });
       return row;
+    }),
+
+  /**
+   * Doc 54 §11 P0.5 — bulk-import operator badges from an HR CSV/array.
+   * Gated on the SAME permission as single-row create (masterdata.canCreate) —
+   * NOT adminProcedure (mirrors doc-54 P0.3). Idempotent: a row whose badgeCode
+   * already has an ACTIVE holder is UPDATED in place (re-map / re-window); a new
+   * badgeCode is ISSUED (source='hr_sync'). userId resolves from `userId` or, if
+   * absent, `username` (unknown username → that row fails, not the batch).
+   * Returns {inserted, updated, failed, errors[]} like dataRouters.import*.
+   */
+  importBadges: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      rows: z.array(z.object({
+        badgeCode: z.string().trim().min(1).max(50),
+        userId: z.number().int().positive().nullish(),
+        username: z.string().trim().max(100).nullish(),
+        displayName: z.string().max(255).nullish(),
+        validFrom: dateInput,
+        validTo: dateInput,
+        notes: z.string().max(2000).nullish(),
+      })).min(1).max(5000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = { inserted: 0, updated: 0, failed: 0, errors: [] as string[] };
+      const db = await getDb();
+      if (!db) {
+        return { inserted: 0, updated: 0, failed: input.rows.length, errors: ["Database not available"] };
+      }
+      for (const row of input.rows) {
+        const code = row.badgeCode.trim();
+        try {
+          const userProvided = row.userId != null || (row.username != null && row.username.trim() !== "");
+          let userId: number | null = row.userId ?? null;
+          if (userId == null && row.username && row.username.trim()) {
+            const user = await getUserByUsername(row.username.trim());
+            if (!user) throw new Error(`Không tìm thấy người dùng "${row.username.trim()}"`);
+            userId = user.id;
+          }
+          const [existing] = await db
+            .select()
+            .from(operatorBadges)
+            .where(and(eq(operatorBadges.badgeCode, code), eq(operatorBadges.isActive, true)))
+            .limit(1);
+          if (existing) {
+            await updateBadge(existing.id, {
+              ...(userProvided ? { userId } : {}),
+              ...(row.displayName != null ? { displayName: row.displayName } : {}),
+              validFrom: row.validFrom,
+              validTo: row.validTo,
+              ...(row.notes != null ? { notes: row.notes } : {}),
+            });
+            result.updated++;
+          } else {
+            await issueBadge({
+              badgeCode: code,
+              userId,
+              displayName: row.displayName ?? null,
+              source: "hr_sync",
+              validFrom: row.validFrom,
+              validTo: row.validTo,
+              notes: row.notes ?? null,
+              issuedBy: ctx.user?.id ?? null,
+            });
+            result.inserted++;
+          }
+        } catch (err) {
+          result.failed++;
+          result.errors.push(`${code}: ${err instanceof Error ? err.message : "lỗi import"}`);
+        }
+      }
+      return result;
     }),
 });
 

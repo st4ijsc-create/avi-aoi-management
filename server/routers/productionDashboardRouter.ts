@@ -510,8 +510,15 @@ export const productionDashboardRouter = router({
         const ucl = Math.min(mean + 3 * stddev, 100);
         const lcl = Math.max(mean - 3 * stddev, 0);
 
-        // Cpk estimate (target = 100% yield, USL=100, LSL=0)
-        const cpk = stddev > 0 ? Math.min((ucl - mean) / (3 * stddev), (mean - lcl) / (3 * stddev)) : 0;
+        // Cpk vs the SPEC limits (yield ∈ [0,100]), NOT the control limits.
+        // doc 54 P2.1 — was `min((ucl-mean)/3σ, (mean-lcl)/3σ)` with ucl/lcl = mean±3σ
+        // ⇒ 3σ/3σ = 1.0 by construction (control limits used as spec limits) → a
+        // fabricated "always-capable" reading. Use USL=100 / LSL=0 so Cpk actually
+        // reflects how far the mean yield sits from the bounds relative to spread.
+        const YIELD_USL = 100, YIELD_LSL = 0;
+        const cpk = stddev > 0
+          ? Math.min((YIELD_USL - mean) / (3 * stddev), (mean - YIELD_LSL) / (3 * stddev))
+          : 0;
 
         return {
           stationId: Number(row.stationId),

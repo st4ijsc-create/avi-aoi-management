@@ -19,6 +19,9 @@ import {
   previewCentroidImport,
   commitCentroidImport,
   applyCentroidImport,
+  // Doc 54 §11 P0.1 — apply CAD/centroid coords onto EXISTING points (fix 0,0).
+  previewCoordinateApply,
+  applyCoordinatesToPoints,
 } from "../services/cad/centroidImportService";
 import { createHash } from "node:crypto";
 import {
@@ -852,7 +855,9 @@ export const productModelRouter = router({
   // RE-VALIDATE phía server (không bỏ qua validation): mã trùng → UPDATE, chưa có
   // → INSERT, thiếu trường bắt buộc/không hợp lệ → lỗi theo dòng. UPDATE chỉ ghi
   // các field có giá trị (không xoá trắng dữ liệu cũ). Trả {inserted,updated,failed,errors}.
-  importList: adminProcedure
+  // doc 54 P0.3 — bulk product import gated on settings_products (same as create),
+  // was adminProcedure → single-admin bottleneck at rollout.
+  importList: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
       rows: z.array(z.record(z.string(), z.unknown())).max(5000),
     }))
@@ -1763,6 +1768,8 @@ export const productMachineMappingRouter = router({
       machineId: z.number({ error: "Vui lòng chọn máy" }).int().positive(),
       priority: z.number().int().nonnegative().optional(),
       notes: z.string().optional(),
+      // doc 54 P0.4 — override the readiness go-live gate (admin/intentional).
+      force: z.boolean().optional().default(false),
     }))
     .mutation(async ({ ctx, input }) => {
       // Doc 42 #40 — orphan guard: chặn tạo mapping trỏ tới sản phẩm/máy không tồn
@@ -1783,7 +1790,29 @@ export const productMachineMappingRouter = router({
           message: "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
         });
       }
-      const result = await db.createProductMachineMapping(input);
+      // doc 54 P0.4 — GO-LIVE READINESS GATE: don't let an under-configured product
+      // (points with no thresholds / no coordinates / no golden) be mapped to a machine,
+      // where it would silently feed Phase-1 with junk spec-gates. Block "blocked"-band
+      // products unless the caller explicitly forces it.
+      if (!input.force) {
+        try {
+          const readiness = await computeProductReadiness(input.productModelId);
+          if (readiness && readiness.band === "blocked") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
+                `Hoàn thiện điểm-đo (ngưỡng/tọa độ/golden) trước, hoặc gán với force=true nếu cố ý.`,
+            });
+          }
+        } catch (e) {
+          if (e instanceof TRPCError) throw e;
+          // readiness compute failed (non-blocking) — fail-open, don't block a legit map.
+          console.warn("productMachineMapping readiness gate: compute failed, allowing", e);
+        }
+      }
+      const { force: _force, ...mappingInput } = input;
+      const result = await db.createProductMachineMapping(mappingInput);
       try {
         await db.createAuditLog({
           userId: ctx.user.id,
@@ -3869,5 +3898,72 @@ export const cadImportRouter = router({
           cropHeight: input.cropHeight,
         },
       });
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 54 §11 P0.1 — apply CAD/centroid coordinates onto EXISTING points.
+  // The centroidCommit/centroidApply pair above CREATES new points; these two
+  // instead MATCH a pick-place file to points that already exist and WRITE their
+  // real X/Y — the fix for points bulk-imported at (0,0). Gated on
+  // settings_measurement_points/canCreate (same as measurementPoint.create and
+  // importList) so engineers — not only admins — can run it.
+  // ══════════════════════════════════════════════════════════════════════════
+  parsePreview: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      return previewCoordinateApply({
+        productModelId: input.productModelId,
+        text,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+    }),
+
+  applyCoordinates: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      fileName: z.string().min(1).max(255).default("coordinates.csv"),
+      content: z.string().min(1).max(50 * 1024 * 1024),
+      isBase64: z.boolean().default(false),
+      columnMap: centroidColumnMapSchema.optional(),
+      parseOptions: centroidParseOptionsSchema.optional(),
+      transformOptions: centroidTransformOptionsSchema.optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const text = input.isBase64
+        ? Buffer.from(input.content, "base64").toString("utf-8")
+        : input.content;
+      const buf = Buffer.from(text, "utf-8");
+      const res = await applyCoordinatesToPoints({
+        productModelId: input.productModelId,
+        fileName: input.fileName,
+        text,
+        fileSha256: createHash("sha256").update(buf).digest("hex"),
+        fileSizeBytes: buf.length,
+        uploadedBy: ctx.user.id,
+        columnMap: input.columnMap,
+        parseOptions: input.parseOptions,
+        transformOptions: input.transformOptions,
+      });
+      // MQTT nudge (best-effort) so AOI/AVI machines re-fetch the bumped config.
+      if (res.bumped) {
+        try {
+          publishPointsConfigChanged(res.bumped.code, res.bumped.version);
+        } catch {
+          /* machines pick it up on the next poll */
+        }
+      }
+      return res;
     }),
 });

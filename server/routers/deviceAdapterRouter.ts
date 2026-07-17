@@ -36,7 +36,10 @@ async function getDb() {
   return db;
 }
 
-const protocolEnum = z.enum(["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub"]);
+// doc 54 P1.5 — add "slmp" (Mitsubishi SLMP 3E/4E): the runtime driver (slmpDriver.ts)
+// + the DB protocol enum already support it; the CRUD zod enum was the only thing blocking
+// FX5U/iQ-R SLMP adapters from being created via the UI/API.
+const protocolEnum = z.enum(["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "slmp", "stub"]);
 const dataTypeEnum = z.enum(["bool", "int", "float", "string", "json"]);
 
 const adapterCreateInput = z.object({

@@ -394,12 +394,23 @@
       "issues": "问题总数",
       "entities": "需关注的实体"
     },
+    "engSection": {
+      "title": "测量点与层级",
+      "subtitle": "缺少阈值 / 位于原点 / 缺少组件的测量点，以及孤立的层级链接（只读）。"
+    },
+    "drill": {
+      "show": "查看 {{n}} 条待清理记录"
+    },
     "entity": {
       "suppliers": "供应商",
       "materials": "物料 / 组件",
       "customers": "客户",
       "tools": "工具 / 夹具",
-      "uom": "单位换算"
+      "uom": "单位换算",
+      "points": "测量点",
+      "machines": "设备（层级）",
+      "stations": "工位（层级）",
+      "products": "产品（层级）"
     },
     "issue": {
       "suppliers": {
@@ -424,6 +435,21 @@
       "uom": {
         "orphanFrom": "源单位不存在",
         "orphanTo": "目标单位不存在"
+      },
+      "points": {
+        "noThreshold": "无阈值（下限/上限/判据均为空）",
+        "originCoord": "坐标位于原点 (0,0)",
+        "noComponent": "缺少组件编码 (componentCode)"
+      },
+      "machines": {
+        "noStation": "父工位已停用 / 不存在",
+        "noProduct": "尚未分配任何产品"
+      },
+      "stations": {
+        "noLine": "父产线已停用 / 不存在"
+      },
+      "products": {
+        "noPoints": "尚无测量点"
       }
     }
   },
@@ -6575,7 +6601,22 @@
       "noDims": "无图像尺寸",
       "warnings": "警告",
       "importResult": "导入结果",
-      "resultLine": "已创建 {{a}} 个点，跳过 {{s}} 个（已存在）。"
+      "resultLine": "已创建 {{a}} 个点，跳过 {{s}} 个（已存在）。",
+      "modeCreate": "创建新测量点",
+      "modeCreateHint": "为文件中的每个元件生成一个测量点。",
+      "modeApply": "为已有点写入坐标",
+      "modeApplyHint": "按位号匹配并修正卡在 0,0 的点。",
+      "matchedN": "匹配 {{n}}",
+      "unmatchedN": "未匹配 {{n}}",
+      "colPoint": "测量点",
+      "colOldXY": "原 X,Y",
+      "colNewXY": "新 X,Y",
+      "colMatchedBy": "依据",
+      "unmatchedRow": "未匹配 — {{r}}",
+      "appliedCoords": "已更新 {{a}} 个点；{{u}} 个未匹配",
+      "noMatches": "没有匹配的点 — 请先创建点，或检查位号映射。",
+      "applyCoordsBtn": "应用坐标",
+      "resultLineApply": "已更新 {{a}} 个点 · 匹配 {{m}} · 未匹配 {{u}}。"
     },
     "bulkImport": {
       "title": "标题",

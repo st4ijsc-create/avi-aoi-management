@@ -108,7 +108,10 @@ async function evaluateRule(rule: any): Promise<AlertEvaluationResult> {
 }
 
 async function handleTriggeredAlert(rule: any, result: AlertEvaluationResult) {
-  const { id, name, cooldownMinutes, notifyOwner, notifyEmail, notifyMqtt } = rule;
+  // doc 54 P2.1 — the `notifyOwner` rule BOOLEAN shadowed the imported notifyOwner()
+  // FUNCTION → `await notifyOwner({...})` below threw "not a function" every time and was
+  // swallowed by the catch, so owner notifications NEVER sent. Rename the flag.
+  const { id, name, cooldownMinutes, notifyOwner: notifyOwnerEnabled, notifyEmail, notifyMqtt } = rule;
 
   // Check cooldown
   const lastTrigger = lastTriggerTimes.get(id);
@@ -137,7 +140,7 @@ async function handleTriggeredAlert(rule: any, result: AlertEvaluationResult) {
   lastTriggerTimes.set(id, now);
 
   // Send notifications
-  if (notifyOwner) {
+  if (notifyOwnerEnabled) {
     try {
       await notifyOwner({
         title: `🚨 MQTT Alert: ${name}`,

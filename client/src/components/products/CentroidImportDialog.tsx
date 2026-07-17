@@ -19,7 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Upload, CircuitBoard, AlertTriangle, Loader2, CheckCircle, FlipVertical, Wand2 } from "lucide-react";
+import { Upload, CircuitBoard, AlertTriangle, Loader2, CheckCircle, FlipVertical, Wand2, MapPin, PlusCircle } from "lucide-react";
 
 interface CentroidImportDialogProps {
   open: boolean;
@@ -53,6 +53,9 @@ export function CentroidImportDialog({
     t(key, { defaultValue: fallback, ...opts }) as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Doc 54 §11 P0.1 — "create" = generate new points (legacy); "apply" = write
+  // coords onto EXISTING points matched by RefDes (the fix for points at 0,0).
+  const [mode, setMode] = useState<"create" | "apply">("create");
   const [fileName, setFileName] = useState("");
   const [text, setText] = useState("");
   const [headers, setHeaders] = useState<string[] | null>(null);
@@ -72,6 +75,9 @@ export function CentroidImportDialog({
   const previewM = trpc.cadImport.centroidPreview.useMutation();
   const commitM = trpc.cadImport.centroidCommit.useMutation();
   const applyM = trpc.cadImport.centroidApply.useMutation();
+  // Doc 54 §11 P0.1 — apply-coordinates-to-existing-points flow.
+  const parsePreviewM = trpc.cadImport.parsePreview.useMutation();
+  const applyCoordsM = trpc.cadImport.applyCoordinates.useMutation();
 
   const buildColumnMapPayload = useCallback(() => {
     const payload: Record<string, number> = {};
@@ -93,19 +99,31 @@ export function CentroidImportDialog({
   const runPreview = useCallback(async () => {
     if (!text) return;
     const map = buildColumnMapPayload();
+    const mapArg = (map.refDesignator != null && map.x != null && map.y != null) ? (map as any) : undefined;
     try {
-      const res = await previewM.mutateAsync({
-        productModelId,
-        content: text,
-        columnMap: (map.refDesignator != null && map.x != null && map.y != null) ? (map as any) : undefined,
-        parseOptions: parseOptions() as any,
-        transformOptions: transformOptions() as any,
-      });
-      setPreview(res);
+      if (mode === "apply") {
+        const res = await parsePreviewM.mutateAsync({
+          productModelId,
+          content: text,
+          columnMap: mapArg,
+          parseOptions: parseOptions() as any,
+          transformOptions: transformOptions() as any,
+        });
+        setPreview(res);
+      } else {
+        const res = await previewM.mutateAsync({
+          productModelId,
+          content: text,
+          columnMap: mapArg,
+          parseOptions: parseOptions() as any,
+          transformOptions: transformOptions() as any,
+        });
+        setPreview(res);
+      }
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [text, productModelId, buildColumnMapPayload, parseOptions, transformOptions, previewM]);
+  }, [text, mode, productModelId, buildColumnMapPayload, parseOptions, transformOptions, previewM, parsePreviewM]);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -164,6 +182,41 @@ export function CentroidImportDialog({
     }
   };
 
+  // Doc 54 §11 P0.1 — write coordinates onto EXISTING points matched by RefDes.
+  const handleApplyCoordinates = async () => {
+    const map = buildColumnMapPayload();
+    if (map.refDesignator == null || map.x == null || map.y == null) {
+      toast.error(tf("products.centroidImport.mapRequired", "Map ref designator, X and Y first."));
+      return;
+    }
+    try {
+      const applied = await applyCoordsM.mutateAsync({
+        productModelId,
+        fileName: fileName || "coordinates.csv",
+        content: text,
+        columnMap: map as any,
+        parseOptions: parseOptions() as any,
+        transformOptions: transformOptions() as any,
+      });
+      setResult(applied);
+      if (applied.applied > 0) {
+        toast.success(tf(
+          "products.centroidImport.appliedCoords",
+          "Updated {{a}} point(s); {{u}} unmatched",
+          { a: applied.applied, u: applied.unmatched },
+        ));
+        onSuccess?.();
+      } else {
+        toast.info(tf(
+          "products.centroidImport.noMatches",
+          "No points matched — create points first, or check the RefDes mapping.",
+        ));
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
   const reset = () => {
     setFileName(""); setText(""); setHeaders(null); setColumnMap({});
     setPreview(null); setResult(null);
@@ -171,7 +224,8 @@ export function CentroidImportDialog({
   };
 
   const columnOptions = headers ?? [];
-  const busy = commitM.isPending || applyM.isPending;
+  const busy = commitM.isPending || applyM.isPending || applyCoordsM.isPending;
+  const isApply = mode === "apply";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
@@ -187,6 +241,32 @@ export function CentroidImportDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-auto space-y-4 pr-1">
+          {/* Doc 54 §11 P0.1 — mode: create new points vs apply coords to existing */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { setMode("create"); setPreview(null); setResult(null); }}
+              className={`flex items-start gap-2 rounded-lg border p-3 text-left text-xs transition ${!isApply ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-muted hover:bg-muted/40"}`}
+            >
+              <PlusCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                <span className="block font-medium">{tf("products.centroidImport.modeCreate", "Create new points")}</span>
+                <span className="block text-muted-foreground">{tf("products.centroidImport.modeCreateHint", "Generate a measurement point per component in the file.")}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode("apply"); setPreview(null); setResult(null); }}
+              className={`flex items-start gap-2 rounded-lg border p-3 text-left text-xs transition ${isApply ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-muted hover:bg-muted/40"}`}
+            >
+              <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                <span className="block font-medium">{tf("products.centroidImport.modeApply", "Apply coords to existing")}</span>
+                <span className="block text-muted-foreground">{tf("products.centroidImport.modeApplyHint", "Match by RefDes and fix points stuck at 0,0.")}</span>
+              </span>
+            </button>
+          </div>
+
           {/* Upload */}
           <div className="border-2 border-dashed rounded-lg p-5 text-center">
             <input
@@ -299,22 +379,24 @@ export function CentroidImportDialog({
                 </div>
               </div>
 
-              {/* Apply defaults */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">{tf("products.centroidImport.measurementType", "Measurement type")}</Label>
-                  <Select value={measurementType} onValueChange={setMeasurementType}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {MEASUREMENT_TYPES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+              {/* Apply defaults — only relevant when CREATING new points */}
+              {!isApply && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">{tf("products.centroidImport.measurementType", "Measurement type")}</Label>
+                    <Select value={measurementType} onValueChange={setMeasurementType}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MEASUREMENT_TYPES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{tf("products.centroidImport.radius", "Point radius (px)")}</Label>
+                    <Input type="number" min={1} value={radius} onChange={(e) => setRadius(Number(e.target.value) || 20)} className="h-8 text-xs" />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">{tf("products.centroidImport.radius", "Point radius (px)")}</Label>
-                  <Input type="number" min={1} value={radius} onChange={(e) => setRadius(Number(e.target.value) || 20)} className="h-8 text-xs" />
-                </div>
-              </div>
+              )}
             </>
           )}
 
@@ -323,8 +405,10 @@ export function CentroidImportDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2 flex-wrap text-xs">
                 <Badge variant="secondary">{tf("products.centroidImport.parsedN", "{{n}} parsed", { n: preview.stats?.parsed ?? 0 })}</Badge>
-                {preview.stats?.skipped > 0 && <Badge variant="outline">{tf("products.centroidImport.skippedN", "{{n}} skipped", { n: preview.stats.skipped })}</Badge>}
-                {preview.stats?.duplicates > 0 && <Badge variant="outline">{tf("products.centroidImport.dupN", "{{n}} duplicate", { n: preview.stats.duplicates })}</Badge>}
+                {isApply && <Badge variant="default">{tf("products.centroidImport.matchedN", "{{n}} matched", { n: preview.matchedCount ?? 0 })}</Badge>}
+                {isApply && (preview.unmatchedCount ?? 0) > 0 && <Badge variant="destructive">{tf("products.centroidImport.unmatchedN", "{{n}} unmatched", { n: preview.unmatchedCount })}</Badge>}
+                {!isApply && preview.stats?.skipped > 0 && <Badge variant="outline">{tf("products.centroidImport.skippedN", "{{n}} skipped", { n: preview.stats.skipped })}</Badge>}
+                {!isApply && preview.stats?.duplicates > 0 && <Badge variant="outline">{tf("products.centroidImport.dupN", "{{n}} duplicate", { n: preview.stats.duplicates })}</Badge>}
                 <Badge variant="outline">{preview.coordinateMode}</Badge>
                 {!preview.hasImageDimensions && <Badge variant="destructive">{tf("products.centroidImport.noDims", "no image size")}</Badge>}
               </div>
@@ -341,34 +425,67 @@ export function CentroidImportDialog({
                 </Alert>
               )}
 
-              <ScrollArea className="h-56 border rounded-lg">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted sticky top-0">
-                    <tr>
-                      <th className="p-1.5 text-left">RefDes</th>
-                      <th className="p-1.5 text-center">X</th>
-                      <th className="p-1.5 text-center">Y</th>
-                      <th className="p-1.5 text-center">Rot</th>
-                      <th className="p-1.5 text-left">Side</th>
-                      <th className="p-1.5 text-left">Package</th>
-                      <th className="p-1.5 text-left">Component</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(preview.candidates ?? []).slice(0, 300).map((c: any, i: number) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-1.5 font-mono">{c.refDesignator}</td>
-                        <td className="p-1.5 text-center">{Math.round(c.positionX)}</td>
-                        <td className="p-1.5 text-center">{Math.round(c.positionY)}</td>
-                        <td className="p-1.5 text-center">{c.rotation ?? "—"}</td>
-                        <td className="p-1.5">{c.side ?? "—"}</td>
-                        <td className="p-1.5">{c.package ?? "—"}</td>
-                        <td className="p-1.5 font-mono text-muted-foreground">{c.componentCode ?? "—"}</td>
+              {isApply ? (
+                <ScrollArea className="h-56 border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="p-1.5 text-left">RefDes</th>
+                        <th className="p-1.5 text-left">{tf("products.centroidImport.colPoint", "Point")}</th>
+                        <th className="p-1.5 text-center">{tf("products.centroidImport.colOldXY", "Old X,Y")}</th>
+                        <th className="p-1.5 text-center">{tf("products.centroidImport.colNewXY", "New X,Y")}</th>
+                        <th className="p-1.5 text-left">{tf("products.centroidImport.colMatchedBy", "By")}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </ScrollArea>
+                    </thead>
+                    <tbody>
+                      {(preview.matched ?? []).slice(0, 300).map((m: any, i: number) => (
+                        <tr key={`m${i}`} className="border-t">
+                          <td className="p-1.5 font-mono">{m.refDesignator}</td>
+                          <td className="p-1.5 font-mono">{m.pointCode}</td>
+                          <td className="p-1.5 text-center text-muted-foreground">{m.oldX},{m.oldY}</td>
+                          <td className="p-1.5 text-center font-medium">{m.newX},{m.newY}</td>
+                          <td className="p-1.5 text-muted-foreground">{m.matchedBy}</td>
+                        </tr>
+                      ))}
+                      {(preview.unmatched ?? []).slice(0, 100).map((u: any, i: number) => (
+                        <tr key={`u${i}`} className="border-t bg-destructive/5">
+                          <td className="p-1.5 font-mono">{u.refDesignator}</td>
+                          <td className="p-1.5 text-destructive" colSpan={4}>{tf("products.centroidImport.unmatchedRow", "unmatched — {{r}}", { r: u.reason })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ScrollArea>
+              ) : (
+                <ScrollArea className="h-56 border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="p-1.5 text-left">RefDes</th>
+                        <th className="p-1.5 text-center">X</th>
+                        <th className="p-1.5 text-center">Y</th>
+                        <th className="p-1.5 text-center">Rot</th>
+                        <th className="p-1.5 text-left">Side</th>
+                        <th className="p-1.5 text-left">Package</th>
+                        <th className="p-1.5 text-left">Component</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(preview.candidates ?? []).slice(0, 300).map((c: any, i: number) => (
+                        <tr key={i} className="border-t">
+                          <td className="p-1.5 font-mono">{c.refDesignator}</td>
+                          <td className="p-1.5 text-center">{Math.round(c.positionX)}</td>
+                          <td className="p-1.5 text-center">{Math.round(c.positionY)}</td>
+                          <td className="p-1.5 text-center">{c.rotation ?? "—"}</td>
+                          <td className="p-1.5">{c.side ?? "—"}</td>
+                          <td className="p-1.5">{c.package ?? "—"}</td>
+                          <td className="p-1.5 font-mono text-muted-foreground">{c.componentCode ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ScrollArea>
+              )}
             </div>
           )}
 
@@ -377,7 +494,9 @@ export function CentroidImportDialog({
               <CheckCircle className="h-4 w-4" />
               <AlertTitle>{tf("products.centroidImport.importResult", "Import result")}</AlertTitle>
               <AlertDescription className="text-xs">
-                {tf("products.centroidImport.resultLine", "{{a}} points created, {{s}} skipped (already existed).", { a: result.applied, s: result.skipped })}
+                {isApply
+                  ? tf("products.centroidImport.resultLineApply", "{{a}} point(s) updated · {{m}} matched · {{u}} unmatched.", { a: result.applied, m: result.matched, u: result.unmatched })
+                  : tf("products.centroidImport.resultLine", "{{a}} points created, {{s}} skipped (already existed).", { a: result.applied, s: result.skipped })}
               </AlertDescription>
             </Alert>
           )}
@@ -387,9 +506,11 @@ export function CentroidImportDialog({
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>
             {t("common.close")}
           </Button>
-          <Button onClick={handleImport} disabled={!requiredMapped || busy || !text}>
-            {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-            {tf("products.centroidImport.importBtn", "Import points")}
+          <Button onClick={isApply ? handleApplyCoordinates : handleImport} disabled={!requiredMapped || busy || !text}>
+            {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : (isApply ? <MapPin className="h-4 w-4 mr-2" /> : <Upload className="h-4 w-4 mr-2" />)}
+            {isApply
+              ? tf("products.centroidImport.applyCoordsBtn", "Apply coordinates")
+              : tf("products.centroidImport.importBtn", "Import points")}
           </Button>
         </DialogFooter>
       </DialogContent>

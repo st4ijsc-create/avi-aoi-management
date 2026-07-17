@@ -35,6 +35,7 @@ import {
   RoutingError,
 } from "../services/routingService";
 import { ROUTING_STATUSES } from "../../drizzle/schema/routing";
+import { getProductModelByCode } from "../db/product";
 
 function toTrpc(err: unknown): never {
   if (err instanceof RoutingError) {
@@ -202,5 +203,95 @@ export const routingRouter = router({
       } catch (err) {
         toTrpc(err);
       }
+    }),
+
+  /**
+   * Doc 54 §11 P0.5 — bulk-import routings from a FLAT CSV/array (one row per
+   * step). Gated on the SAME permission as create (production_orders.canCreate) —
+   * NOT adminProcedure (mirrors doc-54 P0.3). Rows are grouped by
+   * (productCode, routingCode) into one routing header each; productCode resolves
+   * to productModelId (unknown product → that group fails, not the batch).
+   * Idempotent: an existing header of that code has its steps REPLACED (updated);
+   * a new code is CREATED with its steps (inserted). Counts are at the ROUTING
+   * level. Returns {inserted, updated, failed, errors[]}.
+   */
+  importRouting: protectedProcedure
+    .use(canCreate)
+    .input(z.object({
+      rows: z.array(z.object({
+        productCode: z.string().trim().min(1).max(100),
+        routingCode: z.string().trim().max(64).optional(),
+        routingName: z.string().max(255).optional(),
+        stepSeq: z.number().int().min(1),
+        operationCode: z.string().trim().min(1).max(64),
+        stationCode: z.string().trim().max(128).optional(),
+        standardTimeSec: z.number().int().min(0).optional(),
+        description: z.string().max(4000).optional(),
+      })).min(1).max(10000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = { inserted: 0, updated: 0, failed: 0, errors: [] as string[] };
+      // Group flat rows by (productCode, routingCode).
+      type Group = {
+        productCode: string;
+        routingCode: string;
+        routingName?: string;
+        rows: typeof input.rows;
+      };
+      const groups = new Map<string, Group>();
+      for (const row of input.rows) {
+        const productCode = row.productCode.trim();
+        const routingCode = (row.routingCode?.trim() || `${productCode}-IMPORT`);
+        const key = `${productCode}::${routingCode}`;
+        let g = groups.get(key);
+        if (!g) {
+          g = { productCode, routingCode, routingName: row.routingName, rows: [] };
+          groups.set(key, g);
+        }
+        g.rows.push(row);
+      }
+
+      for (const g of groups.values()) {
+        try {
+          const product = await getProductModelByCode(g.productCode);
+          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          const seen = new Set<number>();
+          const steps = g.rows
+            .slice()
+            .sort((a, b) => a.stepSeq - b.stepSeq)
+            .map((r) => {
+              if (seen.has(r.stepSeq)) {
+                throw new Error(`Trùng bước ${r.stepSeq} trong routing ${g.routingCode}`);
+              }
+              seen.add(r.stepSeq);
+              return {
+                stepNo: r.stepSeq,
+                operationCode: r.operationCode.trim(),
+                stationOrMachineType: r.stationCode?.trim() || null,
+                standardTimeSec: r.standardTimeSec ?? null,
+                description: r.description ?? null,
+              };
+            });
+          const list = await listRoutings({ productModelId: product.id, limit: 500 });
+          const existing = list.find((r) => r.code === g.routingCode);
+          if (existing) {
+            await replaceSteps(existing.id, steps);
+            result.updated++;
+          } else {
+            await createRouting({
+              productModelId: product.id,
+              code: g.routingCode,
+              name: g.routingName ?? null,
+              steps,
+              createdBy: ctx.user.id,
+            });
+            result.inserted++;
+          }
+        } catch (err) {
+          result.failed++;
+          result.errors.push(`${g.productCode}/${g.routingCode}: ${err instanceof Error ? err.message : "lỗi import"}`);
+        }
+      }
+      return result;
     }),
 });

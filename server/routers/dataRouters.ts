@@ -7,8 +7,13 @@ import * as cachedStats from "../functions/cachedStatistics";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { resolveThresholdEditGate } from "../services/thresholdGovernanceService";
 
-export const importRouter = router({  
-  importFactories: adminProcedure
+// doc 54 P0.3 — bulk-import RBAC unify: import* were adminProcedure (single-admin
+// bottleneck at rollout). Gate them on the SAME per-entity permission as the single-row
+// create (settings_factory / settings_products / settings_measurement_points) so an
+// engineer who can create a row can also bulk-import — matching the doc-47 factory-config
+// RBAC. Export stays admin.
+export const importRouter = router({
+  importFactories: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),
@@ -47,7 +52,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importWorkshops: adminProcedure
+  importWorkshops: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         factoryCode: z.string(),
@@ -100,7 +105,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importMachines: adminProcedure
+  importMachines: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         stationCode: z.string(),
@@ -163,7 +168,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importProducts: adminProcedure
+  importProducts: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),
@@ -212,7 +217,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importMeasurementPoints: adminProcedure
+  importMeasurementPoints: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         productModelCode: z.string(),
@@ -224,6 +229,17 @@ export const importRouter = router({
         upperLimit: z.number().optional(),
         lowerLimit: z.number().optional(),
         isActive: z.boolean().optional(),
+        // Doc 54 §11 P0.1 — optional CAD/centroid coordinate payload. When a row
+        // carries real X/Y (from a pick-place export), the point is planted there
+        // instead of the legacy (0,0). Omitted → (0,0) as before (back-compat).
+        // For matching a whole file to EXISTING points, prefer cadImport.applyCoordinates.
+        positionX: z.number().optional(),
+        positionY: z.number().optional(),
+        rotation: z.number().optional(),
+        normalizedX: z.number().min(0).max(1).optional(),
+        normalizedY: z.number().min(0).max(1).optional(),
+        refDesignator: z.string().max(64).optional(),
+        componentCode: z.string().max(100).optional(),
       })),
       replaceIfExists: z.boolean().default(false),
     }))
@@ -267,6 +283,14 @@ export const importRouter = router({
                 upperLimit: item.upperLimit?.toString(),
                 lowerLimit: item.lowerLimit?.toString(),
                 isActive: item.isActive ?? true,
+                // Doc 54 §11 P0.1 — overwrite coordinates only when the row carries
+                // them (coords are not lifecycle-gated the way limits are).
+                ...(item.positionX != null ? { positionX: Math.max(0, Math.round(item.positionX)) } : {}),
+                ...(item.positionY != null ? { positionY: Math.max(0, Math.round(item.positionY)) } : {}),
+                ...(item.normalizedX != null ? { normalizedX: item.normalizedX.toFixed(8) } : {}),
+                ...(item.normalizedY != null ? { normalizedY: item.normalizedY.toFixed(8) } : {}),
+                ...(item.refDesignator ? { refDesignator: item.refDesignator.slice(0, 64) } : {}),
+                ...(item.componentCode ? { componentCode: item.componentCode.slice(0, 100) } : {}),
               });
               // Audit the allowed direct limit edit (development products only).
               if (gate) {
@@ -307,6 +331,12 @@ export const importRouter = router({
               throw new Error('Measurement point code already exists');
             }
           } else {
+            // Doc 54 §11 P0.1 — plant real coordinates when the import row supplies
+            // them (CAD/centroid/pick-place payload); otherwise fall back to (0,0)
+            // for backward compatibility with plain measurement-point imports.
+            const px = item.positionX != null ? Math.max(0, Math.round(item.positionX)) : 0;
+            const py = item.positionY != null ? Math.max(0, Math.round(item.positionY)) : 0;
+            const hasCoords = item.positionX != null || item.positionY != null || item.rotation != null;
             await db.createMeasurementPointDef({
               productModelId: productModel.id,
               code: item.code,
@@ -317,9 +347,22 @@ export const importRouter = router({
               upperLimit: item.upperLimit?.toString(),
               lowerLimit: item.lowerLimit?.toString(),
               isActive: item.isActive ?? true,
-              positionX: 0,
-              positionY: 0,
+              positionX: px,
+              positionY: py,
               radius: 20,
+              normalizedX: item.normalizedX != null ? item.normalizedX.toFixed(8) : undefined,
+              normalizedY: item.normalizedY != null ? item.normalizedY.toFixed(8) : undefined,
+              refDesignator: item.refDesignator?.slice(0, 64),
+              componentCode: item.componentCode?.slice(0, 100),
+              geometry: hasCoords
+                ? {
+                    shape: "circle",
+                    x: px,
+                    y: py,
+                    radius: 20,
+                    ...(item.rotation != null ? { centroid: { rotation: item.rotation } } : {}),
+                  }
+                : undefined,
             });
             results.success++;
           }
@@ -332,7 +375,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importLines: adminProcedure
+  importLines: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         workshopCode: z.string(),
@@ -391,7 +434,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importStations: adminProcedure
+  importStations: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         lineCode: z.string(),
@@ -447,7 +490,7 @@ export const importRouter = router({
       return results;
     }),
 
-  importWorkstations: adminProcedure
+  importWorkstations: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
     .input(z.object({
       data: z.array(z.object({
         code: z.string(),

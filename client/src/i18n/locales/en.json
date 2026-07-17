@@ -394,12 +394,23 @@
       "issues": "Total issues",
       "entities": "Entities needing attention"
     },
+    "engSection": {
+      "title": "Measurement points & hierarchy",
+      "subtitle": "Measurement points missing thresholds / at origin / missing component, and orphaned hierarchy links (read-only)."
+    },
+    "drill": {
+      "show": "View {{n}} records to clean up"
+    },
     "entity": {
       "suppliers": "Suppliers",
       "materials": "Materials / components",
       "customers": "Customers",
       "tools": "Tools / fixtures",
-      "uom": "Unit conversions"
+      "uom": "Unit conversions",
+      "points": "Measurement points",
+      "machines": "Machines (hierarchy)",
+      "stations": "Stations (hierarchy)",
+      "products": "Products (hierarchy)"
     },
     "issue": {
       "suppliers": {
@@ -424,6 +435,21 @@
       "uom": {
         "orphanFrom": "Source unit does not exist",
         "orphanTo": "Target unit does not exist"
+      },
+      "points": {
+        "noThreshold": "No thresholds (lower/upper/criteria all empty)",
+        "originCoord": "Coordinate at origin (0,0)",
+        "noComponent": "Missing component code (componentCode)"
+      },
+      "machines": {
+        "noStation": "Parent station retired / missing",
+        "noProduct": "No product mapping assigned"
+      },
+      "stations": {
+        "noLine": "Parent line retired / missing"
+      },
+      "products": {
+        "noPoints": "No measurement points yet"
       }
     }
   },
@@ -6833,7 +6859,22 @@
       "noDims": "no image size",
       "warnings": "Warnings",
       "importResult": "Import result",
-      "resultLine": "{{a}} points created, {{s}} skipped (already existed)."
+      "resultLine": "{{a}} points created, {{s}} skipped (already existed).",
+      "modeCreate": "Create new points",
+      "modeCreateHint": "Generate a measurement point per component in the file.",
+      "modeApply": "Apply coords to existing",
+      "modeApplyHint": "Match by RefDes and fix points stuck at 0,0.",
+      "matchedN": "{{n}} matched",
+      "unmatchedN": "{{n}} unmatched",
+      "colPoint": "Point",
+      "colOldXY": "Old X,Y",
+      "colNewXY": "New X,Y",
+      "colMatchedBy": "By",
+      "unmatchedRow": "unmatched — {{r}}",
+      "appliedCoords": "Updated {{a}} point(s); {{u}} unmatched",
+      "noMatches": "No points matched — create points first, or check the RefDes mapping.",
+      "applyCoordsBtn": "Apply coordinates",
+      "resultLineApply": "{{a}} point(s) updated · {{m}} matched · {{u}} unmatched."
     },
     "package": {
       "export": "Export",
