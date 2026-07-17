@@ -21,13 +21,17 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 export type CredentialShowOncePayload = {
-  /** claimToken = one-time mct_ bootstrap token · apiKey = (re)issued mach_ key. */
-  kind: "claimToken" | "apiKey";
+  /**
+   * claimToken = one-time mct_ per-machine bootstrap token ·
+   * enrollmentToken = met_ zero-touch batch token (a whole fleet self-enrolls) ·
+   * apiKey = (re)issued mach_ key.
+   */
+  kind: "claimToken" | "enrollmentToken" | "apiKey";
   /** Plaintext secret — held ONLY while the dialog is open. */
   secret: string;
-  /** "CODE — Name" label of the machine the secret belongs to. */
+  /** "CODE — Name" label of the machine (or fleet batch) the secret belongs to. */
   machineLabel: string;
-  /** Claim tokens only — expiry (Date server-side, ISO string on the wire). */
+  /** Bootstrap tokens only — expiry (Date server-side, ISO string on the wire). */
   expiresAt?: string | Date | null;
 };
 
@@ -42,6 +46,8 @@ export default function CredentialShowOnceDialog({ payload, onClose }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   const isClaim = payload?.kind === "claimToken";
+  const isEnroll = payload?.kind === "enrollmentToken";
+  const isBootstrapToken = isClaim || isEnroll; // Ticket icon + expiry apply to both
 
   const expiresLabel = (() => {
     if (!payload?.expiresAt) return null;
@@ -88,14 +94,16 @@ export default function CredentialShowOnceDialog({ payload, onClose }: Props) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {isClaim ? (
+            {isBootstrapToken ? (
               <Ticket className="h-5 w-5 text-primary" />
             ) : (
               <KeyRound className="h-5 w-5 text-primary" />
             )}
-            {isClaim
-              ? t("machineRegistration.credential.claimTitle")
-              : t("machineRegistration.credential.apiKeyTitle")}
+            {isEnroll
+              ? t("machineRegistration.credential.enrollTitle")
+              : isClaim
+                ? t("machineRegistration.credential.claimTitle")
+                : t("machineRegistration.credential.apiKeyTitle")}
           </DialogTitle>
           <DialogDescription>
             {t("machineRegistration.credential.machineLabel", {
@@ -132,7 +140,7 @@ export default function CredentialShowOnceDialog({ payload, onClose }: Props) {
                 {qrDataUrl && (
                   <img
                     src={qrDataUrl}
-                    alt={isClaim ? "Claim token QR" : "API key QR"}
+                    alt={isBootstrapToken ? "Bootstrap token QR" : "API key QR"}
                     className="rounded border bg-white p-1 h-[220px] w-[220px]"
                   />
                 )}
@@ -140,9 +148,13 @@ export default function CredentialShowOnceDialog({ payload, onClose }: Props) {
             </Alert>
 
             <div className="text-xs text-muted-foreground space-y-1">
-              {isClaim ? (
+              {isBootstrapToken ? (
                 <>
-                  <p>{t("machineRegistration.credential.claimHint")}</p>
+                  <p>
+                    {isEnroll
+                      ? t("machineRegistration.credential.enrollHint")
+                      : t("machineRegistration.credential.claimHint")}
+                  </p>
                   {expiresLabel && (
                     <p>
                       {t("machineRegistration.credential.expiresAt", {
@@ -150,7 +162,9 @@ export default function CredentialShowOnceDialog({ payload, onClose }: Props) {
                       })}
                     </p>
                   )}
-                  <p>{t("machineRegistration.credential.claimReissueNote")}</p>
+                  {isClaim && (
+                    <p>{t("machineRegistration.credential.claimReissueNote")}</p>
+                  )}
                 </>
               ) : (
                 <p>{t("machineRegistration.credential.apiKeyHint")}</p>

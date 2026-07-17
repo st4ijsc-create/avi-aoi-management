@@ -1,4 +1,85 @@
 {
+  "enrollmentTokens": {
+    "tabLabel": "Mã gia nhập thiết bị",
+    "title": "Mã gia nhập thiết bị",
+    "description": "Cấp mã gia nhập (met_) để máy automation/IoT tự gia nhập hàng loạt không cần thao tác tay — máy nhập mã một lần rồi tự nhận khóa mk_.",
+    "issueButton": "Tạo mã gia nhập",
+    "refresh": "Làm mới",
+    "searchPlaceholder": "Tìm theo tiền tố, mẫu serial hoặc ghi chú…",
+    "serialAny": "Mọi serial",
+    "revealLabelPattern": "Gia nhập hàng loạt · {{pattern}} · {{max}} lượt",
+    "revealLabelAny": "Gia nhập hàng loạt · mọi serial · {{max}} lượt",
+    "adminOnly": {
+      "title": "Chỉ dành cho quản trị viên",
+      "desc": "Chỉ admin mới được tạo, xem và thu hồi mã gia nhập thiết bị."
+    },
+    "columns": {
+      "prefix": "Tiền tố mã",
+      "scopes": "Phạm vi",
+      "serialPattern": "Mẫu serial",
+      "uses": "Đã dùng / Tối đa",
+      "expiresAt": "Hết hạn",
+      "note": "Ghi chú",
+      "status": "Trạng thái",
+      "actions": "Thao tác"
+    },
+    "status": {
+      "active": "Đang hiệu lực",
+      "revoked": "Đã thu hồi",
+      "expired": "Hết hạn",
+      "exhausted": "Hết lượt"
+    },
+    "empty": {
+      "title": "Chưa có mã gia nhập",
+      "desc": "Tạo mã gia nhập đầu tiên để máy tự gia nhập hàng loạt vào hệ thống."
+    },
+    "guide": {
+      "title": "Máy tự gia nhập như thế nào",
+      "step1Title": "Tạo mã gia nhập",
+      "step1Desc": "Chọn phạm vi, mẫu serial (vd SCRW-*) và số lượt dùng. Mã met_ chỉ hiển thị MỘT lần — sao chép hoặc quét QR ngay.",
+      "step2Title": "Nạp mã vào firmware",
+      "step2Desc": "Nhập mã gia nhập này vào firmware/cấu hình của máy để máy tự gia nhập khi khởi động.",
+      "step3Title": "Máy tự nhận khóa",
+      "step3Desc": "Máy gửi mã kèm serial, được duyệt tự động và nhận khóa mk_ theo phạm vi đã cấp (cần bật ENROLLMENT_ENABLED trên máy chủ)."
+    },
+    "form": {
+      "title": "Tạo mã gia nhập thiết bị",
+      "description": "Mã dùng một lần (hoặc theo allowlist) để máy tự gia nhập. Plaintext chỉ hiển thị một lần.",
+      "machineType": "Loại máy dự kiến",
+      "machineTypeNone": "Không chỉ định",
+      "machineTypeHint": "Tùy chọn, chỉ để ghi chú — mã gia nhập không ràng buộc loại máy; máy tự khai báo loại khi gia nhập.",
+      "scopes": "Phạm vi khóa",
+      "scopeDesc": {
+        "ingestWrite": "Gửi dữ liệu kết quả/telemetry",
+        "equipmentRead": "Đọc thông tin thiết bị",
+        "edgeSync": "Đồng bộ cấu hình biên"
+      },
+      "scopesHint": "Khóa mk_ cấp cho máy sẽ kế thừa đúng các phạm vi này. Mặc định: ingest:write.",
+      "serialPattern": "Mẫu serial",
+      "serialPatternPlaceholder": "vd SCRW-*",
+      "serialPatternHint": "Để trống = mọi serial. Kết thúc bằng * để khớp tiền tố (allowlist hàng loạt).",
+      "maxUses": "Số lượt tối đa",
+      "maxUsesHint": "1 = dùng một lần. Đặt lớn hơn để onboard cả lô.",
+      "ttlDays": "Hiệu lực (ngày)",
+      "ttlDaysHint": "Số ngày trước khi hết hạn (tối đa {{max}}).",
+      "note": "Ghi chú",
+      "notePlaceholder": "vd Lô máy bắt vít dây chuyền A",
+      "cancel": "Hủy",
+      "submit": "Tạo mã"
+    },
+    "revoke": {
+      "action": "Thu hồi",
+      "dialogTitle": "Thu hồi mã gia nhập?",
+      "dialogDesc": "Mã {{prefix}}… sẽ bị vô hiệu ngay lập tức. Máy chưa gia nhập bằng mã này sẽ không thể gia nhập nữa.",
+      "cancel": "Hủy",
+      "confirm": "Thu hồi"
+    },
+    "toast": {
+      "issued": "Đã tạo mã gia nhập",
+      "enrollmentDisabled": "Đã tạo mã nhưng tính năng tự gia nhập đang TẮT trên máy chủ (ENROLLMENT_ENABLED=false) — máy sẽ bị từ chối cho đến khi bật.",
+      "revoked": "Đã thu hồi mã gia nhập"
+    }
+  },
   "apiFeeds": {
     "menuProcessFeed": "Automation Process Feed",
     "menuTelemetry": "IoT Telemetry",
@@ -9607,7 +9688,9 @@
         "claimMintFailedAfterApprove": "Máy đã duyệt nhưng chưa cấp được claim token — dùng nút 'Cấp lại claim token' trong bảng.",
         "rotateSuccess": "Đã xoay API key",
         "rotateError": "Không xoay được API key"
-      }
+      },
+      "enrollTitle": "Mã gia nhập thiết bị — chỉ hiện một lần",
+      "enrollHint": "Nhập mã này vào firmware của thiết bị để máy tự gia nhập (nhận API key riêng). Một mã có thể dùng cho cả lô máy theo mẫu số sê-ri."
     },
     "pagination": {
       "showing": "Hiển thị {{from}}–{{to}} / {{total}}",

@@ -39,7 +39,7 @@ Ba cách gửi credential (chọn 1):
 
 | Cách | Vị trí | Ví dụ |
 |---|---|---|
-| **Header (khuyến nghị)** | `Authorization: ApiKey <mk_...>` hoặc `X-API-Key: <mk_...>` | `X-API-Key: mk_live_9f3a…` |
+| **Header (khuyến nghị)** | `Authorization: Bearer <mk_...>` hoặc `X-API-Key: <mk_...>` | `X-API-Key: mk_live_9f3a…` |
 | Body field | `"apiKey": "<mk_...>"` trong JSON body | `{ "apiKey": "mk_live_9f3a…", … }` |
 | `machineCode` | `"machineCode"` trong body / header `X-Machine-Code` | chỉ chấp nhận cho deviceClass `aoi_avi`; **fleet automation/iot BẮT BUỘC `mk_`** (doc 56 QĐ3, cờ `MACHINE_CRED_MK_ONLY_ENABLED`) |
 
@@ -264,7 +264,7 @@ Xem §8.3 (payload) — firmware gửi batch `[temperature, humidity]` mỗi ~30
 
 ```bash
 curl -X POST "https://<host>/api/v1/ingest/telemetry" \
-  -H "Authorization: ApiKey mk_live_9f3a…" \
+  -H "Authorization: Bearer mk_live_9f3a…" \
   -H "Content-Type: application/json" \
   -d '{"samples":[
     {"deviceId":"esp32-ws3-01","metric":"temperature","value":27.4,"unit":"°C","ts":"2026-07-17T14:03:00+07:00"},
@@ -379,7 +379,7 @@ Contract `process-result@1.0` đăng ký trong `machineDataContract` registry (`
 
 **Nội dung chính:**
 - **3 loại message:** **RESULT** (`POST /api/v1/ingest/process-result` — 1 kết quả chu trình/serial) · **TELEMETRY** (`POST /api/v1/ingest/telemetry` — dòng đo liên tục, alias của `/api/ot/ingest`) · **EVENT** (MQTT alarm ISA-18.2, firmware dùng `nativeCode = standardCode`).
-- **Xác thực:** machine key `mk_` (scope `ingest:write`) qua `Authorization: ApiKey mk_…` / `X-API-Key` / body; cấp qua claim `mct_` hoặc enrollment `met_` (doc 56 Trục 1). Fleet automation/iot **bắt buộc `mk_`**, cấm machineCode-only.
+- **Xác thực:** machine key `mk_` (scope `ingest:write`) qua `Authorization: Bearer mk_…` / `X-API-Key: mk_…` (server đọc header, KHÔNG dùng scheme `ApiKey`); cấp qua claim `mct_` hoặc enrollment `met_` (doc 56 Trục 1). Fleet automation/iot **bắt buộc `mk_`**, cấm machineCode-only.
 - **Envelope RESULT:** `schemaVersion:"1.0"`, `serialNumber`, `stepType` (danh mục `process_step_types`), `result` (`pass`/`fail`/`warn`/`skip`), `ts` (**offset bắt buộc**), `recipe?`, `metrics?[{name,value,unit,lsl,usl,nominal}]`, `waveforms?` (cap ~64KB), `idempotencyKey?`, + `stationId/lineCode/productionOrderCode/lotCode`.
 - **Bắt buộc:** `schemaVersion`, `serialNumber`, `stepType`, `result`, `ts` (RFC 3339 **có offset** — giờ naive bị reject, bài học lệch +7h).
 - **Đơn vị chuẩn:** Nm (torque), deg (góc), mL (keo), kPa/bar (áp), °C (nhiệt), A (dòng), Hz (tần số), %RH (ẩm) — đơn vị lạ không kèm conversion bị reject.

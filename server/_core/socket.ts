@@ -584,10 +584,37 @@ export function initializeSocket(server: HttpServer): Server {
       try {
         // Verify machine and API Key
         const machine = await db.getMachineById(data.machineId);
-        if (!machine || machine.apiKey !== data.apiKey) {
-          socket.emit("machine:config_error", {
-            message: "Invalid machine ID or API Key",
-          });
+        // Doc 56 Đ0-A follow-up (Đ2a) — request_config used to compare ONLY the
+        // legacy plaintext machines.apiKey, so a rotated (mk_-only) machine could
+        // never fetch its config once runbook 52 §3.f NULLed the column. `off`
+        // (default) keeps that plaintext comparison byte-identical; `log`/`enforce`
+        // accept legacy-OR-mk_ via the SAME verifier as sync_started/confirm_mapping
+        // (per SOCKET_MACHINE_AUTH_MODE) and count every mismatch. A total mismatch
+        // is still rejected exactly like today (no mode weakens this event).
+        const mode = socketMachineAuthMode();
+        if (mode === "off") {
+          if (!machine || machine.apiKey !== data.apiKey) {
+            socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        } else {
+          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:request_config");
+          if (!machine || !auth.ok) {
+            recordSocketMachineAuthMismatch({
+              event: "machine:request_config",
+              mode,
+              machineId: data.machineId,
+              machineCode: machine?.code,
+              method: auth.method,
+            });
+            socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        }
+        // Both branches above return on a missing machine; this guard also narrows
+        // `machine` to non-null for the config build below.
+        if (!machine) {
+          socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
           return;
         }
 

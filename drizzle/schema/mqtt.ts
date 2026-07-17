@@ -18,6 +18,13 @@ export const mqttClients = pgTable("mqtt_clients", {
   // Mapping to station
   stationId: integer("stationId"), // Công trạm được gán
   processId: integer("processId"), // Công đoạn được gán (optional, for filtering)
+  // Doc 56 Đ2a Việc 4 (IoT identity, migration 0292) — soft link mqtt_clients → machines.id.
+  // Column name kept camelCase ("machineId") to match this table's convention (stationId /
+  // deviceId / processId). Nullable; the migration adds the FK (ON DELETE SET NULL) — kept
+  // as a soft-ref here (no .references()) exactly like stationId/processId in this table, so
+  // the schema does not diverge from the hand-written migration. Populated when an IoT device
+  // is bound to its machines row; a retired/rejected machine's link is revoked (hierarchy.ts).
+  machineId: integer("machineId"),
   // Approval status
   approvalStatus: approvalStatusEnum("approvalStatus").default("PENDING").notNull(),
   approvedBy: integer("approvedBy"), // User ID who approved
@@ -50,6 +57,8 @@ export const mqttClients = pgTable("mqtt_clients", {
   index("idx_mqtt_clients_clientId").on(table.clientId),
   index("idx_mqtt_clients_deviceId").on(table.deviceId),
   index("idx_mqtt_clients_station").on(table.stationId),
+  // Doc 56 Đ2a Việc 4 — lookup a machine's linked MQTT devices (lifecycle revoke).
+  index("idx_mqtt_clients_machine").on(table.machineId),
   index("idx_mqtt_clients_approval").on(table.approvalStatus),
   index("idx_mqtt_clients_connection").on(table.connectionStatus),
   index("idx_mqtt_clients_active").on(table.isActive),

@@ -11,11 +11,14 @@ import {
   workstations, InsertWorkstation,
   factoryZones, InsertFactoryZone,
   apiKeys,
+  mqttClients,
   MACHINE_LIFECYCLE_TRANSITIONS,
   MACHINE_LIFECYCLE_EXCLUDED,
   isLegalLifecycleTransition,
   type MachineLifecycleStatus,
 } from "../../drizzle/schema";
+// Doc 56 Đ2a — DERIVED device class (aoi_avi | automation | iot), single source.
+import { deviceClassOf } from "../constants/machineTypes";
 
 export { MACHINE_LIFECYCLE_TRANSITIONS, MACHINE_LIFECYCLE_EXCLUDED, isLegalLifecycleTransition };
 export type { MachineLifecycleStatus };
@@ -91,6 +94,29 @@ function queueUrnSyncForLine(lineId: number): void {
     .then((m) => m.queueLineAssetIdentitySync(lineId))
     .catch(() => undefined);
 }
+
+// ── Doc 56 Đ2a — credential/identity flags (default OFF = byte-identical) ─────
+// Read here (env) instead of importing machineAuthService to avoid a module cycle
+// (machineAuthService → db barrel → hierarchy). Same env var as
+// machineAuthService.machineCredMkOnlyEnabled — one source of truth (the env).
+
+/** Việc 2 — automation/iot fleets mint/hand back mk_ instead of machines.apiKey. */
+function machineCredMkOnlyEnabled(): boolean {
+  return process.env.MACHINE_CRED_MK_ONLY_ENABLED === "true";
+}
+
+/** Việc 4 — IoT device-class behaviour (virtual station + MQTT-link revoke). */
+function iotDeviceClassEnabled(): boolean {
+  return process.env.IOT_DEVICE_CLASS_ENABLED === "true";
+}
+
+/**
+ * Việc 4 — a non-loginable sentinel written into mqtt_clients.passwordHash when a
+ * machine is retired/rejected. bcrypt.compare() against a non-bcrypt string always
+ * returns false (see mqttService.verifyMqttDevicePassword), so the device can never
+ * authenticate — even if MQTT_REQUIRE_PASSWORD is later turned on/off.
+ */
+const MQTT_REVOKED_PASSWORD_SENTINEL = "!revoked-by-machine-lifecycle!";
 
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
@@ -287,6 +313,66 @@ export async function deleteStation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(stations).set({ isActive: false }).where(eq(stations.id, id));
+}
+
+/**
+ * Doc 56 Đ2a Việc 4 (GAP-4) — resolve (idempotently) the VIRTUAL station an IoT
+ * device (IOT_SENSOR/IOT_GATEWAY) is parked under when it has no real production
+ * station. Because stations.lineId is NOT NULL, a virtual LINE must exist first, so
+ * this creates BOTH under the given workshop:
+ *   line    code = "IOT-<workshopCode>"
+ *   station code = "IOT-<workshopCode>"
+ * The "IOT-" code prefix is the analytics-exclusion convention (OEE/yield/takt
+ * consumers skip IOT- hierarchy — wired in Đ5). Returns the virtual station id.
+ *
+ * Idempotent: a second call reuses the existing active line+station (matched by
+ * code). Falls back to the first active workshop when the code does not resolve, so
+ * a caller that only has the machine (not its workshop) still gets a valid parent.
+ * CALLER gates on IOT_DEVICE_CLASS_ENABLED — this helper itself is unconditional so
+ * it can be unit-tested directly.
+ */
+export async function ensureIotVirtualStation(workshopCode: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let workshop = workshopCode ? await getWorkshopByCode(workshopCode) : null;
+  if (!workshop) {
+    const all = await getWorkshops();
+    workshop = all[0] ?? null;
+  }
+  if (!workshop) {
+    throw new Error("Cannot create IoT virtual station — no workshop exists to parent the virtual line");
+  }
+
+  const virtualCode = `IOT-${workshop.code}`;
+  const virtualName = `IoT devices — ${workshop.name}`;
+
+  // Virtual LINE (idempotent). Reuse only an ACTIVE line, under THIS workshop.
+  let line = await getProductionLineByCode(virtualCode);
+  if (line && (line.isActive === false || line.workshopId !== workshop.id)) line = null;
+  if (!line) {
+    const lineId = await createProductionLine({
+      workshopId: workshop.id,
+      code: virtualCode,
+      name: virtualName,
+      isActive: true,
+    });
+    line = await getLineById(lineId) ?? null;
+  }
+  if (!line) throw new Error("Failed to resolve IoT virtual line");
+
+  // Virtual STATION under the virtual line (idempotent).
+  let station = await getStationByCode(virtualCode);
+  if (station && (station.isActive === false || station.lineId !== line.id)) station = null;
+  if (!station) {
+    return createStation({
+      lineId: line.id,
+      code: virtualCode,
+      name: virtualName,
+      isActive: true,
+    });
+  }
+  return station.id;
 }
 
 // ============ MACHINE FUNCTIONS ============
@@ -607,7 +693,13 @@ export async function redeemMachineClaimToken(opts: {
 
   const tokenHash = hashClaimToken(opts.claimToken);
 
-  return db.transaction(async (tx) => {
+  // Doc 56 Đ2a Việc 2 — an automation/iot machine on the mk_-only fleet hands back
+  // a FRESH per-device mk_ (hash-at-rest) instead of the legacy plaintext
+  // machines.apiKey. The decision is stable across the redeem (device class never
+  // changes), so compute it once and relax the "no machines.apiKey" gate below.
+  const mkOnly = machineCredMkOnlyEnabled() && deviceClassOf(machine.machineType) !== "aoi_avi";
+
+  const redeemed = await db.transaction(async (tx) => {
     const [token] = await tx.select().from(machineClaimTokens)
       .where(and(
         eq(machineClaimTokens.tokenHash, tokenHash),
@@ -640,7 +732,9 @@ export async function redeemMachineClaimToken(opts: {
     // or revoked between the serial lookup and the burn.
     const [fresh] = await tx.select().from(machines).where(eq(machines.id, machine.id)).limit(1);
     if (!fresh || fresh.isActive === false) throw invalid();
-    if (fresh.registrationStatus !== "approved" || !fresh.apiKey) {
+    // Legacy path REQUIRES an existing machines.apiKey; the mk_-only fleet mints its
+    // own key AFTER the burn (below), so it only needs the machine to be approved.
+    if (fresh.registrationStatus !== "approved" || (!mkOnly && !fresh.apiKey)) {
       // Rolls the burn back — a token must not die for a server-side gap.
       throw new ClaimTokenError(
         "Machine has no active credential to claim — an admin must approve it first",
@@ -648,11 +742,56 @@ export async function redeemMachineClaimToken(opts: {
       );
     }
 
-    return { machineId: fresh.id, machineCode: fresh.code, apiKey: fresh.apiKey };
+    return { machineId: fresh.id, machineCode: fresh.code, legacyApiKey: fresh.apiKey ?? null };
   });
+
+  if (!mkOnly) {
+    // legacyApiKey is guaranteed non-null here (the tx enforced it for this path).
+    return { machineId: redeemed.machineId, machineCode: redeemed.machineCode, apiKey: redeemed.legacyApiKey! };
+  }
+
+  // mk_-only: mint the scoped per-device key (shown ONCE) via the SHARED fleet
+  // issuer (fleet TTL + default scopes). Dynamic import avoids a module cycle
+  // (machineAuthService imports the db barrel).
+  const { issueFleetMachineKey } = await import("../services/machineAuthService");
+  const key = await issueFleetMachineKey({
+    machineId: redeemed.machineId,
+    name: `claim:${redeemed.machineCode}`,
+  });
+  return { machineId: redeemed.machineId, machineCode: redeemed.machineCode, apiKey: key.plaintextKey };
 }
 
-type MachineCredentialRevocation = { apiKeysRevoked: number; sharedKeyCleared: boolean };
+type MachineCredentialRevocation = {
+  apiKeysRevoked: number;
+  sharedKeyCleared: boolean;
+  /** Doc 56 Đ2a Việc 4 — MQTT device links revoked (present only when IOT_DEVICE_CLASS_ENABLED). */
+  mqttClientsRevoked?: number;
+};
+
+/**
+ * Doc 56 Đ2a Việc 4 (GAP-4) — put a machine's linked MQTT device(s) into a
+ * NON-LOGINABLE, NON-RESURRECTABLE state on an open tx. See the state rationale
+ * inline: the sentinel hash + cleared plaintext deny password auth, and
+ * REJECTED-with-isActive-true denies admission WITHOUT the isActive=false path that
+ * would reactivate the client to PENDING on reconnect. Returns rows affected.
+ * Caller gates on iotDeviceClassEnabled() (so mqtt_clients."machineId" — migration
+ * 0292 — is never referenced while the feature is OFF).
+ */
+async function revokeLinkedMqttClientsTx(tx: DbOrTx, machineId: number, reason: string): Promise<number> {
+  const revoked = await tx.update(mqttClients)
+    .set({
+      passwordHash: MQTT_REVOKED_PASSWORD_SENTINEL,
+      password: null,
+      approvalStatus: "REJECTED",
+      isActive: true,
+      connectionStatus: "OFFLINE",
+      rejectionReason: reason,
+      updatedAt: new Date(),
+    })
+    .where(eq(mqttClients.machineId, machineId))
+    .returning({ id: mqttClients.id });
+  return revoked.length;
+}
 
 /**
  * Revoke EVERY credential a machine can authenticate with, on an open tx:
@@ -660,6 +799,7 @@ type MachineCredentialRevocation = { apiKeysRevoked: number; sharedKeyCleared: b
  *      denies both bits, resolution step 1)
  *   2. machines.apiKey             → NULL (the legacy shared-key path, step 2)
  *   3. any open claim token        → invalidated (nothing left to exchange)
+ *   4. linked mqtt_clients         → non-loginable (Đ2a Việc 4, flag-gated)
  *
  * Callers MUST run this inside the same transaction as the state change that
  * justifies it, so a machine can never be left retired-but-authenticating.
@@ -688,7 +828,24 @@ async function revokeMachineCredentialsTx(
       isNull(machineClaimTokens.invalidatedAt),
     ));
 
-  return { apiKeysRevoked: revokedKeys.length, sharedKeyCleared: clearedShared.length > 0 };
+  // Doc 56 Đ2a Việc 4 (GAP-4) — a retired/decommissioned machine's linked MQTT
+  // device(s) must ALSO stop authenticating. Gated by IOT_DEVICE_CLASS_ENABLED so
+  // OFF (default) is byte-identical AND never references mqtt_clients."machineId"
+  // before migration 0292 is applied.
+  let mqttClientsRevoked: number | undefined;
+  if (iotDeviceClassEnabled()) {
+    mqttClientsRevoked = await revokeLinkedMqttClientsTx(
+      tx,
+      machineId,
+      "machine retired/decommissioned (doc 56 Đ2a Việc 4)",
+    );
+  }
+
+  return {
+    apiKeysRevoked: revokedKeys.length,
+    sharedKeyCleared: clearedShared.length > 0,
+    ...(mqttClientsRevoked !== undefined ? { mqttClientsRevoked } : {}),
+  };
 }
 
 /** Standalone credential revocation (own transaction) — for admin tooling/rotation. */
@@ -986,6 +1143,18 @@ export async function redeemMachineEnrollmentToken(opts: {
   }
 
   const info = opts.machineInfo!;
+  // Doc 56 Đ2a Việc 4 — a NEW IoT device enrolls onto the workshop's virtual IOT
+  // station (analytics-excluded) rather than the default production station. Gated
+  // by IOT_DEVICE_CLASS_ENABLED (OFF → uses the default station, byte-identical) and
+  // best-effort (any failure keeps the default station).
+  let enrollStationId = station!.id;
+  if (iotDeviceClassEnabled() && deviceClassOf(String(info.machineType)) === "iot") {
+    try {
+      enrollStationId = await ensureIotVirtualStation("");
+    } catch {
+      /* keep the default station on any failure */
+    }
+  }
   const id = await createMachine({
     code: resolvedCode!,
     name: info.name?.trim() || `Machine ${serialNumber}`,
@@ -997,7 +1166,7 @@ export async function redeemMachineEnrollmentToken(opts: {
     syncMode: info.syncMode || "online",
     registrationStatus: "approved",
     lifecycleStatus: "active",
-    stationId: station!.id,
+    stationId: enrollStationId,
   });
   return { machineId: id, machineCode: resolvedCode!, scopes, created: true };
 }
@@ -1190,6 +1359,20 @@ export async function transitionMachineLifecycle(
 export async function rejectMachine(id: number, reason?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // Doc 56 Đ2a Việc 4 — when the IoT device class is on, rejecting a machine ALSO
+  // revokes its linked MQTT device (same non-loginable state as retire), atomically
+  // with the status flip. Flag OFF (default) keeps the original single UPDATE
+  // byte-identical (never touches mqtt_clients."machineId").
+  if (iotDeviceClassEnabled()) {
+    await db.transaction(async (tx) => {
+      await tx.update(machines).set({
+        registrationStatus: "rejected",
+        pendingConfig: reason || null,
+      }).where(eq(machines.id, id));
+      await revokeLinkedMqttClientsTx(tx, id, "machine rejected (doc 56 Đ2a Việc 4)");
+    });
+    return;
+  }
   await db.update(machines).set({
     registrationStatus: "rejected",
     pendingConfig: reason || null,

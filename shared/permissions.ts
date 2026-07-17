@@ -75,6 +75,9 @@ export const PERMISSION_MODULES = [
   "mqtt_monitoring",
   "mqtt_bulletin",
   "mqtt_replay",
+  // doc 56 Đ2a — approve/list-pending máy có thể mở cho non-admin (vd engineer) khi
+  // cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED=true; grant per-USER seed theo tiền lệ 0269.
+  "machine_registration",
   // Settings
   "settings_view",
   "settings_factory",

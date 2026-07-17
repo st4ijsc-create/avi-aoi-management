@@ -73,9 +73,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import { apiKeys } from "../../drizzle/schema";
+import { apiKeys, aiInsights } from "../../drizzle/schema";
 import { logger } from "../logger";
 import { API_SCOPES, ALL_SCOPES, scopeSatisfied, type ApiScope } from "../api/v1/scopes";
+// Doc 56 Đ2a Việc 2 — DERIVED device class (aoi_avi | automation | iot), the ONE
+// source (server/constants/machineTypes.ts). Used to decide which fleets are
+// forced onto per-device mk_ keys under MACHINE_CRED_MK_ONLY_ENABLED.
+import { deviceClassOf } from "../constants/machineTypes";
 
 // ── flags / config ───────────────────────────────────────────────────────────
 
@@ -182,6 +186,69 @@ export function machineKeyDefaultTtlDays(): number {
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.min(n, 3650);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ2a — CREDENTIAL & IDENTITY UNIFICATION (all default-OFF = byte-identical)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Việc 2 — mk_-ONLY FLEET. When ON, a machine whose DERIVED device class is
+ * automation/iot (i.e. NOT aoi_avi) is REQUIRED to authenticate with a per-device
+ * `mk_` key: the legacy shared-plaintext and bare-machineCode paths are refused
+ * for that class regardless of the weak-auth policy flags, and approve/claim mint
+ * an mk_ instead of writing `machines.apiKey`. The original AOI/AVI fleet is
+ * untouched. Default OFF → every path behaves exactly as before.
+ */
+export function machineCredMkOnlyEnabled(): boolean {
+  return process.env.MACHINE_CRED_MK_ONLY_ENABLED === "true";
+}
+
+/**
+ * Việc 3 — machine-key EXPIRY ALERT. When ON, a weekly sweep
+ * (runMachineKeyExpiryAlertSweep, armed by backgroundJobs) turns
+ * listExpiringMachineKeys() into an ops action-inbox item. Default OFF → the
+ * sweep is an immediate no-op (no DB read, no insight written).
+ */
+export function machineKeyExpiryAlertEnabled(): boolean {
+  return process.env.MACHINE_KEY_EXPIRY_ALERT_ENABLED === "true";
+}
+
+/**
+ * Việc 3 — TTL (in DAYS) applied to a key minted for a NEW fleet machine
+ * (mk_-only approve/claim/enroll). Honours the existing MACHINE_KEY_DEFAULT_TTL_DAYS
+ * env when set (>0); otherwise falls back to 180 days. This NEVER changes
+ * machineKeyDefaultTtlDays() (still 0/no-expiry when unset), so the general
+ * issueMachineKey path stays byte-identical — only the fleet issuer below opts in.
+ */
+export function machineKeyFleetTtlDays(): number {
+  const configured = machineKeyDefaultTtlDays();
+  return configured > 0 ? configured : 180;
+}
+
+/** Default scopes for a fleet (automation/iot) machine key — minimal ingest set. */
+export const MACHINE_KEY_FLEET_SCOPES: ApiScope[] = ["ingest:write", "equipment:read"];
+
+/**
+ * Việc 2/3 — mint a per-machine `mk_` key for a NEW fleet machine with the fleet
+ * TTL applied (machineKeyFleetTtlDays). Thin wrapper over issueMachineKey so the
+ * approve/claim/enroll paths share ONE fleet policy (TTL + default scopes) and one
+ * hash-at-rest issuer. Plaintext returned ONCE (never stored).
+ */
+export async function issueFleetMachineKey(opts: {
+  machineId: number;
+  name?: string;
+  scopes?: string[];
+  createdBy?: number | null;
+}): Promise<PublicMachineKeyRow & { plaintextKey: string }> {
+  const ttlDays = machineKeyFleetTtlDays();
+  return issueMachineKey({
+    machineId: opts.machineId,
+    name: opts.name,
+    scopes: opts.scopes && opts.scopes.length > 0 ? opts.scopes : [...MACHINE_KEY_FLEET_SCOPES],
+    expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+    createdBy: opts.createdBy ?? null,
+  });
 }
 
 // ── hashing (MUST match server/api/v1/auth.ts so one table serves both) ──────
@@ -494,7 +561,12 @@ export async function authenticateMachine(opts: {
       sharedMachine = undefined;
     }
     if (sharedMachine) {
-      const decision = weakAuthDecision(sharedPolicy, opts.scope);
+      // Doc 56 Đ2a Việc 2 — an automation/iot machine is FORCED onto its per-device
+      // mk_ key when MACHINE_CRED_MK_ONLY_ENABLED is on: the shared-plaintext path is
+      // refused for it regardless of MACHINE_SHARED_KEY_ALLOWED (aoi_avi unchanged).
+      // Still recorded as a denied weak-auth attempt so rotation telemetry names it.
+      const mkOnlyRefuse = machineCredMkOnlyEnabled() && deviceClassOf(sharedMachine.machineType) !== "aoi_avi";
+      const decision = mkOnlyRefuse ? "denied" : weakAuthDecision(sharedPolicy, opts.scope);
       recordWeakAuthUse({
         machineId: sharedMachine.id,
         machineCode: sharedMachine.code,
@@ -509,10 +581,12 @@ export async function authenticateMachine(opts: {
       // a key that is not the problem. Doc 52 §5 documents the trade-off.
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message:
-          `Shared machine apiKey authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
-          `Configure machine ${sharedMachine.code} with its per-machine key (mk_...) sent as ` +
-          `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
+        message: mkOnlyRefuse
+          ? `This ${deviceClassOf(sharedMachine.machineType)} machine (${sharedMachine.code}) must authenticate with its ` +
+            `per-device key (mk_...) — shared apiKey is not accepted for automation/iot devices on this server.`
+          : `Shared machine apiKey authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
+            `Configure machine ${sharedMachine.code} with its per-machine key (mk_...) sent as ` +
+            `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
       });
     }
 
@@ -531,7 +605,11 @@ export async function authenticateMachine(opts: {
       machine = undefined;
     }
     if (machine) {
-      const decision = weakAuthDecision(codePolicy, opts.scope);
+      // Doc 56 Đ2a Việc 2 — same mk_-only rule as the shared-key branch: an
+      // automation/iot machine cannot authenticate with a bare machineCode (no
+      // secret at all) once the fleet is on mk_-only. aoi_avi is unchanged.
+      const mkOnlyRefuse = machineCredMkOnlyEnabled() && deviceClassOf(machine.machineType) !== "aoi_avi";
+      const decision = mkOnlyRefuse ? "denied" : weakAuthDecision(codePolicy, opts.scope);
       recordWeakAuthUse({
         machineId: machine.id,
         machineCode: machine.code,
@@ -542,10 +620,12 @@ export async function authenticateMachine(opts: {
       if (decision === "allowed") return { machine, method: "machine-code" };
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message:
-          `machineCode-only authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
-          `Configure machine ${machine.code} with its per-machine key (mk_...) sent as ` +
-          `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
+        message: mkOnlyRefuse
+          ? `This ${deviceClassOf(machine.machineType)} machine (${machine.code}) must authenticate with its ` +
+            `per-device key (mk_...) — machineCode-only is not accepted for automation/iot devices on this server.`
+          : `machineCode-only authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
+            `Configure machine ${machine.code} with its per-machine key (mk_...) sent as ` +
+            `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
       });
     }
     if (await dbPositivelyDown()) throw new DbUnavailableError();
@@ -756,6 +836,125 @@ export async function rotateMachineKey(
     expiresAt: existing.expiresAt ?? null,
     createdBy: createdBy ?? null,
   });
+}
+
+// ── Doc 56 Đ2a Việc 3 — machine-key EXPIRY ALERT sweep ───────────────────────
+//
+// The weekly cron (backgroundJobs) calls runMachineKeyExpiryAlertSweep(). It turns
+// the keys listExpiringMachineKeys() finds into ONE ops action-inbox item (an
+// ai_insights row — the SAME source aiActionInbox already aggregates). Deduped:
+// a single 'new' machine-key-expiry insight is kept current rather than piling up
+// weekly. machineCode is left NULL → it surfaces as an admin/ops-wide advisory
+// (aiActionInbox: NULL-machineCode insights are factory-wide, admin-visible).
+
+/** The ai_insights.source tag for this sweep — also the dedup key. */
+export const MACHINE_KEY_EXPIRY_INSIGHT_SOURCE = "machine-key-expiry";
+
+export interface MachineKeyExpiryInsightPayload {
+  source: string;
+  severity: "warning";
+  title: string;
+  body: string;
+  recommendation: string;
+  contextJson: {
+    withinDays: number;
+    count: number;
+    keys: Array<{ keyId: number; machineId: number | null; keyPrefix: string | null; expiresAt: string | null }>;
+  };
+}
+
+/**
+ * PURE — shape the action-inbox item from the expiring keys (no I/O, unit-testable).
+ * Lists at most 20 keys in the human body; the full set rides in contextJson.
+ */
+export function buildMachineKeyExpiryInsight(
+  keys: PublicMachineKeyRow[],
+  withinDays: number,
+): MachineKeyExpiryInsightPayload {
+  const asIso = (d: PublicMachineKeyRow["expiresAt"]): string | null =>
+    d ? new Date(d as unknown as string | number | Date).toISOString() : null;
+  const lines = keys
+    .slice(0, 20)
+    .map((k) => `• ${k.keyPrefix ?? "mk_?"} (machineId=${k.machineId ?? "?"}) — hết hạn ${asIso(k.expiresAt) ?? "?"}`);
+  if (keys.length > 20) lines.push(`… và ${keys.length - 20} khoá khác`);
+  return {
+    source: MACHINE_KEY_EXPIRY_INSIGHT_SOURCE,
+    severity: "warning",
+    title: `${keys.length} khoá máy (mk_) sắp hết hạn trong ${withinDays} ngày`,
+    body:
+      `Có ${keys.length} khoá per-máy (mk_) sắp hết hạn (hoặc đã hết hạn nhưng còn active). ` +
+      `Máy dùng khoá đã hết hạn sẽ NGỪNG ingest.\n${lines.join("\n")}`,
+    recommendation:
+      "Cấp lại khoá qua machineApi.issueKey / rotateMachineKey (hiển thị mk_ MỘT lần) trước khi khoá hết hạn. " +
+      "Bản đồ toàn fleet: node scripts/machine-key-rotation-report.mjs.",
+    contextJson: {
+      withinDays,
+      count: keys.length,
+      keys: keys.map((k) => ({
+        keyId: k.id,
+        machineId: k.machineId,
+        keyPrefix: k.keyPrefix,
+        expiresAt: asIso(k.expiresAt),
+      })),
+    },
+  };
+}
+
+/**
+ * Weekly sweep entry (armed by backgroundJobs). NO-OP unless
+ * MACHINE_KEY_EXPIRY_ALERT_ENABLED=true (default OFF → no DB read at all). When ON,
+ * writes/refreshes exactly ONE 'new' machine-key-expiry insight. Fail-safe: any
+ * error is swallowed (returns created:0) — a cron must never crash the worker.
+ */
+export async function runMachineKeyExpiryAlertSweep(
+  withinDays = 14,
+): Promise<{ enabled: boolean; expiring: number; created: number; refreshed: number }> {
+  if (!machineKeyExpiryAlertEnabled()) return { enabled: false, expiring: 0, created: 0, refreshed: 0 };
+  try {
+    const keys = await listExpiringMachineKeys(withinDays);
+    if (keys.length === 0) return { enabled: true, expiring: 0, created: 0, refreshed: 0 };
+
+    const d = await db.getDb();
+    if (!d) return { enabled: true, expiring: keys.length, created: 0, refreshed: 0 };
+
+    const payload = buildMachineKeyExpiryInsight(keys, withinDays);
+
+    // Dedup: keep ONE current 'new' item rather than a weekly pile-up.
+    const [existing] = await d
+      .select({ id: aiInsights.id })
+      .from(aiInsights)
+      .where(and(eq(aiInsights.source, MACHINE_KEY_EXPIRY_INSIGHT_SOURCE), eq(aiInsights.status, "new")))
+      .limit(1);
+
+    if (existing) {
+      await d
+        .update(aiInsights)
+        .set({
+          title: payload.title,
+          body: payload.body,
+          recommendation: payload.recommendation,
+          contextJson: payload.contextJson,
+          createdAt: new Date(),
+        })
+        .where(eq(aiInsights.id, existing.id));
+      return { enabled: true, expiring: keys.length, created: 0, refreshed: 1 };
+    }
+
+    await d.insert(aiInsights).values({
+      source: payload.source,
+      machineCode: null,
+      severity: payload.severity,
+      title: payload.title,
+      body: payload.body,
+      recommendation: payload.recommendation,
+      contextJson: payload.contextJson,
+      status: "new",
+    });
+    return { enabled: true, expiring: keys.length, created: 1, refreshed: 0 };
+  } catch (err) {
+    logger.error({ err }, "[MachineAuth] machine-key expiry sweep failed");
+    return { enabled: true, expiring: 0, created: 0, refreshed: 0 };
+  }
 }
 
 // ── test helpers ──────────────────────────────────────────────────────────────

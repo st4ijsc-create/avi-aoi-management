@@ -1,4 +1,85 @@
 {
+  "enrollmentTokens": {
+    "tabLabel": "设备加入令牌",
+    "title": "设备加入令牌",
+    "description": "签发加入令牌 (met_)，让自动化/IoT 设备零接触批量自助加入——设备一次性提交令牌即可获取自身的 mk_ 密钥。",
+    "issueButton": "签发加入令牌",
+    "refresh": "刷新",
+    "searchPlaceholder": "按前缀、序列号模式或备注搜索…",
+    "serialAny": "任意序列号",
+    "revealLabelPattern": "批量加入 · {{pattern}} · {{max}} 次",
+    "revealLabelAny": "批量加入 · 任意序列号 · {{max}} 次",
+    "adminOnly": {
+      "title": "仅限管理员",
+      "desc": "只有管理员才能签发、查看和撤销设备加入令牌。"
+    },
+    "columns": {
+      "prefix": "令牌前缀",
+      "scopes": "权限范围",
+      "serialPattern": "序列号模式",
+      "uses": "已用 / 上限",
+      "expiresAt": "过期时间",
+      "note": "备注",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "有效",
+      "revoked": "已撤销",
+      "expired": "已过期",
+      "exhausted": "已用尽"
+    },
+    "empty": {
+      "title": "暂无加入令牌",
+      "desc": "签发第一个令牌，让设备批量自助加入系统。"
+    },
+    "guide": {
+      "title": "设备如何自助加入",
+      "step1Title": "签发令牌",
+      "step1Desc": "选择权限范围、序列号模式（如 SCRW-*）和使用次数。met_ 令牌仅显示一次——请立即复制或扫描二维码。",
+      "step2Title": "写入固件",
+      "step2Desc": "将此加入令牌填入设备固件/配置，设备启动时即可自助加入。",
+      "step3Title": "设备获取密钥",
+      "step3Desc": "设备携序列号提交令牌，自动获批并获得对应权限范围的 mk_ 密钥（需在服务器启用 ENROLLMENT_ENABLED）。"
+    },
+    "form": {
+      "title": "签发设备加入令牌",
+      "description": "一次性（或白名单）令牌，允许设备自助加入。明文仅显示一次。",
+      "machineType": "预期设备类型",
+      "machineTypeNone": "不指定",
+      "machineTypeHint": "可选，仅用于标注——令牌与设备类型无关；设备加入时自行声明类型。",
+      "scopes": "密钥权限范围",
+      "scopeDesc": {
+        "ingestWrite": "上报结果/遥测数据",
+        "equipmentRead": "读取设备信息",
+        "edgeSync": "同步边缘配置"
+      },
+      "scopesHint": "签发给设备的 mk_ 密钥将继承这些权限范围。默认：ingest:write。",
+      "serialPattern": "序列号模式",
+      "serialPatternPlaceholder": "如 SCRW-*",
+      "serialPatternHint": "留空 = 任意序列号。以 * 结尾表示前缀匹配（批量白名单）。",
+      "maxUses": "最大使用次数",
+      "maxUsesHint": "1 = 一次性。设更大值可批量接入。",
+      "ttlDays": "有效期（天）",
+      "ttlDaysHint": "令牌过期前的天数（最多 {{max}} 天）。",
+      "note": "备注",
+      "notePlaceholder": "如 A 线拧螺丝机批次",
+      "cancel": "取消",
+      "submit": "签发令牌"
+    },
+    "revoke": {
+      "action": "撤销",
+      "dialogTitle": "撤销加入令牌？",
+      "dialogDesc": "令牌 {{prefix}}… 将立即失效。尚未使用它加入的设备将无法再加入。",
+      "cancel": "取消",
+      "confirm": "撤销"
+    },
+    "toast": {
+      "issued": "已签发加入令牌",
+      "enrollmentDisabled": "令牌已签发，但服务器的自助加入功能处于关闭状态 (ENROLLMENT_ENABLED=false)——启用前设备将被拒绝。",
+      "revoked": "已撤销加入令牌"
+    }
+  },
   "apiFeeds": {
     "menuProcessFeed": "自动化工序数据 (Process Feed)",
     "menuTelemetry": "IoT 遥测 (Telemetry)",
@@ -9411,7 +9492,9 @@
         "claimMintFailedAfterApprove": "设备已批准，但未能生成认领令牌 — 请使用表格中的「重新发放认领令牌」操作。",
         "rotateSuccess": "API 密钥已轮换",
         "rotateError": "无法轮换 API 密钥"
-      }
+      },
+      "enrollTitle": "设备接入令牌 — 仅显示一次",
+      "enrollHint": "将此令牌写入设备固件，使其自助接入（获取各自的 API 密钥）。一个令牌可为符合序列号模式的整批设备接入。"
     },
     "pagination": {
       "showing": "显示 {{from}}–{{to}} / 共 {{total}}",

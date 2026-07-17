@@ -44,6 +44,7 @@ let started = false;
 let chargingSweepTimer: NodeJS.Timeout | null = null;
 let andonSlaSweepTimer: NodeJS.Timeout | null = null;
 let storeForwardDrainTimer: NodeJS.Timeout | null = null;
+let machineKeyExpiryTimer: NodeJS.Timeout | null = null;
 
 export function backgroundSchedulersStarted(): boolean {
   return started;
@@ -530,6 +531,40 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[StoreForward] drain timer start failed:", (err as any)?.message || err);
   }
 
+  // Doc 56 Đ2a Việc 3 — MACHINE-KEY EXPIRY ALERT weekly sweep. runMachineKeyExpiryAlertSweep
+  // self-gates on MACHINE_KEY_EXPIRY_ALERT_ENABLED (default OFF → each tick is a cheap flag
+  // check then return — no DB read). When ON it turns listExpiringMachineKeys(14) into ONE ops
+  // action-inbox item (ai_insights, deduped). Interval MACHINE_KEY_EXPIRY_SWEEP_MS (default 7d,
+  // floor 1h). Unref'd + non-overlapping (mirrors the charging sweep). A delayed initial kick
+  // (60s, no-op when the flag is off) means enabling it does not wait a full week.
+  try {
+    const rawMs = Number(process.env.MACHINE_KEY_EXPIRY_SWEEP_MS);
+    const intervalMs = Math.max(60 * 60_000, Number.isFinite(rawMs) ? rawMs : 7 * 24 * 60 * 60_000);
+    let sweeping = false;
+    const runMachineKeyExpiryOnce = async () => {
+      if (sweeping) return; // no overlap
+      sweeping = true;
+      try {
+        const { runMachineKeyExpiryAlertSweep } = await import("../services/machineAuthService");
+        const r = await runMachineKeyExpiryAlertSweep(14);
+        if (r.enabled && (r.created > 0 || r.refreshed > 0)) {
+          console.log(
+            `[MachineKeyExpiry] ${r.expiring} expiring machine key(s) → action-inbox item ${r.created ? "created" : "refreshed"}`,
+          );
+        }
+      } catch (err) {
+        console.error("[MachineKeyExpiry] sweep failed:", (err as any)?.message || err);
+      } finally {
+        sweeping = false;
+      }
+    };
+    machineKeyExpiryTimer = setInterval(() => void runMachineKeyExpiryOnce(), intervalMs);
+    if (typeof machineKeyExpiryTimer.unref === "function") machineKeyExpiryTimer.unref();
+    setTimeout(() => void runMachineKeyExpiryOnce(), 60_000).unref?.();
+  } catch (err) {
+    console.error("[MachineKeyExpiry] sweep start failed:", (err as any)?.message || err);
+  }
+
   console.log("[BackgroundJobs] cron-like schedulers started (W4-D/B7 set)");
 }
 
@@ -551,6 +586,11 @@ export function stopBackgroundSchedulers(): void {
   if (storeForwardDrainTimer) {
     clearInterval(storeForwardDrainTimer);
     storeForwardDrainTimer = null;
+  }
+  // Doc 56 Đ2a Việc 3 — idempotent no-op when the expiry sweep was never started.
+  if (machineKeyExpiryTimer) {
+    clearInterval(machineKeyExpiryTimer);
+    machineKeyExpiryTimer = null;
   }
   import("../services/reportScheduler")
     .then((m) => {

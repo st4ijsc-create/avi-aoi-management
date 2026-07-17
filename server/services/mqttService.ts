@@ -55,6 +55,10 @@ import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import mqtt, { MqttClient } from 'mqtt';
+// Doc 56 Đ2a Việc 9 — TYPE-ONLY (erased at compile → no runtime import / no cycle).
+// The bus itself is dynamically imported inside handleTelemetryBridge, only when the
+// bridge flag is on and a telemetry frame actually arrives.
+import type { CanonicalSample } from './telemetryBus';
 
 // Types
 interface MqttClientInfo {
@@ -179,6 +183,89 @@ export function handleAoiPublish(topic: string, payload: Buffer | string | unkno
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ2a Việc 9 — MQTT → TELEMETRY BUS BRIDGE (default OFF = byte-identical)
+// ════════════════════════════════════════════════════════════════════════════
+// A device (fleet-new, per-device password hash-at-rest) publishing a canonical
+// telemetry frame on `synapse/…/telemetry` is bridged into the ONE unified ingest
+// path (telemetryBus.ingestTelemetry) — the same sink the HTTP /api/ot/ingest and
+// the OT adapters use. QĐ2: the CANONICAL wire namespace is `synapse/` (the R-3
+// rebrand root), NOT the contract SUBJECT root `syn/…` (that is the internal
+// validator subject; devices publish on synapse/). Flag OFF (default) → no-op.
+
+/** Việc 9 — is the synapse/…/telemetry → bus bridge enabled? Default OFF. */
+export function mqttTelemetryBridgeEnabled(): boolean {
+  return process.env.MQTT_TELEMETRY_BRIDGE_ENABLED === 'true';
+}
+
+/** Canonical telemetry topic on the rebrand namespace (synapse/, per QĐ2). */
+const SYNAPSE_TELEMETRY_TOPIC = /^synapse\/.+\/telemetry$/;
+
+/**
+ * Parse ONE canonical telemetry message (telemetry.schema.json: asset_id/ts/metrics[])
+ * into CanonicalSample[]. `asset_id` of the form "machine:<n>" resolves to machineId;
+ * anything else is treated as a deviceId (the bus resolves machineId by machines.code).
+ * PURE + fail-safe: a non-telemetry / non-JSON payload yields [] (never throws).
+ * Exported for direct unit testing.
+ */
+export function parseCanonicalTelemetry(topic: string, payload: Buffer | string | unknown): CanonicalSample[] {
+  let msg: any;
+  try {
+    const raw = Buffer.isBuffer(payload)
+      ? payload.toString()
+      : typeof payload === 'string'
+        ? payload
+        : JSON.stringify(payload);
+    msg = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!msg || typeof msg !== 'object' || !Array.isArray(msg.metrics)) return [];
+  const assetId = typeof msg.asset_id === 'string' ? msg.asset_id : null;
+  if (!assetId) return [];
+
+  const machineMatch = /^machine:(\d+)$/.exec(assetId);
+  const machineId = machineMatch ? Number(machineMatch[1]) : null;
+  const deviceId = machineMatch ? null : assetId;
+  const batchTs = typeof msg.ts === 'string' ? new Date(msg.ts) : undefined;
+  const validTs = (d: Date | undefined): Date | undefined => (d && !Number.isNaN(d.getTime()) ? d : undefined);
+
+  const out: CanonicalSample[] = [];
+  for (const m of msg.metrics) {
+    if (!m || typeof m.name !== 'string') continue;
+    const v = m.value;
+    const value = typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
+    out.push({
+      ts: validTs(typeof m.ts === 'string' ? new Date(m.ts) : batchTs),
+      machineId,
+      deviceId,
+      protocol: 'mqtt',
+      metric: m.name,
+      value,
+      unit: typeof m.unit === 'string' ? m.unit : null,
+      quality: m.quality === 'good' || m.quality === 'bad' || m.quality === 'uncertain' ? m.quality : 'good',
+      meta: { topic, ...(typeof msg.seq === 'number' ? { seq: msg.seq } : {}) },
+    });
+  }
+  return out;
+}
+
+/**
+ * Bridge an inbound `synapse/…/telemetry` frame into the unified telemetry bus.
+ * NO-OP unless MQTT_TELEMETRY_BRIDGE_ENABLED=true AND the topic matches. Dynamic
+ * import keeps the bus off this module's static graph; fire-and-forget + fail-safe
+ * so a bad frame never throws into the aedes publish handler.
+ */
+export function handleTelemetryBridge(topic: string, payload: Buffer | string | unknown): void {
+  if (!mqttTelemetryBridgeEnabled()) return;
+  if (!SYNAPSE_TELEMETRY_TOPIC.test(topic)) return;
+  const samples = parseCanonicalTelemetry(topic, payload);
+  if (samples.length === 0) return;
+  void import('./telemetryBus')
+    .then(({ ingestTelemetry }) => ingestTelemetry(samples))
+    .catch((err) => console.error('[MQTT] telemetry bridge ingest failed:', (err as Error)?.message || err));
+}
+
 /**
  * F3b — Thân (đã tách) của handler aedes.on('publish') cho phần mirror/bridge UNS.
  *
@@ -211,6 +298,11 @@ export function processAedesPublish(topic: string, payload: Buffer | string | un
   void import('./sensorIngestService')
     .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload))
     .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
+
+  // Doc 56 Đ2a Việc 9 — bridge synapse/…/telemetry frames into the unified
+  // telemetry bus. No-op unless MQTT_TELEMETRY_BRIDGE_ENABLED=true and the topic
+  // matches (fire-and-forget + fail-safe inside).
+  handleTelemetryBridge(topic, payload);
 }
 
 /**

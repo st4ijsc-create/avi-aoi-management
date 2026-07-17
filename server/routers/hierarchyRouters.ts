@@ -5,7 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
-import { MACHINE_TYPES, DEVICE_CLASS_BY_TYPE } from "../constants/machineTypes";
+import { MACHINE_TYPES, DEVICE_CLASS_BY_TYPE, deviceClassOf } from "../constants/machineTypes";
 import { requirePermission } from "../_core/accessControl";
 import {
   eqGovernEnabled,
@@ -37,7 +37,46 @@ import { logger } from "../logger";
 import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
 // Doc 51 P3 §5.1 — enroll issues the scoped mk_ key through the SAME issuer as
 // rotation/wizard, and reuses its published-scope validator.
-import { issueMachineKey, isValidScopeGrant } from "../services/machineAuthService";
+// Doc 56 Đ2a — issueFleetMachineKey (fleet TTL) + the mk_-only fleet flag.
+import {
+  issueMachineKey,
+  isValidScopeGrant,
+  issueFleetMachineKey,
+  machineCredMkOnlyEnabled,
+} from "../services/machineAuthService";
+
+// ── Doc 56 Đ2a — credential/identity flags (default OFF = byte-identical) ─────
+/** Việc 7 — open machine-approval RBAC from admin-only to a module permission. */
+function machineApproveRbacOpenEnabled(): boolean {
+  return process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED === "true";
+}
+/** Việc 4 — IoT device-class behaviour (virtual station on approve). */
+function iotDeviceClassEnabled(): boolean {
+  return process.env.IOT_DEVICE_CLASS_ENABLED === "true";
+}
+
+/**
+ * Việc 7 — approval-gate factory. Default (flag OFF) is byte-identical to
+ * `adminProcedure` (admin-only, same FORBIDDEN message). When
+ * MACHINE_APPROVE_RBAC_OPEN_ENABLED=true it delegates to a module permission
+ * (`machine_registration`) so a non-admin with that grant can approve/list-pending.
+ * regenerateApiKey stays admin-only (never uses this gate). SoD (creator ≠ approver)
+ * lives in the lifecycle layer and is untouched.
+ *
+ * NOTE (orchestrator): `machine_registration` is a NEW moduleName — see report;
+ * non-admins need it seeded (checkPermission reads per-USER rows).
+ */
+function machineRegistrationGate(action: "canView" | "canEdit") {
+  return async (opts: { ctx: any; next: any }) => {
+    if (machineApproveRbacOpenEnabled()) {
+      return requirePermission("machine_registration", action)(opts);
+    }
+    if (opts.ctx.user?.role !== "admin") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return opts.next({ ctx: opts.ctx });
+  };
+}
 
 // ── Doc 27 Đợt 3 / W3-B — M5 audit helpers ──────────────────────────────────
 // EVERY master-data mutation in this file (corporate hierarchy + machines) now
@@ -865,13 +904,18 @@ export const machineRouter = router({
   // ============ ADMIN: Quản lý đăng ký máy ============
 
   // Danh sách máy chờ duyệt
-  listPending: adminProcedure
+  // Doc 56 Đ2a Việc 7 — admin-only by default; machine_registration/canView when
+  // MACHINE_APPROVE_RBAC_OPEN_ENABLED=true (gate is byte-identical to adminProcedure OFF).
+  listPending: protectedProcedure
+    .use(machineRegistrationGate("canView"))
     .query(async () => {
       return db.getPendingMachines();
     }),
 
   // Admin duyệt máy + mapping
-  approve: adminProcedure
+  // Doc 56 Đ2a Việc 7 — admin-only by default; machine_registration/canEdit when the flag is on.
+  approve: protectedProcedure
+    .use(machineRegistrationGate("canEdit"))
     .input(z.object({
       id: z.number(),
       code: z.string().min(1).max(50).optional(),     // Đặt lại mã máy chuẩn hoá
@@ -894,14 +938,36 @@ export const machineRouter = router({
         }
       }
 
-      // Sinh APIKey nếu chưa có
-      const apiKey = machine.apiKey || `mach_${nanoid(32)}`;
+      // Doc 56 Đ2a Việc 2/4 — resolve the credential + station policy for this fleet.
+      const deviceClass = deviceClassOf(machine.machineType);
+      const mkOnly = machineCredMkOnlyEnabled() && deviceClass !== "aoi_avi";
+
+      // Việc 4 — an IoT device the admin did NOT explicitly place is parked on the
+      // workshop's virtual IOT station (analytics-excluded). Best-effort + gated by
+      // IOT_DEVICE_CLASS_ENABLED (OFF → stationId is exactly today's value).
+      let stationId = input.stationId || machine.stationId;
+      if (iotDeviceClassEnabled() && deviceClass === "iot" && !input.stationId) {
+        try {
+          const line = machine.stationId ? await db.getLineByStationId(machine.stationId) : null;
+          const workshop = line ? await db.getWorkshopById(line.workshopId) : null;
+          stationId = await db.ensureIotVirtualStation(workshop?.code ?? "");
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] IoT virtual-station assignment failed — keeping the current station",
+          );
+        }
+      }
+
+      // Việc 2 — the mk_-only fleet does NOT persist a plaintext machines.apiKey; it
+      // mints a per-device mk_ (below). The AOI/AVI fleet keeps today's mach_ key.
+      const legacyApiKey = mkOnly ? undefined : (machine.apiKey || `mach_${nanoid(32)}`);
 
       await db.approveMachine(input.id, {
         code: input.code || machine.code,
         name: input.name || machine.name,
-        stationId: input.stationId || machine.stationId,
-        apiKey,
+        stationId,
+        ...(legacyApiKey !== undefined ? { apiKey: legacyApiKey } : {}),
       });
 
       // Doc 56 Đ0 việc 8 — stamp the governance key machines.device_type_key at
@@ -923,37 +989,57 @@ export const machineRouter = router({
         );
       }
 
-      // Doc 51 P0 / R1: mint the ONE-TIME claim token the technician types into
-      // the machine (the machine can no longer read its key off `config`).
-      // Best-effort BY DESIGN: the approval is already committed, so a token
-      // failure must not 500 the admin — the token is re-mintable at any time
-      // via `issueClaimToken`.
+      // Credential handoff. mk_-only fleet: a per-device mk_ shown ONCE (no claim
+      // token, no machines.apiKey). AOI fleet: the ONE-TIME claim token the technician
+      // types into the machine (Doc 51 P0 / R1). BOTH best-effort BY DESIGN — the
+      // approval is already committed, so a credential failure must not 500 the admin.
+      let mkKey: Awaited<ReturnType<typeof issueFleetMachineKey>> | null = null;
       let claim: { token: string; tokenPrefix: string; expiresAt: Date } | null = null;
-      try {
-        claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
-      } catch (e) {
-        logger.warn(
-          { err: e, machineId: input.id },
-          "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
-        );
+      if (mkOnly) {
+        try {
+          mkKey = await issueFleetMachineKey({
+            machineId: input.id,
+            name: `approve:${input.code || machine.code}`,
+            createdBy: ctx.user?.id ?? null,
+          });
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] mk_ key mint failed — machine approved without a credential; re-issue via machineApi.issueKey",
+          );
+        }
+      } else {
+        try {
+          claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
+        } catch (e) {
+          logger.warn(
+            { err: e, machineId: input.id },
+            "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
+          );
+        }
       }
 
-      // M5: audit — snapshots NEVER include the apiKey, and NEVER the claim
+      // M5: audit — snapshots NEVER include a plaintext key, and NEVER the claim
       // token plaintext (only its non-secret prefix + expiry).
       await auditAction(ctx, {
         action: "machine.approve", entityType: ENTITY_TYPES.MACHINE, entityId: input.id, entityName: input.code || machine.code,
         before: { code: machine.code, name: machine.name, stationId: machine.stationId, registrationStatus: machine.registrationStatus },
-        after: { code: input.code || machine.code, name: input.name || machine.name, stationId: input.stationId || machine.stationId, registrationStatus: "approved" },
-        metadata: claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined,
+        after: { code: input.code || machine.code, name: input.name || machine.name, stationId, registrationStatus: "approved" },
+        metadata: mkOnly
+          ? { mkOnly: true, deviceClass, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
+          : (claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined),
       });
 
       return {
         success: true,
-        apiKey,
-        /** Shown to the admin ONCE — hand to the technician, expires shortly. */
+        /** mk_-only → the per-device mk_ (shown ONCE, never stored); AOI fleet → mach_ key. */
+        apiKey: mkOnly ? (mkKey?.plaintextKey ?? null) : legacyApiKey!,
+        keyId: mkKey?.id ?? null,
+        mkOnly,
+        /** Shown to the admin ONCE — hand to the technician, expires shortly (AOI fleet only). */
         claimToken: claim?.token ?? null,
         claimExpiresAt: claim?.expiresAt ?? null,
-        message: "Machine approved and mapped",
+        message: mkOnly ? "Machine approved — per-device key (mk_) issued (shown once)" : "Machine approved and mapped",
       };
     }),
 

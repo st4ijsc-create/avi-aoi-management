@@ -38,7 +38,8 @@ import {
   ArrowRight,
   LayoutGrid,
   Network,
-  ShieldCheck
+  ShieldCheck,
+  Ticket
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 // doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
@@ -55,6 +56,8 @@ import { StationsTab } from "@/components/factoryConfig/StationsTab";
 import { MachinesTab } from "@/components/factoryConfig/MachinesTab";
 import { ShiftsTab } from "@/components/factoryConfig/ShiftsTab";
 import { StagesTab } from "@/components/factoryConfig/StagesTab";
+// doc 56 Đợt 2 việc 1 — zero-touch device enrollment tokens (admin-only tab).
+import { EnrollmentTokensTab } from "@/components/factoryConfig/EnrollmentTokensTab";
 import type { NavTarget } from "@/components/factoryConfig/factoryModel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 // doc 47 IA Đợt 1 — the products/process managers now live only at their own routes
@@ -752,6 +755,10 @@ export default function DataSettings() {
         { value: "lines", label: t("settings.sidebar.line"), icon: <GitBranch className="h-3.5 w-3.5" /> },
         { value: "stations", label: t("settings.sidebar.inspectionStation"), icon: <Cpu className="h-3.5 w-3.5" /> },
         { value: "machines", label: t("settings.sidebar.inspectionMachine"), icon: <Cpu className="h-3.5 w-3.5" /> },
+        // doc 56 Đợt 2 — zero-touch enrollment tokens (admin-only; procedures are adminProcedure).
+        ...(isAdmin
+          ? [{ value: "enrollment-tokens", label: t("enrollmentTokens.tabLabel"), icon: <Ticket className="h-3.5 w-3.5" /> }]
+          : []),
       ],
     },
     {
@@ -1195,6 +1202,12 @@ export default function DataSettings() {
               setDeleteMachineDialogOpen={setDeleteMachineDialogOpen}
               restoreMachineMutation={restoreMachineMutation}
             />
+          </TabsContent>
+
+          {/* doc 56 Đợt 2 việc 1 — Mã gia nhập thiết bị (zero-touch enrollment tokens).
+              Self-gated to admin inside the component (backend is adminProcedure). */}
+          <TabsContent value="enrollment-tokens">
+            <EnrollmentTokensTab />
           </TabsContent>
 
           {/* Shifts Tab */}

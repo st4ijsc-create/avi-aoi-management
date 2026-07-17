@@ -1,4 +1,85 @@
 {
+  "enrollmentTokens": {
+    "tabLabel": "Device Enrollment Tokens",
+    "title": "Device Enrollment Tokens",
+    "description": "Issue enrollment tokens (met_) so automation/IoT machines self-enroll in bulk with zero touch — a machine presents the token once and receives its own mk_ key.",
+    "issueButton": "Issue enrollment token",
+    "refresh": "Refresh",
+    "searchPlaceholder": "Search by prefix, serial pattern or note…",
+    "serialAny": "Any serial",
+    "revealLabelPattern": "Bulk enrollment · {{pattern}} · {{max}} use(s)",
+    "revealLabelAny": "Bulk enrollment · any serial · {{max}} use(s)",
+    "adminOnly": {
+      "title": "Administrators only",
+      "desc": "Only admins can issue, view and revoke device enrollment tokens."
+    },
+    "columns": {
+      "prefix": "Token prefix",
+      "scopes": "Scopes",
+      "serialPattern": "Serial pattern",
+      "uses": "Used / Max",
+      "expiresAt": "Expires",
+      "note": "Note",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "exhausted": "Exhausted"
+    },
+    "empty": {
+      "title": "No enrollment tokens yet",
+      "desc": "Issue your first token so machines can self-enroll into the system in bulk."
+    },
+    "guide": {
+      "title": "How machines self-enroll",
+      "step1Title": "Issue a token",
+      "step1Desc": "Pick scopes, a serial pattern (e.g. SCRW-*) and a use count. The met_ token is shown ONCE — copy it or scan the QR right away.",
+      "step2Title": "Load it into firmware",
+      "step2Desc": "Enter this enrollment token into the machine firmware/config so the machine self-enrolls on boot.",
+      "step3Title": "Machine gets its key",
+      "step3Desc": "The machine sends the token with its serial, is auto-approved and receives a scoped mk_ key (requires ENROLLMENT_ENABLED on the server)."
+    },
+    "form": {
+      "title": "Issue a device enrollment token",
+      "description": "A single-use (or allowlisted) token that lets a machine self-enroll. The plaintext is shown only once.",
+      "machineType": "Intended machine type",
+      "machineTypeNone": "Unspecified",
+      "machineTypeHint": "Optional, for labelling only — the token is machine-type-agnostic; the machine declares its own type when it enrolls.",
+      "scopes": "Key scopes",
+      "scopeDesc": {
+        "ingestWrite": "Push result/telemetry data",
+        "equipmentRead": "Read equipment info",
+        "edgeSync": "Sync edge configuration"
+      },
+      "scopesHint": "The mk_ key issued to the machine inherits exactly these scopes. Default: ingest:write.",
+      "serialPattern": "Serial pattern",
+      "serialPatternPlaceholder": "e.g. SCRW-*",
+      "serialPatternHint": "Empty = any serial. End with * for a prefix match (bulk allowlist).",
+      "maxUses": "Max uses",
+      "maxUsesHint": "1 = single use. Set higher to onboard a whole batch.",
+      "ttlDays": "Validity (days)",
+      "ttlDaysHint": "Days until the token expires (max {{max}}).",
+      "note": "Note",
+      "notePlaceholder": "e.g. Screwdriver batch, line A",
+      "cancel": "Cancel",
+      "submit": "Issue token"
+    },
+    "revoke": {
+      "action": "Revoke",
+      "dialogTitle": "Revoke enrollment token?",
+      "dialogDesc": "Token {{prefix}}… will be invalidated immediately. Machines that have not enrolled with it can no longer enroll.",
+      "cancel": "Cancel",
+      "confirm": "Revoke"
+    },
+    "toast": {
+      "issued": "Enrollment token issued",
+      "enrollmentDisabled": "Token issued, but self-enrollment is OFF on the server (ENROLLMENT_ENABLED=false) — machines will be refused until it is enabled.",
+      "revoked": "Enrollment token revoked"
+    }
+  },
   "apiFeeds": {
     "menuProcessFeed": "Automation Process Feed",
     "menuTelemetry": "IoT Telemetry",
@@ -9628,7 +9709,9 @@
         "claimMintFailedAfterApprove": "Machine approved but no claim token could be minted — use the 'Reissue claim token' action in the table.",
         "rotateSuccess": "API key rotated",
         "rotateError": "Could not rotate API key"
-      }
+      },
+      "enrollTitle": "Device enrollment token — shown once",
+      "enrollHint": "Enter this token into the device firmware so it can self-enroll (obtain its own API key). One token can onboard a whole batch matching the serial pattern."
     },
     "pagination": {
       "showing": "Showing {{from}}–{{to}} of {{total}}",
