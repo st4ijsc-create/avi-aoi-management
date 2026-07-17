@@ -7,7 +7,18 @@
 2. **Fiducial registration** (căn toạ độ server-side bằng affine)
 3. **Image single-tx thật** (gộp header + measurement vào 1 physical transaction)
 
-**Trạng thái:** ✅ **USER ĐÃ DUYỆT 14/14 quyết định (2026-07-17)** — đang thực thi **tuần tự: (1) Image single-tx → (2) Fiducial → (3) Product-variant**.
+**Trạng thái:** ✅ **THỰC THI XONG BACKEND (2026-07-17)** — 6 commit, tsc 0, test xanh, mọi cờ default-OFF byte-identical.
+
+**§0-bis — Đã thực thi (verify độc lập: tsc heap-8GB + test cả 2 trạng thái cờ + đọc diff):**
+| Item | Commit | Verify |
+|---|---|---|
+| **1. Image single-tx** (PA-A reserve-id, cờ `INSPECTION_SINGLE_TX_ENABLED`) | `52566261` | persistInspectionAtomic; ★measurement-fail → 0 header rỗng; OFF regression 28 unmodified |
+| **2. Fiducial P0 lib** (similarity Umeyama, QĐ#6) | `760461db` | 15 test, mutation-proof ép-similarity |
+| **2. Fiducial P1 wiring** (`MACHINE_FIDUCIAL_REGISTRATION`) | `1a03d7f4` | Case-0 căn toạ độ; residual-gate 5px fallback; 51 test |
+| **3. Variant PV0** (schema+resolver, mig 0286) | `cc2d9c1f` | backfill base-variant; đổi unique index guarded; fan-out bump; 55 test |
+| **3. Variant PV1/PV2** (sync+ingest, cờ `PRODUCT_VARIANT_ENABLED`) | `a92e52e4` | variantCode plumbing; 107 test cùng xanh (không regression chéo) |
+
+**HOÃN (ghi rõ, không tô hồng):** Item 2 Phase P3 runtime defect-bbox (tuỳ chọn) · Item 3 spec-gate variant-override (grade theo point-def, override chỉ ở READ sync — moot khi cờ OFF) · deltaSync tombstone per-variant · syncMeasurementPoints write-back variant · addPoint/updatePoint (productRouters) · MQTT ACL variantCode (mqttService) · **PV3-UI frontend CRUD variant**. Tất cả sau cờ OFF nên chưa ảnh hưởng production.
 
 **§6 — Chốt quyết định (user duyệt):**
 - **Chung:** lộ trình cờ 2-bước (default-OFF → ON ở doc sau) ✔ · làm tuần tự ✔.
