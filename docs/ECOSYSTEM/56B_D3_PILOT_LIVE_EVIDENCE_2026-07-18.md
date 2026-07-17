@@ -82,6 +82,19 @@ get_fleet_process_summary: toàn bộ 5904 bản ghi, FPY chung 98.2% · FCT/ICT
 
 **Verdict script: ✅ exit 0.** Green-gate: tsc 0 lỗi · vitest 7 (F7) + 190 (toàn aiLocalTools, KHÔNG vỡ đếm tool) · intent routing xác minh (device-health + fleet-summary định tuyến đúng qua triggers). Lưu ý honest: `MACHINE_CODE_REGEX` chung cắt "SCRW-SIM-01"→"SIM-01" khi hỏi tự do (dùng context selectedMachineCode khi mở từ trang máy) — hành vi có sẵn, không sửa regex chung trong Đ6.
 
+## Đ7 — NHÂN RỘNG DISPENSING (họ máy tự động hoá thứ 2): Bằng chứng LIVE (2026-07-18)
+
+Chứng **chuẩn hoá TỔNG QUÁT**: một máy ĐIỂM KEO (DISPENSING / `glue_dispense`) chảy qua ĐÚNG pipeline mà máy vít đã chứng ở Đ3 — **zero endpoint mới**. mig 0295 bù spec-limits còn thiếu cho `glue_dispense` (volume 0.15–0.35 ml, pressure 180–320 kPa) + `weld_spot` (current 1800–2600 A, time 80–220 ms). `scripts/pilot-dispensing.mjs` provision `GLUE-SIM-01` (id245, DISPENSING) + mk_, gửi 10 chu trình qua **CHÍNH `machineApi.submitProcessResult`** (auth mk_ + stepType-validate + spec-gate vs 0295 + idempotency), 2 giọt thiếu keo ép dưới LSL:
+
+```
+EMIT glue_dispense: posted=10 accepted=10 pass=8 fail=2
+DB process_results(GLUE-SIM-01, glue_dispense) = 10 rows · analytics pass=8 fail=2
+SPC volume: CL=0.2158 [-0.0010–0.4326] OOC=0/10 Cpk=0.30
+AI get_device_health: DISPENSING/automation — 10 bản ghi, đạt 8/lỗi 2 FPY 80%, SPC volume computed.
+```
+
+**Verdict script: ✅ exit 0** — cùng ingest+spec-gate+SPC+AI như máy vít, chỉ khác metric (torque→volume/pressure) + stepType (screw_tightening→glue_dispense). WELDER đã có step-type + spec (0289+0295) sẵn nhân rộng tương tự. Đội cơ điện: dùng `scripts/sim/screwdriver-emitter.mjs` làm khung, đổi metrics/stepType (xem doc 58).
+
 ## CÒN LẠI (chưa chạy trong phiên này)
 
 - Kill-test store-forward (tắt DB giữa chừng → buffer WAL → replay): cơ chế `processStoreForward` đã test unit; chưa diễn tập với DB down thật.
