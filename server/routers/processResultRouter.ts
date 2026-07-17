@@ -18,9 +18,15 @@ import {
   listProcessResultsBySerial,
   aggregateProcessResultStats,
   getProcessMetricSeries,
+  getProcessMetricPoints,
+  aggregateProcessResultStatsByType,
+  refreshProcessResultDaily,
+  readProcessResultDaily,
   listActiveStepTypes,
 } from "../db/processResult";
-import { MACHINE_TYPES } from "../constants/machineTypes";
+import { buildProcessControlChart } from "../services/processSpc";
+import { getTelemetrySeries } from "../db/otTelemetry";
+import { MACHINE_TYPES, deviceClassOf } from "../constants/machineTypes";
 
 const recordInput = z
   .object({
@@ -112,5 +118,103 @@ export const processResultRouter = router({
     .query(async ({ input }) => {
       if (!processAnalyticsEnabled()) return [];
       return listActiveStepTypes(input?.machineType);
+    }),
+
+  // ── doc 56 Đ5 — SPC / fleet rollup / env / mart ───────────────────────────
+  /** Server-authoritative I-MR control chart for one metric (UCL/LCL + violations). */
+  spcChart: protectedProcedure
+    .input(
+      z.object({
+        machineId: z.number().int().positive().optional(),
+        stepType: z.string().max(64).optional(),
+        metricKey: z.string().min(1).max(64),
+        sinceDays: z.number().int().positive().max(365).optional(),
+        usl: z.number().optional(),
+        lsl: z.number().optional(),
+        limit: z.number().int().positive().max(5000).optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const empty = {
+        ok: false, n: 0, metricKey: input.metricKey, limits: null,
+        estimatedSigma: 0, outOfControlCount: 0, points: [], capability: null,
+      };
+      if (!processAnalyticsEnabled()) return empty;
+      const points = await getProcessMetricPoints({
+        machineId: input.machineId,
+        stepType: input.stepType,
+        metricKey: input.metricKey,
+        since: sinceFromDays(input.sinceDays ?? 7),
+        limit: input.limit,
+      });
+      return buildProcessControlChart(input.metricKey, points, { usl: input.usl, lsl: input.lsl });
+    }),
+
+  /** Fleet rollup — pass/fail by machineType, tagged with its deviceClass. */
+  fleetRollup: protectedProcedure
+    .input(
+      z.object({
+        sinceDays: z.number().int().positive().max(365).optional(),
+        machineType: z.string().max(40).optional(),
+      }).optional(),
+    )
+    .query(async ({ input }) => {
+      if (!processAnalyticsEnabled()) return [];
+      const rows = await aggregateProcessResultStatsByType({
+        since: sinceFromDays(input?.sinceDays ?? 7),
+        machineType: input?.machineType,
+      });
+      return rows.map((r) => ({
+        ...r,
+        deviceClass: r.machineType ? deviceClassOf(r.machineType) : null,
+        firstPassYield: r.pass + r.fail + r.warn > 0 ? r.pass / (r.pass + r.fail + r.warn) : null,
+      }));
+    }),
+
+  /** IoT / environmental telemetry series (temp, humidity, …) for one device. */
+  envSeries: protectedProcedure
+    .input(
+      z.object({
+        machineId: z.number().int().positive(),
+        tagKey: z.string().min(1).max(64),
+        sinceDays: z.number().int().positive().max(365).optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      if (!processAnalyticsEnabled()) return [];
+      return getTelemetrySeries({
+        machineId: input.machineId,
+        tagKey: input.tagKey,
+        since: sinceFromDays(input.sinceDays ?? 7),
+      });
+    }),
+
+  /** Read the daily mart (fast dashboard trend). */
+  dailyRollup: protectedProcedure
+    .input(
+      z.object({
+        sinceDays: z.number().int().positive().max(365).optional(),
+        machineId: z.number().int().positive().optional(),
+        machineType: z.string().max(40).optional(),
+        limit: z.number().int().positive().max(5000).optional(),
+      }).optional(),
+    )
+    .query(async ({ input }) => {
+      if (!processAnalyticsEnabled()) return [];
+      return readProcessResultDaily({
+        sinceDays: input?.sinceDays,
+        machineId: input?.machineId,
+        machineType: input?.machineType,
+        limit: input?.limit,
+      });
+    }),
+
+  /** Idempotent mart refresh (trailing window). Returns rollup rows written. */
+  refreshDaily: protectedProcedure
+    .input(z.object({ sinceDays: z.number().int().positive().max(365).optional() }).optional())
+    .mutation(async ({ input }) => {
+      if (!processAnalyticsEnabled()) return { written: 0, enabled: false };
+      const written = await refreshProcessResultDaily(input?.sinceDays ?? 30);
+      return { written, enabled: true };
     }),
 });

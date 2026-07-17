@@ -56,7 +56,7 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, Legend,
 } from "recharts";
 import {
-  Activity, TrendingUp, RefreshCw, Info, Search, ClipboardList, Percent,
+  Activity, TrendingUp, RefreshCw, Info, Search, ClipboardList, Percent, LayoutGrid,
 } from "lucide-react";
 
 // ── small helpers ────────────────────────────────────────────────────────────
@@ -187,12 +187,22 @@ function ProcessAnalyticsContent({ machineId: fixedMachineId, embedded = false }
     { serialNumber: serial, limit: 200 },
     { enabled: !embedded && serial.length > 0 },
   );
+  // doc 56 Đ5 — server-authoritative SPC (I-MR control limits + Cpk) for the metric.
+  const spcQ = trpc.processResult.spcChart.useQuery(
+    { ...(machineId != null ? { machineId } : {}), ...(stepType !== "all" ? { stepType } : {}), metricKey, sinceDays },
+    { enabled: metricKey.length > 0 },
+  );
+  // doc 56 Đ5 — fleet rollup by machineType (cross-machine page only).
+  const fleetQ = trpc.processResult.fleetRollup.useQuery({ sinceDays }, { enabled: !embedded });
 
   const refetchAll = () => {
     void statsQ.refetch();
     void seriesQ.refetch();
+    void spcQ.refetch();
+    if (!embedded) void fleetQ.refetch();
     if (serial.length > 0) void serialQ.refetch();
   };
+  const spc = spcQ.data;
 
   // ── derived: pass/fail ──
   const stats = statsQ.data ?? { pass: 0, fail: 0, warn: 0, skip: 0 };
@@ -431,7 +441,17 @@ function ProcessAnalyticsContent({ machineId: fixedMachineId, embedded = false }
                       }}
                       contentStyle={{ fontSize: 12 }}
                     />
-                    {band && (
+                    {/* doc 56 Đ5 — prefer server-authoritative I-MR control limits; fall back to the client ±2σ band. */}
+                    {spc?.ok && spc.limits ? (
+                      <>
+                        <ReferenceLine y={spc.limits.CL} stroke={LINE_COLOR} strokeDasharray="4 4" strokeOpacity={0.7}
+                          label={{ value: "CL", fontSize: 10, fill: LINE_COLOR, position: "right" }} />
+                        <ReferenceLine y={spc.limits.UCL} stroke={BAND_COLOR} strokeDasharray="2 4" strokeOpacity={0.7}
+                          label={{ value: "UCL", fontSize: 10, fill: BAND_COLOR, position: "right" }} />
+                        <ReferenceLine y={spc.limits.LCL} stroke={BAND_COLOR} strokeDasharray="2 4" strokeOpacity={0.7}
+                          label={{ value: "LCL", fontSize: 10, fill: BAND_COLOR, position: "right" }} />
+                      </>
+                    ) : band ? (
                       <>
                         <ReferenceLine y={band.mean} stroke={LINE_COLOR} strokeDasharray="4 4" strokeOpacity={0.6}
                           label={{ value: t("processAnalytics.mean", "TB"), fontSize: 10, fill: LINE_COLOR, position: "right" }} />
@@ -440,7 +460,7 @@ function ProcessAnalyticsContent({ machineId: fixedMachineId, embedded = false }
                         <ReferenceLine y={band.lower} stroke={BAND_COLOR} strokeDasharray="2 4" strokeOpacity={0.6}
                           label={{ value: "-2σ", fontSize: 10, fill: BAND_COLOR, position: "right" }} />
                       </>
-                    )}
+                    ) : null}
                     <Line type="monotone" dataKey="value" stroke={LINE_COLOR} strokeWidth={1.8} dot={false} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -450,6 +470,22 @@ function ProcessAnalyticsContent({ machineId: fixedMachineId, embedded = false }
                   <span>{t("processAnalytics.mean", "TB")}: <span className="font-mono text-foreground">{fmt(band.mean, 3)}</span></span>
                   <span>σ: <span className="font-mono text-foreground">{fmt(band.std, 3)}</span></span>
                   <span>{t("processAnalytics.buckets", "Số bucket")}: <span className="font-mono text-foreground">{chartData.length}</span></span>
+                </div>
+              )}
+              {/* doc 56 Đ5 — SPC (I-MR) verdict from the server: control limits, σ̂, Cpk, #out-of-control. */}
+              {spc?.ok && spc.limits && (
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{t("processAnalytics.spc", "SPC (I-MR)")}:</span>
+                  <span>UCL <span className="font-mono text-foreground">{fmt(spc.limits.UCL, 3)}</span></span>
+                  <span>CL <span className="font-mono text-foreground">{fmt(spc.limits.CL, 3)}</span></span>
+                  <span>LCL <span className="font-mono text-foreground">{fmt(spc.limits.LCL, 3)}</span></span>
+                  <span>σ̂ <span className="font-mono text-foreground">{fmt(spc.estimatedSigma, 3)}</span></span>
+                  {spc.capability?.cpk != null && (
+                    <span>Cpk <span className={`font-mono ${spc.capability.cpk >= 1.33 ? "text-success" : spc.capability.cpk >= 1 ? "text-warning" : "text-destructive"}`}>{fmt(spc.capability.cpk, 2)}</span></span>
+                  )}
+                  <span className={spc.outOfControlCount > 0 ? "text-destructive" : ""}>
+                    {t("processAnalytics.outOfControl", "Ngoài kiểm soát")}: <span className="font-mono">{spc.outOfControlCount}/{spc.n}</span>
+                  </span>
                 </div>
               )}
               {band && (
@@ -462,6 +498,54 @@ function ProcessAnalyticsContent({ machineId: fixedMachineId, embedded = false }
           </AsyncBoundary>
         </CardContent>
       </Card>
+
+      {/* ── doc 56 Đ5 — Fleet rollup by machineType / deviceClass (cross-machine page only) ── */}
+      {!embedded && (fleetQ.data ?? []).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              {t("processAnalytics.fleetTitle", "Tổng hợp theo loại máy")}
+            </CardTitle>
+            <CardDescription>
+              {t("processAnalytics.fleetDesc", "Pass-rate & first-pass yield theo loại thiết bị trong kỳ")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("processAnalytics.colType", "Loại máy")}</TableHead>
+                    <TableHead>{t("processAnalytics.colClass", "Nhóm")}</TableHead>
+                    <TableHead className="text-right">{t("processAnalytics.colTotal", "Tổng")}</TableHead>
+                    <TableHead className="text-right">{t("processAnalytics.colPass", "Đạt")}</TableHead>
+                    <TableHead className="text-right">{t("processAnalytics.colFail", "Lỗi")}</TableHead>
+                    <TableHead className="text-right">{t("processAnalytics.colFpy", "FPY")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(fleetQ.data ?? []).map((r) => {
+                    const fpy = r.firstPassYield;
+                    return (
+                      <TableRow key={String(r.machineType ?? "?")}>
+                        <TableCell className="font-mono text-xs">{r.machineType ?? "—"}</TableCell>
+                        <TableCell className="text-xs capitalize text-muted-foreground">{r.deviceClass ?? "—"}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{r.total}</TableCell>
+                        <TableCell className="text-right font-mono text-xs text-success">{r.pass}</TableCell>
+                        <TableCell className="text-right font-mono text-xs text-destructive">{r.fail}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {fpy != null ? <span className={fpy >= 0.95 ? "text-success" : fpy >= 0.8 ? "text-warning" : "text-destructive"}>{fmt(fpy * 100, 1)}%</span> : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Optional — recent rows by serial (standalone page only) ── */}
       {!embedded && (

@@ -50,6 +50,19 @@ Sim `scripts/sim/screwdriver-emitter.mjs` → **HTTP POST `/api/v1/ingest/proces
 
 **Verdict script: ✅ exit 0** — deploy→check→get→ack(in_sync)→drift, shadow bền, drift phát hiện. Cột `machine_config_state` (mig 0293) mang desired* (đặt lúc deploy) vs reported* (đặt lúc ack) + driftState; checksum = tín hiệu drift chuẩn (fallback code+version). Đây là hiện thực hóa LIVE của "tiêu chuẩn hóa cài đặt & đồng bộ cấu hình" — KHÔNG còn hard-wire measurement-points AOI: cùng đường ống phục vụ recipe (screw/dispense/weld), device_settings (IoT), points (AOI, alias đọc y hệt legacy), model (reserved).
 
+## Đ5 — DASHBOARD/SPC/MART/FLEET: Bằng chứng LIVE (2026-07-18)
+
+Tầng **phân tích dữ liệu theo deviceType** — NỐI process_results (dữ liệu automation/IoT vừa chảy) vào SPC/mart sẵn có, KHÔNG viết lại: `server/utils/spc.ts` (generateControlChart I-MR + calculateCapabilityIndices) dùng chung với đường inspection. mig 0294 `process_result_daily` (rollup/ngày, FPY lưu sẵn). Chạy `scripts/pilot-analytics.mjs` trên DB thật + dữ liệu pilot (12 chu trình torque máy 243 từ Đ3):
+
+| Thành phần | Kết quả LIVE |
+|---|---|
+| MART `refreshProcessResultDaily` (raw INSERT…SELECT…ON CONFLICT) | **91 rollup rows** upsert; máy 243 → `total=12 pass=8 fail=4 FPY=66.7%` (khớp Đ3) |
+| SPC `buildProcessControlChart` I-MR trên 12 torque thật | `UCL=16.856 CL=11.730 LCL=6.605 σ̂=1.71`, out-of-control **0/12**, **Cpk=0.24** (USL 13.5/LSL 10.5 — thấp thật do phương sai pilot lớn, honest) |
+| FLEET `aggregateProcessResultStatsByType` | 3 nhóm machineType (FCT/ICT/—), pass/fail/total |
+| **Verdict script** | **✅ exit 0** |
+
+Router `processResult` (cờ `PROCESS_ANALYTICS_ENABLED`, gate ship-dark): `spcChart` (I-MR + Cpk server-authoritative), `fleetRollup` (gắn deviceClass qua DEVICE_CLASS_BY_TYPE + FPY), `envSeries` (telemetry IoT reuse getTelemetrySeries), `dailyRollup`/`refreshDaily` (mart). Client `ProcessAnalytics.tsx`: chart ưu tiên giới hạn kiểm soát UCL/CL/LCL từ server (fallback ±2σ), caption SPC (σ̂/Cpk/#OOC), card "Tổng hợp theo loại máy" (FPY theo deviceClass). i18n +10 leaf/locale parity. tsc 0 lỗi · vitest processSpc 4 + analytics-router 4 (gồm OFF-inert 5 endpoint). **mig 0294 áp DB live.**
+
 ## CÒN LẠI (chưa chạy trong phiên này)
 
 - Kill-test store-forward (tắt DB giữa chừng → buffer WAL → replay): cơ chế `processStoreForward` đã test unit; chưa diễn tập với DB down thật.
