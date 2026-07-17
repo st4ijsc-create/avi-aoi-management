@@ -63,6 +63,25 @@ Tầng **phân tích dữ liệu theo deviceType** — NỐI process_results (d�
 
 Router `processResult` (cờ `PROCESS_ANALYTICS_ENABLED`, gate ship-dark): `spcChart` (I-MR + Cpk server-authoritative), `fleetRollup` (gắn deviceClass qua DEVICE_CLASS_BY_TYPE + FPY), `envSeries` (telemetry IoT reuse getTelemetrySeries), `dailyRollup`/`refreshDaily` (mart). Client `ProcessAnalytics.tsx`: chart ưu tiên giới hạn kiểm soát UCL/CL/LCL từ server (fallback ±2σ), caption SPC (σ̂/Cpk/#OOC), card "Tổng hợp theo loại máy" (FPY theo deviceClass). i18n +10 leaf/locale parity. tsc 0 lỗi · vitest processSpc 4 + analytics-router 4 (gồm OFF-inert 5 endpoint). **mig 0294 áp DB live.**
 
+## Đ6 — AI LOCAL 3 PERSONA: Bằng chứng LIVE (2026-07-18)
+
+Tầng **AI local hỗ trợ kỹ thuật + công nhân + quản lý** — NỐI dữ liệu chuẩn hóa (process + config-drift Đ4 + SPC/fleet Đ5) vào AI-tool sẵn (`aiLocalTools`, KHUÔN F6). 2 tool read `handlersF7.ts`, self-register, intent qua triggers + arg-extract:
+
+- **`get_device_health`** (công nhân "máy này ổn không" + kỹ thuật "lệch cấu hình/Cpk"): 1 thiết bị — pass/fail+FPY, config drift (desired vs reported shadow), SPC I-MR (Cpk/#OOC) của metric chính (tự suy nếu không nêu).
+- **`get_fleet_process_summary`** (quản lý "phân xưởng automation thế nào"): pass-rate & FPY theo machineType/deviceClass, lọc theo nhóm.
+
+`scripts/pilot-ai-persona.mjs` chạy CHÍNH handler đã đăng ký trên DB thật + máy pilot 243:
+
+```
+get_device_health(SCRW-SIM-01):
+Thiết bị SCRW-SIM-01 (SCREWDRIVE/automation) — process 12 bản ghi, đạt 8/lỗi 4 (33.33%), FPY 66.7%.
+• Cấu hình: ⚠ LỆCH (recipe)          ← đọc thẳng shadow drift do Đ4 tạo
+• SPC angle: CL 358.933 [331.467–386.399], ngoài kiểm soát 0/12.
+get_fleet_process_summary: toàn bộ 5904 bản ghi, FPY chung 98.2% · FCT/ICT/— theo deviceClass.
+```
+
+**Verdict script: ✅ exit 0.** Green-gate: tsc 0 lỗi · vitest 7 (F7) + 190 (toàn aiLocalTools, KHÔNG vỡ đếm tool) · intent routing xác minh (device-health + fleet-summary định tuyến đúng qua triggers). Lưu ý honest: `MACHINE_CODE_REGEX` chung cắt "SCRW-SIM-01"→"SIM-01" khi hỏi tự do (dùng context selectedMachineCode khi mở từ trang máy) — hành vi có sẵn, không sửa regex chung trong Đ6.
+
 ## CÒN LẠI (chưa chạy trong phiên này)
 
 - Kill-test store-forward (tắt DB giữa chừng → buffer WAL → replay): cơ chế `processStoreForward` đã test unit; chưa diễn tập với DB down thật.

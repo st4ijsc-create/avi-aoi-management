@@ -299,6 +299,28 @@ function extractArgsForTool(
       if (stepType) args.stepType = stepType;
       return args;
     }
+    // doc 56 Đ6 — device-standardization persona tools.
+    case "get_device_health": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(30, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { days };
+      if (code) args.machineCode = code;
+      // Only pin an SPC metric when the user NAMES one; otherwise the handler
+      // infers the primary metric from the machine's own data (mapProcessMetric
+      // defaults to "value", which would force SPC onto a non-existent key).
+      if (/torque|lực\s*siết|mô-?men|keo|dispense|cycle\s*time|thời\s*gian\s*chu\s*kỳ/i.test(question)) {
+        args.metricKey = mapProcessMetric(question).metricKey;
+      }
+      return args;
+    }
+    case "get_fleet_process_summary": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(90, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      const args: Record<string, unknown> = { days };
+      if (/\b(automation|tự\s*động|bắt\s*vít|điểm\s*keo|hàn)\b/i.test(question)) args.deviceClass = "automation";
+      else if (/\b(iot|cảm\s*biến|sensor|gateway)\b/i.test(question)) args.deviceClass = "iot";
+      else if (/\b(aoi|avi|spi|kiểm\s*tra\s*quang|quang\s*học)\b/i.test(question)) args.deviceClass = "aoi_avi";
+      return args;
+    }
     case "get_line_balance": {
       const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(14, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 1;
       const lineCode = question.match(LINE_CODE_REGEX)?.[1];
