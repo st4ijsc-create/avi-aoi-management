@@ -52,12 +52,23 @@ import {
 } from "../services/process/processStoreForward";
 // Doc 56 Đ1 (nhóm B) — generic process-result recorder (genealogy hash-chain +
 // idempotency ledger live in the service; the router maps the envelope to it).
-import { recordProcessResult } from "../services/processResultService";
+// Doc 56 Đ4 — server-authoritative process spec-gate (PROCESS_SPEC_GATE_ENABLED).
+import { recordProcessResult, evaluateProcessSpecGate, processSpecGateEnabled } from "../services/processResultService";
+// Doc 56 Đ4 (CONFIG-SYNC-1/2/6) — generic config-sync resolver + drift shadow.
+import {
+  configSyncGenericEnabled,
+  configDriftReportEnabled,
+  resolveActiveRecipe,
+  resolveRecipeConfigDescriptor,
+  recordReportedConfig,
+  readConfigState,
+  routeConfigDriftAlert,
+} from "../services/configDriftService";
 import { storagePut, storageGet, storageDelete, resolveImageToDataUrl } from "../storage";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/socket";
 import { statsCache, CACHE_KEYS } from "../_core/cache";
 import * as cachedStats from "../functions/cachedStatistics";
-import { publishPointsConfigChanged } from "../services/mqttService";
+import { publishPointsConfigChanged, publishConfigChanged } from "../services/mqttService";
 import { publishToOutbox } from "../services/integration/outboxProducers"; // K0+-c: ADDITIVE ERP outbox (ERP_OUTBOX_ENABLED)
 import { resolveThresholdEditGate } from "../services/thresholdGovernanceService"; // Doc 31 B.6 — gate machine limit write-back
 import {
@@ -474,6 +485,60 @@ async function autoProvisionVariantPointDefId(
   const created = await db.getMeasurementPointDefById(newId);
   if (created) productCache.set(normalized, created);
   return newId;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ4 (CONFIG-SYNC-1) — points path for the GENERIC config-sync endpoints.
+//
+// checkConfigVersion / getActiveConfig with configKind='points' MUST hand a machine
+// the SAME points-version data as the legacy checkPointsVersion. This helper is a
+// STANDALONE re-implementation of that exact resolution (getProductModelByCode /
+// resolveSyncVariant / getMappingsByMachine) so the legacy checkPointsVersion
+// procedure stays 100% UNTOUCHED (byte-identical) — the generic alias never reaches
+// into it. Read-only; the two paths share the same underlying db reads.
+// ════════════════════════════════════════════════════════════════════════════
+async function resolvePointsConfigForSync(
+  machineId: number,
+  productModelCode: string | undefined,
+  variantCode: string | undefined,
+): Promise<{
+  productModels: Array<{
+    productModelCode: string;
+    pointsConfigVersion: unknown;
+    imageWidth: unknown;
+    imageHeight: unknown;
+  }>;
+}> {
+  const variantOn = productVariantEnabled();
+  const trimmedCode = productModelCode?.trim();
+  if (trimmedCode) {
+    const productModel = await db.getProductModelByCode(trimmedCode);
+    if (!productModel) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${trimmedCode}' not found` });
+    }
+    const version = variantOn
+      ? (await resolveSyncVariant(productModel.id, variantCode, Number(productModel.pointsConfigVersion ?? 1))).version
+      : productModel.pointsConfigVersion;
+    return {
+      productModels: [{
+        productModelCode: productModel.code,
+        pointsConfigVersion: version,
+        imageWidth: productModel.imageWidth,
+        imageHeight: productModel.imageHeight,
+      }],
+    };
+  }
+  const mappings = await db.getMappingsByMachine(machineId);
+  return {
+    productModels: mappings
+      .filter((m) => m.product)
+      .map((m) => ({
+        productModelCode: m.product!.code,
+        pointsConfigVersion: m.product!.pointsConfigVersion,
+        imageWidth: m.product!.imageWidth,
+        imageHeight: m.product!.imageHeight,
+      })),
+  };
 }
 
 /**
@@ -2736,6 +2801,20 @@ export async function processProcessResultSubmission(
       : input.recipe.code
     : undefined;
 
+  // Doc 56 Đ4 (spec-gate) — when PROCESS_SPEC_GATE_ENABLED, the server evaluates each
+  // metric against the AUTHORITATIVE process_spec_limits and ATTACHES its verdict as
+  // metadata (extra suffixed keys merged into `metrics`; never overrides the machine's
+  // declared `result`). OFF (default) ⇒ specGateExtra stays undefined → row untouched.
+  let specGateExtra: Record<string, number | string | boolean> | undefined;
+  if (processSpecGateEnabled()) {
+    const gate = await evaluateProcessSpecGate({
+      machineType: machine.machineType ?? null,
+      stepType: input.stepType,
+      metrics: input.metrics,
+    });
+    if (Object.keys(gate.extraMetrics).length > 0) specGateExtra = gate.extraMetrics;
+  }
+
   const out = await recordProcessResult(
     {
       serialNumber: input.serialNumber,
@@ -2747,6 +2826,8 @@ export async function processProcessResultSubmission(
       productionOrderCode: input.productionOrderCode,
       lotCode: input.lotCode,
       metricSpecs: input.metrics,
+      // spec-gate metadata (suffixed keys → no collision with real metric names).
+      ...(specGateExtra ? { metrics: specGateExtra } : {}),
       recipeRef,
       measuredAt,
       idempotencyKey: input.idempotencyKey,
@@ -3958,7 +4039,18 @@ export const machineApiRouter = router({
 
   // Heartbeat endpoint
   heartbeat: publicProcedure
-    .input(z.object({ apiKey: z.string() }))
+    .input(z.object({
+      apiKey: z.string(),
+      // Doc 56 Đ4 (CONFIG-DRIFT) — OPTIONAL, additive: what the machine is CURRENTLY
+      // running per configKind. Absent (every machine today) ⇒ the block below is
+      // skipped and the heartbeat response is byte-identical to pre-Đ4.
+      running: z.array(z.object({
+        configKind: z.string().trim().min(1).max(32),
+        code: z.string().trim().max(128).optional(),
+        version: z.union([z.string().trim().max(64), z.number()]).optional(),
+        checksum: z.string().trim().max(128).optional(),
+      })).max(32).optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const auth = await authenticateMachine({
         apiKey: input.apiKey,
@@ -3979,7 +4071,46 @@ export const machineApiRouter = router({
       // machine can rotate BEFORE its key expires (zero-downtime), instead of
       // discovering it via a sudden 401. Best-effort — never fails the heartbeat.
       const keySignal = await computeKeyRotationSignal(auth);
-      return { success: true, machineId: machine.id, ...keySignal };
+
+      // Doc 56 Đ4 (CONFIG-DRIFT) — TWO-WAY reconcile. Gated: default OFF *or* the
+      // machine sending no `running[]` ⇒ this whole block is skipped and the return
+      // value is byte-identical to the pre-Đ4 heartbeat. When on, each reported
+      // config is written to the shadow (reported*) + driftState recomputed vs the
+      // desired* the server set at deploy; a 'drift' routes ONE Andon warning.
+      let configDrift: Array<{ configKind: string; driftState: string }> | undefined;
+      if (configDriftReportEnabled() && input.running && input.running.length > 0) {
+        configDrift = [];
+        for (const r of input.running) {
+          const version = r.version != null ? String(r.version) : null;
+          const { driftState } = await recordReportedConfig({
+            machineId: machine.id,
+            configKind: r.configKind,
+            code: r.code ?? null,
+            version,
+            checksum: r.checksum ?? null,
+          });
+          configDrift.push({ configKind: r.configKind, driftState });
+          if (driftState === "drift") {
+            const state = await readConfigState(machine.id, r.configKind);
+            await routeConfigDriftAlert({
+              machineId: machine.id,
+              machineCode: machine.code,
+              configKind: r.configKind,
+              desired: state
+                ? { code: state.desiredCode, version: state.desiredVersion, checksum: state.desiredChecksum }
+                : null,
+              reported: { code: r.code ?? null, version, checksum: r.checksum ?? null },
+            });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        machineId: machine.id,
+        ...keySignal,
+        ...(configDrift ? { configDrift } : {}),
+      };
     }),
 
   // ============================================================
@@ -4043,6 +4174,173 @@ export const machineApiRouter = router({
             imageHeight: m.product!.imageHeight,
           })),
       };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Doc 56 Đ4 (CONFIG-SYNC-1/2/6) — GENERIC config-sync endpoints (default OFF via
+  // CONFIG_SYNC_GENERIC_ENABLED → PRECONDITION_FAILED, ship dark). A machine pulls a
+  // versioned config for a (machine, configKind) pair, downloads the full payload,
+  // and ACKs what it applied into the machine_config_state shadow.
+  //
+  //   configKind='recipe' | 'device_settings' → active machine_recipes, resolved
+  //     PER-MACHINE (machineId bound) with fallback to the PER-MACHINE-TYPE default.
+  //   configKind='points'                      → ALIAS of the legacy points-version
+  //     resolution (byte-identical data; the old checkPointsVersion is untouched).
+  //   configKind='model'                       → honest 'none' (no first-class
+  //     per-machine model-config version exists yet — reserved).
+  // ════════════════════════════════════════════════════════════════════════════
+  checkConfigVersion: publicProcedure
+    .input(z.object({
+      configKind: z.enum(["recipe", "device_settings", "points", "model"]),
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      // Disambiguate a recipe/device_settings code (a machine that knows its config
+      // code); doubles as productModelCode for the points path when set.
+      configCode: z.string().trim().min(1).optional(),
+      productModelCode: z.string().trim().min(1).optional(),
+      variantCode: z.string().trim().min(1).optional(),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .query(async ({ input, ctx }) => {
+      if (!configSyncGenericEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        });
+      }
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "equipment:read",
+      });
+      if (input.configKind === "points") {
+        const points = await resolvePointsConfigForSync(
+          machine.id,
+          input.productModelCode ?? input.configCode,
+          input.variantCode,
+        );
+        return { success: true, configKind: "points" as const, ...points };
+      }
+      if (input.configKind === "recipe" || input.configKind === "device_settings") {
+        const desc = await resolveRecipeConfigDescriptor(
+          { id: machine.id, machineType: machine.machineType ?? null },
+          input.configCode,
+        );
+        return {
+          success: true,
+          configKind: input.configKind,
+          code: desc?.code ?? null,
+          version: desc?.version ?? null,
+          checksum: desc?.checksum ?? null,
+          resolvedBy: desc?.resolvedBy ?? "none",
+        };
+      }
+      // model — reserved (no per-machine model-config version yet).
+      return { success: true, configKind: "model" as const, code: null, version: null, checksum: null, resolvedBy: "none" as const };
+    }),
+
+  // Doc 56 Đ4 (CONFIG-SYNC-1) — full config payload + checksum for a configKind.
+  getActiveConfig: publicProcedure
+    .input(z.object({
+      configKind: z.enum(["recipe", "device_settings", "points", "model"]),
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      configCode: z.string().trim().min(1).optional(),
+      productModelCode: z.string().trim().min(1).optional(),
+      variantCode: z.string().trim().min(1).optional(),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .query(async ({ input, ctx }) => {
+      if (!configSyncGenericEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        });
+      }
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "equipment:read",
+      });
+      if (input.configKind === "points") {
+        const points = await resolvePointsConfigForSync(
+          machine.id,
+          input.productModelCode ?? input.configCode,
+          input.variantCode,
+        );
+        return { success: true, configKind: "points" as const, ...points };
+      }
+      if (input.configKind === "recipe" || input.configKind === "device_settings") {
+        const resolved = await resolveActiveRecipe(
+          { id: machine.id, machineType: machine.machineType ?? null },
+          input.configCode,
+        );
+        if (!resolved) {
+          return {
+            success: true,
+            configKind: input.configKind,
+            code: null,
+            version: null,
+            checksum: null,
+            resolvedBy: "none" as const,
+            payload: null,
+          };
+        }
+        const { recipe, resolvedBy } = resolved;
+        return {
+          success: true,
+          configKind: input.configKind,
+          code: recipe.code,
+          name: recipe.name,
+          version: String(recipe.version),
+          checksum: recipe.checksum ?? null,
+          resolvedBy,
+          payload: recipe.payload,
+        };
+      }
+      return { success: true, configKind: "model" as const, code: null, version: null, checksum: null, resolvedBy: "none" as const, payload: null };
+    }),
+
+  // Doc 56 Đ4 (CONFIG-SYNC-2) — the machine ACKs what it actually applied. Writes the
+  // reported* side of the shadow + recomputes driftState vs the desired* the server
+  // stamped at deploy. This is the machine reporting its OWN state (equipment:read).
+  ackConfigApplied: publicProcedure
+    .input(z.object({
+      configKind: z.string().trim().min(1).max(32),
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      code: z.string().trim().max(128).optional(),
+      version: z.union([z.string().trim().max(64), z.number()]).optional(),
+      checksum: z.string().trim().max(128).optional(),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!configSyncGenericEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        });
+      }
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "equipment:read",
+      });
+      const version = input.version != null ? String(input.version) : null;
+      const { driftState } = await recordReportedConfig({
+        machineId: machine.id,
+        configKind: input.configKind,
+        code: input.code ?? null,
+        version,
+        checksum: input.checksum ?? null,
+      });
+      return { success: true, machineId: machine.id, configKind: input.configKind, driftState };
     }),
 
   // ============================================================

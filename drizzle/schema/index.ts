@@ -75,3 +75,4 @@ export * from "./rulFailureMode"; // doc 44 W5-B3 — RUL survival estimates + f
 export * from "./ntfClassifier"; // doc 44 W5-B1 — trained NTF/false-call classifier registry (G4.12)
 export * from "./sop"; // doc 44 W6-1 — e-SOP: sops + sop_steps + sop_executions (G5.14, spec LDS-L5 §6.2)
 export * from "./enterpriseIntegration"; // doc 44 W6-5 — WMS/PLM/CMMS connector anti-corruption id-map + sync log (G5.24)
+export * from "./machineConfigState"; // doc 56 Đ4 — generic machine config-sync shadow (desired/reported + drift), migration 0293

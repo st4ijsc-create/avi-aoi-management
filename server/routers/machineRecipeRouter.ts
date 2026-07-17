@@ -29,7 +29,7 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // approve / deploy / rollback change what a MACHINE runs → actuation role-floor
 // (admin/supervisor/engineer) + 2FA, plus the MOD_OT_CONTROL license gate.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
-import { machineRecipes, recipeDeployments, machines } from "../../drizzle/schema";
+import { machineRecipes, recipeDeployments, machines, parameterGuardrails } from "../../drizzle/schema";
 import {
   createRecipe,
   getRecipeById,
@@ -42,6 +42,16 @@ import {
   setGoldenRecipe,
 } from "../db/machineRecipe";
 import { recordEvent as recordGenealogyEvent, listCodeHistory } from "../services/equipment/recipeVersioningService";
+// Doc 56 Đ4 — recipe governance: typed-schema (RECIPE_TYPED_SCHEMA_MODE) + guardrail
+// teeth at sign-off (CONFIG-SYNC-5) + config-sync shadow/notify on deploy (CONFIG-SYNC-3).
+import {
+  recipeTypedSchemaMode,
+  validateRecipePayload,
+  guardrailParamsFor,
+} from "../services/recipes/recipeSchemas";
+import { checkAgainstGuardrail } from "../services/ai/parameterGuardrailService";
+import { configSyncGenericEnabled, upsertDesiredConfig } from "../services/configDriftService";
+import { publishConfigChanged } from "../services/mqttService";
 
 /**
  * W5-22 (doc 25 (b)) — GENEALOGY unification. Every recipe op done from /recipes writes
@@ -71,6 +81,87 @@ const machineTypeEnum = z.enum([
   "FEEDER", "ASSEMBLY", "SCREWDRIVE", "DISPENSING", "ICT_FUNC",
   "ROBOT_TEST", "PACKAGING", "PALLETIZER", "ROBOT",
 ]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ4 — recipe governance helpers (all inert when RECIPE_TYPED_SCHEMA_MODE=off).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Typed-schema gate for a recipe payload. off → skip; log → warn + accept; enforce →
+ * reject a payload that doesn't match its machine-type schema. A machineType with no
+ * typed schema always passes. Byte-identical when mode=off (default).
+ */
+function assertRecipePayloadValid(machineType: string | null, payload: unknown): void {
+  const mode = recipeTypedSchemaMode();
+  if (mode === "off") return;
+  const res = validateRecipePayload(machineType, payload, mode);
+  if (res.ok) return;
+  if (mode === "log") {
+    console.warn(
+      `[machineRecipe] typed-schema mismatch (mode=log, kind=${res.kind}): ${res.errors.join("; ")}`,
+    );
+    return;
+  }
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Recipe payload không hợp lệ cho "${res.kind}": ${res.errors.join("; ")}`,
+  });
+}
+
+/**
+ * Resolve the effective guardrail for (machine|type, paramKey). Machine-scope wins
+ * over the machine-type default (mirrors parameterGuardrailService.resolveGuardrail,
+ * but through the LOCAL db handle so it is mockable in the router tests). Fail-safe → null.
+ */
+async function resolveRecipeGuardrail(machineId: number | null, machineType: string | null, paramKey: string) {
+  try {
+    const db = await getDb();
+    if (machineId != null) {
+      const [m] = await db
+        .select()
+        .from(parameterGuardrails)
+        .where(and(eq(parameterGuardrails.scope, "machine"), eq(parameterGuardrails.machineId, machineId), eq(parameterGuardrails.paramKey, paramKey)))
+        .limit(1);
+      if (m) return m;
+    }
+    if (machineType) {
+      const [t] = await db
+        .select()
+        .from(parameterGuardrails)
+        .where(and(eq(parameterGuardrails.scope, "machine_type"), eq(parameterGuardrails.machineType, machineType), eq(parameterGuardrails.paramKey, paramKey)))
+        .limit(1);
+      if (t) return t;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * CONFIG-SYNC-5 — guardrail TEETH at sign-off. Map the typed payload's physical
+ * setpoints → param_key, and REJECT the approve if any value is outside the
+ * engineer's hard min–max range. A param with NO guardrail passes (strict=false —
+ * we do not block sign-off on unbounded params here). Only meaningful when a typed
+ * schema exists for the machineType (else guardrailParamsFor yields nothing).
+ */
+async function assertRecipeWithinGuardrails(recipe: {
+  machineId: number | null;
+  machineType: string | null;
+  payload: unknown;
+}): Promise<void> {
+  const params = guardrailParamsFor(recipe.machineType, recipe.payload);
+  for (const { paramKey, value } of params) {
+    const guardrail = await resolveRecipeGuardrail(recipe.machineId ?? null, recipe.machineType ?? null, paramKey);
+    const check = checkAgainstGuardrail(guardrail, value);
+    if (!check.ok) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Guardrail chặn duyệt recipe: tham số "${paramKey}"=${value} — ${check.detail}`,
+      });
+    }
+  }
+}
 
 export const machineRecipeRouter = router({
   recipes: router({
@@ -134,6 +225,9 @@ export const machineRecipeRouter = router({
         notes: z.string().max(2000).nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        // Doc 56 Đ4 — typed-schema governance at authoring (RECIPE_TYPED_SCHEMA_MODE).
+        // off (default) ⇒ no-op → byte-identical.
+        assertRecipePayloadValid(input.machineType ?? null, input.payload);
         // Always created as 'draft'; deploy promotes to active.
         const recipe = await createRecipe({
           code: input.code,
@@ -196,6 +290,20 @@ export const machineRecipeRouter = router({
         note: z.string().max(2000).nullable().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        // Doc 56 Đ4 — governance BEFORE sign-off: typed-schema re-check + guardrail
+        // TEETH (CONFIG-SYNC-5). Only engaged when RECIPE_TYPED_SCHEMA_MODE != off (a
+        // typed payload to map); default off ⇒ the approve path is byte-identical.
+        if (recipeTypedSchemaMode() !== "off") {
+          const existing = await getRecipeById(input.recipeId);
+          if (existing) {
+            assertRecipePayloadValid(existing.machineType ?? null, existing.payload);
+            await assertRecipeWithinGuardrails({
+              machineId: existing.machineId ?? null,
+              machineType: existing.machineType ?? null,
+              payload: existing.payload,
+            });
+          }
+        }
         try {
           return await approveRecipe({ recipeId: input.recipeId, approvedBy: ctx.user.id, note: input.note ?? null });
         } catch (err) {
@@ -236,6 +344,42 @@ export const machineRecipeRouter = router({
               meta: { deploymentId: deployment.id, previousRecipeId: deployment.previousRecipeId ?? null },
             });
           }
+
+          // Doc 56 Đ4 (CONFIG-SYNC-3) — write the DESIRED shadow + a RETAINED MQTT notify
+          // so the machine converges on the newly-active recipe (payload is always PULLED
+          // over HTTP; poll of checkConfigVersion is the backstop). Gated OFF by default →
+          // deploy stays byte-identical. Best-effort: a shadow/notify failure must NOT fail
+          // a deploy that already committed (the active flip + ledger row are durable).
+          if (configSyncGenericEnabled() && deployed) {
+            try {
+              await upsertDesiredConfig({
+                machineId: input.machineId,
+                configKind: "recipe",
+                code: deployed.code,
+                version: deployed.version,
+                checksum: deployed.checksum ?? null,
+              });
+              const db = await getDb();
+              const [m] = await db
+                .select({ code: machines.code })
+                .from(machines)
+                .where(eq(machines.id, input.machineId))
+                .limit(1);
+              if (m?.code) {
+                publishConfigChanged(m.code, "recipe", {
+                  code: deployed.code,
+                  version: deployed.version,
+                  checksum: deployed.checksum ?? null,
+                });
+              }
+            } catch (err) {
+              console.error(
+                "[machineRecipe] config-sync desired/notify failed (deploy already committed):",
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
+
           return deployment;
         } catch (err) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });

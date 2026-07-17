@@ -37,6 +37,8 @@ import type { InsertProcessResult } from "../../drizzle/schema";
 // Doc 56 Đ1 — value imports for the idempotency-ledger claim (engaged only when a
 // machine sends an explicit idempotencyKey; the plain path never touches them).
 import { processResults, processIdempotencyKeys } from "../../drizzle/schema";
+// Doc 56 Đ4 (spec-gate) — server-authoritative spec limits (read only when the gate is on).
+import { processSpecLimits, type ProcessSpecLimit } from "../../drizzle/schema";
 import type { MachineType } from "../constants/machineTypes";
 
 /**
@@ -265,4 +267,124 @@ export async function recordProcessResult(
   }
 
   return { processResultId, genealogy, duplicate: false };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ4 (CONFIG-SYNC / Trục 4) — PROCESS SPEC-GATE.
+//
+// When PROCESS_SPEC_GATE_ENABLED is on, the server evaluates each submitted metric
+// against the AUTHORITATIVE process_spec_limits (server-owned lsl/usl) — exactly
+// like the inspection spec-gate — instead of trusting the machine's self-declared
+// pass/fail. The verdict is ATTACHED as metadata (extra scalar keys merged into the
+// result's `metrics` jsonb: `__specGate` overall + per-metric `${name}__specVerdict`
+// / `__specLsl` / `__specUsl` / `__specSource`). It NEVER overrides the machine's own
+// `result` enum — it adds the server's independent judgment beside it. OFF (default)
+// ⇒ this is never called and the row is byte-identical to pre-Đ4.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Master switch (default OFF). OFF ⇒ evaluateProcessSpecGate is never invoked. */
+export function processSpecGateEnabled(): boolean {
+  const s = String(process.env.PROCESS_SPEC_GATE_ENABLED ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "on";
+}
+
+export interface SpecGateMetricVerdict {
+  name: string;
+  value: number;
+  verdict: "pass" | "fail";
+  lsl: number | null;
+  usl: number | null;
+  source: "product" | "machineType" | "global";
+}
+
+export interface SpecGateResult {
+  /** 'none' ⇒ no limit matched any submitted metric (nothing to attach). */
+  overall: "pass" | "fail" | "none";
+  perMetric: SpecGateMetricVerdict[];
+  /** Scalar keys to merge into the result's `metrics` jsonb (suffixed → no collision). */
+  extraMetrics: Record<string, number | string | boolean>;
+}
+
+/**
+ * Resolve the winning spec limit for a metricKey. Order (spec 0289): product-specific
+ * (productModelId match) > machineType default > global (both scope columns NULL).
+ */
+function pickBestSpecLimit(
+  limits: ProcessSpecLimit[],
+  metricKey: string,
+  machineType: string | null,
+  productModelId: number | null,
+): ProcessSpecLimit | null {
+  const candidates = limits.filter((l) => l.metricKey === metricKey);
+  if (candidates.length === 0) return null;
+  const product = productModelId != null ? candidates.find((l) => l.productModelId === productModelId) : undefined;
+  if (product) return product;
+  const byType = machineType != null ? candidates.find((l) => l.productModelId == null && l.machineType === machineType) : undefined;
+  if (byType) return byType;
+  const global = candidates.find((l) => l.productModelId == null && l.machineType == null);
+  return global ?? null;
+}
+
+/**
+ * Evaluate metrics against process_spec_limits. Fail-OPEN (returns 'none' with no
+ * attachments) when the DB/table is unavailable or no limit matches — a transient
+ * lookup error must never turn a valid cycle into a false verdict. Pure of side
+ * effects; the caller merges `extraMetrics` into the persisted row.
+ */
+export async function evaluateProcessSpecGate(input: {
+  machineType?: string | null;
+  stepType: string;
+  productModelId?: number | null;
+  metrics?: ProcessMetricSpec[];
+}): Promise<SpecGateResult> {
+  const empty: SpecGateResult = { overall: "none", perMetric: [], extraMetrics: {} };
+  const metrics = input.metrics ?? [];
+  if (metrics.length === 0) return empty;
+
+  let limits: ProcessSpecLimit[];
+  try {
+    const dbi = await db.getDb();
+    if (!dbi) return empty;
+    limits = await dbi
+      .select()
+      .from(processSpecLimits)
+      .where(and(eq(processSpecLimits.stepType, input.stepType), eq(processSpecLimits.active, true)));
+  } catch (err) {
+    console.warn(
+      `[specGate] limit query failed (fail-open) for stepType="${input.stepType}":`,
+      (err as Error)?.message ?? err,
+    );
+    return empty;
+  }
+  if (!limits || limits.length === 0) return empty;
+
+  const perMetric: SpecGateMetricVerdict[] = [];
+  const extraMetrics: Record<string, number | string | boolean> = {};
+  let anyFail = false;
+  let anyEvaluated = false;
+
+  for (const m of metrics) {
+    if (!m || typeof m.name !== "string" || m.name.length === 0 || typeof m.value !== "number") continue;
+    const best = pickBestSpecLimit(limits, m.name, input.machineType ?? null, input.productModelId ?? null);
+    if (!best) continue;
+    anyEvaluated = true;
+    const lsl = best.lsl ?? null;
+    const usl = best.usl ?? null;
+    const belowLsl = lsl != null && m.value < lsl;
+    const aboveUsl = usl != null && m.value > usl;
+    const pass = !belowLsl && !aboveUsl;
+    if (!pass) anyFail = true;
+    const source: SpecGateMetricVerdict["source"] =
+      best.productModelId != null ? "product" : best.machineType != null ? "machineType" : "global";
+    perMetric.push({ name: m.name, value: m.value, verdict: pass ? "pass" : "fail", lsl, usl, source });
+    extraMetrics[`${m.name}__specVerdict`] = pass ? "pass" : "fail";
+    if (lsl != null) extraMetrics[`${m.name}__specLsl`] = lsl;
+    if (usl != null) extraMetrics[`${m.name}__specUsl`] = usl;
+    extraMetrics[`${m.name}__specSource`] = source;
+  }
+
+  if (!anyEvaluated) return empty;
+  const overall: SpecGateResult["overall"] = anyFail ? "fail" : "pass";
+  extraMetrics["__specGate"] = overall;
+  return { overall, perMetric, extraMetrics };
 }

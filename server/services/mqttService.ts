@@ -2740,6 +2740,56 @@ export function publishPointsConfigChanged(
 }
 
 /**
+ * doc 56 Đ4 (CONFIG-SYNC-3) — Publish a GENERIC config-changed *notify* to a machine
+ * (best-effort, retained). Topic: `synapse/v1/machine/{machineCode}/config/{configKind}`
+ * (the REAL synapse namespace — already synapse-rooted, so the avi→synapse dual-publish
+ * rebrand is a no-op here, exactly as intended).
+ *
+ * IMPORTANT: the payload carries ONLY the descriptor {code, version, checksum} — never
+ * the config body. The machine PULLS the full payload over the apiKey-verified HTTP
+ * endpoint (machineApi.getActiveConfig); poll of checkConfigVersion is the backstop.
+ * retain=true so a machine that reconnects still receives the latest desired descriptor.
+ *
+ * Gated by the CALLER (CONFIG_SYNC_GENERIC_ENABLED) — this function is only invoked
+ * when the flag is on, so it is inert (never called) by default.
+ */
+export function publishConfigChanged(
+  machineCode: string,
+  configKind: string,
+  descriptor: { code: string | null; version: string | number | null; checksum: string | null },
+): void {
+  if (!MQTT_ENABLED || !aedes) return;
+
+  const topic = `synapse/v1/machine/${machineCode}/config/${configKind}`;
+  const payload = JSON.stringify({
+    type: "CONFIG_CHANGED",
+    machineCode,
+    configKind,
+    code: descriptor.code ?? null,
+    version: descriptor.version != null ? String(descriptor.version) : null,
+    checksum: descriptor.checksum ?? null,
+    timestamp: new Date().toISOString(),
+  });
+
+  dualAedesPublish(aedes!, {
+    topic,
+    payload: Buffer.from(payload),
+    qos: 1 as 0 | 1 | 2,
+    retain: true,
+    cmd: 'publish',
+    dup: false,
+  }, (error) => {
+    if (error) {
+      console.error('[MQTT] Config changed publish error:', error);
+    }
+  });
+  console.log(`[MQTT] Published config changed to ${topic} (${descriptor.code ?? '?'}@${descriptor.version ?? '?'})`);
+
+  // Also mirror to the external broker (best-effort).
+  publishToExternalMqtt(topic, payload);
+}
+
+/**
  * WS-2 — Publish a model-update *notify* signal to an edge device (best-effort).
  *
  * IMPORTANT: this is ONLY a small notification (deploymentId + version + hash).

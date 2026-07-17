@@ -986,6 +986,71 @@ async function startServer() {
     }
   });
 
+  // ── doc 56 Đ4 (CONFIG-SYNC) — REST proxies for the generic config-sync endpoints.
+  // Gated server-side by CONFIG_SYNC_GENERIC_ENABLED (PRECONDITION_FAILED when off).
+  // GET /api/machine/config-sync/check?configKind=&apiKey=&configCode=&productModelCode=&variantCode=
+  app.get("/api/machine/config-sync/check", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || (req.query.apiKey as string | undefined);
+      const result = await caller.machineApi.checkConfigVersion({
+        configKind: req.query.configKind as any,
+        apiKey,
+        machineCode: req.query.machineCode as string | undefined,
+        configCode: req.query.configCode as string | undefined,
+        productModelCode: req.query.productModelCode as string | undefined,
+        variantCode: req.query.variantCode as string | undefined,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync check error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync check failed");
+    }
+  });
+
+  // GET /api/machine/config-sync/get?configKind=&apiKey=&... — full payload + checksum
+  app.get("/api/machine/config-sync/get", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || (req.query.apiKey as string | undefined);
+      const result = await caller.machineApi.getActiveConfig({
+        configKind: req.query.configKind as any,
+        apiKey,
+        machineCode: req.query.machineCode as string | undefined,
+        configCode: req.query.configCode as string | undefined,
+        productModelCode: req.query.productModelCode as string | undefined,
+        variantCode: req.query.variantCode as string | undefined,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync get error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync get failed");
+    }
+  });
+
+  // POST /api/machine/config-sync/ack — machine reports the config it applied.
+  app.post("/api/machine/config-sync/ack", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || req.body?.apiKey;
+      const result = await caller.machineApi.ackConfigApplied({
+        configKind: req.body?.configKind,
+        apiKey,
+        machineCode: req.body?.machineCode,
+        code: req.body?.code,
+        version: req.body?.version,
+        checksum: req.body?.checksum,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync ack error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync ack failed");
+    }
+  });
+
   // GET /api/mqtt/version.json — Public endpoint for FactoryAlertSystem OTA updates
   app.get("/api/mqtt/version.json", async (_req, res) => {
     try {
