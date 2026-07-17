@@ -129,6 +129,7 @@ export const MACHINE_BOOTSTRAP_PATHS: readonly string[] = [
  */
 export const MACHINE_INGEST_TRPC_PROCEDURES: ReadonlySet<string> = new Set([
   "machineApi.submitInspection",
+  "machineApi.submitInspectionBatch", // Doc 51 P3 — batch drain (CASE #2/#9); must sit in the machine-ingest tier, not the 300/min browser bucket, or a NAT fleet draining via batch 429s at the middleware.
   "machineApi.uploadImage",
   "machineApi.syncMeasurementPoints",
   "machineApi.heartbeat",

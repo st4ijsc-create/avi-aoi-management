@@ -70,7 +70,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { apiKeys } from "../../drizzle/schema";
@@ -160,6 +160,28 @@ function weakAuthDecision(policy: WeakAuthPolicy, scope?: ApiScope): "allowed" |
 export function machineIngestRateLimitPerMin(): number {
   const n = parseInt(process.env.MACHINE_INGEST_RATE_LIMIT_PER_MIN || "600", 10);
   return Number.isFinite(n) && n >= 0 ? n : 600;
+}
+
+/**
+ * Doc 51 P3 / CASE #10 — DEFAULT machine-key lifetime, in DAYS.
+ *
+ * QĐ#1 (backward-compatible default): unset / 0 → NO expiry (expiresAt stays
+ * null), so a key issued today behaves EXACTLY as before and no running machine
+ * is ever bricked by a silent TTL. Setting MACHINE_KEY_DEFAULT_TTL_DAYS>0 is an
+ * OPT-IN: newly issued keys that do not specify their own expiry then get
+ * `now + N days`. Existing keys are never touched (this only affects issuance),
+ * and an explicit `expiresAt` (including an explicit null) always wins over the
+ * default. Pair it with listExpiringMachineKeys() + a cron so a fleet is warned
+ * BEFORE keys lapse rather than discovering it as a shift-wide ingest outage.
+ *
+ * Returns 0 when disabled; otherwise a clamped, sane day count (1..3650).
+ */
+export function machineKeyDefaultTtlDays(): number {
+  const raw = process.env.MACHINE_KEY_DEFAULT_TTL_DAYS;
+  if (raw == null || raw.trim() === "") return 0;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n, 3650);
 }
 
 // ── hashing (MUST match server/api/v1/auth.ts so one table serves both) ──────
@@ -578,7 +600,7 @@ export function enforceMachineIngestRateLimit(auth: {
 
 const NAMESPACES = new Set(ALL_SCOPES.map((s) => s.split(":")[0]));
 
-function isValidScopeGrant(s: string): boolean {
+export function isValidScopeGrant(s: string): boolean {
   if (s === "*") return true;
   if ((ALL_SCOPES as string[]).includes(s)) return true;
   if (s.endsWith(":*")) return NAMESPACES.has(s.slice(0, -2));
@@ -631,6 +653,18 @@ export async function issueMachineKey(opts: {
   if (!scopes.every(isValidScopeGrant)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "One or more scopes are not in the published scope vocabulary" });
   }
+  // Doc 51 P3 / CASE #10 — apply the DEFAULT TTL only when the caller did not
+  // decide expiry itself. `undefined` = "no opinion" → default TTL (0/unset ⇒
+  // null, the backward-compatible no-expiry behaviour). An explicit value —
+  // including an explicit `null` (rotateMachineKey preserving a source expiry) —
+  // is honoured verbatim and never overridden by the default.
+  let expiresAt: Date | null;
+  if (opts.expiresAt !== undefined) {
+    expiresAt = opts.expiresAt;
+  } else {
+    const ttlDays = machineKeyDefaultTtlDays();
+    expiresAt = ttlDays > 0 ? new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000) : null;
+  }
   const { plaintext, prefix } = generateMachineKey();
   const [row] = await d
     .insert(apiKeys)
@@ -641,12 +675,40 @@ export async function issueMachineKey(opts: {
       keyPrefix: prefix,
       scopes,
       isActive: true,
-      expiresAt: opts.expiresAt ?? null,
+      expiresAt,
       createdBy: opts.createdBy ?? null,
       machineId: machine.id,
     })
     .returning();
   return { ...publicMachineKeyRow(row), plaintextKey: plaintext };
+}
+
+/**
+ * Doc 51 P3 / CASE #10 — machine keys that are ACTIVE, not revoked, and whose
+ * expiry falls within `withinDays` (default 14). Ops/cron reads this to WARN a
+ * fleet before a key lapses. Deliberately also surfaces keys that are ALREADY
+ * expired-but-still-active (expiresAt <= now): those have silently stopped
+ * authenticating and are exactly what an operator needs to rotate first. Ordered
+ * soonest-expiry first (most urgent leads). Keys with no expiry never appear.
+ */
+export async function listExpiringMachineKeys(withinDays = 14): Promise<PublicMachineKeyRow[]> {
+  const d = await requireDb();
+  const days = Number.isFinite(withinDays) && withinDays >= 0 ? withinDays : 14;
+  const cutoff = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const rows = await d
+    .select()
+    .from(apiKeys)
+    .where(
+      and(
+        isNotNull(apiKeys.machineId), // machine credentials only, not general ak_ keys
+        eq(apiKeys.isActive, true),
+        isNull(apiKeys.revokedAt),
+        isNotNull(apiKeys.expiresAt),
+        lte(apiKeys.expiresAt, cutoff),
+      ),
+    )
+    .orderBy(apiKeys.expiresAt);
+  return rows.map(publicMachineKeyRow);
 }
 
 /** List a machine's keys (newest first) — SAFE shape only. */

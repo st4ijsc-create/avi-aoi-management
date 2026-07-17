@@ -98,6 +98,27 @@ function maxImageBase64Chars(): number {
 const MAX_IMAGE_B64 = maxImageBase64Chars();
 const IMAGE_B64_TOO_LARGE = `image exceeds MACHINE_INGEST_MAX_IMAGE_B64 (${MAX_IMAGE_B64} base64 chars)`;
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-1 (§5.4 / CASE #2 / CASE #9) — BATCH INGEST cap.
+//
+// The benchmark (doc 53 §0) proved the server saturates at ~36 inspection/s under
+// per-request synchronous DB writes on a pool-25: 5000 boards drained after a
+// network outage means 5000 separate POSTs, each its own auth + heartbeat +
+// round-trip. `submitInspectionBatch` folds up to MACHINE_INGEST_BATCH_MAX boards
+// into ONE request (5000 → ~25 batches) — one auth, one heartbeat, and the items
+// pipelined with bounded concurrency to actually use the pool. The bound is read
+// at import time so it is a compile-time constant for zod's `.max()`; ops can
+// widen/narrow it via MACHINE_INGEST_BATCH_MAX (QĐ#1 — flag + safe default).
+// ════════════════════════════════════════════════════════════════════════════
+function maxBatchInspections(): number {
+  const raw = process.env.MACHINE_INGEST_BATCH_MAX;
+  const n = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+  // Default 200 (§5.4). A batch this size is a comfortable single request and keeps
+  // the reconnect-drain to ~25 round-trips for the CASE #2 5000-board backlog.
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 200;
+}
+const MAX_BATCH_INSPECTIONS = maxBatchInspections();
+
 const measurementTypeValueList = [
   "DIMENSION",
   "VISUAL",
@@ -371,7 +392,7 @@ function raiseClockSkewAlert(params: {
  * durability layer (inspectionStoreForward) can buffer + replay the EXACT
  * payload through the same pipeline.
  */
-const submitInspectionInputSchema = z.object({
+const submitInspectionCoreObject = z.object({
       // Machine identification
       machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
       apiKey: z.string().optional(), // API key (backward compatible)
@@ -473,47 +494,87 @@ const submitInspectionInputSchema = z.object({
         defectCatalogCode: z.string().max(50).optional(),
         defectSeverity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
       })),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided"
-    })
-    // ── Doc 51 P1 (CASE #3) — inspectionTime validation ──────────────────────
-    // Deliberately a superRefine and not `z.string().datetime({offset:true})`:
-    // the offset requirement must read process.env AT PARSE TIME so it can be a
-    // flag (QĐ#1) and so tests can exercise both sides. The parseability check is
-    // NOT flagged — see below.
-    .superRefine((data, ctx) => {
-      if (data.inspectionTime === undefined) return;
-      // (1) PARSEABLE — always enforced, no flag. This is not a tightening of
-      //     working behaviour: an unparseable stamp produced an Invalid Date that
-      //     blew up at insert time and was classified TRANSIENT, so the payload
-      //     was buffered to the WAL and retried FOREVER (a poison entry that can
-      //     never succeed). A clean BAD_REQUEST is strictly better for every
-      //     party — no machine that works today starts failing.
-      if (Number.isNaN(new Date(data.inspectionTime).getTime())) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["inspectionTime"],
-          message: `inspectionTime is not a parseable date-time: "${data.inspectionTime}"`,
-        });
-        return;
-      }
-      // (2) EXPLICIT UTC OFFSET — flagged, default OFF (accept + tag as
-      //     'machine_naive'). Turning this ON before every machine emits an
-      //     offset would reject real production boards, so it stays opt-in until
-      //     the timeSource telemetry says the fleet is ready.
-      if (requireTimeOffset() && !hasExplicitUtcOffset(data.inspectionTime)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["inspectionTime"],
-          message:
-            `inspectionTime must carry an explicit UTC offset (e.g. 2026-07-15T08:00:00+07:00 ` +
-            `or ...Z) when INGEST_REQUIRE_TIME_OFFSET is on — got "${data.inspectionTime}", ` +
-            `which the server can only interpret in its OWN timezone.`,
-        });
-      }
     });
 
+// ── Doc 51 P1 (CASE #3) — inspectionTime validation ──────────────────────────
+// Deliberately a superRefine and not `z.string().datetime({offset:true})`: the
+// offset requirement must read process.env AT PARSE TIME so it can be a flag
+// (QĐ#1) and so tests can exercise both sides. The parseability check is NOT
+// flagged — see below. Extracted to a standalone refinement (doc 51 P3 batch-1)
+// so BOTH the single submit schema AND each item of the batch schema validate
+// timestamps identically — one rule, no copy-paste drift.
+function refineInspectionTime(
+  data: z.infer<typeof submitInspectionCoreObject>,
+  ctx: z.RefinementCtx,
+): void {
+  if (data.inspectionTime === undefined) return;
+  // (1) PARSEABLE — always enforced, no flag. This is not a tightening of working
+  //     behaviour: an unparseable stamp produced an Invalid Date that blew up at
+  //     insert time and was classified TRANSIENT, so the payload was buffered to
+  //     the WAL and retried FOREVER (a poison entry that can never succeed). A
+  //     clean BAD_REQUEST is strictly better — no machine that works today fails.
+  if (Number.isNaN(new Date(data.inspectionTime).getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inspectionTime"],
+      message: `inspectionTime is not a parseable date-time: "${data.inspectionTime}"`,
+    });
+    return;
+  }
+  // (2) EXPLICIT UTC OFFSET — flagged, default OFF (accept + tag as
+  //     'machine_naive'). Turning this ON before every machine emits an offset
+  //     would reject real production boards, so it stays opt-in until the
+  //     timeSource telemetry says the fleet is ready.
+  if (requireTimeOffset() && !hasExplicitUtcOffset(data.inspectionTime)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inspectionTime"],
+      message:
+        `inspectionTime must carry an explicit UTC offset (e.g. 2026-07-15T08:00:00+07:00 ` +
+        `or ...Z) when INGEST_REQUIRE_TIME_OFFSET is on — got "${data.inspectionTime}", ` +
+        `which the server can only interpret in its OWN timezone.`,
+    });
+  }
+}
+
+const submitInspectionInputSchema = submitInspectionCoreObject
+  .refine((data) => data.apiKey || data.machineCode, {
+    message: "Either apiKey or machineCode must be provided",
+  })
+  .superRefine(refineInspectionTime);
+
 export type SubmitInspectionInput = z.infer<typeof submitInspectionInputSchema>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-1 (§5.4 / CASE #2 / CASE #9) — BATCH INGEST schema.
+//
+// One credential (apiKey/machineCode/header) authenticates the whole batch, so an
+// ITEM never carries its own — the batch item is the SAME core payload minus the
+// credential requirement, with the SAME timestamp validation applied per item. A
+// per-item apiKey/machineCode field is still ACCEPTED (the core object has them as
+// optional) but IGNORED: the batch-level credential (pre-auth) always wins, so a
+// machine cannot smuggle a second identity inside a batch item.
+// ════════════════════════════════════════════════════════════════════════════
+const submitInspectionBatchItemSchema =
+  submitInspectionCoreObject.superRefine(refineInspectionTime);
+
+export type SubmitInspectionBatchItem = z.infer<typeof submitInspectionBatchItemSchema>;
+
+const submitInspectionBatchInputSchema = z
+  .object({
+    machineCode: z.string().optional(),
+    apiKey: z.string().optional(),
+    inspections: z
+      .array(submitInspectionBatchItemSchema)
+      .min(1, "batch must contain at least one inspection")
+      .max(
+        MAX_BATCH_INSPECTIONS,
+        `batch exceeds MACHINE_INGEST_BATCH_MAX (${MAX_BATCH_INSPECTIONS} inspections)`,
+      ),
+  })
+  .refine((data) => data.apiKey || data.machineCode, {
+    message: "Either apiKey or machineCode must be provided",
+  });
 
 /** Extract a machine credential from Authorization: Bearer / X-API-Key headers. */
 function machineHeaderKey(ctx: unknown): string | null {
@@ -798,19 +859,33 @@ function auditInspectionSubmission(params: {
  */
 export async function processInspectionSubmission(
   input: SubmitInspectionInput,
-  opts?: { headerKey?: string | null; rateLimit?: boolean },
+  opts?: {
+    headerKey?: string | null;
+    rateLimit?: boolean;
+    // Doc 51 P3 batch-1 — a PRE-RESOLVED credential (submitInspectionBatch auths
+    // ONCE for the whole batch, then reuses the result for every item). When
+    // present, the per-item authenticateMachine call is skipped — the identity,
+    // scope check and weak-auth telemetry all happened once at the batch level.
+    preAuth?: MachineAuthResult;
+    // Doc 51 P3 batch-1 — skip the per-item machine-heartbeat write. The batch
+    // path stamps the heartbeat ONCE (200 boards ⇒ 1 heartbeat write, not 200).
+    skipHeartbeat?: boolean;
+  },
 ): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
       // Validate machine — per-machine scoped key (Authorization header or apiKey
       // field), legacy shared apiKey (flag-gated), or machineCode. Throws
-      // UNAUTHORIZED/FORBIDDEN, or DbUnavailableError when the DB is down.
-      const auth = await authenticateMachine({
+      // UNAUTHORIZED/FORBIDDEN, or DbUnavailableError when the DB is down. A batch
+      // caller passes a pre-resolved auth so the whole batch shares one identity.
+      const auth = opts?.preAuth ?? await authenticateMachine({
         apiKey: input.apiKey,
         machineCode: input.machineCode,
         headerKey: opts?.headerKey,
         scope: "ingest:write",
       });
       const machine = auth.machine;
-      // Rate limit LIVE requests only (a WAL backfill replay must never trip it).
+      // Rate limit LIVE requests only (a WAL backfill replay must never trip it,
+      // and the batch path enforces the limit itself — once PER inspection —
+      // before dispatching each item, so it never double-counts here).
       if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
 
       const normalizedProductModelCode = input.productModel?.trim();
@@ -819,8 +894,8 @@ export async function processInspectionSubmission(
         : undefined;
       const resolvedProductModelCode = productModelRecord?.code || normalizedProductModelCode;
 
-      // Update machine heartbeat
-      await db.updateMachineHeartbeat(machine.id);
+      // Update machine heartbeat (skipped on the batch path — done once there).
+      if (!opts?.skipHeartbeat) await db.updateMachineHeartbeat(machine.id);
 
       // Find production order if provided
       let productionOrderId: number | undefined;
@@ -1931,6 +2006,135 @@ function projectFiducials(rows: any[]): Array<Record<string, unknown>> {
   }));
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-1 (§5.1 P3) — HEARTBEAT rate limit.
+//
+// heartbeat used to call NO limiter, so a broken/hostile agent could hammer it at
+// line rate. It gets its OWN lightweight fixed-window limiter (NOT the ingest
+// bucket — a heartbeat storm must not eat a machine's ingest quota, nor vice
+// versa). Default GENEROUS (QĐ#1 backward-compat: real machines heartbeat every
+// 5–30s, far under the cap) so no working machine starts getting 429s; 0 disables.
+// ════════════════════════════════════════════════════════════════════════════
+const heartbeatRateWindows = new Map<number, { start: number; count: number }>();
+const HEARTBEAT_RATE_WINDOW_MS = 60_000;
+
+function heartbeatRateLimitPerMin(): number {
+  return envInt("MACHINE_HEARTBEAT_RATE_LIMIT_PER_MIN", 120);
+}
+
+/** Test seam — the window map is module state. */
+export function _resetHeartbeatRateLimit(): void {
+  heartbeatRateWindows.clear();
+}
+
+/** Per-machine heartbeat limiter. Throws TOO_MANY_REQUESTS above the cap; 0 → off. */
+function enforceMachineHeartbeatRateLimit(machineId: number, machineCode: string): void {
+  const limit = heartbeatRateLimitPerMin();
+  if (limit <= 0) return;
+  const now = Date.now();
+  const win = heartbeatRateWindows.get(machineId);
+  if (!win || now - win.start >= HEARTBEAT_RATE_WINDOW_MS) {
+    heartbeatRateWindows.set(machineId, { start: now, count: 1 });
+    if (heartbeatRateWindows.size > 10_000) {
+      for (const [k, v] of heartbeatRateWindows) {
+        if (now - v.start >= HEARTBEAT_RATE_WINDOW_MS) heartbeatRateWindows.delete(k);
+      }
+    }
+    return;
+  }
+  win.count += 1;
+  if (win.count > limit) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Heartbeat rate limit exceeded for machine ${machineCode} (${limit}/min)`,
+    });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 (CASE #10) — KEY-ROTATION SIGNAL.
+//
+// A machine only learns its key expired when auth starts returning 401 — an abrupt
+// line stop. This computes a forward-looking signal (keyStatus / keyRotationPending
+// / keyExpiresInDays) the machine can poll on its heartbeat and rotate BEFORE the
+// cliff (zero-downtime rotation). Read from the CURRENT key's expiresAt (via
+// listMachineKeys, matched by the auth's keyId). Weak paths (shared key / bare
+// machineCode) carry no per-machine key expiry → keyStatus:'shared', no warning.
+//
+// Intentionally NOT wired into the per-board submitInspection response: that path
+// is the exact throughput bottleneck the batch endpoint exists to relieve, and an
+// extra key read per board would regress it. Heartbeat (low-frequency, polled
+// regularly) is the correct channel; the batch response carries it once per batch.
+// ════════════════════════════════════════════════════════════════════════════
+export interface KeyRotationSignal {
+  /** ok = healthy · expiring = within the warn window · expired = past due (still
+   *  authenticating only until the server enforces expiry) · no_expiry = key never
+   *  expires · shared = weak auth path, nothing to rotate on a schedule. */
+  keyStatus: "ok" | "expiring" | "expired" | "no_expiry" | "shared";
+  /** true ⇒ the machine SHOULD rotate now (expiring within the window, or expired). */
+  keyRotationPending: boolean;
+  /** Whole days until expiry (negative = already expired); null when not applicable. */
+  keyExpiresInDays: number | null;
+}
+
+/** Days-before-expiry at which the signal turns keyRotationPending. Default 14. */
+function keyRotationWarnDays(): number {
+  return envInt("MACHINE_KEY_ROTATION_WARN_DAYS", 14);
+}
+
+/**
+ * Best-effort — a failure NEVER breaks the caller (heartbeat/batch still succeed);
+ * on any error we return the neutral 'shared'/no-warning shape. Bounded to a single
+ * indexed read of the authenticating machine's keys.
+ */
+export async function computeKeyRotationSignal(auth: MachineAuthResult): Promise<KeyRotationSignal> {
+  // Only a real per-machine key (mk_...) has a schedule to rotate on.
+  if (auth.method !== "machine-key" || auth.keyId == null) {
+    return { keyStatus: "shared", keyRotationPending: false, keyExpiresInDays: null };
+  }
+  let expiresAt: Date | null = null;
+  try {
+    const keys = await listMachineKeys(auth.machine.id);
+    const current = keys.find((k) => k.id === auth.keyId);
+    expiresAt = current?.expiresAt ? new Date(current.expiresAt) : null;
+  } catch (err) {
+    console.warn(
+      `[machineApi] key-rotation signal lookup failed (non-fatal) for machine=${auth.machine.code}:`,
+      (err as Error)?.message ?? err,
+    );
+    return { keyStatus: "shared", keyRotationPending: false, keyExpiresInDays: null };
+  }
+  if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
+    return { keyStatus: "no_expiry", keyRotationPending: false, keyExpiresInDays: null };
+  }
+  const ms = expiresAt.getTime() - Date.now();
+  const days = Math.floor(ms / 86_400_000);
+  if (ms <= 0) return { keyStatus: "expired", keyRotationPending: true, keyExpiresInDays: days };
+  const pending = days <= keyRotationWarnDays();
+  return { keyStatus: pending ? "expiring" : "ok", keyRotationPending: pending, keyExpiresInDays: days };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-1 — BATCH per-item result + drain worker.
+// ════════════════════════════════════════════════════════════════════════════
+export interface BatchInspectionItemResult {
+  /** 0-based position in the submitted `inspections` array — the client maps by it. */
+  index: number;
+  success: boolean;
+  /** The persisted (or existing, when duplicate) inspection id; null when not persisted. */
+  inspectionId: number | null;
+  /** true ⇒ an idempotency/natural-key hit — already on record, side-effects NOT re-run. */
+  duplicate?: boolean;
+  /** true ⇒ a transient failure was buffered to the durability WAL (replayed later). */
+  queued?: boolean;
+  /** Set on queued items so the machine can reconcile the deferred write. */
+  submissionId?: string;
+  /** true ⇒ rejected by the per-inspection rate limit (retry in a later window). */
+  rateLimited?: boolean;
+  /** Human-readable error for a permanent per-item failure (bad point, validation…). */
+  error?: string;
+}
+
 export const machineApiRouter = router({
   // Submit inspection data from machine — DURABLE (doc 27 W2-C, gap C3/R11):
   // a transient failure (DB down) buffers the full payload to the disk WAL and
@@ -1998,6 +2202,194 @@ export const machineApiRouter = router({
           inspectionId: null,
         };
       }
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Doc 51 P3 batch-1 (§5.4 / CASE #2 / CASE #9) — BATCH INGEST.
+  //
+  // The benchmark (doc 53 §0) proved a hard ceiling of ~36 inspection/s under
+  // per-request synchronous writes on a pool-25. When a machine reconnects after a
+  // network outage it may hold THOUSANDS of buffered boards (CASE #2); replaying
+  // them one-POST-each is the exact pathology. This folds up to
+  // MACHINE_INGEST_BATCH_MAX (default 200) boards into ONE request:
+  //   • ONE authenticate (weak-auth telemetry, scope check) for the whole batch,
+  //   • ONE heartbeat write (not one per board),
+  //   • items pipelined with bounded concurrency so the pool is actually used,
+  //   • the SAME proven pipeline per board (processInspectionSubmission), so every
+  //     board keeps its OWN idempotency (ledger/natural key), duplicate
+  //     short-circuit, provenance, spec-gate and image compensation — no forked
+  //     copy of that logic.
+  // Per-item ISOLATION (QĐ#3): one board's failure never fails the batch — each
+  // item returns its own {index,success,inspectionId,duplicate?,queued?,error?}.
+  // Rate limit is charged PER inspection (enforce × N) BEFORE each item, so a batch
+  // can never dodge the ingest limit; boards past the limit come back rateLimited.
+  //
+  // NOT a single-transaction bulk COPY: each board still uses its own idempotent
+  // transaction. The win here is the round-trip/auth/heartbeat collapse + in-batch
+  // concurrency (5000 boards → ~25 requests). A true single-tx COPY path would
+  // require rewriting the entire per-board side-effect chain and is out of scope.
+  // ════════════════════════════════════════════════════════════════════════════
+  submitInspectionBatch: publicProcedure
+    .input(submitInspectionBatchInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const headerKey = machineHeaderKey(ctx);
+      // AUTH ONCE for the whole batch (the throughput point). Throws
+      // UNAUTHORIZED/FORBIDDEN or DbUnavailableError exactly like the single path;
+      // a bad credential rejects the batch as a whole (nothing to isolate — every
+      // item shares the identity).
+      const auth = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey,
+        scope: "ingest:write",
+        endpoint: "submitInspectionBatch",
+      });
+      const machine = auth.machine;
+
+      // ONE heartbeat for the batch (per-item heartbeat is suppressed below).
+      // Best-effort — a heartbeat write must not fail the ingest.
+      try {
+        await db.updateMachineHeartbeat(machine.id);
+      } catch (hbErr) {
+        console.warn(
+          `[submitInspectionBatch] heartbeat write failed (non-fatal) for machine=${machine.code}:`,
+          (hbErr as Error)?.message ?? hbErr,
+        );
+      }
+
+      const items = input.inspections;
+      const results: BatchInspectionItemResult[] = new Array(items.length);
+      const storeForwardOn = inspectionStoreForwardEnabled();
+      const batchReceivedAt = new Date();
+      const walDrainNeeded = { value: false };
+      // Once the rate limiter trips, every later item in this window will trip too
+      // — flag it so remaining items short-circuit to rateLimited without pointless
+      // DB work. The limit still capped throughput (tokens were consumed up to it).
+      let rateLimitTripped = false;
+
+      const runItem = async (i: number): Promise<void> => {
+        if (rateLimitTripped) {
+          results[i] = {
+            index: i,
+            success: false,
+            inspectionId: null,
+            rateLimited: true,
+            error: `Ingest rate limit exceeded for machine ${machine.code}`,
+          };
+          return;
+        }
+        // Charge ONE ingest token for THIS inspection (batch cannot dodge the limit).
+        try {
+          enforceMachineIngestRateLimit(auth);
+        } catch (rlErr) {
+          if (rlErr instanceof TRPCError && rlErr.code === "TOO_MANY_REQUESTS") {
+            rateLimitTripped = true;
+            results[i] = {
+              index: i,
+              success: false,
+              inspectionId: null,
+              rateLimited: true,
+              error: rlErr.message,
+            };
+            return;
+          }
+          throw rlErr;
+        }
+
+        // Stamp provenance from the ORIGINAL request, mirroring the single path, so
+        // a drained board keeps a stable idempotency key + honest receive-time. The
+        // batch credential wins: strip any per-item apiKey/machineCode identity.
+        const raw = items[i];
+        const stamped: SubmitInspectionInput = {
+          ...raw,
+          apiKey: undefined,
+          machineCode: undefined,
+          inspectionTime: raw.inspectionTime ?? batchReceivedAt.toISOString(),
+          serverReceivedAt: batchReceivedAt.toISOString(),
+          timeSource: classifyInspectionTime(raw.inspectionTime),
+        };
+        try {
+          const r = await processInspectionSubmission(stamped, {
+            preAuth: auth,
+            skipHeartbeat: true,
+          });
+          results[i] = {
+            index: i,
+            success: true,
+            inspectionId: r.inspectionId,
+            ...(r.duplicate ? { duplicate: true } : {}),
+          };
+        } catch (err) {
+          // Per-item isolation. Transient failure + WAL on → buffer THIS board and
+          // ACK it queued (self-authenticating replay folds the batch credential);
+          // otherwise report a permanent per-item error. Neither path aborts the
+          // rest of the batch.
+          if (storeForwardOn && !isPermanentSubmitError(err)) {
+            ensureInspectionWalWired();
+            const walPayload: SubmitInspectionInput = {
+              ...stamped,
+              apiKey: input.apiKey ?? headerKey ?? undefined,
+              machineCode: input.machineCode ?? undefined,
+            };
+            const buffered = await bufferSubmission(walPayload);
+            if (buffered.buffered || buffered.duplicate) {
+              walDrainNeeded.value = true;
+              results[i] = {
+                index: i,
+                success: true,
+                inspectionId: null,
+                queued: true,
+                submissionId: buffered.key,
+              };
+              return;
+            }
+          }
+          results[i] = {
+            index: i,
+            success: false,
+            inspectionId: null,
+            error: (err as Error)?.message ?? String(err),
+          };
+        }
+      };
+
+      // Bounded-concurrency drain (default 8 — below pool-25 so other requests keep
+      // headroom). JS is single-threaded so the in-memory rate-limit increments and
+      // the `rateLimitTripped`/`walDrainNeeded` flags are race-free across workers.
+      const concurrency = Math.max(1, envInt("MACHINE_INGEST_BATCH_CONCURRENCY", 8));
+      let cursor = 0;
+      const worker = async () => {
+        for (let i = cursor++; i < items.length; i = cursor++) await runItem(i);
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+      );
+
+      // Opportunistic WAL drain if any item was buffered and the DB is demonstrably
+      // up (some items succeeded). Fire-and-forget, never blocks the ACK.
+      if (storeForwardOn && walDrainNeeded.value && bufferedInspectionCount() > 0) {
+        ensureInspectionWalWired();
+        void backfillInspections().catch(() => undefined);
+      }
+
+      // CASE #10 — one key-rotation signal per batch (cheap: auth already resolved).
+      const keySignal = await computeKeyRotationSignal(auth);
+
+      const succeeded = results.filter((r) => r.success && !r.queued && !r.duplicate).length;
+      const duplicates = results.filter((r) => r.duplicate).length;
+      const queued = results.filter((r) => r.queued).length;
+      const failed = results.filter((r) => !r.success).length;
+      return {
+        success: true as const,
+        machineId: machine.id,
+        submitted: items.length,
+        succeeded,
+        duplicates,
+        queued,
+        failed,
+        results,
+        ...keySignal,
+      };
     }),
 
   // ============================================================
@@ -2525,14 +2917,26 @@ export const machineApiRouter = router({
   heartbeat: publicProcedure
     .input(z.object({ apiKey: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const { machine } = await authenticateMachine({
+      const auth = await authenticateMachine({
         apiKey: input.apiKey,
         headerKey: machineHeaderKey(ctx),
         scope: "equipment:read",
+        endpoint: "heartbeat",
       });
+      const machine = auth.machine;
+
+      // Doc 51 P3 (§5.1) — heartbeat now has its OWN limiter (was unbounded → a
+      // broken/hostile agent could spam it). Enforced BEFORE the heartbeat write so
+      // a storm is rejected, not recorded. Default cap is generous; 0 disables.
+      enforceMachineHeartbeatRateLimit(machine.id, machine.code);
 
       await db.updateMachineHeartbeat(machine.id);
-      return { success: true, machineId: machine.id };
+
+      // Doc 51 P3 (CASE #10) — carry the forward-looking key-rotation signal so the
+      // machine can rotate BEFORE its key expires (zero-downtime), instead of
+      // discovering it via a sudden 401. Best-effort — never fails the heartbeat.
+      const keySignal = await computeKeyRotationSignal(auth);
+      return { success: true, machineId: machine.id, ...keySignal };
     }),
 
   // ============================================================

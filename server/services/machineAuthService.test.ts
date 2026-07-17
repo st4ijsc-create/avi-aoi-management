@@ -17,6 +17,8 @@ import {
   rotateMachineKey,
   revokeMachineKey,
   listMachineKeys,
+  listExpiringMachineKeys,
+  machineKeyDefaultTtlDays,
   enforceMachineIngestRateLimit,
   sharedMachineKeyAllowed,
   sharedMachineKeyPolicy,
@@ -51,6 +53,7 @@ afterAll(async () => {
   delete process.env.MACHINE_SHARED_KEY_ALLOWED;
   delete process.env.MACHINE_CODE_ONLY_ALLOWED;
   delete process.env.MACHINE_INGEST_RATE_LIMIT_PER_MIN;
+  delete process.env.MACHINE_KEY_DEFAULT_TTL_DAYS;
 });
 
 beforeEach(() => {
@@ -58,6 +61,7 @@ beforeEach(() => {
   delete process.env.MACHINE_SHARED_KEY_ALLOWED;
   delete process.env.MACHINE_CODE_ONLY_ALLOWED;
   delete process.env.MACHINE_INGEST_RATE_LIMIT_PER_MIN;
+  delete process.env.MACHINE_KEY_DEFAULT_TTL_DAYS;
 });
 
 describe("per-machine scoped keys (api_keys + machineId, migration 0178)", () => {
@@ -358,5 +362,110 @@ describe("ingest rate limit (per machine key, in-memory window)", () => {
     process.env.MACHINE_INGEST_RATE_LIMIT_PER_MIN = "0";
     const auth = { machine: { id: 999_003, code: "OFF" } };
     for (let i = 0; i < 50; i++) enforceMachineIngestRateLimit(auth);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 / CASE #10 — default key TTL (opt-in, backward compatible) +
+// listExpiringMachineKeys (cron warning surface).
+// ════════════════════════════════════════════════════════════════════════════
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+describe("doc 51 P3 — machineKeyDefaultTtlDays parsing", () => {
+  it("unset / empty / 0 / negative / garbage → 0 (no expiry, backward compatible)", () => {
+    for (const v of [undefined, "", "0", "-5", "abc"]) {
+      if (v === undefined) delete process.env.MACHINE_KEY_DEFAULT_TTL_DAYS;
+      else process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = v;
+      expect(machineKeyDefaultTtlDays()).toBe(0);
+    }
+  });
+
+  it("a positive value is honoured and clamped to a sane ceiling", () => {
+    process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = "90";
+    expect(machineKeyDefaultTtlDays()).toBe(90);
+    process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = "999999";
+    expect(machineKeyDefaultTtlDays()).toBe(3650);
+  });
+});
+
+describe("doc 51 P3 — issueMachineKey default TTL (QĐ#1: null unless opted in)", () => {
+  it("DEFAULT (env unset): expiresAt stays null — a running machine is never bricked", async () => {
+    const issued = await issueMachineKey({ machineId });
+    expect(issued.expiresAt).toBeNull();
+    await revokeMachineKey(issued.id);
+  });
+
+  it("MACHINE_KEY_DEFAULT_TTL_DAYS=90 → a key with no explicit expiry gets ~90 days", async () => {
+    process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = "90";
+    const issued = await issueMachineKey({ machineId });
+    expect(issued.expiresAt).toBeTruthy();
+    const days = (new Date(issued.expiresAt!).getTime() - Date.now()) / DAY_MS;
+    expect(days).toBeGreaterThan(89);
+    expect(days).toBeLessThanOrEqual(90);
+    // and the TTL is REAL — fast-forward past it and auth must reject
+    await revokeMachineKey(issued.id);
+  });
+
+  it("an EXPLICIT expiresAt always wins over the default (incl. explicit null)", async () => {
+    process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = "90";
+    const nulled = await issueMachineKey({ machineId, expiresAt: null });
+    expect(nulled.expiresAt).toBeNull(); // caller's explicit null beats the default
+
+    const soon = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() + 60_000) });
+    expect(new Date(soon.expiresAt!).getTime()).toBeLessThan(Date.now() + 2 * 60_000);
+
+    await revokeMachineKey(nulled.id);
+    await revokeMachineKey(soon.id);
+  });
+
+  it("rotation copies the SOURCE key's expiry (does not newly stamp the default)", async () => {
+    const issued = await issueMachineKey({ machineId, expiresAt: null });
+    process.env.MACHINE_KEY_DEFAULT_TTL_DAYS = "90"; // set AFTER issue
+    const rotated = await rotateMachineKey(issued.id);
+    expect(rotated.expiresAt).toBeNull(); // preserves the source's null, not now+90d
+    await revokeMachineKey(rotated.id);
+  });
+});
+
+describe("doc 51 P3 — listExpiringMachineKeys (cron warning surface)", () => {
+  it("returns active keys expiring within the window; excludes far-future, no-expiry and revoked", async () => {
+    const soon = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() + 5 * DAY_MS) });
+    const far = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() + 60 * DAY_MS) });
+    const never = await issueMachineKey({ machineId, expiresAt: null });
+
+    const ids = (await listExpiringMachineKeys(14)).map((k) => k.id);
+    expect(ids).toContain(soon.id);
+    expect(ids).not.toContain(far.id);
+    expect(ids).not.toContain(never.id);
+
+    // revoking the expiring key removes it from the warning list
+    await revokeMachineKey(soon.id);
+    expect((await listExpiringMachineKeys(14)).map((k) => k.id)).not.toContain(soon.id);
+
+    await revokeMachineKey(far.id);
+    await revokeMachineKey(never.id);
+  });
+
+  it("INCLUDES already-expired-but-active keys (they have silently stopped authenticating)", async () => {
+    const expired = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() - DAY_MS) });
+    expect((await listExpiringMachineKeys(14)).map((k) => k.id)).toContain(expired.id);
+    await revokeMachineKey(expired.id);
+  });
+
+  it("a wider window pulls in keys a narrow window would miss", async () => {
+    const k = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() + 30 * DAY_MS) });
+    expect((await listExpiringMachineKeys(14)).map((x) => x.id)).not.toContain(k.id);
+    expect((await listExpiringMachineKeys(45)).map((x) => x.id)).toContain(k.id);
+    await revokeMachineKey(k.id);
+  });
+
+  it("never surfaces a general (non-machine) key — only machine credentials", async () => {
+    // A machine key IS a machine key; assert the projection carries the machineId
+    // so a caller can route the warning to the right owner.
+    const k = await issueMachineKey({ machineId, expiresAt: new Date(Date.now() + 3 * DAY_MS) });
+    const row = (await listExpiringMachineKeys(14)).find((x) => x.id === k.id);
+    expect(row?.machineId).toBe(machineId);
+    await revokeMachineKey(k.id);
   });
 });

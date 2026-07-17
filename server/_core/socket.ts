@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { attachRedisAdapter } from "./socketRedisAdapter";
+import { getMachinePresenceStore } from "./machinePresenceStore";
 import { eventBus, EventTypes, type DomainEvent } from "./eventBus";
 import { toEcosystemEvent, isAlertKind, type EcosystemEvent } from "../services/ecosystem/ecosystemEvents";
 // ── doc 44 W2-B1 (G2.12 + G2.17) — state-store ingest hooks + UNS snapshot-then-
@@ -36,9 +37,17 @@ interface PendingMachineRegistration {
 }
 
 const pendingRegistrations: Map<string, PendingMachineRegistration> = new Map();
+// ── PER-INSTANCE local presence (socketId identity guards + disconnect reverse
+// lookup — inherently local). doc 51 §5.3 P2: these are now MIRRORED into a
+// SHARED store (`machinePresenceStore`, Redis when REDIS_URL is set, else an
+// in-memory fallback) so fleet-wide readers (admin:get_online_machines,
+// admin:connected_machines) see the UNION across load-balanced instances and
+// survive restarts. Both are updated at the same call sites. `presence` is the
+// shared mirror; the Maps below stay authoritative for THIS instance's sockets.
 const connectedMachines: Map<number, { socketId: string; ipAddress: string; lastHeartbeat: Date; machineCode: string }> = new Map();
 // Map machineId -> machineCode for quick lookup
 const onlineMachineCodesMap: Map<number, string> = new Map();
+const presence = getMachinePresenceStore();
 
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
@@ -226,6 +235,12 @@ export function initializeSocket(server: HttpServer): Server {
           const machineCode = info.machineCode;
           connectedMachines.delete(machineId);
           onlineMachineCodesMap.delete(machineId);
+          // Shared-store mirror: drop presence, but only if THIS socket still
+          // owns it (a machine that migrated to another instance keeps its newer
+          // entry — see setOffline's socketId guard). Fire-and-forget.
+          void presence.setOffline(machineId, socket.id).catch((err) =>
+            console.error("[Socket.io] presence setOffline failed:", err?.message ?? err),
+          );
           console.log(`[Socket.io] Machine ${machineId} (${machineCode}) disconnected`);
           
           // Log status change to database
@@ -291,7 +306,16 @@ export function initializeSocket(server: HttpServer): Server {
       if (machineInfo && machineInfo.socketId === socket.id) {
         machineInfo.lastHeartbeat = new Date();
         connectedMachines.set(data.machineId, machineInfo);
-        
+        // Shared-store mirror: refresh TTL so a live machine never self-expires.
+        void presence.refresh({
+          machineId: data.machineId,
+          machineCode: machineInfo.machineCode,
+          socketId: socket.id,
+          ipAddress: machineInfo.ipAddress,
+          lastHeartbeat: machineInfo.lastHeartbeat.getTime(),
+          status: data.status,
+        }).catch((err) => console.error("[Socket.io] presence refresh failed:", err?.message ?? err));
+
         // Broadcast machine status update
         io?.to("global").emit("machine:status_update", {
           machineId: data.machineId,
@@ -312,7 +336,16 @@ export function initializeSocket(server: HttpServer): Server {
         machineCode: data.machineCode,
       });
       onlineMachineCodesMap.set(data.machineId, data.machineCode);
-      
+      // Shared-store mirror: mark online across the fleet (TTL-bounded).
+      void presence.setOnline({
+        machineId: data.machineId,
+        machineCode: data.machineCode,
+        socketId: socket.id,
+        ipAddress,
+        lastHeartbeat: Date.now(),
+        status: "online",
+      }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
+
       socket.join(`machine:${data.machineId}`);
       console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
       
@@ -336,10 +369,10 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Admin joins admin room for machine management
-    socket.on("admin:join", () => {
+    socket.on("admin:join", async () => {
       socket.join("admin");
       console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
-      
+
       // Send current pending registrations
       const pending = Array.from(pendingRegistrations.entries()).map(([id, reg]) => ({
         requestSocketId: id,
@@ -349,19 +382,40 @@ export function initializeSocket(server: HttpServer): Server {
         status: reg.status,
       }));
       socket.emit("admin:pending_registrations", pending);
-      
-      // Send connected machines status
-      const connected = Array.from(connectedMachines.entries()).map(([machineId, info]) => ({
-        machineId,
-        ...info,
-      }));
+
+      // Send connected machines status — UNION across all instances via the
+      // shared presence store (doc 51 §5.3 P2). Falls back to the local Map if
+      // the store read fails, so a Redis blip never blanks the admin view.
+      let connected: Array<{ machineId: number; socketId?: string; ipAddress?: string; lastHeartbeat: Date; machineCode: string }>;
+      try {
+        const entries = await presence.listOnline();
+        connected = entries.map((e) => ({
+          machineId: e.machineId,
+          socketId: e.socketId,
+          ipAddress: e.ipAddress,
+          lastHeartbeat: new Date(e.lastHeartbeat),
+          machineCode: e.machineCode,
+        }));
+      } catch (err: any) {
+        console.error("[Socket.io] presence listOnline failed, using local map:", err?.message ?? err);
+        connected = Array.from(connectedMachines.entries()).map(([machineId, info]) => ({
+          machineId,
+          ...info,
+        }));
+      }
       socket.emit("admin:connected_machines", connected);
     });
 
-    // Dashboard requests online machines list
-    socket.on("admin:get_online_machines", () => {
-      // Get machine codes from connectedMachines
-      const onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+    // Dashboard requests online machines list — UNION across all instances via
+    // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
+    socket.on("admin:get_online_machines", async () => {
+      let onlineMachineCodes: string[];
+      try {
+        onlineMachineCodes = await presence.listOnlineCodes();
+      } catch (err: any) {
+        console.error("[Socket.io] presence listOnlineCodes failed, using local map:", err?.message ?? err);
+        onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+      }
       socket.emit("machine:online_list", { machines: onlineMachineCodes });
       console.log(`[Socket.io] Sent online machines list to ${socket.id}: ${onlineMachineCodes.length} machines`);
     });
@@ -546,6 +600,15 @@ export function initializeSocket(server: HttpServer): Server {
           machineCode: data.machineCode,
         });
         onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        // Shared-store mirror: mark online across the fleet (TTL-bounded).
+        void presence.setOnline({
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: Date.now(),
+          status: "online",
+        }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
 
         // Join machine-specific room
         socket.join(`machine:${data.machineId}`);

@@ -1,6 +1,6 @@
-import { eq, and, desc, like, or, sql, inArray, ne, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray, ne, lt, isNull, isNotNull } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
-import { pgTable, serial, integer, varchar, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { getDb } from "./connection";
 import {
   factories, InsertFactory,
@@ -689,6 +689,354 @@ export async function revokeMachineCredentials(machineId: number): Promise<Machi
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 / §5.1 — ZERO-TOUCH ENROLLMENT TOKENS (gỡ nghẽn single-admin)
+// ════════════════════════════════════════════════════════════════════════════
+// A machine used to need an admin to approve it AND mint/hand it a key, one at a
+// time. An ENROLLMENT TOKEN lets a VALID machine self-serve: it presents an
+// admin-issued, high-entropy token and the server approves it + tells the caller
+// the machine is ready for a scoped mk_ key (the router then issues that key via
+// machineAuthService.issueMachineKey). Same hash-at-rest / TTL / revoke posture
+// as the P0 claim token (0273); DIFFERENCE: a claim token trades for an EXISTING
+// machines.apiKey for ONE already-approved machine, whereas an enrollment token
+// APPROVES the machine and can be an ALLOWLIST (serialPattern, maxUses>1) for a
+// batch roll-out. Table declared here for the same reason machineClaimTokens is
+// (migration 0283 + this module are its only touch points; db:push runs plain
+// SQL, not drizzle-kit, so a table outside drizzle/schema is never dropped).
+
+export const machineEnrollmentTokens = pgTable("machine_enrollment_tokens", {
+  id: serial("id").primaryKey(),
+  /** SHA-256 hex of the plaintext — the plaintext is NEVER stored. */
+  tokenHash: varchar("tokenHash", { length: 128 }).notNull(),
+  /** Short, NON-SECRET display prefix (e.g. "met_3f9c") for audit correlation. */
+  tokenPrefix: varchar("tokenPrefix", { length: 32 }),
+  /** Allowlist match for serialNumber. NULL = one-time for a single machine. */
+  serialPattern: varchar("serialPattern", { length: 120 }),
+  /** Scopes granted to the auto-issued mk_ key (min ingest:write). */
+  scopes: jsonb("scopes").$type<string[]>().notNull().default(["ingest:write", "equipment:read"]),
+  /** Max redemptions (one-time = 1; allowlist batch = N) — the single-use bit. */
+  maxUses: integer("maxUses").notNull().default(1),
+  useCount: integer("useCount").notNull().default(0),
+  expiresAt: timestamp("expiresAt").notNull(),
+  /** Admin revoked it (distinct from expired / exhausted). */
+  revokedAt: timestamp("revokedAt"),
+  lastUsedAt: timestamp("lastUsedAt"),
+  lastUsedFromIp: varchar("lastUsedFromIp", { length: 64 }),
+  note: varchar("note", { length: 255 }),
+  issuedBy: integer("issuedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_machine_enrollment_tokens_hash").on(table.tokenHash),
+  index("idx_machine_enrollment_tokens_open").on(table.expiresAt),
+]);
+
+export type MachineEnrollmentToken = typeof machineEnrollmentTokens.$inferSelect;
+
+/** Default scopes the auto-issued mk_ key gets when a token does not narrow them. */
+export const ENROLLMENT_DEFAULT_SCOPES: readonly string[] = ["ingest:write", "equipment:read"];
+
+/**
+ * Doc 51 P3 — an enrollment could not be completed. `reason` drives the router's
+ * status mapping AND the audit row. Messages are deliberately UNIFORM for the
+ * token-secrecy cases (`invalid` covers hash-miss, revoked, and serial-pattern
+ * mismatch) so a caller cannot enumerate tokens or serials; the operational
+ * cases (`exhausted`, `machine_locked`, `needs_info`, `no_station`) are explicit.
+ */
+export class EnrollmentTokenError extends Error {
+  constructor(
+    message: string,
+    public readonly reason:
+      | "invalid"
+      | "expired"
+      | "exhausted"
+      | "machine_locked"
+      | "needs_info"
+      | "no_station",
+  ) {
+    super(message);
+    this.name = "EnrollmentTokenError";
+  }
+}
+
+/** Enrollment-token lifetime in minutes. Default 60; clamped to (0, 30 days]. */
+export function machineEnrollmentTokenTtlMinutes(): number {
+  const n = parseInt(process.env.MACHINE_ENROLLMENT_TOKEN_TTL_MINUTES || "60", 10);
+  return Number.isFinite(n) && n > 0 && n <= 30 * 24 * 60 ? n : 60;
+}
+
+/** SHA-256 hex — same primitive/rationale as the claim token (256-bit CSPRNG). */
+function hashEnrollmentToken(plaintext: string): string {
+  return createHash("sha256").update(plaintext, "utf8").digest("hex");
+}
+
+/** `met_<64 hex>` — distinct from mct_ (claim), mk_ (machine key), ak_ (admin). */
+function generateEnrollmentToken(): { plaintext: string; prefix: string } {
+  const secret = randomBytes(32).toString("hex");
+  return { plaintext: `met_${secret}`, prefix: `met_${secret.slice(0, 6)}` };
+}
+
+/**
+ * Allowlist match. NULL pattern → any serial (one-time). A trailing `*` is a
+ * PREFIX match (no regex → no ReDoS); otherwise an exact, case-sensitive match.
+ */
+export function serialMatchesEnrollmentPattern(serialNumber: string, pattern: string | null | undefined): boolean {
+  if (!pattern) return true;
+  if (pattern.endsWith("*")) return serialNumber.startsWith(pattern.slice(0, -1));
+  return serialNumber === pattern;
+}
+
+/**
+ * Mint an enrollment token. The PLAINTEXT is returned EXACTLY ONCE and never
+ * persisted (only its SHA-256 hash). Scopes are stored on the token so the
+ * auto-issued key inherits exactly what the admin granted; `maxUses`/`serialPattern`
+ * turn a one-time token into a batch allowlist.
+ */
+export async function issueMachineEnrollmentToken(opts: {
+  serialPattern?: string | null;
+  scopes?: string[];
+  maxUses?: number;
+  ttlMinutes?: number;
+  note?: string | null;
+  issuedBy?: number | null;
+}): Promise<{
+  token: string;
+  tokenPrefix: string;
+  expiresAt: Date;
+  serialPattern: string | null;
+  scopes: string[];
+  maxUses: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineEnrollmentTokenTtlMinutes();
+  const expiresAt = new Date(Date.now() + ttl * 60_000);
+  const scopes = opts.scopes && opts.scopes.length > 0 ? opts.scopes : [...ENROLLMENT_DEFAULT_SCOPES];
+  const maxUses = opts.maxUses && opts.maxUses > 0 ? Math.min(Math.trunc(opts.maxUses), 100_000) : 1;
+  const serialPattern = opts.serialPattern?.trim() || null;
+  const { plaintext, prefix } = generateEnrollmentToken();
+
+  await db.insert(machineEnrollmentTokens).values({
+    tokenHash: hashEnrollmentToken(plaintext),
+    tokenPrefix: prefix,
+    serialPattern,
+    scopes,
+    maxUses,
+    expiresAt,
+    note: opts.note?.trim() || null,
+    issuedBy: opts.issuedBy ?? null,
+  });
+
+  return { token: plaintext, tokenPrefix: prefix, expiresAt, serialPattern, scopes, maxUses };
+}
+
+type MachineInfoForEnrollment = {
+  name?: string;
+  machineType?: string;
+  model?: string;
+  manufacturer?: string;
+  firmwareVersion?: string;
+  syncMode?: "online" | "offline";
+};
+
+/**
+ * Redeem an enrollment token: validate + BURN one use atomically, then approve
+ * (or create) the machine. Returns the machine + the scopes the caller should
+ * mint an mk_ key with — the KEY itself is issued by the router
+ * (machineAuthService.issueMachineKey) so both credential paths share one issuer.
+ *
+ * Ordering is deliberate for single-use vs. wasted-use balance:
+ *   1. Validate machine STATE + station availability FIRST (own-handle reads) so
+ *      a legitimate-but-locked machine, or a missing hierarchy, does NOT consume
+ *      a token use.
+ *   2. Validate + BURN the token in ONE transaction: the increment is guarded by
+ *      `WHERE useCount < maxUses RETURNING`, so two concurrent redemptions of a
+ *      one-time token cannot both win (true single-use).
+ *   3. Approve / create the machine (single atomic statements each).
+ *
+ * A token IS consumed even if step 3 later fails (rare — only a DB fault, which
+ * would also have failed the burn). The machine is left recoverable by an admin
+ * (issueClaimToken / regenerateApiKey); the alternative — burning last — would
+ * let an attacker replay a token, which is the exact risk this must prevent.
+ *
+ * Throws EnrollmentTokenError (router maps reason → status).
+ */
+export async function redeemMachineEnrollmentToken(opts: {
+  serialNumber: string;
+  enrollmentToken: string;
+  machineInfo?: MachineInfoForEnrollment;
+  fromIp?: string | null;
+}): Promise<{ machineId: number; machineCode: string; scopes: string[]; created: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const serialNumber = opts.serialNumber.trim();
+
+  // ── 1. Pre-burn state validation (so a bad machine state wastes no token use) ──
+  const existing = await getMachineBySerialNumber(serialNumber); // ACTIVE rows only
+  if (existing) {
+    const lifecycle = (existing as { lifecycleStatus?: string | null }).lifecycleStatus;
+    if (lifecycle === "retired" || lifecycle === "decommissioned") {
+      throw new EnrollmentTokenError(
+        `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can enroll`,
+        "machine_locked",
+      );
+    }
+  }
+  let station: Awaited<ReturnType<typeof getDefaultStation>> | undefined;
+  let resolvedCode: string | undefined;
+  if (!existing) {
+    if (!opts.machineInfo?.machineType) {
+      throw new EnrollmentTokenError(
+        "Unknown machine — call register first, or provide machineInfo.machineType to enroll a new machine",
+        "needs_info",
+      );
+    }
+    station = await getDefaultStation();
+    if (!station) {
+      throw new EnrollmentTokenError(
+        "No active station configured — create the factory hierarchy before enrolling machines",
+        "no_station",
+      );
+    }
+    // Resolve a non-colliding SN- code (same policy as machine.register).
+    let code = `SN-${serialNumber}`;
+    if (await getMachineByCode(code)) {
+      let resolved: string | undefined;
+      for (let i = 2; i <= 5 && !resolved; i++) {
+        const candidate = `SN-${serialNumber}-${i}`;
+        if (!(await getMachineByCode(candidate))) resolved = candidate;
+      }
+      if (!resolved) {
+        throw new EnrollmentTokenError(
+          `Machine code '${code}' (and suffixed variants) are already in use — an admin must intervene`,
+          "machine_locked",
+        );
+      }
+      code = resolved;
+    }
+    resolvedCode = code;
+  }
+
+  // ── 2. Validate + BURN the token atomically (single-use enforcement) ──────────
+  const tokenHash = hashEnrollmentToken(opts.enrollmentToken);
+  const invalid = () => new EnrollmentTokenError("Invalid or expired enrollment token", "invalid");
+
+  const token = await db.transaction(async (tx) => {
+    const [t] = await tx
+      .select()
+      .from(machineEnrollmentTokens)
+      .where(eq(machineEnrollmentTokens.tokenHash, tokenHash))
+      .limit(1);
+
+    if (!t) throw invalid();
+    if (t.revokedAt) throw invalid(); // uniform — do not reveal revocation
+    if (new Date(t.expiresAt).getTime() <= Date.now()) {
+      throw new EnrollmentTokenError("Enrollment token has expired — ask an admin to issue a new one", "expired");
+    }
+    if (t.useCount >= t.maxUses) {
+      throw new EnrollmentTokenError("Enrollment token has no remaining uses", "exhausted");
+    }
+    // Serial allowlist — uniform `invalid` so a token cannot be probed for its pattern.
+    if (!serialMatchesEnrollmentPattern(serialNumber, t.serialPattern)) throw invalid();
+
+    // Single-use: only claim if a use is STILL available. A concurrent redemption
+    // that lost the race gets 0 rows and is rejected as exhausted.
+    const burned = await tx
+      .update(machineEnrollmentTokens)
+      .set({
+        useCount: sql`${machineEnrollmentTokens.useCount} + 1`,
+        lastUsedAt: new Date(),
+        lastUsedFromIp: opts.fromIp ?? null,
+      })
+      .where(and(eq(machineEnrollmentTokens.id, t.id), lt(machineEnrollmentTokens.useCount, t.maxUses)))
+      .returning({ id: machineEnrollmentTokens.id });
+    if (burned.length === 0) {
+      throw new EnrollmentTokenError("Enrollment token has no remaining uses", "exhausted");
+    }
+    return t;
+  });
+
+  const scopes = Array.isArray(token.scopes) && token.scopes.length > 0
+    ? (token.scopes as string[])
+    : [...ENROLLMENT_DEFAULT_SCOPES];
+
+  // ── 3. Approve or create the machine ─────────────────────────────────────────
+  if (existing) {
+    const info: Partial<InsertMachine> = {};
+    if (opts.machineInfo?.name) info.name = opts.machineInfo.name;
+    if (opts.machineInfo?.model !== undefined) info.model = opts.machineInfo.model;
+    if (opts.machineInfo?.manufacturer !== undefined) info.manufacturer = opts.machineInfo.manufacturer;
+    if (opts.machineInfo?.firmwareVersion !== undefined) info.firmwareVersion = opts.machineInfo.firmwareVersion;
+    if (opts.machineInfo?.syncMode) info.syncMode = opts.machineInfo.syncMode;
+    if (Object.keys(info).length > 0) await updateMachine(existing.id, info);
+    // approveMachine flips registrationStatus→approved (+ commissioning→active).
+    await approveMachine(existing.id, {});
+    const fresh = await getMachineById(existing.id);
+    return { machineId: existing.id, machineCode: fresh?.code ?? existing.code, scopes, created: false };
+  }
+
+  const info = opts.machineInfo!;
+  const id = await createMachine({
+    code: resolvedCode!,
+    name: info.name?.trim() || `Machine ${serialNumber}`,
+    machineType: info.machineType as InsertMachine["machineType"],
+    model: info.model,
+    manufacturer: info.manufacturer,
+    firmwareVersion: info.firmwareVersion,
+    serialNumber,
+    syncMode: info.syncMode || "online",
+    registrationStatus: "approved",
+    lifecycleStatus: "active",
+    stationId: station!.id,
+  });
+  return { machineId: id, machineCode: resolvedCode!, scopes, created: true };
+}
+
+/** Safe projection of an enrollment token — NEVER exposes the hash. */
+function publicEnrollmentTokenRow(r: MachineEnrollmentToken) {
+  return {
+    id: r.id,
+    tokenPrefix: r.tokenPrefix,
+    serialPattern: r.serialPattern,
+    scopes: Array.isArray(r.scopes) ? (r.scopes as string[]) : [],
+    maxUses: r.maxUses,
+    useCount: r.useCount,
+    expiresAt: r.expiresAt,
+    revokedAt: r.revokedAt,
+    lastUsedAt: r.lastUsedAt,
+    note: r.note,
+    issuedBy: r.issuedBy,
+    createdAt: r.createdAt,
+  };
+}
+
+export type PublicEnrollmentTokenRow = ReturnType<typeof publicEnrollmentTokenRow>;
+
+/** List enrollment tokens (newest first) — SAFE shape only (no hash). */
+export async function listMachineEnrollmentTokens(): Promise<PublicEnrollmentTokenRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(machineEnrollmentTokens)
+    .orderBy(desc(machineEnrollmentTokens.createdAt));
+  return rows.map(publicEnrollmentTokenRow);
+}
+
+/** Revoke an enrollment token: stamp revokedAt (redemption then denies it). */
+export async function revokeMachineEnrollmentToken(id: number): Promise<PublicEnrollmentTokenRow> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [row] = await db
+    .update(machineEnrollmentTokens)
+    .set({ revokedAt: new Date() })
+    .where(eq(machineEnrollmentTokens.id, id))
+    .returning();
+  if (!row) throw new Error(`Enrollment token ${id} not found`);
+  return publicEnrollmentTokenRow(row);
 }
 
 /** Lifecycle states after which a machine must NOT be able to authenticate. */

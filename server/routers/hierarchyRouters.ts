@@ -34,6 +34,9 @@ import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { withDbErrors, rethrowDbError } from "../_core/dbErrors";
 import { logger } from "../logger";
 import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
+// Doc 51 P3 §5.1 — enroll issues the scoped mk_ key through the SAME issuer as
+// rotation/wizard, and reuses its published-scope validator.
+import { issueMachineKey, isValidScopeGrant } from "../services/machineAuthService";
 
 // ── Doc 27 Đợt 3 / W3-B — M5 audit helpers ──────────────────────────────────
 // EVERY master-data mutation in this file (corporate hierarchy + machines) now
@@ -655,6 +658,40 @@ function warnLegacyConfigApiKey(serialNumber: string, code: string): void {
   );
 }
 
+// ── Doc 51 P3 / §5.1 — ZERO-TOUCH ENROLLMENT (gỡ nghẽn single-admin) ─────────
+// A valid machine self-approves + self-arms with a scoped mk_ key by redeeming
+// an admin-issued enrollment token, instead of an admin approving+keying each
+// machine by hand. High-risk-by-nature (it auto-approves WITHOUT an admin click),
+// so the public `enroll` endpoint is gated behind ENROLLMENT_ENABLED (default
+// OFF, QĐ#1 — controlled activation) and per-IP throttled. Admin token issuance
+// stays available regardless so tokens can be pre-staged before the flag flips.
+
+/** Is zero-touch enrollment turned on? Default FALSE (safe). */
+function enrollmentEnabled(): boolean {
+  return process.env.ENROLLMENT_ENABLED === "true";
+}
+
+/** Enroll attempts allowed per IP per hour (brute-force floor). 0 disables. */
+function enrollRateLimitPerHour(): number {
+  const n = parseInt(process.env.MACHINE_ENROLL_RATE_LIMIT_PER_HOUR || "30", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+const enrollIpWindows = new Map<string, { start: number; count: number }>();
+const ENROLL_WINDOW_MS = 60 * 60 * 1000;
+
+function enforceEnrollThrottle(ip: string | undefined | null): void {
+  const limit = enrollRateLimitPerHour();
+  if (limit <= 0) return;
+  enforceIpWindow(enrollIpWindows, ip, limit, ENROLL_WINDOW_MS,
+    `Too many enrollment attempts from this address (limit ${limit}/hour)`);
+}
+
+/** Test helper — clears the per-IP enrollment throttle windows. */
+export function _resetEnrollThrottle(): void {
+  enrollIpWindows.clear();
+}
+
 export const machineRouter = router({
   // ============ MACHINE SYNC APIs (Public - cho AOI/AVI) ============
 
@@ -982,6 +1019,145 @@ export const machineRouter = router({
           message: (e as Error).message,
         });
       }
+    }),
+
+  // ── Doc 51 P3 / §5.1 — zero-touch enroll (public, flag-gated) ────────────
+  // The ONLY endpoint that approves a machine WITHOUT an admin action. It costs
+  // a single-use (or allowlisted) high-entropy token an admin handed out, and it
+  // hands back a freshly minted scoped mk_ key ONCE. Every attempt is audited.
+  enroll: publicProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(100),
+      enrollmentToken: z.string().min(8).max(200),
+      // Optional — lets enroll ALSO create a never-registered machine in one call
+      // (machineType is then required by the db layer). Omit it to enroll a
+      // machine that already registered via `register`.
+      machineInfo: z.object({
+        name: z.string().min(1).max(255).optional(),
+        machineType: z.enum(MACHINE_TYPES).optional(),
+        model: z.string().max(100).optional(),
+        manufacturer: z.string().max(100).optional(),
+        firmwareVersion: z.string().max(50).optional(),
+        syncMode: z.enum(["online", "offline"]).optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
+      enforceEnrollThrottle(ip);
+      if (!enrollmentEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
+        });
+      }
+
+      try {
+        const enrolled = await db.redeemMachineEnrollmentToken({
+          serialNumber: input.serialNumber,
+          enrollmentToken: input.enrollmentToken,
+          machineInfo: input.machineInfo,
+          fromIp: ip ?? null,
+        });
+        // Mint the scoped mk_ key via the SHARED issuer (default TTL applies).
+        const key = await issueMachineKey({
+          machineId: enrolled.machineId,
+          name: `enroll:${enrolled.machineCode}`,
+          scopes: enrolled.scopes,
+        });
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.enroll", entityType: ENTITY_TYPES.MACHINE,
+          entityId: enrolled.machineId, entityName: enrolled.machineCode,
+          metadata: {
+            outcome: "success", created: enrolled.created,
+            keyPrefix: key.keyPrefix, scopes: enrolled.scopes, ip: ip ?? null,
+          },
+        });
+        return {
+          apiKey: key.plaintextKey,
+          keyId: key.id,
+          machineId: enrolled.machineId,
+          code: enrolled.machineCode,
+          scopes: enrolled.scopes,
+          created: enrolled.created,
+          message: "Machine enrolled — store this key securely; it is shown only once",
+        };
+      } catch (e) {
+        if (!isErrorNamed(e, "EnrollmentTokenError")) throw e;
+        const reason = (e as { reason?: string }).reason ?? "invalid";
+        // Audit the FAILURE (the brute-force signal) before bouncing the caller.
+        await auditAction(ctx as AuditableCtx, {
+          action: "machine.enroll", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+          metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
+        });
+        const code =
+          reason === "needs_info" ? "BAD_REQUEST" :
+          reason === "machine_locked" || reason === "no_station" ? "PRECONDITION_FAILED" :
+          "UNAUTHORIZED"; // invalid | expired | exhausted
+        throw new TRPCError({ code, message: (e as Error).message });
+      }
+    }),
+
+  // ── Doc 51 P3 / §5.1 — admin: mint an enrollment token ───────────────────
+  // Plaintext returned EXACTLY ONCE. Defaults to a one-time token; pass
+  // serialPattern (+ maxUses) for a batch allowlist. Scopes default to the
+  // minimal ingest set and are validated against the published vocabulary here.
+  issueEnrollmentToken: adminProcedure
+    .input(z.object({
+      serialPattern: z.string().trim().min(1).max(120).optional(),
+      scopes: z.array(z.string().min(1).max(64)).max(20).optional(),
+      maxUses: z.number().int().min(1).max(100_000).optional(),
+      ttlMinutes: z.number().int().min(1).max(30 * 24 * 60).optional(),
+      note: z.string().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.scopes && !input.scopes.every(isValidScopeGrant)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more scopes are not in the published scope vocabulary",
+        });
+      }
+      const token = await db.issueMachineEnrollmentToken({
+        serialPattern: input.serialPattern ?? null,
+        scopes: input.scopes && input.scopes.length > 0 ? input.scopes : undefined,
+        maxUses: input.maxUses,
+        ttlMinutes: input.ttlMinutes,
+        note: input.note ?? null,
+        issuedBy: ctx.user?.id ?? null,
+      });
+      // Audit issuance — prefix/pattern/scopes only, NEVER the plaintext.
+      await auditAction(ctx, {
+        action: "machine.issueEnrollmentToken", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+        metadata: {
+          prefix: token.tokenPrefix, serialPattern: token.serialPattern,
+          scopes: token.scopes, maxUses: token.maxUses, expiresAt: token.expiresAt.toISOString(),
+        },
+      });
+      return {
+        enrollmentToken: token.token,
+        prefix: token.tokenPrefix,
+        serialPattern: token.serialPattern,
+        scopes: token.scopes,
+        maxUses: token.maxUses,
+        expiresAt: token.expiresAt,
+        /** So the admin sees a token was minted while the feature is still OFF. */
+        enrollmentEnabled: enrollmentEnabled(),
+      };
+    }),
+
+  // ── Doc 51 P3 / §5.1 — admin: list / revoke enrollment tokens ────────────
+  listEnrollmentTokens: adminProcedure.query(async () => {
+    return db.listMachineEnrollmentTokens();
+  }),
+
+  revokeEnrollmentToken: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const row = await db.revokeMachineEnrollmentToken(input.id);
+      await auditAction(ctx, {
+        action: "machine.revokeEnrollmentToken", entityType: ENTITY_TYPES.MACHINE, entityId: null,
+        metadata: { tokenId: input.id, prefix: row.tokenPrefix },
+      });
+      return { success: true };
     }),
 
   // Admin từ chối máy
