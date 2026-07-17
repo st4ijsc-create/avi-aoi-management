@@ -74,8 +74,11 @@ function basePoint(productModelId: number, code: string) {
 beforeAll(async () => {
   const db = await getDb();
   if (!db) throw new Error("test DB unavailable — run scripts/setup-test-db.mjs");
+  // doc 55 PV0 (0286) renames this to the composite uq_point_defs_product_variant_code
+  // (base points fold to COALESCE(variantId,0)=0 → same (productModelId, code) live-
+  // uniqueness). Accept EITHER so the race assertion keeps running post-swap.
   const idx = await db.execute(
-    sql`SELECT 1 FROM pg_indexes WHERE indexname = 'uq_point_defs_product_code'`,
+    sql`SELECT 1 FROM pg_indexes WHERE indexname IN ('uq_point_defs_product_code', 'uq_point_defs_product_variant_code')`,
   );
   hasIndex = (idx as unknown as unknown[]).length > 0;
 });

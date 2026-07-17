@@ -17,7 +17,10 @@ export const productModels = pgTable("product_models", {
   category: varchar("category", { length: 100 }), // Product family/category (legacy text field)
   categoryId: integer("categoryId"), // Foreign key to product_categories table
   productLine: varchar("productLine", { length: 100 }), // Product line
-  variant: varchar("variant", { length: 100 }), // Product variant
+  // @deprecated doc 55 PV0 (QĐ#13) — legacy free-text variant LABEL. Superseded by
+  // the first-class `product_variants` table (+ inheritance/override). NOT dropped
+  // (existing rows keep their label); no longer the source of truth for variants.
+  variant: varchar("variant", { length: 100 }), // Product variant (legacy label)
   // Lifecycle status
   lifecycleStatus: lifecycleStatusEnum("lifecycleStatus").default("active").notNull(),
   // Doc 31 PM2 (decision #6, migration 0197) — free-text engineering revision
@@ -211,6 +214,15 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // measurement_results → pointDef.componentCode → materials.packageId → component_packages.
   componentCode: varchar("componentCode", { length: 100 }),
   refDesignator: varchar("refDesignator", { length: 64 }),
+  // ── doc 55 Item 3 / PV0 (0286) — product-variant linkage ──────────────────
+  // NULL = BASE/common point: shared by the model and inherited by EVERY variant
+  // (resolveEffectivePoints returns it unless a variant excludes/patches it via
+  // variant_point_overrides). Non-NULL (→ product_variants.id) = a point ADDED by
+  // that specific variant (QĐ#11 — added points live HERE, not in the override
+  // table). All pre-0286 points are NULL (no backfill). ⚠ May be ABSENT at runtime
+  // until 0286 applies; the db layer treats absent/NULL as base, so behaviour is
+  // identical to pre-variant. Soft-ref (no hard FK — claim/panel convention).
+  variantId: integer("variantId"),
   isActive: boolean("isActive").default(true).notNull(),
   // P0 soft-delete marker. NULL = live row. Set when row is logically deleted.
   deletedAt: timestamp("deletedAt"),
@@ -225,16 +237,21 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   index("idx_point_defs_product").on(table.productModelId),
   index("idx_point_defs_machine").on(table.machineId),
   index("idx_point_defs_code").on(table.code),
-  // Doc 51 P2 (0274) — a product may hold only ONE live def per code. PARTIAL on
-  // "deletedAt" IS NULL so soft-deleted history never blocks re-creating a code.
-  // Matches the identity the app already assumes (getMeasurementPointDefByCode,
-  // measurementPointResolver, remapMeasurementPoints all key on productModelId+code)
-  // — this only stops the check-then-insert race from minting a second live row.
-  // ⚠ May be ABSENT at runtime: 0274 is guarded and records 'partial' in
-  //   db_feature_status when pre-existing duplicates block it. All writers use bare
-  //   ON CONFLICT DO NOTHING so they behave identically either way.
-  uniqueIndex("uq_point_defs_product_code")
-    .on(table.productModelId, table.code)
+  // Doc 51 P2 (0274) → doc 55 PV0 (0286) — a product may hold only ONE live def per
+  // (variant, code). PARTIAL on "deletedAt" IS NULL so soft-deleted history never
+  // blocks re-creating a code. variantId is folded via COALESCE(variantId, 0) so
+  // base points (variantId NULL) keep the exact (productModelId, code) uniqueness
+  // 0274 gave them, while a variant may add its own point sharing a base code. Two
+  // DIFFERENT variants may reuse the same code; the SAME variant may not.
+  // Matches the identity the app assumes (getMeasurementPointDefByCode / resolver /
+  // remapMeasurementPoints key on productModelId+variant+code) — this only stops the
+  // check-then-insert race from minting a second live row.
+  // ⚠ May be ABSENT (or still be the pre-0286 uq_point_defs_product_code) at runtime:
+  //   0286 is guarded and keeps the old index when pre-existing duplicates block the
+  //   swap. All writers use bare ON CONFLICT DO NOTHING so they behave identically
+  //   either way.
+  uniqueIndex("uq_point_defs_product_variant_code")
+    .on(table.productModelId, sql`COALESCE("variantId", 0)`, table.code)
     .where(sql`${table.deletedAt} IS NULL`),
   index("idx_point_defs_last_modified").on(table.lastModifiedAt),
   index("idx_point_defs_product_modified").on(table.productModelId, table.lastModifiedAt),
@@ -280,6 +297,83 @@ export const measurementPointVersions = pgTable("measurement_point_versions", {
 
 export type MeasurementPointVersion = typeof measurementPointVersions.$inferSelect;
 export type InsertMeasurementPointVersion = typeof measurementPointVersions.$inferInsert;
+
+// ============================================================
+// doc 55 Item 3 / PV0 (migration 0286) — PRODUCT VARIANTS (PA2 first-class)
+// ------------------------------------------------------------
+// A variant is a first-class build option of a product model (e.g. a region SKU, a
+// with/without-connector option). Every product_models row has EXACTLY ONE BASE
+// variant (isBase=true, backfilled by 0286); non-base variants inherit the base
+// point set and diverge only through:
+//   • variant_point_overrides — exclude / patch a BASE point (QĐ#11), and
+//   • measurement_point_defs rows carrying variantId — points the variant ADDS.
+// Points config is versioned PER VARIANT (pointsConfigVersion, QĐ#10); the base
+// variant's version tracks product_models.pointsConfigVersion (kept in lock-step by
+// bumpPointsConfigVersion's fan-out).
+// SOFT ref productModelId (no hard FK — claim/enrollment/panel convention).
+// ============================================================
+export const productVariants = pgTable("product_variants", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId").notNull(),
+  code: varchar("code", { length: 100 }).notNull(), // 'BASE' for the base variant
+  name: varchar("name", { length: 255 }),
+  isBase: boolean("isBase").default(false).notNull(),
+  // QĐ#10 — per-variant points config version (machines re-fetch when it moves).
+  pointsConfigVersion: integer("pointsConfigVersion").default(1).notNull(),
+  // Optional per-variant OVERRIDE of the model's reference image / coordinate mode.
+  // NULL = inherit the product_models value.
+  referenceImageUrl: text("referenceImageUrl"),
+  referenceImageKey: varchar("referenceImageKey", { length: 255 }),
+  coordinateMode: varchar("coordinateMode", { length: 20 }),
+  lifecycleStatus: varchar("lifecycleStatus", { length: 20 }).default("active").notNull(),
+  deletedAt: timestamp("deletedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  // At most ONE live variant per (model, code). PARTIAL on deletedAt IS NULL so a
+  // retired code can be reused. Also the guard behind "one base per model" (code
+  // 'BASE' can exist once live per model).
+  uniqueIndex("uq_product_variants_model_code")
+    .on(table.productModelId, table.code)
+    .where(sql`${table.deletedAt} IS NULL`),
+  index("idx_product_variants_model").on(table.productModelId),
+  index("idx_product_variants_base")
+    .on(table.productModelId, table.isBase)
+    .where(sql`${table.isBase} = true`),
+  index("idx_product_variants_deleted_at").on(table.deletedAt),
+]);
+
+export type ProductVariant = typeof productVariants.$inferSelect;
+export type InsertProductVariant = typeof productVariants.$inferInsert;
+
+/**
+ * doc 55 PV0 (0286) — how a non-base variant diverges from a BASE/common point.
+ *   • action='exclude'  → the variant DROPS this base point.
+ *   • action='override' → the variant PATCHES the base point (patchJson carries the
+ *     changed limit/geometry fields, shallow-merged onto the base def).
+ * A variant's ADDED points are NOT here — they are measurement_point_defs rows with
+ * variantId set (QĐ#11). Soft-ref variantId → product_variants.id and
+ * basePointDefId → measurement_point_defs.id (a base point, variantId NULL).
+ */
+export const variantPointOverrides = pgTable("variant_point_overrides", {
+  id: serial("id").primaryKey(),
+  variantId: integer("variantId").notNull(),
+  basePointDefId: integer("basePointDefId").notNull(),
+  // 'exclude' | 'override' (CHECK enforced in 0286).
+  action: varchar("action", { length: 20 }).notNull(),
+  // Patch payload for action='override' (e.g. { lowerLimit, upperLimit, geometry }).
+  // NULL for 'exclude'.
+  patchJson: jsonb("patchJson").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_variant_overrides_variant_point").on(table.variantId, table.basePointDefId),
+  index("idx_variant_overrides_variant").on(table.variantId),
+  index("idx_variant_overrides_base_point").on(table.basePointDefId),
+]);
+
+export type VariantPointOverride = typeof variantPointOverrides.$inferSelect;
+export type InsertVariantPointOverride = typeof variantPointOverrides.$inferInsert;
 
 // ============================================================
 // P4.A G17 — Measurement Point Lighting / Illumination Profile

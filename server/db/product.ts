@@ -5,6 +5,8 @@ import {
   productModels, InsertProductModel,
   measurementPointDefs, InsertMeasurementPointDef, MeasurementPointDef,
   measurementPointVersions,
+  productVariants, InsertProductVariant, ProductVariant,
+  variantPointOverrides, InsertVariantPointOverride, VariantPointOverride,
   measurementTypeCatalog, InsertMeasurementTypeCatalog,
   defectCatalog, InsertDefectCatalog,
   unmatchedDefectCodes,
@@ -229,6 +231,100 @@ export async function bumpPointsConfigVersion(
       productModelId: productModels.id,
       code: productModels.code,
       version: productModels.pointsConfigVersion,
+    });
+
+  if (!row) return null;
+
+  // doc 55 PV0 (QĐ#10) — FAN-OUT. A change to a COMMON (base) point must propagate
+  // to the base variant AND every variant of this model, so each variant's machines
+  // re-fetch. The variants bump runs on the SAME executor → ATOMIC with the product
+  // bump whenever the caller passes a tx (deleteMeasurementPointDef does). No-op
+  // (0 rows) for models with no variants yet. Guarded behind a cached table probe:
+  // 0286 may not be applied yet (code ships before the coordinator runs it), and an
+  // unconditional UPDATE product_variants would throw "relation does not exist" and
+  // take the whole point-edit path down — the fail-open trap the 0282 header warns
+  // of. Absent table ⇒ skip fan-out, behaviour = pre-variant (no regression).
+  if (await productVariantsTableAvailable(exec)) {
+    await exec
+      .update(productVariants)
+      .set({
+        pointsConfigVersion: sql`${productVariants.pointsConfigVersion} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(productVariants.productModelId, productModelId),
+        isNull(productVariants.deletedAt),
+      ));
+  }
+
+  return { ...row, version: Number(row.version) };
+}
+
+/**
+ * doc 55 PV0 (QĐ#10) — cached probe for the product_variants table (added by 0286).
+ * 0286 may be ABSENT at runtime (code deploys before the coordinator applies it), so
+ * referencing product_variants unconditionally would throw on a not-yet-migrated DB.
+ * We probe once (to_regclass), cache, and only fan out / bump variants when present.
+ * Returns false WITHOUT caching when the executor cannot answer (a faked db in unit
+ * tests has no `.execute`), so a real probe still runs later in production.
+ */
+let productVariantsTablePresent: boolean | null = null;
+/** Test seam — reset the 0286 table probe between suites. */
+export function _resetProductVariantsTableProbe(): void {
+  productVariantsTablePresent = null;
+}
+export async function productVariantsTableAvailable(exec?: unknown): Promise<boolean> {
+  if (productVariantsTablePresent !== null) return productVariantsTablePresent;
+  const runner = exec ?? (await getDb());
+  const execFn = (runner as { execute?: (q: unknown) => Promise<unknown> } | null)?.execute;
+  if (!runner || typeof execFn !== "function") return false; // can't tell (mock) → absent, don't cache
+  try {
+    const res = await execFn.call(runner, sql`SELECT to_regclass('public.product_variants') AS t`);
+    const rows = Array.isArray(res) ? res : ((res as { rows?: unknown[] } | null)?.rows ?? []);
+    const t = (rows[0] as { t?: unknown } | undefined)?.t;
+    productVariantsTablePresent = t != null;
+    return productVariantsTablePresent;
+  } catch {
+    return false; // transient failure — don't cache, retry next time
+  }
+}
+
+/** Result of {@link bumpVariantPointsConfigVersion}. `null` ⇒ no live variant matched. */
+export interface VariantPointsConfigBump {
+  variantId: number;
+  productModelId: number;
+  /** product_variants.code (e.g. 'BASE'). */
+  code: string;
+  /** The variant's pointsConfigVersion AFTER the increment. */
+  version: number;
+}
+
+/**
+ * doc 55 PV0 (QĐ#10) — bump ONE variant's pointsConfigVersion (the "edit a
+ * variant-specific point" path). Does NOT touch product_models or sibling variants:
+ * a change confined to a variant must only re-notify that variant's machines. The
+ * inverse of {@link bumpPointsConfigVersion}'s fan-out, which handles common points.
+ * Accepts a tx executor so it can be atomic with the point mutation that caused it.
+ */
+export async function bumpVariantPointsConfigVersion(
+  variantId: number,
+  executor?: PointsBumpExecutor,
+): Promise<VariantPointsConfigBump | null> {
+  const exec = executor ?? (await getDb());
+  if (!exec) throw new Error("Database not available");
+
+  const [row] = await exec
+    .update(productVariants)
+    .set({
+      pointsConfigVersion: sql`${productVariants.pointsConfigVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(productVariants.id, variantId), isNull(productVariants.deletedAt)))
+    .returning({
+      variantId: productVariants.id,
+      productModelId: productVariants.productModelId,
+      code: productVariants.code,
+      version: productVariants.pointsConfigVersion,
     });
 
   return row ? { ...row, version: Number(row.version) } : null;
@@ -532,13 +628,21 @@ export async function createMeasurementPointDef(
   const id: number | undefined = inserted[0]?.id;
   if (id !== undefined) return id;
 
-  // Conflict → (productModelId, code) is already live. Resolve the original.
+  // Conflict → (productModelId, COALESCE(variantId,0), code) is already live.
+  // Resolve the original. This branch ONLY runs when a unique index actually fired,
+  // which requires 0286's uq_point_defs_product_variant_code (or 0274's predecessor)
+  // to exist — so referencing "variantId" here is safe (the column is present when a
+  // conflict is possible). Scope by variant so a base insert never resolves to a
+  // variant's same-code point and vice-versa (doc 55 PV0).
   const [existing] = await db
     .select({ id: measurementPointDefs.id })
     .from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.productModelId, data.productModelId),
       eq(measurementPointDefs.code, data.code),
+      data.variantId == null
+        ? isNull(measurementPointDefs.variantId)
+        : eq(measurementPointDefs.variantId, data.variantId),
       isNull(measurementPointDefs.deletedAt),
     ))
     .orderBy(asc(measurementPointDefs.id))
@@ -548,8 +652,9 @@ export async function createMeasurementPointDef(
     // Insert was swallowed but no active twin exists — the conflict came from a
     // constraint we do NOT model here. Fail loudly instead of inventing an id.
     throw new Error(
-      `[createMeasurementPointDef] insert of code '${data.code}' (productModelId=${data.productModelId}) ` +
-      `hit a unique conflict but no active row with that (productModelId, code) could be resolved.`,
+      `[createMeasurementPointDef] insert of code '${data.code}' (productModelId=${data.productModelId}, ` +
+      `variantId=${data.variantId ?? "null"}) hit a unique conflict but no active row with that ` +
+      `(productModelId, variant, code) could be resolved.`,
     );
   }
 
@@ -621,15 +726,38 @@ export async function getMeasurementPointDefById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getMeasurementPointDefByCode(productModelId: number, code: string) {
+/**
+ * doc 55 PV0 — optional `variantId` scoping.
+ *   • omitted (undefined) ⇒ LEGACY behaviour: no variantId predicate at all, so the
+ *     emitted SQL is byte-identical to the pre-variant query. Old callers compile and
+ *     run unchanged, and — crucially — this never references the "variantId" column,
+ *     so it is safe on a DB where 0286 has not yet been applied. Pre-migration every
+ *     row is a base point, so "no predicate" and "variantId IS NULL" return the same.
+ *   • null ⇒ BASE/common point explicitly (variantId IS NULL).
+ *   • number ⇒ that variant's own point (variantId = N).
+ * Variant-aware callers (PV1+, always on a migrated DB) pass null/N explicitly.
+ */
+export async function getMeasurementPointDefByCode(
+  productModelId: number,
+  code: string,
+  variantId?: number | null,
+) {
   const db = await getDb();
   if (!db) return undefined;
+  const conds: SQL[] = [
+    eq(measurementPointDefs.productModelId, productModelId),
+    eq(measurementPointDefs.code, code),
+    isNull(measurementPointDefs.deletedAt),
+  ];
+  if (variantId !== undefined) {
+    conds.push(
+      variantId === null
+        ? isNull(measurementPointDefs.variantId)
+        : eq(measurementPointDefs.variantId, variantId),
+    );
+  }
   const result = await db.select().from(measurementPointDefs)
-    .where(and(
-      eq(measurementPointDefs.productModelId, productModelId),
-      eq(measurementPointDefs.code, code),
-      isNull(measurementPointDefs.deletedAt),
-    ))
+    .where(and(...conds))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -3270,6 +3398,260 @@ export async function listGenealogyChainByLot(lotCode: string, limit = 5000) {
     .where(eq(genealogyChain.lotCode, lotCode))
     .orderBy(asc(genealogyChain.id))
     .limit(limit);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 55 Item 3 / PV0 — PRODUCT VARIANT helpers (schema layer only).
+// Sync/ingest wiring is PV1/PV2 (out of zone). Gated behavior stays behind
+// PRODUCT_VARIANT_ENABLED (default OFF); these helpers are pure data access +
+// the effective-points resolver, safe to land ahead of the flag.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ---- Variant CRUD ----
+
+export async function createVariant(data: InsertProductVariant): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [row] = await db.insert(productVariants).values(data).returning({ id: productVariants.id });
+  return row.id;
+}
+
+export async function getVariantsByModel(
+  productModelId: number,
+  opts?: { includeDeleted?: boolean },
+): Promise<ProductVariant[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conds: SQL[] = [eq(productVariants.productModelId, productModelId)];
+  if (!opts?.includeDeleted) conds.push(isNull(productVariants.deletedAt));
+  // Base first, then by code — a stable, predictable order for pickers.
+  return db.select().from(productVariants)
+    .where(and(...conds))
+    .orderBy(desc(productVariants.isBase), asc(productVariants.code));
+}
+
+export async function getVariantById(id: number): Promise<ProductVariant | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(productVariants)
+    .where(and(eq(productVariants.id, id), isNull(productVariants.deletedAt)))
+    .limit(1);
+  return rows[0];
+}
+
+export async function getBaseVariant(productModelId: number): Promise<ProductVariant | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(productVariants)
+    .where(and(
+      eq(productVariants.productModelId, productModelId),
+      eq(productVariants.isBase, true),
+      isNull(productVariants.deletedAt),
+    ))
+    .orderBy(asc(productVariants.id))
+    .limit(1);
+  return rows[0];
+}
+
+export async function getVariantByCode(productModelId: number, code: string): Promise<ProductVariant | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(productVariants)
+    .where(and(
+      eq(productVariants.productModelId, productModelId),
+      eq(productVariants.code, code),
+      isNull(productVariants.deletedAt),
+    ))
+    .limit(1);
+  return rows[0];
+}
+
+export async function updateVariant(id: number, data: Partial<InsertProductVariant>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productVariants).set({ ...data, updatedAt: new Date() }).where(eq(productVariants.id, id));
+}
+
+/**
+ * Soft-delete a NON-BASE variant. The base variant is the model's inheritance root
+ * and is never deletable — the `isBase=false` guard makes deleting it a no-op.
+ */
+export async function softDeleteVariant(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productVariants)
+    .set({ deletedAt: new Date(), lifecycleStatus: "archived", updatedAt: new Date() })
+    .where(and(eq(productVariants.id, id), eq(productVariants.isBase, false)));
+}
+
+/**
+ * Idempotent — guarantee the model has its single BASE variant. 0286 backfills one
+ * for every EXISTING model; this covers models created AFTER 0286 (PV1 will call it
+ * from the product-create path). Race-safe via the partial uq (productModelId, code):
+ * losers fall through to reading the winner. Returns the base variant's id.
+ */
+export async function ensureBaseVariant(productModelId: number, pointsConfigVersion?: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getBaseVariant(productModelId);
+  if (existing) return existing.id;
+  const inserted = await db.insert(productVariants).values({
+    productModelId,
+    code: "BASE",
+    name: "Base",
+    isBase: true,
+    pointsConfigVersion: pointsConfigVersion ?? 1,
+  }).onConflictDoNothing().returning({ id: productVariants.id });
+  if (inserted[0]?.id !== undefined) return inserted[0].id;
+  const winner = await getBaseVariant(productModelId);
+  if (!winner) {
+    throw new Error(`[ensureBaseVariant] could not create or resolve a base variant for productModelId=${productModelId}`);
+  }
+  return winner.id;
+}
+
+// ---- Variant point-override CRUD (QĐ#11 — exclude / patch a BASE point) ----
+
+/**
+ * Upsert an override for a (variant, base point) pair. action='exclude' drops the
+ * base point for this variant; action='override' patches it (patchJson shallow-merged
+ * onto the base def by {@link mergeEffectivePoints}). Keyed on the uq (variantId,
+ * basePointDefId) so re-setting flips action/patch in place.
+ */
+export async function setVariantPointOverride(data: InsertVariantPointOverride): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [row] = await db.insert(variantPointOverrides)
+    .values({ ...data, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [variantPointOverrides.variantId, variantPointOverrides.basePointDefId],
+      set: { action: data.action, patchJson: data.patchJson ?? null, updatedAt: new Date() },
+    })
+    .returning({ id: variantPointOverrides.id });
+  return row.id;
+}
+
+export async function getVariantOverrides(variantId: number): Promise<VariantPointOverride[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(variantPointOverrides)
+    .where(eq(variantPointOverrides.variantId, variantId))
+    .orderBy(asc(variantPointOverrides.basePointDefId));
+}
+
+export async function removeVariantOverride(variantId: number, basePointDefId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(variantPointOverrides)
+    .where(and(
+      eq(variantPointOverrides.variantId, variantId),
+      eq(variantPointOverrides.basePointDefId, basePointDefId),
+    ));
+}
+
+// ---- Effective-points resolver (inheritance + override) ----
+
+export interface EffectivePointsInput {
+  /** BASE/common points of the model (variantId IS NULL). */
+  basePoints: MeasurementPointDef[];
+  /** Points the variant ADDS (variantId = the variant). */
+  variantPoints: MeasurementPointDef[];
+  /** Variant overrides against base points. */
+  overrides: Pick<VariantPointOverride, "basePointDefId" | "action" | "patchJson">[];
+}
+
+// Identity / lineage fields a patch may NEVER overwrite (patching them would move
+// the row, resurrect a tombstone, or rewrite audit history).
+const VARIANT_PATCH_PROTECTED_KEYS = new Set<string>([
+  "id", "productModelId", "variantId", "code",
+  "createdAt", "updatedAt", "deletedAt", "deletedAtVersion", "lastModifiedAt",
+]);
+
+/**
+ * PURE merge (no DB) — the effective point set a variant inspects:
+ *   {base points} − {base points a variant EXCLUDES}
+ *                 + {base points a variant OVERRIDES (patch applied)}
+ *                 ∪ {points the variant ADDS}
+ * Deterministic + side-effect free ⇒ unit-testable without a database. Returned
+ * ordered by orderIndex then id.
+ */
+export function mergeEffectivePoints(input: EffectivePointsInput): MeasurementPointDef[] {
+  const overrideByBaseId = new Map<number, { action: string; patchJson: unknown }>();
+  for (const ov of input.overrides) {
+    overrideByBaseId.set(ov.basePointDefId, { action: ov.action, patchJson: ov.patchJson });
+  }
+
+  const out: MeasurementPointDef[] = [];
+  for (const bp of input.basePoints) {
+    const ov = overrideByBaseId.get(bp.id);
+    if (!ov) { out.push(bp); continue; }
+    if (ov.action === "exclude") continue; // variant drops this base point
+    if (ov.action === "override") {
+      const patch = (ov.patchJson && typeof ov.patchJson === "object")
+        ? (ov.patchJson as Record<string, unknown>)
+        : {};
+      const safePatch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(patch)) {
+        if (!VARIANT_PATCH_PROTECTED_KEYS.has(k)) safePatch[k] = v;
+      }
+      out.push({ ...bp, ...safePatch } as MeasurementPointDef);
+      continue;
+    }
+    out.push(bp); // unknown action — conservative: keep the base point unmodified
+  }
+  for (const vp of input.variantPoints) out.push(vp);
+
+  out.sort((a, b) => {
+    const oi = (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
+    return oi !== 0 ? oi : (a.id - b.id);
+  });
+  return out;
+}
+
+/**
+ * resolveEffectivePoints — load + merge the effective point set for a variant.
+ *   • variantId omitted/null, or the BASE variant ⇒ the base/common points only
+ *     (the base variant "owns" the NULL-variantId points).
+ *   • a non-base variant ⇒ mergeEffectivePoints(base, variant-added, overrides).
+ * Only LIVE + ACTIVE points participate.
+ *
+ * ⚠ References measurement_point_defs."variantId" ⇒ requires 0286. This is a NEW
+ * function invoked only by variant-aware callers (PV1+), always on a migrated DB.
+ */
+export async function resolveEffectivePoints(
+  productModelId: number,
+  variantId?: number | null,
+): Promise<MeasurementPointDef[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const basePoints = await db.select().from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, productModelId),
+      isNull(measurementPointDefs.variantId),
+      eq(measurementPointDefs.isActive, true),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .orderBy(asc(measurementPointDefs.orderIndex));
+
+  if (variantId == null) return basePoints;
+
+  const variant = await getVariantById(variantId);
+  // Unknown or base variant ⇒ the base set (no overrides/added points apply).
+  if (!variant || variant.isBase) return basePoints;
+
+  const variantPoints = await db.select().from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.productModelId, productModelId),
+      eq(measurementPointDefs.variantId, variantId),
+      eq(measurementPointDefs.isActive, true),
+      isNull(measurementPointDefs.deletedAt),
+    ))
+    .orderBy(asc(measurementPointDefs.orderIndex));
+
+  const overrides = await getVariantOverrides(variantId);
+
+  return mergeEffectivePoints({ basePoints, variantPoints, overrides });
 }
 
 
