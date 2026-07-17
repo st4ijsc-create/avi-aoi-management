@@ -36,8 +36,23 @@ Sim `scripts/sim/screwdriver-emitter.mjs` → **HTTP POST `/api/v1/ingest/proces
 | 5. AI đọc được | ✅ F6 tool cùng query | ✅ machine-anchored tool |
 | Kill-test dedup exactly-once | ✅ 12 retry = 0 row thừa | — |
 
-## CÒN LẠI (chưa chạy trong phiên này — giới hạn chi tiêu tháng)
+## Đ4 — CONFIG-SYNC LOOP: Bằng chứng LIVE (2026-07-18, bổ sung phiên sau)
+
+Đóng vòng **cài đặt & đồng bộ cấu hình tổng quát** trên chính máy pilot `SCRW-SIM-01` (id 243) qua `scripts/pilot-config-sync.mjs` — chạy CHÍNH các publicProcedure mà Express proxy gọi (real `authenticateMachine` bằng mk_ key tươi, real `resolveActiveRecipe`, real `recordReportedConfig`, real `computeDriftState`, real bảng `machine_config_state`), DB owner `aoi@5434`, cờ `CONFIG_SYNC_GENERIC_ENABLED=CONFIG_DRIFT_REPORT_ENABLED=true` + `RECIPE_TYPED_SCHEMA_MODE=enforce`. Chỉ bỏ lớp HTTP proxy mỏng (Bearer mk_ trên dây đã chứng ở Đ3).
+
+| Chặng | Lệnh | Kết quả LIVE |
+|---|---|---|
+| DEPLOY (ý định KT) | `createRecipe(status=active)` + `upsertDesiredConfig` | recipe `SCRW-RECIPE-01` v2 (v1→archived, `uq_machine_recipes_active_code` giữ 1-active/code), desired shadow ghi `checksum=3c9e8caf…`. driftState="drift" **ngay** vì máy còn báo checksum tay-sửa lần trước ⇒ trung thực |
+| CHECK (máy hỏi) | `machineApi.checkConfigVersion` | `{code:SCRW-RECIPE-01, version:2, checksum:3c9e8caf…, resolvedBy:"machine"}` — bind per-máy |
+| GET (máy kéo) | `machineApi.getActiveConfig` | payload đủ `{torqueTarget:12.5, torqueTolerance:0.5, angleTarget:720, speedRpm:300}` round-trip đúng giá trị (jsonb đổi thứ tự key — checksum canonical là chữ ký bất biến) |
+| ACK #1 (áp đúng) | `machineApi.ackConfigApplied(checksum=đúng)` | **driftState="in_sync"**, shadow `reportedChecksum==desiredChecksum` |
+| ACK #2 (thợ đổi tay) | `machineApi.ackConfigApplied(checksum=lệch)` | **driftState="drift"**, shadow lưu checksum phân kỳ ⇒ sẵn sàng cho `routeConfigDriftAlert` |
+
+**Verdict script: ✅ exit 0** — deploy→check→get→ack(in_sync)→drift, shadow bền, drift phát hiện. Cột `machine_config_state` (mig 0293) mang desired* (đặt lúc deploy) vs reported* (đặt lúc ack) + driftState; checksum = tín hiệu drift chuẩn (fallback code+version). Đây là hiện thực hóa LIVE của "tiêu chuẩn hóa cài đặt & đồng bộ cấu hình" — KHÔNG còn hard-wire measurement-points AOI: cùng đường ống phục vụ recipe (screw/dispense/weld), device_settings (IoT), points (AOI, alias đọc y hệt legacy), model (reserved).
+
+## CÒN LẠI (chưa chạy trong phiên này)
 
 - Kill-test store-forward (tắt DB giữa chừng → buffer WAL → replay): cơ chế `processStoreForward` đã test unit; chưa diễn tập với DB down thật.
+- Config-sync qua HTTP proxy thật + retained MQTT notify `synapse/v1/machine/{code}/config/{kind}`: logic đã chứng qua caller + unit test; chưa diễn tập trên server HTTP đang chạy (cờ Đ4 mới nên instance :3000 cũ chưa bật — cần restart server với cờ Đ4 để E2E HTTP).
 - Thiết bị THẬT (đội cơ điện flash firmware theo `examples/device-client/` + conformance fixtures doc 57) — cổng nghiệm thu nhà máy (QĐ8, tách khỏi green-gate).
-- ProcessAnalytics UI (trang + tab MachineCockpit), wizard V2, DeviceHub deviceClass filter: server API đã sẵn; phần client UI 3 agent bị dừng do giới hạn chi tiêu, làm tiếp ở phiên sau.
+- ✅ ProcessAnalytics UI (trang + tab MachineCockpit), wizard V2, DeviceHub deviceClass filter: **ĐÃ tích hợp + commit `897218d2`** (green: tsc + esbuild + i18n parity); LIVE-render trong browser để phiên sau.
