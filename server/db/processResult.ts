@@ -1,7 +1,7 @@
 // Sprint F2 — DB access for generic process results (parallel to inspection).
 import { getDb } from "./connection";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
-import { processResults, InsertProcessResult } from "../../drizzle/schema";
+import { processResults, processStepTypes, InsertProcessResult } from "../../drizzle/schema";
 
 /** Insert one process-result row; returns the new id. */
 export async function insertProcessResult(row: InsertProcessResult): Promise<number> {
@@ -149,4 +149,29 @@ export async function getProcessMetricSeries(opts: {
       samples: Number(r.samples ?? 0),
     };
   });
+}
+
+// ─── doc 56 Đ3 — ProcessAnalytics: active step-type vocabulary for UI dropdowns ─
+export interface ProcessStepTypeRow {
+  code: string;
+  nameVi: string | null;
+  machineType: string | null;
+}
+
+/** List active process step types (seed 0289), optionally scoped to a machineType. */
+export async function listActiveStepTypes(machineType?: string): Promise<ProcessStepTypeRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [eq(processStepTypes.active, true)];
+  if (machineType) conds.push(eq(processStepTypes.machineType, machineType));
+  const rows = await db
+    .select({
+      code: processStepTypes.code,
+      nameVi: processStepTypes.nameVi,
+      machineType: processStepTypes.machineType,
+    })
+    .from(processStepTypes)
+    .where(and(...conds))
+    .orderBy(asc(processStepTypes.code));
+  return rows;
 }
