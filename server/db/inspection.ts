@@ -234,6 +234,172 @@ export async function createProductInspection(
 }
 
 /**
+ * Doc 55 Item 1 (PA-A "reserve-id") — reserve a product_inspections surrogate id
+ * from its sequence WITHOUT inserting a row.
+ *
+ * THIS is what makes a single physical transaction reachable from the ingest path
+ * (see the deleteInspectionForCompensation doc-comment below for why it was NOT,
+ * before): the measurement images are stored under object keys that EMBED the
+ * inspection id, and those uploads must stay OUTSIDE any DB transaction — so the id
+ * has to exist before the header row does. `serial("id")` (drizzle/schema/
+ * inspection.ts) owns the sequence product_inspections_id_seq; nextval advances it
+ * atomically and never hands the same value to two callers, so concurrent
+ * reservations can never collide. A reserved id that is never inserted (a
+ * duplicate, or a rolled-back tx) simply leaves a GAP — sequences are explicitly
+ * allowed to, and every downstream reader keys off the row, never off contiguity.
+ *
+ * On a Timescale hypertable the column's sequence still exists and behaves
+ * identically (verified on the dev/test DB). Returns a plain positive integer
+ * (nextval comes back as a bigint string over postgres-js → coerced + validated).
+ */
+export async function reserveInspectionId(): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const res = await db.execute(sql`SELECT nextval('product_inspections_id_seq') AS id`);
+  const rows = ((res as { rows?: unknown[] })?.rows ?? (res as unknown[])) as Array<{ id?: unknown }>;
+  const raw = rows?.[0]?.id;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error(`reserveInspectionId: unexpected nextval result ${String(raw)}`);
+  }
+  return id;
+}
+
+/**
+ * Doc 55 Item 1 (PA-A) — persist an inspection HEADER together with its measurement
+ * rows (and the optional spec-gate overall→NG promotion) in ONE physical
+ * transaction, closing the two-phase crash window that leaves an EMPTY header (the
+ * gap the OFF-path deleteInspectionForCompensation below only *mitigates*).
+ *
+ * `data.id` MUST be a caller-reserved id (reserveInspectionId) — the SAME id the
+ * caller already embedded in the pre-uploaded image object keys AND in every
+ * `measurementRows[i].inspectionId` — so header, measurements and images all agree.
+ *
+ * Dedup semantics are byte-for-byte IDENTICAL to createProductInspection (they MUST
+ * be — the WAL replay + machine-retry short-circuit depend on it):
+ *   • idempotencyKey present → CLAIM the ledger (0275) FIRST. Claim lost ⇒ this is a
+ *     retry: return the PRIOR row's id, duplicate=true, and write NO measurements.
+ *   • header still natural-key-collides (0272: same serial+time, possibly under a
+ *     NEW key) ⇒ point the key at the ORIGINAL row, duplicate=true, write NO
+ *     measurements (they belong to the row that already exists).
+ *   • genuinely new board ⇒ insert measurements + promote + back-fill the ledger id,
+ *     ALL inside the same tx, duplicate=false.
+ *
+ * On duplicate the caller MUST skip every side-effect (order qty, ERP outbox, NG
+ * alerts) exactly as with createProductInspection's duplicate short-circuit.
+ * `opts.outcome.duplicate` is set for the out-param contract callers already use.
+ */
+export async function persistInspectionAtomic(
+  data: InsertProductInspection & { id: number },
+  measurementRows: InsertMeasurementResult[],
+  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome },
+): Promise<{ id: number; duplicate: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  const { id, duplicate } = await db.transaction(async (tx) => {
+    // ── 1) LEDGER CLAIM (only when the machine sent an explicit key) ───────────
+    // Same protocol + ordering as createProductInspection: CLAIM FIRST so two
+    // concurrent retries of one key serialise and the loser reports duplicate.
+    if (idempotencyKey) {
+      const claimed = await tx
+        .insert(inspectionIdempotencyKeys)
+        .values({
+          machineId: data.machineId,
+          idempotencyKey,
+          inspectionTime: (data.inspectionTime as Date | undefined) ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ machineId: inspectionIdempotencyKeys.machineId });
+
+      if (claimed.length === 0) {
+        // Key already used by a COMMITTED submission → retry. Resolve its row.
+        const prior = await tx
+          .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+          .from(inspectionIdempotencyKeys)
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ))
+          .limit(1);
+        const priorId = prior[0]?.inspectionId;
+        if (priorId == null) {
+          throw new Error(
+            `persistInspectionAtomic: idempotency key claimed but unresolved ` +
+              `(machineId=${data.machineId}, idempotencyKey=${idempotencyKey})`,
+          );
+        }
+        return { id: priorId, duplicate: true };
+      }
+    }
+
+    // ── 2) HEADER (natural-key idempotent, 0272) ───────────────────────────────
+    // We own the key (or there is none). The header can STILL collide on the
+    // natural key (same serial+time under a NEW key) — then point the key at the
+    // original row and report duplicate, exactly like createProductInspection.
+    const header = await insertInspectionHeader(tx, data);
+
+    if (header.duplicate) {
+      if (idempotencyKey) {
+        await tx
+          .update(inspectionIdempotencyKeys)
+          .set({ inspectionId: header.id })
+          .where(and(
+            eq(inspectionIdempotencyKeys.machineId, data.machineId),
+            eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+          ));
+      }
+      return { id: header.id, duplicate: true };
+    }
+
+    // ── 3) NEW board → MEASUREMENTS + overall-NG promotion IN THE SAME TX ───────
+    // THE point of PA-A: if either write throws, the WHOLE tx (header + ledger
+    // claim + measurements + promotion) rolls back, so a retry re-inserts a
+    // COMPLETE board instead of the P0 short-circuit resolving to an empty header.
+    if (measurementRows.length > 0) {
+      await tx.insert(measurementResults).values(measurementRows);
+    }
+    if (opts?.promoteOverallToNg) {
+      await tx
+        .update(productInspections)
+        .set({ overallResult: "NG", updatedAt: new Date() })
+        .where(and(
+          eq(productInspections.id, header.id),
+          eq(productInspections.overallResult, "OK"),
+        ));
+    }
+    // ── 4) BACK-FILL the ledger claim with the header id ───────────────────────
+    if (idempotencyKey) {
+      await tx
+        .update(inspectionIdempotencyKeys)
+        .set({ inspectionId: header.id })
+        .where(and(
+          eq(inspectionIdempotencyKeys.machineId, data.machineId),
+          eq(inspectionIdempotencyKeys.idempotencyKey, idempotencyKey),
+        ));
+    }
+    return { id: header.id, duplicate: false };
+  });
+
+  if (opts?.outcome) opts.outcome.duplicate = duplicate;
+
+  // Parity with createProductInspection — an inspection submit is also machine
+  // "activity" for the downtime auto-detector. Fire-and-forget + dynamic import;
+  // inert unless DOWNTIME_DETECTION_ENABLED. Kept identical so the single-tx path
+  // does not silently drop the heartbeat-less-machine downtime feed.
+  if (typeof data.machineId === "number") {
+    const mid = data.machineId;
+    void import("../services/downtimeDetectionService")
+      .then((m) => m.recordMachineActivity(mid))
+      .catch(() => {});
+  }
+
+  return { id, duplicate };
+}
+
+/**
  * Doc 51 P2 (§11.2 residual #1) — COMPENSATE an orphaned inspection header.
  *
  * THE RESIDUAL P1 GAP: createProductInspection commits the header in its own

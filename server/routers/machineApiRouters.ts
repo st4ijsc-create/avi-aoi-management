@@ -1067,7 +1067,12 @@ export async function processInspectionSubmission(
       // inspectionTime) was ALREADY persisted, i.e. this is a machine retry /
       // WAL replay of a board we have already fully processed.
       const insertOutcome: CreateInspectionOutcome = { duplicate: false };
-      const inspectionId = await db.createProductInspection({
+
+      // Doc 55 Item 1 (PA-A) — the header columns, extracted to a single object so
+      // BOTH the historical two-phase path (INSPECTION_SINGLE_TX_ENABLED off) and the
+      // single-transaction path (flag on) persist the IDENTICAL row. Extracting the
+      // literal to a const changes NOTHING about the OFF path's behaviour.
+      const inspectionHeaderData = {
         machineId: machine.id,
         ingestMode: aoiIngestMode === "commissioning" ? "commissioning" : undefined,
         programReleaseId: programReleaseId ?? undefined,
@@ -1101,7 +1106,23 @@ export async function processInspectionSubmission(
         // CASE #12 — machine's claim, verbatim + the server's soft verdict on it.
         pointsConfigVersion: declaredConfigVersion,
         configVersionStatus,
-      }, insertOutcome);
+      };
+
+      // Doc 55 Item 1 — INSPECTION_SINGLE_TX_ENABLED (default OFF; read once). OFF ⇒
+      // the two-phase path is byte-for-byte unchanged (header commits in its OWN tx
+      // HERE; measurement rows follow in a SEPARATE tx below). ON ⇒ PA-A: reserve the
+      // surrogate id NOW so the pre-uploaded image keys + measurement rows all share
+      // it, and defer the ONE atomic header+measurements write to the tx section.
+      const singleTxOn = envTrue(process.env.INSPECTION_SINGLE_TX_ENABLED);
+
+      let inspectionId: number;
+      let reservedInspectionId: number | null = null;
+      if (singleTxOn) {
+        reservedInspectionId = await db.reserveInspectionId();
+        inspectionId = reservedInspectionId;
+      } else {
+        inspectionId = await db.createProductInspection(inspectionHeaderData, insertOutcome);
+      }
 
       // ══ Doc 51 P0 (R2) — DUPLICATE SHORT-CIRCUIT ═══════════════════════════
       // The board is already on record: the header insert was a no-op and
@@ -1485,6 +1506,48 @@ export async function processInspectionSubmission(
       // (input.overallResult) — a server-downgraded board is reflected in stored
       // data/analytics but does not retro-fire the live NG alert.
       const promoteOverallToNg = serverDowngradeCount > 0 && input.overallResult === "OK";
+
+      if (singleTxOn) {
+        // ── Doc 55 Item 1 (PA-A) — SINGLE PHYSICAL TRANSACTION ─────────────────
+        // Header + measurement rows + spec-gate overall→NG promotion COMMIT AS ONE.
+        // A failure rolls BOTH back (no empty-header crash window), so there is NO
+        // deleteInspectionForCompensation on this path. The images pre-uploaded
+        // under inspections/<reservedId>/ are the ONLY residue on a failure and are
+        // reaped by imageLifecycleService.reapOrphanImages (P3-b2) — no image
+        // cleanup is added here (a transient failure re-throws → the mutation buffers
+        // to the WAL, whose replay reserves a FRESH id and writes a clean board).
+        const persisted = await db.persistInspectionAtomic(
+          { ...inspectionHeaderData, id: reservedInspectionId! },
+          measurementResults,
+          { promoteOverallToNg, outcome: insertOutcome },
+        );
+        inspectionId = persisted.id;
+        if (persisted.duplicate) {
+          // Same short-circuit as the two-phase path: the board is already on record
+          // (ledger/natural key), so EVERY side-effect below has already run for it.
+          // ACK with the ORIGINAL id + duplicate:true; the WAL still ledgers
+          // markSubmissionApplied and the machine stops retrying. The images uploaded
+          // under the (now-unused) reserved id are orphans → reaper cleans them.
+          console.warn(
+            `[submitInspection] duplicate submission ignored (single-tx path) — ` +
+              `machine=${machine.code} serial=${input.serialNumber} ` +
+              `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+          );
+          auditInspectionSubmission({
+            machineId: machine.id,
+            machineCode: machine.code,
+            serialNumber: input.serialNumber,
+            overallResult: input.overallResult,
+            inspectionId,
+            authMethod: auth.method,
+            duplicate: true,
+          });
+          return { success: true as const, inspectionId, duplicate: true as const };
+        }
+        if (promoteOverallToNg) {
+          console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+        }
+      } else {
       // Doc 51 P1 (CASE #5) — keys of images ALREADY uploaded to object storage for
       // THIS submission. If the measurement transaction below fails, these are
       // orphans (bytes in storage, no DB row pointing at them) → we compensate by
@@ -1566,6 +1629,7 @@ export async function processInspectionSubmission(
           console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
         }
       }
+      } // end two-phase (INSPECTION_SINGLE_TX_ENABLED off) measurement path
 
       // ══ Doc 51 P2 (§11.2 residual #1) — DEFERRED SIDE-EFFECTS ══════════════════
       // Now that the measurement rows have COMMITTED (or there were none to write),
