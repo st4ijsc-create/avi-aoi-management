@@ -18,7 +18,18 @@
 | **3. Variant PV0** (schema+resolver, mig 0286) | `cc2d9c1f` | backfill base-variant; đổi unique index guarded; fan-out bump; 55 test |
 | **3. Variant PV1/PV2** (sync+ingest, cờ `PRODUCT_VARIANT_ENABLED`) | `a92e52e4` | variantCode plumbing; 107 test cùng xanh (không regression chéo) |
 
-**HOÃN (ghi rõ, không tô hồng):** Item 2 Phase P3 runtime defect-bbox (tuỳ chọn) · Item 3 spec-gate variant-override (grade theo point-def, override chỉ ở READ sync — moot khi cờ OFF) · deltaSync tombstone per-variant · syncMeasurementPoints write-back variant · addPoint/updatePoint (productRouters) · MQTT ACL variantCode (mqttService) · **PV3-UI frontend CRUD variant**. Tất cả sau cờ OFF nên chưa ảnh hưởng production.
+**§0-ter — Backend deferrals + PV3-UI ĐÃ XONG (2026-07-17, +3 commit):**
+| Phần | Commit | Verify |
+|---|---|---|
+| **spec-gate variant-override + deltaSync tombstone per-variant + MQTT ACL variantCode** | `3202693b` | override patch thắng base khi gate (load 1 lần/board); tombstone theo effective set; topic variant; 152 test |
+| **variant CRUD tRPC router** (`variant:` — list/create/update/delete/getEffectivePoints/setOverride/removeOverride) | `ab196d78` | 28 test, RBAC settings_products + settings_measurement_points |
+| **PV3-UI** tab Biến thể dưới ProductModels (DataTable + create/edit + effective-points viewer + exclude/override/restore) | `2c611f26` | tsc 0, i18n 55key×3 (0 mismatch), RBAC, 0286-degrade Alert |
+
+**CÒN HOÃN (nhỏ, ghi rõ):** Item 2 Phase P3 runtime defect-bbox (tuỳ chọn, thấp) · UI "thêm điểm riêng cho variant" (cần variant-scoped `measurementPoint.create` — điểm variant-only vẫn render read-only khi có) · snapshot-gate × variant-override dùng patch HIỆN TẠI (measurement_point_versions không track override history — edge case, đã document). Tất cả sau cờ OFF, chưa ảnh hưởng production.
+
+---
+
+### ✅ DOC 55 HOÀN TẤT — 3 mục còn lại của doc 51 §12.3 đã thực thi TRỌN VẸN (backend + UI), 10 commit, mọi cờ default-OFF, tsc 0 + test xanh, verify độc lập.
 
 **§6 — Chốt quyết định (user duyệt):**
 - **Chung:** lộ trình cờ 2-bước (default-OFF → ON ở doc sau) ✔ · làm tuần tự ✔.
