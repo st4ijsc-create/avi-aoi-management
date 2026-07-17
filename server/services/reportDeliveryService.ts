@@ -35,7 +35,19 @@ import { reportDeliveries, type ReportDelivery } from "../../drizzle/schema";
 export interface DeliveryChannelsConfig {
   email?: { enabled: boolean };
   webhook?: { enabled: boolean; url: string; secret?: string };
-  inApp?: { enabled: boolean; userIds?: number[] };
+  inApp?: {
+    enabled: boolean;
+    userIds?: number[];
+    /**
+     * doc 54 P2.4 #4 — optional mobile-push device tokens delivered ALONGSIDE the
+     * in-app notification (best-effort). Requires a push transport (FCM) to be
+     * configured; when absent the push is skipped and the in-app notification is
+     * unaffected. Stored on scheduled_reports.deliveryChannels (jsonb).
+     */
+    pushTokens?: string[];
+  };
+  /** Alternate placement for mobile-push tokens (equivalent to inApp.pushTokens). */
+  push?: { enabled?: boolean; tokens?: string[] };
 }
 
 export type DeliveryChannel = "email" | "webhook" | "in_app";
@@ -243,38 +255,179 @@ export interface AdapterOutcome {
   error?: string;
 }
 
-/** E-mail adapter: db smtp_config transporter first, env transporter fallback. */
+// ── Optional email-fallback transports (credential-gated, doc 54 P2.4 #4) ─────
+// The default transports (db smtp_config → env SMTP) are unchanged. When a
+// message can't be delivered through them AND a fallback provider is configured
+// via env, the chain falls through to it. When NO transport is configured the
+// adapter returns a clear, RETRYABLE error — it never fabricates success.
+
+/** True when a SendGrid API key is configured. */
+export function sendGridConfigured(): boolean {
+  return !!process.env.SENDGRID_API_KEY;
+}
+
+/** True when Amazon SES is reachable via its SMTP interface (host+user+pass). */
+export function sesSmtpConfigured(): boolean {
+  return !!(process.env.SES_SMTP_HOST && process.env.SES_SMTP_USER && process.env.SES_SMTP_PASS);
+}
+
+/** Resolve the fallback From address across the supported env conventions. */
+function fallbackFromAddress(): string {
+  return (
+    process.env.REPORT_EMAIL_FROM ||
+    process.env.SENDGRID_FROM ||
+    process.env.SES_FROM ||
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    "no-reply@localhost"
+  );
+}
+
+/** SendGrid v3 mail/send (bearer token, no SDK). Attachment inlined as base64. */
+async function sendViaSendGrid(recipients: string[], content: DeliverableReport): Promise<AdapterOutcome> {
+  try {
+    const apiKey = process.env.SENDGRID_API_KEY as string;
+    const body: Record<string, unknown> = {
+      personalizations: [{ to: recipients.map((email) => ({ email })) }],
+      from: { email: fallbackFromAddress() },
+      subject: content.subject,
+      content: [{ type: "text/html", value: content.html }],
+    };
+    if (content.attachment) {
+      const buf = Buffer.isBuffer(content.attachment.content)
+        ? content.attachment.content
+        : Buffer.from(String(content.attachment.content));
+      body.attachments = [
+        {
+          content: buf.toString("base64"),
+          filename: content.attachment.filename,
+          type: content.attachment.contentType,
+          disposition: "attachment",
+        },
+      ];
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+    try {
+      const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (resp.status >= 200 && resp.status < 300) return { ok: true };
+      const txt = await resp.text().catch(() => "");
+      return { ok: false, error: `sendgrid HTTP ${resp.status} ${txt.slice(0, 200)}` };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message ?? String(err) };
+  }
+}
+
+/** Amazon SES via its SMTP endpoint (nodemailer) — avoids SigV4 / the AWS SDK. */
+async function sendViaSesSmtp(recipients: string[], content: DeliverableReport): Promise<AdapterOutcome> {
+  try {
+    const { createTransporterFromConfig } = await import("../_core/email");
+    const port = Number(process.env.SES_SMTP_PORT) || 587;
+    const fromName = process.env.REPORT_EMAIL_FROM_NAME || "SYNAPSE Reports";
+    const transporter = createTransporterFromConfig({
+      host: process.env.SES_SMTP_HOST as string,
+      port,
+      secure: port === 465,
+      username: process.env.SES_SMTP_USER as string,
+      password: process.env.SES_SMTP_PASS as string,
+      fromEmail: fallbackFromAddress(),
+      fromName,
+    });
+    const mailOptions: Record<string, unknown> = {
+      from: `${fromName} <${fallbackFromAddress()}>`,
+      to: recipients.join(","),
+      subject: content.subject,
+      html: content.html,
+    };
+    if (content.attachment) mailOptions.attachments = [content.attachment];
+    await transporter.sendMail(mailOptions as never);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message ?? String(err) };
+  }
+}
+
+/**
+ * E-mail adapter with a transport chain (doc 54 P2.4 #4), never fabricating
+ * success:
+ *   1. db smtp_config transporter — the unchanged default. When configured it is
+ *      THE transport: success → ok, failure → a RETRYABLE error (NOT a silent
+ *      fallthrough — a real SMTP outage should retry, not mask via another
+ *      provider).
+ *   2. env SMTP transporter (_core/email sendEmail) — the historical fallback
+ *      used when db SMTP is absent.
+ *   3+4. Credential-gated fallbacks (SendGrid → SES-over-SMTP) — engaged only
+ *      when the SMTP paths are unavailable/unconfigured and the provider env is
+ *      actually set. When none is configured the caller gets a clear, retryable
+ *      "no email transport configured" error.
+ */
 async function deliverEmail(row: ReportDelivery, content: DeliverableReport): Promise<AdapterOutcome> {
   const recipients = row.target.split(",").map((s) => s.trim()).filter(Boolean);
   if (recipients.length === 0) return { ok: false, error: "no recipients" };
+
+  // 1) db smtp_config transporter — authoritative when configured.
   try {
     const { getSmtpConfig } = await import("../db");
     const smtpConfig = await getSmtpConfig().catch(() => null);
     if (smtpConfig) {
-      const { createTransporterFromConfig } = await import("../_core/email");
-      const transporter = createTransporterFromConfig(smtpConfig);
-      const mailOptions: Record<string, unknown> = {
-        from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
-        to: recipients.join(","),
-        subject: content.subject,
-        html: content.html,
-      };
-      if (content.attachment) mailOptions.attachments = [content.attachment];
-      await transporter.sendMail(mailOptions as never);
-      return { ok: true };
+      try {
+        const { createTransporterFromConfig } = await import("../_core/email");
+        const transporter = createTransporterFromConfig(smtpConfig);
+        const mailOptions: Record<string, unknown> = {
+          from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
+          to: recipients.join(","),
+          subject: content.subject,
+          html: content.html,
+        };
+        if (content.attachment) mailOptions.attachments = [content.attachment];
+        await transporter.sendMail(mailOptions as never);
+        return { ok: true };
+      } catch (err) {
+        // Configured transport failed → retry it, don't mask with a fallback.
+        return { ok: false, error: `smtp: ${(err as Error)?.message ?? err}` };
+      }
     }
-    // Fallback: the env-configured transporter (worker processes without db SMTP).
-    const { sendEmail } = await import("../_core/email");
-    const result = await sendEmail({
-      to: recipients,
-      subject: content.subject,
-      html: content.html,
-      attachments: content.attachment ? [content.attachment] : undefined,
-    });
-    return result.success ? { ok: true } : { ok: false, error: result.error ?? "email send failed" };
-  } catch (err) {
-    return { ok: false, error: (err as Error)?.message ?? String(err) };
+  } catch {
+    /* db smtp lookup failed → fall through to the env transporter / fallbacks */
   }
+
+  // 2) env SMTP transporter (historical fallback when db SMTP is absent).
+  const { sendEmail } = await import("../_core/email");
+  const envResult = await sendEmail({
+    to: recipients,
+    subject: content.subject,
+    html: content.html,
+    attachments: content.attachment ? [content.attachment] : undefined,
+  }).catch((e) => ({ success: false as const, error: (e as Error)?.message ?? String(e) }));
+  if (envResult.success) return { ok: true };
+
+  // 3+4) Credential-gated fallbacks (SendGrid → SES over SMTP).
+  const errors: string[] = [`smtp(env): ${envResult.error ?? "send failed"}`];
+  if (sendGridConfigured()) {
+    const r = await sendViaSendGrid(recipients, content);
+    if (r.ok) return { ok: true };
+    errors.push(r.error ?? "sendgrid failed");
+  }
+  if (sesSmtpConfigured()) {
+    const r = await sendViaSesSmtp(recipients, content);
+    if (r.ok) return { ok: true };
+    errors.push(r.error ?? "ses failed");
+  }
+
+  if (!sendGridConfigured() && !sesSmtpConfigured()) {
+    console.warn(
+      "[ReportDelivery] no email transport configured (SMTP_* / SENDGRID_API_KEY / SES_SMTP_*) — report email will retry",
+    );
+  }
+  return { ok: false, error: errors.join("; ") };
 }
 
 /** HMAC-SHA256 signature over the raw body with the per-report secret. */
@@ -351,6 +504,117 @@ async function deliverWebhook(row: ReportDelivery, content: DeliverableReport): 
   }
 }
 
+// ── Optional mobile-push transport (credential-gated, doc 54 P2.4 #4) ─────────
+// Push is a BONUS layer on the in-app channel: when a push transport is
+// configured AND the report carries device tokens, an in-app delivery ALSO fires
+// a mobile push; when neither is present it logs "transport not configured" and
+// the in-app notification still succeeds (no throw, no fabricated success).
+
+let pushUnconfiguredLogged = false;
+
+/** True when Firebase Cloud Messaging is configured (matches fcmService env). */
+export function fcmPushConfigured(): boolean {
+  return !!(process.env.FIREBASE_SERVICE_ACCOUNT_JSON && process.env.FIREBASE_PROJECT_ID);
+}
+
+/** True when a standalone APNs key is configured (see deliverReportPush note). */
+export function apnsPushConfigured(): boolean {
+  return !!(
+    process.env.APNS_KEY_ID &&
+    process.env.APNS_TEAM_ID &&
+    process.env.APNS_BUNDLE_ID &&
+    process.env.APNS_AUTH_KEY_BASE64
+  );
+}
+
+export interface PushTransportStatus {
+  fcm: boolean;
+  apns: boolean;
+  configured: boolean;
+}
+
+/** Which push transports are available right now (for health/admin surfaces). */
+export function pushTransportStatus(): PushTransportStatus {
+  const fcm = fcmPushConfigured();
+  const apns = apnsPushConfigured();
+  return { fcm, apns, configured: fcm || apns };
+}
+
+export function pushTransportConfigured(): boolean {
+  return fcmPushConfigured() || apnsPushConfigured();
+}
+
+export interface PushOutcome {
+  ok: boolean;
+  /** True when nothing was attempted (no transport / no tokens) — NOT a failure. */
+  skipped?: boolean;
+  sent?: number;
+  error?: string;
+}
+
+/**
+ * Best-effort mobile push for a report. NEVER throws and never fabricates
+ * success. When no push transport is configured, logs once and returns
+ * { ok:false, skipped:true }. FCM (which itself bridges to APNs via its `apns`
+ * payload) is the delivery transport; a config with ONLY APNS_* set is
+ * acknowledged but not delivered here — a standalone APNs HTTP/2 transport is
+ * intentionally out of scope, route iOS pushes through FCM instead.
+ */
+export async function deliverReportPush(
+  tokens: string[],
+  msg: { title: string; body: string; data?: Record<string, string> },
+): Promise<PushOutcome> {
+  const status = pushTransportStatus();
+  if (!status.configured) {
+    if (!pushUnconfiguredLogged) {
+      console.log(
+        "[ReportDelivery] push transport not configured — skipping mobile push " +
+          "(set FIREBASE_SERVICE_ACCOUNT_JSON + FIREBASE_PROJECT_ID to enable FCM). " +
+          "In-app notifications are unaffected.",
+      );
+      pushUnconfiguredLogged = true;
+    }
+    return { ok: false, skipped: true, error: "push transport not configured" };
+  }
+
+  const validTokens = tokens.map((t) => (typeof t === "string" ? t.trim() : "")).filter(Boolean);
+  if (validTokens.length === 0) return { ok: false, skipped: true, error: "no device tokens" };
+
+  if (status.fcm) {
+    try {
+      const { sendCustomPushNotification } = await import("./fcmService");
+      const { sent } = await sendCustomPushNotification(validTokens, msg.title, msg.body, msg.data);
+      return sent > 0
+        ? { ok: true, sent }
+        : { ok: false, sent: 0, error: `fcm delivered 0/${validTokens.length}` };
+    } catch (err) {
+      return { ok: false, error: (err as Error)?.message ?? String(err) };
+    }
+  }
+
+  // APNS_* set but FCM is not — FCM is the supported delivery bridge for iOS.
+  console.warn(
+    "[ReportDelivery] APNS_* is set but a standalone APNs transport is not implemented — " +
+      "configure FCM (FIREBASE_*) to deliver iOS pushes (FCM bridges to APNs).",
+  );
+  return { ok: false, skipped: true, error: "apns standalone transport not implemented (use FCM)" };
+}
+
+/** Resolve mobile-push device tokens for a delivery from its report's config. */
+async function resolvePushTokensForDelivery(row: ReportDelivery): Promise<string[]> {
+  try {
+    const { getScheduledReportById } = await import("../db");
+    const report = await getScheduledReportById(row.scheduledReportId);
+    const cfg = (report as { deliveryChannels?: DeliveryChannelsConfig } | undefined)?.deliveryChannels;
+    const fromPush = Array.isArray(cfg?.push?.tokens) ? cfg?.push?.tokens : undefined;
+    const fromInApp = Array.isArray(cfg?.inApp?.pushTokens) ? cfg?.inApp?.pushTokens : undefined;
+    const tokens = fromPush ?? fromInApp ?? [];
+    return tokens.filter((t): t is string => typeof t === "string" && t.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /** In-app adapter: notifications table + socket emit via notificationService. */
 async function deliverInApp(row: ReportDelivery, content: DeliverableReport): Promise<AdapterOutcome> {
   const userIds = row.target
@@ -370,6 +634,29 @@ async function deliverInApp(row: ReportDelivery, content: DeliverableReport): Pr
       }).catch(() => null);
       if (result) delivered += 1;
     }
+
+    // Best-effort mobile push ALONGSIDE the in-app notification (doc 54 P2.4 #4).
+    // Only attempts when a push transport is configured — so the default path
+    // makes no extra DB call and behaves exactly as before. Push failure NEVER
+    // fails the in-app delivery (the task's "fall back to in-app without throw").
+    if (pushTransportConfigured()) {
+      try {
+        const tokens = await resolvePushTokensForDelivery(row);
+        if (tokens.length > 0) {
+          const push = await deliverReportPush(tokens, {
+            title: content.subject,
+            body: `${content.reportName} (${content.reportType})`,
+            data: { type: "REPORT", reportId: String(content.reportId) },
+          });
+          if (push.ok) {
+            console.log(`[ReportDelivery] in_app push sent for delivery ${row.id} (${push.sent} device(s))`);
+          }
+        }
+      } catch {
+        /* push is best-effort — never affects the in-app outcome */
+      }
+    }
+
     // User notification preferences may legitimately suppress every recipient —
     // that is a SUCCESSFUL delivery of a suppressed notification, not a failure.
     return { ok: true, error: delivered === 0 ? "all recipients suppressed by preferences" : undefined };

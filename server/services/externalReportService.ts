@@ -181,6 +181,8 @@ export interface GenerateExternalReportResult {
   emptyReason?: string;
   /** True when an identical prior artifact (same bytes) was returned. */
   deduped: boolean;
+  /** True when the dataset exceeded EXPORT_MAX_ROWS and the render was capped (doc 54 P2.4 #1). */
+  truncated: boolean;
 }
 
 // ─── Window + filter resolution ────────────────────────────────────────────────
@@ -657,6 +659,8 @@ export async function generateExternalReport(
       window: { start: window.start.toISOString(), end: window.end.toISOString() },
       filters: input.filters ?? {},
       rowCount: rows.length,
+      truncated: rendered.truncated,
+      totalRows: rendered.totalRows,
     },
     createdBy: input.createdBy ?? null,
     source: input.source ?? "external",
@@ -677,5 +681,6 @@ export async function generateExternalReport(
     emptyState: rows.length === 0,
     emptyReason: rows.length === 0 ? emptyReason : undefined,
     deduped: persisted.deduped,
+    truncated: Boolean(rendered.truncated),
   };
 }

@@ -73,7 +73,9 @@
     <a href="#empty">5 · Màn rỗng vì thiếu seed</a><br>
     <a href="#cross">6 · Cross-cutting</a><br>
     <a href="#plan">7 · Kế hoạch nâng cấp</a><br>
-    <a href="#dec">8 · Quyết định cần chốt</a>
+    <a href="#dec">8 · Quyết định cần chốt</a><br>
+    <a href="#phased">11 · Lộ trình theo giai đoạn</a><br>
+    <a href="#exec2">12 · ĐÃ THỰC THI theo giai đoạn</a>
   </div>
 </div>
 
@@ -325,7 +327,17 @@
 <tr><td>L-Đ5</td><td>Phạm vi đợt tới: <b>GĐ0+GĐ1</b> (nền+kết nối) hay full <b>GĐ0→GĐ3</b>?</td></tr>
 </tbody></table></div>
 
-<div class="foot">Nguồn: audit gốc (§0-8) + thực thi (§9) + tái đánh giá hậu-fix (§10) + lộ trình 4-giai-đoạn (§11) — 8+ subagent + SQL live + Playwright đa persona. Bản Markdown đầy đủ: <code>docs/ECOSYSTEM/54_*.md</code>.</div>
+<h2 id="exec2">12 · ĐÃ THỰC THI kế hoạch theo giai đoạn (2026-07-17)</h2>
+<div class="callout good"><b>Quyết định USER:</b> L-Đ1 = GĐ0 + P1.2 song song · L-Đ2 = CAD/Gerber auto-place · L-Đ3 = tiếp tục Full-Sim (hoãn HW-FAT) · L-Đ4 = HA làm ngay (P2.3) · L-Đ5 = full GĐ0→GĐ3.</div>
+<h3>Đợt 1 — GĐ0 nền + ⭐P1.2 (commit <code>059c4c1c</code>)</h3>
+<p>P0.1 CAD/centroid auto-place (điểm-đo hết 0,0) · P0.2 seed master-data 20 bảng + backfill componentCode · P0.3 RBAC 9 bulk-import mở engineer · P0.4a mapping readiness-gate · P0.4b DQ hierarchy+points · P0.5 bulk badges/routing/BOM + bootstrap · <b>⭐P1.2</b> liveStatsRollupService (rollup daily_statistics từ inspection THẬT, gated OFF trên Full-Sim) · P1.5 slmp · P2.1 owner-notify + Cpk spec-limit.</p>
+<h3>Đợt 2 — GĐ1 activate + GĐ2 HA/analytics + GĐ3 security (commit <code>150523fe</code>, mig <code>0285</code>)</h3>
+<p><b>GĐ1:</b> P1.1 simOtTelemetryService (máy phát telemetry → presence ONLINE, Full-Sim, gated) · P1.3 seed 5 rule cảnh báo · P1.4·G1 alertRouters update/delete → writeProcedure. <b>GĐ2:</b> P2.3 Realtime HA (Redis SET-NX cooldown, leader-gate, BROKER/CLIENT duration THẬT, war-room push — gated OFF = single-node byte-identical) · P2.2 OEE-trust (idealCycleTimeSec mig 0285, window-align, availabilityBasis uptime vs semi_e10) · P2.5 Pareto/MTBF-MTTR/takt/line-balance/genealogy đệ quy. <b>GĐ3:</b> P3.2 step-up-2FA 4 deploy mutation + client dialog OTP 5 điểm · P3.4 copilot refuse safety + idempotency CONFLICT + simulate inArray.</p>
+<div class="callout good"><b>Green-gate + LIVE:</b> cả 2 đợt <code>tsc</code> 0 lỗi + <code>vite build</code> ✓ + locale hợp lệ; mig 0285 áp (owner). <b>GĐ1 chain PROVEN LIVE</b>: emitter <b>144 telemetry / 36 máy</b> → presence <b>changed 2</b> → <b>5 rule armed</b>; Redis thực chạy. <code>daily_statistics</code>/OEE hôm nay=0 vì chưa có feed chạy liên tục (không phải lỗi code — P1.2 sống khi server bật).</div>
+<h3>CÒN LẠI (hoãn/giới hạn hạ tầng)</h3>
+<p>P1.6/P3.3 HW-FAT (hoãn, Full-Sim) · P3.1 AI-model-server (CUDA-OOM env). <b>P2.4 reporting breadth ĐÃ LÀM</b> (row-cap+truncation · VN/CJK font đã đủ · scheduled→archive gated · email db-SMTP→SendGrid→SES + FCM push credential-gated skip-sạch) — cần credential vận hành để thật gửi. Follow-up: <code>ACTUATION_STEPUP_2FA</code> đã live, UI deploy đã thu OTP; P2.1 WIP bottleneck-mislabel đã fix (trạm chậm nhất, không phải trạm cuối).</p>
+
+<div class="foot">Nguồn: audit gốc (§0-8) + thực thi (§9) + tái đánh giá hậu-fix (§10) + lộ trình 4-giai-đoạn (§11) + THỰC THI theo giai đoạn (§12) — 12+ subagent + SQL live + Playwright đa persona. Bản Markdown đầy đủ: <code>docs/ECOSYSTEM/54_*.md</code>.</div>
 </div>
 <script>
 // Theme toggle hook: honor a data-theme set by host; default follows prefers-color-scheme.

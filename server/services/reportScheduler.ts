@@ -181,6 +181,87 @@ export async function buildScheduledReportEmail(
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 §11 P2.4 #3 — server-render a scheduled run to a re-downloadable ARTIFACT
+//
+// The scheduler already server-renders each run (buildScheduledReportEmail →
+// HTML body + optional PDF/Excel attachment) and delivers it. This wires that
+// SAME rendered output into the canonical report_artifacts archive (source
+// "scheduled"), so a scheduled report is re-downloadable from the artifact store
+// exactly like the on-demand/external path — closing the "scheduled → artifact"
+// gap. ADDITIVE + flag-gated: default OFF (SCHEDULED_REPORT_ARCHIVE_ENABLED),
+// wrapped in try/catch, never blocks or breaks delivery.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Master switch for scheduled-run artifact archiving. Default OFF. */
+export function scheduledReportArchiveEnabled(): boolean {
+  return String(process.env.SCHEDULED_REPORT_ARCHIVE_ENABLED ?? "false").toLowerCase() === "true";
+}
+
+/** Map an attachment (contentType/filename) to an archivable artifact format. */
+function attachmentArtifactFormat(att: { filename: string; contentType: string }): "pdf" | "xlsx" | null {
+  const ct = (att.contentType || "").toLowerCase();
+  const fn = (att.filename || "").toLowerCase();
+  if (ct.includes("pdf") || fn.endsWith(".pdf")) return "pdf";
+  if (ct.includes("spreadsheet") || ct.includes("excel") || fn.endsWith(".xlsx") || fn.endsWith(".xls")) return "xlsx";
+  return null;
+}
+
+/**
+ * Archive a scheduled run's rendered output into report_artifacts. Persists the
+ * HTML body (always — so every run has a downloadable artifact) plus the PDF/
+ * Excel attachment when present. No-op when the flag is off. Never throws.
+ */
+export async function archiveScheduledReport(
+  report: { id: number; name: string; reportType?: string | null; createdBy?: number | null },
+  built: BuiltReportEmail,
+): Promise<void> {
+  if (!scheduledReportArchiveEnabled()) return;
+  try {
+    const { persistArtifact } = await import("./reportArtifactService");
+    const reportType = String(report.reportType ?? "scheduled");
+    const createdBy = report.createdBy ?? null;
+
+    const htmlArtifact = await persistArtifact({
+      buffer: Buffer.from(built.html, "utf8"),
+      format: "html",
+      reportType,
+      title: report.name,
+      params: { scheduledReportId: report.id, subject: built.subject },
+      createdBy,
+      source: "scheduled",
+    });
+
+    let docId: number | undefined;
+    if (built.attachment) {
+      const fmt = attachmentArtifactFormat(built.attachment);
+      if (fmt) {
+        const buf = Buffer.isBuffer(built.attachment.content)
+          ? built.attachment.content
+          : Buffer.from(String(built.attachment.content));
+        const docArtifact = await persistArtifact({
+          buffer: buf,
+          format: fmt,
+          reportType,
+          title: report.name,
+          params: { scheduledReportId: report.id, filename: built.attachment.filename },
+          createdBy,
+          source: "scheduled",
+          contentType: built.attachment.contentType,
+        });
+        docId = docArtifact.id;
+      }
+    }
+
+    console.log(
+      `[ReportScheduler] archived scheduled report ${report.id} → artifacts ` +
+        `(html=${htmlArtifact.id}${docId ? `, doc=${docId}` : ""})`,
+    );
+  } catch (err) {
+    console.error(`[ReportScheduler] artifact archive failed for report ${report.id}:`, (err as any)?.message || err);
+  }
+}
+
 /**
  * Convert schedule configuration to cron expression
  */
@@ -258,6 +339,10 @@ async function executeScheduledReport(reportId: number) {
     const built = await buildScheduledReportEmail(report as any);
     const emailHTML = built.html;
 
+    // doc 54 P2.4 #3 — archive the rendered output as a re-downloadable artifact
+    // (flag-gated default OFF; never blocks delivery).
+    void archiveScheduledReport(report as any, built).catch(() => undefined);
+
     // Send email to all recipients
     const recipients = report.recipients || [];
     if (recipients.length === 0) {
@@ -333,6 +418,10 @@ async function executeScheduledReportViaChannels(report: {
 }): Promise<void> {
   try {
     const built = await buildScheduledReportEmail(report as never);
+
+    // doc 54 P2.4 #3 — archive the rendered output (flag-gated; non-blocking).
+    void archiveScheduledReport(report as never, built).catch(() => undefined);
+
     const { enqueueReportDeliveries, drainReportDeliveriesOnce } = await import("./reportDeliveryService");
     const enqueued = await enqueueReportDeliveries(report, built);
 

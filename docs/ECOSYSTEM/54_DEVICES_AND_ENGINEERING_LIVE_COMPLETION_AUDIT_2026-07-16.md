@@ -406,3 +406,33 @@ Ba phát hiện độc lập cùng MỘT gốc: **không có service nào tính 
 - **L-Đ3:** Có nhà máy/HW thật để **HW-FAT** (P1.6/P3.3) chưa, hay tiếp tục Full-Sim?
 - **L-Đ4:** Realtime **HA (Redis multi-instance)** cần ngay (P2.3) hay chấp nhận single-node cho pilot?
 - **L-Đ5:** Phạm vi thực thi đợt tới: **GĐ0+GĐ1 (nền + kết nối/monitor)** hay full **GĐ0→GĐ3**?
+
+---
+
+## 12. THỰC THI kế hoạch theo giai đoạn (2026-07-17)
+
+### 12.1 Quyết định đã chốt (USER)
+`L-Đ1` = bắt đầu **GĐ0** + làm **P1.2 song song**. `L-Đ2` = **CAD/Gerber auto-place**. `L-Đ3` = **tiếp tục Full-Sim** (hoãn HW-FAT). `L-Đ4` = **Realtime HA làm ngay (P2.3)**. `L-Đ5` = **full GĐ0→GĐ3**.
+
+### 12.2 Đợt 1 — GĐ0 nền + P1.2 đòn bẩy (commit `059c4c1c`)
+- **P0.1** CAD/centroid auto-place: điểm-đo lấy toạ độ từ Gerber/pick-place thay vì hardcode 0,0 (`centroidImportService` + `cadImport.parsePreview/applyCoordinates` + `CentroidImportDialog` Create/Apply).
+- **P0.2** seed master-data THẬT 20 bảng + backfill 34/34 componentCode/refDes.
+- **P0.3** RBAC: 9 thủ tục bulk-import `adminProcedure` → `requirePermission(settings_*, canCreate)`; +`settings_factory` vào ma trận engineer.
+- **P0.4a** `product_machine_mapping` readiness-gate (chặn map product "blocked", có `force`). **P0.4b** DQ-dashboard mở rộng hierarchy+points. **P0.5** bulk-import badges/routing/BOM + `bootstrap.newFactory`.
+- **⭐P1.2** `liveStatsRollupService` (rollup daily_statistics từ product_inspections THẬT, ok/ng/ntf, self-heal upsert) — wired boot, gated `LIVE_STATS_ROLLUP_ENABLED` (OFF trên Full-Sim để không trùng sim-daemon). `startMachinePresence` xác nhận đã wired.
+- **P1.5** slmp enum. **P2.1** owner-notify shadowing (cảnh báo chủ máy giờ gửi được) + Cpk spec-limit thật.
+
+### 12.3 Đợt 2 — GĐ1 activate + GĐ2 HA/analytics + GĐ3 security (commit `150523fe`, migration `0285`)
+- **GĐ1 · P1.1** `simOtTelemetryService`: máy đã seed phát telemetry tổng-hợp qua ĐÚNG đường ingest → presence sweep BẬT máy ONLINE (Full-Sim, không cần HW; gated `SIM_OT_TELEMETRY_ENABLED`, `meta.source='SIM-OT'`). **P1.3** seed 5 rule cảnh báo mặc định (evaluator trước đó 0 rule). **P1.4·G1** `alertRouters.update/delete` bare → `writeProcedure`.
+- **GĐ2 · P2.3 Realtime HA** (mọi thứ gated OFF → single-node byte-identical): Redis atomic `SET NX` cooldown/dedup cluster-wide, leader-gate cluster-singleton, tính THẬT `BROKER_DISCONNECT`/`CLIENT_OFFLINE` (trước hardcode 0), war-room push khi trigger. **P2.2 OEE-trust**: `idealCycleTimeSec` cấu hình per product×machine (mig 0285 đã áp), align cửa sổ đếm-SP với cửa sổ availability, phân biệt 2 định nghĩa OEE (`availabilityBasis` uptime vs semi_e10). **P2.5**: downtime Pareto, MTBF/MTTR, takt/utilization/line-balance, genealogy đệ quy (honest-null khi thưa).
+- **GĐ3 · P3.2 step-up-2FA**: 4 mutation deploy `actuationProcedure`→`deployProcedure` (+`totpCode`); **client** wired dialog OTP tại 5 điểm deploy (deployBuild/approve/rollback/deployToFleet/deployWorkflow). **P3.4**: copilot từ chối chứng nhận logic an toàn; idempotency lệch-tham-số nay báo `CONFLICT` (hết swallow-reject); `orchestration.simulate` dùng `inArray`.
+
+### 12.4 Green-gate + Kiểm chứng LIVE
+- **Cả 2 đợt:** `tsc --noEmit` **0 lỗi**, `vite build` **✓**, locale JSON hợp lệ. Migration 0285 áp bằng owner role (`db_feature_status`=ok, cột present).
+- **GĐ1 chain PROVEN LIVE** (`scripts/verify-gd1-monitoring.mjs`): emitter ghi **144 telemetry / 36 máy** → presence sweep **checked 36, changed 2** → **5 rule cảnh báo armed**. Redis THỰC SỰ chạy (HA khả dụng). `daily_statistics`/OEE hôm nay = 0 vì **chưa có tiến trình feed chạy liên tục** (sim-daemon/rollup cần server bật) — KHÔNG phải lỗi code; P1.2 đã wired + green, sống khi server chạy.
+
+### 12.5 CÒN LẠI (hoãn/giới hạn hạ tầng — đúng L-Đ3)
+- **P1.6 / P3.3 HW-FAT** (chạm PLC/robot/firmware thật): HOÃN — tiếp tục Full-Sim.
+- **P3.1 AI-model-server** (llama-server đủ VRAM): giới hạn môi trường (CUDA-OOM) — Copilot/AI-chat/exec-summary suy giảm khi model offline; là việc HW/env.
+- **P2.4 reporting breadth** — ĐÃ LÀM (đợt 3, commit kèm): export row-cap + tín hiệu truncation (không drop ngầm); VN/CJK PDF font (Be Vietnam Pro + Noto Sans SC — đã đủ, xác nhận); scheduled-run → archive `report_artifacts` (gated OFF); chuỗi transport email db-SMTP→env-SMTP→SendGrid→SES + FCM push (đều credential-gated, skip sạch không giả-gửi). **Cần credential vận hành** để THẬT gửi: SendGrid/SES/FCM (APNs định tuyến qua FCM).
+- **Follow-up client step-up:** khi bật `ACTUATION_STEPUP_2FA` (đã =true env này), UI deploy đã thu OTP 6 số → gửi `totpCode`; cache 10' server-side.

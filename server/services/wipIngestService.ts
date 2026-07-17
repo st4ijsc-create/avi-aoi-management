@@ -445,10 +445,18 @@ async function updateLineBalance(
     // Running average over throughput (weight by count) for avgCycleTimeMs.
     let avgCycle = existing.avgCycleTimeMs;
     let maxCycle = existing.maxCycleTimeMs;
+    // doc 54 P2.1 — 'bottleneck' của line phải là trạm CHẬM NHẤT (cycle lớn nhất) trong kỳ,
+    // KHÔNG phải trạm VỪA báo cáo. Cũ: bottleneckStationId = stationId (trạm cuối ingest) →
+    // nhãn nút-thắt nhảy loạn theo đơn vị cuối cùng đi qua, gây hiểu sai phân tích line-balance.
+    // Nay: chỉ gán lại khi trạm này vừa lập MAX cycle mới (thực sự là điểm nghẽn nhất tới giờ).
+    let bottleneck = existing.bottleneckStationId;
     if (cycleMs != null) {
       const prevAvg = existing.avgCycleTimeMs ?? cycleMs;
       avgCycle = Math.round((prevAvg * existing.throughputUnits + cycleMs) / newThroughput);
       maxCycle = Math.max(existing.maxCycleTimeMs ?? 0, cycleMs);
+      if (cycleMs > (existing.maxCycleTimeMs ?? 0) && stationId != null) {
+        bottleneck = stationId;
+      }
     }
     await database
       .update(lineBalanceMetrics)
@@ -457,7 +465,7 @@ async function updateLineBalance(
         wipCount: Number(wipCount) || 0,
         avgCycleTimeMs: avgCycle,
         maxCycleTimeMs: maxCycle,
-        bottleneckStationId: stationId ?? existing.bottleneckStationId,
+        bottleneckStationId: bottleneck,
       })
       .where(eq(lineBalanceMetrics.id, existing.id));
   } else {

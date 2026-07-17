@@ -93,6 +93,68 @@ const LANGUAGE_LABELS: Record<string, Record<string, string>> = {
   },
 };
 
+// ─── Row-cap (OOM guard — doc 54 §11 P2.4 #1) ────────────────────────────────
+// Every buffered render (PDF/XLSX/CSV/HTML) materializes the FULL dataset in
+// memory (jsPDF/exceljs/string concat), so an unbounded `data[]` can OOM the
+// server. renderReport enforces a configurable ceiling: rows beyond
+// EXPORT_MAX_ROWS are dropped, a final MARKER ROW + a subtitle note make the
+// truncation explicit (never a silent drop), and RenderReportOutput carries a
+// `truncated` flag + the real totals. Streaming CSV/JSON (api/export/exportRouter)
+// stays uncapped — it never buffers — and its row-level document exports apply
+// their own tighter caps on top of this ceiling.
+
+/** Default render-layer row ceiling; env EXPORT_MAX_ROWS overrides (>0). */
+export function exportMaxRows(): number {
+  const v = Number(process.env.EXPORT_MAX_ROWS);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 100_000;
+}
+
+/** i18n truncation note (ASCII marker prefix so no font lacks the glyph). */
+const TRUNCATION_NOTE: Record<ReportLocale, (shown: number, total: number) => string> = {
+  vi: (s, t) => `[ĐÃ CẮT BỚT] Hiển thị ${s}/${t} dòng — giới hạn EXPORT_MAX_ROWS`,
+  en: (s, t) => `[TRUNCATED] Showing ${s} of ${t} rows — EXPORT_MAX_ROWS limit`,
+  zh: (s, t) => `[已截断] 显示 ${s}/${t} 行 — EXPORT_MAX_ROWS`,
+};
+
+function truncationNote(locale: ReportLocale, shown: number, total: number): string {
+  return (TRUNCATION_NOTE[locale] ?? TRUNCATION_NOTE.vi)(shown, total);
+}
+
+export interface CappedRows {
+  rows: Record<string, any>[];
+  truncated: boolean;
+  /** Rows in the source dataset before capping. */
+  totalRows: number;
+  /** Rows actually rendered (excludes the appended marker row). */
+  renderedRows: number;
+}
+
+/**
+ * Cap `data` to `max` rows for a buffered render. Over the cap it appends ONE
+ * marker row (message placed in the first TEXT column so no numeric-format path
+ * turns it into NaN) so the truncation is visible IN the file — never a silent
+ * drop. Returns the SAME array reference (no marker, truncated:false) when within
+ * the cap, so an un-truncated render is byte-for-byte unchanged.
+ */
+export function capRowsForRender(
+  data: Record<string, any>[],
+  columns: ExportColumn[],
+  locale: ReportLocale,
+  max = exportMaxRows(),
+): CappedRows {
+  const totalRows = data.length;
+  if (totalRows <= max) {
+    return { rows: data, truncated: false, totalRows, renderedRows: totalRows };
+  }
+  const kept = data.slice(0, max);
+  // Put the note in a text (non-numeric/date) column so the PDF number/date
+  // formatters never coerce the message into NaN / Invalid Date.
+  const noteCol = columns.find((c) => !c.format || c.format === "text") ?? columns[0];
+  const noteKey = noteCol?.key ?? "_note";
+  const marker: Record<string, any> = { [noteKey]: truncationNote(locale, max, totalRows) };
+  return { rows: [...kept, marker], truncated: true, totalRows, renderedRows: max };
+}
+
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
 const DEFAULT_PRIMARY = "#1E3A5F";
@@ -546,6 +608,12 @@ export interface RenderReportOutput {
   mimeType: string;
   filename: string;
   format: ReportFormat;
+  /** True when the dataset exceeded EXPORT_MAX_ROWS and was capped (marker row + subtitle note added). */
+  truncated: boolean;
+  /** Rows in the source dataset before capping. */
+  totalRows: number;
+  /** Rows actually rendered (<= EXPORT_MAX_ROWS; excludes the truncation marker row). */
+  renderedRows: number;
 }
 
 const MIME: Record<ReportFormat, string> = {
@@ -583,12 +651,24 @@ export async function renderReport(input: RenderReportInput): Promise<RenderRepo
     );
   }
 
+  const locale: ReportLocale = input.locale ?? "vi";
+
+  // OOM guard (doc 54 P2.4 #1): cap the dataset before any buffered render.
+  // Un-truncated → same array ref, byte-identical output; truncated → marker row
+  // in the body + an explicit subtitle note (visible in PDF/XLSX/HTML headers).
+  const capped = capRowsForRender(input.data, input.columns, locale);
+  const subtitle = capped.truncated
+    ? [input.subtitle, truncationNote(locale, capped.renderedRows, capped.totalRows)]
+        .filter((s): s is string => !!s)
+        .join("  ·  ")
+    : input.subtitle;
+
   const opts: ExportOptions = {
     title: input.title,
-    subtitle: input.subtitle,
+    subtitle,
     columns: input.columns,
-    data: input.data,
-    language: input.locale ?? "vi",
+    data: capped.rows,
+    language: locale,
     sheetName: input.sheetName,
     includeTimestamp: input.includeTimestamp ?? true,
     branding: input.branding,
@@ -612,7 +692,15 @@ export async function renderReport(input: RenderReportInput): Promise<RenderRepo
       throw new Error(`renderReport: unsupported format "${format as string}"`);
   }
 
-  return { buffer, mimeType: MIME[format], filename: `${safeFileBase(input)}.${EXT[format]}`, format };
+  return {
+    buffer,
+    mimeType: MIME[format],
+    filename: `${safeFileBase(input)}.${EXT[format]}`,
+    format,
+    truncated: capped.truncated,
+    totalRows: capped.totalRows,
+    renderedRows: capped.renderedRows,
+  };
 }
 
 /**
@@ -628,7 +716,8 @@ export async function renderPremiumNgVisualPdf(
 ): Promise<RenderReportOutput> {
   const { generateNGVisualPDF } = await import("./reportGenerator");
   const buffer = await generateNGVisualPDF(ngData, customization);
-  return { buffer, mimeType: MIME.pdf, filename: `${fileBase}.pdf`, format: "pdf" };
+  // Premium path is a fixed-layout NG-visual document, not the tabular cap path.
+  return { buffer, mimeType: MIME.pdf, filename: `${fileBase}.pdf`, format: "pdf", truncated: false, totalRows: 0, renderedRows: 0 };
 }
 
 // ─── Branding resolution (company profile) ───────────────────────────────────
