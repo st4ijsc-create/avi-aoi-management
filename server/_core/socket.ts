@@ -16,6 +16,15 @@ import {
   trackMachineSocket,
 } from "../services/stateStore/ingest";
 import { registerUnsStreamHandlers } from "../services/stateStore/unsStreamGateway";
+// ── doc 56 Đ0-A (RTM-6 + GAP-1) — machine-event auth on the socket channel.
+// SOCKET_MACHINE_AUTH_MODE default `off` keeps today's behaviour byte-identical;
+// `log`/`enforce` accept legacy-OR-mk_ so a rotated (mk_-only) machine keeps
+// presence after runbook 52 §3.f nulls machines.apiKey.
+import {
+  socketMachineAuthMode,
+  verifyMachineSocketAuth,
+  recordSocketMachineAuthMismatch,
+} from "./socketMachineAuth";
 
 let io: Server | null = null;
 
@@ -327,45 +336,87 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Machine confirms mapping
+    // Doc 56 Đ0-A (RTM-6/GAP-1): historically this event verified NOTHING before
+    // setOnline + broadcast — anyone on the LAN could mark any machine online.
+    // SOCKET_MACHINE_AUTH_MODE gates the fix:
+    //   off (default) — byte-identical legacy behaviour (no check, synchronous);
+    //   log           — verify legacy-OR-mk_, count/log mismatches, STILL allow
+    //                   (GAP-1 observation week);
+    //   enforce       — mismatch → drop: no setOnline, no broadcast, no
+    //                   machine_status_logs write.
+    // NOTE: in log/enforce the apply step runs AFTER an async DB verify, so the
+    // additive state-store confirm_mapping listener below (registration order)
+    // no longer sees connectedMachines populated — with STATE_STORE_ENABLED on,
+    // tracking then starts at the machine's first heartbeat instead (the same
+    // documented limitation sync_started already has; see stateStore/ingest.ts).
     socket.on("machine:confirm_mapping", (data: { machineId: number; machineCode: string; apiKey: string }) => {
-      const ipAddress = socket.handshake.address;
-      connectedMachines.set(data.machineId, {
-        socketId: socket.id,
-        ipAddress,
-        lastHeartbeat: new Date(),
-        machineCode: data.machineCode,
-      });
-      onlineMachineCodesMap.set(data.machineId, data.machineCode);
-      // Shared-store mirror: mark online across the fleet (TTL-bounded).
-      void presence.setOnline({
-        machineId: data.machineId,
-        machineCode: data.machineCode,
-        socketId: socket.id,
-        ipAddress,
-        lastHeartbeat: Date.now(),
-        status: "online",
-      }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
+      const applyConfirmMapping = () => {
+        const ipAddress = socket.handshake.address;
+        connectedMachines.set(data.machineId, {
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: new Date(),
+          machineCode: data.machineCode,
+        });
+        onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        // Shared-store mirror: mark online across the fleet (TTL-bounded).
+        void presence.setOnline({
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: Date.now(),
+          status: "online",
+        }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
 
-      socket.join(`machine:${data.machineId}`);
-      console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
-      
-      // Log status change to database
-      db.createMachineStatusLog({
-        machineId: data.machineId,
-        status: 'online',
-        ipAddress,
-      }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
-      
-      // Notify admin dashboard
-      io?.to("admin").emit("machine:connected", {
-        machineId: data.machineId,
-        machineCode: data.machineCode,
-        ipAddress,
-        timestamp: new Date(),
-      });
-      
-      // Broadcast status change to all clients
-      io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
+        socket.join(`machine:${data.machineId}`);
+        console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
+
+        // Log status change to database
+        db.createMachineStatusLog({
+          machineId: data.machineId,
+          status: 'online',
+          ipAddress,
+        }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
+
+        // Notify admin dashboard
+        io?.to("admin").emit("machine:connected", {
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          ipAddress,
+          timestamp: new Date(),
+        });
+
+        // Broadcast status change to all clients
+        io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
+      };
+
+      const mode = socketMachineAuthMode();
+      if (mode === "off") {
+        applyConfirmMapping(); // legacy: no credential check (today's behaviour)
+        return;
+      }
+      void (async () => {
+        let machine: Awaited<ReturnType<typeof db.getMachineById>>;
+        try {
+          machine = await db.getMachineById(data.machineId);
+        } catch (err: any) {
+          console.error("[Socket.io] confirm_mapping machine lookup failed:", err?.message ?? err);
+          machine = undefined;
+        }
+        const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:confirm_mapping");
+        if (!auth.ok) {
+          recordSocketMachineAuthMismatch({
+            event: "machine:confirm_mapping",
+            mode,
+            machineId: data.machineId,
+            machineCode: machine?.code ?? data.machineCode,
+            method: auth.method,
+          });
+          if (mode === "enforce") return; // reject: no setOnline, no broadcast, no status log
+        }
+        applyConfirmMapping();
+      })();
     });
 
     // Admin joins admin room for machine management
@@ -585,9 +636,30 @@ export function initializeSocket(server: HttpServer): Server {
       try {
         // Verify machine
         const machine = await db.getMachineById(data.machineId);
-        if (!machine || machine.apiKey !== data.apiKey) {
-          socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
-          return;
+        // Doc 56 Đ0-A (RTM-6/GAP-1): `off` (default) keeps the legacy PLAINTEXT
+        // comparison byte-identical. `log`/`enforce` accept legacy-OR-mk_ — so a
+        // rotated machine (machines.apiKey NULLed per runbook 52 §3.f) still
+        // syncs with its mk_ key — and count/log every mismatch; a total
+        // mismatch is rejected exactly like today (no mode weakens this event).
+        const mode = socketMachineAuthMode();
+        if (mode === "off") {
+          if (!machine || machine.apiKey !== data.apiKey) {
+            socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
+        } else {
+          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:sync_started");
+          if (!machine || !auth.ok) {
+            recordSocketMachineAuthMismatch({
+              event: "machine:sync_started",
+              mode,
+              machineId: data.machineId,
+              machineCode: machine?.code ?? data.machineCode,
+              method: auth.method,
+            });
+            socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
+            return;
+          }
         }
 
         const ipAddress = socket.handshake.address;

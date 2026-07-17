@@ -8374,6 +8374,16 @@
     "machineType_PACKAGING": "Packaging",
     "machineType_PALLETIZER": "Palletizer",
     "machineType_ROBOT": "Robot",
+    "machineType_MOUNTER": "Mounter (Pick-and-Place)",
+    "machineType_REFLOW": "Reflow Oven",
+    "machineType_STENCIL_PRINTER": "Stencil Printer",
+    "machineType_WAVE_SOLDER": "Wave Soldering",
+    "machineType_WELDER": "Welding Cell",
+    "machineType_IOT_SENSOR": "IoT Sensor",
+    "machineType_IOT_GATEWAY": "IoT Gateway",
+    "deviceClass_aoi_avi": "Optical Inspection (AVI/AOI)",
+    "deviceClass_automation": "Automation Machines",
+    "deviceClass_iot": "IoT Devices",
     "machineImage": "Machine Image",
     "machineStatus": "Machine Status",
     "machineOptionalAll": "All Machines",
@@ -9553,6 +9563,41 @@
     }
   },
   "machineRegistration": {
+    "credential": {
+      "issued": "Key issued",
+      "notIssued": "No key",
+      "issueKey": "Issue API key",
+      "rotateKey": "Rotate API key",
+      "reissueClaimToken": "Reissue claim token",
+      "adminOnly": "Admin only",
+      "claimTitle": "Claim token — shown once",
+      "apiKeyTitle": "New API key — shown once",
+      "machineLabel": "Machine: {{machine}}",
+      "showOnceTitle": "Shown ONE time only",
+      "showOnceDesc": "Copy it now — once this dialog closes it cannot be viewed again.",
+      "claimHint": "One-time token the machine exchanges for its API key.",
+      "claimReissueNote": "Issuing a new token invalidates any unused previous token.",
+      "apiKeyHint": "The old key is already invalid — update the machine with the new key to keep it sending data.",
+      "expiresAt": "Expires: {{time}}",
+      "copy": "Copy",
+      "copied": "Copied to clipboard",
+      "qr": "QR code",
+      "qrError": "Could not generate QR code",
+      "close": "Close",
+      "rotateDialog": {
+        "title": "Rotate API key?",
+        "description": "The current key of machine {{machine}} will be invalidated immediately — a machine still using the old key loses its connection until the new key is entered. The new key is shown ONCE.",
+        "cancel": "Cancel",
+        "confirm": "Rotate key"
+      },
+      "toast": {
+        "claimIssued": "Claim token issued",
+        "claimIssueError": "Could not issue claim token",
+        "claimMintFailedAfterApprove": "Machine approved but no claim token could be minted — use the 'Reissue claim token' action in the table.",
+        "rotateSuccess": "API key rotated",
+        "rotateError": "Could not rotate API key"
+      }
+    },
     "pagination": {
       "showing": "Showing {{from}}–{{to}} of {{total}}",
       "pageOf": "Page {{page}} / {{pages}}",

@@ -166,13 +166,15 @@ describe("M5 — machine mutations audited, secrets never leak", () => {
     expect(JSON.stringify(e)).not.toContain("mach_");
   });
 
-  it("machine.update with apiKey in the payload → value is REDACTED in the snapshot", async () => {
-    await machineRouter.createCaller(ctx).update({ id: 51, name: "AOI 1b", apiKey: "mach_NEW_PLAINTEXT" });
+  // doc 54 P0-2 removed apiKey from the machine.update zod schema entirely — zod strips
+  // the field before it can reach the audit snapshot, which is stronger than redaction.
+  it("machine.update with apiKey in the payload → field stripped from input, never in snapshot", async () => {
+    await machineRouter.createCaller(ctx).update({ id: 51, name: "AOI 1b", apiKey: "mach_NEW_PLAINTEXT" } as never);
     const e = lastAudit();
     expect(e.action).toBe("update");
     expect(e.details.after.name).toBe("AOI 1b");
-    expect(e.details.after.apiKey).toBe("***REDACTED***");
-    expect(e.details.before.apiKey).toBe("***REDACTED***");
+    expect(e.details.after.apiKey).toBeUndefined();
+    expect(e.details.before.apiKey).toBeUndefined();
     expect(JSON.stringify(e)).not.toContain("mach_NEW_PLAINTEXT");
     expect(JSON.stringify(e)).not.toContain("mach_SUPER_SECRET_KEY");
   });

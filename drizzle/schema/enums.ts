@@ -36,6 +36,10 @@ export const machineTypeEnum = pgEnum("machinetypeenum", [
   "REFLOW",          // Reflow soldering oven
   "STENCIL_PRINTER", // Solder-paste stencil printer
   "WAVE_SOLDER",     // Wave / selective soldering
+  // --- doc 56 Đ0 việc 5 (migration 0287_device_class_types): WELDER + IoT device classes ---
+  "WELDER",          // Welding cell (process automation; deviceClass "automation")
+  "IOT_SENSOR",      // Self-developed IoT sensor — telemetry-only (deviceClass "iot")
+  "IOT_GATEWAY",     // Self-developed IoT gateway / relay (deviceClass "iot")
 ]);
 // Sprint F2 — outcome of a generic process/station step (telemetry RESULT, not a control command)
 export const processResultEnum = pgEnum("processresultenum", ["pass", "fail", "warn", "skip"]);

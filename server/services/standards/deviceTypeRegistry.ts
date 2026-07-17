@@ -102,6 +102,34 @@ const CLASS_PARENT: Record<EquipmentClass, string> = {
   // doc 40 W5 (MTX-03) — SMT line cells sit under ProcessAutomation.
   MOUNTER: "ProcessAutomation", REFLOW: "ProcessAutomation",
   STENCIL_PRINTER: "ProcessAutomation", WAVE_SOLDER: "ProcessAutomation",
+  // doc 56 Đ0 (0287) — welding under ProcessAutomation; IoT under the new IoTDevice branch.
+  WELDER: "ProcessAutomation",
+  IOT_SENSOR: "IoTDevice", IOT_GATEWAY: "IoTDevice",
+};
+
+/**
+ * Doc 56 Đ0 việc 8 (TAX-4/TAX-11) — REQUIRED process-setting attributes for the
+ * automation leaves whose recipes carry hard targets. Merged ON TOP of the
+ * telemetry-derived attribute slots in buildSeedTypes (mergeAttributes semantics:
+ * same-name slots gain `required` while keeping label/unit; new names append).
+ * These drive capabilitiesValidation tier-1 (required-attribute check).
+ */
+const LEAF_REQUIRED_ATTRS: Partial<Record<EquipmentClass, DeviceTypeAttribute[]>> = {
+  SCREWDRIVE: [
+    { name: "torque_target", label: "Torque target", dataType: "float", unit: "Nm", required: true },
+    { name: "torque_tolerance", label: "Torque tolerance", dataType: "float", unit: "Nm", required: true },
+    { name: "angle_target", label: "Angle target", dataType: "float", unit: "deg" },
+  ],
+  DISPENSING: [
+    { name: "volume_target", label: "Volume target", dataType: "float", unit: "mm3", required: true },
+    { name: "viscosity", label: "Viscosity", dataType: "float", unit: "mPa.s" },
+    { name: "pressure", label: "Pressure", dataType: "float", unit: "bar" },
+  ],
+  WELDER: [
+    { name: "weld_current", label: "Weld current", dataType: "float", unit: "A", required: true },
+    { name: "weld_time", label: "Weld time", dataType: "float", unit: "s", required: true },
+    { name: "tip_temp", label: "Tip temperature", dataType: "float", unit: "degC" },
+  ],
 };
 
 /** Base attributes every Equipment carries (mirrors report §9.6 Equipment(base)). */
@@ -173,6 +201,17 @@ export function buildSeedTypes(): DeviceTypeNode[] {
     typeKey: "ProcessAutomation", parentTypeKey: "Equipment", label: "Process automation",
     description: "General PLC-driven automation/assembly/feed/process.",
   }));
+  // doc 56 Đ0 (0287) — self-developed IoT devices (sensors/gateways): telemetry-only,
+  // NOT production equipment (capability countsTowardOee=false on the leaves).
+  nodes.push(mk({
+    typeKey: "IoTDevice", parentTypeKey: "Equipment", label: "IoT device",
+    description: "Self-developed IoT device (ESP32-class sensor/gateway) — telemetry-only, no control.",
+    attributesSchema: [
+      { name: "firmware_version", label: "Firmware", dataType: "string" },
+      { name: "last_heartbeat", label: "Last heartbeat", dataType: "string" },
+      { name: "rssi_dbm", label: "Signal strength", dataType: "float", unit: "dBm" },
+    ],
+  }));
 
   // ── leaf nodes from capabilityModel DEFAULT_PROFILES ──
   const profiles = listDefaultProfiles();
@@ -182,8 +221,13 @@ export function buildSeedTypes(): DeviceTypeNode[] {
       parentTypeKey: CLASS_PARENT[p.equipmentClass] ?? "Equipment",
       label: p.equipmentClass,
       description: `Seeded from capabilityModel DEFAULT_PROFILES[${p.equipmentClass}].`,
-      // telemetry → attribute slots (commands stay in supportedCommands).
-      attributesSchema: p.telemetryTags.map(telemetryToAttribute),
+      // telemetry → attribute slots (commands stay in supportedCommands); doc 56 Đ0
+      // layers the REQUIRED process-setting attrs on top (same-name slots gain
+      // `required`, new names append — mergeAttributes child-overrides semantics).
+      attributesSchema: mergeAttributes(
+        p.telemetryTags.map(telemetryToAttribute),
+        LEAF_REQUIRED_ATTRS[p.equipmentClass] ?? [],
+      ),
       supportedCommands: p.supportedCommands,
       supportedStates: p.supportedStates,
       adapterKind: p.adapterKind,
@@ -324,6 +368,39 @@ export function buildTree(nodes: DeviceTypeNode[]): DeviceTypeTreeNode[] {
 export function resolveForMachineType(machineType: string, nodes?: DeviceTypeNode[]): ResolvedDeviceType {
   const set = nodes ?? buildSeedTypes();
   return resolveType(machineType, set) ?? resolveType("Equipment", set)!;
+}
+
+/**
+ * Doc 56 Đ0 việc 8 — machineType → the typeKey of its GOVERNING leaf device type
+ * (newest published wins), for stamping `machines.device_type_key`.
+ *
+ * Resolution order (deterministic):
+ *   1. a node whose typeKey EQUALS the machineType (the canonical seed leaves);
+ *   2. else a node whose `mappedMachineTypes` contains the machineType (covers
+ *      board-published types with custom keys);
+ * within each bucket: published > draft > archived, then highest SemVer
+ * (preferNode). Fail-safe: nothing matches → null — the caller treats the stamp
+ * as best-effort (approve must NEVER fail on it). Unlike resolveForMachineType
+ * there is NO "Equipment" fallback: a generic base key on a machine row would be
+ * noise, not governance.
+ */
+export function resolveDeviceTypeKeyForMachineType(
+  machineType: string,
+  nodes?: DeviceTypeNode[],
+): string | null {
+  if (!machineType) return null;
+  const set = nodes ?? buildSeedTypes();
+  let exact: DeviceTypeNode | undefined;
+  let mapped: DeviceTypeNode | undefined;
+  for (const n of set) {
+    if (!n || typeof n.typeKey !== "string") continue;
+    if (n.typeKey === machineType) {
+      if (!exact || preferNode(n, exact)) exact = n;
+    } else if ((n.mappedMachineTypes ?? []).includes(machineType)) {
+      if (!mapped || preferNode(n, mapped)) mapped = n;
+    }
+  }
+  return exact?.typeKey ?? mapped?.typeKey ?? null;
 }
 
 /**

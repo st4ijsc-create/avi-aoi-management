@@ -56,9 +56,9 @@ export function asSeverity(raw: unknown): AlarmSeverity {
 // ════════════════════════════════════════════════════════════════════════════
 export const SEED_ALARM_MAPPINGS: AlarmMapping[] = [
   // ── Fanuc (robot controllers) ──
-  { vendor: "fanuc", machineType: "ROBOT", nativeCode: "SRVO-050", standardCode: "COLLISION_DETECT", severity: "critical", description: "Collision detect alarm", recommendedAction: "Clear obstruction; jog robot away; reset after safety check." },
+  // SRVO-050 / SRVO-062 live in VENDOR_ALARM_MAPPINGS (doc 37 §6.4 real dataset) —
+  // duplicating them here would be dead weight: mergeAlarmMappings dedupes last-wins.
   { vendor: "fanuc", machineType: "ROBOT", nativeCode: "SRVO-021", standardCode: "ESTOP_ACTIVE", severity: "critical", description: "SRDY off (E-stop)", recommendedAction: "Release E-stop and reset controller." },
-  { vendor: "fanuc", machineType: "ROBOT", nativeCode: "SRVO-062", standardCode: "ENCODER_FAULT", severity: "high", description: "BZAL alarm (encoder battery)", recommendedAction: "Replace encoder backup battery; re-master axis." },
   // ── Universal Robots (cobots) ──
   { vendor: "universal_robots", machineType: "ROBOT", nativeCode: "C153A0", standardCode: "FORCE_LIMIT_EXCEEDED", severity: "high", description: "Protective stop: force limit exceeded", recommendedAction: "Reduce payload/speed; verify force limit config; restart program." },
   { vendor: "universal_robots", machineType: "ROBOT", nativeCode: "C204", standardCode: "JOINT_LIMIT", severity: "medium", description: "Joint position out of safety range", recommendedAction: "Jog joint back into range; review waypoints." },

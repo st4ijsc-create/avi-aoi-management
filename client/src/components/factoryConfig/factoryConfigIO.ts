@@ -11,15 +11,10 @@
  */
 import * as XLSX from "xlsx";
 
-/** Mirror của server/constants/machineTypes.ts — GIỮ ĐỒNG BỘ (order + values).
- * Bản client/src/constants/machineTypes.ts đang thiếu 4 loại SMT nên KHÔNG dùng ở
- * đây; danh sách đủ 21 giá trị này khớp `z.enum(MACHINE_TYPES)` của importMachines. */
-export const IMPORT_MACHINE_TYPES = [
-  "AVI", "AOI", "SPI", "AXI", "ICT", "FCT", "CMM", "AUTOMATION",
-  "FEEDER", "ASSEMBLY", "SCREWDRIVE", "DISPENSING", "ICT_FUNC", "ROBOT_TEST",
-  "PACKAGING", "PALLETIZER", "ROBOT",
-  "MOUNTER", "REFLOW", "STENCIL_PRINTER", "WAVE_SOLDER",
-] as const;
+// doc 56 Đ0 việc 6 — fork `IMPORT_MACHINE_TYPES` ĐÃ XÓA. Danh sách loại máy hợp lệ
+// giờ do CALLER truyền vào `ValidationCtx.machineTypes` (lấy từ hook
+// `@/hooks/useMachineTypes` — tRPC machine.listTypes, có fallback tĩnh đủ 24).
+// File này thuần (không React/không query) nên KHÔNG tự giữ bản sao từ vựng nữa.
 
 export type FactoryLevel = "factory" | "workshop" | "line" | "station" | "machine";
 export const FACTORY_LEVELS: FactoryLevel[] = ["factory", "workshop", "line", "station", "machine"];
@@ -37,6 +32,8 @@ export interface FieldDef {
   /** Trường này là MÃ CHA — phải resolve được trong DB hiện có. */
   parentRef?: boolean;
   enumValues?: readonly string[];
+  /** Enum ĐỘNG — giá trị hợp lệ do caller cấp qua ValidationCtx (doc 56 Đ0). */
+  dynamicEnum?: "machineTypes";
   /** Giá trị ví dụ dùng cho file mẫu. */
   example?: string | number | boolean;
 }
@@ -136,7 +133,7 @@ export const LEVEL_DEFS: Record<FactoryLevel, LevelDef> = {
       { key: "stationCode", labelKey: "factoryIO.field.stationCode", labelDefault: "Mã trạm", type: "string", required: true, parentRef: true, example: "ST-01" },
       { key: "code", labelKey: "factoryIO.field.code", labelDefault: "Mã", type: "string", required: true, example: "M-01" },
       { key: "name", labelKey: "factoryIO.field.name", labelDefault: "Tên", type: "string", required: true, example: "Máy AOI 1" },
-      { key: "machineType", labelKey: "factoryIO.field.machineType", labelDefault: "Loại máy", type: "enum", required: true, enumValues: IMPORT_MACHINE_TYPES, example: "AOI" },
+      { key: "machineType", labelKey: "factoryIO.field.machineType", labelDefault: "Loại máy", type: "enum", required: true, dynamicEnum: "machineTypes", example: "AOI" },
       { key: "model", labelKey: "factoryIO.field.model", labelDefault: "Model", type: "string", required: false, example: "" },
       { key: "manufacturer", labelKey: "factoryIO.field.manufacturer", labelDefault: "Hãng SX", type: "string", required: false, example: "" },
       { key: "isActive", labelKey: "factoryIO.field.isActive", labelDefault: "Kích hoạt", type: "boolean", required: false, example: true },
@@ -191,6 +188,8 @@ export interface ValidationCtx {
   /** Nhãn đã dịch, dùng dựng message lỗi thân thiện. */
   labelOf: (field: FieldDef) => string;
   parentLabel: string;
+  /** doc 56 Đ0 — loại máy hợp lệ, caller lấy từ useMachineTypes (machine.listTypes). */
+  machineTypes: readonly string[];
 }
 
 /** Đọc ô theo key KHÔNG phân biệt hoa/thường (header có thể "Code" hay "code"). */
@@ -238,7 +237,10 @@ export function validateRow(
     }
     if (field.type === "enum") {
       const upper = s.toUpperCase();
-      if (!field.enumValues?.includes(upper)) {
+      // Enum tĩnh (enumValues) hoặc động (doc 56 Đ0: machineTypes từ caller).
+      const allowed =
+        field.enumValues ?? (field.dynamicEnum === "machineTypes" ? ctx.machineTypes : undefined);
+      if (!allowed?.includes(upper)) {
         errors.push(`${label}: "${s}" không hợp lệ`);
         continue;
       }

@@ -45,12 +45,12 @@ describe("pure severity/reason mapping", () => {
   });
 
   it("known code → mapped Andon input; unknown code → unmapped passthrough", () => {
-    const known = mapAlarm("fanuc", "SRVO-050"); // COLLISION_DETECT / critical
+    const known = mapAlarm("fanuc", "SRVO-050"); // COLLISION / critical (doc 37 vendor dataset)
     const inputKnown = buildAndonInput({ vendor: "fanuc", nativeCode: "SRVO-050" }, known);
     expect(known.mapped).toBe(true);
     expect(inputKnown.state).toBe("red");
     expect(inputKnown.reason).toBe("safety");
-    expect(inputKnown.title).toContain("COLLISION_DETECT");
+    expect(inputKnown.title).toContain("COLLISION");
 
     const unknown = mapAlarm("acme", "ZZZ-999");
     const inputUnknown = buildAndonInput({ vendor: "acme", nativeCode: "ZZZ-999" }, unknown);

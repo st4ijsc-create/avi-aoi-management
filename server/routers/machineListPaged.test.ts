@@ -100,6 +100,31 @@ describe("F9 — machine.listPaged", () => {
       machineRouter.createCaller(userCtx).listPaged({ registrationStatus: "bogus" as any }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
+
+  // ── Doc 56 Đ0-A (MGMTUI-3/REG-1) — listPaged must NEVER return the plaintext
+  // ingest apiKey. The db layer (getMachinesPaged) strips it and derives
+  // hasApiKey; this test feeds the router a REGRESSED full-row db result to
+  // prove the route-level belt-and-braces strip seals the leak regardless.
+  it("Đ0-A: items never contain apiKey — derived hasApiKey survives", async () => {
+    dbm.getMachinesPaged.mockResolvedValue({
+      items: [
+        { id: 1, code: "AOI-01", name: "AOI 1", apiKey: "mach_SECRET_KEY", hasApiKey: true },
+        { id: 2, code: "AOI-02", name: "AOI 2", apiKey: null, hasApiKey: false },
+      ],
+      total: 2,
+    });
+    const res = await machineRouter.createCaller(userCtx).listPaged();
+    expect(res.total).toBe(2);
+    expect(res.items).toHaveLength(2);
+    for (const item of res.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item)).not.toContain("apiKey");
+      expect(item).toHaveProperty("hasApiKey");
+    }
+    expect(res.items[0]).toMatchObject({ id: 1, code: "AOI-01", hasApiKey: true });
+    expect(res.items[1]).toMatchObject({ id: 2, code: "AOI-02", hasApiKey: false });
+    // The secret must not survive anywhere in the serialized response.
+    expect(JSON.stringify(res)).not.toContain("mach_SECRET_KEY");
+  });
 });
 
 describe("F9 — machine.registrationSummary", () => {

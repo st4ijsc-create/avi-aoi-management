@@ -159,7 +159,7 @@ describe("I1-a — Euromap framework (honest, read-only)", () => {
 
 // ── Alarm normalization (I1-c) — maps known, passes through unknown, flag-off no-op
 describe("I1-c — alarm normalization", () => {
-  const KNOWN = { vendor: "fanuc", nativeCode: "SRVO-050" }; // seeded → COLLISION_DETECT/critical
+  const KNOWN = { vendor: "fanuc", nativeCode: "SRVO-050" }; // seeded → COLLISION/critical (doc 37 vendor dataset)
   const UNKNOWN = { vendor: "acme", nativeCode: "ZZZ-999" };
 
   beforeEach(() => { delete process.env.EQ_INTEG_ENABLED; });
@@ -176,12 +176,12 @@ describe("I1-c — alarm normalization", () => {
     const { mapAlarm } = await import("../standards/alarmTaxonomy");
     const normalized = mapAlarm(KNOWN.vendor, KNOWN.nativeCode);
     expect(normalized.mapped).toBe(true);
-    expect(normalized.standardCode).toBe("COLLISION_DETECT");
+    expect(normalized.standardCode).toBe("COLLISION");
     const input = buildAndonInput({ ...KNOWN, machineId: 5 }, normalized);
     expect(input.state).toBe("red");
     expect(input.reason).toBe("safety");
     expect(input.raisedBySystem).toBe(true);
-    expect(input.title).toContain("COLLISION_DETECT");
+    expect(input.title).toContain("COLLISION");
   });
 
   it("passes through an UNKNOWN code as the fail-safe default (still raises a yellow advisory)", async () => {
@@ -202,7 +202,7 @@ describe("I1-c — alarm normalization", () => {
     const res = await normalizeAndRaise({ ...KNOWN, machineId: 5 });
     expect(res.raised).toBe(false);
     expect(res.andon).toBeNull();
-    expect(res.normalized.standardCode).toBe("COLLISION_DETECT");
+    expect(res.normalized.standardCode).toBe("COLLISION");
     expect(raiseAndon).not.toHaveBeenCalled();
   });
 
@@ -216,7 +216,7 @@ describe("I1-c — alarm normalization", () => {
     expect(raiseAndon).toHaveBeenCalledOnce();
     const passed = raiseAndon.mock.calls[0][0] as any;
     expect(passed.state).toBe("red");
-    expect(passed.title).toContain("COLLISION_DETECT"); // standard code, not raw
+    expect(passed.title).toContain("COLLISION"); // standard code, not raw
   });
 });
 

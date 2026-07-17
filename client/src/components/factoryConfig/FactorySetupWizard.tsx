@@ -27,8 +27,10 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
-import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
+import { type MachineType } from "@/constants/machineTypes";
 import { machineTypeLabel } from "@/lib/machineTypeLabel";
+// doc 56 Đ0 việc 6 — dropdown loại máy dùng MỘT nguồn (machine.listTypes qua hook).
+import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
 
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -642,7 +644,7 @@ export function FactorySetupWizard({ open, onOpenChange, onComplete }: FactorySe
                   <Select value={m.machineType} onValueChange={(v) => updateMachine(m.lid, { machineType: v as MachineType })}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {MACHINE_TYPES.map((mt) => <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>)}
+                      <MachineTypeSelectOptions />
                     </SelectContent>
                   </Select>
                 </Field>

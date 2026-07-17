@@ -18,8 +18,11 @@ import { EmptyState, StatusBadge } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { ExcelImportExport } from "@/components/ExcelImportExport";
 import { Cpu, Plus, Loader2, Pencil, Trash2, RotateCcw, Key } from "lucide-react";
-import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
+import { type MachineType } from "@/constants/machineTypes";
 import { machineTypeLabel } from "@/lib/machineTypeLabel";
+// doc 56 Đ0 việc 6 — dropdown loại máy (form) dùng MỘT nguồn machine.listTypes.
+// Dropdown LỌC bên dưới vẫn nhận prop `machineTypes` (loại đang có trong dữ liệu).
+import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
 import type { Factory, Workshop, Line, Station, Machine } from "./entityTypes";
 
 type MachineForm = {
@@ -188,9 +191,7 @@ export function MachinesTab({
                           <Select value={machineForm.machineType} onValueChange={(v: MachineType) => setMachineForm({ ...machineForm, machineType: v })}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              {MACHINE_TYPES.map((mt) => (
-                                <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>
-                              ))}
+                              <MachineTypeSelectOptions />
                             </SelectContent>
                           </Select>
                         </div>

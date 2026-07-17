@@ -254,6 +254,14 @@ curl -X POST localhost:3000/api/trpc/machineApi.checkPointsVersion \
 
 **Mục đích.** Còn `machines.apiKey` trong DB = còn credential plaintext at-rest chờ rò.
 
+**Điều kiện tiên quyết (doc 56 Đ0-A / GAP-1 — kênh Socket.io).** Socket realtime
+(`machine:sync_started` / `machine:confirm_mapping`) từng chỉ so plaintext
+`machines.apiKey` — NULL cột này khi socket chưa nhận khoá `mk_` là **vỡ presence
+máy đang chạy**. **CHỈ chạy bước f sau khi:** `SOCKET_MACHINE_AUTH_MODE=log` ghi
+nhận **0 mismatch ≥1 tuần trên fleet thật** (xem `getSocketMachineAuthMismatches()`
+/ log `[SocketMachineAuth]`) **VÀ** đã chuyển `SOCKET_MACHINE_AUTH_MODE=enforce` —
+tức socket sync_started/confirm_mapping đã xác thực được bằng khoá `mk_`.
+
 **Lệnh.**
 ```sql
 -- Xem trước máy nào còn (báo cáo cột SHARED=yes):

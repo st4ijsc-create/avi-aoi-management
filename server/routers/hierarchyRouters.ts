@@ -5,12 +5,13 @@ import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
-import { MACHINE_TYPES } from "../constants/machineTypes";
+import { MACHINE_TYPES, DEVICE_CLASS_BY_TYPE } from "../constants/machineTypes";
 import { requirePermission } from "../_core/accessControl";
 import {
   eqGovernEnabled,
   buildSeedTypes,
   resolveType,
+  resolveDeviceTypeKeyForMachineType,
 } from "../services/standards/deviceTypeRegistry";
 // W8-A (doc 27 M13 / doc 29 §4): soft 2-tier capabilities gate + weekly drift scan.
 import {
@@ -903,6 +904,25 @@ export const machineRouter = router({
         apiKey,
       });
 
+      // Doc 56 Đ0 việc 8 — stamp the governance key machines.device_type_key at
+      // approval (machineType → newest published leaf, DB-published types first
+      // via loadDeviceTypeNodes, seed fallback). Best-effort BY DESIGN: the
+      // approval is already committed, so a resolve/write failure must never 500
+      // the admin; machines approved before 0287 (or a null resolve) are
+      // backfilled by scripts/seed-device-types.mjs.
+      try {
+        const deviceTypeKey = resolveDeviceTypeKeyForMachineType(
+          machine.machineType,
+          await loadDeviceTypeNodes(),
+        );
+        if (deviceTypeKey) await db.updateMachine(input.id, { deviceTypeKey });
+      } catch (e) {
+        logger.warn(
+          { err: e, machineId: input.id },
+          "[MachineApprove] device_type_key stamp failed — machine approved without one; backfill via scripts/seed-device-types.mjs",
+        );
+      }
+
       // Doc 51 P0 / R1: mint the ONE-TIME claim token the technician types into
       // the machine (the machine can no longer read its key off `config`).
       // Best-effort BY DESIGN: the approval is already committed, so a token
@@ -1182,6 +1202,20 @@ export const machineRouter = router({
     return rows.map(({ apiKey: _apiKey, ...rest }) => rest);
   }),
 
+  // ── Doc 56 Đ0 việc 6 (TAX-1/TAX-3) — machine-type vocabulary, ONE source ──
+  // The full 24-type taxonomy with its DERIVED deviceClass, served from
+  // server/constants/machineTypes.ts so the client stops forking compile-time
+  // type lists (Step1MachineInfo / MachinesTab / FactorySetupWizard / MQTTReplay
+  // / factoryConfigIO.IMPORT_MACHINE_TYPES). labelKey follows the existing i18n
+  // convention `machineType_<TYPE>`. Pure constant projection — no db access.
+  listTypes: protectedProcedure.query(() => {
+    return MACHINE_TYPES.map((type) => ({
+      type,
+      deviceClass: DEVICE_CLASS_BY_TYPE[type],
+      labelKey: `machineType_${type}` as const,
+    }));
+  }),
+
   // ── Doc 27 Đợt 5 / W5-E — gap F9: server-side search + pagination ────────
   // `list` above stays a full list (30+ consumers); this is the paged variant
   // used by MachineRegistration. Bounded: default 50, hard max 200.
@@ -1193,7 +1227,18 @@ export const machineRouter = router({
       offset: z.number().int().min(0).default(0),
     }).default({ limit: 50, offset: 0 }))
     .query(async ({ input }) => {
-      return db.getMachinesPaged(input);
+      // Doc 56 Đ0-A (MGMTUI-3/REG-1) — db.getMachinesPaged already strips the
+      // plaintext apiKey (and derives hasApiKey); this belt-and-braces strip
+      // keeps the ROUTE sealed even if the db layer ever regresses to full rows
+      // (doc 54 P0-1 precedent: the sibling list/getById strip at the router).
+      const { items, total } = await db.getMachinesPaged(input);
+      return {
+        items: items.map((m) => {
+          const { apiKey: _omitApiKey, ...safe } = m as typeof m & { apiKey?: string | null };
+          return safe;
+        }),
+        total,
+      };
     }),
 
   // F9 — registration-status counts for the summary cards (replaces counting a

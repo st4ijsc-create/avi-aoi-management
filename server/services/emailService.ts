@@ -14,12 +14,14 @@ export function initEmailService() {
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || "587");
   const smtpUser = process.env.SMTP_USER;
-  const smtpPassword = process.env.SMTP_PASSWORD;
+  // RTM-5 (doc 56 Đ0-A): .env.example documents SMTP_PASS while this service only
+  // read SMTP_PASSWORD — accept both (SMTP_PASSWORD wins, SMTP_PASS fallback).
+  const smtpPassword = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
   const smtpFrom = process.env.SMTP_FROM || smtpUser;
 
   if (!smtpHost || !smtpUser || !smtpPassword) {
     console.log("[Email Service] SMTP not configured, email notifications disabled");
-    console.log("[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD to enable");
+    console.log("[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable");
     return;
   }
 

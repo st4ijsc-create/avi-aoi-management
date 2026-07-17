@@ -356,10 +356,17 @@ export async function getMachinesPaged(opts: {
   }
   const where = and(...conditions);
 
-  const [items, totalRows] = await Promise.all([
+  const [rows, totalRows] = await Promise.all([
     db.select().from(machines).where(where).orderBy(machines.name).limit(limit).offset(offset),
     db.select({ count: sql<number>`count(*)` }).from(machines).where(where),
   ]);
+  // Doc 56 Đ0-A (MGMTUI-3/REG-1) — same rule as machine.list/getById (doc 54
+  // P0-1): a list path NEVER returns the plaintext ingest apiKey. The derived
+  // `hasApiKey` keeps the UI's "đã cấp / chưa cấp" state without the secret.
+  const items = rows.map(({ apiKey, ...rest }) => ({
+    ...rest,
+    hasApiKey: apiKey != null && apiKey !== "",
+  }));
   return { items, total: Number(totalRows[0]?.count) || 0 };
 }
 

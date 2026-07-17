@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import type { StepProps } from "./types";
-import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
-import { machineTypeLabel } from "@/lib/machineTypeLabel";
+import { type MachineType } from "@/constants/machineTypes";
+// doc 56 Đ0 việc 6 — dropdown loại máy dùng MỘT nguồn (machine.listTypes qua hook).
+import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
 import { isValidAddress, isValidMachineCode, isValidPort } from "./validation";
 
 export default function Step1MachineInfo({ state, update, onNext }: StepProps) {
@@ -99,9 +100,7 @@ export default function Step1MachineInfo({ state, update, onNext }: StepProps) {
             onValueChange={(v) => update({ machineType: v as MachineType })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {MACHINE_TYPES.map((mt) => (
-                <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>
-              ))}
+              <MachineTypeSelectOptions />
             </SelectContent>
           </Select>
         </div>

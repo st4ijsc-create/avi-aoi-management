@@ -8157,6 +8157,16 @@
     "machineType_PACKAGING": "包装站",
     "machineType_PALLETIZER": "码垛机",
     "machineType_ROBOT": "机器人",
+    "machineType_MOUNTER": "贴片机",
+    "machineType_REFLOW": "回流焊炉",
+    "machineType_STENCIL_PRINTER": "锡膏印刷机",
+    "machineType_WAVE_SOLDER": "波峰焊机",
+    "machineType_WELDER": "自动焊接机",
+    "machineType_IOT_SENSOR": "IoT 传感器",
+    "machineType_IOT_GATEWAY": "IoT 网关",
+    "deviceClass_aoi_avi": "光学检测设备（AVI/AOI）",
+    "deviceClass_automation": "自动化设备",
+    "deviceClass_iot": "IoT 设备",
     "machineImage": "设备图片",
     "machineStatus": "设备状态",
     "machineOptionalAll": "所有设备",
@@ -9336,6 +9346,41 @@
     }
   },
   "machineRegistration": {
+    "credential": {
+      "issued": "已发放密钥",
+      "notIssued": "未发放",
+      "issueKey": "发放 API 密钥",
+      "rotateKey": "轮换 API 密钥",
+      "reissueClaimToken": "重新发放认领令牌",
+      "adminOnly": "仅管理员可执行此操作",
+      "claimTitle": "认领令牌 — 仅显示一次",
+      "apiKeyTitle": "新 API 密钥 — 仅显示一次",
+      "machineLabel": "设备：{{machine}}",
+      "showOnceTitle": "仅显示一次",
+      "showOnceDesc": "请立即复制 — 关闭此对话框后将无法再次查看。",
+      "claimHint": "设备用此一次性令牌兑换 API 密钥。",
+      "claimReissueNote": "发放新令牌会使未使用的旧令牌失效。",
+      "apiKeyHint": "旧密钥已立即失效 — 请将新密钥更新到设备以继续上传数据。",
+      "expiresAt": "过期时间：{{time}}",
+      "copy": "复制",
+      "copied": "已复制到剪贴板",
+      "qr": "二维码",
+      "qrError": "无法生成二维码",
+      "close": "关闭",
+      "rotateDialog": {
+        "title": "轮换 API 密钥？",
+        "description": "设备 {{machine}} 的当前密钥将立即失效 — 仍在使用旧密钥的设备将断开连接，直至录入新密钥。新密钥仅显示一次。",
+        "cancel": "取消",
+        "confirm": "轮换密钥"
+      },
+      "toast": {
+        "claimIssued": "已发放认领令牌",
+        "claimIssueError": "无法发放认领令牌",
+        "claimMintFailedAfterApprove": "设备已批准，但未能生成认领令牌 — 请使用表格中的「重新发放认领令牌」操作。",
+        "rotateSuccess": "API 密钥已轮换",
+        "rotateError": "无法轮换 API 密钥"
+      }
+    },
     "pagination": {
       "showing": "显示 {{from}}–{{to}} / 共 {{total}}",
       "pageOf": "第 {{page}} / {{pages}} 页",

@@ -48,7 +48,11 @@ export type EquipmentClass =
   | "MOUNTER"
   | "REFLOW"
   | "STENCIL_PRINTER"
-  | "WAVE_SOLDER";
+  | "WAVE_SOLDER"
+  // ── doc 56 Đ0 (0287) — WELDER + self-developed IoT device classes ──
+  | "WELDER"
+  | "IOT_SENSOR"
+  | "IOT_GATEWAY";
 
 /**
  * How the unified EquipmentAdapter facade reaches the real driver/registry for a
@@ -134,6 +138,15 @@ export interface EquipmentCapability {
   telemetryTags: TelemetryDescriptor[];
   /** The PackML states this class can occupy (subset of the 17). */
   supportedStates: PackmlState[];
+  /**
+   * Doc 56 Đ0 việc 7 (GAP-4) — whether this class participates in OEE/production
+   * analytics. Semantics: `undefined` = true (every production cell counts, the
+   * historical behaviour); declare `false` ONLY for classes that are not
+   * production equipment (IOT_SENSOR / IOT_GATEWAY). This wave adds the FIELD +
+   * profile values only — the consumers (oeeSnapshotScheduler / reportingMart)
+   * read it in Đ5 (no behaviour change here).
+   */
+  countsTowardOee?: boolean;
 }
 
 // ── reusable command building blocks (derived from writeHandlers/machineControl.ts) ──
@@ -292,6 +305,17 @@ const T_PRINT_CYCLE: TelemetryDescriptor = { key: "print_cycle_time", label: "Pr
 // Wave/selective solder: solder-pot temperature + preheat.
 const T_SOLDER_POT_TEMP: TelemetryDescriptor = { key: "solder_pot_temp", label: "Solder pot temp", dataType: "float", unit: "degC" };
 const T_PREHEAT_TEMP: TelemetryDescriptor = { key: "preheat_temp", label: "Preheat temp", dataType: "float", unit: "degC" };
+// ── doc 56 Đ0 việc 7 — welding cell + self-developed IoT telemetry blocks ──
+// Welder (spot/wave/soldering-iron cell): weld electrical + thermal profile.
+const T_WELD_CURRENT: TelemetryDescriptor = { key: "weld_current", label: "Weld current", dataType: "float", unit: "A" };
+const T_TIP_TEMP: TelemetryDescriptor = { key: "tip_temp", label: "Tip temperature", dataType: "float", unit: "degC" };
+const T_WELD_TIME: TelemetryDescriptor = { key: "weld_time", label: "Weld time", dataType: "float", unit: "s" };
+// IoT sensor (ESP32-class environment sensor): ambient readings + device health.
+const T_TEMPERATURE: TelemetryDescriptor = { key: "temperature", label: "Temperature", dataType: "float", unit: "degC" };
+const T_HUMIDITY: TelemetryDescriptor = { key: "humidity", label: "Humidity", dataType: "float", unit: "%RH" };
+// IoT gateway (relay/aggregator): fan-in health of the devices behind it.
+const T_CONNECTED_DEVICES: TelemetryDescriptor = { key: "connected_devices", label: "Connected devices", dataType: "int" };
+const T_MESSAGE_RATE: TelemetryDescriptor = { key: "message_rate", label: "Message rate", dataType: "float", unit: "msg/min" };
 // X1-a (doc 16 §5) — UDM/UEM extension telemetry for robots/AMRs. Surfaced on the
 // canonical model so the Unified Device Model exposes battery/joint/firmware/zone/
 // heartbeat regardless of vendor. battery_level is populated for AGVs (VDA5050);
@@ -393,6 +417,18 @@ const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   STENCIL_PRINTER: { equipmentClass: "STENCIL_PRINTER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_SQUEEGEE_PRESSURE, T_SQUEEGEE_SPEED, T_PRINT_CYCLE, T_CYCLE], supportedStates: FULL_STATES },
   // Wave / selective solder: solder-pot + preheat temps + belt speed.
   WAVE_SOLDER: { equipmentClass: "WAVE_SOLDER", adapterKind: "ot-opcua", supportedCommands: [CMD_START, CMD_STOP, CMD_SELECT_RECIPE, CMD_SET_PARAM, CMD_ACK_ALARM], telemetryTags: [T_STATE, T_MODE, T_SOLDER_POT_TEMP, T_PREHEAT_TEMP, T_CONVEYOR_SPEED], supportedStates: FULL_STATES },
+
+  // ── doc 56 Đ0 việc 7: WELDER + self-developed IoT device classes (0287) ──
+  // Welding cell: recipe-driven process automation (weld profile select via PLC).
+  WELDER: { equipmentClass: "WELDER", adapterKind: "ot-opcua", supportedCommands: [...AUTOMATION_COMMANDS, CMD_SELECT_RECIPE], telemetryTags: [T_STATE, T_MODE, T_WELD_CURRENT, T_TIP_TEMP, T_WELD_TIME, T_CYCLE], supportedStates: FULL_STATES },
+  // IoT sensor: TELEMETRY-ONLY — no recipe, no control verbs (read_tag is the only,
+  // read-risk, command so discovery/UI keep a non-empty contract). `state` stays in
+  // the tag set: the house conformance standard (equipment.state_telemetry) requires
+  // EVERY Equipment to surface it. Not production equipment → countsTowardOee=false
+  // (GAP-4; OEE consumers wire in Đ5).
+  IOT_SENSOR: { equipmentClass: "IOT_SENSOR", adapterKind: "ot-stub", supportedCommands: [CMD_READ_TAG], telemetryTags: [T_STATE, T_TEMPERATURE, T_HUMIDITY, T_BATTERY, T_FIRMWARE, T_HEARTBEAT], supportedStates: SIMPLE_STATES, countsTowardOee: false },
+  // IoT gateway: telemetry + relay health for the devices behind it (no control).
+  IOT_GATEWAY: { equipmentClass: "IOT_GATEWAY", adapterKind: "ot-stub", supportedCommands: [CMD_READ_TAG], telemetryTags: [T_STATE, T_CONNECTED_DEVICES, T_MESSAGE_RATE, T_FIRMWARE, T_HEARTBEAT], supportedStates: SIMPLE_STATES, countsTowardOee: false },
 };
 
 /** A minimal, read-only fallback profile for an unknown/unmodelled machineType. */
@@ -463,6 +499,8 @@ function cloneCapability(c: EquipmentCapability): EquipmentCapability {
     })),
     telemetryTags: c.telemetryTags.map((t) => ({ ...t })),
     supportedStates: [...c.supportedStates],
+    // Doc 56 Đ0 — preserve the OEE-participation flag (absent = counts, see interface).
+    ...(c.countsTowardOee !== undefined ? { countsTowardOee: c.countsTowardOee } : {}),
   };
 }
 

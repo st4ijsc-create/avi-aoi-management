@@ -13,7 +13,8 @@ import {
 // robotCommandDispatcher HITL/dry-run path — this is only a registry vendor).
 export const robotVendorEnum = pgEnum("robotvendorenum", ["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050", "ur"]);
 export const robotKindEnum = pgEnum("robotkindenum", ["arm", "scara", "cobot", "agv"]);
-export const robotJobTypeEnum = pgEnum("robotjobtypeenum", ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"]);
+// 'weld' appended last to mirror ALTER TYPE ... ADD VALUE order (drizzle/0287, doc 56 Đ0)
+export const robotJobTypeEnum = pgEnum("robotjobtypeenum", ["move", "pick_place", "dispense", "screw", "home", "abort", "custom", "weld"]);
 export const robotJobStatusEnum = pgEnum("robotjobstatusenum", ["draft", "pending", "confirmed", "running", "done", "failed", "simulated", "rejected"]);
 
 /** Robot registry — one row per physical robot/AGV the platform manages. */

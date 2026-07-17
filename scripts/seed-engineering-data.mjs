@@ -211,7 +211,9 @@ async function main() {
       { typeKey: 'Equipment', parent: null, label: 'Thiết bị (gốc)', adapterKind: null, mapped: [] },
       { typeKey: 'Robot', parent: 'Equipment', label: 'Robot', adapterKind: 'robot', mapped: ['ROBOT'] },
       { typeKey: 'CollaborativeRobot', parent: 'Robot', label: 'Robot cộng tác (cobot)', adapterKind: 'robot', mapped: [] },
-      { typeKey: 'AOI', parent: 'Equipment', label: 'Máy AOI', adapterKind: 'aoi', mapped: ['AOI', 'AVI'] },
+      // doc 56 Đ0 việc 8 — adapterKind 'aoi' là SAI vocabulary (không có trong
+      // AdapterKind union); máy quang học dùng 'vision' (capabilityModel).
+      { typeKey: 'AOI', parent: 'Equipment', label: 'Máy AOI', adapterKind: 'vision', mapped: ['AOI', 'AVI'] },
       { typeKey: 'SPI', parent: 'Equipment', label: 'Máy SPI', adapterKind: null, mapped: ['SPI'] },
     ];
     let dN = 0;

@@ -152,12 +152,12 @@ describe("alarmTaxonomy.mapAlarm", () => {
   it("maps a known vendor native code → standard code + severity + action", () => {
     const r = mapAlarm("fanuc", "SRVO-050");
     expect(r.mapped).toBe(true);
-    expect(r.standardCode).toBe("COLLISION_DETECT");
+    expect(r.standardCode).toBe("COLLISION");
     expect(r.severity).toBe("critical");
     expect(r.recommendedAction).toBeTruthy();
   });
   it("is case-insensitive on vendor + native code", () => {
-    expect(mapAlarm("FANUC", "srvo-050").standardCode).toBe("COLLISION_DETECT");
+    expect(mapAlarm("FANUC", "srvo-050").standardCode).toBe("COLLISION");
   });
   it("fails safe for unknown code", () => {
     const r = mapAlarm("fanuc", "DOES-NOT-EXIST");
@@ -172,7 +172,7 @@ describe("alarmTaxonomy.mapAlarm", () => {
   });
   it("a DB override wins over the seed for the same vendor+native", () => {
     const entries = [...SEED_ALARM_MAPPINGS, { vendor: "fanuc", nativeCode: "SRVO-050", standardCode: "OVERRIDDEN", severity: "low" as const }];
-    expect(mapAlarm("fanuc", "SRVO-050", entries).standardCode).toBe("COLLISION_DETECT");
+    expect(mapAlarm("fanuc", "SRVO-050", entries).standardCode).toBe("COLLISION");
     // (seed appears first; mapAlarm returns the FIRST match — proves precedence is deterministic)
   });
 });

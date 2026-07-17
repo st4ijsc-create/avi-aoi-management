@@ -8353,6 +8353,16 @@
     "machineType_PACKAGING": "Trạm đóng gói",
     "machineType_PALLETIZER": "Máy xếp pallet",
     "machineType_ROBOT": "Robot",
+    "machineType_MOUNTER": "Máy gắn linh kiện (Mounter)",
+    "machineType_REFLOW": "Lò hàn reflow",
+    "machineType_STENCIL_PRINTER": "Máy in kem hàn",
+    "machineType_WAVE_SOLDER": "Máy hàn sóng",
+    "machineType_WELDER": "Máy hàn tự động",
+    "machineType_IOT_SENSOR": "Cảm biến IoT",
+    "machineType_IOT_GATEWAY": "IoT Gateway",
+    "deviceClass_aoi_avi": "Máy kiểm tra quang (AVI/AOI)",
+    "deviceClass_automation": "Máy tự động hóa",
+    "deviceClass_iot": "Thiết bị IoT",
     "machineImage": "Hình ảnh máy",
     "machineStatus": "Trạng thái máy",
     "machineOptionalAll": "Tất cả máy",
@@ -9532,6 +9542,41 @@
     }
   },
   "machineRegistration": {
+    "credential": {
+      "issued": "Đã cấp key",
+      "notIssued": "Chưa cấp",
+      "issueKey": "Cấp API key",
+      "rotateKey": "Xoay API key",
+      "reissueClaimToken": "Cấp lại claim token",
+      "adminOnly": "Chỉ admin mới thực hiện được thao tác này",
+      "claimTitle": "Claim token — chỉ hiện một lần",
+      "apiKeyTitle": "API key mới — chỉ hiện một lần",
+      "machineLabel": "Máy: {{machine}}",
+      "showOnceTitle": "Chỉ hiển thị MỘT lần",
+      "showOnceDesc": "Sao chép ngay — sau khi đóng hộp thoại này sẽ không thể xem lại.",
+      "claimHint": "Token dùng 1 lần để máy đổi lấy API key.",
+      "claimReissueNote": "Cấp token mới sẽ vô hiệu token cũ chưa dùng.",
+      "apiKeyHint": "Key cũ đã bị vô hiệu ngay lập tức — cập nhật key mới vào máy để tiếp tục gửi dữ liệu.",
+      "expiresAt": "Hết hạn: {{time}}",
+      "copy": "Sao chép",
+      "copied": "Đã sao chép vào clipboard",
+      "qr": "Mã QR",
+      "qrError": "Không tạo được mã QR",
+      "close": "Đóng",
+      "rotateDialog": {
+        "title": "Xoay API key?",
+        "description": "Key hiện tại của máy {{machine}} sẽ bị vô hiệu ngay lập tức — máy đang dùng key cũ sẽ mất kết nối cho đến khi nhập key mới. Key mới chỉ hiển thị MỘT lần.",
+        "cancel": "Hủy",
+        "confirm": "Xoay key"
+      },
+      "toast": {
+        "claimIssued": "Đã cấp claim token",
+        "claimIssueError": "Không cấp được claim token",
+        "claimMintFailedAfterApprove": "Máy đã duyệt nhưng chưa cấp được claim token — dùng nút 'Cấp lại claim token' trong bảng.",
+        "rotateSuccess": "Đã xoay API key",
+        "rotateError": "Không xoay được API key"
+      }
+    },
     "pagination": {
       "showing": "Hiển thị {{from}}–{{to}} / {{total}}",
       "pageOf": "Trang {{page}} / {{pages}}",

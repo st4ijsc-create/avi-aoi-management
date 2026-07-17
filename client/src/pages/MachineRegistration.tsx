@@ -69,11 +69,10 @@ import {
   RefreshCw,
   Server,
   Cpu,
-  Copy,
-  Eye,
-  EyeOff,
   AlertTriangle,
   HardDrive,
+  KeyRound,
+  Ticket,
   Wifi,
   WifiOff,
   Search,
@@ -89,6 +88,10 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
+import { useAuth } from "@/_core/hooks/useAuth";
+import CredentialShowOnceDialog, {
+  type CredentialShowOncePayload,
+} from "@/components/machineRegistration/CredentialShowOnceDialog";
 
 type PendingMachine = {
   id: number;
@@ -117,7 +120,9 @@ type AllMachine = {
   syncMode?: string | null;
   model?: string | null;
   manufacturer?: string | null;
-  apiKey?: string | null;
+  /** Doc 56 Đ0 (REG-2) — listPaged no longer carries the plaintext apiKey;
+   *  the server only says WHETHER a key exists. */
+  hasApiKey?: boolean;
   createdAt?: string | Date | null;
   stationId: number;
 };
@@ -139,6 +144,10 @@ export function MachineRegistrationContent() {
   const { t, i18n } = useTranslation();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("pending");
+  // Doc 56 Đ0 — credential actions (rotate key / claim token) are admin-only
+  // server-side (adminProcedure); pre-gate the buttons client-side too.
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const dateFnsLocale = i18n.language === 'vi' ? vi : i18n.language === 'zh' ? zhCN : enUS;
 
@@ -187,8 +196,14 @@ export function MachineRegistrationContent() {
   const [lifecycleTarget, setLifecycleTarget] = useState<string>("");
   const [lifecycleReason, setLifecycleReason] = useState("");
 
-  // API Key visibility
-  const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
+  // ── Doc 56 Đ0 (nhóm B) — show-once credential dialog (REG-2/REG-3) ───────
+  // Holds the ONE-TIME plaintext (mct_ claim token from approve/issueClaimToken,
+  // or a rotated mach_ API key) ONLY while the dialog is open. Closing the
+  // dialog nulls it — the secret is never cached, persisted or re-shown.
+  const [credential, setCredential] = useState<CredentialShowOncePayload | null>(null);
+
+  // Rotate-API-key confirm dialog (rotation kills the old key immediately).
+  const [rotateKeyMachine, setRotateKeyMachine] = useState<AllMachine | null>(null);
 
   // ── QR asset-tag (doc 40 Wave 4, persona operator) ────────────────────────
   // Generate scan-to-open QR labels encoding the machine profile URL
@@ -257,17 +272,82 @@ export function MachineRegistrationContent() {
   // Mutations
   const approveMutation = trpc.machine.approve.useMutation({
     onSuccess: (data) => {
-      toast.success(t('machineRegistration.toast.approveSuccess'), {
-        description: t('machineRegistration.toast.approveSuccessDesc', { apiKey: data.apiKey?.substring(0, 20) }),
-      });
+      // Label computed BEFORE clearing the dialog state.
+      const approvedLabel = [
+        approveCode || selectedMachine?.code,
+        approveName || selectedMachine?.name,
+      ].filter(Boolean).join(" — ");
+      toast.success(t('machineRegistration.toast.approveSuccess'));
       setApproveDialogOpen(false);
       setSelectedMachine(null);
       invalidateMachines();
+      // Doc 56 Đ0 việc 4 (REG-3): surface the one-time mct_ claim token minted
+      // at approval — previously discarded. No plaintext apiKey is shown here.
+      if (data.claimToken) {
+        setCredential({
+          kind: "claimToken",
+          secret: data.claimToken,
+          machineLabel: approvedLabel,
+          expiresAt: data.claimExpiresAt ?? null,
+        });
+      } else {
+        // Server mints best-effort — on failure point the admin at reissue.
+        toast.warning(t('machineRegistration.credential.toast.claimMintFailedAfterApprove'));
+      }
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.approveError'), { description: err.message });
     },
   });
+
+  // ── Doc 56 Đ0 việc 4 — (re)issue a one-time claim token (admin-only). The
+  // machine label is captured per-call so the show-once dialog is labelled
+  // correctly even after list state moves on.
+  const issueClaimTokenMutation = trpc.machine.issueClaimToken.useMutation();
+  const handleReissueClaimToken = (machine: AllMachine) => {
+    issueClaimTokenMutation.mutate(
+      { id: machine.id },
+      {
+        onSuccess: (data) => {
+          toast.success(t('machineRegistration.credential.toast.claimIssued'));
+          setCredential({
+            kind: "claimToken",
+            secret: data.claimToken,
+            machineLabel: `${machine.code} — ${machine.name}`,
+            expiresAt: data.expiresAt ?? null,
+          });
+        },
+        onError: (err) => {
+          toast.error(t('machineRegistration.credential.toast.claimIssueError'), { description: err.message });
+        },
+      },
+    );
+  };
+
+  // ── Doc 56 Đ0 việc 1-UI — rotate the machine API key (admin-only); the new
+  // key is revealed exactly once through the same show-once dialog.
+  const rotateKeyMutation = trpc.machine.regenerateApiKey.useMutation();
+  const handleConfirmRotateKey = () => {
+    const machine = rotateKeyMachine;
+    if (!machine) return;
+    rotateKeyMutation.mutate(
+      { id: machine.id },
+      {
+        onSuccess: (data) => {
+          toast.success(t('machineRegistration.credential.toast.rotateSuccess'));
+          invalidateMachines();
+          setCredential({
+            kind: "apiKey",
+            secret: data.apiKey,
+            machineLabel: `${machine.code} — ${machine.name}`,
+          });
+        },
+        onError: (err) => {
+          toast.error(t('machineRegistration.credential.toast.rotateError'), { description: err.message });
+        },
+      },
+    );
+  };
 
   const rejectMutation = trpc.machine.reject.useMutation({
     onSuccess: () => {
@@ -450,20 +530,6 @@ export function MachineRegistrationContent() {
       name: editName || undefined,
       stationId: editStationId,
     });
-  };
-
-  const toggleApiKeyVisibility = (machineId: number) => {
-    setVisibleApiKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(machineId)) next.delete(machineId);
-      else next.add(machineId);
-      return next;
-    });
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(t('machineRegistration.actions.copyApiKey'));
   };
 
   const getStatusBadge = (status: string | null | undefined) => {
@@ -873,42 +939,17 @@ export function MachineRegistrationContent() {
                               </TableCell>
                               {tab !== "rejected" && (
                                 <TableCell>
-                                  {machine.apiKey ? (
-                                    <div className="flex items-center gap-1">
-                                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded max-w-[120px] truncate">
-                                        {visibleApiKeys.has(machine.id)
-                                          ? machine.apiKey
-                                          : "••••••••••••"}
-                                      </code>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() =>
-                                          toggleApiKeyVisibility(machine.id)
-                                        }
-                                      >
-                                        {visibleApiKeys.has(machine.id) ? (
-                                          <EyeOff className="h-3 w-3" />
-                                        ) : (
-                                          <Eye className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() =>
-                                          copyToClipboard(machine.apiKey!)
-                                        }
-                                      >
-                                        <Copy className="h-3 w-3" />
-                                      </Button>
-                                    </div>
+                                  {/* Doc 56 Đ0 (REG-2) — no plaintext key in the
+                                      list; only issued / not-issued state. */}
+                                  {machine.hasApiKey ? (
+                                    <Badge variant="outline" className="border-success/30 bg-success/15 text-success">
+                                      <KeyRound className="h-3 w-3 mr-1" />
+                                      {t('machineRegistration.credential.issued')}
+                                    </Badge>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground">
-                                      —
-                                    </span>
+                                    <Badge variant="outline" className="text-muted-foreground">
+                                      {t('machineRegistration.credential.notIssued')}
+                                    </Badge>
                                   )}
                                 </TableCell>
                               )}
@@ -951,6 +992,46 @@ export function MachineRegistrationContent() {
                                         </Button>
                                       </TooltipTrigger>
                                       <TooltipContent>{t('machineRegistration.qr.rowAction', 'Tạo nhãn QR')}</TooltipContent>
+                                    </Tooltip>
+                                    {/* Doc 56 Đ0 việc 4 — reissue one-time claim token (show-once) */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          disabled={!isAdmin || issueClaimTokenMutation.isPending}
+                                          onClick={() => handleReissueClaimToken(machine)}
+                                        >
+                                          <Ticket className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {isAdmin
+                                          ? t('machineRegistration.credential.reissueClaimToken')
+                                          : t('machineRegistration.credential.adminOnly')}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    {/* Doc 56 Đ0 việc 1-UI — rotate API key (confirm → show-once) */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          disabled={!isAdmin}
+                                          onClick={() => setRotateKeyMachine(machine)}
+                                        >
+                                          <KeyRound className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {isAdmin
+                                          ? (machine.hasApiKey
+                                              ? t('machineRegistration.credential.rotateKey')
+                                              : t('machineRegistration.credential.issueKey'))
+                                          : t('machineRegistration.credential.adminOnly')}
+                                      </TooltipContent>
                                     </Tooltip>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -1296,6 +1377,45 @@ export function MachineRegistrationContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Rotate API Key Confirm (doc 56 Đ0 việc 1-UI) ── */}
+      <AlertDialog
+        open={rotateKeyMachine !== null}
+        onOpenChange={(open) => { if (!open) setRotateKeyMachine(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-warning" />
+              {t('machineRegistration.credential.rotateDialog.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('machineRegistration.credential.rotateDialog.description', {
+                machine: rotateKeyMachine
+                  ? `${rotateKeyMachine.code} — ${rotateKeyMachine.name}`
+                  : '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('machineRegistration.credential.rotateDialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              onClick={handleConfirmRotateKey}
+              disabled={rotateKeyMutation.isPending}
+            >
+              <KeyRound className="h-4 w-4 mr-1" />
+              {t('machineRegistration.credential.rotateDialog.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Show-once credential dialog (claim token / rotated API key) ── */}
+      <CredentialShowOnceDialog
+        payload={credential}
+        onClose={() => setCredential(null)}
+      />
 
       {/* ── Edit Approved Machine Dialog ── */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

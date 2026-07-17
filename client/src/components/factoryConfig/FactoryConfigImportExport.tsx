@@ -70,6 +70,9 @@ import {
   readSheetRows,
   validateRow,
 } from "./factoryConfigIO";
+// doc 56 Đ0 việc 6 — loại máy hợp lệ cho validation import lấy từ MỘT nguồn
+// (machine.listTypes qua hook, fallback tĩnh đủ 24) thay cho fork IMPORT_MACHINE_TYPES.
+import { useMachineTypes } from "@/hooks/useMachineTypes";
 
 type Row = Record<string, unknown>;
 
@@ -161,6 +164,13 @@ export function FactoryConfigImportExport(): React.JSX.Element {
     }
   };
 
+  // doc 56 Đ0 việc 6 — từ vựng loại máy từ server (fallback tĩnh khi đang tải).
+  const { types: machineTypeEntries } = useMachineTypes();
+  const machineTypeCodes = useMemo(
+    () => machineTypeEntries.map((e) => e.type as string),
+    [machineTypeEntries],
+  );
+
   // ── Kiểm tra dòng (thuần) — chạy lại khi đổi file / cấp / dữ liệu DB ────────
   const parsed = useMemo<ParsedRow[]>(() => {
     if (!rawRows) return [];
@@ -175,9 +185,10 @@ export function FactoryConfigImportExport(): React.JSX.Element {
       existingCodes,
       labelOf: (f: FieldDef) => t(f.labelKey, f.labelDefault),
       parentLabel: parentDef ? t(parentDef.labelKey, parentDef.labelDefault) : "",
+      machineTypes: machineTypeCodes,
     };
     return rawRows.map((raw, i) => validateRow(level, raw, i + 1, ctx));
-  }, [rawRows, level, lists, t]);
+  }, [rawRows, level, lists, t, machineTypeCodes]);
 
   const validRows = useMemo(() => parsed.filter((r) => r.valid), [parsed]);
   const invalidCount = parsed.length - validRows.length;

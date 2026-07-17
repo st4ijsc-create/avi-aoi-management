@@ -307,6 +307,12 @@ export const machines = pgTable("machines", {
   operationStatus: operationStatusEnum("operationStatus").default("stopped").notNull(),
   // Sprint F2 — generic device capability flags (nullable; defaults inferred per machineType)
   capabilities: jsonb("capabilities").$type<MachineCapabilities>(),
+  // Doc 56 Đ0 việc 5 (0287) — governance key into device_types."typeKey" (versioned
+  // tree; no FK on purpose — device_types is unique per (typeKey, version) and the
+  // published-latest resolution lives in deviceTypeRegistry). Stamped best-effort at
+  // approve (resolveDeviceTypeKeyForMachineType) + backfilled for existing machines
+  // by scripts/seed-device-types.mjs. NULL = never resolved (pre-0287 rows).
+  deviceTypeKey: varchar("device_type_key", { length: 64 }),
   // Doc 27 M13 / doc 29 §4 (W8-A, 0191): last capabilities-validation result
   // ({checkedAt, deviceTypeKey, ok, errors, unknownKeys}). NULL = never validated.
   capabilitiesValidation: jsonb("capabilitiesValidation").$type<CapabilitiesValidationStamp>(),

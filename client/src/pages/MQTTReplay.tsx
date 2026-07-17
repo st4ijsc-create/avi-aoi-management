@@ -11,7 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { MACHINE_TYPES } from "@/constants/machineTypes";
+import type { MachineType } from "@/constants/machineTypes";
+// doc 56 Đ0 việc 6 — dropdown loại máy dùng MỘT nguồn (machine.listTypes qua hook).
+import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
 import {
   Play,
   Pause, 
@@ -63,7 +65,7 @@ export function MQTTReplayContent() {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [regCode, setRegCode] = useState("");
   const [regName, setRegName] = useState("");
-  const [regType, setRegType] = useState<(typeof MACHINE_TYPES)[number]>("AUTOMATION");
+  const [regType, setRegType] = useState<MachineType>("AUTOMATION");
   const [regStationId, setRegStationId] = useState<number | undefined>(undefined);
 
   // Queries
@@ -546,14 +548,12 @@ export function MQTTReplayContent() {
               </div>
               <div>
                 <Label>{t('mqtt.replayPage.registerTypeLabel', 'Machine type')}</Label>
-                <Select value={regType} onValueChange={(v) => setRegType(v as (typeof MACHINE_TYPES)[number])}>
+                <Select value={regType} onValueChange={(v) => setRegType(v as MachineType)}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {MACHINE_TYPES.map((mt) => (
-                      <SelectItem key={mt} value={mt}>{mt}</SelectItem>
-                    ))}
+                    <MachineTypeSelectOptions />
                   </SelectContent>
                 </Select>
               </div>
