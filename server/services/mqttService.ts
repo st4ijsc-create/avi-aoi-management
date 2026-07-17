@@ -2569,19 +2569,62 @@ export function getExternalMqttInfo(): {
 }
 
 /**
- * Publish points config changed notification via local MQTT
+ * Publish points config changed notification via local MQTT.
+ *
+ * Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL `variantCode`. When present (non-empty after
+ * trim) the notify is scoped to the variant: the topic gains a `/{variantCode}` level
+ * (`avi/points-config-changed/{code}/{variantCode}`) and the payload carries the
+ * `variantCode` field, so a machine can subscribe to just its variant. When ABSENT the
+ * topic AND payload are byte-identical to the pre-variant behaviour, so a machine still
+ * subscribed to `avi/points-config-changed/{code}` (base/model fan-out) is not broken.
+ * The topic stays inside the server-only `points-config-changed` namespace, so the P0
+ * publish/subscribe ACL (server-published, device-readable) is unaffected by the extra
+ * level (see canPublish/canSubscribe — neither special-cases the leaf depth).
  */
-export function publishPointsConfigChanged(productModelCode: string, version: number, machineCode?: string): void {
-  if (!MQTT_ENABLED || !aedes) return;
-
-  const topic = `avi/points-config-changed/${productModelCode}`;
+/**
+ * PURE builder for the points-config-changed topic + payload (no broker, no clock in
+ * the caller's way — `timestamp` is injected). Extracted so the QĐ#14 variant scoping
+ * is unit-testable without an aedes instance. Absent/blank `variantCode` ⇒ the topic
+ * AND payload are byte-identical to the pre-variant message.
+ */
+export function buildPointsConfigChangedMessage(
+  productModelCode: string,
+  version: number,
+  machineCode?: string,
+  variantCode?: string,
+  timestamp: string = new Date().toISOString(),
+): { topic: string; payload: string; variantCode?: string } {
+  const trimmedVariant = variantCode?.trim() || undefined;
+  const topic = trimmedVariant
+    ? `avi/points-config-changed/${productModelCode}/${trimmedVariant}`
+    : `avi/points-config-changed/${productModelCode}`;
   const payload = JSON.stringify({
     type: 'POINTS_CONFIG_CHANGED',
     productModelCode,
     pointsConfigVersion: version,
     machineCode: machineCode ?? null,
-    timestamp: new Date().toISOString(),
+    // Additive: only present when a variant is targeted ⇒ the ABSENT-variant payload
+    // stays byte-identical (no `variantCode` key at all) for legacy machines.
+    ...(trimmedVariant ? { variantCode: trimmedVariant } : {}),
+    timestamp,
   });
+  return { topic, payload, variantCode: trimmedVariant };
+}
+
+export function publishPointsConfigChanged(
+  productModelCode: string,
+  version: number,
+  machineCode?: string,
+  variantCode?: string,
+): void {
+  if (!MQTT_ENABLED || !aedes) return;
+
+  const { topic, payload, variantCode: trimmedVariant } = buildPointsConfigChangedMessage(
+    productModelCode,
+    version,
+    machineCode,
+    variantCode,
+  );
 
   dualAedesPublish(aedes!, {
     topic,
@@ -2595,7 +2638,10 @@ export function publishPointsConfigChanged(productModelCode: string, version: nu
       console.error('[MQTT] Points config publish error:', error);
     }
   });
-  console.log(`[MQTT] Published points config changed to ${topic} (v${version})`);
+  console.log(
+    `[MQTT] Published points config changed to ${topic} (v${version}` +
+      `${trimmedVariant ? `, variant=${trimmedVariant}` : ''})`,
+  );
 
   // Also publish to external broker
   publishToExternalMqtt(topic, payload);

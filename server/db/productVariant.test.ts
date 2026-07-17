@@ -44,6 +44,8 @@ import {
   getMeasurementPointDefByCode,
   bumpPointsConfigVersion,
   bumpVariantPointsConfigVersion,
+  getPointsChangedSinceVersion,
+  deleteMeasurementPointDef,
   _resetProductVariantsTableProbe,
   type CreateMeasurementPointOutcome,
 } from "./product";
@@ -392,5 +394,62 @@ describe("doc55 PV0 — legacy signatures behave as base", () => {
     // Explicit scoping.
     expect((await getMeasurementPointDefByCode(modelId, "C", null))!.id).toBe(baseP);
     expect((await getMeasurementPointDefByCode(modelId, "C", vA))!.id).toBe(varP);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 55 Item 3 PV2 (QĐ#14) — getPointsChangedSinceVersion VARIANT tombstones
+// ════════════════════════════════════════════════════════════════════════════
+describe("doc55 PV2 — getPointsChangedSinceVersion(variantId) tombstones", () => {
+  it("variant call tombstones an EXCLUDED base point + a RETIRED variant point; base call omits the exclude", async () => {
+    if (!hasPV0) return;
+    const modelId = await newModel("delta");
+    const V = await createVariant({ productModelId: modelId, code: "VD" });
+
+    // Two active base points; one variant-added point (later retired).
+    const bp1 = await createMeasurementPointDef(basePoint(modelId, "T-BP1"));
+    const bp2 = await createMeasurementPointDef(basePoint(modelId, "T-BP2"));
+    const vp = await createMeasurementPointDef(basePoint(modelId, "T-VP", { variantId: V }));
+
+    // Variant EXCLUDES base point BP2.
+    await setVariantPointOverride({ variantId: V, basePointDefId: bp2, action: "exclude" });
+    // Variant-added point VP is RETIRED (soft-delete + model version bump + deletedAtVersion stamp).
+    const bumped = await deleteMeasurementPointDef(vp);
+    expect(bumped).not.toBeNull();
+
+    // Sanity: the effective set is base-minus-exclude = [T-BP1] (VP gone, BP2 excluded).
+    const effective = await resolveEffectivePoints(modelId, V);
+    expect(effective.map((p) => p.code).sort()).toEqual(["T-BP1"]);
+
+    // VARIANT call — deletedCodes must carry BOTH the excluded base point and the
+    // retired variant point so the variant machine stops inspecting them.
+    const variantDiff = await getPointsChangedSinceVersion(modelId, 0, V);
+    expect(variantDiff.deletedCodes).toContain("T-BP2"); // excluded base point
+    expect(variantDiff.deletedCodes).toContain("T-VP");  // retired variant point
+    expect(variantDiff.deletedCodes).not.toContain("T-BP1"); // still in the effective set
+    // The excluded base point is ACTIVE (not soft-deleted) — proves it came from the
+    // effective-set diff, not the model soft-delete stream.
+    expect(bp1).toBeGreaterThan(0);
+
+    // BASE call (legacy 2-arg + explicit null) — byte-identical model stream: it
+    // tombstones only the truly soft-deleted VP, NEVER the active excluded BP2.
+    const baseDiff = await getPointsChangedSinceVersion(modelId, 0);
+    expect(baseDiff.deletedCodes).toContain("T-VP");
+    expect(baseDiff.deletedCodes).not.toContain("T-BP2");
+    const baseDiffExplicit = await getPointsChangedSinceVersion(modelId, 0, null);
+    expect(baseDiffExplicit.deletedCodes).toEqual(baseDiff.deletedCodes);
+  });
+
+  it("variant with NO exclude/retire ⇒ no extra variant tombstones vs base for its live points", async () => {
+    if (!hasPV0) return;
+    const modelId = await newModel("delta-clean");
+    const V = await createVariant({ productModelId: modelId, code: "VC" });
+    await createMeasurementPointDef(basePoint(modelId, "K-BP1"));
+    // Bump so the version gate opens (createMeasurementPointDef does not bump on its own).
+    await bumpPointsConfigVersion(modelId);
+
+    const variantDiff = await getPointsChangedSinceVersion(modelId, 0, V);
+    // K-BP1 is live + in the effective set ⇒ never tombstoned.
+    expect(variantDiff.deletedCodes).not.toContain("K-BP1");
   });
 });

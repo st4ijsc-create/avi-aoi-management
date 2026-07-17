@@ -85,16 +85,48 @@ import { publishPointsConfigChanged } from "../services/mqttService";
  *
  * `bumped === null` ⇒ the product row is gone (soft-deleted) → nothing to notify.
  */
-async function bumpAndNotifyPointsConfig(productModelId: number | null | undefined) {
+async function bumpAndNotifyPointsConfig(
+  productModelId: number | null | undefined,
+  // Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL variant to scope the MQTT notify to. Absent
+  // ⇒ the legacy base topic (byte-identical). See publishPointsConfigChanged.
+  variantCode?: string,
+) {
   if (productModelId == null) return null;
   const bumped = await db.bumpPointsConfigVersion(productModelId);
   if (!bumped) return null;
   try {
-    publishPointsConfigChanged(bumped.code, bumped.version);
+    publishPointsConfigChanged(bumped.code, bumped.version, undefined, variantCode);
   } catch (err) {
     console.warn("[doc51 R4] publishPointsConfigChanged failed (machines will pick it up on next poll)", err);
   }
   return bumped;
+}
+
+/**
+ * Doc 55 Item 3 PV2 (QĐ#14) — resolve the variant CODE to scope a config-changed
+ * notify to, from the point row being edited. Flag-gated + forgiving:
+ *   • PRODUCT_VARIANT_ENABLED off, no point, or a NULL/base variantId ⇒ undefined
+ *     (the base/model fan-out topic — byte-identical to the pre-variant behaviour).
+ *   • a NON-BASE variant point ⇒ that variant's code.
+ * Best-effort: any lookup failure degrades to undefined (base topic), never throws
+ * into an engineer's save.
+ */
+async function variantCodeForPointNotify(
+  point: { variantId?: number | null } | null | undefined,
+): Promise<string | undefined> {
+  if (!productVariantEnabledPR() || point?.variantId == null) return undefined;
+  try {
+    const v = await db.getVariantById(point.variantId);
+    return v && !v.isBase ? v.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Local mirror of machineApiRouters.productVariantEnabled (avoids a router↔router import cycle). */
+function productVariantEnabledPR(): boolean {
+  const s = String(process.env.PRODUCT_VARIANT_ENABLED ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "on";
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1403,7 +1435,12 @@ export const measurementPointRouter = router({
       // re-fetch means the engineer's change exists only in the UI while the fleet
       // keeps grading boards against the old spec. Bump AFTER the write succeeds
       // (a rejected optimistic-lock write above threw, so no version churn for it).
-      await bumpAndNotifyPointsConfig(existingPoint.productModelId);
+      // Doc 55 Item 3 PV2 (QĐ#14) — scope the notify to the point's variant (base
+      // point / flag OFF ⇒ undefined ⇒ base topic, byte-identical).
+      await bumpAndNotifyPointsConfig(
+        existingPoint.productModelId,
+        await variantCodeForPointNotify(existingPoint),
+      );
       // Doc 31 OP2 — every DIRECT limit change leaves a dedicated audit row with
       // before/after limits + the gate decision (development-direct or override).
       if (touchesLimits) {
@@ -1516,8 +1553,12 @@ export const measurementPointRouter = router({
       const bumped = await db.deleteMeasurementPointDef(input.id);
       if (bumped) {
         // Best-effort nudge; machines otherwise converge on their next poll.
+        // Doc 55 Item 3 PV2 (QĐ#14) — scope to the deleted point's variant (a
+        // variant-added point → that variant's topic; base point / flag OFF ⇒ base
+        // topic, byte-identical).
+        const notifyVariantCode = await variantCodeForPointNotify(existing);
         try {
-          publishPointsConfigChanged(bumped.code, bumped.version);
+          publishPointsConfigChanged(bumped.code, bumped.version, undefined, notifyVariantCode);
         } catch (err) {
           console.warn("[doc51 R4] publishPointsConfigChanged failed after point delete", err);
         }

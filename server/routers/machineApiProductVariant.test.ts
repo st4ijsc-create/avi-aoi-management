@@ -67,6 +67,7 @@ vi.mock("../db", () => {
     getVariantByCode: vi.fn(async () => undefined),
     getBaseVariant: vi.fn(async () => undefined),
     getVariantsByModel: vi.fn(async () => [] as any[]),
+    getVariantOverrides: vi.fn(async () => [] as any[]),
     resolveEffectivePoints: vi.fn(async () => [] as any[]),
     // ── read-sync surface ──
     getMeasurementPointDefsByProductModel: vi.fn(async () => [] as any[]),

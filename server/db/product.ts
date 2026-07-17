@@ -2517,7 +2517,17 @@ export interface PointTombstone {
  *     machine keys on CODE — shipping the code in both `points` and `deletedCodes`
  *     would let it delete the point it just installed. Active always wins.
  */
-export async function getPointsChangedSinceVersion(productModelId: number, sinceVersion: number) {
+export async function getPointsChangedSinceVersion(
+  productModelId: number,
+  sinceVersion: number,
+  // Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL variant scope. NULL/omitted ⇒ the exact
+  // legacy MODEL/base stream (byte-identical — the old 2-arg signature still runs).
+  // Set ⇒ tombstones are computed against the variant's EFFECTIVE set: a base point
+  // the variant EXCLUDES (still active for base/others → never in the model stream)
+  // and a variant-added point that was retired both surface in deletedCodes so the
+  // variant machine stops inspecting them.
+  variantId?: number | null,
+) {
   const db = await getDb();
   if (!db) return { points: [], deletedPoints: [] as PointTombstone[], deletedCodes: [] as string[], currentVersion: 0 };
 
@@ -2531,7 +2541,12 @@ export async function getPointsChangedSinceVersion(productModelId: number, since
   }
 
   const currentVersion = product[0].pointsConfigVersion;
-  if (currentVersion <= sinceVersion) {
+  // Base path keeps the exact model-version early return. The variant path must NOT
+  // early-return on the MODEL version: a variant-only change (bumpVariantPointsConfig)
+  // can leave the model version untouched, and deltaSyncPoints has already confirmed
+  // the VARIANT version advanced before calling here — so variant tombstones must
+  // still be computed even when the model version did not move.
+  if (variantId == null && currentVersion <= sinceVersion) {
     return { points: [], deletedPoints: [] as PointTombstone[], deletedCodes: [] as string[], currentVersion };
   }
 
@@ -2567,7 +2582,45 @@ export async function getPointsChangedSinceVersion(productModelId: number, since
   const deletedPoints: PointTombstone[] = tombstones.filter((t) => !activeCodes.has(t.code));
   const deletedCodes = [...new Set(deletedPoints.map((t) => t.code))];
 
-  return { points, deletedPoints, deletedCodes, currentVersion };
+  // Base/model stream — byte-identical to the pre-variant behaviour.
+  if (variantId == null) {
+    return { points, deletedPoints, deletedCodes, currentVersion };
+  }
+
+  // ── Doc 55 Item 3 PV2 (QĐ#14) — VARIANT-SCOPED tombstones ────────────────────
+  // The variant's EFFECTIVE set is the source of truth for "what this machine SHOULD
+  // inspect". Anything a version-old variant machine could have been inspecting that
+  // is NOT in the effective set is a tombstone:
+  //   • base points the variant EXCLUDES — active for base/other variants, so the
+  //     model stream never tombstones them; added here explicitly.
+  //   • variant-added points that were retired — already in the model tombstone
+  //     stream (soft-deleted rows), kept as long as they are not in the effective set.
+  // The effective code set is the single "keep" gate (drops re-created / still-live
+  // codes). Over-shipping another variant's retired code is a harmless no-op for the
+  // machine (it just drops a code it never had) — same philosophy as note 1 above.
+  const effectivePoints = await resolveEffectivePoints(productModelId, variantId);
+  const effectiveCodes = new Set(effectivePoints.map((p) => p.code));
+  const overrides = await getVariantOverrides(variantId);
+  const excludedBaseIds = new Set(
+    overrides.filter((o) => o.action === "exclude").map((o) => o.basePointDefId),
+  );
+
+  const variantTombstones: PointTombstone[] = tombstones.filter((t) => !effectiveCodes.has(t.code));
+  const seenCodes = new Set(variantTombstones.map((t) => t.code));
+  for (const p of points) {
+    if (excludedBaseIds.has(p.id) && !effectiveCodes.has(p.code) && !seenCodes.has(p.code)) {
+      variantTombstones.push({
+        id: p.id,
+        code: p.code,
+        deletedAt: p.deletedAt ?? null,
+        deletedAtVersion: p.deletedAtVersion ?? null,
+      });
+      seenCodes.add(p.code);
+    }
+  }
+  const variantDeletedCodes = [...new Set(variantTombstones.map((t) => t.code))];
+
+  return { points, deletedPoints: variantTombstones, deletedCodes: variantDeletedCodes, currentVersion };
 }
 
 export async function updatePointLastModified(pointId: number) {

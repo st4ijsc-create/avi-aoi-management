@@ -1106,6 +1106,29 @@ export async function processInspectionSubmission(
         variantIngestMode = vres.ingestMode;
       }
 
+      // ══ Doc 55 Item 3 (Task 1) — VARIANT-OVERRIDE spec-gate map ═════════════
+      // For a NON-BASE variant board (pointDefVariantId set — flag ON), load the
+      // variant's point overrides ONCE (this is the ingest hot path — never N+1) and
+      // key them by basePointDefId. Applied in the per-measurement spec-gate below:
+      //   • action='exclude' ⇒ the base point is NOT in the variant's effective set →
+      //     the gate is SKIPPED (the machine verdict stands).
+      //   • action='override' ⇒ the base point is graded against the PATCHED limits
+      //     (lowerLimit/upperLimit/… from patchJson), not the base limits.
+      // Base variant / flag OFF ⇒ this stays null ⇒ the gate is byte-identical.
+      let variantOverrideByBaseId: Map<number, { action: string; patchJson: unknown }> | null = null;
+      if (pointDefVariantId != null) {
+        const overrides = await db.getVariantOverrides(pointDefVariantId);
+        variantOverrideByBaseId = new Map(
+          overrides.map(
+            (o) =>
+              [o.basePointDefId, { action: o.action, patchJson: o.patchJson }] as [
+                number,
+                { action: string; patchJson: unknown },
+              ],
+          ),
+        );
+      }
+
       // Update machine heartbeat (skipped on the batch path — done once there).
       if (!opts?.skipHeartbeat) await db.updateMachineHeartbeat(machine.id);
 
@@ -1646,6 +1669,23 @@ export async function processInspectionSubmission(
               versionLivePoints++;     // point unchanged since declared V → live == V-era limits
             } else {
               snapshotGatedPoints++;   // instant-based reconstruction (P1)
+            }
+          }
+          // ══ Doc 55 Item 3 (Task 1) — VARIANT OVERRIDE (applied LAST) ═══════════
+          // Keyed by basePointDefId: a base point resolves to its own def id, so a
+          // variant override for it matches here. Applied after the (live/snapshot)
+          // base limits are chosen so the variant's patch always wins. Variant-added
+          // points (variantId-set defs) never match a base override → untouched.
+          const variantOv = variantOverrideByBaseId?.get(resolvedPointDefId);
+          if (variantOv) {
+            if (variantOv.action === "exclude") {
+              gateLimits = null; // not in the variant's effective set → skip the gate
+            } else if (variantOv.action === "override" && gateLimits) {
+              const patch =
+                variantOv.patchJson && typeof variantOv.patchJson === "object"
+                  ? (variantOv.patchJson as Record<string, unknown>)
+                  : {};
+              gateLimits = { ...gateLimits, ...patch } as PointLimitSource;
             }
           }
           if (gateLimits) {
@@ -2821,6 +2861,11 @@ export const machineApiRouter = router({
       sourceImageHeight: z.number().int().positive().optional(),
       clientVersion: z.string().max(50).optional(),
       points: z.array(measurementPointSyncSchema).min(1),
+      // Doc 55 Item 3 PV2 (QĐ#14) — OPTIONAL variant the push targets. Additive +
+      // inert unless PRODUCT_VARIANT_ENABLED: it ONLY scopes the MQTT config-changed
+      // notify to the variant topic below. Point WRITES stay model-scoped (variant
+      // point authoring is PV1/PV2 territory, outside this notify path).
+      variantCode: z.string().trim().min(1).max(50).optional(),
       // Doc 55 Item 2 (CASE #11) — OPTIONAL fiducials the machine OBSERVED for THIS
       // board/setup. Additive: a machine that omits them keeps exactly today's
       // behaviour. Request-level (not per-point) because one similarity transform is
@@ -3275,8 +3320,15 @@ export const machineApiRouter = router({
         const bumped = await db.bumpPointsConfigVersion(productModel.id);
         if (bumped) {
           newConfigVersion = bumped.version;
-          // Notify all subscribers about config change
-          publishPointsConfigChanged(bumped.code, newConfigVersion, input.machineCode);
+          // Notify all subscribers about config change. Doc 55 Item 3 PV2 (QĐ#14) —
+          // scope to the variant topic when the machine addressed one (flag ON);
+          // absent / flag OFF ⇒ the legacy base topic (byte-identical).
+          publishPointsConfigChanged(
+            bumped.code,
+            newConfigVersion,
+            input.machineCode,
+            productVariantEnabled() ? input.variantCode : undefined,
+          );
         }
         // bumped === null ⇒ product soft-deleted between fetch and bump → no version
         // churn, no notify (there is no live fleet to converge). newConfigVersion
@@ -3963,12 +4015,20 @@ export const machineApiRouter = router({
       // exists. Additive: existing consumers that read only `points` are untouched.
       //
       // PV1: when a variant is resolved, `points` becomes its EFFECTIVE set
-      // (resolveEffectivePoints) instead of the model's raw active set. Tombstones
-      // still come from the model/base stream (variant-scoped tombstones are a
-      // documented deferral — see the report / QĐ#14). getPointsChangedSinceVersion
-      // is still called for those tombstones; its own `points` are used only in the
-      // flag-OFF path so the legacy behaviour is byte-identical.
-      const changed = await db.getPointsChangedSinceVersion(productModel.id, input.sinceVersion);
+      // (resolveEffectivePoints) instead of the model's raw active set.
+      //
+      // Doc 55 Item 3 PV2 (QĐ#14) — tombstones are now VARIANT-SCOPED too. Passing
+      // the resolved variantId makes getPointsChangedSinceVersion return deletedCodes
+      // for base points the variant EXCLUDES + variant-added points that were retired,
+      // so a variant machine stops inspecting a point that left its effective set.
+      // syncVariant is null when the flag is OFF ⇒ variantId undefined ⇒ the exact
+      // legacy model/base tombstone stream (byte-identical). Its own `points` are used
+      // only in the flag-OFF path; the ON path replaces them with resolveEffectivePoints.
+      const changed = await db.getPointsChangedSinceVersion(
+        productModel.id,
+        input.sinceVersion,
+        syncVariant ? syncVariant.pointDefVariantId : undefined,
+      );
       const deletedPoints = changed.deletedPoints;
       const deletedCodes = changed.deletedCodes;
       const points = syncVariant
