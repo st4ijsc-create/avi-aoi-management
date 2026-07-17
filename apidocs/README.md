@@ -226,6 +226,25 @@ Chi tiết → xem [SYNC_API.md](SYNC_API.md#8-rest-proxy-endpoints)
 
 ---
 
+## Topo triển khai — một nhà máy / một database (doc 51 QĐ#4)
+
+> **Ràng buộc quan trọng khi tích hợp / vận hành đa nhà máy.**
+
+Một deployment (một database) phục vụ **không gian mã máy của MỘT nhà máy**:
+
+- **`machineCode` và `URN` là DUY NHẤT TOÀN CỤC trong một database** (partial-unique `uq_machines_code_active` — chỉ máy `isActive` giữ mã). KHÔNG có namespace theo site/factory ở tầng khóa.
+- Các trường `companyCode` / `factoryCode` / `workshopCode` / `lineCode` / `stageCode` trong `submitInspection` chỉ là **ngữ cảnh phân cấp free-text** để định tuyến/hiển thị — **KHÔNG phải khóa ngoại**, KHÔNG tạo namespace tách biệt cho mã máy.
+- ⇒ Hai nhà máy **không thể** dùng chung một database nếu có convention mã máy trùng nhau — mã sẽ va chạm.
+
+**Đa nhà máy / đa site = FEDERATION (database tách rời)**, không phải multi-tenant cùng-DB:
+
+- Mỗi site chạy database + deployment riêng; roll-up liên-site qua federation read API (xem doc 13 / `federationRouter`: `siteRollups` / `aggregateSummary` — chỉ đọc).
+- Đây là **quyết định kiến trúc đã chốt** (doc 51 QĐ#4): không đầu tư multi-factory cùng-DB (sẽ cần đưa `siteId` vào mọi unique key máy); federation giữ cách ly dữ liệu + đơn giản khóa.
+
+> Nếu bạn cần một hệ phục vụ nhiều nhà máy trên **cùng** một database, đó là thay đổi kiến trúc lớn (namespace mọi khóa máy theo site) — hiện KHÔNG hỗ trợ; hãy dùng federation.
+
+---
+
 ## Rate Limiting
 
 > Số cũ "1000 req / 15 phút" là **SAI**. Bảng dưới đọc từ `server/_core/rateLimitConfig.ts`.

@@ -1671,6 +1671,67 @@ export const measurementPointRouter = router({
       });
       return summary;
     }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Doc 51 P3 batch-2 (§5.2 P3) — VERSION-ROLLBACK. Reconstruct the point set as it
+  // stood at an earlier pointsConfigVersion, then bump the version FORWARD so the
+  // fleet re-fetches. This is "revert CONTENT, advance VERSION" — the number never
+  // goes backwards, so delta-sync / version-gate stay monotonic (see db function).
+  // Gated by canEdit (rewrites this product's measurement config for every machine).
+  // ══════════════════════════════════════════════════════════════════════════
+  revertPointsConfigToVersion: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
+    .input(z.object({
+      productModelId: z.number().int().positive(),
+      targetVersion: z.number().int().positive(),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await withDbErrors(() =>
+        db.revertPointsConfigToVersion(input.productModelId, input.targetVersion, {
+          changedBy: ctx.user.id,
+          changeReason: input.reason ?? `revert to pointsConfigVersion ${input.targetVersion}`,
+        }),
+      ).catch((err) => {
+        // Out-of-range target (target >= current, or non-positive) → 400, not 500.
+        if (err instanceof db.RevertVersionError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        throw err;
+      });
+      if (!result) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Product model ${input.productModelId} not found.` });
+      }
+      // Best-effort nudge; machines otherwise converge on their next poll.
+      try {
+        publishPointsConfigChanged(result.code, result.newVersion);
+      } catch (err) {
+        console.warn("[doc51 P3] publishPointsConfigChanged failed after points-config revert", err);
+      }
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "measurementPoint.revertPointsConfig",
+          entityType: "product",
+          entityId: input.productModelId,
+          entityName: result.code,
+          details: {
+            targetVersion: result.targetVersion,
+            fromVersion: result.fromVersion,
+            newVersion: result.newVersion,
+            pointsReverted: result.pointsReverted,
+            pointsUnchanged: result.pointsUnchanged,
+            pointsSkipped: result.pointsSkipped,
+            skippedPointIds: result.skippedPointIds,
+            reason: input.reason ?? null,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (measurementPoint.revertPointsConfig)", err);
+      }
+      return result;
+    }),
 });
 
 // ============ PRODUCT MACHINE MAPPING ROUTER ============

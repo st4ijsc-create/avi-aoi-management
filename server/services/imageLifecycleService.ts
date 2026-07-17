@@ -312,10 +312,297 @@ export function __resetDiskAlertDebounce(): void {
   lastDiskAlertAtMs = 0;
 }
 
+// ── 5. Orphan-image reaper (DB-diff sweep) — CASE #5, doc 51 §11.2 ────────────
+//
+// The age-based sweep (#3) only removes whole inspection directories older than
+// the retention window, and only in STORAGE_MODE=local. It therefore MISSES:
+//   • Freshly-orphaned objects — the image upload succeeded but the DB row that
+//     should reference it failed to persist (P2 idempotency compensation reduced
+//     this window but cannot close it entirely). Such objects can sit for a full
+//     year before the age sweep touches them, and only if their whole inspection
+//     dir also ages out.
+//   • forge/S3 backends — #3 is local-only, so a hosted backend never reclaims
+//     any orphaned inspection image.
+//
+// This reaper closes both gaps with a DB-DIFF: list storage objects under the
+// inspection prefix, subtract every key any measurement_results row references
+// (imageKey / defectCropKey, plus keys derived from imageUrl / defectCropUrl for
+// legacy rows), and treat the remainder — once older than a grace period — as
+// orphans.
+//
+// SAFETY (non-negotiable):
+//   • DRY-RUN by default. `reapOrphanImages()` never deletes unless dryRun:false
+//     is passed explicitly; the scheduler only passes it when
+//     ORPHAN_IMAGE_REAPER_DELETE=true (and the whole reaper is gated OFF by
+//     ORPHAN_IMAGE_REAPER_ENABLED, default off — QĐ#1 backward-compatible).
+//   • Grace period (ORPHAN_IMAGE_REAPER_GRACE_HOURS, default 24h): an object
+//     younger than the grace window is NEVER touched — it may be mid-write, or
+//     its DB row may not have committed yet.
+//   • Honest-refuse: if the DB reference set cannot be built (DB down), the run
+//     is SKIPPED, never a blind delete. Same for backends without a list adapter.
+//   • Scoped to the `inspections/` prefix only, so product-model / export /
+//     ai-model / floor-plan objects (different prefixes) are never at risk.
+
+export interface StorageObject {
+  /** Storage key relative to the storage root, posix-normalized (no leading /). */
+  key: string;
+  /** Last-modified time in epoch ms; 0 when unknown (such objects are never eligible). */
+  mtimeMs: number;
+}
+
+export interface ReapOrphansResult {
+  mode: string;
+  scanned: number; // objects listed under the prefix
+  referenced: number; // listed objects that have a DB row
+  orphans: number; // listed objects with no DB row (any age)
+  eligible: number; // orphans older than the grace period
+  deleted: number; // objects actually deleted (0 in dry-run)
+  failed: number; // delete attempts that did not remove the object
+  dryRun: boolean;
+  skipped: boolean; // true when the run refused to proceed (see skipReason)
+  skipReason?: string;
+  graceHours: number;
+  prefix: string;
+  /** Capped sample of eligible orphan keys for logging / the ops report. */
+  sampleOrphanKeys: string[];
+}
+
+const INSPECTION_PREFIX_DEFAULT = "inspections";
+const SAMPLE_ORPHAN_CAP = 50;
+
+/** Normalize a storage key: backslashes → slashes, strip leading slashes. */
+export function normalizeStorageKey(key: string): string {
+  return key.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+/**
+ * Derive a storage key from a stored URL. In local mode imageUrl/defectCropUrl
+ * are served as `/uploads/<key>`; we recover `<key>`. Absolute http(s) URLs
+ * (forge mode) yield null — those rows carry the key in imageKey/defectCropKey.
+ */
+export function deriveKeyFromUploadsUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const marker = "/uploads/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  const key = url.slice(idx + marker.length);
+  return key ? normalizeStorageKey(key) : null;
+}
+
+/**
+ * List local storage objects (files) under a prefix, recursively. Keys are
+ * returned relative to the uploads root and posix-normalized so they compare
+ * 1:1 with DB imageKey values. Missing prefix dir → empty list (not an error).
+ */
+export async function listLocalStorageObjects(prefix: string): Promise<StorageObject[]> {
+  const root = uploadsRoot();
+  const base = resolveUnderRoot(prefix);
+  if (!base) return [];
+  const out: StorageObject[] = [];
+  async function walk(dir: string): Promise<void> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // dir vanished mid-scan or does not exist
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(p);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      let mtimeMs = 0;
+      try {
+        mtimeMs = (await fs.promises.stat(p)).mtimeMs;
+      } catch {
+        continue; // file vanished mid-scan
+      }
+      out.push({ key: normalizeStorageKey(path.relative(root, p)), mtimeMs });
+    }
+  }
+  await walk(base);
+  return out;
+}
+
+/**
+ * Build the set of every storage key referenced by measurement_results. Includes
+ * imageKey + defectCropKey directly, plus keys derived from imageUrl/defectCropUrl
+ * (covers legacy rows that persisted only a URL, never a key). Injected `db`/`sqlTag`
+ * keep the drizzle/postgres barrels out of unit tests.
+ *
+ * ⚠ Scale note: this materializes referenced keys into an in-memory Set. At the
+ * hot-table's scale (millions of rows) that is tens of MB — acceptable for an
+ * opt-in maintenance sweep, but the standalone script does the same diff in SQL
+ * for very large datasets.
+ */
+export async function defaultFetchReferencedKeys(db: any, sqlTag: any): Promise<Set<string>> {
+  const set = new Set<string>();
+  const rows = (await db.execute(sqlTag`
+    SELECT "imageKey", "defectCropKey", "imageUrl", "defectCropUrl"
+    FROM measurement_results
+    WHERE "imageKey" IS NOT NULL OR "defectCropKey" IS NOT NULL
+       OR "imageUrl" LIKE '%/uploads/%' OR "defectCropUrl" LIKE '%/uploads/%'
+  `)) as unknown as Array<Record<string, string | null>>;
+  for (const r of rows ?? []) {
+    if (r.imageKey) set.add(normalizeStorageKey(r.imageKey));
+    if (r.defectCropKey) set.add(normalizeStorageKey(r.defectCropKey));
+    const u1 = deriveKeyFromUploadsUrl(r.imageUrl);
+    if (u1) set.add(u1);
+    const u2 = deriveKeyFromUploadsUrl(r.defectCropUrl);
+    if (u2) set.add(u2);
+  }
+  return set;
+}
+
+/**
+ * Reap orphaned inspection images by DB-diff. DRY-RUN unless `dryRun:false`.
+ * Fully injectable (listFn / referencedKeysFn / deleteFn) for testing and for
+ * wiring a future forge/S3 list adapter without touching this function.
+ */
+export async function reapOrphanImages(opts?: {
+  dryRun?: boolean;
+  graceHours?: number;
+  prefix?: string;
+  nowMs?: number;
+  maxDeletePerRun?: number;
+  mode?: string;
+  listFn?: (prefix: string) => Promise<StorageObject[]>;
+  referencedKeysFn?: () => Promise<Set<string>>;
+  deleteFn?: (key: string) => Promise<{ deleted: boolean; error?: string }>;
+}): Promise<ReapOrphansResult> {
+  const mode = opts?.mode ?? (process.env.STORAGE_MODE ?? "forge");
+  const dryRun = opts?.dryRun ?? true; // SAFE DEFAULT — deletion is always opt-in.
+  const graceHours = Math.max(0, opts?.graceHours ?? envInt("ORPHAN_IMAGE_REAPER_GRACE_HOURS", 24));
+  const prefix = normalizeStorageKey(
+    opts?.prefix ?? process.env.ORPHAN_IMAGE_REAPER_PREFIX ?? INSPECTION_PREFIX_DEFAULT,
+  ).replace(/\/+$/, "");
+  const nowMs = opts?.nowMs ?? Date.now();
+  const maxDelete = Math.max(0, opts?.maxDeletePerRun ?? envInt("ORPHAN_IMAGE_REAPER_MAX_DELETE", 10000));
+  const graceMs = graceHours * 60 * 60 * 1000;
+
+  const result: ReapOrphansResult = {
+    mode,
+    scanned: 0,
+    referenced: 0,
+    orphans: 0,
+    eligible: 0,
+    deleted: 0,
+    failed: 0,
+    dryRun,
+    skipped: false,
+    graceHours,
+    prefix,
+    sampleOrphanKeys: [],
+  };
+
+  // Resolve the list adapter. Local → fs walk. Any other backend without an
+  // injected listFn → honest-refuse (storage.ts exposes no storageList yet).
+  let listFn = opts?.listFn;
+  if (!listFn) {
+    if (mode === "local") {
+      listFn = listLocalStorageObjects;
+    } else {
+      result.skipped = true;
+      result.skipReason =
+        `storage listing not supported for STORAGE_MODE='${mode}' — ` +
+        `server/storage.ts exposes no storageList adapter. Inject listFn, or add a ` +
+        `list adapter (forge v1/storage/list, or S3 ListObjectsV2) to enable reaping here.`;
+      console.warn(`[OrphanReaper] ${result.skipReason}`);
+      return result;
+    }
+  }
+
+  // Build the DB reference set FIRST. If this fails we must NOT delete anything.
+  const referencedKeysFn =
+    opts?.referencedKeysFn ??
+    (async () => {
+      const [{ getJobsDb }, drizzle] = await Promise.all([
+        import("../db/connection"),
+        import("drizzle-orm"),
+      ]);
+      const db = await getJobsDb();
+      if (!db) throw new Error("database unavailable");
+      return defaultFetchReferencedKeys(db, (drizzle as any).sql);
+    });
+
+  let referenced: Set<string>;
+  try {
+    referenced = await referencedKeysFn();
+  } catch (err: any) {
+    result.skipped = true;
+    result.skipReason = `could not load DB references — refusing to reap: ${err?.message ?? err}`;
+    console.error(`[OrphanReaper] ${result.skipReason}`);
+    return result;
+  }
+
+  const objects = await listFn(prefix);
+  result.scanned = objects.length;
+
+  const eligibleOrphans: string[] = [];
+  for (const obj of objects) {
+    const key = normalizeStorageKey(obj.key);
+    if (referenced.has(key)) {
+      result.referenced++;
+      continue;
+    }
+    result.orphans++;
+    const ageOk = obj.mtimeMs > 0 && nowMs - obj.mtimeMs >= graceMs;
+    if (!ageOk) continue; // too new (or unknown mtime) — protect mid-write objects
+    result.eligible++;
+    eligibleOrphans.push(key);
+    if (result.sampleOrphanKeys.length < SAMPLE_ORPHAN_CAP) result.sampleOrphanKeys.push(key);
+  }
+
+  if (dryRun) {
+    if (result.eligible > 0) {
+      console.log(
+        `[OrphanReaper] DRY-RUN mode=${mode} prefix=${prefix}: ${result.eligible} orphan object(s) ` +
+          `older than ${graceHours}h would be deleted ` +
+          `(scanned ${result.scanned}, referenced ${result.referenced}, orphans ${result.orphans})`,
+      );
+    }
+    return result;
+  }
+
+  const deleteFn =
+    opts?.deleteFn ??
+    (async (key: string) => {
+      const { storageDelete } = await import("../storage");
+      return storageDelete(key);
+    });
+
+  for (const key of eligibleOrphans) {
+    if (result.deleted >= maxDelete) {
+      console.warn(`[OrphanReaper] hit maxDeletePerRun=${maxDelete}; stopping (more orphans remain)`);
+      break;
+    }
+    try {
+      const res = await deleteFn(key);
+      if (res.deleted) {
+        result.deleted++;
+      } else {
+        result.failed++;
+        if (res.error) console.warn(`[OrphanReaper] delete ${key} not removed: ${res.error}`);
+      }
+    } catch (err: any) {
+      result.failed++;
+      console.warn(`[OrphanReaper] delete ${key} threw: ${err?.message ?? err}`);
+    }
+  }
+  console.log(
+    `[OrphanReaper] mode=${mode} prefix=${prefix}: deleted ${result.deleted} orphan object(s) ` +
+      `(failed ${result.failed}, scanned ${result.scanned}, referenced ${result.referenced}, grace ${graceHours}h)`,
+  );
+  return result;
+}
+
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
 let pruneTimer: NodeJS.Timeout | null = null;
 let diskTimer: NodeJS.Timeout | null = null;
+let orphanTimer: NodeJS.Timeout | null = null;
 
 /**
  * Start the image lifecycle scheduler. Gated by DATA_RETENTION_ENABLED (same
@@ -333,6 +620,11 @@ export function startImageLifecycle(): void {
   const pruneIntervalMs = Math.max(60_000, envInt("IMAGE_LIFECYCLE_INTERVAL_MS", 24 * 60 * 60 * 1000));
   const diskIntervalMs = Math.max(60_000, envInt("UPLOADS_DISK_CHECK_INTERVAL_MS", 60 * 60 * 1000));
 
+  // Orphan reaper (CASE #5) is a SEPARATE opt-in gate, default OFF (QĐ#1). When
+  // on, it runs DRY-RUN (report only) unless ORPHAN_IMAGE_REAPER_DELETE=true.
+  const reaperEnabled = process.env.ORPHAN_IMAGE_REAPER_ENABLED === "true";
+  const reaperDelete = process.env.ORPHAN_IMAGE_REAPER_DELETE === "true";
+
   // First runs shortly after boot (don't block startup), then on interval.
   setTimeout(() => {
     void pruneOldInspectionImages().catch((e) =>
@@ -341,6 +633,11 @@ export function startImageLifecycle(): void {
     void checkUploadsDiskUsage().catch((e) =>
       console.error("[ImageLifecycle] disk check failed:", e?.message ?? e),
     );
+    if (reaperEnabled) {
+      void reapOrphanImages({ dryRun: !reaperDelete }).catch((e) =>
+        console.error("[OrphanReaper] run failed:", e?.message ?? e),
+      );
+    }
   }, 45_000);
 
   pruneTimer = setInterval(() => {
@@ -357,6 +654,25 @@ export function startImageLifecycle(): void {
   }, diskIntervalMs);
   if (typeof diskTimer.unref === "function") diskTimer.unref();
 
+  if (reaperEnabled) {
+    const reaperIntervalMs = Math.max(
+      60_000,
+      envInt("ORPHAN_IMAGE_REAPER_INTERVAL_MS", 24 * 60 * 60 * 1000),
+    );
+    orphanTimer = setInterval(() => {
+      void reapOrphanImages({ dryRun: !reaperDelete }).catch((e) =>
+        console.error("[OrphanReaper] run failed:", e?.message ?? e),
+      );
+    }, reaperIntervalMs);
+    if (typeof orphanTimer.unref === "function") orphanTimer.unref();
+    console.log(
+      `[OrphanReaper] scheduled every ${Math.round(reaperIntervalMs / 3600000)}h — ` +
+        `${reaperDelete ? "DELETE" : "DRY-RUN (report only)"} ` +
+        `(grace ${envInt("ORPHAN_IMAGE_REAPER_GRACE_HOURS", 24)}h, prefix=` +
+        `${process.env.ORPHAN_IMAGE_REAPER_PREFIX ?? INSPECTION_PREFIX_DEFAULT})`,
+    );
+  }
+
   console.log(
     `[ImageLifecycle] enabled — image prune every ${Math.round(pruneIntervalMs / 3600000)}h, ` +
       `disk check every ${Math.round(diskIntervalMs / 60000)}min ` +
@@ -372,5 +688,9 @@ export function stopImageLifecycle(): void {
   if (diskTimer) {
     clearInterval(diskTimer);
     diskTimer = null;
+  }
+  if (orphanTimer) {
+    clearInterval(orphanTimer);
+    orphanTimer = null;
   }
 }

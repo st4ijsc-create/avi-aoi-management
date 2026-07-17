@@ -2845,17 +2845,26 @@ export const machineApiRouter = router({
       const updatedCount = results.filter((r) => r.action === 'updated').length;
       const transformedCount = results.filter((r) => r.coordTransformed).length;
 
-      // Bump pointsConfigVersion if any points were created or updated
+      // Bump pointsConfigVersion if any points were created or updated.
+      // Doc 51 P3 batch-2 (§11.2/§12.2 CASE #12) — ATOMIC bump. This was a
+      // read-modify-write (`newConfigVersion = (live ?? 1) + 1; updateProductModel`)
+      // = a LOST-UPDATE race: two concurrent POINTS_PUSH (or a UI edit racing a sync)
+      // both read version N and both write N+1, shipping TWO distinct config changes
+      // under ONE version number. A machine already holding N+1 then skips the second
+      // change forever. `bumpPointsConfigVersion` is `col = col + 1 RETURNING` inside
+      // a row lock → N concurrent bumps always yield +N, matching every other bump
+      // path (bumpAndNotifyPointsConfig, deleteMeasurementPointDef).
       let newConfigVersion = productModel.pointsConfigVersion ?? 1;
       if (results.length > 0) {
-        newConfigVersion += 1;
-        await db.updateProductModel(productModel.id, {
-          pointsConfigVersion: newConfigVersion,
-          updatedAt: new Date(),
-        });
-
-        // Notify all subscribers about config change
-        publishPointsConfigChanged(productModel.code, newConfigVersion, input.machineCode);
+        const bumped = await db.bumpPointsConfigVersion(productModel.id);
+        if (bumped) {
+          newConfigVersion = bumped.version;
+          // Notify all subscribers about config change
+          publishPointsConfigChanged(bumped.code, newConfigVersion, input.machineCode);
+        }
+        // bumped === null ⇒ product soft-deleted between fetch and bump → no version
+        // churn, no notify (there is no live fleet to converge). newConfigVersion
+        // keeps the pre-bump value so the sync log's toVersion stays truthful.
       }
 
       const syncDurationMs = Date.now() - syncStartTime;

@@ -54,6 +54,9 @@ vi.mock("../db", () => ({
   updateMeasurementPointDef: (...a: unknown[]) => (updateMeasurementPointDef as any)(...a),
   createMeasurementPointDef: vi.fn(async () => 123),
   updateProductModel: vi.fn(async () => {}),
+  // Doc 51 P3 batch-2 — syncMeasurementPoints now bumps ATOMICALLY (was a RMW on
+  // updateProductModel). The version value is irrelevant to these lock/parity tests.
+  bumpPointsConfigVersion: vi.fn(async (id: number) => ({ productModelId: id, code: "PRD-1", version: 10 })),
   createProductSyncLog: vi.fn(async () => {}),
   createAuditLog: (...a: unknown[]) => createAuditLog(...(a as [])),
   isStaleUpdate: (...a: unknown[]) => realIsStaleUpdate(a[0], a[1]),

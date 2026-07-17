@@ -1138,7 +1138,16 @@ export const stationTraces = pgTable("station_traces", {
   summary: jsonb("summary").$type<Record<string, any>>(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("uq_station_traces_serial").on(table.serialNumber),
+  // Doc 51 P3 batch-2 (CASE #8, migration 0284) — genealogy scope. The old
+  // UNIQUE(serialNumber) collapsed two different boards sharing a printed serial
+  // (or a blank serial) into ONE trace. Scope by (serialNumber, productModelId).
+  // ⚠ May be ABSENT at runtime: 0284 is guarded and records 'partial' when
+  //   pre-existing duplicate (serial, model) pairs block the rebuild; upsertStationTrace
+  //   scopes in the app either way (SELECT-then-write), so behaviour is identical.
+  //   NULL productModelId rows are NULLS-DISTINCT here (Postgres default) — two blank-
+  //   model boards with the same serial are indistinguishable and still merge; the app
+  //   matches them null-safe so a single blank-model board stays one row.
+  uniqueIndex("uq_station_traces_serial_model").on(table.serialNumber, table.productModelId),
   index("idx_station_traces_product").on(table.productModelId),
   index("idx_station_traces_lot").on(table.lotCode),
   index("idx_station_traces_first_escape").on(table.firstEscapeStation),

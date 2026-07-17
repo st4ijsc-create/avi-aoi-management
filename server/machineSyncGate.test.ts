@@ -27,6 +27,9 @@ vi.mock("./db", () => ({
   updateMeasurementPointDef: (...a: unknown[]) => updateMeasurementPointDef(...a),
   createMeasurementPointDef: (...a: unknown[]) => createMeasurementPointDef(...a),
   updateProductModel: vi.fn(async () => {}),
+  // Doc 51 P3 batch-2 — syncMeasurementPoints now bumps ATOMICALLY (was a RMW on
+  // updateProductModel). Value is irrelevant to the sync-gate assertions here.
+  bumpPointsConfigVersion: vi.fn(async (id: number) => ({ productModelId: id, code: "PRD-1", version: 10 })),
   createProductSyncLog: vi.fn(async () => {}),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
   getDb: vi.fn(async () => null),

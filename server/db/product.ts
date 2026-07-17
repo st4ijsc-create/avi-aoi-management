@@ -1792,6 +1792,208 @@ export async function deleteMeasurementPointDef(id: number): Promise<PointsConfi
   });
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-2 (§5.2 P3) — VERSION-ROLLBACK for measurement-point config.
+//
+// THE GAP this closes: pointsConfigVersion only ever INCREASES, and although every
+// point edit snapshots its pre-edit state into measurement_point_versions (stamped
+// with the product version it was live under, via 0282), there was NO way to
+// RECONSTRUCT the point set as it stood at an earlier version. A bad limit push
+// (wrong file, fat-fingered tolerance) could be shipped to the fleet with no
+// one-click way back.
+//
+// WHAT THIS DOES — "revert CONTENT, advance VERSION" (NOT a version rollback):
+//   • For every LIVE point of the product, resolve the state that was live at
+//     `targetVersion` = the version-snapshot with the SMALLEST stamp >= targetVersion
+//     (the exact same pick resolveGateLimitsForBoard uses for the spec-gate). That
+//     snapshot's snapshotJson holds the full pre-edit row → restore its config fields.
+//     – no stamped snapshot >= targetVersion ⇒ the point was NOT edited since then ⇒
+//       its live state already IS the target-era state → left untouched (counted).
+//     – no 0282-stamped history at all (legacy point) ⇒ we cannot prove the target-era
+//       state by version → SKIPPED (reported, never guessed).
+//   • Each reverted point's PRE-revert state is snapshotted first (stamped with the
+//     current version) so the revert is itself auditable AND un-revertable.
+//   • Finally bump pointsConfigVersion FORWARD (atomic +1) so machines re-fetch. The
+//     number never goes backwards — delta-sync/version-gate stay monotonic and safe.
+//
+// All in ONE transaction. Returns null when the product is gone (soft-deleted).
+// Throws RevertVersionError on an out-of-range target (caller maps to BAD_REQUEST).
+// ════════════════════════════════════════════════════════════════════════════
+export class RevertVersionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RevertVersionError";
+  }
+}
+
+export interface RevertPointsSummary {
+  productModelId: number;
+  /** product_models.code — the key publishPointsConfigChanged broadcasts on. */
+  code: string;
+  targetVersion: number;
+  /** Version BEFORE the revert (what content was reconstructed away from). */
+  fromVersion: number;
+  /** Version AFTER the forward bump (what machines must converge to). */
+  newVersion: number;
+  /** Points whose config was restored from a target-era snapshot. */
+  pointsReverted: number;
+  /** Points already at their target-era state (no edit since targetVersion). */
+  pointsUnchanged: number;
+  /** Points with no 0282-stamped history — could not version-resolve, left as-is. */
+  pointsSkipped: number;
+  skippedPointIds: number[];
+}
+
+// Columns that carry IDENTITY / audit lineage — never restored from a snapshot
+// (restoring them would move the row, resurrect a tombstone, or rewrite history).
+const REVERT_IDENTITY_KEYS = new Set<string>([
+  "id",
+  "productModelId",
+  "code",
+  "createdAt",
+  "updatedAt",
+  "deletedAt",
+  "deletedAtVersion",
+  "lastModifiedAt",
+]);
+
+export async function revertPointsConfigToVersion(
+  productModelId: number,
+  targetVersion: number,
+  options?: { changedBy?: number | null; changeReason?: string | null },
+): Promise<RevertPointsSummary | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!Number.isInteger(targetVersion) || targetVersion < 1) {
+    throw new RevertVersionError(`targetVersion must be a positive integer (got ${targetVersion}).`);
+  }
+
+  // Probe the 0282 provenance column ONCE outside the tx (a missing column must
+  // never abort the transaction). Absent ⇒ every point is "skipped" (no version
+  // history to resolve against) and the revert is an honest no-op bump.
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
+
+  return db.transaction(async (tx) => {
+    const [pm] = await tx
+      .select({ id: productModels.id, code: productModels.code, version: productModels.pointsConfigVersion })
+      .from(productModels)
+      .where(and(eq(productModels.id, productModelId), isNull(productModels.deletedAt)))
+      .for("update")
+      .limit(1);
+    if (!pm) return null; // product gone → nothing to revert / notify
+
+    const currentVersion = Number(pm.version ?? 1);
+    if (targetVersion >= currentVersion) {
+      throw new RevertVersionError(
+        `targetVersion (${targetVersion}) must be below the current pointsConfigVersion (${currentVersion}); the version only moves forward.`,
+      );
+    }
+
+    const points = await tx
+      .select()
+      .from(measurementPointDefs)
+      .where(and(eq(measurementPointDefs.productModelId, productModelId), isNull(measurementPointDefs.deletedAt)));
+
+    let pointsReverted = 0;
+    let pointsUnchanged = 0;
+    const skippedPointIds: number[] = [];
+
+    for (const point of points) {
+      // Load this point's version history. Only 0282-stamped rows can be resolved
+      // by product version; without a stamp we cannot prove the target-era state.
+      const versions = stampConfigVersion
+        ? await tx
+            .select({
+              snapshotJson: measurementPointVersions.snapshotJson,
+              productPointsConfigVersion: measurementPointVersions.productPointsConfigVersion,
+            })
+            .from(measurementPointVersions)
+            .where(eq(measurementPointVersions.pointDefId, point.id))
+        : [];
+
+      const stamped = versions.filter(
+        (v) => v.productPointsConfigVersion != null && Number.isFinite(Number(v.productPointsConfigVersion)),
+      );
+
+      if (!stampConfigVersion || stamped.length === 0) {
+        skippedPointIds.push(point.id); // legacy / unstamped → cannot version-resolve
+        continue;
+      }
+
+      // Mirror resolveGateLimitsForBoard: smallest stamp >= targetVersion.
+      let best: (typeof stamped)[number] | null = null;
+      let bestV = Number.POSITIVE_INFINITY;
+      for (const v of stamped) {
+        const sv = Number(v.productPointsConfigVersion);
+        if (sv >= targetVersion && sv < bestV) {
+          best = v;
+          bestV = sv;
+        }
+      }
+
+      if (best === null) {
+        // Stamped history exists but none covers targetVersion ⇒ the point has not
+        // been edited since then ⇒ its live state already IS the target-era state.
+        pointsUnchanged++;
+        continue;
+      }
+
+      const snap = (best.snapshotJson ?? {}) as Record<string, unknown>;
+      const restore: Record<string, unknown> = {};
+      for (const [k, val] of Object.entries(snap)) {
+        if (!REVERT_IDENTITY_KEYS.has(k)) restore[k] = val;
+      }
+      if (Object.keys(restore).length === 0) {
+        // Snapshot carried only identity columns (should not happen) → treat as
+        // unchanged rather than issue an empty write.
+        pointsUnchanged++;
+        continue;
+      }
+
+      // Snapshot the PRE-revert state (stamped with the current version it was live
+      // under) so the revert is auditable AND un-revertable — same shape as an edit.
+      const [{ maxVersion }] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+        .from(measurementPointVersions)
+        .where(eq(measurementPointVersions.pointDefId, point.id));
+      const nextVersion = Number(maxVersion ?? 0) + 1;
+
+      const versionRow: Record<string, unknown> = {
+        pointDefId: point.id,
+        version: nextVersion,
+        snapshotJson: point as unknown as Record<string, any>,
+        changedBy: options?.changedBy ?? null,
+        changeReason: options?.changeReason ?? `revert to pointsConfigVersion ${targetVersion}`,
+      };
+      if (stampConfigVersion) versionRow.productPointsConfigVersion = currentVersion;
+      await tx.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
+
+      await tx
+        .update(measurementPointDefs)
+        .set({ ...restore, updatedAt: new Date() })
+        .where(eq(measurementPointDefs.id, point.id));
+      pointsReverted++;
+    }
+
+    // Advance the product version FORWARD (atomic +1). Never lower the number.
+    const bump = await bumpPointsConfigVersion(productModelId, tx as unknown as PointsBumpExecutor);
+    // bump is non-null here: we hold a FOR-UPDATE lock on this live row.
+    const newVersion = bump ? bump.version : currentVersion;
+
+    return {
+      productModelId,
+      code: pm.code,
+      targetVersion,
+      fromVersion: currentVersion,
+      newVersion,
+      pointsReverted,
+      pointsUnchanged,
+      pointsSkipped: skippedPointIds.length,
+      skippedPointIds,
+    };
+  });
+}
+
 // ============ BULK MEASUREMENT POINT FUNCTIONS ============
 export async function bulkCreateMeasurementPoints(points: InsertMeasurementPointDef[]) {
   const db = await getDb();
@@ -2861,21 +3063,60 @@ export async function listSamplesForLot(lotCode: string, limit = 5000) {
   return rows;
 }
 
-export async function upsertStationTrace(row: InsertStationTrace) {
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 51 P3 batch-2 (CASE #8, migration 0284) — station-trace genealogy SCOPE.
+//
+// THE BUG this closes: the upsert keyed on `serialNumber` ALONE (matching the old
+// UNIQUE(serialNumber) in 0094). Serial numbers are only unique PER product on a
+// contract-manufacturing line — two different boards (different product models) can
+// legitimately carry the same printed serial, and a mis-scanned / firmware-default
+// serial can even be blank. Under the serial-only key those distinct physical units
+// COLLAPSED into ONE station_traces row: one board's stations/defects/escapes
+// overwrote the other's, so the genealogy + escape analytics silently mixed two
+// units together.
+//
+// Fix: scope the upsert by (serialNumber, productModelId) — null-safe, so a board
+// whose model is not yet known still updates its OWN row instead of duplicating —
+// and REFUSE a blank/whitespace serial outright (there is no identity to key on;
+// merging every unlabelled board into one row is worse than dropping the trace).
+//
+// LIMIT (honest): two boards that BOTH carry the same serial AND a NULL productModelId
+// are genuinely indistinguishable here, so they still merge — there is nothing to key
+// them apart on. Callers that can supply productModelId (stationTriangulationRouter)
+// should always do so. Migration 0284 replaces UNIQUE(serialNumber) with a composite
+// unique index so the DB enforces the same scope for known-model rows.
+//
+// Returns the row id, or `null` when the serial was blank (nothing written).
+// ════════════════════════════════════════════════════════════════════════════
+export async function upsertStationTrace(row: InsertStationTrace): Promise<number | null> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // CASE #8 — a blank/whitespace serial has no identity to scope on. Skip it
+  // rather than merge every unlabelled board into a single serial='' aggregate.
+  const serial = typeof row.serialNumber === "string" ? row.serialNumber.trim() : "";
+  if (!serial) return null;
+  const productModelId = row.productModelId ?? null;
+  // Null-safe scope match: `IS NOT DISTINCT FROM` so a NULL-model board matches its
+  // own prior NULL-model row (a plain `= NULL` never matches → would duplicate).
   const [existing] = await db
     .select({ id: stationTraces.id })
     .from(stationTraces)
-    .where(eq(stationTraces.serialNumber, row.serialNumber))
+    .where(and(
+      eq(stationTraces.serialNumber, serial),
+      productModelId == null
+        ? isNull(stationTraces.productModelId)
+        : eq(stationTraces.productModelId, productModelId),
+    ))
     .limit(1);
   if (existing) {
     await db.update(stationTraces)
-      .set({ ...row, updatedAt: new Date() })
+      .set({ ...row, serialNumber: serial, updatedAt: new Date() })
       .where(eq(stationTraces.id, existing.id));
     return existing.id;
   }
-  const [inserted] = await db.insert(stationTraces).values(row).returning({ id: stationTraces.id });
+  const [inserted] = await db.insert(stationTraces)
+    .values({ ...row, serialNumber: serial })
+    .returning({ id: stationTraces.id });
   return inserted.id;
 }
 

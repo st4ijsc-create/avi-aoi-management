@@ -5030,6 +5030,23 @@ async function startServer() {
     console.error("[LakeSink] start failed:", (err as any)?.message || err);
   }
 
+  // doc 51 P3 / QĐ#5 — STREAM PROCESSOR: consume syn/telemetry/* từ StreamBridge →
+  // event-time tumbling window + watermark + late-correction → phát _line rollup.
+  // No-op trừ khi STREAM_PROCESSOR_ENABLED=true. Honest NATS-readiness qua `available`.
+  try {
+    const { startStreamProcessor } = await import("../services/streaming/streamProcessor");
+    const sp = await startStreamProcessor();
+    if (!sp) {
+      console.log("[StreamProcessor] disabled (set STREAM_PROCESSOR_ENABLED=true to derive _line rollups from the telemetry stream)");
+    } else if (sp.available) {
+      console.log(`[StreamProcessor] ENABLED — consuming ${sp.sourceTopic} (backend=${sp.backend}) → ${sp.emitTopic}`);
+    } else {
+      console.log(`[StreamProcessor] enabled but bridge transport UNAVAILABLE (backend=${sp.backend}) — no events consumed until reachable (npm i nats + NATS_URL)`);
+    }
+  } catch (err) {
+    console.error("[StreamProcessor] start failed:", (err as any)?.message || err);
+  }
+
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
   // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 

@@ -14,9 +14,13 @@ import {
   patternEnrichResolver,
   defaultOutcomeClassifier,
   StreamProcessor,
+  startStreamProcessor,
+  stopStreamProcessor,
+  getStreamProcessorStatus,
   type ClosedWindow,
 } from "./streamProcessor";
 import { createInProcessStreamBridge } from "./inProcessAdapter";
+import { getStreamBridge, resetStreamBridge } from "./streamBridge";
 
 const W = 60_000; // 1-minute window
 
@@ -225,5 +229,143 @@ describe("StreamProcessor — enrich + rollup + emit", () => {
   it("start() is a no-op while STREAM_PROCESSOR_ENABLED is unset", () => {
     proc.start();
     expect(proc.status().running).toBe(false);
+  });
+});
+
+// ── LIVE consumer path: start() must SUBSCRIBE and consume PUBLISHED bridge msgs ──
+// (the existing suite hand-feeds onMessage; these drive the real subscription so a
+//  regression that drops `bridge.subscribe(...)` in start() is caught).
+describe("StreamProcessor — live bridge consumption (start → publish → flush)", () => {
+  const prevFlag = process.env.STREAM_PROCESSOR_ENABLED;
+  let bridge: ReturnType<typeof createInProcessStreamBridge>;
+  let emitted: Array<{ topic: string; payload: any }>;
+  let proc: StreamProcessor;
+
+  beforeEach(() => {
+    process.env.STREAM_PROCESSOR_ENABLED = "true";
+    bridge = createInProcessStreamBridge();
+    emitted = [];
+    proc = new StreamProcessor({
+      bridge,
+      emit: (topic, payload) => void emitted.push({ topic, payload }),
+      enrich: () => ({ site: "s", area: "a", line: "l1" }),
+      windowMs: W,
+      allowedLatenessMs: 0,
+      flushIntervalMs: 10_000_000, // never auto-fire; flush() is driven manually here
+    });
+  });
+  afterEach(async () => {
+    proc.stop();
+    await bridge.close();
+    if (prevFlag === undefined) delete process.env.STREAM_PROCESSOR_ENABLED;
+    else process.env.STREAM_PROCESSOR_ENABLED = prevFlag;
+  });
+
+  it("consumes N events PUBLISHED to the bridge through the live subscription", async () => {
+    proc.start();
+    expect(proc.status().running).toBe(true);
+    // Publish 5 telemetry batches — the live subscription must feed the windower.
+    for (let i = 0; i < 5; i++) {
+      await bridge.publish("syn/telemetry/l1", [
+        { deviceId: "SIM-L1-DEV0", ts: 1_000 + i, metric: "x", value: 1, outcome: i % 2 === 1 ? "ng" : "ok" },
+      ]);
+    }
+    // Advance event time past the window end so [0,60000) closes on the watermark.
+    await bridge.publish("syn/telemetry/l1", [{ deviceId: "SIM-L1-DEV0", ts: 61_000, metric: "x", value: 1 }]);
+    const n = await proc.flush();
+    expect(n).toBe(1);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload.path).toBe("s/a/l1/_line");
+    expect(emitted[0].payload.values.event_count).toBe(5);
+    expect(emitted[0].payload.values.ng_count).toBe(2); // i=1,3 → ng
+  });
+
+  it("wildcard source topic rolls DISTINCT lines published on separate topics", async () => {
+    proc = new StreamProcessor({
+      bridge,
+      emit: (topic, payload) => void emitted.push({ topic, payload }),
+      enrich: (assetId) => {
+        const m = /-L(\d+)-/.exec(assetId);
+        return { site: "s", area: "a", line: m ? `l${m[1]}` : "unassigned" };
+      },
+      windowMs: W,
+      allowedLatenessMs: 0,
+      flushIntervalMs: 10_000_000,
+    });
+    proc.start();
+    await bridge.publish("syn/telemetry/l1", [{ deviceId: "SIM-L1-DEV0", ts: 1_000, metric: "x", value: 1, outcome: "ok" }]);
+    await bridge.publish("syn/telemetry/l2", [{ deviceId: "SIM-L2-DEV0", ts: 2_000, metric: "x", value: 1, outcome: "ok" }]);
+    await bridge.publish("syn/telemetry/l1", [{ deviceId: "SIM-L1-DEV0", ts: 61_000, metric: "x", value: 1 }]);
+    const n = await proc.flush();
+    expect(n).toBe(2); // one _line node per distinct line
+    const lines = emitted.map((e) => e.payload.path).sort();
+    expect(lines).toEqual(["s/a/l1/_line", "s/a/l2/_line"]);
+  });
+
+  it("does NOT subscribe/consume when the flag is off (start() is a no-op)", async () => {
+    process.env.STREAM_PROCESSOR_ENABLED = "false";
+    proc.start();
+    expect(proc.status().running).toBe(false);
+    await bridge.publish("syn/telemetry/l1", [{ deviceId: "SIM-L1-DEV0", ts: 1_000, metric: "x", value: 1 }]);
+    await bridge.publish("syn/telemetry/l1", [{ deviceId: "SIM-L1-DEV0", ts: 61_000, metric: "x", value: 1 }]);
+    expect(await proc.flush()).toBe(0);
+    expect(emitted).toHaveLength(0);
+  });
+});
+
+// ── Module-level lifecycle: startStreamProcessor / stop / status (boot-wiring shape) ──
+describe("startStreamProcessor / stopStreamProcessor — module lifecycle + honest status", () => {
+  const prevFlag = process.env.STREAM_PROCESSOR_ENABLED;
+  const prevBackend = process.env.STREAM_BRIDGE_BACKEND;
+
+  beforeEach(async () => {
+    stopStreamProcessor();
+    await resetStreamBridge();
+    delete process.env.STREAM_BRIDGE_BACKEND; // default → inprocess
+  });
+  afterEach(async () => {
+    stopStreamProcessor();
+    await resetStreamBridge();
+    if (prevFlag === undefined) delete process.env.STREAM_PROCESSOR_ENABLED;
+    else process.env.STREAM_PROCESSOR_ENABLED = prevFlag;
+    if (prevBackend === undefined) delete process.env.STREAM_BRIDGE_BACKEND;
+    else process.env.STREAM_BRIDGE_BACKEND = prevBackend;
+  });
+
+  it("returns null (clean no-op) and does not run when the flag is off", async () => {
+    process.env.STREAM_PROCESSOR_ENABLED = "false";
+    expect(await startStreamProcessor()).toBeNull();
+    expect(getStreamProcessorStatus().running).toBe(false);
+  });
+
+  it("starts against the in-process bridge, reports honest status, and consumes the singleton bus", async () => {
+    process.env.STREAM_PROCESSOR_ENABLED = "true";
+    const info = await startStreamProcessor();
+    expect(info).not.toBeNull();
+    expect(info!.backend).toBe("inprocess");
+    expect(info!.available).toBe(true); // in-process transport is always usable
+    expect(info!.sourceTopic).toBe("syn/telemetry/*");
+    expect(getStreamProcessorStatus().running).toBe(true);
+
+    // Publishing to the SAME singleton bridge the processor subscribed to must be
+    // consumed → the windower retains window state (proves the live subscription).
+    const bridge = await getStreamBridge();
+    await bridge.publish("syn/telemetry/l1", [
+      { deviceId: "SIM-L1-DEV0", ts: 1_000, metric: "x", value: 1, outcome: "ok" },
+    ]);
+    expect(getStreamProcessorStatus().windows).toBeGreaterThanOrEqual(1);
+
+    stopStreamProcessor();
+    expect(getStreamProcessorStatus().running).toBe(false);
+  });
+
+  it("is idempotent — a second start re-reports without a second subscription", async () => {
+    process.env.STREAM_PROCESSOR_ENABLED = "true";
+    const a = await startStreamProcessor();
+    const b = await startStreamProcessor();
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(b!.backend).toBe("inprocess");
+    expect(getStreamProcessorStatus().running).toBe(true);
   });
 });
