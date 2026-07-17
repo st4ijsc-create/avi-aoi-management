@@ -138,16 +138,28 @@ async function resolveMachines(sql, cfg, runId) {
       if (!st) { console.error("[bench-insp] không có station nào — không thể tạo máy bench. Chạy `npm run sim:factory` trước."); process.exit(3); }
       stationId = st.id;
     }
+    // `machines.code` has only a PARTIAL unique index (uq_machines_code_active,
+    // WHERE "isActive") which is NOT a valid ON CONFLICT target — Postgres throws
+    // "no unique or exclusion constraint matching". Resolve idempotently by SELECT
+    // then reactivate-or-insert instead of upserting.
+    const benchRows = await sql`
+      SELECT id, code FROM machines WHERE code LIKE ${BENCH_MACHINE_CODE_PREFIX + "%"}`;
+    const benchByCode = new Map(benchRows.map((r) => [r.code, r.id]));
     for (let i = 0; i < missing; i++) {
-      const code = `${BENCH_MACHINE_CODE_PREFIX}${String(picked.length + 1).padStart(4, "0")}`;
-      // Idempotent: lần chạy sau tái dùng máy bench cũ thay vì đẻ thêm.
-      const [row] = await sql`
-        INSERT INTO machines ("stationId", code, name, "machineType", "registrationStatus", "lifecycleStatus", "isActive", description)
-        VALUES (${stationId}, ${code}, ${`Bench machine ${code}`}, 'AOI', 'approved', 'active', true,
-                ${"Synthetic machine created by scripts/bench/bench-inspection-ingest.mjs (doc 51 P1). Safe to delete."})
-        ON CONFLICT (code) DO UPDATE SET "isActive" = true
-        RETURNING id, code`;
-      picked.push({ id: row.id, code: row.code, provisioned: true });
+      const code = `${BENCH_MACHINE_CODE_PREFIX}${String(i + 1).padStart(4, "0")}`;
+      let id = benchByCode.get(code);
+      if (id) {
+        // Reuse a bench machine from an earlier run (reactivate if it was retired).
+        await sql`UPDATE machines SET "isActive" = true WHERE id = ${id}`;
+      } else {
+        const [row] = await sql`
+          INSERT INTO machines ("stationId", code, name, "machineType", "registrationStatus", "lifecycleStatus", "isActive", description)
+          VALUES (${stationId}, ${code}, ${`Bench machine ${code}`}, 'AOI', 'approved', 'active', true,
+                  ${"Synthetic machine created by scripts/bench/bench-inspection-ingest.mjs (doc 51 P1). Safe to delete."})
+          RETURNING id`;
+        id = row.id;
+      }
+      picked.push({ id, code, provisioned: true });
       provisioned++;
     }
   }

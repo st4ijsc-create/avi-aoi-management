@@ -2,7 +2,27 @@
 
 > **Thuộc:** doc 51 §8 P1 · **QĐ#7**: benchmark thật *100 máy × 1 inspection/giây + ảnh* là **deliverable bắt buộc** trước khi cam kết SLA.
 > **Bối cảnh:** doc 48 ghi *"scale benchmark chỉ dry-run"*. Doc này đóng đúng lỗ đó cho **tầng inspection**.
-> **Ngày:** 2026-07-16 · **Trạng thái:** harness XONG + tự smoke-test LIVE. **Chưa chạy 100 máy** (xem §7 — có vật cản môi trường).
+> **Ngày:** 2026-07-16 · **Trạng thái:** harness XONG + **ĐÃ CHẠY 100 máy LIVE 2026-07-17** (xem §7.3).
+
+---
+
+## 0. KẾT QUẢ CHẠY THẬT — 2026-07-17 (server tsx-watch code doc51 P0-P2b, DB dev, role aoi)
+
+> ⚠ **Đọc trước:** server + DB + harness **chạy CHUNG 1 máy dev Windows** → tranh CPU. `offeredPct < 99%` ở mọi run ⇒ **throughput/latency là ARTIFACT máy dev, KHÔNG phải SLA server thật** (đúng như §6.1 cảnh báo). Số tuyệt đối chỉ dùng để so tương đối + xác nhận hình dạng nút thắt.
+
+| Run | Cấu hình | offered | đạt/s | p95 | **Loss** | **Dup rows** | 429 | Kết luận |
+|---|---|---|---|---|---|---|---|---|
+| Deliverable | 100 máy×1/s, 200KB ảnh, 20 điểm | 33.7% | 31/s | 7.2s | **0** | **0** | 0 | ✅ chính-trực; throughput dev-bound |
+| No-image | 100 máy×1/s, 0 ảnh, 20 điểm | 40% | 36/s | 11.7s | **0** | **0** | 0 | server-bound ~36/s (CASE #9), KHÔNG phải image-gen |
+| **NAT** (auth=body) | 100 máy×2/s, key trong BODY, chung IP | 29% | 53/s | — | **0** | **0** | **0** | ✅ **fix R6 VALIDATE** — 0×429, không sụp bucket NAT |
+| **Idempotency** (dup-pct=30) | 50 máy×2/s, 30% replay | — | — | — | **0** | **0** | — | ✅ **649 duplicate bắt bởi P0**, 0 dòng trùng DB |
+
+**3 kết luận cứng (đã đo, không suy đoán):**
+1. ✅ **CHÍNH TRỰC DỮ LIỆU GIỮ VỮNG DƯỚI TẢI** — mọi run: `unaccountedRows=0`, `duplicateRowsInDb=0`, `unexplainedExcess=0`. P0 idempotency (mig 0272) + QĐ#3 vững. Idempotency run: **649 duplicate bị short-circuit đúng, 0 dòng trùng**.
+2. ✅ **FIX R6 (rate-limit NAT) HOẠT ĐỘNG** — 100 máy gửi key-trong-body chung 1 IP → **0 http_429** (trước fix = bão 429 vì chung 1 bucket IP). Key theo credential đã tách bucket per-máy.
+3. ⚠ **THROUGHPUT SLA CHƯA LẬP ĐƯỢC trên máy dev** — server bão hoà ~36/s (20 điểm) / ~53/s (10 điểm), latency leo (pool-25 cạn, đồng bộ ghi DB — đúng CASE #9). `offeredPct<99%` vì harness+server+DB tranh tài nguyên 1 máy. **Cần: phần cứng prod + máy phát-tải RIÊNG + fix CASE #9 (async queue/batch-heartbeat/nâng pool) để có số SLA thật.**
+
+> **Việc còn lại cho SLA thật:** chạy trên phần cứng production, harness ở máy tách biệt (§6.1), rồi leo thang tới điểm gãy (§6). Ngưỡng §4 vẫn chờ chủ hệ ratify sau khi có baseline prod.
 
 ---
 
