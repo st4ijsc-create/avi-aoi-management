@@ -7,7 +7,13 @@
 2. **Fiducial registration** (căn toạ độ server-side bằng affine)
 3. **Image single-tx thật** (gộp header + measurement vào 1 physical transaction)
 
-**Trạng thái:** 🟡 **CHỜ REVIEW & DUYỆT** — đây là **lập kế hoạch, CHƯA sửa code**. Sau khi bạn duyệt (đặc biệt các **quyết định §6**), tôi mới gọi agent chuyên môn thực thi.
+**Trạng thái:** ✅ **USER ĐÃ DUYỆT 14/14 quyết định (2026-07-17)** — đang thực thi **tuần tự: (1) Image single-tx → (2) Fiducial → (3) Product-variant**.
+
+**§6 — Chốt quyết định (user duyệt):**
+- **Chung:** lộ trình cờ 2-bước (default-OFF → ON ở doc sau) ✔ · làm tuần tự ✔.
+- **Single-tx:** ① **PA-A** reserve-id ✔ · ② `persistInspectionAtomic` **song song** `createProductInspection` cũ ✔ · ③ ảnh orphan **dựa reaper P3-b2 có sẵn** (KHÔNG reaper riêng) · ④ chấp nhận sequence gap ✔.
+- **Fiducial:** ⑤ **Phase A** write-path làm Phase 1 ✔ · ⑥ ⚠️ **ÉP SIMILARITY kể cả ≥3** (bỏ shear/affine — khác đề xuất `auto`) · ⑦ reject+fallback+tag ✔ · ⑧ ngưỡng **5.0px** ✔ · ⑨ similarity ok → thay sạch nhánh resolution-scale ✔.
+- **Variant:** ⑩ **fan-out bump** ✔ · ⑪ override = exclude+patch, điểm THÊM = hàng variantId ✔ · ⑫ absent variantCode → **gán base + tag ingestMode** ✔ · ⑬ **deprecate** nhãn cũ (không drop) ✔ · ⑭ variantCode vào MQTT ACL + deltaSync tombstone **Có** (PV2, tách commit).
 
 ---
 
@@ -137,7 +143,7 @@
 - **[Thứ tự]** Đồng ý làm **TUẦN TỰ** single-tx → fiducial → variant (không song song), để variantId-stamp + fiducial-transform ride trên `persistInspectionAtomic`?
 
 ### 6.1 — Image single-tx
-1. Chốt **PA-A** (reserve-id, giữ format key — ĐỀ XUẤT) vs B (uuid) vs C (status flag)?
+1. Chốt **PA-A** (reserve-id, giữ format key — ĐỀ XUẤT) vs B (uuid) vs C (status flag)? -> 
 2. Giữ `createProductInspection` cũ + thêm `persistInspectionAtomic` **SONG SONG** (đề xuất) hay mở rộng thẳng chữ ký (churn ~20 caller)?
 3. Ảnh orphan do crash: reaper sweep chuyên biệt hay dựa retention/orphan-scan hiện có (đã có từ P3-b2)?
 4. Chấp nhận **sequence gap** (burn reservedId khi duplicate-trong-tx — id không liên tục, vô hại)?
