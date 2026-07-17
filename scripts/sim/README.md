@@ -96,6 +96,32 @@ node scripts/sim/sensor-generator.mjs --url mqtt://127.0.0.1:1883 \
 4. Phá hoại: `kill OPCUA-L1` (link-loss), `fault SENSOR-L2 drift` (PdM), `kill AGV-01`
    (LWT), rồi `start`/`restart` để xem hệ phục hồi.
 
+## Process-feed emitter — máy bắt vít (REST, doc 56 Đ1)
+
+`screwdriver-emitter.mjs` **KHÁC bản chất 6 simulator trên**: không bind cổng cho
+driver nối vào — nó là **HTTP client CHỦ ĐỘNG** mô phỏng controller máy bắt vít
+(SCREWDRIVE) đẩy kết quả từng chu trình siết qua đường ingest THẬT:
+
+```
+POST {BASE}/api/v1/ingest/process-result   (envelope "ST4I Standard Process Feed v1")
+```
+
+Dữ liệu đi qua `requireScope(ingest:write)` → `machineApi.submitProcessResult` →
+`recordProcessResult` (idempotency ledger + WAL) — **KHÔNG ghi thẳng DB**.
+
+```bash
+# cần: PROCESS_RESULT_INGEST_ENABLED=true + máy SCRW-SIM-01 đã enroll có khoá mk_
+node scripts/sim/screwdriver-emitter.mjs --machine SCRW-SIM-01 --apiKey mk_xxx \
+     --intervalMs 3000 --faultRate 0.05
+SIM_MACHINE_KEY=mk_xxx node scripts/sim/screwdriver-emitter.mjs --count 20
+node scripts/sim/screwdriver-emitter.mjs --apiKey mk_xxx --count 3 --idempotencyRetry
+node scripts/sim/screwdriver-emitter.mjs --help          # in tham số, không cần mạng
+```
+
+- Auth: khoá `mk_` gửi ở header `Authorization: Bearer <mk_…>` (server chỉ nhận
+  `Bearer` / `X-API-Key`, không nhận scheme "ApiKey"); `machineCode` trong body cho
+  khớp envelope. `--idempotencyRetry` gửi trùng `idempotencyKey` để chứng minh dedup.
+
 ## Ghi chú kỹ thuật
 
 - Không thêm dependency mới — chỉ dùng `node-opcua`, `modbus-serial`, `mqtt`, `aedes`

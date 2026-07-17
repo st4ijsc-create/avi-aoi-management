@@ -47,6 +47,7 @@ import {
   type CommandDescriptor,
 } from "../../services/equipment/capabilityModel";
 import { equipmentRegistry, type EquipmentCommand } from "../../services/equipment/equipmentAdapter";
+import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../../services/telemetryBus";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,38 @@ function buildCommand(
     }
   }
   return cmd;
+}
+
+// ── telemetry normalization (mirrors POST /api/ot/ingest in _core/index.ts) ───
+// The versioned alias POST /api/v1/ingest/telemetry funnels into the SAME unified
+// bus (ingestTelemetry); it only differs in surface (the {ok,data,error} envelope +
+// OpenAPI visibility, AIR-8). Keep these normalizers byte-aligned with the OT route.
+const OT_PROTOCOLS = new Set<string>([
+  "mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other",
+]);
+const OT_QUALITY = new Set<string>(["good", "bad", "uncertain"]);
+const normProtocol = (p: unknown): TelemetryProtocol =>
+  typeof p === "string" && OT_PROTOCOLS.has(p) ? (p as TelemetryProtocol) : "other";
+const normQuality = (q: unknown): TelemetryQuality =>
+  typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
+
+/** Map one raw JSON sample → CanonicalSample (deviceId preserved for bus-side resolve). */
+function toCanonicalSample(s: unknown): CanonicalSample {
+  const o = (s ?? {}) as Record<string, unknown>;
+  return {
+    ts: o.ts ? new Date(o.ts as string) : undefined,
+    machineId: typeof o.machineId === "number" ? o.machineId : null,
+    deviceId: typeof o.deviceId === "string" ? o.deviceId : null,
+    protocol: normProtocol(o.protocol),
+    metric: String(o.metric ?? ""),
+    value:
+      typeof o.value === "number" || typeof o.value === "string" || typeof o.value === "boolean"
+        ? (o.value as number | string | boolean)
+        : null,
+    unit: typeof o.unit === "string" ? o.unit : null,
+    quality: normQuality(o.quality),
+    meta: o.meta && typeof o.meta === "object" ? (o.meta as Record<string, unknown>) : null,
+  };
 }
 
 // ── router ──────────────────────────────────────────────────────────────────
@@ -330,6 +363,80 @@ export function createV1Router(): Router {
         // tRPC validation / auth errors → 400 (structured), not a crash.
         throw new ApiHttpError(400, "ingest_failed", message);
       }
+    }),
+  );
+
+  // POST /ingest/process-result — ST4I Standard Process Feed v1 (doc 56 nhóm C).
+  // Nhân pattern /ingest/inspection: reuse the tRPC machineApi.submitProcessResult
+  // caller (same validation/side-effects). A generic per-step process RESULT
+  // (telemetry-of-record), NOT a control command — no device actuation here.
+  r.post(
+    "/ingest/process-result",
+    requireScope(API_SCOPES.INGEST_WRITE),
+    wrap(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { appRouter } = await import("../../routers");
+      const { createContext } = await import("../../_core/context");
+      const ctx = await createContext({ req: req as never, res: res as never });
+      const caller = appRouter.createCaller(ctx);
+
+      // A machine-principal carries its own apiKey identity (its `name` is the machine
+      // code); when the body supplies neither machineCode nor apiKey, adopt the
+      // principal's machine code so submitProcessResult can resolve the machine.
+      const input: Record<string, unknown> = { ...body };
+      if (!input.machineCode && !input.apiKey && req.apiPrincipal?.kind === "machine" && req.apiPrincipal.name) {
+        input.machineCode = req.apiPrincipal.name;
+      }
+      // Locally-typed view so this file has NO compile-time dependency on agent B's
+      // in-flight `submitProcessResult` procedure (resolved dynamically at runtime).
+      const machineApi = caller.machineApi as unknown as {
+        submitProcessResult(payload: Record<string, unknown>): Promise<unknown>;
+      };
+      try {
+        const result = await machineApi.submitProcessResult(input);
+        void emit("process.committed", {
+          serialNumber: body.serialNumber,
+          stepType: body.stepType,
+          result: body.result,
+          processResultId:
+            (result as { processResultId?: number; id?: number })?.processResultId ??
+            (result as { id?: number })?.id,
+        });
+        sendOk(res, result, 201);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // tRPC validation / auth errors → 400 (structured), not a crash.
+        throw new ApiHttpError(400, "ingest_failed", message);
+      }
+    }),
+  );
+
+  // POST /ingest/telemetry — versioned alias of the LIVE POST /api/ot/ingest (doc 56
+  // AIR-8). Same unified bus (ingestTelemetry) + same per-machine credential model,
+  // but under /api/v1 with the {ok,data,error} envelope so the TELEMETRY path is
+  // finally visible in the published OpenAPI. Body: { samples: CanonicalSample[] }
+  // (or a bare array). Auth is the shared ingest:write scope (requireScope above).
+  r.post(
+    "/ingest/telemetry",
+    requireScope(API_SCOPES.INGEST_WRITE),
+    wrap(async (req, res) => {
+      const body = (req.body ?? {}) as { samples?: unknown } | unknown[];
+      const rawSamples = Array.isArray(body) ? body : (body as { samples?: unknown }).samples;
+      if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
+        throw new ApiHttpError(400, "bad_request", "Body must be { samples: [ ... ] } (or a bare array) with at least one sample.");
+      }
+      const samples = rawSamples.map(toCanonicalSample);
+      const { ingestTelemetry } = await import("../../services/telemetryBus");
+      const accepted = await ingestTelemetry(samples);
+      sendOk(
+        res,
+        {
+          accepted,
+          received: samples.length,
+          machine: req.apiPrincipal?.kind === "machine" ? req.apiPrincipal.name : undefined,
+        },
+        202,
+      );
     }),
   );
 

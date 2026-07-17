@@ -818,7 +818,7 @@ const toolsRouter = router({
 });
 
 // ─── Units of Measure (+conversions) ────────────────────────────────────────
-const uomDimension = z.enum(["length", "mass", "volume", "time", "temperature", "count", "percent", "other"]);
+const uomDimension = z.enum(["length", "mass", "volume", "time", "temperature", "count", "percent", "other", "torque", "pressure", "flow", "current", "frequency"]);
 const uomRouter = router({
   list: protectedProcedure
     .use(requirePermission(MODULE, "canView"))

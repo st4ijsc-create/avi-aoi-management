@@ -48,14 +48,81 @@ export const machineDataContractV1 = z.object({
   message: "Either apiKey or machineCode must be provided",
 });
 
+// ── v1.1: khớp CHÍNH XÁC submitInspection thật (doc 56 API-2 — sửa drift) ────
+// v1.0 ở trên được viết tay và LỆCH ~10 field so với `submitInspectionCoreObject`
+// (server/routers/machineApiRouters.ts): thiếu variantCode, idempotencyKey,
+// pointsConfigVersion, panelId/boardIndex, unit/unitScaleToCanonical + toàn bộ
+// nhóm value* của measurement, và serialNumber không bị chặn max(100). v1.1 phản
+// ánh ĐÚNG hợp đồng máy đang gửi (BỎ các field server-stamp serverReceivedAt/
+// timeSource — chúng KHÔNG thuộc hợp đồng máy). Giữ 1.0 cho back-compat.
+const measurementV11 = z.object({
+  pointId: z.string().optional(),
+  pointCode: z.string().optional(),
+  measuredValue: z.union([z.number(), z.string()]).optional(),
+  // Đơn vị máy đo + hệ số quy đổi tuỳ chọn (doc 51 P2 / CASE #11).
+  unit: z.string().trim().max(20).optional(),
+  unitScaleToCanonical: z.union([z.number(), z.string()]).optional(),
+  result: z.enum(["OK", "NG", "NTF"]),
+  remark: z.string().optional(),
+  imageBase64: z.string().optional(),
+  // Nhóm giá trị đo mở rộng (SPI/AOI 3D…).
+  valueZ: z.union([z.number(), z.string()]).optional(),
+  valueHeight: z.union([z.number(), z.string()]).optional(),
+  valueArea: z.union([z.number(), z.string()]).optional(),
+  valueVolume: z.union([z.number(), z.string()]).optional(),
+  valueVoidPct: z.union([z.number(), z.string()]).optional(),
+  valueCoplanarity: z.union([z.number(), z.string()]).optional(),
+  valueWarpage: z.union([z.number(), z.string()]).optional(),
+  valueOffsetX: z.union([z.number(), z.string()]).optional(),
+  valueOffsetY: z.union([z.number(), z.string()]).optional(),
+  valueTilt: z.union([z.number(), z.string()]).optional(),
+  valueThickness: z.union([z.number(), z.string()]).optional(),
+  defectCatalogCode: z.string().max(50).optional(),
+  defectSeverity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
+});
+
+export const machineDataContractV11 = z.object({
+  schemaVersion: z.literal("1.1").default("1.1"),
+  // Định danh máy (một trong hai)
+  machineCode: z.string().optional(),
+  apiKey: z.string().optional(),
+  // Sản phẩm
+  serialNumber: z.string().trim().min(1).max(100),
+  productModel: z.string().optional(),
+  variantCode: z.string().trim().min(1).max(50).optional(),
+  batchNumber: z.string().optional(),
+  // Kết quả
+  cycleTime: z.number().optional(),
+  overallResult: z.enum(["OK", "NG", "NTF"]),
+  inspectionTime: z.string().optional(),
+  idempotencyKey: z.string().trim().min(8).max(200).optional(),
+  pointsConfigVersion: z.number().int().nonnegative().optional(),
+  // Phân cấp doanh nghiệp
+  companyCode: z.string().optional(),
+  factoryCode: z.string().optional(),
+  workshopCode: z.string().optional(),
+  lineCode: z.string().optional(),
+  stageCode: z.string().optional(),
+  // Bối cảnh sản xuất
+  productionOrderCode: z.string().optional(),
+  operatorId: z.string().optional(),
+  // Panel multi-up (W8-B)
+  panelId: z.string().max(100).optional(),
+  boardIndex: z.number().int().min(1).optional(),
+  measurements: z.array(measurementV11),
+}).refine((d) => Boolean(d.apiKey || d.machineCode), {
+  message: "Either apiKey or machineCode must be provided",
+});
+
 // ── Registry phiên bản ──────────────────────────────────────────────────────
 export const MACHINE_CONTRACT_VERSIONS = {
   "1.0": machineDataContractV1,
+  "1.1": machineDataContractV11,
 } as const;
 
 export type MachineContractVersion = keyof typeof MACHINE_CONTRACT_VERSIONS;
 
-export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "1.0";
+export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "1.1";
 
 export function listMachineContractVersions(): MachineContractVersion[] {
   return Object.keys(MACHINE_CONTRACT_VERSIONS) as MachineContractVersion[];
@@ -89,6 +156,115 @@ export function validateMachinePayload(version: string, payload: unknown): Valid
 /** Sinh JSON-Schema cho đối tác tích hợp ngoài (zod v4). */
 export function machineContractJsonSchema(version: string): unknown | null {
   const schema = getMachineContract(version);
+  if (!schema) return null;
+  return z.toJSONSchema(schema, { target: "draft-7" });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ST4I Standard Process Feed v1 — hợp đồng RESULT/TELEMETRY chuẩn hoá (doc 56/57).
+//
+// Envelope máy↔server cho MỌI loại máy (không riêng AVI/AOI): kết quả của MỘT bước
+// quy trình/trạm (test, ép, hàn, dán…) — telemetry-of-record, KHÔNG phải lệnh điều
+// khiển. Đây là bản CHÍNH THỨC: field names khớp REST /api/v1/ingest/process-result
+// và procedure machineApi.submitProcessResult. Đăng ký ở registry RIÊNG (không trộn
+// vào MACHINE_CONTRACT_VERSIONS của inspection vì cả hai đều đánh version "1.0").
+// ════════════════════════════════════════════════════════════════════════════
+
+/** true khi `s` là ISO-8601 parse được VÀ mang offset UTC tường minh (…Z hoặc ±HH:MM). */
+export function isIsoWithExplicitOffset(s: unknown): boolean {
+  if (typeof s !== "string" || s.trim() === "") return false;
+  const t = s.trim();
+  if (Number.isNaN(new Date(t).getTime())) return false;
+  // …Z | …±HH:MM | …±HHMM (chỉ ở PHẦN GIỜ, sau chữ 'T')
+  return /T[^Z+-]*(?:Z|[+-]\d{2}:?\d{2})$/.test(t);
+}
+
+const processMetricV1 = z.object({
+  name: z.string().min(1),
+  value: z.union([z.number(), z.string(), z.boolean()]),
+  unit: z.string().optional(),
+  lsl: z.number().optional(),
+  usl: z.number().optional(),
+  nominal: z.number().optional(),
+});
+
+const processWaveformV1 = z.object({
+  name: z.string().min(1),
+  unit: z.string().optional(),
+  rateHz: z.number().positive().optional(),
+  // Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị).
+  samples: z.array(z.tuple([z.number(), z.number()])),
+});
+
+export const machineProcessResultContractV1 = z.object({
+  schemaVersion: z.literal("1.0").default("1.0"),
+  // Định danh máy — transport/API-key cấp; body optional (mirrors inspection).
+  machineCode: z.string().optional(),
+  apiKey: z.string().optional(),
+  // Sản phẩm + bước quy trình
+  serialNumber: z.string().trim().min(1).max(128),
+  stepType: z.string().trim().min(1).max(64),
+  result: z.enum(["pass", "fail", "warn", "skip"]),
+  // Dấu thời gian — BẮT BUỘC có offset UTC tường minh (khác inspection, offset ở đây
+  // là cứng theo Feed v1: một kết quả process không có offset là không truy vết được).
+  ts: z.string().refine(isIsoWithExplicitOffset, {
+    message:
+      "ts must be an ISO-8601 timestamp WITH an explicit UTC offset (e.g. 2026-07-17T08:00:00+07:00 or ...Z)",
+  }),
+  // Công thức/recipe
+  recipe: z
+    .object({
+      code: z.string().min(1),
+      version: z.string().optional(),
+      checksum: z.string().optional(),
+    })
+    .optional(),
+  // Số đo + dạng sóng
+  metrics: z.array(processMetricV1).optional(),
+  waveforms: z.array(processWaveformV1).optional(),
+  // Idempotency + bối cảnh sản xuất
+  idempotencyKey: z.string().trim().min(8).max(200).optional(),
+  stationId: z.number().int().positive().optional(),
+  lineCode: z.string().max(50).optional(),
+  productionOrderCode: z.string().max(80).optional(),
+  lotCode: z.string().max(80).optional(),
+});
+
+// ── Registry RIÊNG cho process-result ────────────────────────────────────────
+export const MACHINE_PROCESS_CONTRACT_VERSIONS = {
+  "1.0": machineProcessResultContractV1,
+} as const;
+
+export type ProcessContractVersion = keyof typeof MACHINE_PROCESS_CONTRACT_VERSIONS;
+
+export const LATEST_PROCESS_CONTRACT_VERSION: ProcessContractVersion = "1.0";
+
+export function listProcessContractVersions(): ProcessContractVersion[] {
+  return Object.keys(MACHINE_PROCESS_CONTRACT_VERSIONS) as ProcessContractVersion[];
+}
+
+export function getProcessContract(version: string): z.ZodTypeAny | null {
+  return (MACHINE_PROCESS_CONTRACT_VERSIONS as Record<string, z.ZodTypeAny>)[version] ?? null;
+}
+
+/** Kiểm tra payload process-result theo phiên bản. Không ném lỗi — trả kết quả có cấu trúc. */
+export function validateProcessPayload(version: string, payload: unknown): ValidateResult {
+  const schema = getProcessContract(version);
+  if (!schema) {
+    return { ok: false, version, errors: [{ path: "", message: `Unknown process contract version: ${version}` }] };
+  }
+  const r = schema.safeParse(payload);
+  if (r.success) return { ok: true, version };
+  return {
+    ok: false,
+    version,
+    errors: r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+  };
+}
+
+/** Sinh JSON-Schema process-result cho đối tác/firmware (zod v4). */
+export function machineProcessContractJsonSchema(version: string): unknown | null {
+  const schema = getProcessContract(version);
   if (!schema) return null;
   return z.toJSONSchema(schema, { target: "draft-7" });
 }

@@ -314,7 +314,8 @@ export const certificationLevelEnum = pgEnum("certificationlevelenum", ["trainee
 
 // === Doc 07 §③ — MASTER DATA EXTRAS (UoM / Plant Calendar / Warehouse-Inventory) ===
 // Physical dimension a unit-of-measure belongs to (for safe conversions).
-export const uomDimensionEnum = pgEnum("uomdimensionenum", ["length", "mass", "volume", "time", "temperature", "count", "percent", "other"]);
+// doc 56 Đ1 (mig 0290a) — +torque/pressure/flow/current/frequency cho máy automation (torque siết vít, áp lực keo, dòng/tần hàn)
+export const uomDimensionEnum = pgEnum("uomdimensionenum", ["length", "mass", "volume", "time", "temperature", "count", "percent", "other", "torque", "pressure", "flow", "current", "frequency"]);
 // Day classification in a plant/shift calendar (drives takt / OEE-availability / APS).
 export const calendarDayTypeEnum = pgEnum("calendardaytypeenum", ["working", "holiday", "planned_downtime"]);
 // Warehouse kind (raw / work-in-progress / finished-goods / spare / other).

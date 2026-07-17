@@ -11,6 +11,9 @@ import {
   productInspections,
   measurementResults as measurementResultsTable,
   measurementPointVersions,
+  // Doc 56 Đ1 (nhóm B) — generic process-result ingest (stepType vocab + idempotency ledger).
+  processStepTypes,
+  processIdempotencyKeys,
 } from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
@@ -35,6 +38,21 @@ import {
   setProcessFn as walSetProcessFn,
   setDedupFn as walSetDedupFn,
 } from "../services/inspection/inspectionStoreForward";
+// Doc 56 Đ1 (nhóm B) — PROCESS RESULT ingest durability (disk WAL, parallel to
+// the inspection store-forward above). Flag-gated OFF → every entry point no-op.
+import {
+  processStoreForwardEnabled,
+  bufferProcessSubmission,
+  backfillProcessResults,
+  bufferedProcessCount,
+  computeProcessSubmissionKey,
+  markProcessApplied,
+  setProcessFn as processWalSetProcessFn,
+  setDedupFn as processWalSetDedupFn,
+} from "../services/process/processStoreForward";
+// Doc 56 Đ1 (nhóm B) — generic process-result recorder (genealogy hash-chain +
+// idempotency ledger live in the service; the router maps the envelope to it).
+import { recordProcessResult } from "../services/processResultService";
 import { storagePut, storageGet, storageDelete, resolveImageToDataUrl } from "../storage";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/socket";
 import { statsCache, CACHE_KEYS } from "../_core/cache";
@@ -587,7 +605,13 @@ const submitInspectionCoreObject = z.object({
       // Machine identification
       machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
       apiKey: z.string().optional(), // API key (backward compatible)
-      
+
+      // Doc 56 Đ1 (API-2) — OPTIONAL, LOG-ONLY feed schema version. Accepted +
+      // logged when present; changes NO behaviour (zod would silently strip an
+      // unknown field today — declaring it makes the machine's declared feed
+      // version explicit + carried through the WAL). Shared with the process feed.
+      schemaVersion: z.string().max(20).optional(),
+
       // Product information
       // Doc 51 P0 — bounded to the varchar(100) column and never blank: a blank
       // serial is unroutable (no traceability) AND is exempted from the ingest
@@ -2471,6 +2495,316 @@ export interface BatchInspectionItemResult {
   error?: string;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 56 Đ1 (nhóm B) — GENERIC PROCESS RESULT INGEST ("ST4I Standard Process Feed
+// v1"). A machine-credential, durable, idempotent path for the OUTCOME of ANY
+// automation cycle (torque, dispense, weld, leak, functional, press-fit, label,
+// vision…). PARALLEL to submitInspection (the AOI/AVI feed) — NOT a replacement.
+// Closes CONN-1/API-1/AIR-2: automation machines finally have a first-class feed.
+//
+// Mirrors submitInspection's auth (machine-key/shared/machineCode) + ingest rate
+// limit + store-and-forward. Two differences from the inspection feed, both by
+// design: (1) the whole endpoint is master-flag gated (PROCESS_RESULT_INGEST_ENABLED
+// default OFF → PRECONDITION_FAILED) so it ships dark; (2) a naive `ts` (no UTC
+// offset) is ALWAYS rejected (API-10) — the process feed carries no legacy fleet
+// to protect, and a naive stamp files a cycle into the wrong shift.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Master switch (default OFF). OFF ⇒ submitProcessResult throws PRECONDITION_FAILED. */
+function processResultIngestEnabled(): boolean {
+  return envTrue(process.env.PROCESS_RESULT_INGEST_ENABLED);
+}
+
+/** stepType-vocabulary validation mode. off (default) | log | enforce (TAX-12/API-4). */
+type ProcessAttrValidateMode = "off" | "log" | "enforce";
+function processAttrValidateMode(): ProcessAttrValidateMode {
+  const v = String(process.env.PROCESS_ATTR_VALIDATE_MODE ?? "").trim().toLowerCase();
+  if (v === "log") return "log";
+  if (v === "enforce") return "enforce";
+  return "off";
+}
+
+/** Cap on a single submission's total waveform bytes. Default ~64KB. */
+function processWaveformMaxBytes(): number {
+  return envInt("PROCESS_WAVEFORM_MAX_BYTES", 64 * 1024);
+}
+
+// ── zod: the "ST4I Standard Process Feed v1" envelope ────────────────────────
+
+const PROCESS_RESULT_VALUES = ["pass", "fail", "warn", "skip"] as const;
+
+const processMetricSchema = z.object({
+  name: z.string().trim().min(1).max(64),
+  value: z.number(),
+  unit: z.string().trim().max(32).optional(),
+  lsl: z.number().optional(),
+  usl: z.number().optional(),
+  nominal: z.number().optional(),
+});
+
+const processWaveformSchema = z.object({
+  name: z.string().trim().min(1).max(64),
+  unit: z.string().trim().max(32).optional(),
+  rateHz: z.number().positive().optional(),
+  // [t, value] pairs. Count-capped here; TOTAL byte size is capped in the pipeline.
+  samples: z.array(z.tuple([z.number(), z.number()])).max(100_000),
+});
+
+const submitProcessResultCoreObject = z.object({
+  schemaVersion: z.string().max(20).optional(), // log-only provenance (shared w/ inspection feed)
+  machineCode: z.string().optional(),           // OR authenticate via Authorization header
+  apiKey: z.string().optional(),
+  serialNumber: z.string().trim().min(1).max(128),
+  stepType: z.string().trim().min(1).max(64),   // SHOULD be in process_step_types (validate mode)
+  result: z.enum(PROCESS_RESULT_VALUES),
+  // ISO-8601. OPTIONAL: absent ⇒ server stamps now() + timeSource='server'. When
+  // PRESENT it MUST be parseable AND carry an explicit UTC offset (refine below).
+  ts: z.string().optional(),
+  recipe: z
+    .object({
+      code: z.string().trim().min(1).max(128),
+      version: z.string().trim().max(64).optional(),
+      checksum: z.string().trim().max(128).optional(),
+    })
+    .optional(),
+  metrics: z.array(processMetricSchema).max(512).optional(),
+  waveforms: z.array(processWaveformSchema).max(64).optional(),
+  idempotencyKey: z.string().trim().min(8).max(200).optional(),
+  // genealogy (optional, additive)
+  stationId: z.number().int().positive().optional(),
+  lineCode: z.string().trim().max(50).optional(),
+  productionOrderCode: z.string().trim().max(80).optional(),
+  lotCode: z.string().trim().max(80).optional(),
+  // ── SERVER-STAMPED, carried through the WAL (a machine cannot forge them) ──
+  serverReceivedAt: z.string().optional(),
+  timeSource: z.enum(["device", "server"]).optional(),
+});
+
+/**
+ * API-10 — `ts` validation. Unlike the inspection feed's FLAGGED offset rule, the
+ * process feed ALWAYS requires an explicit UTC offset when a ts is sent (and it
+ * must parse). Reused by both the single and the batch item schema.
+ */
+function refineProcessTime(data: { ts?: string }, ctx: z.RefinementCtx): void {
+  if (data.ts === undefined) return;
+  if (Number.isNaN(new Date(data.ts).getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ts"],
+      message: `ts is not a parseable date-time: "${data.ts}"`,
+    });
+    return;
+  }
+  if (!hasExplicitUtcOffset(data.ts)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ts"],
+      message:
+        `ts must carry an explicit UTC offset (e.g. 2026-07-15T08:00:00+07:00 or ...Z) — ` +
+        `got "${data.ts}", which the server can only interpret in its OWN timezone.`,
+    });
+  }
+}
+
+const submitProcessResultInputSchema = submitProcessResultCoreObject.superRefine(refineProcessTime);
+export type SubmitProcessResultInput = z.infer<typeof submitProcessResultInputSchema>;
+
+const submitProcessResultBatchItemSchema =
+  submitProcessResultCoreObject.superRefine(refineProcessTime);
+
+const submitProcessResultBatchInputSchema = z.object({
+  machineCode: z.string().optional(),
+  apiKey: z.string().optional(),
+  results: z
+    .array(submitProcessResultBatchItemSchema)
+    .min(1, "batch must contain at least one process result")
+    .max(
+      MAX_BATCH_INSPECTIONS,
+      `batch exceeds MACHINE_INGEST_BATCH_MAX (${MAX_BATCH_INSPECTIONS} results)`,
+    ),
+});
+
+/** Per-item result of submitProcessResultBatch (mirror of BatchInspectionItemResult). */
+export interface BatchProcessResultItemResult {
+  index: number;
+  success: boolean;
+  processResultId: number | null;
+  duplicate?: boolean;
+  queued?: boolean;
+  submissionId?: string;
+  rateLimited?: boolean;
+  error?: string;
+}
+
+/**
+ * stepType vocabulary check (PROCESS_ATTR_VALIDATE_MODE). off ⇒ skip; log ⇒ warn +
+ * accept; enforce ⇒ reject unknown with BAD_REQUEST. A check that cannot RUN (DB
+ * down / mocked) fails OPEN in every mode — a transient lookup error must never
+ * turn a valid cycle into a false reject (the real DB-down case is handled by the
+ * subsequent insert → transient → WAL buffer). deviceType/attributesSchema
+ * validation is a documented future hook (log mode); only stepType this pass.
+ */
+async function validateProcessStepType(stepType: string, machineCode: string): Promise<void> {
+  const mode = processAttrValidateMode();
+  if (mode === "off") return;
+  let known: boolean;
+  try {
+    const dbi = await getDb();
+    if (!dbi) return; // cannot validate → fail-open
+    const rows = await dbi
+      .select({ code: processStepTypes.code })
+      .from(processStepTypes)
+      .where(drizzleEq(processStepTypes.code, stepType))
+      .limit(1);
+    known = rows.length > 0;
+  } catch (err) {
+    console.warn(
+      `[submitProcessResult] stepType validation query failed (fail-open) for "${stepType}":`,
+      (err as Error)?.message ?? err,
+    );
+    return;
+  }
+  if (known) return;
+  if (mode === "enforce") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Unknown stepType "${stepType}" (not in process_step_types; PROCESS_ATTR_VALIDATE_MODE=enforce)`,
+    });
+  }
+  console.warn(
+    `[submitProcessResult] UNKNOWN stepType "${stepType}" from machine=${machineCode} — ACCEPTED ` +
+      `(PROCESS_ATTR_VALIDATE_MODE=log). Add it to process_step_types or fix the machine.`,
+  );
+}
+
+/**
+ * The core process-result pipeline, shared by the single + batch procedures AND
+ * the store-forward WAL replay (exported for processStoreForward.initProcessStoreForward).
+ * Auth (or pre-auth) → ingest rate limit → waveform cap → stepType validate →
+ * heartbeat → map the envelope to recordProcessResult (which owns the idempotency
+ * ledger + genealogy hash-chain). A batch caller passes preAuth (one identity for
+ * the whole batch) + skipHeartbeat (one heartbeat for the batch).
+ */
+export async function processProcessResultSubmission(
+  input: SubmitProcessResultInput,
+  opts?: {
+    headerKey?: string | null;
+    rateLimit?: boolean;
+    preAuth?: MachineAuthResult;
+    skipHeartbeat?: boolean;
+  },
+): Promise<{ success: true; processResultId: number | null; duplicate?: boolean }> {
+  const auth =
+    opts?.preAuth ??
+    (await authenticateMachine({
+      apiKey: input.apiKey,
+      machineCode: input.machineCode,
+      headerKey: opts?.headerKey,
+      scope: "ingest:write",
+      endpoint: "submitProcessResult",
+    }));
+  const machine = auth.machine;
+  // Rate limit LIVE requests only (a WAL replay must never trip it; the batch path
+  // charges the limit itself once per item before dispatching).
+  if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
+
+  // Waveform TOTAL byte cap — permanent (BAD_REQUEST), never buffered.
+  if (input.waveforms && input.waveforms.length > 0) {
+    const bytes = Buffer.byteLength(JSON.stringify(input.waveforms), "utf8");
+    if (bytes > processWaveformMaxBytes()) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `waveforms exceed PROCESS_WAVEFORM_MAX_BYTES (${processWaveformMaxBytes()} bytes; got ${bytes})`,
+      });
+    }
+  }
+
+  await validateProcessStepType(input.stepType, machine.code);
+
+  if (!opts?.skipHeartbeat) await db.updateMachineHeartbeat(machine.id);
+
+  // Provenance: measuredAt from the device ts when present, else the service
+  // stamps now(); timeSource honours an already-stamped value (WAL replay) else
+  // derives 'device' when a ts was sent, 'server' otherwise. serverReceivedAt is
+  // the ORIGINAL receive time carried through the WAL (else now()).
+  const measuredAt = input.ts ? new Date(input.ts) : undefined;
+  const serverReceivedAt = input.serverReceivedAt ? new Date(input.serverReceivedAt) : new Date();
+  const timeSource: "device" | "server" = input.timeSource ?? (input.ts ? "device" : "server");
+  const recipeRef = input.recipe
+    ? input.recipe.version
+      ? `${input.recipe.code}@${input.recipe.version}`
+      : input.recipe.code
+    : undefined;
+
+  const out = await recordProcessResult(
+    {
+      serialNumber: input.serialNumber,
+      machineId: machine.id,
+      stepType: input.stepType,
+      result: input.result,
+      stationId: input.stationId,
+      lineCode: input.lineCode,
+      productionOrderCode: input.productionOrderCode,
+      lotCode: input.lotCode,
+      metricSpecs: input.metrics,
+      recipeRef,
+      measuredAt,
+      idempotencyKey: input.idempotencyKey,
+      serverReceivedAt,
+      timeSource,
+      waveforms: input.waveforms,
+    },
+    null,
+  );
+
+  return {
+    success: true as const,
+    processResultId: out.processResultId,
+    ...(out.duplicate ? { duplicate: true as const } : {}),
+  };
+}
+
+/**
+ * Backfill dedup check: does this buffered submission ALREADY have a persisted
+ * process_results row? Keyed by the explicit idempotencyKey via the ledger (the
+ * ONLY reliable key — a machine that omits it cannot be deduped, so we return
+ * false and let the replay insert, protected by nothing but its own absence of a
+ * key). Throws when the DB is unreachable (transient → backfill leaves queued).
+ */
+export async function processResultAlreadyPersisted(input: SubmitProcessResultInput): Promise<boolean> {
+  const idkey = input.idempotencyKey?.trim();
+  if (!idkey) return false; // cannot key without an explicit idempotencyKey
+  let auth: MachineAuthResult;
+  try {
+    auth = await authenticateMachine({ apiKey: input.apiKey, machineCode: input.machineCode });
+  } catch (err) {
+    if (err instanceof TRPCError) return false; // invalid creds → replay dead-letters with the real error
+    throw err; // DbUnavailableError etc. → transient
+  }
+  const dbi = await getDb();
+  if (!dbi) throw new Error("Database not available");
+  const rows = await dbi
+    .select({ resultId: processIdempotencyKeys.resultId })
+    .from(processIdempotencyKeys)
+    .where(
+      drizzleAnd(
+        drizzleEq(processIdempotencyKeys.machineId, auth.machine.id),
+        drizzleEq(processIdempotencyKeys.idempotencyKey, idkey),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0 && rows[0].resultId != null;
+}
+
+/**
+ * Wire the process WAL's replay + dedup functions to THIS pipeline (idempotent
+ * cheap assignment; survives a store-forward _reset in tests/maintenance).
+ */
+function ensureProcessWalWired(): void {
+  processWalSetProcessFn((payload) => processProcessResultSubmission(payload as SubmitProcessResultInput));
+  processWalSetDedupFn((payload) => processResultAlreadyPersisted(payload as SubmitProcessResultInput));
+}
+
 export const machineApiRouter = router({
   // Submit inspection data from machine — DURABLE (doc 27 W2-C, gap C3/R11):
   // a transient failure (DB down) buffers the full payload to the disk WAL and
@@ -2481,6 +2815,12 @@ export const machineApiRouter = router({
     .input(submitInspectionInputSchema)
     .mutation(async ({ input, ctx }) => {
       const headerKey = machineHeaderKey(ctx);
+      // Doc 56 Đ1 (API-2) — log-only: surface the machine's declared feed schema
+      // version if it sent one. Debug level so the hottest ingest path is not
+      // flooded; behaviour is otherwise unchanged.
+      if (input.schemaVersion) {
+        console.debug(`[submitInspection] schemaVersion="${input.schemaVersion}" (serial=${input.serialNumber})`);
+      }
       // Stamp receive-time when the machine omitted inspectionTime so a WAL
       // replay reproduces the same timestamp (stable idempotency key) and the
       // persisted row keeps the ORIGINAL receive time, not the replay time.
@@ -2725,6 +3065,224 @@ export const machineApiRouter = router({
         failed,
         results,
         ...keySignal,
+      };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Doc 56 Đ1 (nhóm B) — submitProcessResult (generic PROCESS FEED, single).
+  // DURABLE (transient DB failure → disk WAL → ACK queued) + IDEMPOTENT (explicit
+  // idempotencyKey → process_idempotency_keys ledger). Master-gated OFF by default.
+  // ════════════════════════════════════════════════════════════════════════════
+  submitProcessResult: publicProcedure
+    .input(submitProcessResultInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      if (!processResultIngestEnabled()) {
+        // OFF ⇒ the endpoint ships dark. PRECONDITION_FAILED is permanent, so even
+        // with store-forward on it is surfaced (never buffered).
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        });
+      }
+      if (input.schemaVersion) {
+        console.debug(`[submitProcessResult] schemaVersion="${input.schemaVersion}" (serial=${input.serialNumber})`);
+      }
+      const headerKey = machineHeaderKey(ctx);
+      // Stamp provenance from the ORIGINAL request so a WAL replay reproduces the
+      // same receive-time + timeSource (a machine cannot forge either — assigned
+      // AFTER the spread).
+      const receivedAt = new Date();
+      const payload: SubmitProcessResultInput = {
+        ...input,
+        serverReceivedAt: receivedAt.toISOString(),
+        timeSource: input.ts ? "device" : "server",
+      };
+      // The WAL entry must be self-authenticating on replay: fold a header
+      // credential into the payload's apiKey field (never persisted to the DB).
+      const walPayload: SubmitProcessResultInput = {
+        ...payload,
+        apiKey: payload.apiKey ?? headerKey ?? undefined,
+      };
+      try {
+        const result = await processProcessResultSubmission(payload, { headerKey, rateLimit: true });
+        if (processStoreForwardEnabled()) {
+          // Ledger the live success so a queued duplicate of the SAME submission
+          // (machine retry captured while the DB flapped) dedupes on backfill.
+          markProcessApplied(computeProcessSubmissionKey(walPayload));
+          if (bufferedProcessCount() > 0) {
+            ensureProcessWalWired();
+            void backfillProcessResults().catch(() => undefined);
+          }
+        }
+        return result;
+      } catch (err) {
+        if (!processStoreForwardEnabled() || isPermanentSubmitError(err)) throw err;
+        ensureProcessWalWired();
+        const buffered = await bufferProcessSubmission(walPayload);
+        if (!buffered.buffered && !buffered.duplicate) throw err; // bounds evicted it → never lie
+        console.error(
+          `[submitProcessResult] transient failure (${(err as Error)?.message || err}) — ` +
+            `${buffered.duplicate ? "submission already queued in" : "payload queued to"} process WAL ` +
+            `(serial=${payload.serialNumber}, step=${payload.stepType}, submissionId=${buffered.key.slice(0, 12)}…)`,
+        );
+        return {
+          success: true as const,
+          queued: true as const,
+          submissionId: buffered.key,
+          processResultId: null,
+        };
+      }
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Doc 56 Đ1 (nhóm B) — submitProcessResultBatch (mirror of submitInspectionBatch):
+  // ONE auth + ONE heartbeat for the batch, items pipelined with bounded
+  // concurrency, per-item ISOLATION (one result's failure never fails the batch),
+  // rate limit charged PER item, each item keeping its own idempotency + WAL path.
+  // ════════════════════════════════════════════════════════════════════════════
+  submitProcessResultBatch: publicProcedure
+    .input(submitProcessResultBatchInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      if (!processResultIngestEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        });
+      }
+      const headerKey = machineHeaderKey(ctx);
+      // AUTH ONCE for the whole batch. A bad credential rejects the batch as a
+      // whole (nothing to isolate — every item shares the identity).
+      const auth = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey,
+        scope: "ingest:write",
+        endpoint: "submitProcessResultBatch",
+      });
+      const machine = auth.machine;
+
+      // ONE heartbeat for the batch (per-item heartbeat suppressed below).
+      try {
+        await db.updateMachineHeartbeat(machine.id);
+      } catch (hbErr) {
+        console.warn(
+          `[submitProcessResultBatch] heartbeat write failed (non-fatal) for machine=${machine.code}:`,
+          (hbErr as Error)?.message ?? hbErr,
+        );
+      }
+
+      const items = input.results;
+      const results: BatchProcessResultItemResult[] = new Array(items.length);
+      const storeForwardOn = processStoreForwardEnabled();
+      const batchReceivedAt = new Date();
+      const walDrainNeeded = { value: false };
+      let rateLimitTripped = false;
+
+      const runItem = async (i: number): Promise<void> => {
+        if (rateLimitTripped) {
+          results[i] = {
+            index: i,
+            success: false,
+            processResultId: null,
+            rateLimited: true,
+            error: `Ingest rate limit exceeded for machine ${machine.code}`,
+          };
+          return;
+        }
+        try {
+          enforceMachineIngestRateLimit(auth);
+        } catch (rlErr) {
+          if (rlErr instanceof TRPCError && rlErr.code === "TOO_MANY_REQUESTS") {
+            rateLimitTripped = true;
+            results[i] = {
+              index: i,
+              success: false,
+              processResultId: null,
+              rateLimited: true,
+              error: rlErr.message,
+            };
+            return;
+          }
+          throw rlErr;
+        }
+
+        // Stamp provenance from the ORIGINAL request; the batch credential wins
+        // (strip any per-item apiKey/machineCode identity).
+        const raw = items[i];
+        const stamped: SubmitProcessResultInput = {
+          ...raw,
+          apiKey: undefined,
+          machineCode: undefined,
+          serverReceivedAt: batchReceivedAt.toISOString(),
+          timeSource: raw.ts ? "device" : "server",
+        };
+        try {
+          const r = await processProcessResultSubmission(stamped, { preAuth: auth, skipHeartbeat: true });
+          results[i] = {
+            index: i,
+            success: true,
+            processResultId: r.processResultId,
+            ...(r.duplicate ? { duplicate: true } : {}),
+          };
+        } catch (err) {
+          // Per-item isolation. Transient + WAL on → buffer THIS result; else a
+          // permanent per-item error. Neither aborts the rest of the batch.
+          if (storeForwardOn && !isPermanentSubmitError(err)) {
+            ensureProcessWalWired();
+            const walPayload: SubmitProcessResultInput = {
+              ...stamped,
+              apiKey: input.apiKey ?? headerKey ?? undefined,
+              machineCode: input.machineCode ?? undefined,
+            };
+            const buffered = await bufferProcessSubmission(walPayload);
+            if (buffered.buffered || buffered.duplicate) {
+              walDrainNeeded.value = true;
+              results[i] = {
+                index: i,
+                success: true,
+                processResultId: null,
+                queued: true,
+                submissionId: buffered.key,
+              };
+              return;
+            }
+          }
+          results[i] = {
+            index: i,
+            success: false,
+            processResultId: null,
+            error: (err as Error)?.message ?? String(err),
+          };
+        }
+      };
+
+      const concurrency = Math.max(1, envInt("MACHINE_INGEST_BATCH_CONCURRENCY", 8));
+      let cursor = 0;
+      const worker = async () => {
+        for (let i = cursor++; i < items.length; i = cursor++) await runItem(i);
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+      );
+
+      if (storeForwardOn && walDrainNeeded.value && bufferedProcessCount() > 0) {
+        ensureProcessWalWired();
+        void backfillProcessResults().catch(() => undefined);
+      }
+
+      const succeeded = results.filter((r) => r.success && !r.queued && !r.duplicate).length;
+      const duplicates = results.filter((r) => r.duplicate).length;
+      const queued = results.filter((r) => r.queued).length;
+      const failed = results.filter((r) => !r.success).length;
+      return {
+        success: true as const,
+        machineId: machine.id,
+        submitted: items.length,
+        succeeded,
+        duplicates,
+        queued,
+        failed,
+        results,
       };
     }),
 

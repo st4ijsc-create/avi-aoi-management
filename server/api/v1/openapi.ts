@@ -6,8 +6,11 @@
  *
  * doc 37 §7 (dev-portal / C3): the request-body component schemas that HAVE an authoritative
  * Zod contract are now GENERATED from that Zod source (zod v4 `z.toJSONSchema`), not re-typed
- * by hand — `InspectionIngest` ← machineDataContractV1, `WorkOrderIntake`/`BomIntake` ←
- * erpIntake's Zod schemas. Generation is fail-safe: if a schema can't be converted the builder
+ * by hand — `InspectionIngest` ← machineDataContract latest (v1.1, doc 56 API-2 drift fix),
+ * `ProcessResultIngest` ← machineProcessResultContractV1 (ST4I Standard Process Feed v1, doc 56
+ * nhóm C), `WorkOrderIntake`/`BomIntake` ← erpIntake's Zod schemas. The TELEMETRY path
+ * (`/api/v1/ingest/telemetry`, alias of the live POST /api/ot/ingest — AIR-8) is documented too.
+ * Generation is fail-safe: if a schema can't be converted the builder
  * falls back to a hand-written stub, so the doc always renders. Paths/tags for the ERP intake
  * (`/orders`, `/bom`), OAuth token (`/oauth/token`), twin-simulate (`/orchestration/simulate`)
  * and edge-sync (`/edge/sync`) routes are covered so the published contract matches router.ts.
@@ -16,7 +19,12 @@ import { z } from "zod";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "./scopes";
 import { V1_WEBHOOK_EVENTS } from "./webhookBridge";
 import { orderIntakeSchema, bomIntakeSchema } from "./erpIntake";
-import { machineContractJsonSchema, LATEST_MACHINE_CONTRACT_VERSION } from "../../contracts/machineDataContract";
+import {
+  machineContractJsonSchema,
+  LATEST_MACHINE_CONTRACT_VERSION,
+  machineProcessContractJsonSchema,
+  LATEST_PROCESS_CONTRACT_VERSION,
+} from "../../contracts/machineDataContract";
 
 /**
  * Convert a Zod schema to a draft-7 JSON-Schema fragment (dropping the `$schema` header so it
@@ -122,6 +130,43 @@ const bomIntakeFallback = {
     lines: { type: "array", items: { type: "object", additionalProperties: true } },
   },
 } as const;
+// ST4I Standard Process Feed v1 fallback (doc 56 nhóm C) — used only if Zod → JSON-Schema fails.
+const processResultIngestFallback = {
+  type: "object",
+  required: ["schemaVersion", "serialNumber", "stepType", "result", "ts"],
+  properties: {
+    schemaVersion: { type: "string", enum: ["1.0"] },
+    machineCode: { type: "string" },
+    serialNumber: { type: "string" },
+    stepType: { type: "string" },
+    result: { type: "string", enum: ["pass", "fail", "warn", "skip"] },
+    ts: { type: "string", format: "date-time", description: "ISO-8601 with an explicit UTC offset (…Z or ±HH:MM)." },
+    recipe: { type: "object", properties: { code: { type: "string" }, version: { type: "string" }, checksum: { type: "string" } } },
+    metrics: { type: "array", items: { type: "object", additionalProperties: true } },
+    waveforms: { type: "array", items: { type: "object", additionalProperties: true } },
+    idempotencyKey: { type: "string" },
+    stationId: { type: "integer" },
+    lineCode: { type: "string" },
+    productionOrderCode: { type: "string" },
+    lotCode: { type: "string" },
+  },
+} as const;
+// CanonicalSample — the telemetry ingest item (mirrors services/telemetryBus.CanonicalSample).
+const telemetrySampleSchema = {
+  type: "object",
+  required: ["metric"],
+  properties: {
+    ts: { type: "string", format: "date-time", description: "Event/source time; defaults to now() when omitted." },
+    machineId: { type: "integer", nullable: true, description: "Soft machine ref if already known." },
+    deviceId: { type: "string", nullable: true, description: "External device id; resolves machineId when machineId absent." },
+    protocol: { type: "string", enum: ["mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other"] },
+    metric: { type: "string", description: "Normalized tag/metric name (e.g. temperature)." },
+    value: { description: "Raw value (number | string | boolean | null).", nullable: true },
+    unit: { type: "string", nullable: true },
+    quality: { type: "string", enum: ["good", "bad", "uncertain"] },
+    meta: { type: "object", additionalProperties: true, nullable: true },
+  },
+} as const;
 
 /** Build the OpenAPI 3.0 document for the Unified Machine API. */
 export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
@@ -132,6 +177,9 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
     stripSchemaHeader(machineContractJsonSchema(LATEST_MACHINE_CONTRACT_VERSION)) ?? inspectionIngestFallback;
   const workOrderIntakeSchema = zodToJson(orderIntakeSchema) ?? workOrderIntakeFallback;
   const bomIntakeSchemaJson = zodToJson(bomIntakeSchema) ?? bomIntakeFallback;
+  // ST4I Standard Process Feed v1 — GENERATED from machineProcessResultContractV1 (fail-safe fallback).
+  const processResultIngestSchema =
+    stripSchemaHeader(machineProcessContractJsonSchema(LATEST_PROCESS_CONTRACT_VERSION)) ?? processResultIngestFallback;
 
   return {
     openapi: "3.0.3",
@@ -196,8 +244,19 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             idempotencyKey: { type: "string", description: "Client-supplied de-dup key (generated if omitted)." },
           },
         },
-        // GENERATED from machineDataContractV1 (server/contracts/machineDataContract.ts) via zod v4.
+        // GENERATED from machineDataContract latest (v1.1 — doc 56 API-2 drift fix) via zod v4.
         InspectionIngest: inspectionIngestSchema,
+        // GENERATED from machineProcessResultContractV1 (ST4I Standard Process Feed v1) via zod v4.
+        ProcessResultIngest: processResultIngestSchema,
+        // Telemetry ingest item (mirrors services/telemetryBus.CanonicalSample).
+        TelemetrySample: telemetrySampleSchema,
+        TelemetryIngest: {
+          type: "object",
+          required: ["samples"],
+          properties: {
+            samples: { type: "array", minItems: 1, items: { $ref: "#/components/schemas/TelemetrySample" } },
+          },
+        },
         // GENERATED from erpIntake.ts orderIntakeSchema / bomIntakeSchema.
         WorkOrderIntake: workOrderIntakeSchema,
         BomIntake: bomIntakeSchemaJson,
@@ -291,7 +350,35 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Ingest an inspection result",
           description: "Requires scope `ingest:write`. Reuses the existing submitInspection path.",
           requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/InspectionIngest" } } } },
-          responses: { "200": { description: "Committed", content: jsonOk() }, "400": { description: "Bad request", content: jsonErr() }, ...errResponses() },
+          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Bad request", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/ingest/process-result": {
+        post: {
+          tags: ["Ingest"],
+          summary: "Ingest a process/station step RESULT (ST4I Standard Process Feed v1)",
+          description:
+            "Requires scope `ingest:write`. Reuses the machineApi.submitProcessResult path — the generic " +
+            "per-step outcome of ANY machine type (telemetry-of-record, NOT a control command; nothing is actuated). " +
+            "`ts` must carry an explicit UTC offset. A machine-credential caller may omit machineCode (adopted from the key).",
+          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ProcessResultIngest" } } } },
+          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Validation / auth error", content: jsonErr() }, ...errResponses() },
+        },
+      },
+      "/api/v1/ingest/telemetry": {
+        post: {
+          tags: ["Ingest"],
+          summary: "Ingest OT telemetry samples (versioned alias of POST /api/ot/ingest)",
+          description:
+            "Requires scope `ingest:write`. Versioned alias of the live high-throughput POST /api/ot/ingest — the SAME " +
+            "unified telemetry bus and per-machine credential model, exposed under /api/v1 with the {ok,data,error} " +
+            "envelope so the TELEMETRY path is visible in this contract. Body: `{ samples: CanonicalSample[] }` (or a bare array).",
+          requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TelemetryIngest" } } } },
+          responses: {
+            "202": { description: "Accepted {accepted, received, machine?}", content: jsonOk() },
+            "400": { description: "Empty/invalid samples", content: jsonErr() },
+            ...errResponses(),
+          },
         },
       },
       // ── R0 (doc 16 Khối 0) — inbound ERP/MES intake. Gated by ERP_INBOUND_ENABLED. ──

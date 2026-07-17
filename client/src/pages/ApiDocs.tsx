@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,8 @@ import { MachineSection } from "@/components/apiDocs/MachineSection";
 import { AoiPackageSection } from "@/components/apiDocs/AoiPackageSection";
 import { MachineSyncSection } from "@/components/apiDocs/MachineSyncSection";
 import { HierarchyTreeSection } from "@/components/apiDocs/HierarchyTreeSection";
+import { AutomationProcessFeedSection } from "@/components/apiDocs/AutomationProcessFeedSection";
+import { IoTTelemetrySection } from "@/components/apiDocs/IoTTelemetrySection";
 
 
 type MenuItem = {
@@ -79,6 +82,7 @@ export function ApiDocsContent() {
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
   const endpointBase = `${baseUrl || ""}/api/trpc`;
   const [activeMenu, setActiveMenu] = useState("thirdParty");
+  const { t } = useTranslation();
 
   const menuGroups: MenuGroup[] = [
     {
@@ -89,6 +93,8 @@ export function ApiDocsContent() {
         { id: "aoiPackage", label: "AOI Image Upload", icon: Camera },
         { id: "machineSync", label: "Machine Sync", icon: HardDrive },
         { id: "hierarchyTree", label: "Hierarchy Tree & MQTT", icon: Network },
+        { id: "automationProcessFeed", label: t("apiFeeds.menuProcessFeed"), icon: Wrench },
+        { id: "iotTelemetry", label: t("apiFeeds.menuTelemetry"), icon: RadioTower },
       ],
     },
     {
@@ -216,6 +222,12 @@ export function ApiDocsContent() {
 
           {/* Machine APIs */}
           {activeMenu === "machine" && <MachineSection endpointBase={endpointBase} baseUrl={baseUrl} />}
+
+          {/* Automation Process Feed (doc 56/57) */}
+          {activeMenu === "automationProcessFeed" && <AutomationProcessFeedSection endpointBase={endpointBase} baseUrl={baseUrl} />}
+
+          {/* IoT Telemetry (doc 56/57) */}
+          {activeMenu === "iotTelemetry" && <IoTTelemetrySection endpointBase={endpointBase} baseUrl={baseUrl} />}
 
           {/* Auth */}
           {activeMenu === "auth" && (

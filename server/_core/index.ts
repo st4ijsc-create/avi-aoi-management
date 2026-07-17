@@ -5221,6 +5221,17 @@ async function startServer() {
     console.error("[InspectionSF] init failed:", (err as any)?.message || err);
   }
 
+  // doc 56 Đ1 (Trục 2) — PROCESS FEED store-and-forward: mirror của inspection SF cho
+  // process_results (máy bắt vít/điểm keo/hàn). Restore WAL đĩa + khởi động backfill
+  // worker replay qua submitProcessResult (idempotency). No-op trừ khi
+  // PROCESS_STORE_FORWARD_ENABLED / OT_STORE_FORWARD_ENABLED bật.
+  try {
+    const { initProcessStoreForward } = await import("../services/process/processStoreForward");
+    await initProcessStoreForward();
+  } catch (err) {
+    console.error("[ProcessSF] init failed:", (err as any)?.message || err);
+  }
+
   // Doc 27 §11 decisions #2/#5 — image lifecycle: MOVED to the W4-D background
   // scheduler set (backgroundJobs.ts). NOTE: in a split topology the worker
   // must mount the SAME uploads volume as the API.
