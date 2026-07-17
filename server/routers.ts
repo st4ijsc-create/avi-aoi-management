@@ -29,6 +29,7 @@ import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolat
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
 import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+import { productVariantRouter } from "./routers/productVariantRouter"; // doc 55 Item 3 / PV3: product-variant master-data admin
 import { inspectionRouter, measurementResultRouter } from "./routers/inspectionRouters";
 import { layoutRouter } from "./routers/layoutRouters";
 import { dashboardRouter, seedDataRouter } from "./routers/dashboardStatsRouters";
@@ -320,6 +321,7 @@ export const appRouter = router({
   // Products
   productOnboarding: productOnboardingRouter,
   productModel: productModelRouter,
+  variant: productVariantRouter, // doc 55 Item 3 / PV3: product-variant master-data admin
   measurementPoint: measurementPointRouter,
   productMachineMapping: productMachineMappingRouter,
   productCategory: productCategoryRouter,
