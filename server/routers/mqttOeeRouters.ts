@@ -15,6 +15,34 @@ import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import * as db from "../db";
 
+/**
+ * doc 54 P2.5 — resolve a downtime/reliability analytics scope (machineId | lineId |
+ * factoryId) to a concrete machineId[] . Returns undefined = "all machines" (no scope
+ * filter). An empty array = "scope resolved to nothing" (caller returns empty result).
+ */
+async function resolveAnalyticsMachineIds(scope: {
+  machineId?: number; lineId?: number; factoryId?: number;
+}): Promise<number[] | undefined> {
+  if (scope.machineId) return [scope.machineId];
+  if (!scope.lineId && !scope.factoryId) return undefined;
+  const { getDb } = await import("../db/connection");
+  const database = await getDb();
+  if (!database) return [];
+  const { sql } = await import("drizzle-orm");
+  const { executeRows } = await import("../utils/kpi");
+  const rows = executeRows(await database.execute(sql`
+    SELECT m."id" AS id
+    FROM machines m
+    JOIN stations s ON s."id" = m."stationId"
+    JOIN production_lines l ON l."id" = s."lineId"
+    JOIN workshops w ON w."id" = l."workshopId"
+    WHERE m."isActive" = true
+      ${scope.lineId ? sql`AND l."id" = ${scope.lineId}` : sql``}
+      ${scope.factoryId ? sql`AND w."factoryId" = ${scope.factoryId}` : sql``}
+  `)) as Array<{ id: number }>;
+  return rows.map((r) => Number(r.id));
+}
+
 // ============================================================
 // MQTT Client Router (lines 3859-4379)
 // ============================================================
@@ -498,6 +526,9 @@ export const mqttClientRouter = router({
         performance: live.performance ?? 0,
         quality: live.quality ?? 0,
         oee: live.oee ?? 0,
+        // doc 54 P2.2 §3 — live availability is UPTIME% (online/(online+offline)),
+        // NOT the SEMI-E10 six-state availability. Surfaced so the UI can label it.
+        availabilityBasis: live.availabilityBasis,
         details: {
           plannedTime: onlineMin + offlineMin,
           runTime: onlineMin,
@@ -530,6 +561,8 @@ export const mqttClientRouter = router({
           performance: m.performance as number,
           quality: m.quality as number,
           oee: m.oee as number,
+          // doc 54 P2.2 §3 — UPTIME%-based availability (not SEMI-E10). Labelled for the UI.
+          availabilityBasis: m.availabilityBasis,
           // Legacy OEEMetrics.details shape consumed by OEEDashboard CSV/Excel export.
           details: {
             plannedTime: onlineMin + offlineMin,
@@ -607,6 +640,56 @@ export const mqttClientRouter = router({
     .query(async ({ input }) => {
       const { getDowntimeHistory } = await import('../_core/socket');
       return getDowntimeHistory(input);
+    }),
+
+  // ============ DOWNTIME PARETO (doc 54 P2.5) ============
+  // Pareto of downtime by category (default) or reason from downtime_events over a
+  // window. Minutes are clipped to the window; overflow groups fold into "Other".
+  // Honest: hasData=false + empty rows when there is no downtime in the window.
+  downtimePareto: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      from: z.coerce.date(),
+      to: z.coerce.date(),
+      groupBy: z.enum(['category', 'reason']).default('category'),
+      limit: z.number().int().positive().max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { getDowntimePareto } = await import('../services/oeeService');
+      const machineIds = await resolveAnalyticsMachineIds(input);
+      return getDowntimePareto({
+        machineIds,
+        from: input.from,
+        to: input.to,
+        groupBy: input.groupBy,
+        limit: input.limit,
+      });
+    }),
+
+  // ============ RELIABILITY: MTBF / MTTR (doc 54 P2.5) ============
+  // MTBF (mean operating time between failures) + MTTR (mean repair time) from
+  // downtime_events. "Failures" default to unplanned/breakdown categories. Both are
+  // null (honest N/A) for a machine with no failures in the window.
+  reliabilityMetrics: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      factoryId: z.number().optional(),
+      from: z.coerce.date(),
+      to: z.coerce.date(),
+      failureCategories: z.array(z.enum(['planned', 'unplanned', 'breakdown', 'changeover', 'maintenance', 'other'])).optional(),
+    }))
+    .query(async ({ input }) => {
+      const { getReliabilityMetrics } = await import('../services/oeeService');
+      const machineIds = await resolveAnalyticsMachineIds(input);
+      return getReliabilityMetrics({
+        machineIds,
+        from: input.from,
+        to: input.to,
+        failureCategories: input.failureCategories,
+      });
     }),
 
   // ============ PREDICTIVE MAINTENANCE ============

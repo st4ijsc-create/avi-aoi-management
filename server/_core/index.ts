@@ -5115,6 +5115,20 @@ async function startServer() {
     // boot inside startBackgroundSchedulers() above (backgroundJobs.ts, with its stop
     // counterpart). It self-gates MACHINE_PRESENCE_ENABLED (default OFF) + is idempotent,
     // so it is NOT re-called here — backgroundJobs.ts owns its start/stop lifecycle.
+
+    // doc 54 §11 P1.1 ⭐ — Full-Sim OT telemetry emitter. Periodically pushes synthetic
+    // heartbeat/state/cycle/temp telemetry for each ACTIVE machine THROUGH the real
+    // unified telemetry bus (→ ot_telemetry), so the (already-wired) machine presence
+    // sweep flips those machines ONLINE without real hardware. Self-gates
+    // SIM_OT_TELEMETRY_ENABLED (default OFF) + is idempotent + never throws (DB-missing
+    // = no-op). ⚠ Full-Sim ONLY — do NOT enable where ot_telemetry comes from real
+    // adapters/machines (see .env).
+    try {
+      const { startSimOtTelemetry } = await import("../services/simOtTelemetryService");
+      startSimOtTelemetry();
+    } catch (err) {
+      console.error("[simOtTelemetry] start failed:", (err as any)?.message || err);
+    }
   }
 
   // Initialize MQTT broker (if enabled)
@@ -5585,6 +5599,11 @@ async function startServer() {
     // flag was off / it never started). Started in the ROLE!=api block above.
     import("../services/liveStatsRollupService")
       .then((m) => m.stopLiveStatsRollup())
+      .catch(() => {});
+    // doc 54 §11 P1.1 — stop Full-Sim OT telemetry emitter (idempotent no-op if the
+    // flag was off / it never started). Started in the ROLE!=api block above.
+    import("../services/simOtTelemetryService")
+      .then((m) => m.stopSimOtTelemetry())
       .catch(() => {});
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC

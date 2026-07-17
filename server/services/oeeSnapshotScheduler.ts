@@ -28,8 +28,10 @@
  *    computeOEE (no downtime tracked ⇒ the window is treated as fully productive
  *    ⇒ availability 100% — the honest default).
  *  • idealCycleTimeSec (Performance denominator) is resolved via
- *    oeeService.resolveIdealCycleTimeSec (configured / last-known) and, when that
- *    is absent, FALLS BACK to the window's observed average cycle time. When
+ *    oeeService.resolveIdealCycleTimeSec — now CONFIGURED-first (doc 54 P2.2:
+ *    product_machine_mappings.idealCycleTimeSec, migration 0285) → target-implied →
+ *    last-known oee_metrics — and, when all are absent, FALLS BACK to the window's
+ *    observed average cycle time. When
  *    ideal ≈ observed average, Performance reflects productive-time utilisation
  *    rather than pure speed-loss — configure an ideal cycle time for true OEE.
  *    A machine with production but no resolvable ideal is SKIPPED (never a

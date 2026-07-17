@@ -276,11 +276,12 @@ export const orchestrationRouter = router({
       const refIds = new Set(validateWorkflow(def, null).referencedMachineIds);
       const byId = new Map<number, { id: number; machineType: string; capabilities?: unknown }>();
       if (refIds.size > 0) {
-        const rows = await d.select().from(machines);
+        // Doc 54 P3.4 (#3) — set-membership PHẢI dùng Drizzle inArray: nạp ĐÚNG các máy được tham
+        // chiếu thay vì quét TOÀN BỘ bảng machines rồi lọc trong JS (chậm + tốn RAM theo quy mô nhà
+        // máy, và sai về ngữ nghĩa "IN (...)"). inArray đã import sẵn ở đầu file.
+        const rows = await d.select().from(machines).where(inArray(machines.id, [...refIds]));
         for (const m of rows) {
-          if (refIds.has(m.id)) {
-            byId.set(m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities });
-          }
+          byId.set(m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities });
         }
       }
       // Inline machines override/augment DB rows (self-contained what-if simulations).

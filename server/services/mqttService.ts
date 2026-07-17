@@ -347,6 +347,26 @@ let mqttPortConflictDetected = false;
 let externalMqttClient: MqttClient | null = null;
 let staleClientTimer: NodeJS.Timeout | null = null;
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 P2.3 — CONNECTION-STATE tracking so alertEvaluationService can compute REAL
+// minutes for BROKER_DISCONNECT / CLIENT_OFFLINE rules (both previously hard-coded to 0).
+//   • externalBroker{Connected,DisconnectedSince}: external cloud broker link, driven by the
+//     mqtt.js client connect/close/offline/error/reconnect events below. `DisconnectedSince`
+//     is the epoch-ms the link went (or started) down; null while connected.
+//   • lastClientSeenAt: epoch-ms we last SAW any LOCAL device (aedes connect / ping / publish).
+//     Used to infer offline duration only when NO client is currently connected.
+// All best-effort in-memory markers — never persisted, reset on process restart.
+// ════════════════════════════════════════════════════════════════════════════
+let externalBrokerConnected = false;
+let externalBrokerDisconnectedSince: number | null = null;
+let lastClientSeenAt: number | null = null;
+
+/** Mark the external broker link as DOWN, stamping the disconnect start once (idempotent). */
+function markExternalBrokerDown(): void {
+  externalBrokerConnected = false;
+  if (externalBrokerDisconnectedSince == null) externalBrokerDisconnectedSince = Date.now();
+}
+
 // Configuration
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_WS_PORT = parseInt(process.env.MQTT_WS_PORT || '8883');
@@ -1100,20 +1120,35 @@ function initExternalMqttClient() {
 
   externalMqttClient = mqtt.connect(brokerUrl, options);
 
+  // doc 54 P2.3 — before the first successful connect the link is effectively DOWN; stamp the
+  // start so a BROKER_DISCONNECT rule has a baseline even if the broker is never reached.
+  markExternalBrokerDown();
+
   externalMqttClient.on('connect', () => {
     console.log(`[MQTT External] Connected to ${brokerUrl}`);
+    // doc 54 P2.3 — link UP: clear the disconnect marker so duration reads 0.
+    externalBrokerConnected = true;
+    externalBrokerDisconnectedSince = null;
   });
 
   externalMqttClient.on('error', (error) => {
     console.error('[MQTT External] Connection error:', error.message);
+    markExternalBrokerDown(); // doc 54 P2.3
   });
 
   externalMqttClient.on('close', () => {
     console.log('[MQTT External] Connection closed');
+    markExternalBrokerDown(); // doc 54 P2.3
+  });
+
+  externalMqttClient.on('offline', () => {
+    console.log('[MQTT External] Client offline');
+    markExternalBrokerDown(); // doc 54 P2.3
   });
 
   externalMqttClient.on('reconnect', () => {
     console.log('[MQTT External] Reconnecting...');
+    // still down until the next 'connect'; keep the existing disconnect start.
   });
 }
 
@@ -1380,7 +1415,8 @@ function setupEventHandlers() {
   // Client connected
   aedes.on('client', async (client) => {
     console.log(`[MQTT] Client connected: ${client.id}`);
-    
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — presence baseline for CLIENT_OFFLINE
+
     try {
       await db!.update(schema.mqttClients)
         .set({
@@ -1442,6 +1478,7 @@ function setupEventHandlers() {
 
   // Heartbeat/ping handler
   aedes.on('ping', async (packet, client) => {
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — refresh presence on every heartbeat
     // R-2a — throttle/coalesce the heartbeat write (no-op window when flag is 0).
     const throttle = heartbeatThrottleMs();
     if (throttle > 0 && client) {
@@ -1463,6 +1500,7 @@ function setupEventHandlers() {
   aedes.on('publish', async (packet, client) => {
     // Ignore system messages (starting with $) and messages without a client
     if (!client || packet.topic.startsWith('$')) return;
+    lastClientSeenAt = Date.now(); // doc 54 P2.3 — a publishing client is present
 
     // G1/F3b — Mirror UNS (publishNormalized, vô điều kiện) RỒI bridge AOI→Sparkplug
     // (handleAoiPublish, no-op khi cờ tắt). Tách thành processAedesPublish để test.
@@ -2349,6 +2387,70 @@ function stopStaleClientChecker() {
 export function getConnectedClientsCount(): number {
   if (!aedes) return 0;
   return aedes.connectedClients;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 54 P2.3 — connection-state getters + PURE duration math (exported for
+// alertEvaluationService + unit tests). The getters read the live in-memory markers;
+// the compute* helpers are pure (state + now → minutes) so they are directly testable.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface BrokerConnectionState {
+  /** Is the external cloud-broker feature enabled at all? */
+  enabled: boolean;
+  /** Currently connected to the external broker? */
+  connected: boolean;
+  /** epoch-ms the link went (or started) down; null while connected. */
+  disconnectedSince: number | null;
+}
+
+/** Live external-broker connection state (for BROKER_DISCONNECT evaluation). */
+export function getBrokerConnectionState(): BrokerConnectionState {
+  return {
+    enabled: EXTERNAL_MQTT_ENABLED,
+    connected: externalBrokerConnected,
+    disconnectedSince: externalBrokerDisconnectedSince,
+  };
+}
+
+export interface ClientPresenceState {
+  /** How many local devices are connected to the aedes broker right now. */
+  connectedClients: number;
+  /** epoch-ms we last saw any local device (connect/ping/publish); null if never. */
+  lastSeenAt: number | null;
+}
+
+/** Live local-client presence state (for CLIENT_OFFLINE evaluation). */
+export function getClientPresenceState(): ClientPresenceState {
+  return {
+    connectedClients: aedes ? aedes.connectedClients : 0,
+    lastSeenAt: lastClientSeenAt,
+  };
+}
+
+/** epoch-ms we last saw any local device, or null. Small getter for callers/tests. */
+export function getLastClientSeenAt(): number | null {
+  return lastClientSeenAt;
+}
+
+/**
+ * PURE — minutes the external broker has been disconnected. Returns 0 when the feature is
+ * disabled or the link is up (or has no recorded down-start). Never negative.
+ */
+export function computeBrokerDisconnectMinutes(state: BrokerConnectionState, nowMs: number): number {
+  if (!state.enabled) return 0;
+  if (state.connected || state.disconnectedSince == null) return 0;
+  return Math.max(0, (nowMs - state.disconnectedSince) / 60000);
+}
+
+/**
+ * PURE — minutes with NO local client online. Returns 0 when at least one client is connected
+ * or we have never seen a client (no baseline to measure from). Never negative.
+ */
+export function computeClientOfflineMinutes(state: ClientPresenceState, nowMs: number): number {
+  if (state.connectedClients > 0) return 0;
+  if (state.lastSeenAt == null) return 0;
+  return Math.max(0, (nowMs - state.lastSeenAt) / 60000);
 }
 
 /**

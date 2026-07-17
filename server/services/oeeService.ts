@@ -98,6 +98,28 @@ export interface StateDurations {
   operationsTime: number;  // PT + ET
 }
 
+/**
+ * doc 54 P2.2 (OEE-trust §3 — reconcile the two OEE notions) — which availability
+ * DEFINITION backs a given number. The codebase deliberately carries TWO:
+ *
+ *   "semi_e10" — SEMI E10 / ISO 22400 six-state availability
+ *                = operationsTime / equipmentUptime = (PT+ET)/(PT+SB+ET+UD),
+ *                derived from downtime_events classified into equipment states.
+ *                This is the TRUE OEE availability (computeOEE / semiE10Breakdown /
+ *                the oee_metrics snapshots). Feeds "true OEE = A×P×Q".
+ *
+ *   "uptime"   — simple uptime% = onlineTime / (onlineTime + offlineTime) from
+ *                machine_status_logs (getMachineUptimeStats). This is the LIVE
+ *                read-path availability (getMachineOEELive / getAllMachinesOEELive /
+ *                getLineOEE) — a coarse connectivity-based proxy, NOT the six-state
+ *                availability. It is labelled distinctly so the UI/API never conflates
+ *                "uptime %" with SEMI-E10 "Availability".
+ *
+ * The two are NOT silently merged: every OEE-bearing shape carries `availabilityBasis`
+ * so a consumer can tell exactly which definition produced `availability`/`oee`.
+ */
+export type AvailabilityBasis = "semi_e10" | "uptime";
+
 export interface OEEBreakdown {
   machineId: number;
   windowStart: Date;
@@ -111,6 +133,8 @@ export interface OEEBreakdown {
   goodCount: number;
   rejectCount: number;
   idealCycleTimeSec: number;
+  /** SEMI-E10 six-state availability backs this breakdown (see AvailabilityBasis). */
+  availabilityBasis: AvailabilityBasis;
 }
 
 function classify(category: string | null | undefined): "SD" | "UD" | "ET" | "NS" | "SB" {
@@ -232,6 +256,9 @@ export async function computeOEE(params: {
     goodCount,
     rejectCount,
     idealCycleTimeSec: params.idealCycleTimeSec,
+    // computeOEE is the SEMI-E10 six-state calculator (availability from equipment
+    // states), the canonical "true OEE". Labelled so it is never read as uptime%.
+    availabilityBasis: "semi_e10",
   };
 }
 
@@ -368,10 +395,13 @@ export interface LiveOEEMetrics {
   machineId: number;
   machineCode: string;
   timestamp: Date;
-  availability: number | null; // %  online/(online+offline)
+  availability: number | null; // %  online/(online+offline) — UPTIME% (see availabilityBasis)
   performance: number | null;  // %  ideal·count / runTime   (null if no ideal cycle)
   quality: number | null;      // %  (ok+ntf)/total
   oee: number | null;          // %  A×P×Q (null if any factor null)
+  // doc 54 P2.2 §3 — live availability is uptime% (online/(online+offline)), a coarse
+  // connectivity proxy, NOT the SEMI-E10 six-state availability. Always "uptime" here.
+  availabilityBasis: AvailabilityBasis;
   details: {
     windowHours: number;
     onlineSeconds: number;
@@ -425,6 +455,7 @@ export async function getMachineOEELive(params: {
     performance: null,
     quality: null,
     oee: null,
+    availabilityBasis: "uptime",
     details: {
       windowHours,
       onlineSeconds: 0,
@@ -449,7 +480,16 @@ export async function getMachineOEELive(params: {
   const availability = hasUptimeData ? onlineSeconds / totalStatusTime : null;
 
   // ── Production counts (Quality + Performance numerator) ───────────────────
-  const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  // doc 54 P2.2 §2 (window alignment) — the availability window above runs to NOW
+  // (getMachineUptimeStats integrates status logs over [now-windowHours, now]). The
+  // production-count window MUST match: previously this query bounded only the LOWER
+  // edge (date >= from) with no upper bound, so counts drifted vs the availability
+  // denominator. Bind BOTH edges to [from, to=now]. CAVEAT: daily_statistics is
+  // DAY-grained (one row/machine/day), so alignment is at day resolution here; for
+  // sub-day-exact OEE use the SEMI-E10 snapshot path (computeOEE over product_inspections
+  // + downtime_events on an identical [from,to]).
+  const to = new Date();
+  const from = new Date(to.getTime() - windowHours * 60 * 60 * 1000);
   const statsRows = await db.select({
     totalCount: dailyStatistics.totalCount,
     okCount: dailyStatistics.okCount,
@@ -461,6 +501,7 @@ export async function getMachineOEELive(params: {
     .where(and(
       eq(dailyStatistics.machineId, params.machineId),
       gte(dailyStatistics.date, from),
+      lte(dailyStatistics.date, to),
     ));
 
   let totalCount = 0, okCount = 0, ngCount = 0, ntfCount = 0;
@@ -492,6 +533,7 @@ export async function getMachineOEELive(params: {
     performance: performance !== null ? pct(performance) : null,
     quality: quality !== null ? pct(quality) : null,
     oee: oee !== null ? pct(oee) : null,
+    availabilityBasis: "uptime",
     details: {
       windowHours,
       onlineSeconds,
@@ -520,25 +562,90 @@ function idealFromTargetEnabled(): boolean {
 }
 
 /**
+ * doc 54 P2.2 (OEE-trust §1, migration 0285) — cached probe for the CONFIGURED
+ * `product_machine_mappings."idealCycleTimeSec"` column. 0285 is a plain ADD COLUMN
+ * but it is applied by the DB owner separately, so the column can be ABSENT at
+ * runtime. If we read it unconditionally the query would fail on a DB without the
+ * migration and take the whole OEE path down. So we probe once (information_schema),
+ * cache it, and only read the column when present — absent ⇒ we fall through to the
+ * legacy ideal sources (identical behaviour to before 0285). Returns false WITHOUT
+ * caching when the executor can't answer (mock db in unit tests) so a real probe
+ * still runs later in production.
+ */
+let pmmIdealCycleColumn: boolean | null = null;
+/** Test seam — reset the 0285 column probe between suites. */
+export function _resetPmmIdealCycleColumnProbe(): void {
+  pmmIdealCycleColumn = null;
+}
+export async function productMachineMappingHasIdealColumn(exec?: unknown): Promise<boolean> {
+  if (pmmIdealCycleColumn !== null) return pmmIdealCycleColumn;
+  const runner = exec ?? (await getDb());
+  const execFn = (runner as { execute?: (q: unknown) => Promise<unknown> } | null)?.execute;
+  if (!runner || typeof execFn !== "function") return false; // can't tell (mock) → treat absent, don't cache
+  try {
+    const res = await execFn.call(
+      runner,
+      sql`SELECT 1 FROM information_schema.columns WHERE table_name = 'product_machine_mappings' AND column_name = 'idealCycleTimeSec' LIMIT 1`,
+    );
+    const rows = Array.isArray(res) ? res : ((res as { rows?: unknown[] } | null)?.rows ?? []);
+    pmmIdealCycleColumn = rows.length > 0;
+    return pmmIdealCycleColumn;
+  } catch {
+    return false; // transient failure — don't cache, retry next time
+  }
+}
+
+/**
+ * The CONFIGURED ideal cycle time (seconds/unit) for a machine from
+ * product_machine_mappings (doc 54 P2.2). When a productModelId is given, the exact
+ * (product, machine) pair's ideal is used; otherwise the highest-PRIORITY active
+ * mapping that has a configured ideal wins (honest limitation: a machine running
+ * several products with different ideals resolves to its top-priority product here —
+ * pass productModelId when the product is known). Returns null when the column is
+ * absent (migration 0285 not applied) or nothing is configured.
+ */
+async function resolveConfiguredIdealCycleTimeSec(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  machineId: number,
+  productModelId?: number | null,
+): Promise<number | null> {
+  if (!(await productMachineMappingHasIdealColumn(db))) return null;
+  const rows = executeRows(await db.execute(sql`
+    SELECT "idealCycleTimeSec" AS ideal
+    FROM product_machine_mappings
+    WHERE "machineId" = ${machineId}
+      AND "isActive" = true
+      AND "idealCycleTimeSec" IS NOT NULL
+      AND "idealCycleTimeSec" > 0
+      ${productModelId ? sql`AND "productModelId" = ${productModelId}` : sql``}
+    ORDER BY "priority" DESC, "idealCycleTimeSec" ASC
+    LIMIT 1
+  `)) as Array<{ ideal: number | null }>;
+  const v = rows[0]?.ideal;
+  return v != null && Number(v) > 0 ? Number(v) : null;
+}
+
+/**
  * Resolve an ideal cycle time (seconds/unit) for a machine.
- * Priority:
+ * Priority (highest first):
+ *   0. CONFIGURED product_machine_mappings.idealCycleTimeSec (doc 54 P2.2, 0285) —
+ *      a truly configured standard, NOT a read-back. Guarded by a column probe so a
+ *      DB without 0285 simply falls through.
  *   1. (MON-F8, when OEE_IDEAL_FROM_TARGET armed AND an observed avg cycle is
  *      supplied) the active oee_target's implied ideal = avgCycle × targetPerformance.
- *      This is a PROACTIVE source — it needs no pre-existing oee_metrics row.
  *   2. Most-recent persisted oee_metrics.idealCycleTime for this machine.
- *   3. null (no synthetic default).
- *
- * NOTE: a dedicated `machines.idealCycleTimeSec` column would be the cleanest
- * proactive source, but that table/migration is outside this wave's owned files;
- * the active-target implied ideal delivers the same "configured, not read-back"
- * property without a schema change.
+ *   3. null (no synthetic default — Performance stays honest-NULL).
  */
 export async function resolveIdealCycleTimeSec(
   machineId: number,
-  opts?: { avgCycleTimeSec?: number | null; at?: Date },
+  opts?: { avgCycleTimeSec?: number | null; at?: Date; productModelId?: number | null },
 ): Promise<number | null> {
   const db = await getDb();
   if (!db) return null;
+
+  // 0) CONFIGURED ideal from product_machine_mappings — the proper configured standard.
+  const configured = await resolveConfiguredIdealCycleTimeSec(db, machineId, opts?.productModelId ?? null);
+  if (configured && configured > 0) return configured;
 
   // 1) Proactive: active OEE target's implied ideal (gated OFF by default).
   if (idealFromTargetEnabled() && opts?.avgCycleTimeSec && opts.avgCycleTimeSec > 0) {
@@ -569,7 +676,11 @@ export async function getAllMachinesOEELive(params?: {
   const db = await getDb();
   if (!db) return [];
   const windowHours = params?.windowHours ?? 24;
-  const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  // doc 54 P2.2 §2 — availability integrates status logs to NOW; bind the production
+  // window to the SAME [from, to=now] so the count numerator and the online-time
+  // denominator use one window (see getMachineOEELive note; day-grain caveat applies).
+  const to = new Date();
+  const from = new Date(to.getTime() - windowHours * 60 * 60 * 1000);
 
   // MON-F7 (doc 40) — SET-BASED fleet OEE. The old path fanned out one
   // getMachineOEELive per machine, each doing a full status-log scan + a
@@ -621,7 +732,7 @@ export async function getAllMachinesOEELive(params?: {
       COALESCE(SUM("ntfCount"), 0)::int    AS ntf,
       AVG(NULLIF("avgCycleTime", 0))::float AS avg_cycle
     FROM daily_statistics
-    WHERE "date" >= ${from.toISOString()}
+    WHERE "date" >= ${from.toISOString()} AND "date" <= ${to.toISOString()}
     GROUP BY "machineId"
   `)) as Array<{ machine_id: number; total: number; ok: number; ng: number; ntf: number; avg_cycle: number | null }>;
   const prodByMachine = new Map<number, { total: number; ok: number; ng: number; ntf: number; avgCycle: number | null }>();
@@ -647,6 +758,25 @@ export async function getAllMachinesOEELive(params?: {
   for (const r of idealRows) {
     const v = r.ideal != null ? Number(r.ideal) : 0;
     if (v > 0) idealByMachine.set(Number(r.machine_id), v);
+  }
+
+  // 4a) doc 54 P2.2 — CONFIGURED ideal per machine (highest-priority active mapping
+  //     with a non-null idealCycleTimeSec). Guarded by the 0285 column probe: absent ⇒
+  //     skipped entirely (no query, no behaviour change). When present it WINS over the
+  //     oee_metrics read-back and the target-implied ideal below.
+  let configuredIdealByMachine: Map<number, number> | null = null;
+  if (await productMachineMappingHasIdealColumn(db)) {
+    const cfgRows = executeRows(await db.execute(sql`
+      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, "idealCycleTimeSec" AS ideal
+      FROM product_machine_mappings
+      WHERE "isActive" = true AND "idealCycleTimeSec" IS NOT NULL AND "idealCycleTimeSec" > 0
+      ORDER BY "machineId", "priority" DESC, "idealCycleTimeSec" ASC
+    `)) as Array<{ machine_id: number; ideal: number | null }>;
+    configuredIdealByMachine = new Map<number, number>();
+    for (const r of cfgRows) {
+      const v = r.ideal != null ? Number(r.ideal) : 0;
+      if (v > 0) configuredIdealByMachine.set(Number(r.machine_id), v);
+    }
   }
 
   // 4b) MON-F8 — PROACTIVE ideal from active OEE targets (implied ideal =
@@ -686,10 +816,10 @@ export async function getAllMachinesOEELive(params?: {
     const goodCount = prod.ok + prod.ntf;
     const quality = hasProductionData ? goodCount / totalCount : null;
 
-    // Ideal: proactive target-implied first (if armed + observed avg present),
-    // else last-known oee_metrics.
-    let idealCycleTimeSec: number | null = null;
-    if (targetPerfByMachine && prod.avgCycle && prod.avgCycle > 0) {
+    // Ideal priority: CONFIGURED mapping (0285) → proactive target-implied (if armed
+    // + observed avg present) → last-known oee_metrics. Honest-NULL if none resolve.
+    let idealCycleTimeSec: number | null = configuredIdealByMachine?.get(m.id) ?? null;
+    if (idealCycleTimeSec == null && targetPerfByMachine && prod.avgCycle && prod.avgCycle > 0) {
       const perf = targetPerfByMachine.get(m.id);
       if (perf && perf > 0) idealCycleTimeSec = prod.avgCycle * (perf / 10000);
     }
@@ -711,6 +841,7 @@ export async function getAllMachinesOEELive(params?: {
       performance: performance !== null ? pct(performance) : null,
       quality: quality !== null ? pct(quality) : null,
       oee: oee !== null ? pct(oee) : null,
+      availabilityBasis: "uptime",
       details: {
         windowHours,
         onlineSeconds,
@@ -746,10 +877,12 @@ export async function getAllMachinesOEELive(params?: {
 export interface LineOEEMetrics {
   lineId: number;
   lineName: string;
-  availability: number | null; // %  online / (online + offline)
+  availability: number | null; // %  online / (online + offline) — UPTIME% (see availabilityBasis)
   performance: number | null;  // %  Σ(ideal·total) / Σonline over machines w/ ideal
   quality: number | null;      // %  (ok + ntf) / total
   oee: number | null;          // %  A × P × Q (null if any factor null)
+  // doc 54 P2.2 §3 — line availability is uptime% (online/(online+offline)), not SEMI-E10.
+  availabilityBasis: AvailabilityBasis;
   details: {
     from: Date;
     to: Date;
@@ -857,6 +990,21 @@ export async function getLineOEE(params?: {
     if (v > 0) idealByMachine.set(Number(r.machine_id), v);
   }
 
+  // 4a) doc 54 P2.2 — CONFIGURED ideal per machine wins over the oee_metrics read-back.
+  //     Guarded by the 0285 column probe (absent ⇒ skipped, no behaviour change).
+  if (await productMachineMappingHasIdealColumn(db)) {
+    const cfgRows = executeRows(await db.execute(sql`
+      SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, "idealCycleTimeSec" AS ideal
+      FROM product_machine_mappings
+      WHERE "isActive" = true AND "idealCycleTimeSec" IS NOT NULL AND "idealCycleTimeSec" > 0
+      ORDER BY "machineId", "priority" DESC, "idealCycleTimeSec" ASC
+    `)) as Array<{ machine_id: number; ideal: number | null }>;
+    for (const r of cfgRows) {
+      const v = r.ideal != null ? Number(r.ideal) : 0;
+      if (v > 0) idealByMachine.set(Number(r.machine_id), v); // configured overrides read-back
+    }
+  }
+
   // 5) Aggregate per line (pure JS; honest-null for absent inputs).
   type Acc = {
     machineCount: number; online: number; offline: number;
@@ -915,6 +1063,7 @@ export async function getLineOEE(params?: {
       performance: performance !== null ? pct(performance) : null,
       quality: quality !== null ? pct(quality) : null,
       oee: oee !== null ? pct(oee) : null,
+      availabilityBasis: "uptime",
       details: {
         from, to,
         machineCount: a.machineCount,
@@ -928,5 +1077,499 @@ export async function getLineOEE(params?: {
         hasIdeal: a.hasIdeal,
       },
     } satisfies LineOEEMetrics;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// doc 54 P2.5 — Production analytics (downtime Pareto, MTBF/MTTR, takt/utilization/
+// line-balance). All REAL computations from real sources, HONEST when data is sparse
+// (null/empty, never fabricated). Pure math is factored into exported helpers so the
+// formulas are unit-testable without a database.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Float minutes of overlap between [start, end] and the window [from, to]. */
+function overlapMinutes(start: Date, end: Date, from: Date, to: Date): number {
+  const s = Math.max(start.getTime(), from.getTime());
+  const e = Math.min(end.getTime(), to.getTime());
+  return Math.max(0, (e - s) / 60000);
+}
+
+// ─── Downtime Pareto ─────────────────────────────────────────────────────────
+
+export interface DowntimeParetoRow {
+  key: string;             // category or reason label
+  eventCount: number;
+  downtimeMinutes: number; // clipped to the window
+  pct: number;             // % of total downtime minutes
+  cumulativePct: number;   // running total, ascending order of the sorted rows
+}
+
+export interface DowntimeParetoResult {
+  from: Date;
+  to: Date;
+  groupBy: "category" | "reason";
+  totalEvents: number;
+  totalDowntimeMinutes: number;
+  rows: DowntimeParetoRow[]; // sorted by downtimeMinutes DESC; overflow folded into "Other"
+  hasData: boolean;
+}
+
+/**
+ * PURE — build a Pareto (sorted desc, cumulative %) from grouped downtime rows.
+ * Groups beyond `limit` are folded into a single "Other" bucket so the % + cumulative
+ * still sum to 100 over the full population (no silent truncation of the denominator).
+ */
+export function computeParetoRows(
+  groups: Array<{ key: string; eventCount: number; downtimeMinutes: number }>,
+  limit = 20,
+): { rows: DowntimeParetoRow[]; totalEvents: number; totalDowntimeMinutes: number } {
+  const totalEvents = groups.reduce((s, g) => s + g.eventCount, 0);
+  const totalMinutes = groups.reduce((s, g) => s + g.downtimeMinutes, 0);
+  const sorted = [...groups].sort((a, b) => b.downtimeMinutes - a.downtimeMinutes);
+
+  let kept = sorted;
+  if (sorted.length > limit) {
+    const head = sorted.slice(0, limit);
+    const tail = sorted.slice(limit);
+    const other = {
+      key: "Other",
+      eventCount: tail.reduce((s, g) => s + g.eventCount, 0),
+      downtimeMinutes: tail.reduce((s, g) => s + g.downtimeMinutes, 0),
+    };
+    kept = [...head, other];
+  }
+
+  let cum = 0;
+  const rows: DowntimeParetoRow[] = kept.map((g) => {
+    const pct = totalMinutes > 0 ? (g.downtimeMinutes / totalMinutes) * 100 : 0;
+    cum += pct;
+    return {
+      key: g.key,
+      eventCount: g.eventCount,
+      downtimeMinutes: Math.round(g.downtimeMinutes * 100) / 100,
+      pct: Math.round(pct * 100) / 100,
+      cumulativePct: Math.round(Math.min(100, cum) * 100) / 100,
+    };
+  });
+  return { rows, totalEvents, totalDowntimeMinutes: Math.round(totalMinutes * 100) / 100 };
+}
+
+/**
+ * Downtime Pareto over [from, to] from downtime_events. Minutes are clipped to the
+ * window (open events extend to `to`). Optional machine scope; empty scope ⇒ empty.
+ */
+export async function getDowntimePareto(params: {
+  machineIds?: number[];
+  from: Date;
+  to: Date;
+  groupBy?: "category" | "reason";
+  limit?: number;
+}): Promise<DowntimeParetoResult> {
+  const groupBy = params.groupBy ?? "category";
+  const empty: DowntimeParetoResult = {
+    from: params.from, to: params.to, groupBy,
+    totalEvents: 0, totalDowntimeMinutes: 0, rows: [], hasData: false,
+  };
+  const db = await getDb();
+  if (!db) return empty;
+  if (params.machineIds && params.machineIds.length === 0) return empty;
+  if (params.to.getTime() <= params.from.getTime()) return empty;
+
+  const machineFilter = params.machineIds && params.machineIds.length > 0
+    ? sql`AND "machineId" IN (${sql.join(params.machineIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
+  const keyExpr = groupBy === "reason"
+    ? sql`COALESCE(NULLIF(btrim("reason"), ''), '(unspecified)')`
+    : sql`"category"::text`;
+
+  const rows = executeRows(await db.execute(sql`
+    SELECT ${keyExpr} AS key,
+           COUNT(*)::int AS event_count,
+           COALESCE(SUM(
+             GREATEST(0, EXTRACT(EPOCH FROM (
+               LEAST(COALESCE("endTime", ${params.to.toISOString()}), ${params.to.toISOString()})
+               - GREATEST("startTime", ${params.from.toISOString()})
+             )) / 60.0)
+           ), 0)::float AS minutes
+    FROM downtime_events
+    WHERE "startTime" <= ${params.to.toISOString()}
+      AND COALESCE("endTime", ${params.to.toISOString()}) >= ${params.from.toISOString()}
+      ${machineFilter}
+    GROUP BY key
+  `)) as Array<{ key: string; event_count: number; minutes: number }>;
+
+  const groups = rows.map((r) => ({
+    key: String(r.key ?? "(unspecified)"),
+    eventCount: Number(r.event_count) || 0,
+    downtimeMinutes: Number(r.minutes) || 0,
+  }));
+  const { rows: paretoRows, totalEvents, totalDowntimeMinutes } = computeParetoRows(groups, params.limit ?? 20);
+
+  return {
+    from: params.from, to: params.to, groupBy,
+    totalEvents, totalDowntimeMinutes,
+    rows: paretoRows,
+    hasData: totalEvents > 0,
+  };
+}
+
+// ─── Reliability: MTBF / MTTR ────────────────────────────────────────────────
+
+/** Downtime categories that count as FAILURES for MTBF/MTTR (unplanned stoppages). */
+export const DEFAULT_FAILURE_CATEGORIES = ["unplanned", "breakdown"] as const;
+
+export interface ReliabilityMachine {
+  machineId: number;
+  failureCount: number;
+  totalDowntimeMinutes: number; // ALL categories, clipped
+  failureDowntimeMinutes: number; // failure categories only, clipped
+  mtbfHours: number | null;     // uptime between failures (null if no failures)
+  mttrHours: number | null;     // mean repair time per failure (null if no failures)
+}
+
+export interface ReliabilityResult {
+  from: Date;
+  to: Date;
+  windowHours: number;
+  failureCategories: string[];
+  machineCount: number;         // machines with ≥1 downtime event in the window
+  failureCount: number;
+  mtbfHours: number | null;     // fleet: total uptime / total failures
+  mttrHours: number | null;     // fleet: total failure-repair time / total failures
+  perMachine: ReliabilityMachine[];
+  hasData: boolean;
+}
+
+interface DowntimeRowLite { machineId: number; category: string | null; startTime: Date; endTime: Date | null }
+
+/**
+ * PURE — MTBF / MTTR from downtime rows over [from, to].
+ *   MTTR = Σ(failure repair minutes) / (# failures)                    — mean time to repair
+ *   MTBF = Σ(uptime minutes) / (# failures),
+ *          uptime = windowMinutes − totalDowntimeMinutes(all categories) per machine — mean
+ *          operating time between failures. Both null when there are no failures (honest N/A).
+ * Open events (endTime null) extend to `to`. Repair time uses the failure events' clipped
+ * duration; uptime nets out ALL downtime (planned + unplanned) so MTBF reflects true operating time.
+ */
+export function computeReliability(
+  events: DowntimeRowLite[],
+  from: Date,
+  to: Date,
+  failureCategories: readonly string[] = DEFAULT_FAILURE_CATEGORIES,
+): ReliabilityResult {
+  const windowMs = Math.max(0, to.getTime() - from.getTime());
+  const windowMinutes = windowMs / 60000;
+  const failSet = new Set(failureCategories.map((c) => c.toLowerCase()));
+
+  const byMachine = new Map<number, DowntimeRowLite[]>();
+  for (const e of events) {
+    const arr = byMachine.get(e.machineId) ?? [];
+    arr.push(e);
+    byMachine.set(e.machineId, arr);
+  }
+
+  const perMachine: ReliabilityMachine[] = [];
+  let fleetFailures = 0;
+  let fleetRepairMin = 0;
+  let fleetUptimeMin = 0;
+
+  for (const [machineId, evs] of byMachine) {
+    let failureCount = 0;
+    let totalDowntimeMin = 0;
+    let failureDowntimeMin = 0;
+    for (const e of evs) {
+      const end = e.endTime ?? to;
+      const mins = overlapMinutes(new Date(e.startTime), new Date(end), from, to);
+      if (mins <= 0) continue;
+      totalDowntimeMin += mins;
+      if (e.category && failSet.has(e.category.toLowerCase())) {
+        failureCount += 1;
+        failureDowntimeMin += mins;
+      }
+    }
+    const uptimeMin = Math.max(0, windowMinutes - totalDowntimeMin);
+    const mtbfHours = failureCount > 0 ? (uptimeMin / failureCount) / 60 : null;
+    const mttrHours = failureCount > 0 ? (failureDowntimeMin / failureCount) / 60 : null;
+    perMachine.push({
+      machineId,
+      failureCount,
+      totalDowntimeMinutes: Math.round(totalDowntimeMin * 100) / 100,
+      failureDowntimeMinutes: Math.round(failureDowntimeMin * 100) / 100,
+      mtbfHours: mtbfHours == null ? null : Math.round(mtbfHours * 100) / 100,
+      mttrHours: mttrHours == null ? null : Math.round(mttrHours * 100) / 100,
+    });
+    if (failureCount > 0) {
+      fleetFailures += failureCount;
+      fleetRepairMin += failureDowntimeMin;
+      fleetUptimeMin += uptimeMin;
+    }
+  }
+
+  perMachine.sort((a, b) => b.failureCount - a.failureCount || a.machineId - b.machineId);
+
+  return {
+    from, to,
+    windowHours: Math.round((windowMinutes / 60) * 100) / 100,
+    failureCategories: [...failureCategories],
+    machineCount: byMachine.size,
+    failureCount: fleetFailures,
+    mtbfHours: fleetFailures > 0 ? Math.round(((fleetUptimeMin / fleetFailures) / 60) * 100) / 100 : null,
+    mttrHours: fleetFailures > 0 ? Math.round(((fleetRepairMin / fleetFailures) / 60) * 100) / 100 : null,
+    perMachine,
+    hasData: events.length > 0,
+  };
+}
+
+/** MTBF / MTTR over [from, to] from downtime_events. Optional machine scope. */
+export async function getReliabilityMetrics(params: {
+  machineIds?: number[];
+  from: Date;
+  to: Date;
+  failureCategories?: string[];
+}): Promise<ReliabilityResult> {
+  const empty: ReliabilityResult = {
+    from: params.from, to: params.to,
+    windowHours: Math.round(((params.to.getTime() - params.from.getTime()) / 3600000) * 100) / 100,
+    failureCategories: params.failureCategories ?? [...DEFAULT_FAILURE_CATEGORIES],
+    machineCount: 0, failureCount: 0, mtbfHours: null, mttrHours: null, perMachine: [], hasData: false,
+  };
+  const db = await getDb();
+  if (!db) return empty;
+  if (params.machineIds && params.machineIds.length === 0) return empty;
+  if (params.to.getTime() <= params.from.getTime()) return empty;
+
+  const machineFilter = params.machineIds && params.machineIds.length > 0
+    ? sql`AND "machineId" IN (${sql.join(params.machineIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
+
+  const rows = executeRows(await db.execute(sql`
+    SELECT "machineId" AS machine_id, "category"::text AS category,
+           "startTime" AS start_time, "endTime" AS end_time
+    FROM downtime_events
+    WHERE "startTime" <= ${params.to.toISOString()}
+      AND COALESCE("endTime", ${params.to.toISOString()}) >= ${params.from.toISOString()}
+      ${machineFilter}
+  `)) as Array<{ machine_id: number; category: string | null; start_time: string | Date; end_time: string | Date | null }>;
+
+  const events: DowntimeRowLite[] = rows.map((r) => ({
+    machineId: Number(r.machine_id),
+    category: r.category,
+    startTime: new Date(r.start_time),
+    endTime: r.end_time ? new Date(r.end_time) : null,
+  }));
+
+  return computeReliability(
+    events, params.from, params.to,
+    params.failureCategories ?? DEFAULT_FAILURE_CATEGORIES,
+  );
+}
+
+// ─── Takt / utilization / line-balance ───────────────────────────────────────
+
+export interface StationBalanceRow {
+  stationId: number;
+  stationName: string;
+  machineCount: number;
+  producedUnits: number;
+  onlineSeconds: number;
+  /** Avg reported cycle time (s) for the station (daily_statistics.avgCycleTime), else derived. */
+  cycleTimeSec: number | null;
+  isBottleneck: boolean;
+}
+
+export interface LineTaktResult {
+  lineId: number;
+  lineName: string;
+  from: Date;
+  to: Date;
+  windowSeconds: number;
+  demandUnits: number | null;         // capacityPerHour × windowHours (configured), else null
+  producedUnits: number;
+  taktTimeSec: number | null;         // windowSeconds / demandUnits (null if no demand configured)
+  actualCycleTimeSec: number | null;  // windowSeconds / producedUnits (null if no output)
+  timeUtilizationPct: number | null;  // onlineSec / (onlineSec+offlineSec) — logged-time online share
+  capacityUtilizationPct: number | null; // producedUnits / demandUnits × 100 (null if no demand)
+  balanceRatePct: number | null;      // mean(stationCycle)/max(stationCycle) × 100 (line balance efficiency)
+  bottleneckStationId: number | null;
+  stations: StationBalanceRow[];
+  hasData: boolean;
+}
+
+/**
+ * PURE — line-balance efficiency + bottleneck from per-station cycle times.
+ * balanceRate = mean(cycle)/max(cycle) × 100 over stations WITH a cycle time; the
+ * bottleneck is the slowest station (max cycle). Null when <1 station has a cycle.
+ */
+export function computeLineBalance(
+  stations: Array<{ stationId: number; cycleTimeSec: number | null }>,
+): { balanceRatePct: number | null; bottleneckStationId: number | null } {
+  const withCycle = stations.filter((s): s is { stationId: number; cycleTimeSec: number } =>
+    s.cycleTimeSec != null && s.cycleTimeSec > 0);
+  if (withCycle.length === 0) return { balanceRatePct: null, bottleneckStationId: null };
+  const maxCycle = Math.max(...withCycle.map((s) => s.cycleTimeSec));
+  const meanCycle = withCycle.reduce((sum, s) => sum + s.cycleTimeSec, 0) / withCycle.length;
+  const bottleneck = withCycle.find((s) => s.cycleTimeSec === maxCycle) ?? null;
+  return {
+    balanceRatePct: maxCycle > 0 ? Math.round((meanCycle / maxCycle) * 10000) / 100 : null,
+    bottleneckStationId: bottleneck ? bottleneck.stationId : null,
+  };
+}
+
+/**
+ * Takt / utilization / per-station line-balance over an explicit [from, to] window.
+ *
+ * SOURCES (all real, honest-null when absent):
+ *  • available/online time  ← machine_status_logs (clipped to [from,to], set-based LEAD).
+ *  • production + avg cycle  ← daily_statistics over the SAME [from,to] window.
+ *  • demand                  ← production_lines.capacityPerHour × windowHours (configured);
+ *                              absent ⇒ takt + capacityUtilization are null (no fabricated demand).
+ * Definitions:
+ *  • Takt time            = availableWindowSeconds / demandUnits (line cadence required to meet demand).
+ *  • Actual cycle time    = windowSeconds / producedUnits (observed line output cadence).
+ *  • Time utilization     = Σonline / Σ(online+offline) across the line's machines.
+ *  • Capacity utilization = producedUnits / demandUnits.
+ *  • Balance rate         = mean/ max station cycle time; bottleneck = slowest station.
+ */
+export async function getLineTaktUtilization(params: {
+  lineId?: number;
+  factoryId?: number;
+  from: Date;
+  to: Date;
+}): Promise<LineTaktResult[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const { from, to } = params;
+  if (to.getTime() <= from.getTime()) return [];
+  const windowSeconds = (to.getTime() - from.getTime()) / 1000;
+  const windowHours = windowSeconds / 3600;
+
+  // 1) machine → station → line map (+ line name, capacityPerHour), active machines.
+  const mapRows = executeRows(await db.execute(sql`
+    SELECT m."id" AS machine_id, s."id" AS station_id, s."name" AS station_name,
+           l."id" AS line_id, l."name" AS line_name, l."capacityPerHour" AS capacity_per_hour
+    FROM machines m
+    JOIN stations s ON s."id" = m."stationId"
+    JOIN production_lines l ON l."id" = s."lineId"
+    JOIN workshops w ON w."id" = l."workshopId"
+    WHERE m."isActive" = true
+      ${params.lineId ? sql`AND l."id" = ${params.lineId}` : sql``}
+      ${params.factoryId ? sql`AND w."factoryId" = ${params.factoryId}` : sql``}
+  `)) as Array<{
+    machine_id: number; station_id: number; station_name: string;
+    line_id: number; line_name: string; capacity_per_hour: number | null;
+  }>;
+  if (mapRows.length === 0) return [];
+
+  // 2) online/offline seconds per machine over [from, to] (closed upper bound at `to`).
+  const durationRows = executeRows(await db.execute(sql`
+    WITH ordered AS (
+      SELECT "machineId" AS machine_id, status, "timestamp" AS ts,
+             LEAD("timestamp") OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
+      FROM machine_status_logs
+      WHERE "timestamp" >= ${from.toISOString()} AND "timestamp" <= ${to.toISOString()}
+    )
+    SELECT machine_id,
+      COALESCE(SUM(CASE WHEN status = 'online'
+        THEN EXTRACT(EPOCH FROM (LEAST(COALESCE(next_ts, ${to.toISOString()}), ${to.toISOString()}) - ts)) ELSE 0 END), 0)::float AS online_sec,
+      COALESCE(SUM(CASE WHEN status <> 'online'
+        THEN EXTRACT(EPOCH FROM (LEAST(COALESCE(next_ts, ${to.toISOString()}), ${to.toISOString()}) - ts)) ELSE 0 END), 0)::float AS offline_sec
+    FROM ordered
+    GROUP BY machine_id
+  `)) as Array<{ machine_id: number; online_sec: number; offline_sec: number }>;
+  const uptimeByMachine = new Map<number, { online: number; offline: number }>();
+  for (const r of durationRows) {
+    uptimeByMachine.set(Number(r.machine_id), {
+      online: Math.max(0, Number(r.online_sec) || 0),
+      offline: Math.max(0, Number(r.offline_sec) || 0),
+    });
+  }
+
+  // 3) production + avg cycle per machine over [from, to].
+  const statRows = executeRows(await db.execute(sql`
+    SELECT "machineId" AS machine_id,
+      COALESCE(SUM("totalCount"), 0)::int AS total,
+      AVG(NULLIF("avgCycleTime", 0))::float AS avg_cycle
+    FROM daily_statistics
+    WHERE "date" >= ${from.toISOString()} AND "date" <= ${to.toISOString()}
+    GROUP BY "machineId"
+  `)) as Array<{ machine_id: number; total: number; avg_cycle: number | null }>;
+  const prodByMachine = new Map<number, { total: number; avgCycle: number | null }>();
+  for (const r of statRows) {
+    prodByMachine.set(Number(r.machine_id), {
+      total: Number(r.total) || 0,
+      avgCycle: r.avg_cycle != null ? Number(r.avg_cycle) : null,
+    });
+  }
+
+  // 4) fold machines → stations → lines.
+  type StationAcc = { stationId: number; stationName: string; machineCount: number; produced: number; online: number; cycleSum: number; cycleN: number };
+  type LineAcc = {
+    lineId: number; lineName: string; capacityPerHour: number | null;
+    online: number; offline: number; produced: number;
+    stations: Map<number, StationAcc>;
+  };
+  const lineAcc = new Map<number, LineAcc>();
+  const lineOrder: number[] = [];
+  for (const r of mapRows) {
+    const lid = Number(r.line_id);
+    let la = lineAcc.get(lid);
+    if (!la) {
+      la = { lineId: lid, lineName: r.line_name, capacityPerHour: r.capacity_per_hour != null ? Number(r.capacity_per_hour) : null, online: 0, offline: 0, produced: 0, stations: new Map() };
+      lineAcc.set(lid, la);
+      lineOrder.push(lid);
+    }
+    const sid = Number(r.station_id);
+    let sa = la.stations.get(sid);
+    if (!sa) {
+      sa = { stationId: sid, stationName: r.station_name, machineCount: 0, produced: 0, online: 0, cycleSum: 0, cycleN: 0 };
+      la.stations.set(sid, sa);
+    }
+    const up = uptimeByMachine.get(Number(r.machine_id)) ?? { online: 0, offline: 0 };
+    const prod = prodByMachine.get(Number(r.machine_id)) ?? { total: 0, avgCycle: null };
+    la.online += up.online; la.offline += up.offline; la.produced += prod.total;
+    sa.machineCount += 1; sa.online += up.online; sa.produced += prod.total;
+    if (prod.avgCycle != null && prod.avgCycle > 0) { sa.cycleSum += prod.avgCycle; sa.cycleN += 1; }
+  }
+
+  return lineOrder.map((lid) => {
+    const la = lineAcc.get(lid)!;
+    const demandUnits = la.capacityPerHour != null && la.capacityPerHour > 0
+      ? Math.round(la.capacityPerHour * windowHours)
+      : null;
+    const availTime = la.online + la.offline;
+    const stations: StationBalanceRow[] = [...la.stations.values()].map((sa) => {
+      // Prefer the reported avg cycle; fall back to online/produced when no reported cycle.
+      const reported = sa.cycleN > 0 ? sa.cycleSum / sa.cycleN : null;
+      const derived = sa.produced > 0 && sa.online > 0 ? sa.online / sa.produced : null;
+      const cycleTimeSec = reported ?? derived;
+      return {
+        stationId: sa.stationId,
+        stationName: sa.stationName,
+        machineCount: sa.machineCount,
+        producedUnits: sa.produced,
+        onlineSeconds: Math.round(sa.online),
+        cycleTimeSec: cycleTimeSec != null ? Math.round(cycleTimeSec * 100) / 100 : null,
+        isBottleneck: false,
+      };
+    });
+    const balance = computeLineBalance(stations.map((s) => ({ stationId: s.stationId, cycleTimeSec: s.cycleTimeSec })));
+    for (const s of stations) s.isBottleneck = balance.bottleneckStationId != null && s.stationId === balance.bottleneckStationId;
+
+    return {
+      lineId: lid,
+      lineName: la.lineName,
+      from, to,
+      windowSeconds: Math.round(windowSeconds),
+      demandUnits,
+      producedUnits: la.produced,
+      taktTimeSec: demandUnits && demandUnits > 0 ? Math.round((windowSeconds / demandUnits) * 100) / 100 : null,
+      actualCycleTimeSec: la.produced > 0 ? Math.round((windowSeconds / la.produced) * 100) / 100 : null,
+      timeUtilizationPct: availTime > 0 ? Math.round((la.online / availTime) * 10000) / 100 : null,
+      capacityUtilizationPct: demandUnits && demandUnits > 0 ? Math.round((la.produced / demandUnits) * 10000) / 100 : null,
+      balanceRatePct: balance.balanceRatePct,
+      bottleneckStationId: balance.bottleneckStationId,
+      stations,
+      hasData: la.produced > 0 || availTime > 0,
+    } satisfies LineTaktResult;
   });
 }

@@ -16,7 +16,7 @@
 import { z } from "zod";
 import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase, writeProcedure as writeBase } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, deployProcedure as deployBase, writeProcedure as writeBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { isUniqueViolation } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
@@ -24,9 +24,11 @@ import { getDb } from "../db/connection";
 // (moduleGate is pass-through until the deployment's SKU is configured — no-brick).
 // Shadows `protectedProcedure`; per-action RBAC is unchanged.
 const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
-// Deploy/rollback of a built program to a device is an ACTUATION path → role-floor
-// (admin/supervisor/engineer) + 2FA, plus the same MOD_ENGINEERING license gate.
-const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
+// Doc 54 P3.2 (doc 40 CTL-07) — DEPLOY/rollback/fleet-rollout của một chương trình ra thiết bị là
+// đường ACTUATION MẠNH NHẤT: role-floor (admin/supervisor/engineer) + 2FA + STEP-UP OTP TƯƠI
+// (requireFreshTotp, sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng
+// license gate MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
+const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // Doc 54 Wave B — authoring/compile writes (createArtifact/buildArtifact/upsertSymbol)
 // get a write floor (blocks read-only roles viewer/user) so a stray machine_control
 // bit can't author+compile, plus the same MOD_ENGINEERING license gate. The per-user
@@ -91,6 +93,76 @@ async function db() {
   const d = await getDb();
   if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
   return d;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 54 P3.4 (#2) — IDEMPOTENCY: chống "swallow-reject".
+//
+// programmingService.deployBuild/requestDeployApproval trả lại HÀNG deploy TRƯỚC cho một
+// idempotencyKey "as-is" mà KHÔNG so nội dung yêu cầu. Hệ quả: nếu client TÁI DÙNG cùng key cho
+// một yêu cầu KHÁC (buildId/stage/deviceId khác — ví dụ copy nhầm key), hệ thống LẶNG LẼ trả về
+// bản deploy CŨ như thể thành công → che giấu xung đột thật. Ở tầng router — nơi ta có ĐẦY ĐỦ định
+// danh yêu cầu — ta chặn TRƯỚC: cùng key + yêu cầu KHÁC ⇒ CONFLICT rõ ràng; cùng key + cùng yêu cầu
+// ⇒ để service replay bản gốc (idempotent hợp lệ, không đổi hành vi).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * true nếu `prior` (deploy đã lưu cho một idempotencyKey) thuộc về một yêu cầu KHÁC `want`.
+ * deviceId CHỈ so khi client cung cấp (want.deviceId != null): khi null, service tự suy ra
+ * deviceId của project nên KHÔNG so được ở router (tránh báo nhầm cho replay hợp lệ). Pure/testable.
+ */
+export function idempotencyKeyConflicts(
+  prior: { buildId: number; stage: string; deviceId: number | null },
+  want: { buildId: number; stage: string; deviceId: number | null },
+): boolean {
+  if (prior.buildId !== want.buildId) return true;
+  if (prior.stage !== want.stage) return true;
+  if (want.deviceId != null && prior.deviceId !== want.deviceId) return true;
+  return false;
+}
+
+/** Chặn tái dùng idempotencyKey cho yêu cầu khác → CONFLICT; key mới hoặc cùng yêu cầu → cho qua. */
+async function assertIdempotencyKeyConsistent(
+  idempotencyKey: string,
+  want: { buildId: number; stage: string; deviceId: number | null },
+): Promise<void> {
+  const d = await db();
+  const [prior] = await d
+    .select({
+      buildId: programDeployments.buildId,
+      stage: programDeployments.stage,
+      deviceId: programDeployments.deviceId,
+    })
+    .from(programDeployments)
+    .where(eq(programDeployments.idempotencyKey, idempotencyKey))
+    .limit(1);
+  if (!prior) return; // key mới → không xung đột
+  if (idempotencyKeyConflicts(prior, want)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message:
+        `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
+        `(build #${prior.buildId}, ${prior.stage}${prior.deviceId != null ? `, thiết bị #${prior.deviceId}` : ""}). ` +
+        `Yêu cầu hiện tại khác → hãy dùng khóa mới; hệ thống không ghi đè hay nuốt xung đột.`,
+    });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 54 P3.4 (#1) — COPILOT SAFETY GUARD cho REVIEW/EXPLAIN.
+//
+// generateProgram() chỉ HARD-REFUSE khi AUTHOR code (generate/complete/translate). Với
+// review/explain nó trả THẲNG lời của model → có nguy cơ "chứng nhận" logic an toàn. Regex dưới
+// đây mirror SAFETY_RE của aiProgrammingCopilot (const nội bộ, không export được) — bảo thủ:
+// thà nhận nhầm còn hơn bỏ sót. Neo word-boundary để "silicon"/"place" không kích nhầm.
+// ════════════════════════════════════════════════════════════════════════════
+const COPILOT_SAFETY_RE =
+  /\b(e-?stops?|emergency[-\s]?stops?|emergency|interlocks?|safety(?:[-\s]?(?:function|relay|plc|logic|circuit|door|gate|rated))?|safeties|sil\s?[1-4]?|pl[-\s]?[a-e]|performance[-\s]?level|guard[-\s]?lock(?:ing)?|guard|light[-\s]?curtain|two[-\s]?hand|lockout|tagout|muting|estop)\b|(?:安全|急停|安全门|安全回路|安全继电器|紧急停止|光幕|双手)/i;
+
+/** true nếu bất kỳ đoạn text nào (request/mã) chạm từ khoá LIÊN QUAN AN TOÀN. Pure/testable. */
+export function isSafetyRelevantProgram(...texts: (string | undefined | null)[]): boolean {
+  const joined = texts.filter((t): t is string => typeof t === "string" && t.length > 0).join("\n");
+  return joined.length > 0 && COPILOT_SAFETY_RE.test(joined);
 }
 
 export const programmingRouter = router({
@@ -347,7 +419,7 @@ export const programmingRouter = router({
         .orderBy(desc(programDeployments.id));
     }),
 
-  deployBuild: actuationProcedure
+  deployBuild: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -360,6 +432,8 @@ export const programmingRouter = router({
         actionId: z.string().min(1).max(128),
         /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
         reason: z.string().max(2000).optional(),
+        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+        totpCode: z.string().max(16).optional(),
       })
         // Doc 38 Đợt Q — four-eyes enforced AT THE SCHEMA for the sensitive path: a
         // PRODUCTION deploy must name a confirming approver (staging may self-sign).
@@ -370,6 +444,12 @@ export const programmingRouter = router({
         }),
     )
     .mutation(async ({ input, ctx }) => {
+      // Doc 54 P3.4 — chặn tái dùng idempotencyKey cho một yêu cầu KHÁC (surface CONFLICT).
+      await assertIdempotencyKeyConsistent(input.idempotencyKey, {
+        buildId: input.buildId,
+        stage: input.stage,
+        deviceId: input.deviceId ?? null,
+      });
       return deployBuild(
         {
           buildId: input.buildId,
@@ -404,12 +484,18 @@ export const programmingRouter = router({
         reason: z.string().min(1).max(2000),
       }),
     )
-    .mutation(async ({ input, ctx }) =>
-      requestDeployApproval(
+    .mutation(async ({ input, ctx }) => {
+      // Doc 54 P3.4 — cùng chống swallow-reject như deployBuild (yêu cầu duyệt luôn là production).
+      await assertIdempotencyKeyConsistent(input.idempotencyKey, {
+        buildId: input.buildId,
+        stage: "production",
+        deviceId: input.deviceId ?? null,
+      });
+      return requestDeployApproval(
         { buildId: input.buildId, idempotencyKey: input.idempotencyKey, deviceId: input.deviceId, reason: input.reason },
         toDpcUser(ctx.user),
-      ),
-    ),
+      );
+    }),
 
   /**
    * doc 40 ENG-F2 — inbox source: các yêu cầu deploy đang CHỜ DUYỆT (status='awaiting_approval').
@@ -495,12 +581,14 @@ export const programmingRouter = router({
    * + license gate. approver ký bằng session CỦA CHÍNH HỌ; service enforced SoD (approver ≠
    * requester) và chạy đúng mọi gate cũ (sim/verify/version) với actionId THẬT.
    */
-  approveDeployment: actuationProcedure
+  approveDeployment: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
         deploymentId: z.number().int().positive(),
         reason: z.string().max(2000).optional(),
+        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+        totpCode: z.string().max(16).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) =>
@@ -543,7 +631,7 @@ export const programmingRouter = router({
         .orderBy(users.username);
     }),
 
-  rollbackDeployment: actuationProcedure
+  rollbackDeployment: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -551,6 +639,8 @@ export const programmingRouter = router({
         idempotencyKey: z.string().min(1).max(128),
         actionId: z.string().min(1).max(128),
         confirmedBy: z.number().int().positive().optional(),
+        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+        totpCode: z.string().max(16).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -569,7 +659,7 @@ export const programmingRouter = router({
   // Là ACTUATION (kích hoạt ghi HW thật) → actuationProcedure (role-floor + 2FA) +
   // machine_control/canCreate + MOD_ENGINEERING. Cùng ràng buộc four-eyes ở schema như
   // deployBuild: production phải có confirmedBy (người ký ≠ người yêu cầu, service tái kiểm).
-  deployToFleet: actuationProcedure
+  deployToFleet: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({
@@ -585,6 +675,8 @@ export const programmingRouter = router({
         actionId: z.string().min(1).max(96),
         confirmedBy: z.number().int().positive().optional(),
         reason: z.string().max(2000).optional(),
+        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+        totpCode: z.string().max(16).optional(),
       })
         // Four-eyes AT THE SCHEMA cho đường nhạy cảm: rollout production phải có approver.
         .refine((v) => v.stage !== "production" || v.confirmedBy != null, {
@@ -742,7 +834,22 @@ export const programmingRouter = router({
   copilotExplain: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ kind: KIND, source: z.string().max(2_000_000) }))
-    .query(({ input }) => explainProgram(input.kind, input.source)),
+    .query(({ input }) => {
+      const res = explainProgram(input.kind, input.source);
+      // Doc 54 P3.4 (#1) — dù đây chỉ là mô tả cấu trúc (không phải model), KHÔNG được để bị hiểu
+      // là "chứng nhận": mã liên quan an toàn ⇒ gắn cờ yêu cầu người kiểm định an toàn.
+      if (isSafetyRelevantProgram(input.source)) {
+        return {
+          ...res,
+          safetyReviewRequired: true as const,
+          certified: false as const,
+          safetyNote:
+            "Chương trình chứa logic liên quan AN TOÀN — bản mô tả cấu trúc này KHÔNG phải chứng nhận. " +
+            "Yêu cầu KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận.",
+        };
+      }
+      return res;
+    }),
 
   /**
    * Doc 34 · P2 — LLM CODE COPILOT (generate / complete / translate / review / explain).
@@ -767,7 +874,32 @@ export const programmingRouter = router({
         targetKind: KIND.optional(),
       }),
     )
-    .mutation(async ({ input }) => generateProgram(input)),
+    .mutation(async ({ input }) => {
+      const result = await generateProgram(input);
+      // Doc 54 P3.4 (#1) — SAFETY GUARD. generateProgram HARD-REFUSE khi AUTHOR
+      // (generate/complete/translate), NHƯNG review/explain trả THẲNG lời của model → có nguy cơ
+      // "chứng nhận" logic an toàn. Nếu chương trình được phân tích chạm từ khoá an toàn (e-stop/
+      // interlock/light-curtain/two-hand/guard/muting/safety-PLC/SIL/PL): KHÔNG lặng lẽ duyệt —
+      // gắn cờ yêu cầu người kiểm định an toàn và TỪ CHỐI chứng nhận. Bảo thủ: nghi ngờ thì chặn.
+      if (
+        (input.mode === "review" || input.mode === "explain") &&
+        isSafetyRelevantProgram(input.request, input.contextCode)
+      ) {
+        return {
+          ...result,
+          ok: false as const,
+          refused: true as const,
+          safetyReviewRequired: true as const,
+          certified: false as const,
+          reason:
+            "Chương trình chứa logic liên quan AN TOÀN (e-stop/interlock/light-curtain/two-hand/guard/" +
+            "muting/safety-PLC/SIL/PL). Copilot KHÔNG chứng nhận hay phê duyệt logic an toàn — yêu cầu " +
+            "KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận. Nhận xét kèm " +
+            "theo (nếu có) CHỈ để tham khảo, KHÔNG phải chứng nhận.",
+        };
+      }
+      return result;
+    }),
 
   // ── IEC 61131-3 structured POU (LAD/FBD/SFC) — P4 (doc 24 Wave-3) ──
   //

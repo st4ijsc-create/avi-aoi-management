@@ -253,6 +253,30 @@ class RedisService {
   }
 
   /**
+   * P2.3 (doc 54) — ATOMIC cluster-wide cooldown/dedup claim (`SET key 1 EX ttl NX`).
+   *
+   * Trả về:
+   *   • true  — GIÀNH được khoá (key chưa tồn tại) → caller là instance ĐƯỢC PHÉP kích hoạt.
+   *   • false — key đã tồn tại (đang cooldown do instance khác / lần trước) → caller BỎ QUA.
+   *   • null  — Redis không sẵn sàng / lỗi → caller TỰ fallback sang bộ nhớ cục bộ (single-node).
+   *
+   * Best-effort theo hợp đồng: MỌI lỗi Redis → null (KHÔNG BAO GIỜ throw), nên vòng đánh giá
+   * cảnh báo không bao giờ vỡ vì Redis. TTL ≤ 0 → null (không có cửa sổ cooldown để giữ).
+   */
+  async acquireCooldown(key: string, ttlSeconds: number): Promise<boolean | null> {
+    if (!(this.isConnected && this.redis) || !(ttlSeconds > 0)) return null;
+    const fullKey = this.getFullKey(key);
+    try {
+      // SET NX + EX là NGUYÊN TỬ: đúng một instance trong cụm set thành công mỗi cửa sổ.
+      const res = await this.redis.set(fullKey, '1', 'EX', Math.ceil(ttlSeconds), 'NX');
+      return res === 'OK';
+    } catch (err: any) {
+      console.error(`[Redis] acquireCooldown error: ${err?.message ?? err}`);
+      return null; // báo hiệu fallback sang bộ nhớ
+    }
+  }
+
+  /**
    * Delete cached value
    */
   async delete(key: string): Promise<boolean> {

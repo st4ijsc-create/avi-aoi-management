@@ -65,6 +65,7 @@ import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
+import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -371,6 +372,8 @@ export default function EngineeringWorkspace() {
     },
     onError: (e) => toast.error(e.message),
   });
+  // doc 54 P3.2 — step-up 2FA (fresh OTP) for deploy actuation when ACTUATION_STEPUP_2FA is on.
+  const stepUp = useStepUpOtp();
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
@@ -1216,7 +1219,7 @@ export default function EngineeringWorkspace() {
                           disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
                           title={createReason}
                           onClick={() =>
-                            buildId && deployM.mutate({
+                            buildId && stepUp.guard((totpCode) => deployM.mutate({
                               buildId,
                               stage: deployStage,
                               // Khóa idempotency ổn định theo (build, stage) → double-click không tạo 2 deploy.
@@ -1226,7 +1229,8 @@ export default function EngineeringWorkspace() {
                                 ? (approverId ? Number(approverId) : undefined)
                                 : (signOff && user?.id ? user.id : undefined),
                               reason: isProd ? deployReason.trim() : undefined,
-                            })
+                              totpCode,
+                            }))
                           }
                         >
                           <Rocket className="mr-1 h-4 w-4" /> {t("engineering.deployBtn", "Deploy build")}
@@ -1421,7 +1425,7 @@ export default function EngineeringWorkspace() {
                         // hỏng (rejected) và sửa build, bấm lại sẽ DEPLOY LẠI thay vì trả
                         // về hàng rejected cũ (deployBuild dedupe theo idempotencyKey).
                         const fleetRunId = rid("frun");
-                        deployToFleetM.mutate({
+                        stepUp.guard((totpCode) => deployToFleetM.mutate({
                           buildId,
                           deviceIds: fleetDeviceIds,
                           stage: fleetStage,
@@ -1437,7 +1441,8 @@ export default function EngineeringWorkspace() {
                             ? (fleetApproverId ? Number(fleetApproverId) : undefined)
                             : (fleetSignOff && user?.id ? user.id : undefined),
                           reason: fleetIsProd ? fleetReason.trim() : undefined,
-                        });
+                          totpCode,
+                        }));
                       }}
                     >
                       {deployToFleetM.isPending
@@ -1873,11 +1878,12 @@ export default function EngineeringWorkspace() {
               onClick={() => {
                 if (rollbackTarget == null) return;
                 // idempotencyKey/actionId ỔN ĐỊNH theo deploymentId → click lại không tạo bản trùng.
-                rollbackM.mutate({
+                stepUp.guard((totpCode) => rollbackM.mutate({
                   deploymentId: rollbackTarget.id,
                   idempotencyKey: `rollback-dep-${rollbackTarget.id}`,
                   actionId: `rollback-dep-${rollbackTarget.id}`,
-                });
+                  totpCode,
+                }));
               }}
             >
               {t("engineering.rollback", "Khôi phục")}
@@ -1885,6 +1891,8 @@ export default function EngineeringWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* doc 54 P3.2 — step-up 2FA prompt for deploy/rollback/fleet actuation */}
+      {stepUp.dialog}
     </DashboardLayout>
   );
 }

@@ -727,6 +727,17 @@ export const productMachineMappings = pgTable("product_machine_mappings", {
     .references(() => machines.id, { onDelete: "cascade" }),
   isActive: boolean("isActive").default(true).notNull(),
   priority: integer("priority").default(0).notNull(), // Ưu tiên sản phẩm trên máy
+  // Doc 54 P2.2 (OEE-trust, migration 0285) — CONFIGURED ideal/standard cycle time
+  // (giây/đơn vị) cho ĐÚNG cặp (sản phẩm, máy) này. Đây là nguồn CHỦ ĐỘNG cho hệ số
+  // Performance của OEE (Performance = ideal × count / runTime). Trước đây "ideal" duy
+  // nhất chỉ đến từ việc ĐỌC LẠI một dòng oee_metrics cũ (bài toán con-gà-quả-trứng) hoặc
+  // ideal-suy-ra từ oee_targets. NULL = chưa cấu hình → Performance rơi về các nguồn cũ
+  // (target-implied / oee_metrics gần nhất / avg cycle quan sát) và HONEST-NULL khi không
+  // có gì phân giải — KHÔNG bao giờ bịa một ideal giả làm phồng OEE.
+  // ⚠ CÓ THỂ VẮNG lúc chạy: 0285 chỉ ADD COLUMN nhưng app dò cột trước khi đọc
+  //   (resolveIdealCycleTimeSec → productMachineMappingHasIdealColumn) và rơi về nguồn cũ
+  //   khi cột chưa có, nên hành vi y hệt cho tới khi migration được áp.
+  idealCycleTimeSec: integer("idealCycleTimeSec"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

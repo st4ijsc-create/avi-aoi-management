@@ -52,6 +52,7 @@ import {
   ArrowRight, ShieldAlert, Inbox as InboxIcon, Rocket, GitCompare, FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 
 const THRESHOLD_PENDING = "requested";
 
@@ -247,6 +248,8 @@ export default function ApprovalsInbox() {
   const isOwnDeploy = (r: DeployApproval) => myId != null && myId === r.deployment.requestedBy;
 
   const invalidateDeploys = () => { void utils.programming.listDeployApprovals.invalidate(); void utils.programming.listDeployments.invalidate(); };
+  // doc 54 P3.2 — approveDeployment chạy deployProcedure → step-up 2FA (OTP tươi) khi cờ bật.
+  const stepUp = useStepUpOtp();
   const approveDeployM = trpc.programming.approveDeployment.useMutation({
     onSuccess: (row) => {
       // Trung thực theo trạng thái THẬT trả về (đi qua mọi gate cũ).
@@ -693,7 +696,7 @@ export default function ApprovalsInbox() {
                                         : !readiness.ready
                                           ? readiness.blockers.map((bl) => t(`actuationReadiness.${bl.code}`, bl.defaultMessage)).join(" ")
                                           : undefined}
-                                      onClick={() => approveDeployM.mutate({ deploymentId: r.deployment.id })}
+                                      onClick={() => stepUp.guard((totpCode) => approveDeployM.mutate({ deploymentId: r.deployment.id, totpCode }))}
                                       aria-label={t("approvalsInbox.deploy.approveAria", "Duyệt & deploy #{{id}}", { id: r.deployment.id })}
                                     >
                                       <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
@@ -759,6 +762,8 @@ export default function ApprovalsInbox() {
           )}
         </DialogContent>
       </Dialog>
+      {/* doc 54 P3.2 — step-up 2FA prompt for approve & deploy */}
+      {stepUp.dialog}
     </DashboardLayout>
   );
 }

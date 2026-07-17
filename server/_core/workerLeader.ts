@@ -53,6 +53,20 @@ export function isWorkerLeader(): boolean {
   return _isLeader;
 }
 
+/**
+ * doc 54 P2.3 — CLUSTER-SINGLETON gate. One place to answer "should THIS instance run a
+ * once-per-cluster job?":
+ *   • leader-election OFF (default — single-node pilot / Full-Sim) → ALWAYS true → run as
+ *     today, byte-for-byte (NO behaviour change);
+ *   • leader-election ON → true ONLY on the instance currently holding leadership, so N
+ *     replicas don't double-fire the singleton.
+ * Callers gate their scheduler/broadcaster start on this. Kept trivial + synchronous so it
+ * is safe to call from any hot path.
+ */
+export function shouldRunClusterSingleton(): boolean {
+  return !leaderElectionEnabled() || isWorkerLeader();
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(resolve, ms);

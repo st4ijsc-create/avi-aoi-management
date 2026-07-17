@@ -99,6 +99,7 @@ import {
   ON_PRECONDITION_FAIL,
 } from "@/components/orchestration/workflowTypes";
 import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
+import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -1136,6 +1137,8 @@ export default function OrchestrationStudio() {
 
   const utils = trpc.useUtils();
   const [simulating, setSimulating] = useState(false);
+  // doc 54 P3.2 — step-up 2FA (fresh OTP) for deployWorkflow when ACTUATION_STEPUP_2FA is on.
+  const stepUp = useStepUpOtp();
 
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
@@ -1264,11 +1267,13 @@ export default function OrchestrationStudio() {
     }
   };
   // doc 40 ENG-F4 — mang sim-token (nếu còn tươi cho định nghĩa hiện tại) sang server để qua sim-gate.
+  // doc 54 P3.2 — deployWorkflow chạy deployProcedure → step-up 2FA (OTP tươi) khi cờ bật.
   const runDeploy = () =>
-    deployM.mutate({
+    stepUp.guard((totpCode) => deployM.mutate({
       definition: serializeDef(def) as Record<string, unknown>,
       simToken: simFresh ? simPass?.token : undefined,
-    });
+      totpCode,
+    }));
   const runStart = () => startRunM.mutate({ workflowRef: def.ref, params: {} });
 
   // ── E5: AI advisor — propose / optimize (HITL: AI only proposes; human deploys) ──
@@ -1911,6 +1916,8 @@ export default function OrchestrationStudio() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* doc 54 P3.2 — step-up 2FA prompt for workflow deploy */}
+      {stepUp.dialog}
     </DashboardLayout>
   );
 }

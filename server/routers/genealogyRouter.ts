@@ -116,6 +116,28 @@ export const genealogyRouter = router({
       return rowsToChainRows(rows);
     }),
 
+  /**
+   * doc 54 P2.5 — RECURSIVE lineage walk over the parent→child edges of the
+   * genealogy chain. Unlike getBySerial (one serial's own events), this traces the
+   * full multi-level tree: descendants (parent→child→…), ancestors (child→parent→…),
+   * or both. Cycle-safe + depth-bounded. Honest: a serial with no edges returns a
+   * single-node tree (itself), never a fabricated relationship.
+   */
+  getLineage: protectedProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1).max(128),
+      direction: z.enum(["ancestors", "descendants", "both"]).default("both"),
+      maxDepth: z.number().int().positive().max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { getGenealogyLineage } = await import("../services/genealogyLineageService");
+      return getGenealogyLineage({
+        rootSerial: input.serialNumber,
+        direction: input.direction,
+        maxDepth: input.maxDepth,
+      });
+    }),
+
   /** Get the full chain for a lot. */
   getByLot: protectedProcedure
     .input(z.object({

@@ -541,6 +541,34 @@ export const productionDashboardRouter = router({
 
       return results.filter(Boolean);
     }),
+
+  /**
+   * doc 54 P2.5 — Takt / utilization / per-station line-balance for the analytics
+   * dashboard. Computes (from real sources, honest-null when data is sparse):
+   *   • takt time            = window / demand   (demand = line.capacityPerHour × hours;
+   *                            null when no capacity configured — never fabricated)
+   *   • actual cycle time    = window / producedUnits
+   *   • time utilization     = Σonline / Σ(online+offline)   (machine_status_logs)
+   *   • capacity utilization = producedUnits / demand
+   *   • per-station balance  = mean/max station cycle time + bottleneck station
+   * One row per production line in scope.
+   */
+  getLineBalance: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+      startDate: z.coerce.date(),
+      endDate: z.coerce.date(),
+    }))
+    .query(async ({ input }) => {
+      const { getLineTaktUtilization } = await import("../services/oeeService");
+      return getLineTaktUtilization({
+        lineId: input.lineId,
+        factoryId: input.factoryId,
+        from: input.startDate,
+        to: input.endDate,
+      });
+    }),
 });
 
 /** Helper: resolve machine IDs from factory/line filters */

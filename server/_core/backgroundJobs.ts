@@ -38,6 +38,8 @@
  * never take down boot) — semantics copied verbatim from the old inline blocks.
  */
 
+import { shouldRunClusterSingleton } from "./workerLeader";
+
 let started = false;
 let chargingSweepTimer: NodeJS.Timeout | null = null;
 let andonSlaSweepTimer: NodeJS.Timeout | null = null;
@@ -49,6 +51,23 @@ export function backgroundSchedulersStarted(): boolean {
 
 export async function startBackgroundSchedulers(): Promise<void> {
   if (started) return;
+
+  // doc 54 P2.3 — CLUSTER-SINGLETON GATE. Every scheduler in this file is part of the
+  // cron/DB-write "once-per-cluster" set (see header). When WORKER_LEADER_ELECTION_ENABLED=true
+  // ONLY the elected leader runs them, so N HA replicas don't double-fire reports/backups/
+  // retention/snapshot-rollups/escalation-sweep. Flag OFF (default — single-node pilot /
+  // Full-Sim) → runs as today, NO behaviour change. runWorkerProcess() already acquires
+  // leadership BEFORE calling this, so this is defense-in-depth for EVERY caller (incl. the
+  // all-in-one API boot). Gate is BEFORE `started = true` so a later leader-promotion can still
+  // start the set. NOTE: do NOT enable leader-election in all-in-one mode without a dedicated
+  // worker — see report.
+  if (!shouldRunClusterSingleton()) {
+    console.log(
+      "[BackgroundJobs] leader-election ON & this instance is not the leader — cluster-singleton schedulers skipped here",
+    );
+    return;
+  }
+
   started = true;
 
   // Scheduled + executive reports (e-mail delivery; non-blocking with retry).

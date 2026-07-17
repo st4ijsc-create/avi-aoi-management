@@ -281,7 +281,10 @@ export const alertRouter = router({
       return result;
     }),
 
-  update: protectedProcedure
+  // doc 54 P1.4 (G1) — was bare protectedProcedure: `create` got write-floored in
+  // Wave B but update/delete did not, so a read-only viewer owning an alert could
+  // still rewire it. writeProcedure blocks read-only roles; ownership check kept below.
+  update: writeProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
@@ -309,7 +312,8 @@ export const alertRouter = router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  // doc 54 P1.4 (G1) — write-floor (see update above); ownership check retained.
+  delete: writeProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
