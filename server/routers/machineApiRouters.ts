@@ -69,6 +69,15 @@ import {
   expandArrayGeometry,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+// Doc 55 Item 2 (CASE #11) — fiducial registration (pure math lib, Phase P0). We
+// only IMPORT it here (the write-path wiring is Phase P1); the lib is never edited.
+import {
+  fitTransform,
+  applyTransform,
+  DEFAULT_MAX_RESIDUAL_PX,
+  type FiducialPair,
+  type RegistrationResult,
+} from "../lib/fiducialRegistration";
 import {
   resolveOrCreateMeasurementPointDefId,
   assertValidPointDefId,
@@ -265,6 +274,42 @@ function machineSyncOptimisticLockEnabled(): boolean {
  */
 function requestAuditEnabled(): boolean {
   return envTrue(process.env.INGEST_REQUEST_AUDIT_ENABLED);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 55 Item 2 (CASE #11) — FIDUCIAL REGISTRATION flags (QĐ#5-9).
+//
+// syncMeasurementPoints (POINTS_PUSH) stores the machine's OBSERVED point
+// coordinates. When the physical board sat translated/rotated/scaled under the
+// camera, those coordinates land in the WRONG canonical position (CASE #11). If
+// the machine also reports where it OBSERVED the product's fiducial marks, we can
+// fit a 2D SIMILARITY (observed → canonical) from those matched marks and
+// re-project every point back into the canonical frame BEFORE it is written.
+//
+// All three knobs are read at call time (not import time) so tests can flip them
+// and ops can retune without a redeploy. Default OFF ⇒ the legacy coordinate
+// resolution path is byte-for-byte unchanged (QĐ#1).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Master switch. Default OFF ⇒ legacy resolveCoordinates path, unchanged. */
+function fiducialRegistrationEnabled(): boolean {
+  return envTrue(process.env.MACHINE_FIDUCIAL_REGISTRATION);
+}
+
+/**
+ * Minimum number of OBSERVED fiducials the machine must report before we even
+ * attempt a fit (policy floor — the lib itself also needs ≥2 to solve a 4-DoF
+ * similarity). Default 2. Below this ⇒ reject 'insufficient' + fall back (QĐ#7).
+ */
+function fiducialMinMarks(): number {
+  return envInt("MACHINE_FIDUCIAL_MIN_MARKS", 2);
+}
+
+/** RMS reprojection reject threshold in px (QĐ#8). Default 5.0; floats allowed. */
+function fiducialMaxResidualPx(): number {
+  const raw = process.env.MACHINE_FIDUCIAL_MAX_RESIDUAL_PX;
+  const n = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_RESIDUAL_PX;
 }
 
 /**
@@ -2589,6 +2634,20 @@ export const machineApiRouter = router({
       sourceImageHeight: z.number().int().positive().optional(),
       clientVersion: z.string().max(50).optional(),
       points: z.array(measurementPointSyncSchema).min(1),
+      // Doc 55 Item 2 (CASE #11) — OPTIONAL fiducials the machine OBSERVED for THIS
+      // board/setup. Additive: a machine that omits them keeps exactly today's
+      // behaviour. Request-level (not per-point) because one similarity transform is
+      // fit ONCE from these marks and applied to EVERY point in the push. Matched to
+      // the product's canonical fiducial_marks by `code`; see the mutation body.
+      observedFiducials: z
+        .array(
+          z.object({
+            code: z.string(),
+            observedX: z.number(),
+            observedY: z.number(),
+          }),
+        )
+        .optional(),
     }).refine((data) => data.apiKey || data.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
@@ -2631,13 +2690,18 @@ export const machineApiRouter = router({
       const hasServerDimensions = serverW != null && serverH != null && serverW > 0 && serverH > 0;
 
       /**
-       * Resolve coordinates: handles 3 scenarios:
+       * Resolve coordinates: handles 3 legacy scenarios + fiducial registration:
+       * 0. `reg` present & ok (Doc 55 Item 2 / QĐ#5,#9) → the machine reported
+       *    observed fiducials and a similarity fit them into the canonical frame;
+       *    re-project (positionX,positionY) through it and compute normalized from
+       *    server dims. This SUBSUMES the resolution-scale branch (a similarity
+       *    already carries uniform scale — QĐ#9), so Case 1/2 are skipped entirely.
        * 1. Client sends normalizedX/Y → compute absolute from server dimensions
        * 2. Client sends sourceImageWidth/Height (different from server) → transform absolute coords
        * 3. Same resolution or no info → use absolute coords as-is
        * Always computes normalizedX/Y for storage
        */
-      function resolveCoordinates(point: typeof input.points[0]) {
+      function resolveCoordinates(point: typeof input.points[0], reg?: RegistrationResult) {
         let finalX = point.positionX;
         let finalY = point.positionY;
         let finalRadius = point.radius ?? 20;
@@ -2645,6 +2709,29 @@ export const machineApiRouter = router({
         let normY: string | undefined;
         let normR: string | undefined;
         let transformed = false;
+
+        if (reg && reg.ok) {
+          // Case 0 — FIDUCIAL REGISTRATION. Map the machine's OBSERVED pixel
+          // coordinates into the product's CANONICAL pixel frame. The 2×3 matrix
+          // maps observed → canonical; translation is baked in, so we do NOT also
+          // run the sourceW/serverW resolution scale (the similarity's uniform
+          // scale s already absorbs any resolution difference — QĐ#9).
+          const proj = applyTransform(reg.matrix2x3, point.positionX, point.positionY);
+          finalX = Math.round(proj.x);
+          finalY = Math.round(proj.y);
+          // Radius is a scalar length → scale it by the similarity's uniform scale
+          // s = |first column| = √((s·cosθ)² + (s·sinθ)²). Pure rotation/translation
+          // (s≈1) leaves it untouched.
+          const s = Math.hypot(reg.matrix2x3[0][0], reg.matrix2x3[1][0]);
+          finalRadius = Math.round(finalRadius * (Number.isFinite(s) && s > 0 ? s : 1));
+          if (hasServerDimensions) {
+            normX = (finalX / serverW!).toFixed(8);
+            normY = (finalY / serverH!).toFixed(8);
+            normR = (finalRadius / serverW!).toFixed(8);
+          }
+          transformed = true;
+          return { finalX, finalY, finalRadius, normX, normY, normR, transformed };
+        }
 
         if (point.normalizedX != null && point.normalizedY != null && hasServerDimensions) {
           // Case 1: Client sent normalized coordinates → compute absolute for server image
@@ -2678,6 +2765,81 @@ export const machineApiRouter = router({
         return { finalX, finalY, finalRadius, normX, normY, normR, transformed };
       }
 
+      // ── Doc 55 Item 2 (CASE #11) — FIDUCIAL REGISTRATION (QĐ#5-9) ─────────────
+      // Fit ONE observed→canonical similarity for the whole push from the machine's
+      // reported fiducials, matched by `code` against the product's fiducial_marks.
+      // reg.ok ⇒ every point is re-projected in resolveCoordinates (Case 0). A poor/
+      // impossible fit (insufficient/degenerate/residual_exceeded) is NEVER an error
+      // to the machine (QĐ#7): we fall back to the legacy path and TAG the reason.
+      // ⚠ Limitation: this aligns PIXEL space. On a coordinateMode='mm' product the
+      // fit still runs in whatever units observed/canonical share (both are the raw
+      // fiducial_marks positionX/Y integers) — it corrects placement but does not
+      // convert units; a true mm workflow is out of scope for this pixel-space fix.
+      const fiducialRegOn = fiducialRegistrationEnabled();
+      let registration: RegistrationResult | null = null;
+      let registrationApplied = false;
+      let registrationResidualPx: number | undefined;
+      let registrationFiducialCount: number | undefined;
+      let registrationRejectedReason: string | undefined;
+      if (fiducialRegOn && input.observedFiducials && input.observedFiducials.length > 0) {
+        const minMarks = fiducialMinMarks();
+        if (input.observedFiducials.length < minMarks) {
+          // Policy floor not met — do not even attempt a fit.
+          registrationRejectedReason = "insufficient";
+          registrationFiducialCount = input.observedFiducials.length;
+          console.warn(
+            `[syncMeasurementPoints] fiducial registration SKIPPED (insufficient) — machine=${machine.code} ` +
+              `product=${productModel.code}: got ${input.observedFiducials.length} observed fiducial(s), ` +
+              `need ≥${minMarks} (MACHINE_FIDUCIAL_MIN_MARKS) — FALLBACK to legacy coordinate resolution.`,
+          );
+        } else {
+          // Match observed marks to canonical fiducial_marks by code (best-effort
+          // load — a DB hiccup yields [] ⇒ no pairs ⇒ reject 'insufficient', never
+          // an ingest failure).
+          const canonicalFiducials = await db
+            .getFiducialMarksByProductModel(productModel.id)
+            .catch(() => [] as any[]);
+          const byCode = new Map<string, { positionX: number; positionY: number }>();
+          for (const f of canonicalFiducials ?? []) {
+            if (f && typeof f.code === "string") {
+              byCode.set(f.code, { positionX: Number(f.positionX), positionY: Number(f.positionY) });
+            }
+          }
+          const pairs: FiducialPair[] = [];
+          for (const obs of input.observedFiducials) {
+            const canon = byCode.get(obs.code);
+            if (canon && Number.isFinite(canon.positionX) && Number.isFinite(canon.positionY)) {
+              pairs.push({
+                code: obs.code,
+                srcX: obs.observedX, // observed (machine frame)
+                srcY: obs.observedY,
+                dstX: canon.positionX, // canonical (server frame)
+                dstY: canon.positionY,
+              });
+            }
+          }
+          const reg = fitTransform(pairs, { maxResidualPx: fiducialMaxResidualPx() });
+          registration = reg;
+          registrationResidualPx = reg.residualPx;
+          registrationFiducialCount = reg.fiducialCount;
+          if (reg.ok) {
+            registrationApplied = true;
+            console.info(
+              `[syncMeasurementPoints] fiducial registration APPLIED — machine=${machine.code} ` +
+                `product=${productModel.code}: fiducials=${reg.fiducialCount} residualPx=${reg.residualPx.toFixed(3)} ` +
+                `(≤${fiducialMaxResidualPx()}). Points re-projected observed→canonical.`,
+            );
+          } else {
+            registrationRejectedReason = reg.reason;
+            console.warn(
+              `[syncMeasurementPoints] fiducial registration REJECTED (${reg.reason}) — machine=${machine.code} ` +
+                `product=${productModel.code}: matchedFiducials=${reg.fiducialCount} residualPx=${reg.residualPx.toFixed(3)} ` +
+                `(threshold ${fiducialMaxResidualPx()}) — FALLBACK to legacy coordinate resolution (QĐ#7).`,
+            );
+          }
+        }
+      }
+
       for (let index = 0; index < input.points.length; index++) {
         const point = input.points[index];
         try {
@@ -2691,7 +2853,10 @@ export const machineApiRouter = router({
             point.imageUrl,
           );
 
-          const { finalX, finalY, finalRadius, normX, normY, normR, transformed } = resolveCoordinates(point);
+          const { finalX, finalY, finalRadius, normX, normY, normR, transformed } = resolveCoordinates(
+            point,
+            registrationApplied ? registration ?? undefined : undefined,
+          );
 
           if (existing) {
             const updatePayload = cleanUndefined({
@@ -2981,6 +3146,14 @@ export const machineApiRouter = router({
         optimisticLockEnforced: lockEnforced,
         staleConflicts: staleConflictCount,
         blindOverwrites: blindOverwriteCount,
+        // Doc 55 Item 2 (CASE #11) — fiducial-registration outcome (ADDITIVE, so a
+        // machine can OBSERVE the alignment). `registrationApplied` false ⇒ points
+        // went through the legacy coordinate resolution (flag off, no observed
+        // fiducials, or the fit was rejected — see `registrationRejectedReason`).
+        registrationApplied,
+        registrationResidualPx,
+        registrationFiducialCount,
+        registrationRejectedReason,
         points: results,
         errors,
       };
