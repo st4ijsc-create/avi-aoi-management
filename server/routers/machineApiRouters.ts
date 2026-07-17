@@ -312,6 +312,152 @@ function fiducialMaxResidualPx(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_RESIDUAL_PX;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 55 Item 3 (PV1/PV2) — PRODUCT VARIANT master switch (QĐ#1, default OFF).
+//
+// OFF ⇒ the whole variant layer is INERT: sync (getPoints/deltaSyncPoints/
+// checkPointsVersion) ignores any `variantCode`, ingest (submitInspection) never
+// resolves or stamps a variant (product_inspections.variantId stays NULL), and
+// EVERY read/write path is byte-for-byte the pre-variant behaviour. The gate is
+// checked at CALL TIME (not import) so tests can flip it and ops can enable it
+// without a redeploy, exactly like the fiducial/snapshot flags above.
+//
+// ON ⇒ a machine MAY send `variantCode` (optional, additive). Absent + the model
+// has >1 live variant ⇒ the board is filed against the BASE variant AND tagged
+// ingestMode='variant_unspecified' (QĐ#12 — measure the un-declared rate, the same
+// soft-tag pattern as commissioning). Present ⇒ resolved to that variant.
+// ════════════════════════════════════════════════════════════════════════════
+export function productVariantEnabled(): boolean {
+  return envTrue(process.env.PRODUCT_VARIANT_ENABLED);
+}
+
+/** ingestMode soft-tag for a board that could NOT bind an explicit variant. */
+export const VARIANT_UNSPECIFIED_TAG = "variant_unspecified" as const;
+
+/**
+ * PV1 — resolve the variant a machine addresses for a READ sync
+ * (getPoints/deltaSyncPoints/checkPointsVersion). ONLY called under
+ * productVariantEnabled(). Returns:
+ *   • variant            — the resolved product_variants row (or the base variant).
+ *   • pointDefVariantId  — the value to SCOPE POINT DEFS by: NULL for the base
+ *       variant (base/common points are `variantId IS NULL`, NOT tagged with the
+ *       base variant's id), the variant's own id for a non-base variant. This is
+ *       what resolveEffectivePoints expects.
+ *   • version            — the pointsConfigVersion to REPORT (per-variant; the base
+ *       variant's == the model version by the PV0 invariant).
+ *
+ * Forgiving by design: a `variantCode` that does not resolve falls back to the base
+ * variant rather than erroring — a bad code on a machine poll must never blank its
+ * point set (a read has no place to reject). Documented deferral, not a silent bug.
+ */
+async function resolveSyncVariant(
+  productModelId: number,
+  variantCode: string | undefined,
+  fallbackModelVersion: number,
+): Promise<{ variantId: number | null; pointDefVariantId: number | null; version: number }> {
+  const trimmed = variantCode?.trim() || undefined;
+  if (trimmed) {
+    const v = await db.getVariantByCode(productModelId, trimmed);
+    if (v) {
+      return {
+        variantId: v.id,
+        pointDefVariantId: v.isBase ? null : v.id,
+        version: Number(v.pointsConfigVersion ?? fallbackModelVersion),
+      };
+    }
+    // Unknown code → fall through to base (forgiving).
+  }
+  const base = await db.getBaseVariant(productModelId);
+  return {
+    variantId: base?.id ?? null,
+    pointDefVariantId: null,
+    version: Number(base?.pointsConfigVersion ?? fallbackModelVersion),
+  };
+}
+
+/**
+ * PV2 — resolve the variant an INGEST (submitInspection) board belongs to. ONLY
+ * called under productVariantEnabled() with a resolved product model. Returns:
+ *   • variantId          — the product_variants.id to STAMP on product_inspections
+ *       (the base variant's id when the machine sends no/unknown code — QĐ#12; the
+ *       matched non-base variant's id when it does). May be null if the model has
+ *       no base variant yet (pre-ensureBaseVariant model) — then nothing is stamped.
+ *   • pointDefVariantId  — the scope for AUTO-PROVISIONING an unknown point code:
+ *       NULL for base (a new common point), the variant id for a non-base variant
+ *       (QĐ#11 — a point ADDED for a variant is a variantId-set row).
+ *   • ingestMode         — VARIANT_UNSPECIFIED_TAG when the board could not bind an
+ *       explicit variant AND the model has >1 live variant (QĐ#12); else undefined.
+ */
+async function resolveIngestVariant(
+  productModelId: number,
+  variantCode: string | undefined,
+): Promise<{
+  variantId: number | null;
+  pointDefVariantId: number | null;
+  ingestMode: typeof VARIANT_UNSPECIFIED_TAG | undefined;
+}> {
+  const trimmed = variantCode?.trim() || undefined;
+  if (trimmed) {
+    const v = await db.getVariantByCode(productModelId, trimmed);
+    if (v) {
+      return {
+        variantId: v.id,
+        pointDefVariantId: v.isBase ? null : v.id,
+        ingestMode: undefined,
+      };
+    }
+    // Unknown code → treat as unspecified: file against base, tag if ambiguous.
+  }
+  const variants = await db.getVariantsByModel(productModelId); // live only, base-first
+  const base = variants.find((v) => v.isBase);
+  const multiVariant = variants.length > 1;
+  return {
+    variantId: base?.id ?? null,
+    pointDefVariantId: null,
+    ingestMode: multiVariant ? VARIANT_UNSPECIFIED_TAG : undefined,
+  };
+}
+
+/**
+ * PV2 — variant-scoped auto-provision of an UNKNOWN measurement-point code (QĐ#11).
+ * Kept in-router (not in measurementPointResolver, which is variant-agnostic and
+ * out of this phase's zone) so the point is written as a VARIANT row (variantId
+ * set). Idempotent: a same-(model,variant,code) retry resolves to the existing row
+ * via the composite unique index behind createMeasurementPointDef. Only reached
+ * under the flag for a NON-BASE variant; base/OFF auto-provision keeps the exact
+ * legacy resolveOrCreateMeasurementPointDefId path (byte-identical).
+ */
+async function autoProvisionVariantPointDefId(
+  code: string | undefined,
+  productModelId: number,
+  variantId: number,
+  machineId: number,
+  productCache: PointDefCache,
+): Promise<number> {
+  const normalized = (code ?? "").trim() || `AUTO_${Date.now()}`;
+  const existing = await db.getMeasurementPointDefByCode(productModelId, normalized, variantId);
+  if (existing?.id) {
+    productCache.set(normalized, existing);
+    return existing.id;
+  }
+  const newId = await db.createMeasurementPointDef({
+    productModelId,
+    machineId,
+    variantId,
+    code: normalized,
+    name: normalized,
+    description:
+      "Auto-provisioned during inspection ingest (variant-scoped, no pre-configured " +
+      "definition). Review and complete tolerances/coordinates as needed.",
+    measurementType: "VISUAL",
+    positionX: 0,
+    positionY: 0,
+  });
+  const created = await db.getMeasurementPointDefById(newId);
+  if (created) productCache.set(normalized, created);
+  return newId;
+}
+
 /**
  * Does an ISO-8601 datetime string carry an EXPLICIT UTC offset ('Z' or ±HH[:]MM)?
  *
@@ -450,6 +596,11 @@ const submitInspectionCoreObject = z.object({
       // double-count hole. `.trim()` normalises before both checks.
       serialNumber: z.string().trim().min(1).max(100), // Số serial sản phẩm
       productModel: z.string().optional(), // Model sản phẩm
+      // Doc 55 Item 3 PV2 — OPTIONAL variant code (additive). Inert unless
+      // PRODUCT_VARIANT_ENABLED is on: absent ⇒ base (+ tag when the model has >1
+      // variant, QĐ#12); present ⇒ the board is filed AS that variant. A machine
+      // that never sends it keeps exactly today's behaviour.
+      variantCode: z.string().trim().min(1).max(50).optional(),
       batchNumber: z.string().optional(), // Số lô
       
       // Inspection results
@@ -939,6 +1090,22 @@ export async function processInspectionSubmission(
         : undefined;
       const resolvedProductModelCode = productModelRecord?.code || normalizedProductModelCode;
 
+      // ══ Doc 55 Item 3 PV2 — VARIANT RESOLUTION (flag-gated) ═════════════════
+      // OFF (default) ⇒ every value stays undefined: the header stamp omits
+      // variantId (→ NULL), auto-provision uses the legacy resolver, and no
+      // ingestMode variant-tag is applied — byte-for-byte the pre-variant path.
+      // ON ⇒ resolve the board's variant from input.variantCode (base + tag when
+      // absent/unknown and the model has >1 variant, QĐ#12).
+      let stampVariantId: number | null | undefined = undefined;    // product_inspections.variantId
+      let pointDefVariantId: number | null | undefined = undefined; // auto-provision scope (null=base)
+      let variantIngestMode: typeof VARIANT_UNSPECIFIED_TAG | undefined = undefined;
+      if (productVariantEnabled() && productModelRecord?.id) {
+        const vres = await resolveIngestVariant(productModelRecord.id, input.variantCode);
+        stampVariantId = vres.variantId;
+        pointDefVariantId = vres.pointDefVariantId;
+        variantIngestMode = vres.ingestMode;
+      }
+
       // Update machine heartbeat (skipped on the batch path — done once there).
       if (!opts?.skipHeartbeat) await db.updateMachineHeartbeat(machine.id);
 
@@ -1119,7 +1286,14 @@ export async function processInspectionSubmission(
       // literal to a const changes NOTHING about the OFF path's behaviour.
       const inspectionHeaderData = {
         machineId: machine.id,
-        ingestMode: aoiIngestMode === "commissioning" ? "commissioning" : undefined,
+        // Doc 55 Item 3 PV2 (QĐ#12) — commissioning is the stronger signal and wins
+        // when a board is BOTH un-commissioned and variant-unspecified (rare
+        // overlap; a single varchar(20) column). variantIngestMode is undefined
+        // when the flag is OFF ⇒ this collapses to the exact legacy expression.
+        ingestMode:
+          aoiIngestMode === "commissioning" ? "commissioning" : variantIngestMode,
+        // Doc 55 Item 3 PV2 — the resolved variant (NULL when the flag is OFF).
+        variantId: stampVariantId ?? undefined,
         programReleaseId: programReleaseId ?? undefined,
         serialNumber: input.serialNumber,
         productModelId: productModelRecord?.id,
@@ -1357,13 +1531,26 @@ export async function processInspectionSubmission(
         } else {
           missingPointCodes.push(pointCode);
           console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'}) — auto-provisioning`);
-          resolvedPointDefId = await resolveOrCreateMeasurementPointDefId(usedCode ?? pointCode, {
-            productModelId: productModelRecord?.id,
-            machineId: machine.id,
-            productCache: productPointCache,
-            machineCache: machinePointCache,
-            autoCreate: true,
-          });
+          // Doc 55 Item 3 PV2 (QĐ#11) — under the flag, an unknown code on a NON-BASE
+          // variant is provisioned as that variant's OWN point (variantId set). Base
+          // (pointDefVariantId null) and flag-OFF keep the exact legacy resolver path.
+          if (pointDefVariantId != null && productModelRecord?.id) {
+            resolvedPointDefId = await autoProvisionVariantPointDefId(
+              usedCode ?? pointCode,
+              productModelRecord.id,
+              pointDefVariantId,
+              machine.id,
+              productPointCache,
+            );
+          } else {
+            resolvedPointDefId = await resolveOrCreateMeasurementPointDefId(usedCode ?? pointCode, {
+              productModelId: productModelRecord?.id,
+              machineId: machine.id,
+              productCache: productPointCache,
+              machineCache: machinePointCache,
+              autoCreate: true,
+            });
+          }
         }
         assertValidPointDefId(resolvedPointDefId, `submitInspection (machine=${machine.code}, point=${pointCode})`);
 
@@ -3195,6 +3382,11 @@ export const machineApiRouter = router({
       machineCode: z.string().optional(),
       apiKey: z.string().optional(),
       productModelCode: z.string().trim().min(1).optional(),
+      // Doc 55 Item 3 PV1 — OPTIONAL variant (additive; inert unless the flag is on).
+      // Present ⇒ the VARIANT's pointsConfigVersion is returned (product_variants),
+      // so a variant-aware machine polls the version it actually inspects against.
+      // Absent / flag OFF ⇒ product_models.pointsConfigVersion (base == model, PV0).
+      variantCode: z.string().trim().min(1).optional(),
     }).refine((data) => data.apiKey || data.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
@@ -3205,17 +3397,23 @@ export const machineApiRouter = router({
         headerKey: machineHeaderKey(ctx),
         scope: "equipment:read",
       });
+      const variantOn = productVariantEnabled();
 
       if (input.productModelCode) {
         const productModel = await db.getProductModelByCode(input.productModelCode.trim());
         if (!productModel) {
           throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
         }
+        // PV1: report the resolved variant's version (base == model version) under
+        // the flag; otherwise the model version exactly as before.
+        const version = variantOn
+          ? (await resolveSyncVariant(productModel.id, input.variantCode, Number(productModel.pointsConfigVersion ?? 1))).version
+          : productModel.pointsConfigVersion;
         return {
           success: true,
           productModels: [{
             productModelCode: productModel.code,
-            pointsConfigVersion: productModel.pointsConfigVersion,
+            pointsConfigVersion: version,
             imageWidth: productModel.imageWidth,
             imageHeight: productModel.imageHeight,
           }],
@@ -3246,6 +3444,11 @@ export const machineApiRouter = router({
       machineCode: z.string().optional(),
       apiKey: z.string().optional(),
       productModelCode: z.string().trim().min(1).optional(),
+      // Doc 55 Item 3 PV1 — OPTIONAL variant (additive; inert unless the flag is on).
+      // Present ⇒ the machine downloads the variant's EFFECTIVE point set
+      // (base − excluded + overridden ∪ variant-added) and its version. Absent /
+      // flag OFF ⇒ exactly today's full product point set + model version.
+      variantCode: z.string().trim().min(1).optional(),
     }).refine((data) => data.apiKey || data.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
@@ -3261,13 +3464,26 @@ export const machineApiRouter = router({
       // Update heartbeat
       await db.updateMachineHeartbeat(machine.id);
 
+      // Doc 55 Item 3 PV1 — resolve a model's point set + reported version. OFF ⇒
+      // db.getMeasurementPointDefsByProductModel + model version (byte-identical).
+      // ON ⇒ resolveEffectivePoints for the addressed variant (base when absent).
+      const variantOn = productVariantEnabled();
+      async function pointsForModel(pm: any): Promise<{ points: any[]; versionOverride?: number }> {
+        if (!variantOn) {
+          return { points: await db.getMeasurementPointDefsByProductModel(pm.id) };
+        }
+        const v = await resolveSyncVariant(pm.id, input.variantCode, Number(pm.pointsConfigVersion ?? 1));
+        const points = await db.resolveEffectivePoints(pm.id, v.pointDefVariantId);
+        return { points, versionOverride: v.version };
+      }
+
       // Doc 51 P2 batch-2 (§5.2 P2, CASE khởi tạo) — build ONE product-model entry
       // with geometry parity to deltaSyncPoints: the SHARED projectSyncPoint (shape/
       // geometry/cells/3D-limits/criteria/lighting) + fiducials + coordinateMode, so
       // a machine that initialises via getPoints is not blind to non-circle points.
       // Legacy fields are preserved verbatim (normalizedX/Y/R kept as Number|null;
       // referenceImageUrl + workstationId still present) — additive, never breaking.
-      async function buildModelEntry(pm: any, points: any[]) {
+      async function buildModelEntry(pm: any, points: any[], versionOverride?: number) {
         const [fiducialRows, lightingByPoint] = await Promise.all([
           db.getFiducialMarksByProductModel(pm.id).catch(() => [] as any[]),
           db
@@ -3281,7 +3497,8 @@ export const machineApiRouter = router({
           referenceImageUrl: pm.referenceImageUrl,
           imageWidth: pm.imageWidth,
           imageHeight: pm.imageHeight,
-          pointsConfigVersion: pm.pointsConfigVersion,
+          // PV1: the variant's version when a variant was resolved, else model version.
+          pointsConfigVersion: versionOverride ?? pm.pointsConfigVersion,
           // Additive parity fields (deltaSyncPoints already returns these).
           coordinateMode: pm.coordinateMode ?? "pixel",
           fiducials: projectFiducials(fiducialRows),
@@ -3306,13 +3523,13 @@ export const machineApiRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${normalizedModelCode}' not found` });
         }
 
-        const points = await db.getMeasurementPointDefsByProductModel(productModel.id);
+        const { points, versionOverride } = await pointsForModel(productModel);
 
         return {
           success: true,
           machineId: machine.id,
           machineCode: machine.code,
-          productModels: [await buildModelEntry(productModel, points)],
+          productModels: [await buildModelEntry(productModel, points, versionOverride)],
         };
       }
 
@@ -3322,8 +3539,8 @@ export const machineApiRouter = router({
 
       for (const { product: pm } of mappings) {
         if (!pm) continue;
-        const points = await db.getMeasurementPointDefsByProductModel(pm.id);
-        productModels.push(await buildModelEntry(pm, points));
+        const { points, versionOverride } = await pointsForModel(pm);
+        productModels.push(await buildModelEntry(pm, points, versionOverride));
       }
 
       return {
@@ -3694,6 +3911,10 @@ export const machineApiRouter = router({
       apiKey: z.string().optional(),
       productModelCode: z.string().trim().min(1),
       sinceVersion: z.number().int().nonnegative(),
+      // Doc 55 Item 3 PV1 — OPTIONAL variant (additive; inert unless the flag is on).
+      // Present ⇒ diff is gated on the VARIANT's version and `points` is the variant's
+      // EFFECTIVE set. Absent / flag OFF ⇒ exactly today's model-version diff.
+      variantCode: z.string().trim().min(1).optional(),
     }).refine((data) => data.apiKey || data.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
@@ -3712,7 +3933,14 @@ export const machineApiRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
       }
 
-      const currentVersion = productModel.pointsConfigVersion ?? 1;
+      // Doc 55 Item 3 PV1 — variant-aware version gate + point source (flag-gated).
+      // OFF ⇒ syncVariant null ⇒ currentVersion = model version and `points` come
+      // from getPointsChangedSinceVersion (byte-identical). ON ⇒ gate on the variant
+      // version and return its EFFECTIVE set.
+      const syncVariant = productVariantEnabled()
+        ? await resolveSyncVariant(productModel.id, input.variantCode, Number(productModel.pointsConfigVersion ?? 1))
+        : null;
+      const currentVersion = syncVariant ? syncVariant.version : (productModel.pointsConfigVersion ?? 1);
 
       // No changes since client version
       if (currentVersion <= input.sinceVersion) {
@@ -3733,8 +3961,19 @@ export const machineApiRouter = router({
       // are RETIRED and STOP inspecting them — previously they just vanished from
       // `points`, so the machine kept grading boards against a spec that no longer
       // exists. Additive: existing consumers that read only `points` are untouched.
-      const { points, deletedPoints, deletedCodes } =
-        await db.getPointsChangedSinceVersion(productModel.id, input.sinceVersion);
+      //
+      // PV1: when a variant is resolved, `points` becomes its EFFECTIVE set
+      // (resolveEffectivePoints) instead of the model's raw active set. Tombstones
+      // still come from the model/base stream (variant-scoped tombstones are a
+      // documented deferral — see the report / QĐ#14). getPointsChangedSinceVersion
+      // is still called for those tombstones; its own `points` are used only in the
+      // flag-OFF path so the legacy behaviour is byte-identical.
+      const changed = await db.getPointsChangedSinceVersion(productModel.id, input.sinceVersion);
+      const deletedPoints = changed.deletedPoints;
+      const deletedCodes = changed.deletedCodes;
+      const points = syncVariant
+        ? await db.resolveEffectivePoints(productModel.id, syncVariant.pointDefVariantId)
+        : changed.points;
 
       // Log delta sync pull
       db.createProductSyncLog({

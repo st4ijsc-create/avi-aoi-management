@@ -154,6 +154,18 @@ export const productInspections = pgTable("product_inspections", {
   // already on record from a DIFFERENT machine in the recent window (QĐ#3: the
   // board is TAGGED, never rejected). Distinct from an idempotency retry (same
   // machine + same key ⇒ short-circuited as a duplicate long before this check).
+  //
+  // ── Doc 55 Item 3 PV0/PV2 (migration 0286) — PRODUCT VARIANT stamp. ──────────
+  // Which product_variants.id this board was inspected AS. Nullable + never
+  // backfilled: NULL = legacy/pre-0286 row OR ingest ran with PRODUCT_VARIANT_ENABLED
+  // OFF (the whole variant layer inert ⇒ variantId stays NULL, byte-identical to
+  // pre-variant). Under the flag, submitInspection stamps the resolved variant's id
+  // (the BASE variant's id when the machine sends no variantCode — QĐ#12; the
+  // matched non-base variant's id when it does). Soft ref (product_inspections is a
+  // Timescale hypertable → no FK); analytics must stay null-safe. Declared here so
+  // the generated INSERT carries it when set — additive on a DB where 0286 added
+  // the column, and an omitted (undefined) value simply never references it.
+  variantId: integer("variantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
