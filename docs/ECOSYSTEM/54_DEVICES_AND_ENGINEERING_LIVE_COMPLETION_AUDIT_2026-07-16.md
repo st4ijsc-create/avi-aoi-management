@@ -255,3 +255,154 @@ User duyệt **A→E** + Đ1(A→E)/Đ2(ECN→engineer)/Đ3(MQTT read-only opera
 - `ACTUATION_STEPUP_2FA=true` → mỗi lệnh actuation (robot/deploy) cần **OTP tươi** — test actuation sẽ cần mã mỗi lần (đúng thiết kế production).
 - Console-noise mới thấy (không phải regression F): `/device-monitor` fire `deviceAdapter.list` bất kể quyền → operator1 (không machine_control) nhận 403 log. FE nên `enabled: hasPermission("machine_control")` trước khi query — polish nhỏ.
 - `.env.doc54F.bak` giữ lại làm điểm khôi phục; xoá khi chắc chắn.
+
+### §9d — Commit/push + cosmetic (2026-07-16, user duyệt)
+
+**Commit + push (2 commit lên `fresh` github):**
+- `d467c6b5` feat(doc54): toàn bộ A→E + Đ1-5 + follow-ups (2FA/broker) + Đợt F (54 files). Migration 0277-0280 đã áp DB (files committed). `.env`/`.bak`/tool-junk gitignore, KHÔNG lọt secret.
+- `e495d954` polish(doc54): 4 cosmetic.
+- Ghi chú git: anomaly một phần (file turn-trước nằm sẵn trong tree HEAD) — commit là snapshot working-tree nên bắt TRỌN (đã verify markers có trong HEAD).
+
+**Cosmetic (4/4 DONE, green-gate tsc0+build):**
+1. Dock push-layout: mở rail đẩy nội dung (body padding-right) trên viewport rộng, không che editor.
+2. Lưới 2D: hiện mã máy ở fit-all cho fleet ≤60 + font lớn hơn (hết "ô màu trơ").
+3. ECN i18n: +43 key ×3 locale (component đã t()-wired sẵn) → EN/ZH hết fallback VN.
+4. FE-gate: `deviceAdapter.list`+edge query gate machine_control view → **verify LIVE operator1 0 console error** (trước 3× 403). Bonus: factory OEE hiện 30% (trước "—").
+
+**doc 54 — TOÀN BỘ HOÀN TẤT & ĐÃ PUSH.** Còn lại chỉ việc operator/HW ngoài phạm vi code.
+
+---
+
+## 10. TÁI ĐÁNH GIÁ độ hoàn thiện (hậu-remediation, 2026-07-17) — CHỜ DUYỆT
+
+**Phương pháp:** 3 subagent chấm lại độc lập code/backend/DB theo trạng thái HIỆN TẠI (spot-check file + SQL live) + tôi lái Playwright đánh giá frontend/thiết kế đa persona. Đây là đo lại độ hoàn thiện SAU khi đã thực thi §9/§9b/§9c/§9d.
+
+### 10.1 Scorecard: TRƯỚC (§1) → SAU (hậu-fix)
+
+| Trục (thang 100) | Thiết bị & Giám sát | Kỹ thuật & Điều khiển |
+|---|---|---|
+| Backend đúng đắn/REAL | 74 → **82** | 82 → **84** |
+| An toàn / RBAC | 55 → **80** | 68 → **83** |
+| Data-integrity | 60 → **78** | 66 → **80** |
+| Frontend render/UX | 72 → **80** | 78 → **82** |
+| Độ đầy dữ liệu | 62 → **80** | 40 → **80** |
+| Thiết kế/bố cục/màu | 80 → **80** | 82 → **82** |
+| i18n | 55 → **72** | 58 → **70** |
+| **TỔNG** | **~65 → ~78** | **~68 → ~81** |
+
+*(DB/data-integrity riêng: ~60 → **78**.)* **Cải thiện ~+13 điểm/module.** Khoảng cách còn lại tới "production" = **polish + vài surface RBAC bị sót + độ-thực dữ liệu**, KHÔNG phải kiến trúc.
+
+### 10.2 Đã verify vững (hậu-fix)
+- **2 P0 đóng thật** (getById strip apiKey; update reject apiKey/registrationStatus non-admin). **~25 mutation gated** (writeProcedure/actuation/admin). **Interlock**→actuation, approve→admin+2FA. **Broker secret** strip read + AES-256-GCM encrypt-at-rest (secretBox đúng). **Analytics** SUM/CASE + DOW fixed. **N+1 fleet** → set-based.
+- **DB (SQL live):** UNIQUE `uq_oee_metrics_*`/`uq_machine_health_*` tồn tại **0 dup**; **WORM REVOKE hiệu lực trên `avi_app`** (command_log INSERT+SELECT only; product_inspections/program_deployments/robot_jobs mất DELETE); robot_telemetry retention **365d**; **15 machine api_keys** hashed. Row-counts lấp đầy (program 4, recipes 3, interlock_events 3, ECN 3, edge 3, uns 15, heartbeats 108, mqtt 3/6/31, oee 897, health 38k, robot_telemetry 159k).
+- **Deploy-gate (Engineering):** four-eyes→build→SoD→sim-gate→adapter chỉ khi enabled+signed→verify-after-download; inbox `ai_pending_actions` + dispatcher re-verify `NOT_CONFIRMED` → formality-four-eyes KHÔNG chạm HW.
+- **Live QA (Playwright):** OEE 35.1%/36-36, Recipes 3, ECN engineer full, connectivity 2-tier, 2FA-lockout hết, 0 console error.
+
+### 10.3 Đánh giá FRONTEND/thiết kế (từng màn/element/bố cục/màu)
+**Điểm mạnh:** identity nhất quán dark+teal, content-first (canvas ≥70%); Engineering Hub hub-and-spoke + Beta badge + golden-thread; Operator home touch-first đúng persona; OEE/CMMS/Device-Monitor dùng DataTable + badge priority/status + chart (OEE comparison bar chart thật); POU Studio KPI + LAD/FBD/SFC + transpile ST thật; empty/denied-state đẹp; Copilot Dock rail polish + safety note; connectivity 2-tier tab sạch. **Hình thức ~8/10.**
+**Điểm yếu/còn lại:**
+- **[DESIGN] Canvas 2D `/factory-command` vẫn crude** — ô chữ nhật màu 1 hàng, nhãn giữa hiện "—" khó đọc, chưa group Line trực quan, không legend. Tweak nhỏ (showAllCodes+font) CHƯA đủ; phàn nàn gốc "sơ sài" của user CÒN.
+- **[DATA-hệ thống] Seed-staleness:** OEE/telemetry cũ đi theo thời gian (thấy live: OEE 30%→"—" sau ~16h; re-seed → 35.1% lại). Màn phụ thuộc live-window tự rỗng.
+- **i18n partial:** FactoryCommand/CMMS/ECN đã key-hóa; còn mixed EN/VN ở robot-control rows, operator home, vài chỗ.
+- **RBAC-UI:** interlock vẫn hiện nút hành động khi "View Only" (robot-control đã fix).
+
+### 10.4 ĐÍNH CHÍNH báo cáo trước (subagent phát hiện)
+- **§9c SAI về step-up-2FA:** `ACTUATION_STEPUP_2FA=true` **KHÔNG** làm deploy family cần OTP tươi. `deployBuild/approveDeployment/rollbackDeployment/deployToFleet` dùng `actuationProcedure` = chỉ kiểm **cờ 2FA tài khoản** (`require2FA`), KHÔNG phải `requireFreshTotp`. Chỉ `orchestration.deployWorkflow` (deployProcedure) mới OTP-tươi. → Cờ đang **inert** trên deploy family (xem G2).
+- **§3.2 SAI về workOrderNumber:** thực ra `maintenance_work_orders_workOrderNumber_unique` ĐÃ tồn tại (0 dup) — KHÔNG phải gap.
+
+### 10.5 KẾ HOẠCH NÂNG CẤP còn lại (đề xuất — CHỜ DUYỆT)
+
+**Đợt G1 — RBAC surface bị sót (HIGH, ship-blocker):**
+- Gate `mqttAlert` mutations còn bare protectedProcedure (`mqttOeeRouters.ts:1083/1107/1132/1140/1160` create/update/delete/toggle/resolve) — Wave B sót sub-router này; viewer CRUD được luật cảnh báo MQTT. + `mqttClientManagementRouter.ts:1648/1776/1795` (updateAlertConfig/ack/resolve). Fix: writeProcedure + requirePermission(mqtt_monitoring).
+- **G2 (đính chính):** đổi `deployBuild/approveDeployment/rollbackDeployment/deployToFleet` → `deployProcedure` (+ nhận `totpCode`) để `ACTUATION_STEPUP_2FA` thực sự yêu cầu OTP tươi (hoặc bỏ claim).
+
+**Đợt G3 — Data resilience (MED):**
+- Live machine-health READ hydrate từ `machine_health_history` khi Map lạnh (hết "—" sau restart).
+- Fix seed-staleness: **continuous-sim feeder** (đẩy status_logs/heartbeat/oee liên tục) HOẶC OEE fallback last-known `oee_metrics` khi live-window rỗng.
+- Idempotency: bỏ short-circuit trên trạng thái `rejected/failed` (deploy retry được); partial-UNIQUE `product_inspections(idempotencyKey)`.
+
+**Đợt G4 — DB referential hardening (MED):**
+- Thêm FK `machineId→machines(id)` trên bảng thường (non-hypertable): edge_nodes, mqtt_clients, engineering_changes, tasks, interlock_events (+ maintenance_work_orders.assignedTo).
+- Retire cột legacy `machines.apiKey` (null/drop sau khi chắc 15 máy auth qua api_keys hash).
+
+**Đợt G5 — Design & i18n polish (LOW):**
+- **Redesign canvas 2D** `/factory-command`: nhãn máy rõ, group theo Line, legend màu, mini-KPI mỗi ô (đúng phàn nàn gốc).
+- Sweep i18n VN-in-EN còn lại (ECN leftovers, robot-control rows, operator home, FactoryCommand misc).
+
+**Đợt G6 — Security hardening (LOW/defense-in-depth):**
+- Copilot review/explain refuse phân tích logic an toàn; equipment-governance thêm writeProcedure floor; `orchestration.simulate` dùng inArray; startup-assert DB role KHÔNG superuser (bảo toàn WORM); set explicit `SECRET_ENCRYPTION_KEY` + doc "không rotate ẩu".
+
+**Đợt G7 — Seed realism (LOW):** lấp bảng còn rỗng (factory_zones/safety_zones/recipe_sets/mqtt_message_history/mqtt_connection_status) + heartbeat/robot_job dày hơn.
+
+**Ngoài code (chủ nhà máy/HW):** áp migration production; HW-FAT; Timescale cutover; bật LICENSE_MODULE_GATE_ENABLED (SKU) nếu cần.
+
+### 10.6 Quyết định cần chốt
+- **G-Đ1:** Thực thi ngay **G1+G2** (RBAC sót + step-up-2FA) — HIGH, nên làm trước?
+- **G-Đ2:** Seed-staleness fix bằng **continuous-sim feeder** hay **OEE fallback last-known** (đơn giản hơn)?
+- **G-Đ3:** Retire `machines.apiKey`: **null giá trị** (giữ cột) hay **drop cột** (migration)?
+- **G-Đ4:** Redesign canvas 2D (G5) — làm ngay hay để đợt UX riêng?
+- **G-Đ5:** Phạm vi thực thi: **G1-G4** (chức năng/an toàn/data) hay **G1-G7** (thêm design+polish+realism)?
+
+---
+
+## 11. LỘ TRÌNH TRIỂN KHAI NHÀ MÁY theo GIAI ĐOẠN (0→3) — audit + kế hoạch chi tiết (CHỜ DUYỆT)
+
+Re-frame theo thứ tự ưu tiên triển khai của nhà máy (thay vì module/wave). 4 subagent đánh giá độ **sẵn-sàng-TRIỂN-KHAI** (không chỉ "màn render" mà "có dùng được ở nhà máy thật") + SQL live.
+
+### 11.1 Ma trận độ sẵn-sàng triển khai
+
+| Giai đoạn | Điểm deploy-ready | Cổng chặn chính | Kết luận |
+|---|---|---|---|
+| **GĐ0 — Master data** | **60** | Data/kích-hoạt (framework 85, data-completeness **15**) | Framework MẠNH, gần đủ màn; nhưng CHƯA load data thật lần nào + bulk MP-coordinate không có → không set được ở quy mô 100s sản phẩm |
+| **GĐ1 — Kết nối + Monitor + Cảnh báo** | **70** | Activation posture (code REAL, ship flag-OFF) | Driver protocol THẬT (mở socket/lib), ingest production-grade; nhưng 15 adapter disabled, dashboard phụ thuộc derived-table chỉ sim ghi, chưa HW-FAT |
+| **GĐ2 — Thống kê/phân tích/báo cáo** | **70** | 3 số-SAI live + realtime single-node | Reporting production-grade; nhưng Cpk≈1 giả, owner-notify throw, WIP sai nhãn; realtime chưa HA |
+| **GĐ3 — Lập trình + điều khiển + AI** | **~81** | AI model offline + HW-FAT + step-up-2FA | Authoring/deploy-gate an toàn nhiều lớp THẬT; nhưng model AI chưa chạy (CUDA OOM), deploy chạm máy cần FAT, step-up-2FA inert |
+
+**Chủ đề xuyên suốt:** cả 4 giai đoạn là **framework đẳng cấp** — cổng triển khai đồng nhất là **kích-hoạt + data thật + HW-FAT + config transport**, KHÔNG phải viết lại.
+
+### 11.2 ⭐ Insight liên-giai-đoạn (đòn bẩy cao nhất)
+Ba phát hiện độc lập cùng MỘT gốc: **không có service nào tính `daily_statistics` / machine-presence từ telemetry THẬT được ingest — chỉ sim-live-daemon làm.**
+- GĐ1: `upsertDailyStatistics` (db/statistics.ts) **zero live caller**; `machinePresenceService` (MACHINE_PRESENCE_ENABLED **OFF**).
+- GĐ2: OEE honest-null → máy thiếu factor bị drop → fleet-OEE rỗng; `oeeSnapshotScheduler` default-OFF → `oee_metrics` sparse.
+- Live (tôi thấy): OEE 30%→"—" sau 16h (seed cũ đi).
+→ **Wire "live derived-table writer" (GĐ1-T3) là fix đòn-bẩy cao nhất**: bật nó thì OEE/health/monitoring + phần lớn GĐ2 tự sống với máy thật. Nếu không, kết nối máy thật vẫn ra dashboard rỗng.
+
+### 11.3 Kế hoạch chi tiết theo giai đoạn (deployment-ordered)
+
+**GĐ0 — Master data (làm TRƯỚC NHẤT):**
+- P0.1 [L] Wire **MP-coordinate bulk import** (Gerber/centroid/CAD→auto-place); nay `dataRouters.ts:320` hardcode positionX/Y=0, `cad_import_jobs` chưa nối → điểm-đo geometry-less, phải đặt tay từng điểm.
+- P0.2 [M] **Load master data thật** + backfill componentCode/BOM (suppliers/materials/UoM/calendars/routing/BOM = 0; 34/34 điểm no componentCode → traceability/feeder/ERP-routing/Pareto inert).
+- P0.3 [S] Unify RBAC bulk-import (`dataRouters.import*`/`productRouters.importList` admin-only → mở engineer) — hết single-admin bottleneck.
+- P0.4 [M] Data-quality gate: mở rộng DQ dashboard sang hierarchy+points; **chặn map máy khi product under-configured** (0,0-points/no-threshold) → không feed junk spec-gate cho GĐ1.
+- P0.5 [S-M] First-run factory bootstrap + tách sim/real (corporates 0; 22,995 inspection sim lẫn DB); import operator-badge/routing/BOM bulk.
+
+**GĐ1 — Kết nối + Monitor + Cảnh báo:**
+- P1.1 [M · HW] **Activate + provision adapter/endpoint per line** (flip OT_GATEWAY/MTCONNECT/CFX/HOT_FOLDER/MQTT/SECS_GEM=true; 15 adapter disabled→trỏ endpoint thật; tag mapping).
+- P1.2 [M · no-HW] ⭐ **Wire live derived-table writers** (upsertDailyStatistics + machinePresenceService + OEE_SNAPSHOT_ENABLED) — đòn bẩy §11.2, làm OEE/health sống với máy thật.
+- P1.3 [M · no-HW] **Config alert transports + seed rules** (SMTP/FCM/Forge unset; 0 rule; ngRate chỉ MQTT/FCM) — hiện out-of-box chỉ in-app WS.
+- P1.4 [S · no-HW] **Flip durability+security go-live** (INSPECTION/OT_STORE_FORWARD, ANDON_SLA/ALERT_ESCALATION_SWEEP; MACHINE_CODE_ONLY_ALLOWED default-allow; +G1 gate mqttAlert còn bare).
+- P1.5 [S] Thêm `slmp` vào deviceAdapter enum (driver+DB đã support).
+- P1.6 [L · HW] **HW-FAT/commissioning** vs device thật (validate firmware quirk); complete scaffold FOCAS/IO-Link/Euromap63/SCPI **chỉ nếu** có máy class đó.
+
+**GĐ2 — Thống kê/phân tích/báo cáo:**
+- P2.1 [S] **Fix 3 số-SAI trust-blocker:** Cpk≈1 giả (productionDashboardRouter:509→dùng utils/spc), owner-notify throw (alertEvaluationService:111 boolean che hàm), WIP bottleneck sai nhãn (wipIngestService:460).
+- P2.2 [M] OEE-trust: provision ideal-cycle-time + align production-count window với availability window + reconcile 2 OEE definitions (relabel uptime% vs SEMI-E10 6-state).
+- P2.3 [M-L] Realtime HA: Redis adapter + REDIS_URL + leader-lock broadcaster/scheduler + move in-memory cooldown/dedup→Redis; impl BROKER_DISCONNECT/CLIENT_OFFLINE duration (nay hardcode 0); war-room push.
+- P2.4 [M] Reporting breadth: mobile push FCM/APNs; SendGrid/SES fallback + bundle CJK font; paginate row-cap; report-builder server-render+schedule.
+- P2.5 [M] Analytics coverage: compute takt/util/balance; downtime Pareto + MTBF/MTTR; recursive genealogy.
+
+**GĐ3 — Lập trình + điều khiển + AI (làm SAU CÙNG):**
+- P3.1 [M · HW] **Deploy AI model server** (llama-server đủ VRAM) — Copilot generate/AI-chat/exec-summary/orchestration-advisor chết khi model offline; AI-assist là cốt lõi GĐ3.
+- P3.2 [S] **Step-up-2FA** (G2): deployBuild/approve/rollback/deployToFleet → deployProcedure + totpCode (nay ACTUATION_STEPUP_2FA inert).
+- P3.3 [L · HW] **HW-FAT deploy** chạm PLC/robot thật (DPC_DEPLOY_ENABLED on + adapter thật + nghiệm thu 2-eyes). Chỉ bật SAU khi GĐ1/GĐ2 vững.
+- P3.4 [S] Copilot review/explain refuse safety-logic; idempotency bỏ swallow-reject; orchestration.simulate inArray.
+
+### 11.4 Đường tới-hạn (thứ tự khuyến nghị)
+`GĐ0 (load data + MP-coord + DQ-gate)` → `GĐ1 (activate + ⭐derived-writer + transport + FAT)` → `GĐ2 (fix 3 trust-stat + OEE-reconcile + HA)` → `GĐ3 (AI-model + step-up-2FA + HW-deploy)`. **Không lập trình/điều khiển máy (GĐ3) trước khi monitor được (GĐ1) — đúng thứ tự anh đề ra.** Ưu tiên tuyệt đối: **P1.2 derived-writer** (mở khóa cả GĐ1+GĐ2 cho máy thật).
+
+### 11.5 Quyết định cần chốt
+- **L-Đ1:** Bắt đầu ngay **GĐ0 (load master data + MP-coord import)** hay **GĐ1 (activate connectivity + derived-writer)** trước? (GĐ0 là tiền đề data, nhưng derived-writer P1.2 là đòn bẩy — có thể làm song song).
+- **L-Đ2:** MP-coordinate: đầu tư **CAD/Gerber auto-place** (L) hay tạm **CSV x,y thủ công** (S) cho pilot?
+- **L-Đ3:** Có nhà máy/HW thật để **HW-FAT** (P1.6/P3.3) chưa, hay tiếp tục Full-Sim?
+- **L-Đ4:** Realtime **HA (Redis multi-instance)** cần ngay (P2.3) hay chấp nhận single-node cho pilot?
+- **L-Đ5:** Phạm vi thực thi đợt tới: **GĐ0+GĐ1 (nền + kết nối/monitor)** hay full **GĐ0→GĐ3**?

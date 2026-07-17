@@ -214,7 +214,118 @@
 <tr><td>Đ5</td><td>WORM (C) làm bằng <b>REVOKE grant</b> hay <b>trigger append-only</b>?</td></tr>
 </tbody></table></div>
 
-<div class="foot">Nguồn: 3 subagent audit code/backend/DB (đọc mã + SQL live) + audit Playwright đa persona (engineer1/operator1, ~15 màn, ảnh + console + network). Chi tiết backend/DB lưu ở scratchpad phiên. Bản Markdown song song: <code>docs/ECOSYSTEM/54_*.md</code>.</div>
+<h2 id="exec">9 · ĐÃ THỰC THI (A→E + Đ1-5 + follow-ups + Đợt F + cosmetic)</h2>
+<div class="callout good"><b>Toàn bộ kế hoạch §7 đã thực thi &amp; push</b> (green-gate tsc+build sau mỗi đợt; live-verify Playwright đa persona). Chi tiết §9-§9d trong bản Markdown. Tóm: 2 P0 credential đóng · ~25 mutation RBAC-hardened · broker password AES-256-GCM encrypt-at-rest · migrations 0277-0280 áp DB (WORM/UNIQUE/retention) · seed rộng · i18n 157 key×3 · Đợt F (tắt legacy shared-key, default-deny broker, 3 cờ deploy-safety, 15 api_keys hashed) · 2 commit push: <code>d467c6b5</code> + <code>e495d954</code>.</div>
+
+<h2 id="reassess">10 · TÁI ĐÁNH GIÁ độ hoàn thiện (hậu-remediation) — CHỜ DUYỆT</h2>
+<p class="small">3 subagent chấm lại độc lập (spot-check file + SQL live) + Playwright design-pass đa persona. Đo lại SAU khi đã thực thi §9.</p>
+
+<h3>Scorecard: TRƯỚC → SAU</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Trục (thang 100)</th><th>Thiết bị &amp; Giám sát</th><th>Kỹ thuật &amp; Điều khiển</th></tr></thead>
+<tbody>
+<tr><td>Backend đúng đắn / REAL</td><td class="num">74 → 82</td><td class="num">82 → 84</td></tr>
+<tr><td>An toàn / RBAC</td><td class="num">55 → 80</td><td class="num">68 → 83</td></tr>
+<tr><td>Data-integrity</td><td class="num">60 → 78</td><td class="num">66 → 80</td></tr>
+<tr><td>Frontend render / UX</td><td class="num">72 → 80</td><td class="num">78 → 82</td></tr>
+<tr><td>Độ đầy dữ liệu</td><td class="num">62 → 80</td><td class="num">40 → 80</td></tr>
+<tr><td>Thiết kế / bố cục / màu</td><td class="num">80 → 80</td><td class="num">82 → 82</td></tr>
+<tr><td>i18n</td><td class="num">55 → 72</td><td class="num">58 → 70</td></tr>
+<tr><td><b>TỔNG</b></td><td class="num">~65 → <b>~78</b></td><td class="num">~68 → <b>~81</b></td></tr>
+</tbody></table></div>
+<p class="small">DB/data-integrity riêng: ~60 → <b>78</b>. Cải thiện <b>~+13/module</b>. Khoảng cách còn lại = polish + vài RBAC surface bị sót + độ-thực dữ liệu, <b>không phải kiến trúc</b>.</p>
+
+<h3>Verify (SQL live) — remediation đã landed</h3>
+<ul>
+<li>UNIQUE <code>uq_oee_metrics_*</code>/<code>uq_machine_health_*</code> tồn tại <b>0 dup</b>; <b>WORM REVOKE hiệu lực trên <code>avi_app</code></b> (command_log INSERT+SELECT; các bảng khác mất DELETE); robot_telemetry retention <b>365d</b>; <b>15 machine api_keys</b> hashed. Row-counts lấp đầy (program 4 · recipes 3 · ECN 3 · edge 3 · uns 15 · heartbeats 108 · mqtt 3/6/31 · oee 897 · health 38k · robot_telemetry 159k).</li>
+<li>Live QA: OEE 35.1%/36-36 · Recipes 3 · ECN engineer full · connectivity 2-tier · 2FA-lockout hết · 0 console error.</li>
+</ul>
+
+<h3>Frontend / thiết kế</h3>
+<p><b>Mạnh (~8/10):</b> dark+teal nhất quán, content-first; Engineering Hub hub-and-spoke; Operator home touch-first; OEE/CMMS/Device-Monitor DataTable + badge + chart; POU transpile ST thật; empty/denied-state đẹp; Copilot Dock polish; connectivity 2-tier sạch.</p>
+<p><b>Yếu/còn:</b> <span class="b p1">DESIGN</span> canvas 2D <code>/factory-command</code> vẫn crude (ô màu, nhãn "—", chưa group Line/legend) — phàn nàn gốc CÒN · <span class="b p1">DATA</span> seed-staleness hệ thống (OEE 30%→"—" sau 16h, re-seed→35.1%) · i18n partial (mixed EN/VN vài chỗ) · interlock vẫn hiện nút khi "View Only".</p>
+
+<div class="callout warn"><b>Đính chính báo cáo trước:</b> (1) §9c SAI — <code>ACTUATION_STEPUP_2FA</code> KHÔNG bắt OTP-tươi trên deploy family (actuationProcedure chỉ kiểm cờ 2FA tài khoản; cần <code>deployProcedure</code> — xem G2). (2) §3.2 SAI — <code>workOrderNumber</code> thực ra ĐÃ có UNIQUE (không phải gap).</div>
+
+<h3>Kế hoạch nâng cấp còn lại (đề xuất)</h3>
+<div class="grid">
+<div class="panel"><b>G1 — RBAC surface bị sót <span class="b p1">HIGH</span></b><ul>
+<li>Gate <code>mqttAlert</code> mutations còn bare (<code>mqttOeeRouters.ts:1083/1107/1132/1140/1160</code>) + <code>mqttClientMgmt</code> updateAlertConfig/ack/resolve — Wave B sót; viewer CRUD luật cảnh báo MQTT.</li>
+<li><b>G2</b> (đính chính): deployBuild/approveDeployment/rollbackDeployment/deployToFleet → <code>deployProcedure</code> (+ totpCode) để step-up-2FA thực sự có tác dụng.</li></ul></div>
+<div class="panel"><b>G3 — Data resilience <span class="b p2">MED</span></b><ul>
+<li>Live machine-health READ hydrate từ <code>machine_health_history</code> (hết "—" sau restart).</li>
+<li>Seed-staleness: continuous-sim feeder HOẶC OEE fallback last-known khi live-window rỗng.</li>
+<li>Idempotency: bỏ short-circuit trên reject/fail; partial-UNIQUE <code>product_inspections(idempotencyKey)</code>.</li></ul></div>
+<div class="panel"><b>G4 — DB referential <span class="b p2">MED</span></b><ul>
+<li>FK <code>machineId→machines</code> trên bảng thường (edge_nodes/mqtt_clients/engineering_changes/tasks/interlock_events).</li>
+<li>Retire cột legacy <code>machines.apiKey</code> plaintext (null/drop sau khi chắc hashed path).</li></ul></div>
+<div class="panel"><b>G5 — Design &amp; i18n <span class="b info">LOW</span></b><ul>
+<li><b>Redesign canvas 2D</b> factory-command (nhãn máy rõ, group Line, legend, mini-KPI).</li>
+<li>Sweep i18n VN-in-EN còn lại.</li></ul></div>
+<div class="panel"><b>G6 — Security hardening <span class="b info">LOW</span></b><ul>
+<li>Copilot review/explain refuse safety; equipment-governance writeProcedure floor; orchestration.simulate inArray; startup-assert DB role non-superuser; explicit <code>SECRET_ENCRYPTION_KEY</code>.</li></ul></div>
+<div class="panel"><b>G7 — Seed realism <span class="b info">LOW</span></b><ul>
+<li>Lấp bảng còn rỗng (zones/recipe_sets/mqtt_message_history/mqtt_connection_status) + telemetry dày hơn.</li></ul></div>
+</div>
+
+<h3>Quyết định cần chốt</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Quyết định</th></tr></thead>
+<tbody>
+<tr><td>G-Đ1</td><td>Thực thi ngay <b>G1+G2</b> (RBAC sót + step-up-2FA)?</td></tr>
+<tr><td>G-Đ2</td><td>Seed-staleness: <b>continuous-sim feeder</b> hay <b>OEE fallback last-known</b>?</td></tr>
+<tr><td>G-Đ3</td><td>Retire <code>machines.apiKey</code>: <b>null giá trị</b> hay <b>drop cột</b>?</td></tr>
+<tr><td>G-Đ4</td><td>Redesign canvas 2D — làm ngay hay đợt UX riêng?</td></tr>
+<tr><td>G-Đ5</td><td>Phạm vi: <b>G1-G4</b> (chức năng/an toàn/data) hay <b>G1-G7</b> (thêm design+realism)?</td></tr>
+</tbody></table></div>
+
+<h2 id="phased">11 · LỘ TRÌNH TRIỂN KHAI NHÀ MÁY theo GIAI ĐOẠN (0→3) — CHỜ DUYỆT</h2>
+<p class="small">Re-frame theo thứ tự ưu tiên nhà máy. 4 subagent đánh giá độ <b>sẵn-sàng-TRIỂN-KHAI</b> (dùng được ở nhà máy thật, không chỉ render) + SQL live.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Giai đoạn</th><th>Điểm deploy-ready</th><th>Cổng chặn chính</th></tr></thead>
+<tbody>
+<tr><td><b>GĐ0 — Master data</b></td><td class="num">60</td><td>Data/kích-hoạt (framework 85, data-completeness <b>15</b>) — chưa load data thật, MP-coordinate bulk không có</td></tr>
+<tr><td><b>GĐ1 — Kết nối + Monitor + Cảnh báo</b></td><td class="num">70</td><td>Activation posture — driver protocol REAL nhưng 15 adapter disabled, dashboard phụ thuộc derived-table chỉ sim ghi, chưa HW-FAT</td></tr>
+<tr><td><b>GĐ2 — Thống kê/phân tích/báo cáo</b></td><td class="num">70</td><td>3 số-SAI live (Cpk≈1 giả · owner-notify throw · WIP sai nhãn) + realtime single-node</td></tr>
+<tr><td><b>GĐ3 — Lập trình + điều khiển + AI</b></td><td class="num">~81</td><td>AI model offline (CUDA OOM) + HW-FAT deploy + step-up-2FA inert</td></tr>
+</tbody></table></div>
+<p class="small"><b>Chủ đề:</b> cả 4 GĐ là <b>framework đẳng cấp</b> — cổng triển khai đồng nhất = <b>kích-hoạt + data thật + HW-FAT + config transport</b>, KHÔNG phải viết lại.</p>
+
+<div class="callout"><b>⭐ Insight liên-giai-đoạn (đòn bẩy cao nhất):</b> 3 phát hiện độc lập cùng MỘT gốc — <b>không service nào tính <code>daily_statistics</code>/machine-presence từ telemetry THẬT; chỉ sim-daemon làm</b> (<code>upsertDailyStatistics</code> zero live caller · <code>machinePresenceService</code> OFF · OEE honest-null drop máy → fleet rỗng · live: OEE 30%→"—" sau 16h). → <b>Wire "live derived-table writer" (P1.2) mở khóa cả GĐ1+GĐ2 cho máy thật</b> — nếu không, cắm máy thật vẫn ra dashboard rỗng.</div>
+
+<h3>Kế hoạch chi tiết theo giai đoạn (deployment-ordered)</h3>
+<div class="grid">
+<div class="panel"><b>GĐ0 — Master data (TRƯỚC NHẤT)</b><ul>
+<li>P0.1 <span class="b p1">L</span> Wire <b>MP-coordinate bulk import</b> (Gerber/CAD→auto-place; nay hardcode 0,0).</li>
+<li>P0.2 <span class="b p2">M</span> Load master data thật + backfill componentCode/BOM (mọi bảng master = 0).</li>
+<li>P0.3 <span class="b info">S</span> Unify RBAC bulk-import (admin-only→engineer). P0.4 <span class="b p2">M</span> DQ-gate chặn map máy khi product under-configured. P0.5 First-run bootstrap + tách sim/real.</li></ul></div>
+<div class="panel"><b>GĐ1 — Kết nối + Monitor + Cảnh báo</b><ul>
+<li>P1.1 <span class="b p2">M·HW</span> Activate + provision adapter/endpoint (15 disabled).</li>
+<li>P1.2 <span class="b p1">M</span> ⭐ <b>Wire live derived-table writers</b> (daily_stats + presence + OEE_SNAPSHOT).</li>
+<li>P1.3 <span class="b p2">M</span> Config alert transports + seed rules. P1.4 <span class="b info">S</span> Flip durability/security go-live + gate mqttAlert. P1.5 slmp enum. P1.6 <span class="b p1">L·HW</span> HW-FAT + scaffold FOCAS/IO-Link/Euromap63/SCPI (nếu có máy).</li></ul></div>
+<div class="panel"><b>GĐ2 — Thống kê/phân tích/báo cáo</b><ul>
+<li>P2.1 <span class="b p0">S</span> <b>Fix 3 số-SAI</b> (Cpk giả · owner-notify throw · WIP mislabel).</li>
+<li>P2.2 <span class="b p2">M</span> OEE-trust (ideal-cycle + align window + reconcile 2 defs). P2.3 <span class="b p2">M-L</span> Realtime HA (Redis + leader-lock + duration-impl + war-room push). P2.4 reporting breadth. P2.5 takt/downtime-Pareto/genealogy.</li></ul></div>
+<div class="panel"><b>GĐ3 — Lập trình + điều khiển + AI (SAU CÙNG)</b><ul>
+<li>P3.1 <span class="b p1">M·HW</span> <b>Deploy AI model server</b> (llama-server đủ VRAM) — copilot/AI-chat chết khi offline.</li>
+<li>P3.2 <span class="b p2">S</span> Step-up-2FA (deployProcedure+totpCode). P3.3 <span class="b p1">L·HW</span> HW-FAT deploy (chỉ SAU GĐ1/GĐ2). P3.4 copilot-refuse + idempotency + simulate-inArray.</li></ul></div>
+</div>
+
+<div class="callout good"><b>Đường tới-hạn:</b> GĐ0 (load data+MP-coord+DQ-gate) → GĐ1 (activate+⭐derived-writer+transport+FAT) → GĐ2 (fix 3 trust-stat+HA) → GĐ3 (AI-model+step-up-2FA+HW-deploy). <b>Không lập trình máy (GĐ3) trước khi monitor được (GĐ1)</b> — đúng thứ tự anh đề ra. Ưu tiên tuyệt đối: <b>P1.2 derived-writer</b>.</div>
+
+<h3>Quyết định cần chốt</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Quyết định</th></tr></thead>
+<tbody>
+<tr><td>L-Đ1</td><td>Bắt đầu <b>GĐ0 (load master data+MP-coord)</b> hay <b>GĐ1 (activate+derived-writer)</b> trước? (có thể song song)</td></tr>
+<tr><td>L-Đ2</td><td>MP-coordinate: <b>CAD/Gerber auto-place</b> (L) hay <b>CSV x,y thủ công</b> (S) cho pilot?</td></tr>
+<tr><td>L-Đ3</td><td>Có <b>HW thật để HW-FAT</b> chưa (P1.6/P3.3) hay tiếp tục Full-Sim?</td></tr>
+<tr><td>L-Đ4</td><td>Realtime <b>HA (Redis multi-instance)</b> ngay (P2.3) hay single-node cho pilot?</td></tr>
+<tr><td>L-Đ5</td><td>Phạm vi đợt tới: <b>GĐ0+GĐ1</b> (nền+kết nối) hay full <b>GĐ0→GĐ3</b>?</td></tr>
+</tbody></table></div>
+
+<div class="foot">Nguồn: audit gốc (§0-8) + thực thi (§9) + tái đánh giá hậu-fix (§10) + lộ trình 4-giai-đoạn (§11) — 8+ subagent + SQL live + Playwright đa persona. Bản Markdown đầy đủ: <code>docs/ECOSYSTEM/54_*.md</code>.</div>
 </div>
 <script>
 // Theme toggle hook: honor a data-theme set by host; default follows prefers-color-scheme.
