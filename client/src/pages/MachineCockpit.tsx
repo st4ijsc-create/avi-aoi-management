@@ -46,6 +46,7 @@ import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ProcessAnalyticsPanel } from "./ProcessAnalytics";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/patterns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
   Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
   ScrollText, Radio, Upload, Waves, History, Timer, Package, FileText, ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -834,6 +836,7 @@ export default function MachineCockpit() {
                 <TabsTrigger value="overview"><Activity className="mr-1 h-4 w-4" />{t("cockpit.tabOverview", "Overview")}</TabsTrigger>
                 <TabsTrigger value="health"><HeartPulse className="mr-1 h-4 w-4" />{t("cockpit.tabHealth", "Health / PdM")}</TabsTrigger>
                 <TabsTrigger value="telemetry"><Waves className="mr-1 h-4 w-4" />{t("cockpit.tabTelemetry", "Telemetry")}</TabsTrigger>
+                <TabsTrigger value="process"><ClipboardList className="mr-1 h-4 w-4" />{t("processAnalytics.tabLabel", "Kết quả process")}</TabsTrigger>
                 <TabsTrigger value="oee"><Gauge className="mr-1 h-4 w-4" />{t("cockpit.tabOee", "OEE")}</TabsTrigger>
                 <TabsTrigger value="alarms"><AlertTriangle className="mr-1 h-4 w-4" />{t("cockpit.tabAlarms", "Alarms")}</TabsTrigger>
                 <TabsTrigger value="recipes"><FileStack className="mr-1 h-4 w-4" />{t("cockpit.tabRecipes", "Recipes")}</TabsTrigger>
@@ -979,6 +982,11 @@ export default function MachineCockpit() {
               >
                 <SensorTrendTab machineId={machineId} />
               </SectionCard>
+            </TabsContent>
+
+            {/* ── PROCESS RESULTS (doc 56 Đ3) — pass/fail + parameter trend for this machine ── */}
+            <TabsContent value="process">
+              <ProcessAnalyticsPanel machineId={machineId} />
             </TabsContent>
 
             {/* ── OEE ── */}

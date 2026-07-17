@@ -35,6 +35,9 @@ import {
   useDensity,
 } from "@/components/patterns";
 import { useFullscreen } from "@/hooks/useFullscreen";
+import {
+  useMachineTypes, DEVICE_CLASS_ORDER, isDeviceClassUiEnabled, type DeviceClass,
+} from "@/hooks/useMachineTypes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,7 +51,7 @@ import {
 } from "@/components/ui/table";
 import {
   Wifi, WifiOff, HelpCircle, RefreshCw, Search, Plus, Activity, Server, Plug, Cpu,
-  ChevronRight, ChevronDown, ExternalLink, Loader2, Maximize2, Minimize2, Rows3,
+  ChevronRight, ChevronDown, ExternalLink, Loader2, Maximize2, Minimize2, Rows3, Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -83,6 +86,9 @@ interface DeviceRow {
   machineId: number | null;
   /** For adapters: the adapter id, used by testConnection. */
   adapterId: number | null;
+  /** doc 56 Đ2b — deviceClass of a machine row (aoi_avi/automation/iot) for the class
+   *  filter; null for adapters/edge nodes (not part of the machine-type taxonomy). */
+  deviceClass?: DeviceClass | null;
   detail?: string;        // small secondary line (location / endpoint / lines)
 }
 
@@ -92,6 +98,17 @@ interface LastTelemetry {
   unit: string | null;
   ts: number;
   protocol: string;
+}
+
+/** doc 56 Đ2b — a device sending telemetry that has no machineId yet (not onboarded /
+ *  approved). Kept in its own cache keyed by deviceId so its telemetry is NOT dropped. */
+interface UnmappedDevice {
+  deviceId: string;
+  protocol: string;
+  metric: string;
+  value: string;
+  unit: string | null;
+  ts: number;
 }
 
 const STALE_MS = 2 * 60_000;
@@ -166,6 +183,8 @@ export function UnifiedDeviceMonitorContent() {
   const [search, setSearch] = useState("");
   const [filterSource, setFilterSource] = useState<string>("all");
   const [filterConn, setFilterConn] = useState<string>("all");
+  // doc 56 Đ2b — deviceClass facet (all | aoi_avi | automation | iot).
+  const [filterClass, setFilterClass] = useState<"all" | DeviceClass>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
 
@@ -175,12 +194,28 @@ export function UnifiedDeviceMonitorContent() {
   const [, forceSpark] = useState(0); // bump to re-render sparklines
   const [liveStatus, setLiveStatus] = useState<Record<number, { status: string; ts: number }>>({});
 
+  // doc 56 Đ2b — telemetry from devices with NO machineId is no longer dropped; it's
+  // gathered here (keyed by deviceId) to feed the "unmapped devices" panel.
+  const [unmappedDevices, setUnmappedDevices] = useState<Record<string, UnmappedDevice>>({});
+
   // doc 54 cosmetic — the OT adapter + edge-runtime queries require machine_control;
   // gate them so a machine_monitoring-only role (e.g. operator) doesn't fire a query it
   // can't read → no 403 console noise. The machines/health data (machine_monitoring)
   // still loads for everyone.
   const { hasPermission } = usePermissions();
   const canReadControl = hasPermission("machine_control", "canView");
+
+  // doc 56 Đ2b — machineType → deviceClass lookup (server taxonomy via useMachineTypes,
+  // static fallback while loading). Powers the deviceClass filter so IoT machines (IoT
+  // sensor/gateway rows after Đ2a) land in the `iot` group. The flag gates only the
+  // filter UI — default OFF keeps the flat list byte-identical.
+  const { byClass } = useMachineTypes();
+  const classByType = useMemo(() => {
+    const m = new Map<string, DeviceClass>();
+    for (const cls of DEVICE_CLASS_ORDER) for (const e of byClass[cls]) m.set(e.type, cls);
+    return m;
+  }, [byClass]);
+  const deviceClassUi = isDeviceClassUiEnabled();
 
   // ── Data sources (slow refetch only for membership; live bits come via socket) ──
   const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 60_000 });
@@ -205,10 +240,17 @@ export function UnifiedDeviceMonitorContent() {
     const socket = getSharedSocket();
     const onTelemetry = (data: { samples?: TelemetrySample[] }) => {
       if (!data?.samples?.length) return;
+      // doc 56 Đ2b — samples with no machineId used to be dropped here. Instead we
+      // collect the ones that carry a deviceId into the unmapped batch (applied to its
+      // own cache below) so their telemetry surfaces in the "unmapped devices" panel.
+      const unmapped: TelemetrySample[] = [];
       setLastTelemetry((prev) => {
         const next = { ...prev };
         for (const s of data.samples!) {
-          if (s.machineId == null) continue;
+          if (s.machineId == null) {
+            if (s.deviceId != null) unmapped.push(s);
+            continue;
+          }
           next[s.machineId] = {
             metric: s.metric,
             value: sampleToValue(s),
@@ -225,9 +267,28 @@ export function UnifiedDeviceMonitorContent() {
         }
         return next;
       });
+      if (unmapped.length) {
+        setUnmappedDevices((prev) => {
+          const next = { ...prev };
+          for (const s of unmapped) {
+            const id = s.deviceId!;
+            next[id] = {
+              deviceId: id,
+              protocol: s.protocol,
+              metric: s.metric,
+              value: sampleToValue(s),
+              unit: s.unit,
+              ts: new Date(s.ts).getTime(),
+            };
+          }
+          return next;
+        });
+      }
       forceSpark((n) => n + 1);
     };
     const onStatus = (data: { machineId: number; status: string }) => {
+      // doc 56 Đ2b — status_update carries only {machineId,status} (no deviceId/metric),
+      // so a null machineId cannot form an unmapped-device row; keep the mapped-only guard.
       if (data?.machineId == null) return;
       setLiveStatus((prev) => ({ ...prev, [data.machineId]: { status: data.status, ts: Date.now() } }));
     };
@@ -270,6 +331,7 @@ export function UnifiedDeviceMonitorContent() {
         lastSeen,
         machineId: m.id,
         adapterId: null,
+        deviceClass: classByType.get(m.machineType) ?? null,
         detail: [m.factory?.name, m.workshop?.name, m.line?.name].filter(Boolean).join(" → "),
       });
     }
@@ -292,6 +354,7 @@ export function UnifiedDeviceMonitorContent() {
         lastSeen,
         machineId: a.machineId ?? null,
         adapterId: a.id,
+        deviceClass: null,
         detail: a.endpoint,
       });
     }
@@ -314,22 +377,25 @@ export function UnifiedDeviceMonitorContent() {
         lastSeen,
         machineId: null,
         adapterId: null,
+        deviceClass: null,
         detail: (n.assignedLineCodes ?? []).join(", ") || n.factoryCode || undefined,
       });
     }
 
     return out;
-  }, [machinesQ.data, adaptersQ.data, edgeNodesQ.data, liveStatus, t]);
+  }, [machinesQ.data, adaptersQ.data, edgeNodesQ.data, liveStatus, t, classByType]);
 
   const filtered = useMemo(() => rows.filter((r) => {
     if (filterSource !== "all" && r.source !== filterSource) return false;
     if (filterConn !== "all" && r.conn !== filterConn) return false;
+    // doc 56 Đ2b — deviceClass facet only narrows machine rows (adapters/edge = null).
+    if (filterClass !== "all" && r.deviceClass !== filterClass) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       if (!`${r.name} ${r.code} ${r.protocol} ${r.type}`.toLowerCase().includes(q)) return false;
     }
     return true;
-  }), [rows, filterSource, filterConn, search]);
+  }), [rows, filterSource, filterConn, filterClass, search]);
 
   const counts = useMemo(() => ({
     total: rows.length,
@@ -337,6 +403,18 @@ export function UnifiedDeviceMonitorContent() {
     offline: rows.filter((r) => r.conn === "offline").length,
     unknown: rows.filter((r) => r.conn === "unknown").length,
   }), [rows]);
+
+  // doc 56 Đ2b — unmapped devices (latest telemetry first) for the attention panel.
+  const unmappedList = useMemo(
+    () => Object.values(unmappedDevices).sort((a, b) => b.ts - a.ts),
+    [unmappedDevices],
+  );
+
+  const classFilterLabel = (c: "all" | DeviceClass): string =>
+    c === "all" ? t("deviceMonitor.classAll", "Tất cả")
+    : c === "aoi_avi" ? t("deviceMonitor.classAoiAvi", "AVI/AOI")
+    : c === "automation" ? t("deviceMonitor.classAutomation", "Tự động hóa")
+    : t("deviceMonitor.classIot", "IoT");
 
   const isLoading = machinesQ.isLoading || adaptersQ.isLoading || edgeNodesQ.isLoading;
 
@@ -409,6 +487,64 @@ export function UnifiedDeviceMonitorContent() {
           <FrameworkChip label="Edge runtime" enabled={!!(edgeStatusQ.data as any)?.enabled} loading={edgeStatusQ.isLoading} onClick={() => setLocation("/edge-nodes")} t={t} />
         </StatChipRow>
 
+        {/* doc 56 Đ2b — "Thiết bị chưa map": devices sending telemetry that aren't bound
+            to any machine yet. Self-hiding when empty (byte-identical default). Each row
+            offers a "register this device" shortcut into the onboarding wizard. */}
+        {unmappedList.length > 0 && (
+          <Card className="shrink-0 border-warning/40">
+            <CardHeader className="flex flex-row flex-wrap items-center gap-x-2 gap-y-1 space-y-0 py-2">
+              <Unplug className="h-4 w-4 shrink-0 text-warning" />
+              <CardTitle className="text-sm">
+                {t("deviceMonitor.unmapped.title", "Thiết bị chưa map")}{" "}
+                <span className="tabular-nums text-muted-foreground">({unmappedList.length})</span>
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">
+                {t("deviceMonitor.unmapped.hint", "Đang gửi telemetry nhưng chưa gắn với máy nào — đăng ký để theo dõi đầy đủ.")}
+              </span>
+            </CardHeader>
+            <CardContent className="max-h-44 overflow-auto p-0 [&>[data-slot=table-container]]:overflow-visible">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead>{t("deviceMonitor.unmapped.colDevice", "Mã thiết bị")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colProtocol", "Giao thức")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colLastSeen", "Lần cuối")}</TableHead>
+                    <TableHead>{t("deviceMonitor.colTelemetry", "Telemetry mới nhất")}</TableHead>
+                    <TableHead className="text-right">{t("common.actions", "Thao tác")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unmappedList.map((u) => (
+                    <TableRow key={u.deviceId}>
+                      <TableCell className="font-mono text-xs">{u.deviceId}</TableCell>
+                      <TableCell className="text-xs">{u.protocol}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {fmtAgo(new Date(u.ts), t("deviceMonitor.never", "chưa"))}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="text-muted-foreground">{u.metric}: </span>
+                        <span className="font-semibold tabular-nums">{u.value}</span>
+                        {u.unit && <span className="text-muted-foreground"> {u.unit}</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title={t("deviceMonitor.unmapped.registerHint", "Đăng ký thiết bị này") + ` (${u.deviceId})`}
+                          onClick={() => setWizardOpen(true)}
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          {t("deviceMonitor.unmapped.register", "Đăng ký")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Master table — chiếm ≥70% chiều cao (flex-1), cuộn nội bộ, sticky header */}
         <Card
           ref={fs.ref}
@@ -439,6 +575,32 @@ export function UnifiedDeviceMonitorContent() {
                   <SelectItem value="edge">{t("deviceMonitor.typeEdge", "Node biên")}</SelectItem>
                 </SelectContent>
               </Select>
+              {/* doc 56 Đ2b — deviceClass facet (segmented control). Gated by the
+                  DEVICE_CLASS_UI flag; OFF (default) hides it and keeps filterClass="all". */}
+              {deviceClassUi && (
+                <div
+                  className="inline-flex h-8 items-center gap-0.5 rounded-md border p-0.5"
+                  role="group"
+                  aria-label={t("deviceMonitor.classFilterLabel", "Lọc theo nhóm thiết bị")}
+                >
+                  {(["all", ...DEVICE_CLASS_ORDER] as const).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setFilterClass(c)}
+                      aria-pressed={filterClass === c}
+                      className={cn(
+                        "h-7 whitespace-nowrap rounded px-2 text-xs transition-colors",
+                        filterClass === c
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent",
+                      )}
+                    >
+                      {classFilterLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              )}
               <Button
                 variant="outline" size="icon-sm" onClick={toggleDensity}
                 title={density === "compact"

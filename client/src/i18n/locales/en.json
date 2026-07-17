@@ -9882,6 +9882,11 @@
     "sync": {
       "online": "Online",
       "offline": "Offline"
+    },
+    "rbac": {
+      "noApprovePermission": "You don't have permission to approve machines (requires the machine_registration permission).",
+      "noViewPendingTitle": "No permission to view pending machines",
+      "noViewPendingDesc": "You need the machine_registration permission to view and approve pending machines. Contact an administrator."
     }
   },
   "validation": {
@@ -13171,7 +13176,19 @@
     "detailInfo": "Info",
     "test": "Test",
     "testOk": "Connection OK",
-    "testFail": "Connection failed"
+    "testFail": "Connection failed",
+    "classAll": "All",
+    "classAoiAvi": "AVI/AOI",
+    "classAutomation": "Automation",
+    "classIot": "IoT",
+    "classFilterLabel": "Filter by device class",
+    "unmapped": {
+      "title": "Unmapped devices",
+      "hint": "Sending telemetry but not bound to any machine yet — register to track it fully.",
+      "colDevice": "Device ID",
+      "register": "Register",
+      "registerHint": "Register this device"
+    }
   },
   "wizard": {
     "title": "Onboard new OT device",
@@ -16228,6 +16245,193 @@
     "empty": {
       "title": "No SLA data",
       "desc": "No Andon events or alert escalations were recorded in the selected window."
+    }
+  },
+  "processAnalytics": {
+    "title": "Process result analytics",
+    "subtitle": "Pass/fail rate and parameter trends per process step (automation / IoT machines)",
+    "tabLabel": "Process results",
+    "filterMachine": "Machine",
+    "allMachines": "All machines",
+    "filterStepType": "Process step",
+    "allStepTypes": "All steps",
+    "range": "Time range",
+    "range1d": "24 hours",
+    "range7d": "7 days",
+    "range30d": "30 days",
+    "refresh": "Refresh",
+    "panelPassFail": "Pass/fail rate",
+    "panelPassFailDesc": "Process-step outcomes over the selected period",
+    "resultPass": "Pass",
+    "resultFail": "Fail",
+    "resultWarn": "Warn",
+    "resultSkip": "Skip",
+    "failRate": "Fail rate",
+    "total": "Total",
+    "panelTrend": "Parameter trend",
+    "panelTrendDesc": "Bucket average with a ±2σ reference band",
+    "metricKey": "Parameter",
+    "metricKeyHint": "e.g. torque, angle…",
+    "mean": "Mean",
+    "buckets": "Buckets",
+    "bandNote": "The ±2σ band is a statistical reference from this window's data — not an engineering limit.",
+    "loadError": "Couldn't load data",
+    "emptyTitle": "No process-result data yet",
+    "emptyHint": "Enable PROCESS_ANALYTICS_ENABLED (read) and PROCESS_RESULT_INGEST_ENABLED (write), then let machines report step results.",
+    "emptyTrendTitle": "No parameter data yet",
+    "emptyTrendHint": "No numeric samples for this parameter key in the period. Try another key or widen the time range.",
+    "recentTitle": "Recent rows by serial",
+    "recentDesc": "Look up process results for a specific serial number",
+    "serial": "Serial number",
+    "serialPlaceholder": "Enter serial number…",
+    "search": "Look up",
+    "colTime": "Time",
+    "colStep": "Step",
+    "colResult": "Result",
+    "colMachine": "Machine",
+    "colMetrics": "Parameters",
+    "recentEmpty": "No rows for this serial",
+    "recentEmptyHint": "This serial has no process results, or analytics is disabled."
+  },
+  "deviceOnboarding": {
+    "title": "Add device",
+    "subtitle": "One entry point for every device — pick a device class to begin.",
+    "changeClass": "Change device class",
+    "back": "Back",
+    "next": "Next",
+    "yes": "Yes",
+    "no": "No",
+    "chooser": {
+      "typeCount": "{{n}} types",
+      "aoi_aviDesc": "Optical/vision inspection (AOI/AVI/SPI/AXI) — connect per doc 28.",
+      "automationDesc": "Automation machines (screw, glue, weld, leak-test…) pushing cycle results per doc 57.",
+      "iotDesc": "IoT devices (ESP32 temp-humidity, LAN sensors) pushing telemetry per doc 57."
+    },
+    "disabled": {
+      "title": "Add-device wizard (V2) is off",
+      "desc": "This feature runs behind DEVICE_ONBOARD_WIZARD_V2_ENABLED (default OFF). Enable the flag to try it."
+    },
+    "automation": {
+      "title": "Add automation machine",
+      "subtitle": "Screw · glue · weld · leak-test — cycle data per doc 57.",
+      "machineType": "Machine type",
+      "machineTypePlaceholder": "Choose an automation type",
+      "code": "Machine code",
+      "name": "Machine name",
+      "namePlaceholder": "Screwdriver station A",
+      "station": "Station",
+      "steps": {
+        "info": "Info",
+        "protocol": "Protocol",
+        "recipe": "Recipe",
+        "guardrail": "Guardrail",
+        "credential": "Credential",
+        "signoff": "Sign-off"
+      },
+      "stepDesc": {
+        "0": "Machine type, code/name and line station.",
+        "1": "How the machine pushes cycle results to the platform.",
+        "2": "Initial recipe/program (real deploy at Wave 4).",
+        "3": "Required: declare safe ranges for parameters the machine writes.",
+        "4": "Issue the machine key mk_ (guide + enrollment token).",
+        "5": "Review and sign off the configuration."
+      },
+      "protocol": {
+        "httpTitle": "HTTP push (REST)",
+        "httpDesc": "Machine POSTs standard JSON to the ingest endpoint — simple, recommended for new machines.",
+        "plcTitle": "PLC adapter (OT)",
+        "plcDesc": "Bridge via an OT adapter (PLC/Zmotion/Modbus) when the machine cannot call HTTP itself.",
+        "mqttTitle": "MQTT (syn/)",
+        "mqttDesc": "Publish under the SYNAPSE namespace for real-time event/result streams.",
+        "specHint": "See the protocol spec and sample SDK:"
+      },
+      "recipe": {
+        "hint": "This only records the initial recipe — real load/drift checks happen at Wave 4.",
+        "code": "Recipe code",
+        "version": "Version"
+      },
+      "guardrail": {
+        "title": "Parameter guardrails (required)",
+        "desc": "Declare min/max/max-step for each parameter the machine writes — seeds parameter_guardrails at Wave 4. At least one valid row is required.",
+        "empty": "No rows yet. Add at least one parameter with min/max.",
+        "param": "Parameter",
+        "min": "Min",
+        "max": "Max",
+        "maxStep": "Max step",
+        "unit": "Unit",
+        "remove": "Remove row",
+        "add": "Add parameter",
+        "count": "{{n}} parameters"
+      }
+    },
+    "iot": {
+      "title": "Add IoT device",
+      "subtitle": "ESP32 temp-humidity · workshop LAN sensors — continuous telemetry per doc 57.",
+      "deviceType": "Device type",
+      "code": "Device code",
+      "workshop": "Workshop (for virtual station)",
+      "workshopPlaceholder": "Choose a workshop",
+      "virtualStation": "Virtual station to create:",
+      "steps": {
+        "info": "Info",
+        "channel": "Channel",
+        "metrics": "Metrics",
+        "credential": "Credential",
+        "signoff": "Sign-off"
+      },
+      "stepDesc": {
+        "0": "Device type, code and workshop (virtual station IOT-<workshop>).",
+        "1": "Choose the telemetry channel.",
+        "2": "Declare the metric schema the device will send.",
+        "3": "Issue the device key mk_ (guide + optional certificate).",
+        "4": "Review and sign off the configuration."
+      },
+      "channel": {
+        "httpTitle": "HTTP telemetry (REST)",
+        "httpDesc": "Device POSTs a batch of samples to the telemetry endpoint (alias of /api/ot/ingest).",
+        "mqttTitle": "MQTT (syn/)",
+        "mqttDesc": "Publish telemetry under the SYNAPSE namespace — good for multi-device gateways.",
+        "hint": "One gateway may forward many devices; the bus resolves each by deviceId."
+      },
+      "metrics": {
+        "hint": "Declare the metrics the device will send (canonical name + unit). Click a preset or add manually.",
+        "empty": "No metrics yet. Add at least one metric.",
+        "namePlaceholder": "temperature",
+        "unitPlaceholder": "°C",
+        "remove": "Remove metric",
+        "add": "Add metric",
+        "count": "{{n}} metrics"
+      }
+    },
+    "credential": {
+      "mintSuccess": "Enrollment token (met_) created",
+      "enrollmentDisabled": "Token created but ENROLLMENT_ENABLED is off — devices cannot enroll yet.",
+      "mkTitle": "Machine key mk_ (scope ingest:write)",
+      "mkDesc": "Every ingest request authenticates with a per-device mk_ key (hash-at-rest), sent via header:",
+      "claimTitle": "Claim (per machine)",
+      "claimDesc": "Admin approves one machine → mints a show-once claim token → device redeems it for mk_.",
+      "enrollTitle": "Enrollment (zero-touch fleet)",
+      "enrollDesc": "Mint one met_ token for a batch by serial pattern → devices self-enroll and receive mk_.",
+      "openEnrollTab": "Open Enrollment tokens tab",
+      "openApiDocs": "API docs",
+      "sdkHint": "Sample SDK/firmware:",
+      "mintHere": "Quick-mint an enrollment token (met_) here",
+      "serialPattern": "Serial pattern (optional)",
+      "serialPatternPlaceholder": "SCRW-*",
+      "mintButton": "Mint met_ token",
+      "mintNote": "Uses machine.issueEnrollmentToken (same as the Enrollment tab). The mk_ key is received by the DEVICE at enroll time — not issued here.",
+      "adminOnly": "Only admins can mint enrollment tokens. Ask an admin or open the Enrollment tokens tab.",
+      "certTitle": "Use X.509 certificate (mTLS)",
+      "certDesc": "Advanced opt-in for sensitive devices (decision QĐ4). Phase 1 uses mk_ + topic ACL.",
+      "acknowledge": "I understand the credential flow and will provision mk_ for the device before it sends data."
+    },
+    "signoff": {
+      "deferNote": "This is a design wizard — the configuration is captured locally. Real provisioning (create machine, seed recipe/guardrails, issue mk_, MQTT ACL) happens at Wave 4.",
+      "sign": "Sign off (design)",
+      "doneTitle": "Configuration captured",
+      "doneDesc": "The configuration is signed off in design mode. Continue to enrollment tokens to bring the device online for real.",
+      "designBadge": "Design mode",
+      "finish": "Go to Enrollment tokens"
     }
   }
 }

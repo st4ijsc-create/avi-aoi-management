@@ -82,6 +82,8 @@ const AIImageSearchPage = React.lazy(() => import("./pages/AIImageSearchPage"));
 const AIReportsPage = React.lazy(() => import("./pages/AIReportsPage"));
 const AITimeSeriesPage = React.lazy(() => import("./pages/AITimeSeriesPage"));
 const EnergyAnalyticsPage = React.lazy(() => import("./pages/EnergyAnalyticsPage")); // G2.6b: energy analytics (READ/ANALYTICS only)
+const ProcessAnalyticsPage = React.lazy(() => import("./pages/ProcessAnalytics")); // doc 56 Đ3 — automation process-result analytics
+const DeviceOnboardingHubV2 = React.lazy(() => import("./pages/DeviceOnboardingHubV2")); // doc 56 Đ2b — unified add-device wizard V2 (self-gated OFF)
 const AISettingsPage = React.lazy(() => import("./pages/AISettingsPage"));
 const AIDataProcessingPage = React.lazy(() => import("./pages/AIDataProcessingPage"));
 const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagementPage"));
@@ -411,6 +413,11 @@ function Router() {
       <Route path="/comparison-studio"><RouteGuard navHref="/comparison-studio"><ComparisonStudio /></RouteGuard></Route>
       <Route path="/realtime-report"><RouteGuard navHref="/realtime-report"><RealtimeReportView /></RouteGuard></Route>
       <Route path="/energy-analytics"><RouteGuard navHref="/energy-analytics"><EnergyAnalyticsPage /></RouteGuard></Route>
+      {/* doc 56 Đ3/Đ2b — no navHref: authenticated-user access; PROCESS_ANALYTICS_ENABLED
+          gates the data (empty-state when OFF) and DEVICE_ONBOARD_WIZARD_V2_ENABLED
+          self-gates the wizard (fallback card when OFF). Menu entry deferred to Đ7 IA. */}
+      <Route path="/process-analytics"><RouteGuard><ProcessAnalyticsPage /></RouteGuard></Route>
+      <Route path="/device-onboarding"><RouteGuard><DeviceOnboardingHubV2 /></RouteGuard></Route>
       <Route path="/carbon-dashboard"><RouteGuard navHref="/carbon-dashboard"><CarbonDashboard /></RouteGuard></Route>
       <Route path="/pdf-reports"><RouteGuard navHref="/pdf-reports"><PdfReports /></RouteGuard></Route>
       <Route path="/powerpoint-export"><RouteGuard navHref="/powerpoint-export"><PowerPointExport /></RouteGuard></Route>

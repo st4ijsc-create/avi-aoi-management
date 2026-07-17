@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -89,6 +89,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import CredentialShowOnceDialog, {
   type CredentialShowOncePayload,
 } from "@/components/machineRegistration/CredentialShowOnceDialog";
@@ -148,6 +149,25 @@ export function MachineRegistrationContent() {
   // server-side (adminProcedure); pre-gate the buttons client-side too.
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+
+  // Doc 56 Đ2b việc 7 (MGMTUI-8) — mirror the server `machineRegistrationGate`:
+  // approving needs machine_registration/canEdit, viewing pending needs /canView.
+  // `hasPermission` returns true for admin, so admin keeps full access unchanged; a
+  // non-admin without the grant gets disabled approve controls (+reason) and a
+  // permission notice on the Pending tab. reject stays admin-only server-side.
+  const { hasPermission } = usePermissions();
+  const canApproveMachines = hasPermission("machine_registration", "canEdit");
+  const canViewPending = hasPermission("machine_registration", "canView");
+  // Reason shown on a blocked approve control (undefined = allowed → no tooltip/wrapper).
+  const approveReason = canApproveMachines
+    ? undefined
+    : t('machineRegistration.rbac.noApprovePermission', 'Bạn không có quyền duyệt máy (cần quyền machine_registration).');
+  // A disabled Button is pointer-events-none, so hover-title must live on a wrapper.
+  // Admin (allowed) gets the node untouched → DOM unchanged.
+  const gateApprove = (node: ReactNode): ReactNode =>
+    canApproveMachines ? node : (
+      <span className="inline-flex cursor-not-allowed" title={approveReason}>{node}</span>
+    );
 
   const dateFnsLocale = i18n.language === 'vi' ? vi : i18n.language === 'zh' ? zhCN : enUS;
 
@@ -245,7 +265,9 @@ export function MachineRegistrationContent() {
   };
 
   // Queries
-  const pendingQuery = trpc.machine.listPending.useQuery();
+  // Đ2b việc 7 — gate the listPending fetch on canView (admin=true) so a non-permitted
+  // non-admin doesn't fire a query the server would 403 (matches the server gate).
+  const pendingQuery = trpc.machine.listPending.useQuery(undefined, { enabled: canViewPending });
   // F9: the table tabs read a PAGED server-side query (search + status filter +
   // limit/offset) instead of filtering the full machine.list client-side.
   const listStatusForTab =
@@ -722,7 +744,18 @@ export function MachineRegistrationContent() {
 
           {/* ── Pending Tab ── */}
           <TabsContent value="pending" className="space-y-4">
-            {pendingMachines.length === 0 ? (
+            {!canViewPending ? (
+              /* Đ2b việc 7 — no machine_registration/canView: hide the pending queue. */
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <ShieldX className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                  <h3 className="text-lg font-medium">{t('machineRegistration.rbac.noViewPendingTitle', 'Không có quyền xem máy chờ duyệt')}</h3>
+                  <p className="text-muted-foreground mt-1">
+                    {t('machineRegistration.rbac.noViewPendingDesc', 'Bạn cần quyền machine_registration để xem và duyệt máy chờ. Liên hệ quản trị viên.')}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : pendingMachines.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-3" />
@@ -749,19 +782,21 @@ export function MachineRegistrationContent() {
                     />
                     {t('machineRegistration.bulk.selectAll')}
                   </label>
-                  <Button
-                    size="sm"
-                    disabled={bulkSelected.size === 0 || isBulkApproving}
-                    onClick={handleBulkApprove}
-                    className="bg-success text-success-foreground hover:bg-success/90"
-                  >
-                    {isBulkApproving ? (
-                      <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-1" />
-                    )}
-                    {t('machineRegistration.bulk.approveSelected', { count: bulkSelected.size })}
-                  </Button>
+                  {gateApprove(
+                    <Button
+                      size="sm"
+                      disabled={bulkSelected.size === 0 || isBulkApproving || !canApproveMachines}
+                      onClick={handleBulkApprove}
+                      className="bg-success text-success-foreground hover:bg-success/90"
+                    >
+                      {isBulkApproving ? (
+                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-1" />
+                      )}
+                      {t('machineRegistration.bulk.approveSelected', { count: bulkSelected.size })}
+                    </Button>
+                  )}
                 </div>
                 {pendingMachines.map((machine) => (
                   <Card
@@ -840,14 +875,17 @@ export function MachineRegistrationContent() {
                           <XCircle className="h-4 w-4 mr-1" />
                           {t('machineRegistration.actions.reject')}
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleOpenApprove(machine)}
-                          className="bg-success text-success-foreground hover:bg-success/90"
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          {t('machineRegistration.actions.approveAllocate')}
-                        </Button>
+                        {gateApprove(
+                          <Button
+                            size="sm"
+                            disabled={!canApproveMachines}
+                            onClick={() => handleOpenApprove(machine)}
+                            className="bg-success text-success-foreground hover:bg-success/90"
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            {t('machineRegistration.actions.approveAllocate')}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -966,16 +1004,19 @@ export function MachineRegistrationContent() {
                                     >
                                       <XCircle className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-success hover:text-success"
-                                      onClick={() =>
-                                        handleOpenApprove(machine as PendingMachine)
-                                      }
-                                    >
-                                      <CheckCircle2 className="h-4 w-4" />
-                                    </Button>
+                                    {gateApprove(
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-success hover:text-success"
+                                        disabled={!canApproveMachines}
+                                        onClick={() =>
+                                          handleOpenApprove(machine as PendingMachine)
+                                        }
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                   </div>
                                 )}
                                 {machine.registrationStatus === "approved" && (
@@ -1075,11 +1116,12 @@ export function MachineRegistrationContent() {
                                     </Tooltip>
                                   </div>
                                 )}
-                                {machine.registrationStatus === "rejected" && (
+                                {machine.registrationStatus === "rejected" && gateApprove(
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 text-xs"
+                                    disabled={!canApproveMachines}
                                     onClick={() =>
                                       handleOpenApprove(machine as PendingMachine)
                                     }
@@ -1284,7 +1326,8 @@ export function MachineRegistrationContent() {
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={approveMutation.isPending}
+              disabled={approveMutation.isPending || !canApproveMachines}
+              title={approveReason}
               className="bg-success text-success-foreground hover:bg-success/90"
             >
               {approveMutation.isPending ? (

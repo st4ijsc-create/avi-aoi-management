@@ -9861,6 +9861,11 @@
     "sync": {
       "online": "Trực tuyến",
       "offline": "Ngoại tuyến"
+    },
+    "rbac": {
+      "noApprovePermission": "Bạn không có quyền duyệt máy (cần quyền machine_registration).",
+      "noViewPendingTitle": "Không có quyền xem máy chờ duyệt",
+      "noViewPendingDesc": "Bạn cần quyền machine_registration để xem và duyệt máy chờ. Liên hệ quản trị viên."
     }
   },
   "validation": {
@@ -13150,7 +13155,19 @@
     "detailInfo": "Thông tin",
     "test": "Test",
     "testOk": "Kết nối OK",
-    "testFail": "Kết nối thất bại"
+    "testFail": "Kết nối thất bại",
+    "classAll": "Tất cả",
+    "classAoiAvi": "AVI/AOI",
+    "classAutomation": "Tự động hóa",
+    "classIot": "IoT",
+    "classFilterLabel": "Lọc theo nhóm thiết bị",
+    "unmapped": {
+      "title": "Thiết bị chưa map",
+      "hint": "Đang gửi telemetry nhưng chưa gắn với máy nào — đăng ký để theo dõi đầy đủ.",
+      "colDevice": "Mã thiết bị",
+      "register": "Đăng ký",
+      "registerHint": "Đăng ký thiết bị này"
+    }
   },
   "wizard": {
     "title": "Kết nối thiết bị OT mới",
@@ -16207,6 +16224,193 @@
     "empty": {
       "title": "Chưa có dữ liệu SLA",
       "desc": "Không ghi nhận Andon hay cảnh báo leo thang nào trong cửa sổ đã chọn."
+    }
+  },
+  "processAnalytics": {
+    "title": "Phân tích kết quả process",
+    "subtitle": "Tỉ lệ pass/fail và xu hướng thông số theo bước công đoạn (máy tự động hoá / IoT)",
+    "tabLabel": "Kết quả process",
+    "filterMachine": "Máy",
+    "allMachines": "Tất cả máy",
+    "filterStepType": "Bước công đoạn",
+    "allStepTypes": "Tất cả bước",
+    "range": "Khoảng thời gian",
+    "range1d": "24 giờ",
+    "range7d": "7 ngày",
+    "range30d": "30 ngày",
+    "refresh": "Làm mới",
+    "panelPassFail": "Tỉ lệ pass/fail",
+    "panelPassFailDesc": "Kết quả bước công đoạn trong kỳ đã chọn",
+    "resultPass": "Đạt",
+    "resultFail": "Lỗi",
+    "resultWarn": "Cảnh báo",
+    "resultSkip": "Bỏ qua",
+    "failRate": "Tỉ lệ lỗi",
+    "total": "Tổng",
+    "panelTrend": "Xu hướng thông số",
+    "panelTrendDesc": "Giá trị trung bình theo bucket kèm dải tham chiếu ±2σ",
+    "metricKey": "Thông số",
+    "metricKeyHint": "vd torque, angle…",
+    "mean": "TB",
+    "buckets": "Số bucket",
+    "bandNote": "Dải ±2σ là tham chiếu thống kê từ dữ liệu trong kỳ — không phải giới hạn kỹ thuật.",
+    "loadError": "Không tải được dữ liệu",
+    "emptyTitle": "Chưa có dữ liệu kết quả process",
+    "emptyHint": "Bật cờ PROCESS_ANALYTICS_ENABLED (đọc) và PROCESS_RESULT_INGEST_ENABLED (ghi), rồi để máy gửi kết quả bước công đoạn.",
+    "emptyTrendTitle": "Chưa có dữ liệu thông số",
+    "emptyTrendHint": "Không có mẫu số cho khoá thông số này trong kỳ. Thử khoá khác hoặc mở rộng khoảng thời gian.",
+    "recentTitle": "Bản ghi gần đây theo serial",
+    "recentDesc": "Tra cứu kết quả process theo số serial cụ thể",
+    "serial": "Số serial",
+    "serialPlaceholder": "Nhập số serial…",
+    "search": "Tra cứu",
+    "colTime": "Thời điểm",
+    "colStep": "Bước",
+    "colResult": "Kết quả",
+    "colMachine": "Máy",
+    "colMetrics": "Thông số",
+    "recentEmpty": "Không có bản ghi cho serial này",
+    "recentEmptyHint": "Serial chưa có kết quả process, hoặc cờ analytics đang tắt."
+  },
+  "deviceOnboarding": {
+    "title": "Thêm thiết bị",
+    "subtitle": "Một điểm vào cho mọi loại thiết bị — chọn nhóm thiết bị để bắt đầu.",
+    "changeClass": "Đổi loại thiết bị",
+    "back": "Quay lại",
+    "next": "Tiếp theo",
+    "yes": "Có",
+    "no": "Không",
+    "chooser": {
+      "typeCount": "{{n}} loại",
+      "aoi_aviDesc": "Máy kiểm tra quang học/hình ảnh (AOI/AVI/SPI/AXI) — kết nối theo doc 28.",
+      "automationDesc": "Máy tự động (bắt vít, điểm keo, hàn, leak-test…) đẩy kết quả chu trình theo doc 57.",
+      "iotDesc": "Thiết bị IoT (ESP32 nhiệt-ẩm, cảm biến LAN) đẩy telemetry theo doc 57."
+    },
+    "disabled": {
+      "title": "Wizard thêm thiết bị (V2) đang tắt",
+      "desc": "Tính năng này chạy sau cờ DEVICE_ONBOARD_WIZARD_V2_ENABLED (mặc định TẮT). Bật cờ để dùng thử."
+    },
+    "automation": {
+      "title": "Thêm máy tự động",
+      "subtitle": "Bắt vít · điểm keo · hàn · leak-test — dữ liệu chu trình theo doc 57.",
+      "machineType": "Loại máy",
+      "machineTypePlaceholder": "Chọn loại máy tự động",
+      "code": "Mã máy",
+      "name": "Tên máy",
+      "namePlaceholder": "Máy bắt vít trạm A",
+      "station": "Trạm",
+      "steps": {
+        "info": "Thông tin",
+        "protocol": "Giao thức",
+        "recipe": "Recipe",
+        "guardrail": "Guardrail",
+        "credential": "Cấp khóa",
+        "signoff": "Ký duyệt"
+      },
+      "stepDesc": {
+        "0": "Loại máy, mã/tên và trạm trong dây chuyền.",
+        "1": "Chọn cách máy đẩy kết quả chu trình vào nền tảng.",
+        "2": "Recipe/chương trình khởi tạo (deploy thật ở Đợt 4).",
+        "3": "Bắt buộc: khai dải an toàn cho tham số máy sẽ ghi.",
+        "4": "Cấp khóa máy mk_ (hướng dẫn + token gia nhập).",
+        "5": "Xem lại và ký duyệt cấu hình."
+      },
+      "protocol": {
+        "httpTitle": "HTTP push (REST)",
+        "httpDesc": "Máy POST JSON chuẩn tới endpoint ingest — đơn giản, khuyến nghị cho máy mới.",
+        "plcTitle": "PLC adapter (OT)",
+        "plcDesc": "Bắc cầu qua adapter OT (PLC/Zmotion/Modbus) khi máy không tự gọi HTTP được.",
+        "mqttTitle": "MQTT (syn/)",
+        "mqttDesc": "Publish theo namespace SYNAPSE cho luồng sự kiện/kết quả thời gian thực.",
+        "specHint": "Xem đặc tả giao thức và SDK mẫu:"
+      },
+      "recipe": {
+        "hint": "Chỉ ghi nhận recipe khởi tạo — nạp/kiểm tra drift recipe thật thực hiện ở Đợt 4.",
+        "code": "Mã recipe",
+        "version": "Phiên bản"
+      },
+      "guardrail": {
+        "title": "Dải an toàn tham số (bắt buộc)",
+        "desc": "Khai min/max/bước-tối-đa cho mỗi tham số máy sẽ ghi — sẽ seed parameter_guardrails ở Đợt 4. Cần ít nhất một dòng hợp lệ.",
+        "empty": "Chưa có dòng nào. Thêm ít nhất một tham số với min/max.",
+        "param": "Tham số",
+        "min": "Min",
+        "max": "Max",
+        "maxStep": "Bước tối đa",
+        "unit": "Đơn vị",
+        "remove": "Xóa dòng",
+        "add": "Thêm tham số",
+        "count": "{{n}} tham số"
+      }
+    },
+    "iot": {
+      "title": "Thêm thiết bị IoT",
+      "subtitle": "ESP32 nhiệt-ẩm · cảm biến LAN xưởng — telemetry liên tục theo doc 57.",
+      "deviceType": "Loại thiết bị",
+      "code": "Mã thiết bị",
+      "workshop": "Xưởng (cho trạm ảo)",
+      "workshopPlaceholder": "Chọn xưởng",
+      "virtualStation": "Trạm ảo sẽ tạo:",
+      "steps": {
+        "info": "Thông tin",
+        "channel": "Kênh",
+        "metrics": "Metric",
+        "credential": "Cấp khóa",
+        "signoff": "Ký duyệt"
+      },
+      "stepDesc": {
+        "0": "Loại thiết bị, mã và xưởng (trạm ảo IOT-<xưởng>).",
+        "1": "Chọn kênh đẩy telemetry.",
+        "2": "Khai lược đồ metric thiết bị sẽ gửi.",
+        "3": "Cấp khóa thiết bị mk_ (hướng dẫn + tùy chọn chứng chỉ).",
+        "4": "Xem lại và ký duyệt cấu hình."
+      },
+      "channel": {
+        "httpTitle": "HTTP telemetry (REST)",
+        "httpDesc": "Thiết bị POST batch mẫu tới endpoint telemetry (alias của /api/ot/ingest).",
+        "mqttTitle": "MQTT (syn/)",
+        "mqttDesc": "Publish telemetry theo namespace SYNAPSE — hợp cho gateway nhiều thiết bị.",
+        "hint": "Một gateway có thể chuyển tiếp nhiều thiết bị; bus tự resolve theo deviceId."
+      },
+      "metrics": {
+        "hint": "Khai các metric thiết bị sẽ gửi (tên chuẩn + đơn vị). Bấm nhanh preset hoặc thêm thủ công.",
+        "empty": "Chưa có metric nào. Thêm ít nhất một metric.",
+        "namePlaceholder": "temperature",
+        "unitPlaceholder": "°C",
+        "remove": "Xóa metric",
+        "add": "Thêm metric",
+        "count": "{{n}} metric"
+      }
+    },
+    "credential": {
+      "mintSuccess": "Đã tạo token gia nhập (met_)",
+      "enrollmentDisabled": "Token đã tạo nhưng ENROLLMENT_ENABLED đang tắt — máy sẽ chưa enroll được.",
+      "mkTitle": "Khóa máy mk_ (scope ingest:write)",
+      "mkDesc": "Mọi request ingest xác thực bằng khóa máy mk_ per-thiết-bị (hash-at-rest), gửi qua header:",
+      "claimTitle": "Claim (per-máy)",
+      "claimDesc": "Admin duyệt một máy → mint token claim show-once → thiết bị redeem lấy mk_.",
+      "enrollTitle": "Enrollment (zero-touch fleet)",
+      "enrollDesc": "Mint một token met_ cho cả lô theo mẫu serial → thiết bị tự gia nhập, nhận mk_.",
+      "openEnrollTab": "Mở tab Mã gia nhập thiết bị",
+      "openApiDocs": "Tài liệu API",
+      "sdkHint": "SDK/firmware mẫu:",
+      "mintHere": "Tạo nhanh token gia nhập (met_) tại đây",
+      "serialPattern": "Mẫu serial (tùy chọn)",
+      "serialPatternPlaceholder": "SCRW-*",
+      "mintButton": "Tạo token met_",
+      "mintNote": "Dùng procedure machine.issueEnrollmentToken (như tab Mã gia nhập). Khóa mk_ do THIẾT BỊ nhận khi enroll — không cấp ở đây.",
+      "adminOnly": "Chỉ admin mới tạo được token gia nhập. Hãy nhờ admin hoặc mở tab Mã gia nhập thiết bị.",
+      "certTitle": "Dùng chứng chỉ X.509 (mTLS)",
+      "certDesc": "Tùy chọn nâng cao cho thiết bị nhạy cảm (opt-in, QĐ4). Giai đoạn 1 dùng mk_ + ACL topic.",
+      "acknowledge": "Tôi đã hiểu quy trình cấp khóa và sẽ cấp mk_ cho thiết bị trước khi bắn dữ liệu."
+    },
+    "signoff": {
+      "deferNote": "Đây là wizard thiết kế — cấu hình được ghi nhận cục bộ. Provisioning thật (tạo máy, seed recipe/guardrail, cấp mk_, MQTT ACL) thực hiện ở Đợt 4.",
+      "sign": "Ký duyệt (thiết kế)",
+      "doneTitle": "Đã ghi nhận cấu hình",
+      "doneDesc": "Cấu hình đã được ký duyệt ở chế độ thiết kế. Chuyển sang cấp token gia nhập để đưa thiết bị lên thật.",
+      "designBadge": "Chế độ thiết kế",
+      "finish": "Tới Mã gia nhập thiết bị"
     }
   }
 }

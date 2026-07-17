@@ -9665,6 +9665,11 @@
     "sync": {
       "online": "在线",
       "offline": "离线"
+    },
+    "rbac": {
+      "noApprovePermission": "您没有审批设备的权限（需要 machine_registration 权限）。",
+      "noViewPendingTitle": "无权查看待审批设备",
+      "noViewPendingDesc": "您需要 machine_registration 权限才能查看和审批待处理设备。请联系管理员。"
     }
   },
   "validation": {
@@ -12954,7 +12959,19 @@
     "detailInfo": "信息",
     "test": "测试",
     "testOk": "连接正常",
-    "testFail": "连接失败"
+    "testFail": "连接失败",
+    "classAll": "全部",
+    "classAoiAvi": "AVI/AOI",
+    "classAutomation": "自动化",
+    "classIot": "IoT",
+    "classFilterLabel": "按设备类别筛选",
+    "unmapped": {
+      "title": "未映射设备",
+      "hint": "正在发送遥测数据但尚未绑定到任何设备 — 注册以完整跟踪。",
+      "colDevice": "设备ID",
+      "register": "注册",
+      "registerHint": "注册此设备"
+    }
   },
   "wizard": {
     "title": "接入新 OT 设备",
@@ -16235,6 +16252,193 @@
     "empty": {
       "title": "暂无 SLA 数据",
       "desc": "所选窗口内未记录任何安灯或报警升级。"
+    }
+  },
+  "processAnalytics": {
+    "title": "过程结果分析",
+    "subtitle": "按工序统计合格/不合格率与参数趋势（自动化 / 物联网设备）",
+    "tabLabel": "过程结果",
+    "filterMachine": "设备",
+    "allMachines": "全部设备",
+    "filterStepType": "工序步骤",
+    "allStepTypes": "全部步骤",
+    "range": "时间范围",
+    "range1d": "24 小时",
+    "range7d": "7 天",
+    "range30d": "30 天",
+    "refresh": "刷新",
+    "panelPassFail": "合格/不合格率",
+    "panelPassFailDesc": "所选周期内的工序结果",
+    "resultPass": "合格",
+    "resultFail": "不合格",
+    "resultWarn": "警告",
+    "resultSkip": "跳过",
+    "failRate": "不合格率",
+    "total": "合计",
+    "panelTrend": "参数趋势",
+    "panelTrendDesc": "分桶平均值及 ±2σ 参考带",
+    "metricKey": "参数",
+    "metricKeyHint": "例如 torque、angle…",
+    "mean": "均值",
+    "buckets": "桶数",
+    "bandNote": "±2σ 带为该窗口数据的统计参考，并非工程限值。",
+    "loadError": "无法加载数据",
+    "emptyTitle": "暂无过程结果数据",
+    "emptyHint": "启用 PROCESS_ANALYTICS_ENABLED（读）与 PROCESS_RESULT_INGEST_ENABLED（写），并让设备上报工序结果。",
+    "emptyTrendTitle": "暂无参数数据",
+    "emptyTrendHint": "该参数键在此周期内没有数值样本。请更换参数键或扩大时间范围。",
+    "recentTitle": "按序列号查看最近记录",
+    "recentDesc": "按指定序列号查询过程结果",
+    "serial": "序列号",
+    "serialPlaceholder": "输入序列号…",
+    "search": "查询",
+    "colTime": "时间",
+    "colStep": "步骤",
+    "colResult": "结果",
+    "colMachine": "设备",
+    "colMetrics": "参数",
+    "recentEmpty": "该序列号没有记录",
+    "recentEmptyHint": "该序列号暂无过程结果，或分析功能已关闭。"
+  },
+  "deviceOnboarding": {
+    "title": "添加设备",
+    "subtitle": "所有设备的统一入口 — 请先选择设备类别。",
+    "changeClass": "更换设备类别",
+    "back": "上一步",
+    "next": "下一步",
+    "yes": "是",
+    "no": "否",
+    "chooser": {
+      "typeCount": "{{n}} 种",
+      "aoi_aviDesc": "光学/影像检测设备（AOI/AVI/SPI/AXI）— 按 doc 28 接入。",
+      "automationDesc": "自动化设备（拧螺丝、点胶、焊接、气密测试…）按 doc 57 推送循环结果。",
+      "iotDesc": "物联网设备（ESP32 温湿度、LAN 传感器）按 doc 57 推送遥测。"
+    },
+    "disabled": {
+      "title": "添加设备向导（V2）已关闭",
+      "desc": "此功能受 DEVICE_ONBOARD_WIZARD_V2_ENABLED 控制（默认关闭）。启用该开关后可试用。"
+    },
+    "automation": {
+      "title": "添加自动化设备",
+      "subtitle": "拧螺丝 · 点胶 · 焊接 · 气密测试 — 循环数据按 doc 57。",
+      "machineType": "设备类型",
+      "machineTypePlaceholder": "选择自动化类型",
+      "code": "设备编码",
+      "name": "设备名称",
+      "namePlaceholder": "A 工位拧螺丝机",
+      "station": "工位",
+      "steps": {
+        "info": "信息",
+        "protocol": "协议",
+        "recipe": "配方",
+        "guardrail": "护栏",
+        "credential": "凭证",
+        "signoff": "签核"
+      },
+      "stepDesc": {
+        "0": "设备类型、编码/名称与产线工位。",
+        "1": "设备如何将循环结果推送到平台。",
+        "2": "初始配方/程序（第 4 波真正部署）。",
+        "3": "必填：为设备写入的参数声明安全范围。",
+        "4": "签发设备密钥 mk_（指引 + 加入令牌）。",
+        "5": "复核并签核配置。"
+      },
+      "protocol": {
+        "httpTitle": "HTTP 推送（REST）",
+        "httpDesc": "设备向 ingest 端点 POST 标准 JSON — 简单，推荐新设备使用。",
+        "plcTitle": "PLC 适配器（OT）",
+        "plcDesc": "设备无法自行调用 HTTP 时，经 OT 适配器（PLC/Zmotion/Modbus）桥接。",
+        "mqttTitle": "MQTT（syn/）",
+        "mqttDesc": "在 SYNAPSE 命名空间下发布，用于实时事件/结果流。",
+        "specHint": "参见协议规范与示例 SDK："
+      },
+      "recipe": {
+        "hint": "此处仅记录初始配方 — 真正的加载/漂移校验在第 4 波进行。",
+        "code": "配方编码",
+        "version": "版本"
+      },
+      "guardrail": {
+        "title": "参数护栏（必填）",
+        "desc": "为设备写入的每个参数声明 最小/最大/最大步长 — 第 4 波写入 parameter_guardrails。至少需要一行有效数据。",
+        "empty": "尚无行。请至少添加一个带 最小/最大 的参数。",
+        "param": "参数",
+        "min": "最小",
+        "max": "最大",
+        "maxStep": "最大步长",
+        "unit": "单位",
+        "remove": "删除行",
+        "add": "添加参数",
+        "count": "{{n}} 个参数"
+      }
+    },
+    "iot": {
+      "title": "添加物联网设备",
+      "subtitle": "ESP32 温湿度 · 车间 LAN 传感器 — 按 doc 57 持续遥测。",
+      "deviceType": "设备类型",
+      "code": "设备编码",
+      "workshop": "车间（用于虚拟工位）",
+      "workshopPlaceholder": "选择车间",
+      "virtualStation": "将创建的虚拟工位：",
+      "steps": {
+        "info": "信息",
+        "channel": "通道",
+        "metrics": "指标",
+        "credential": "凭证",
+        "signoff": "签核"
+      },
+      "stepDesc": {
+        "0": "设备类型、编码与车间（虚拟工位 IOT-<车间>）。",
+        "1": "选择遥测通道。",
+        "2": "声明设备将发送的指标架构。",
+        "3": "签发设备密钥 mk_（指引 + 可选证书）。",
+        "4": "复核并签核配置。"
+      },
+      "channel": {
+        "httpTitle": "HTTP 遥测（REST）",
+        "httpDesc": "设备向遥测端点 POST 一批样本（/api/ot/ingest 的别名）。",
+        "mqttTitle": "MQTT（syn/）",
+        "mqttDesc": "在 SYNAPSE 命名空间下发布遥测 — 适合多设备网关。",
+        "hint": "一个网关可转发多台设备；总线按 deviceId 解析。"
+      },
+      "metrics": {
+        "hint": "声明设备将发送的指标（规范名称 + 单位）。点击预设或手动添加。",
+        "empty": "尚无指标。请至少添加一个指标。",
+        "namePlaceholder": "temperature",
+        "unitPlaceholder": "°C",
+        "remove": "删除指标",
+        "add": "添加指标",
+        "count": "{{n}} 个指标"
+      }
+    },
+    "credential": {
+      "mintSuccess": "已创建加入令牌（met_）",
+      "enrollmentDisabled": "令牌已创建，但 ENROLLMENT_ENABLED 已关闭 — 设备暂时无法加入。",
+      "mkTitle": "设备密钥 mk_（scope ingest:write）",
+      "mkDesc": "每个 ingest 请求都用每设备的 mk_ 密钥（散列存储）认证，经请求头发送：",
+      "claimTitle": "认领（单台）",
+      "claimDesc": "管理员批准一台设备 → 铸造一次性认领令牌 → 设备兑换为 mk_。",
+      "enrollTitle": "加入（零接触批量）",
+      "enrollDesc": "按序列号模式为整批铸造一个 met_ 令牌 → 设备自助加入并获得 mk_。",
+      "openEnrollTab": "打开设备加入令牌标签页",
+      "openApiDocs": "API 文档",
+      "sdkHint": "示例 SDK/固件：",
+      "mintHere": "在此快速铸造加入令牌（met_）",
+      "serialPattern": "序列号模式（可选）",
+      "serialPatternPlaceholder": "SCRW-*",
+      "mintButton": "铸造 met_ 令牌",
+      "mintNote": "使用 machine.issueEnrollmentToken（与加入令牌标签页相同）。mk_ 密钥由设备在加入时获得，不在此签发。",
+      "adminOnly": "仅管理员可铸造加入令牌。请联系管理员或打开设备加入令牌标签页。",
+      "certTitle": "使用 X.509 证书（mTLS）",
+      "certDesc": "面向敏感设备的高级选项（决议 QĐ4）。第一阶段使用 mk_ + 主题 ACL。",
+      "acknowledge": "我已了解凭证流程，并将在设备发送数据前为其配置 mk_。"
+    },
+    "signoff": {
+      "deferNote": "这是设计向导 — 配置仅在本地记录。真正的部署（创建设备、写入配方/护栏、签发 mk_、MQTT ACL）在第 4 波进行。",
+      "sign": "签核（设计）",
+      "doneTitle": "配置已记录",
+      "doneDesc": "配置已在设计模式下签核。继续前往加入令牌，让设备真正上线。",
+      "designBadge": "设计模式",
+      "finish": "前往加入令牌"
     }
   }
 }
