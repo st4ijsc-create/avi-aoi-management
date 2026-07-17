@@ -491,8 +491,9 @@ Version-exact gate (stamp `productPointsConfigVersion`, chấm theo version máy
 
 **⏳ Còn lại:**
 - **Residual nhỏ:** `syncMeasurementPoints` bump vẫn read-modify-write (→ `bumpPointsConfigVersion` atomic) · station_traces scope theo (serial+productModel) · image single-tx thật · fake-UTC-shift cutover · bump-path ở `statusTemplateRouters`/`dataRouters`/`aiLocalTools` (**hoãn — vùng user**).
-- **QĐ#7:** benchmark 100 máy thật (cần server live).
-- **P3 (initiative lớn riêng):** streaming NATS + wiring StreamProcessor (QĐ#5) · presence unification · zero-touch onboarding · key-expiry + rotation signal · batch-ingest endpoint · product-variant · multi-factory doc (QĐ#4 federation) · fiducial registration · orphan-reaper · version-rollback API · heartbeat rate-limit.
+- **✅ QĐ#7 benchmark 100 máy — ĐÃ CHẠY** (commit `8bd45cd5`, doc 53 §0): chính-trực dữ liệu giữ vững + fix R6 validate; throughput dev-bound ~36/s (CASE #9) → cần prod HW + máy phát riêng cho SLA thật.
+- **✅ P3 batch-1 XONG** (commit `86547ace`, mig 0283, tsc 0 + 127 test): presence đa-instance (Redis+TTL) · zero-touch enrollment token · key-expiry opt-in · **batch-ingest** (CASE #2/#9) · heartbeat rate-limit · key-rotation signal.
+- **⏳ P3 batch-2 (còn lại — lớn/cần infra):** streaming NATS + wiring StreamProcessor (QĐ#5 — cần server NATS) · product-variant (schema + sync contract) · fiducial registration (affine server-side) · version-rollback API · orphan-reaper DB-diff · multi-factory doc (QĐ#4 federation) · image single-tx thật · station_traces scope · syncMeasurementPoints bump→atomic.
 
 ---
 
