@@ -66,6 +66,8 @@ import { ProductInfoTab } from "@/components/productModels/ProductInfoTab";
 import { ProductReleaseTab } from "@/components/productModels/ProductReleaseTab";
 import { ProductFoundationTab } from "@/components/productModels/ProductFoundationTab";
 import { MsaStudyDialog } from "@/components/productModels/MsaStudyDialog";
+// doc 55 Item 3 / PV3-UI — product-variant master-data admin tab.
+import { ProductVariantsTab } from "@/components/products/ProductVariantsTab";
 
 interface MeasurementPoint {
   id?: number;
@@ -211,7 +213,8 @@ function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["me
 // Doc 42 Đợt 4A (APPLY-B) — cột nhập/xuất danh sách sản phẩm. Khớp server
 // PRODUCT_IMPORT_COLUMNS (productRouters.ts); validate cùng luật @shared/masterDataIO.
 // Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
-const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation"] as const;
+// doc 55 Item 3 / PV3-UI — thêm tab "variants" (Biến thể) quản lý biến thể sản phẩm.
+const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants"] as const;
 
 const PRODUCT_IO_COLUMNS: MasterDataColumn[] = [
   { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
@@ -2861,6 +2864,11 @@ export default function ProductModels() {
                     <Layers className="h-4 w-4" />
                     {t("products.tabFoundation", "Nền tảng")}
                   </TabsTrigger>
+                  {/* doc 55 Item 3 / PV3-UI — Biến thể (product variants) */}
+                  <TabsTrigger value="variants" className="h-7 gap-1.5 text-xs">
+                    <Layers className="h-4 w-4" />
+                    {t("products.variants.tab", "Biến thể")}
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* ① Điểm đo — canvas + point list + form (màn làm việc chính) */}
@@ -3250,6 +3258,11 @@ export default function ProductModels() {
                   setNewSamplingName={setNewSamplingName} setNewSamplingStrategy={setNewSamplingStrategy} setNewViewCode={setNewViewCode}
                   setNewViewName={setNewViewName} setNewViewType={setNewViewType} setSelectedMsaStudyId={setSelectedMsaStudyId}
                 />
+              </TabsContent>
+
+              {/* ⑤ Biến thể — product-variant master-data (doc 55 Item 3 / PV3-UI) */}
+              <TabsContent value="variants" className="space-y-4 mt-2">
+                <ProductVariantsTab productModelId={selectedProduct.id} productName={selectedProduct.name} />
               </TabsContent>
               </Tabs>
 
