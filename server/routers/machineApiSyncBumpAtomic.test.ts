@@ -108,7 +108,8 @@ describe("syncMeasurementPoints — atomic pointsConfigVersion bump", () => {
     // (broadcast by the bumped CODE + version; machineCode is undefined here since the
     // input omits it — the point is that publish uses the atomic result, not a RMW).
     expect(res.pointsConfigVersion).toBe(10);
-    expect(publishPointsConfigChanged).toHaveBeenCalledWith("PRD-1", 10, undefined);
+    // 4th arg = variantCode (doc-55 Item 3 PV1) — undefined here (no variant in this input).
+    expect(publishPointsConfigChanged).toHaveBeenCalledWith("PRD-1", 10, undefined, undefined);
   });
 
   it("★ two sequential syncs advance +2 (no lost update) — 10 then 11", async () => {
