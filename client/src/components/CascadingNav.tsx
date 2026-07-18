@@ -68,21 +68,6 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // Open the current route's module by default (on mount / remount); when the scope is
   // a single module, open that instead (covers routes whose href isn't matched here).
   const [activeModuleId, setActiveModuleId] = useState<string | null>(moduleForPath ?? soleModuleId);
-  // The Level-2 category (section) that OWNS the current route. The category the user
-  // is in must stay OPEN across navigation (this nav remounts per page), while OTHER
-  // categories collapse (single-open accordion).
-  const categoryForPath = useMemo(() => {
-    const g = groups.find(gr => gr.id === moduleForPath);
-    if (!g) return null;
-    const entry = buildModuleL2(g).find(
-      (e): e is Extract<L2Entry, { kind: "category" }> =>
-        e.kind === "category" && e.items.some(i => isNavItemActive(i.href, currentPath)),
-    );
-    return entry?.key ?? null;
-  }, [groups, moduleForPath, currentPath]);
-  // The currently expanded category (its pages show inline below it). One at a time.
-  // Initialised to the active route's category so navigating keeps the used one open.
-  const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(categoryForPath);
 
   // Principle: Level-2 only collapses when a DIFFERENT Level-1 is selected — not
   // when navigating within the same module. So when the route moves to a page in
@@ -107,16 +92,6 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
     }
     prevSoleModuleId.current = soleModuleId;
   }, [soleModuleId]);
-  // Keep the OPEN category following the route: when navigation lands on a page in a
-  // different category, open that category (others collapse — single-open). Fires only
-  // when the active category CHANGES, so a manual collapse on the current page is kept.
-  const prevCategoryForPath = useRef(categoryForPath);
-  useEffect(() => {
-    if (categoryForPath && categoryForPath !== prevCategoryForPath.current) {
-      setHoverCategoryKey(categoryForPath);
-    }
-    prevCategoryForPath.current = categoryForPath;
-  }, [categoryForPath]);
   // Touch devices (tablets/phones in landscape that still show the rail): switch
   // Level-2→3 from hover to tap and expand items INLINE in the Level-2 panel
   // (single-column drill) instead of opening a separate Level-3 side flyout — this
@@ -134,13 +109,7 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
   // its own dismissal logic in CollapsedRail (that one IS a transient flyout).
 
   const handleModuleClick = useCallback((groupId: string) => {
-    setHoverCategoryKey(null);
     setActiveModuleId(prev => (prev === groupId ? null : groupId));
-  }, []);
-
-  // Click a category to toggle its inline page list (click again collapses).
-  const handleToggleCategory = useCallback((key: string) => {
-    setHoverCategoryKey(prev => (prev === key ? null : key));
   }, []);
 
   const handleNavigate = useCallback(
@@ -209,48 +178,23 @@ export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavPr
                       />
                     );
                   }
-                  // Category → click toggles its pages inline right below it (all pointers).
-                  const categoryHasActive = entry.items.some(i => isNavItemActive(i.href, currentPath));
-                  const isCatOpen = hoverCategoryKey === entry.key;
+                  // doc 60 FIX A — section = STATIC header, pages listed directly below
+                  // it (no L3 click). Reaching a page is now 2 clicks (module → page)
+                  // instead of 3. Same shape CollapsedFlyout already uses.
                   return (
-                    <div key={entry.key}>
-                      <button
-                        type="button"
-                        aria-expanded={isCatOpen}
-                        onClick={() => handleToggleCategory(entry.key)}
-                        className={cn(
-                          "flex w-full items-center gap-3 rounded-full px-3 text-sm transition-colors",
-                          coarse ? "py-3" : "py-2",
-                          "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          isCatOpen && "bg-sidebar-accent",
-                          categoryHasActive ? "font-medium text-primary" : "text-popover-foreground",
-                        )}
-                      >
-                        <span className={categoryHasActive ? "text-primary" : "text-muted-foreground"}>
-                          {entry.items[0]?.icon}
-                        </span>
-                        <span className="flex-1 text-left">{t(entry.label)}</span>
-                        <ChevronRight
-                          className={cn(
-                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                            isCatOpen && "rotate-90",
-                          )}
+                    <div key={entry.key} className="space-y-0.5">
+                      <div className="px-3 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t(entry.label)}
+                      </div>
+                      {entry.items.map(item => (
+                        <ItemRow
+                          key={item.href}
+                          item={item}
+                          isActive={isNavItemActive(item.href, currentPath)}
+                          onNavigate={handleNavigate}
+                          variant="pill"
                         />
-                      </button>
-                      {/* Inline-expanded pages (all pointers) — real links, Tab-reachable. */}
-                      {isCatOpen && (
-                        <div className="mt-0.5 space-y-0.5 pl-3 animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out">
-                          {entry.items.map(item => (
-                            <ItemRow
-                              key={item.href}
-                              item={item}
-                              isActive={isNavItemActive(item.href, currentPath)}
-                              onNavigate={handleNavigate}
-                              variant="pill"
-                            />
-                          ))}
-                        </div>
-                      )}
+                      ))}
                     </div>
                   );
                 })}
@@ -516,7 +460,6 @@ interface MobileDrillNavProps {
 export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillNavProps) {
   const { t } = useTranslation();
   const [moduleId, setModuleId] = useState<string | null>(null);
-  const [categoryKey, setCategoryKey] = useState<string | null>(null);
 
   const group = groups.find(g => g.id === moduleId) ?? null;
 
@@ -530,10 +473,7 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
             <button
               key={g.id}
               type="button"
-              onClick={() => {
-                setModuleId(g.id);
-                setCategoryKey(null);
-              }}
+              onClick={() => setModuleId(g.id)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors",
                 "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -553,45 +493,14 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
   }
 
   const l2 = buildModuleL2(group);
-  const activeCategory = l2.find(
-    (e): e is Extract<typeof e, { kind: "category" }> =>
-      e.kind === "category" && e.key === categoryKey,
-  );
 
-  // Level 2 — items inside a selected category (non-hub pages).
-  if (activeCategory) {
-    return (
-      <div className="space-y-0.5 px-2">
-        <button
-          type="button"
-          onClick={() => setCategoryKey(null)}
-          className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{t(activeCategory.label)}</span>
-        </button>
-        {activeCategory.items.map(item => (
-          <ItemRow
-            key={item.href}
-            item={item}
-            isActive={isNavItemActive(item.href, currentPath)}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  // Level 1 — the module's Level-2 list: hub pages as direct links, the rest as
-  // categories that drill into their items.
+  // doc 60 FIX A — module selected → ALL its pages listed (sections as static headers).
+  // No more per-category drill (was Level 3). Back button returns to the module list.
   return (
     <div className="space-y-0.5 px-2">
       <button
         type="button"
-        onClick={() => {
-          setModuleId(null);
-          setCategoryKey(null);
-        }}
+        onClick={() => setModuleId(null)}
         className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -608,24 +517,21 @@ export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillN
             />
           );
         }
-        const categoryHasActive = entry.items.some(i => isNavItemActive(i.href, currentPath));
+        // doc 60 FIX A — section = static header, pages listed directly (no drill).
         return (
-          <button
-            key={entry.key}
-            type="button"
-            onClick={() => setCategoryKey(entry.key)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors",
-              "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              categoryHasActive ? "text-primary font-medium" : "text-sidebar-foreground",
-            )}
-          >
-            <span className={categoryHasActive ? "text-primary" : "text-muted-foreground"}>
-              {entry.items[0]?.icon}
-            </span>
-            <span className="flex-1 text-left">{t(entry.label)}</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </button>
+          <div key={entry.key} className="space-y-0.5">
+            <div className="px-3 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t(entry.label)}
+            </div>
+            {entry.items.map(item => (
+              <ItemRow
+                key={item.href}
+                item={item}
+                isActive={isNavItemActive(item.href, currentPath)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
         );
       })}
     </div>
