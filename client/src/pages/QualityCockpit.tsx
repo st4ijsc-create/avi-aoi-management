@@ -25,9 +25,11 @@ import {
   FlaskConical,
   BellRing,
   ClipboardCheck,
+  Stethoscope,
 } from "lucide-react";
 
 import { SPCAnalysisContent } from "./SPCAnalysis";
+import { DiagnoseTabGroup } from "./quality/DiagnoseTabGroup"; // doc 59 Cụm F
 import { ParetoAnalysisContent } from "./ParetoAnalysis";
 import { QualityGatesContent } from "./QualityGates";
 import { AnnotationComparisonPageContent } from "./AnnotationComparisonPage";
@@ -216,6 +218,7 @@ function RealtimeGateStatus() {
 const VALID_TABS = [
   "spc", "pareto", "heatmap", "gates", "annotation",
   "alerts", "calibration", "msa", "ipc",
+  "diagnose", // doc 59 Cụm F — nhóm điều tra (RCA/dự đoán/nhân quả/tương quan)
 ] as const;
 
 export default function QualityCockpit() {
@@ -320,6 +323,10 @@ export default function QualityCockpit() {
               <ClipboardCheck className="h-4 w-4" />
               {t("qualityCockpit.tabs.ipc")}
             </TabsTrigger>
+            <TabsTrigger value="diagnose" className="gap-2">
+              <Stethoscope className="h-4 w-4" />
+              {t("qualityCockpit.tabs.diagnose", "Chẩn đoán")}
+            </TabsTrigger>
           </TabsList>
 
           {/* SPC chart + capability (embed canonical SPC engine UI) */}
@@ -372,6 +379,11 @@ export default function QualityCockpit() {
           {/* IPC-A-610 per-class acceptance profile */}
           <TabsContent value="ipc">
             <IpcAcceptancePanel />
+          </TabsContent>
+
+          {/* doc 59 Cụm F — điều tra (RCA/dự đoán/nhân quả/tương quan) cạnh SPC/Pareto */}
+          <TabsContent value="diagnose">
+            <DiagnoseTabGroup />
           </TabsContent>
         </Tabs>
       </div>
