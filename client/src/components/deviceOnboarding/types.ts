@@ -16,10 +16,11 @@ export type { DeviceClass };
 const FLAG_KEY = "DEVICE_ONBOARD_WIZARD_V2_ENABLED";
 
 /**
- * Cờ wizard hợp nhất V2 — mặc định OFF (route ẩn khi OFF; orchestrator gate route
- * + TAB_REDIRECTS sau). Theo đúng convention client-flag của repo
- * (appLauncherFlag.ts / useMachineTypes.ts): localStorage override ("true"/"false")
- * → VITE env `VITE_DEVICE_ONBOARD_WIZARD_V2_ENABLED` → OFF.
+ * Cờ wizard hợp nhất V2. doc 59 Cụm C (USER duyệt "bật mặc định ngay"): MẶC ĐỊNH ON
+ * — DeviceOnboardingHubV2 là cửa thêm-thiết-bị duy nhất; /machine-onboarding +
+ * /aoi-onboarding redirect vào /device-onboarding. Đặt =false (hoặc localStorage
+ * `deviceOnboardWizardV2Enabled`="false") để quay lại các wizard cũ.
+ * localStorage override ("true"/"false") → VITE env → default ON.
  */
 export function isDeviceOnboardWizardV2Enabled(): boolean {
   if (typeof window !== "undefined") {
@@ -31,7 +32,7 @@ export function isDeviceOnboardWizardV2Enabled(): boolean {
       /* storage unavailable — dùng env default */
     }
   }
-  return import.meta.env.VITE_DEVICE_ONBOARD_WIZARD_V2_ENABLED === "true";
+  return import.meta.env.VITE_DEVICE_ONBOARD_WIZARD_V2_ENABLED !== "false";
 }
 
 // ── Tham chiếu tài liệu / endpoint (doc 57) ──────────────────────────────────

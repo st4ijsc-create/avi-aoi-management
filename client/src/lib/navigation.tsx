@@ -37,8 +37,6 @@
   Workflow,
   Brain,
   Wrench,
-  Rocket,
-  ScanSearch,
   LayoutTemplate,
   Archive,
   Store,
@@ -705,26 +703,9 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "connect",
       },
-      {
-        href: "/machine-onboarding",
-        label: "nav.machineOnboarding",
-        icon: <Rocket className="h-4 w-4" />,
-        description: "nav.machineOnboardingDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "connect",
-      },
-      {
-        // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter +
-        // dry-run + credential + commissioning sign-off (soft gate, tag-only)
-        href: "/aoi-onboarding",
-        label: "nav.aoiOnboarding",
-        icon: <ScanSearch className="h-4 w-4" />,
-        description: "nav.aoiOnboardingDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "connect",
-      },
+      // doc 59 Cụm C — /machine-onboarding + /aoi-onboarding GỠ khỏi menu: đã hợp nhất
+      // vào "Thêm thiết bị (hợp nhất)" /device-onboarding (mục ở trên). Route cũ redirect
+      // vào đó (App.tsx, gate cờ wizard); deep-link vẫn sống.
       {
         href: "/machine-registration",
         label: "nav.machineRegistration",

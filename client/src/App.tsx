@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
 import { isWorkspaceShellEnabled } from "./components/workspace/hubState";
+import { isDeviceOnboardWizardV2Enabled } from "./components/deviceOnboarding/types";
 import React, { Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -351,8 +352,19 @@ function Router() {
       <Route path="/mqtt-profiles"><Redirect to="/connectivity?tab=profiles" /></Route>
       <Route path="/mqtt-topics"><Redirect to="/connectivity?tab=topics" /></Route>
       <Route path="/mqtt-ng-rate"><Redirect to="/connectivity?tab=ngrate" /></Route>
-      <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
-      <Route path="/aoi-onboarding"><RouteGuard navHref="/aoi-onboarding"><AIPageWrapper><AoiOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 59 Cụm C — wizard hợp nhất default-ON: các wizard cũ fold vào /device-onboarding
+          (aoi_avi branch tái dùng nguyên AoiOnboardingWizardContent; automation/iot có nhánh riêng).
+          Giữ standalone khi cờ wizard OFF. */}
+      <Route path="/machine-onboarding">
+        {() => isDeviceOnboardWizardV2Enabled()
+          ? <Redirect to="/device-onboarding" />
+          : <RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard>}
+      </Route>
+      <Route path="/aoi-onboarding">
+        {() => isDeviceOnboardWizardV2Enabled()
+          ? <Redirect to="/device-onboarding" />
+          : <RouteGuard navHref="/aoi-onboarding"><AIPageWrapper><AoiOnboardingWizard /></AIPageWrapper></RouteGuard>}
+      </Route>
       <Route path="/product-onboarding"><RouteGuard navHref="/product-onboarding"><AIPageWrapper><ProductOnboardingWizard /></AIPageWrapper></RouteGuard></Route>
       {/* doc 40 Wave 4 — Đổi sản phẩm (changeover) tại line: gate machine_status qua navHref (operator/maintenance đều có canView). */}
       <Route path="/product-changeover"><RouteGuard navHref="/product-changeover"><AIPageWrapper><ProductChangeoverWizard /></AIPageWrapper></RouteGuard></Route>
