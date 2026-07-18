@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
+import { isWorkspaceShellEnabled } from "./components/workspace/hubState";
 import React, { Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -386,7 +387,17 @@ function Router() {
       <Route path="/digital-twin-center"><Redirect to="/digital-twin?tab=center" /></Route>
       <Route path="/command-center"><RouteGuard requirePermission="machine_status"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       {/* U3 (doc 21 §6 G-4/G-5): per-asset cockpits — reached by drill (no top-nav entry). */}
-      <Route path="/machine/:id"><RouteGuard requirePermission="machine_status"><AIPageWrapper><MachineCockpit /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 59 P3 — workspace default-ON: /machine/:id folds into the Machine Workspace
+          (rail + cockpit) at /device-monitor?machine=; standalone cockpit kept for flag-off. */}
+      <Route path="/machine/:id">
+        {(params) =>
+          isWorkspaceShellEnabled() ? (
+            <Redirect to={`/device-monitor?machine=${params.id}`} />
+          ) : (
+            <RouteGuard requirePermission="machine_status"><AIPageWrapper><MachineCockpit /></AIPageWrapper></RouteGuard>
+          )
+        }
+      </Route>
       <Route path="/robot/:id"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RobotCockpit /></AIPageWrapper></RouteGuard></Route>
       <Route path="/technician-copilot"><RouteGuard navHref="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>

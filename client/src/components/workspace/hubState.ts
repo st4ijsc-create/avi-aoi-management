@@ -27,8 +27,11 @@ export function buildTabHref(basePath: string, search: string, tab: string): str
 
 /**
  * WorkspaceShell master-detail rollout flag (doc 59). Convention mirrors the repo's
- * other client flags (appLauncherFlag / isDeviceOnboardWizardV2Enabled): localStorage
- * override ("true"/"false") → VITE env → OFF. Default OFF ⇒ byte-identical.
+ * other client flags: localStorage override ("true"/"false") → VITE env → default.
+ *
+ * doc 59 P3 (USER duyệt 2026-07-18 "bật mặc định ngay"): default is now ON — the
+ * Machine Workspace IS /device-monitor. Set `VITE_WORKSPACE_SHELL_ENABLED=false`
+ * (or localStorage `workspaceShellEnabled="false"`) to fall back to the legacy hub.
  */
 export const WORKSPACE_SHELL_FLAG_KEY = "workspaceShellEnabled";
 
@@ -42,5 +45,5 @@ export function isWorkspaceShellEnabled(): boolean {
       /* storage unavailable — fall through to env default */
     }
   }
-  return import.meta.env.VITE_WORKSPACE_SHELL_ENABLED === "true";
+  return import.meta.env.VITE_WORKSPACE_SHELL_ENABLED !== "false";
 }
