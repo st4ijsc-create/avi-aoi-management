@@ -40,7 +40,7 @@ export default function SupervisorHome() {
     { icon: Building2, label: t("supervisor.tiles.corporate", "Tổng quan tập đoàn"), description: t("supervisor.tiles.corporateDesc", "Rollup theo nhà máy"), to: "/corporate-dashboard" },
     { icon: Gauge, label: t("supervisor.tiles.oee", "OEE & Sức khỏe"), description: t("supervisor.tiles.oeeDesc", "Năng suất & thiết bị"), to: "/oee-dashboard" },
     { icon: Factory, label: t("supervisor.tiles.production", "Sản xuất"), description: t("supervisor.tiles.productionDesc", "Tiến độ dây chuyền"), to: "/production-dashboard" },
-    { icon: BarChart3, label: t("supervisor.tiles.analytics", "Phân tích"), description: t("supervisor.tiles.analyticsDesc", "Xu hướng & SPC"), to: "/spc-analysis" },
+    { icon: BarChart3, label: t("supervisor.tiles.analytics", "Phân tích"), description: t("supervisor.tiles.analyticsDesc", "Xu hướng & SPC"), to: "/quality-cockpit?tab=spc" },
     { icon: MessageSquareText, label: t("supervisor.tiles.insight", "Hỏi đáp điều hành"), description: t("supervisor.tiles.insightDesc", "NL Q&A + tóm tắt"), to: "/management-insight" },
     { icon: FileText, label: t("supervisor.tiles.reports", "Báo cáo"), description: t("supervisor.tiles.reportsDesc", "Xuất & lịch báo cáo"), to: "/reports" },
   ];

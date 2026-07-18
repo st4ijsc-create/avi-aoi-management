@@ -141,7 +141,9 @@ export default function QualityHome() {
       icon: Brain,
       label: t("quality.tools.spc"),
       description: t("quality.tools.spcDesc"),
-      to: "/spc-analysis",
+      // doc 59 P2 (theme #4): trỏ THẲNG surface chuẩn (Quality Cockpit tab SPC), bỏ
+      // hop qua redirect-stub /spc-analysis — cửa vào nhất quán với IA.
+      to: "/quality-cockpit?tab=spc",
     },
     {
       icon: BarChart3,
