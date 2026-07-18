@@ -26,12 +26,15 @@ function formatAgo(ms: number): string {
 export function PollFreshness({
   updatedAt,
   isFetching = false,
+  staleAfterMs = 60_000,
   className,
 }: {
   /** react-query dataUpdatedAt (mốc mili-giây lần fetch thành công gần nhất). */
   updatedAt: number | undefined;
   /** Đang refetch → hiện trạng thái "đang cập nhật" + icon xoay. */
   isFetching?: boolean;
+  /** doc 63 (ISA-101/AUD-08): chỉ tô cảnh báo (amber) khi quá hạn này; còn tươi = trung tính. */
+  staleAfterMs?: number;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -49,6 +52,10 @@ export function PollFreshness({
     return formatAgo(Date.now() - updatedAt);
   }, [updatedAt]);
 
+  // doc 63 (ISA-101): fresh data reads NEUTRAL (quiet); saturated amber is reserved for
+  // the abnormal "stale" case — matches FreshnessStrip + the high-performance-HMI rule.
+  const isStale = updatedAt != null && Date.now() - updatedAt > staleAfterMs;
+
   const label = isFetching
     ? t("realtime.refreshing", "Đang cập nhật…")
     : ago != null
@@ -61,7 +68,10 @@ export function PollFreshness({
       aria-live="polite"
       title={label}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium leading-none text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none",
+        isStale
+          ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+          : "border-border bg-muted text-muted-foreground",
         className,
       )}
     >

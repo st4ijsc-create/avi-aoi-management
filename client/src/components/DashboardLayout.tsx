@@ -37,7 +37,7 @@ import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffec
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import {
   Breadcrumb,
@@ -297,7 +297,17 @@ function DashboardLayoutContent({
   // their owning module's app, reorganising across the old groups). Search (⌘K) still spans
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
   const sidebarGroups = launcherOn ? scopeGroupsToApp(visibleGroups, activeApp.appId) : visibleGroups;
-  const searchGroups = launcherOn ? accessibleGroups : visibleGroups;
+  // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
+  // rows folded into hubs), so a page hidden from the rail is still findable by name.
+  // Same license/nav-group filtering as the sidebar, minus the hub-collapse step.
+  const searchAccessibleGroups = getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
+    .filter(group => isNavGroupAllowed(group.id))
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
+    }))
+    .filter(group => group.items.length > 0);
+  const searchGroups = searchAccessibleGroups;
 
   // doc 40 Lan — RBAC cho App Launcher: một app "truy cập được" khi là core, HOẶC còn ≥1
   // item hiển thị sau khi lọc role/permission/license (accessibleGroups). Tile không truy

@@ -2277,13 +2277,14 @@ function collapseNavGroups(groups: NavGroup[]): NavGroup[] {
     .filter(group => group.items.length > 0);
 }
 
-export function getFilteredNavGroups(
+/** Apply role/permission filtering to an already-decided set of groups (collapsed or not). */
+function applyRbacFilter(
+  base: NavGroup[],
   userRole?: string,
   hasPermission?: PermissionChecker,
   hasAnyCategoryPermission?: CategoryChecker,
 ): NavGroup[] {
-  const base = collapseNavGroups(navGroups);
-  // Admin sees everything (except the hub-collapsed rows above)
+  // Admin sees everything in `base`.
   if (userRole === 'admin') return base;
 
   return base
@@ -2305,4 +2306,28 @@ export function getFilteredNavGroups(
       ),
     }))
     .filter(group => group.items.length > 0);
+}
+
+export function getFilteredNavGroups(
+  userRole?: string,
+  hasPermission?: PermissionChecker,
+  hasAnyCategoryPermission?: CategoryChecker,
+): NavGroup[] {
+  // Sidebar view: rows folded into consolidation hubs are removed.
+  return applyRbacFilter(collapseNavGroups(navGroups), userRole, hasPermission, hasAnyCategoryPermission);
+}
+
+/**
+ * doc 63 (AUD-05 / IA-09) — SEARCH index for the ⌘K command palette. Identical
+ * role/permission filtering to getFilteredNavGroups but WITHOUT collapseNavGroups: the
+ * 28 rows folded into consolidation hubs (COLLAPSED_INTO_HUB) stay searchable, so a page
+ * hidden from the sidebar is still reachable by name (Nielsen H7). Only the command palette
+ * consumes this fuller set; the rail keeps using the collapsed getFilteredNavGroups.
+ */
+export function getSearchNavGroups(
+  userRole?: string,
+  hasPermission?: PermissionChecker,
+  hasAnyCategoryPermission?: CategoryChecker,
+): NavGroup[] {
+  return applyRbacFilter(navGroups, userRole, hasPermission, hasAnyCategoryPermission);
 }

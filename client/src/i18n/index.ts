@@ -50,4 +50,16 @@ i18n
     },
   });
 
+// doc 63 (AUD-11 / WCAG 3.1.1 "Language of Page") — index.html ships a static <html lang>,
+// but the app is Vietnamese-primary and users switch vi/en/zh at runtime. Keep the document
+// language in sync with the active i18next language so assistive tech announces content in
+// the right language. SSR-guarded; only ever writes documentElement.lang.
+function syncHtmlLang(lng?: string) {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.lang = (lng || 'vi').split('-')[0];
+  }
+}
+syncHtmlLang(i18n.language);
+i18n.on('languageChanged', syncHtmlLang);
+
 export default i18n;
