@@ -84,3 +84,21 @@ Cao ROI hằng ngày nhất (operator/maint/eng sống ở miền máy mỗi ca)
 - **QĐ-D (QW làm ngay?):** cho phép làm QUICK-WIN (menu-wiring + bật cờ wizard) NGAY như bước độc lập rủi-ro-thấp trong lúc chờ duyệt A-C?
 
 *Phụ lục: 3 báo cáo agent đầy đủ (IA inventory / role-fragmentation / consolidation blueprint) lưu trong transcript phiên; các phát hiện đã tổng hợp ở §1-§7.*
+
+---
+
+## 10. THỰC THI (USER DUYỆT 2026-07-18: thẳng A+B+C+D, flagship A, QW ngay, bật mặc định)
+
+11 commit `dc7e81e1`→`8718e611` (mọi bước tsc 0 + reversible qua cờ):
+- **QW** `dc7e81e1`: ProcessAnalytics + DeviceOnboarding vào nav. **P0** `b5ee687e`: primitives WorkspaceShell/TabbedHub/ContextDrawer (DeviceHub 80→33, unit 6 pass). **P1+P1.1** `7eacb7c4`/`a9fbd9b1`: Machine Workspace (tách MachineCockpitBody, rail⇄cockpit?machine=⇄AI-drawer + fleet-wide tabs). **P2** `7eb706f8`: ControlTower đã persona-shell → theme #4 stub. **Default-ON** `9a622c80`. **Cụm C** `38fa9a07`: onboarding 4-6→1. **Cụm D** `8718e611`: Data Hub master-detail.
+
+### §10.1 — BROWSER-VERIFY LIVE (Playwright, 2026-07-18)
+Dev server `:3010` (vite) + user no-2FA `wsverify`(admin để bypass gate). Kết quả:
+- **`/device-monitor` = Machine Workspace RENDER ĐÚNG**: rail trái = danh sách máy thật (SCRW/GLUE/ESP32 pilot + SIM-L1/2/3 kèm machineType) + filter; main no-selection = TabbedHub fleet-wide [OEE|Health|Field].
+- **Click "Máy bắt vít pilot 01" → `?machine=243` → cockpit nhúng** đầy đủ 12 tab (gồm "Process results" doc-56), header ONLINE, KHÔNG nút Back (embedded=true). Nút **AI copilot** mở **ContextDrawer** "Device AI copilot" (MachineAISummary: Diagnose/Ask-AI/Anomaly/Failure-risk).
+- **`/device-onboarding` (Cụm C)**: "Add device — One entry point" + 3 thẻ class (Optical 4 · Automation 18 · IoT 2 types); nav "Connect & Setup" có "Add Device (unified)", 2 wizard cũ đã GỠ.
+- **`/data-management` (Cụm D)**: rail 3 nhóm ⇄ main launcher ToolTile (Products/onboarding/mapping/component-library).
+- **0 lỗi render từ code doc-59**; 1 console-error duy nhất = policy "admin phải bật 2FA" của chính test-user (không phải bug). Screenshot: ws-noselect/ws-cockpit/ws-drawer/data-hub.png.
+
+### §10.2 — CÒN (Cụm E–I + phụ)
+E Product-Workspace · F Quality-Diagnose tab-group · G Reporting-Studio · H AI-Studio · I Maintenance-workspace + phụ (Settings/role-home/Engineering-Studio). Đang thiết kế blueprint (workflow 5-agent) → hiện thực theo mô hình reversible.
