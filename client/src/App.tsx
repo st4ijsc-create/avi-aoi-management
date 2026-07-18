@@ -116,6 +116,7 @@ const DataManagementHub = React.lazy(() => import("./pages/DataManagementHub"));
 const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub")); // doc 59 Cụm E
 const AIStudioHub = React.lazy(() => import("./pages/AIStudioHub")); // doc 59 Cụm H
 const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
+const ReportingStudio = React.lazy(() => import("./pages/ReportingStudio")); // doc 59 Cụm G
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
@@ -428,6 +429,7 @@ function Router() {
       <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
 
       {/* ── ANALYTICS ────────────────────────────────────────────────────── */}
+      <Route path="/reporting-studio"><RouteGuard navHref="/reporting-studio"><ReportingStudio /></RouteGuard></Route>
       <Route path="/reports"><RouteGuard navHref="/reports"><Reports /></RouteGuard></Route>
       <Route path="/scheduled-reports"><RouteGuard navHref="/scheduled-reports"><ScheduledReports /></RouteGuard></Route>
       {/* P1 consolidation: enhanced scheduled reports folded into the canonical Scheduled Reports page. */}

@@ -1088,6 +1088,16 @@ export const navGroups: NavGroup[] = [
     ],
     items: [
       {
+        // doc 59 Cụm G — Xưởng báo cáo: studio 4 tab (tạo/lịch/xuất/so sánh) hợp nhất.
+        href: "/reporting-studio",
+        label: "Xưởng báo cáo",
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "Tạo · lịch · xuất PDF/PPTX · so sánh — một studio",
+        requiredPermission: "reports_view",
+        permissionCategory: "reports",
+        section: "reports",
+      },
+      {
         href: "/reports",
         label: "nav.reportsPage",
         icon: <FileBarChart className="h-4 w-4" />,
