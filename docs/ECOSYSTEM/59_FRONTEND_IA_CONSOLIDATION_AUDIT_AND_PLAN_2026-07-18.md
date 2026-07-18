@@ -100,5 +100,17 @@ Dev server `:3010` (vite) + user no-2FA `wsverify`(admin để bypass gate). K�
 - **`/data-management` (Cụm D)**: rail 3 nhóm ⇄ main launcher ToolTile (Products/onboarding/mapping/component-library).
 - **0 lỗi render từ code doc-59**; 1 console-error duy nhất = policy "admin phải bật 2FA" của chính test-user (không phải bug). Screenshot: ws-noselect/ws-cockpit/ws-drawer/data-hub.png.
 
-### §10.2 — CÒN (Cụm E–I + phụ)
-E Product-Workspace · F Quality-Diagnose tab-group · G Reporting-Studio · H AI-Studio · I Maintenance-workspace + phụ (Settings/role-home/Engineering-Studio). Đang thiết kế blueprint (workflow 5-agent) → hiện thực theo mô hình reversible.
+### §10.2 — Cụm E–I ĐÃ HOÀN TẤT (workflow 5-agent design + critic verified → hiện thực + Playwright LIVE)
+
+Workflow thiết kế 5-agent (read-only) + critic đã kiểm chứng approach khớp *Content thực trên disk (E 2/9 · F 4/6 · G 6/10 · H 0/17 · I 0/4 embeddable). Hiện thực (mọi cụm tsc 0 + Playwright render đúng, additive — route con giữ nguyên):
+
+- **HubLauncher primitive** (`components/workspace/HubLauncher.tsx`): rail category ⇄ ToolTile launcher + PER-TILE RBAC (ẩn tile thiếu quyền + category rỗng). Nền cho E/H/I.
+- **E** `/product-workspace` (`7b6152f3`): 2 nhóm × 5 tile, per-tile 5 quyền, nav gate history_view (bậc thấp nhất). LIVE: 2 nhóm + note "Kỹ thuật" trên Recipe.
+- **H** `/ai-studio` (`7b6152f3`): 5 nhóm (17 surface), admin-only route, giữ /robot-model-health standalone. LIVE: rail 5 nhóm ⇄ ToolTile.
+- **I** `/maintenance-hub` (`7b6152f3`): launcher an toàn (thay master-detail-rebuild vì 0/4 *Content). LIVE render OK.
+- **F** `/quality-cockpit?tab=diagnose` (`f2a69803`): nhóm tab "Chẩn đoán" nhúng 4 *Content (RCA/dự đoán/nhân quả/tương quan) cạnh SPC/Pareto. ADDITIVE — KHÔNG redirect/widen-guard (tránh RBAC-regression critic cảnh báo). LIVE: tab Chẩn đoán selected → nested RCA.
+- **G** `/reporting-studio` (`d5e9dd1b`): TabbedHub 4 tab (Tạo/Lịch/Xuất-nested-PDF-PPTX/So-sánh) nhúng 6 *Content, route mới (không đụng Reports.tsx 1311 dòng). LIVE: 4 tab + ?tab=export nested.
+
+**Green cuối doc-59: tsc 0 · vite build 35s · Playwright LIVE render 8 surface (workspace/onboarding/data-hub/ai-studio/product/maintenance/quality-diagnose/reporting-studio) 0 lỗi code.** 6 commit thực thi E-I: `7b6152f3`(E/H/I+HubLauncher) `f2a69803`(F) `d5e9dd1b`(G).
+
+**CÒN (follow-up, ngoài A-I chính):** phụ (Settings/role-home/Engineering-Studio merge) · full-embed G (tách Reports/HistoryExport) + nav-collapse các row cũ khi muốn giảm sprawl mạnh hơn · Connections-hub (overlap MQTT MonitoringSettings⇄ConnectivityHub).
