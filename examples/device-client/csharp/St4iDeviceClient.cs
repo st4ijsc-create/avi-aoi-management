@@ -103,8 +103,32 @@ namespace St4i.DeviceClient
         [JsonPropertyName("quality")] public string Quality { get; set; }  // good|bad|uncertain
     }
 
+    // ── DTO đầu vào — INSPECTION (AOI/AVI, doc 61 §5 / doc 28 v1.1) ───────────
+    public class MeasurementPoint
+    {
+        [JsonPropertyName("pointCode")] public string PointCode { get; set; }
+        [JsonPropertyName("measuredValue")] public double? MeasuredValue { get; set; }
+        [JsonPropertyName("result")] public string Result { get; set; }  // OK|NG|NTF
+        [JsonPropertyName("unit")] public string Unit { get; set; }
+        [JsonPropertyName("defectCatalogCode")] public string DefectCatalogCode { get; set; }
+        [JsonPropertyName("defectSeverity")] public string DefectSeverity { get; set; } // critical|major|minor|cosmetic
+        [JsonPropertyName("valueHeight")] public double? ValueHeight { get; set; }
+        [JsonPropertyName("valueArea")] public double? ValueArea { get; set; }
+        [JsonPropertyName("valueVolume")] public double? ValueVolume { get; set; }
+        [JsonPropertyName("valueVoidPct")] public double? ValueVoidPct { get; set; }
+        [JsonPropertyName("valueCoplanarity")] public double? ValueCoplanarity { get; set; }
+        [JsonPropertyName("valueWarpage")] public double? ValueWarpage { get; set; }
+        [JsonPropertyName("valueOffsetX")] public double? ValueOffsetX { get; set; }
+        [JsonPropertyName("valueOffsetY")] public double? ValueOffsetY { get; set; }
+        [JsonPropertyName("valueTilt")] public double? ValueTilt { get; set; }
+        [JsonPropertyName("valueThickness")] public double? ValueThickness { get; set; }
+        [JsonPropertyName("valueZ")] public double? ValueZ { get; set; }
+        [JsonPropertyName("imageBase64")] public string ImageBase64 { get; set; }
+    }
+
     // ── DTO phản hồi ────────────────────────────────────────────────────────
     public class ProcessAck { public bool Success; public long? ProcessResultId; public bool Duplicate; public bool Queued; public string SubmissionId; }
+    public class InspectionAck { public bool Success; public long? InspectionId; public bool Duplicate; public bool Queued; }
     public class TelemetryAck { public int Accepted; public int Received; public string Machine; }
     public class ConfigVersion { public bool Success; public string ConfigKind; public string Code; public string Name; public string Version; public string Checksum; public string ResolvedBy; public JsonElement Payload; }
     public class ConfigAck { public bool Success; public long MachineId; public string ConfigKind; public string DriftState; }
@@ -368,6 +392,44 @@ namespace St4i.DeviceClient
                 Duplicate = GetBool(data, "duplicate"),
                 Queued = GetBool(data, "queued"),
                 SubmissionId = GetStr(data, "submissionId"),
+            };
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // INSPECTION — POST /api/v1/ingest/inspection  (AOI/AVI, doc 61 §5 / doc 28 v1.1)
+        // ══════════════════════════════════════════════════════════════════════
+        public async Task<InspectionAck> SubmitInspectionAsync(
+            string serialNumber, string overallResult, IEnumerable<MeasurementPoint> measurements,
+            string productModel = null, string variantCode = null, string idempotencyKey = null,
+            string ts = null, string panelId = null, int? boardIndex = null, string inspectionTime = null,
+            string machineCode = null, CancellationToken ct = default)
+        {
+            overallResult = (overallResult ?? "").Trim().ToUpperInvariant();
+            if (overallResult != "OK" && overallResult != "NG" && overallResult != "NTF")
+                throw new St4iConfigException($"overallResult phải OK|NG|NTF, nhận '{overallResult}'");
+            string mc = machineCode ?? MachineCode;
+            var payload = new Dictionary<string, object>
+            {
+                ["schemaVersion"] = "1.1",
+                ["serialNumber"] = serialNumber,
+                ["overallResult"] = overallResult,
+                ["inspectionTime"] = inspectionTime ?? ts ?? IsoNow(),
+                ["measurements"] = measurements.ToList(),
+            };
+            if (!string.IsNullOrEmpty(mc)) payload["machineCode"] = mc;
+            if (!string.IsNullOrEmpty(productModel)) payload["productModel"] = productModel;
+            if (!string.IsNullOrEmpty(variantCode)) payload["variantCode"] = variantCode;
+            if (!string.IsNullOrEmpty(idempotencyKey)) payload["idempotencyKey"] = idempotencyKey;
+            if (!string.IsNullOrEmpty(panelId)) payload["panelId"] = panelId;
+            if (boardIndex.HasValue) payload["boardIndex"] = boardIndex.Value;
+
+            var data = await SendWithRetryAsync("inspection", "/api/v1/ingest/inspection", payload, ct).ConfigureAwait(false);
+            return new InspectionAck
+            {
+                Success = GetBool(data, "success"),
+                InspectionId = TryGet(data, "inspectionId", out var id) && id.ValueKind == JsonValueKind.Number ? id.GetInt64() : (long?)null,
+                Duplicate = GetBool(data, "duplicate"),
+                Queued = GetBool(data, "queued"),
             };
         }
 
