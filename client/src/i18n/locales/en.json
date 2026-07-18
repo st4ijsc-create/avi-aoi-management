@@ -16307,6 +16307,15 @@
     "recentEmpty": "No rows for this serial",
     "recentEmptyHint": "This serial has no process results, or analytics is disabled."
   },
+  "machineWorkspace": {
+    "title": "Machine Workspace",
+    "filter": "Filter devices…",
+    "noMachines": "No devices.",
+    "selectTitle": "Select a device",
+    "selectHint": "Pick a device on the left to open its cockpit: status · process/SPC · config · history.",
+    "aiTitle": "Device AI copilot",
+    "ai": "AI copilot"
+  },
   "deviceOnboarding": {
     "title": "Add device",
     "subtitle": "One entry point for every device — pick a device class to begin.",

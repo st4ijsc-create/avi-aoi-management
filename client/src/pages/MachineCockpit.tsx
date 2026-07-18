@@ -712,11 +712,11 @@ function MaintenanceTab({ machineId, now }: { machineId: number; now: number }) 
 // PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-export default function MachineCockpit() {
+// doc 59 P1 — cockpit BODY (no DashboardLayout) so it embeds in the Machine Workspace
+// master-detail locked to the selected machine, AND backs the standalone /machine/:id.
+export function MachineCockpitBody({ machineId, embedded = false }: { machineId: number; embedded?: boolean }) {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/machine/:id");
-  const machineId = Number(params?.id);
   const validId = Number.isFinite(machineId) && machineId > 0;
 
   const [now, setNow] = useState(() => Date.now());
@@ -782,16 +782,13 @@ export default function MachineCockpit() {
 
   if (!validId) {
     return (
-      <DashboardLayout>
-        <div className="p-4">
-          <EmptyState title={t("cockpit.badId", "Invalid machine id")} description={t("cockpit.badIdHint", "This URL does not reference a machine.")} />
-        </div>
-      </DashboardLayout>
+      <div className="p-4">
+        <EmptyState title={t("cockpit.badId", "Invalid machine id")} description={t("cockpit.badIdHint", "This URL does not reference a machine.")} />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
       <div className="space-y-4 p-1">
         {/* Header */}
         <PageHeader
@@ -812,9 +809,11 @@ export default function MachineCockpit() {
               {connected === false && (
                 <Badge className="gap-1 bg-muted text-muted-foreground"><WifiOff className="h-3.5 w-3.5" /> {t("cockpit.offline", "OFFLINE")}</Badge>
               )}
-              <Button size="sm" variant="outline" onClick={() => setLocation("/device-monitor")}>
-                <ArrowLeft className="mr-1 h-4 w-4" /> {t("cockpit.back", "Back")}
-              </Button>
+              {!embedded && (
+                <Button size="sm" variant="outline" onClick={() => setLocation("/device-monitor")}>
+                  <ArrowLeft className="mr-1 h-4 w-4" /> {t("cockpit.back", "Back")}
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={() => detailQ.refetch()}>
                 <RefreshCw className={cn("mr-1 h-4 w-4", detailQ.isFetching && "animate-spin")} /> {t("cockpit.refresh", "Refresh")}
               </Button>
@@ -1186,6 +1185,16 @@ export default function MachineCockpit() {
           </Tabs>
         )}
       </div>
+  );
+}
+
+// Standalone route wrapper — reads /machine/:id and frames the body in the app shell.
+export default function MachineCockpit() {
+  const [, params] = useRoute("/machine/:id");
+  const machineId = Number(params?.id);
+  return (
+    <DashboardLayout>
+      <MachineCockpitBody machineId={machineId} />
     </DashboardLayout>
   );
 }

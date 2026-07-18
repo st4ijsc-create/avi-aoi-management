@@ -9,10 +9,11 @@
  * primitive (URL sync preserves other params, e.g. a future `?machine=`). Behaviour is
  * identical; each tab body self-gates its own permission so no tab leaks access.
  */
+import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 import { Server, HeartPulse, Radio, Gauge } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { TabbedHub, type TabbedHubTab } from "@/components/workspace";
+import { TabbedHub, type TabbedHubTab, isWorkspaceShellEnabled } from "@/components/workspace";
 
 import { UnifiedDeviceMonitorContent } from "./UnifiedDeviceMonitor";
 import { MachineHealthMonitoringContent } from "./MachineHealthMonitoring";
@@ -27,8 +28,26 @@ const TABS: readonly TabbedHubTab[] = [
   { value: "field", labelKey: "deviceHub.tabs.field", fallback: "Field Devices", icon: <Radio className="h-4 w-4" />, Content: FieldDevicesContent },
 ];
 
+// doc 59 P1 — Machine Workspace (master-detail) loads only when the flag is on.
+const MachineWorkspace = lazy(() => import("./MachineWorkspace"));
+
 export default function DeviceHub() {
   const { t } = useTranslation();
+  // Flag ON ⇒ /device-monitor is the Machine Workspace (rail fleet ⇄ cockpit ⇄ AI drawer);
+  // OFF ⇒ the legacy tabbed hub below (byte-identical). doc 59 guardrail: reversible.
+  if (isWorkspaceShellEnabled()) {
+    return (
+      <Suspense
+        fallback={
+          <DashboardLayout>
+            <div className="p-6 text-sm text-muted-foreground">{t("common.loading", "Đang tải…")}</div>
+          </DashboardLayout>
+        }
+      >
+        <MachineWorkspace />
+      </Suspense>
+    );
+  }
   return (
     <DashboardLayout title={t("deviceHub.title", "Devices")}>
       <TabbedHub tabs={TABS} basePath="/device-monitor" defaultTab="fleet" />

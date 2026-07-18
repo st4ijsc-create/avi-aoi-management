@@ -16314,6 +16314,15 @@
     "recentEmpty": "该序列号没有记录",
     "recentEmptyHint": "该序列号暂无过程结果，或分析功能已关闭。"
   },
+  "machineWorkspace": {
+    "title": "设备工作区",
+    "filter": "筛选设备…",
+    "noMachines": "暂无设备。",
+    "selectTitle": "选择一台设备",
+    "selectHint": "在左侧选择设备以打开驾驶舱：状态 · 工序/SPC · 配置 · 历史。",
+    "aiTitle": "设备AI助手",
+    "ai": "AI助手"
+  },
   "deviceOnboarding": {
     "title": "添加设备",
     "subtitle": "所有设备的统一入口 — 请先选择设备类别。",

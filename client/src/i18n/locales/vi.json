@@ -16286,6 +16286,15 @@
     "recentEmpty": "Không có bản ghi cho serial này",
     "recentEmptyHint": "Serial chưa có kết quả process, hoặc cờ analytics đang tắt."
   },
+  "machineWorkspace": {
+    "title": "Không gian thiết bị",
+    "filter": "Lọc thiết bị…",
+    "noMachines": "Không có thiết bị.",
+    "selectTitle": "Chọn một thiết bị",
+    "selectHint": "Chọn thiết bị ở danh sách bên trái để mở cockpit: trạng thái · Kết quả process/SPC · cấu hình · lịch sử.",
+    "aiTitle": "Trợ lý AI thiết bị",
+    "ai": "Trợ lý AI"
+  },
   "deviceOnboarding": {
     "title": "Thêm thiết bị",
     "subtitle": "Một điểm vào cho mọi loại thiết bị — chọn nhóm thiết bị để bắt đầu.",
