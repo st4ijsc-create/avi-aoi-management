@@ -37,4 +37,27 @@ public class AutoTransportTests
         Assert.True(auto.IsFallingBack);
         Assert.True(fired);
     }
+
+    // Regression for the transition guard: FallbackChanged must fire exactly ONCE across many calls
+    // that all observe the same false->true transition, not once per call. A naive unsynchronized
+    // read-then-write of IsFallingBack (or, in a concurrent caller, two threads racing on it) would
+    // fire the event on every single fallback call instead of only the first.
+    [Fact]
+    public async Task FallbackChanged_fires_exactly_once_across_multiple_failing_calls()
+    {
+        var auto = new AutoTransport(new DownTransport(), new DemoTransport(latencyMs: 0));
+        var fireCount = 0;
+        auto.FallbackChanged += _ => Interlocked.Increment(ref fireCount);
+
+        for (var i = 0; i < 5; i++)
+        {
+            var env = new CanonicalEnvelope(ReadingKind.ProcessResult, "SCRW-01", "/api/v1/ingest/process-result",
+                new() { ["idempotencyKey"] = $"SCRW-01:RC1:{i:000000}" }, $"SCRW-01:RC1:{i:000000}");
+            var ack = await auto.SendAsync(env, default);
+            Assert.True(ack.Success); // every call still succeeds via demo fallback
+        }
+
+        Assert.Equal(1, fireCount);
+        Assert.True(auto.IsFallingBack);
+    }
 }

@@ -22,6 +22,9 @@ public sealed class AutoTransport : ITransport
     private readonly ITransport _live;
     private readonly ITransport _demo;
 
+    /// <summary>Guards <see cref="IsFallingBack"/>'s read-then-write transition check — see <see cref="SetFallingBack"/>.</summary>
+    private readonly object _gate = new();
+
     private long _callCount;
 
     public AutoTransport(ITransport live, ITransport demo)
@@ -32,6 +35,14 @@ public sealed class AutoTransport : ITransport
 
     public TransportMode Mode => TransportMode.Auto;
 
+    /// <summary>
+    /// Deliberately a SINGLE flag shared across <see cref="SendAsync"/>, <see cref="HeartbeatAsync"/> and
+    /// <see cref="SyncConfigAsync"/> — a heartbeat or config-sync network failure will route a
+    /// perfectly-healthy live <see cref="SendAsync"/> to demo too, rather than tracking three
+    /// independent per-method flags. For this exhibition/edge tool erring toward demo (looking good)
+    /// over staying on a possibly-flaky live path is the right tradeoff, and it's simpler — YAGNI on
+    /// splitting this into per-method state unless a real need shows up.
+    /// </summary>
     public bool IsFallingBack { get; private set; }
 
     public event Action<bool>? FallbackChanged;
@@ -150,10 +161,23 @@ public sealed class AutoTransport : ITransport
 
     private static bool IsNetworkFailure(ConfigSyncResult result) => result.DriftState == "error";
 
+    /// <summary>
+    /// Atomic compare-and-set: <see cref="SendAsync"/> (foreground) and <see cref="HeartbeatAsync"/>
+    /// (typically a background timer, per the intended architecture) can call this concurrently. Without
+    /// the lock, two threads can both read <see cref="IsFallingBack"/>==false before either writes,
+    /// and both fire <see cref="FallbackChanged"/>(true) for what is really a single transition. The
+    /// state check-and-flip happens inside the lock; the event fires outside it (only when this call
+    /// actually caused the transition) so we never hold the lock during arbitrary subscriber code.
+    /// </summary>
     private void SetFallingBack(bool value)
     {
-        if (IsFallingBack == value) return;
-        IsFallingBack = value;
-        FallbackChanged?.Invoke(value);
+        bool changed;
+        lock (_gate)
+        {
+            changed = IsFallingBack != value;
+            if (changed) IsFallingBack = value;
+        }
+
+        if (changed) FallbackChanged?.Invoke(value);
     }
 }
