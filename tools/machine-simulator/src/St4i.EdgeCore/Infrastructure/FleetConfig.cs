@@ -24,10 +24,18 @@ public sealed class FleetConfigException : Exception
 /// </summary>
 public static class FleetConfig
 {
+    // Canonical fleet.json convention: enum VALUES (deviceClass/driverKind) are matched
+    // case-insensitively against the C# enum member names — e.g. deviceClass: automation|iot|aoiAvi
+    // (also accepts Automation/AoiAvi/AOIAVI/...); driverKind: simulated|hotFolderAoi|mqtt (also
+    // accepts Simulated/HotFolderAoi/MQTT/...). Deliberately NOT pinned to one naming policy (no
+    // JsonNamingPolicy passed to JsonStringEnumConverter) so a later task authoring fleet.json +
+    // mapping presets can pick whichever casing style it likes without silently misparsing — see
+    // FleetConfigTests.Load_parses_mixed_enum_casing_case_insensitively, which locks this in against
+    // three different casing styles in one file.
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: true) },
+        Converters = { new JsonStringEnumConverter() },
     };
 
     /// <summary>Parses <paramref name="path"/> into a list of <see cref="MachineDescriptor"/>.
