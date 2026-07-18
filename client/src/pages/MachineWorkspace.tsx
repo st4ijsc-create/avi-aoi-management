@@ -10,13 +10,23 @@ import { useState } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
-import { WorkspaceShell, ContextDrawer } from "@/components/workspace";
-import { EmptyState } from "@/components/patterns";
+import { WorkspaceShell, ContextDrawer, TabbedHub, type TabbedHubTab } from "@/components/workspace";
 import { Button } from "@/components/ui/button";
-import { Sparkles, MousePointerClick } from "lucide-react";
+import { Sparkles, HeartPulse, Gauge, Radio } from "lucide-react";
 import { MachineRail } from "./machineWorkspace/MachineRail";
 import { MachineCockpitBody } from "./MachineCockpit";
 import MachineAISummary from "@/components/MachineAISummary";
+import { MachineHealthMonitoringContent } from "./MachineHealthMonitoring";
+import { OEEDashboardContent } from "./OEEDashboard";
+import { FieldDevicesContent } from "./FieldDevices";
+
+// No machine selected → fleet-wide views (keeps /device-monitor?tab=oee|health|field
+// working under the workspace flag, so /oee-dashboard + /machine-health redirects land right).
+const FLEET_TABS: readonly TabbedHubTab[] = [
+  { value: "oee", labelKey: "deviceHub.tabs.oee", fallback: "OEE & Downtime", icon: <Gauge className="h-4 w-4" />, Content: OEEDashboardContent },
+  { value: "health", labelKey: "deviceHub.tabs.health", fallback: "Health", icon: <HeartPulse className="h-4 w-4" />, Content: MachineHealthMonitoringContent },
+  { value: "field", labelKey: "deviceHub.tabs.field", fallback: "Field Devices", icon: <Radio className="h-4 w-4" />, Content: FieldDevicesContent },
+];
 
 export default function MachineWorkspace() {
   const { t } = useTranslation();
@@ -52,15 +62,11 @@ export default function MachineWorkspace() {
         }
         main={
           selectedId == null ? (
-            <div className="grid h-full place-items-center">
-              <EmptyState
-                icon={MousePointerClick}
-                title={t("machineWorkspace.selectTitle", "Chọn một thiết bị")}
-                description={t(
-                  "machineWorkspace.selectHint",
-                  "Chọn thiết bị ở danh sách bên trái để mở cockpit: trạng thái · Kết quả process/SPC · cấu hình · lịch sử.",
-                )}
-              />
+            <div className="space-y-2">
+              <p className="px-1 text-xs text-muted-foreground">
+                {t("machineWorkspace.selectHint", "Chọn thiết bị ở danh sách bên trái để mở cockpit từng máy — hoặc xem tổng quan đội máy bên dưới.")}
+              </p>
+              <TabbedHub tabs={FLEET_TABS} basePath="/device-monitor" defaultTab="oee" />
             </div>
           ) : (
             <div className="space-y-2">
