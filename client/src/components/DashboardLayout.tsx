@@ -23,6 +23,8 @@ import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, L
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
+import { SidebarQuickAccess } from "./SidebarQuickAccess";
+import { pushRecentHref } from "@/lib/navRecent";
 import { AppLauncherButton } from "./AppLauncherButton";
 import { AppLauncherOverlay } from "./AppLauncherOverlay";
 import { NotificationCenter } from "./NotificationCenter";
@@ -262,6 +264,7 @@ function DashboardLayoutContent({
 
   // Navigate helper — on mobile, also close the Sheet drawer after picking a page.
   const handleNavigate = (href: string) => {
+    pushRecentHref(href); // doc 60 B — feed the sidebar QuickAccess "Recent" list
     setLocation(href);
     if (isMobile) setOpenMobile(false);
   };
@@ -383,6 +386,8 @@ function DashboardLayoutContent({
                 <SiteSwitcher variant="drawer" />
               </div>
             )}
+            {/* doc 60 B — Favorites + Recent pinned above the nav (1-click to frequent pages). */}
+            <SidebarQuickAccess onNavigate={handleNavigate} />
             {isMobile ? (
               // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
               <MobileDrillNav
