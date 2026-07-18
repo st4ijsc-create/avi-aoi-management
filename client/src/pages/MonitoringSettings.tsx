@@ -29,11 +29,7 @@ import { useLocation, useSearch } from "wouter";
 
 // Import content components from existing pages
 import { MachineRegistrationContent } from "@/pages/MachineRegistration";
-import { MqttClientManagementContent } from "@/pages/MqttClientManagement";
-import { MqttTopicsMessagesContent } from "@/pages/MqttTopicsMessages";
-import { MQTTReplayContent } from "@/pages/MQTTReplay";
-import { MqttProfileManagementContent } from "@/pages/MqttProfileManagement";
-import { MqttNgRateThresholdContent } from "@/pages/MqttNgRateThreshold";
+// doc 60 — 5 MQTT *Content imports GỠ (tab MQTT trùng đã bỏ; canonical = /connectivity).
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
 
@@ -295,36 +291,9 @@ export default function MonitoringSettings() {
                   </Card>
                 </div>
               </TabsContent>
-
-              <TabsContent value="mqtt-clients" className="mt-0">
-                <ErrorBoundary>
-                  <MqttClientManagementContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-topics" className="mt-0">
-                <ErrorBoundary>
-                  <MqttTopicsMessagesContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-replay" className="mt-0">
-                <ErrorBoundary>
-                  <MQTTReplayContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-profiles" className="mt-0">
-                <ErrorBoundary>
-                  <MqttProfileManagementContent />
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="mqtt-ng-rate" className="mt-0">
-                <ErrorBoundary>
-                  <MqttNgRateThresholdContent />
-                </ErrorBoundary>
-              </TabsContent>
+              {/* doc 60 — 5 tab MQTT (clients/topics/replay/profiles/ng-rate) GỠ: trùng 100%
+                  ConnectivityHub (/connectivity) là canonical; ?tab=mqtt-* đã redirect sang đó
+                  (MQTT_TAB_REDIRECTS). Trang này chỉ còn machine-registration + device-management. */}
             </div>
           </div>
         </Tabs>
