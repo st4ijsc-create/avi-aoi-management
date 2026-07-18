@@ -1110,8 +1110,13 @@ async function startServer() {
   // DEV_PORTAL-gated (404 when off). Stable REST URLs so external tooling (Postman / Swagger import)
   // can consume the OpenAPI 3.1 + AsyncAPI 2.6 surface without an authenticated tRPC call.
   const specDevPortalOn = () => process.env.DEV_PORTAL === "true" || process.env.DEV_PORTAL === "1";
-  app.get("/api/v1/openapi.json", async (_req, res) => {
-    if (!specDevPortalOn()) return res.status(404).json({ error: "Developer Portal disabled" });
+  app.get("/api/v1/openapi.json", async (_req, res, next) => {
+    // DEV_PORTAL on → serve the broader Developer-Portal seed spec (OpenAPI 3.1).
+    // DEV_PORTAL off (default) → fall through to the versioned machine/equipment
+    // contract served by createV1Router() (api/v1/router.ts → buildV1OpenApiSpec).
+    // Previously this returned 404 when off, which SHADOWED and hid the machine API
+    // doc entirely; falling through makes it reachable by default (doc 61 APIdocs).
+    if (!specDevPortalOn()) return next();
     try {
       const { buildSeedSpecs } = await import("../services/contracts/apiSpec");
       res.json(buildSeedSpecs().openapi);

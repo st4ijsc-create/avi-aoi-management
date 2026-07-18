@@ -167,4 +167,34 @@ describe("machineProcessResultContract v1", () => {
     expect(schema).toHaveProperty("type");
     expect(machineProcessContractJsonSchema("9.9")).toBeNull();
   });
+
+  // ── doc 61 — contract aligned to the RUNTIME schema (submitProcessResultCoreObject).
+  //    These lock the APIdocs contract to what the server actually enforces. ──
+  it("accepts a payload WITHOUT ts (ts is optional; server stamps now())", () => {
+    const { ts, ...noTs } = validProcess;
+    const r = validateProcessPayload("1.0", noTs);
+    expect(r.ok).toBe(true);
+    expect(r.errors).toBeUndefined();
+  });
+
+  it("rejects a metrics[].value that is NOT a number (number-only, matches runtime)", () => {
+    const r = validateProcessPayload("1.0", {
+      ...validProcess,
+      metrics: [{ name: "force", value: "PASS" }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors?.some((e) => e.path.startsWith("metrics"))).toBe(true);
+  });
+
+  it("accepts a schemaVersion other than '1.0' (log-only; not enforced)", () => {
+    expect(validateProcessPayload("1.0", { ...validProcess, schemaVersion: "1.3" }).ok).toBe(true);
+    const { schemaVersion, ...noVer } = validProcess;
+    expect(validateProcessPayload("1.0", noVer).ok).toBe(true);
+  });
+
+  it("rejects a non-numeric stationId (integer only, matches runtime)", () => {
+    const r = validateProcessPayload("1.0", { ...validProcess, stationId: "ST-A" });
+    expect(r.ok).toBe(false);
+    expect(r.errors?.some((e) => e.path === "stationId")).toBe(true);
+  });
 });

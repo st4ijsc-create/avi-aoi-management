@@ -180,24 +180,27 @@ export function isIsoWithExplicitOffset(s: unknown): boolean {
 }
 
 const processMetricV1 = z.object({
-  name: z.string().min(1),
-  value: z.union([z.number(), z.string(), z.boolean()]),
-  unit: z.string().optional(),
+  name: z.string().min(1).max(64),
+  // RUNTIME chỉ nhận number (submitProcessResultCoreObject.processMetricSchema) — chuỗi/bool → 400.
+  // Contract này PHẢI khớp runtime để APIdocs không mời gọi payload bị từ chối (doc 61 §4.8).
+  value: z.number(),
+  unit: z.string().max(32).optional(),
   lsl: z.number().optional(),
   usl: z.number().optional(),
   nominal: z.number().optional(),
 });
 
 const processWaveformV1 = z.object({
-  name: z.string().min(1),
-  unit: z.string().optional(),
+  name: z.string().min(1).max(64),
+  unit: z.string().max(32).optional(),
   rateHz: z.number().positive().optional(),
-  // Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị).
-  samples: z.array(z.tuple([z.number(), z.number()])),
+  // Chuỗi mẫu [ [t, v], … ] — cặp (thời điểm, giá trị). Cap khớp runtime.
+  samples: z.array(z.tuple([z.number(), z.number()])).max(100_000),
 });
 
 export const machineProcessResultContractV1 = z.object({
-  schemaVersion: z.literal("1.0").default("1.0"),
+  // RUNTIME: z.string().max(20).optional() — log-only provenance, KHÔNG ép "1.0" (doc 61 §4.8).
+  schemaVersion: z.string().max(20).optional(),
   // Định danh máy — transport/API-key cấp; body optional (mirrors inspection).
   machineCode: z.string().optional(),
   apiKey: z.string().optional(),
@@ -205,23 +208,26 @@ export const machineProcessResultContractV1 = z.object({
   serialNumber: z.string().trim().min(1).max(128),
   stepType: z.string().trim().min(1).max(64),
   result: z.enum(["pass", "fail", "warn", "skip"]),
-  // Dấu thời gian — BẮT BUỘC có offset UTC tường minh (khác inspection, offset ở đây
-  // là cứng theo Feed v1: một kết quả process không có offset là không truy vết được).
-  ts: z.string().refine(isIsoWithExplicitOffset, {
-    message:
-      "ts must be an ISO-8601 timestamp WITH an explicit UTC offset (e.g. 2026-07-17T08:00:00+07:00 or ...Z)",
-  }),
+  // Dấu thời gian — OPTIONAL (khớp runtime): vắng ⇒ server đóng dấu now()+timeSource='server'.
+  // KHI GỬI, PHẢI có offset UTC tường minh (một kết quả process không offset là không truy vết được).
+  ts: z
+    .string()
+    .refine(isIsoWithExplicitOffset, {
+      message:
+        "ts must be an ISO-8601 timestamp WITH an explicit UTC offset (e.g. 2026-07-17T08:00:00+07:00 or ...Z)",
+    })
+    .optional(),
   // Công thức/recipe
   recipe: z
     .object({
-      code: z.string().min(1),
-      version: z.string().optional(),
-      checksum: z.string().optional(),
+      code: z.string().min(1).max(128),
+      version: z.string().max(64).optional(),
+      checksum: z.string().max(128).optional(),
     })
     .optional(),
-  // Số đo + dạng sóng
-  metrics: z.array(processMetricV1).optional(),
-  waveforms: z.array(processWaveformV1).optional(),
+  // Số đo + dạng sóng (cap khớp runtime)
+  metrics: z.array(processMetricV1).max(512).optional(),
+  waveforms: z.array(processWaveformV1).max(64).optional(),
   // Idempotency + bối cảnh sản xuất
   idempotencyKey: z.string().trim().min(8).max(200).optional(),
   stationId: z.number().int().positive().optional(),

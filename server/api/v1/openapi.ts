@@ -133,22 +133,23 @@ const bomIntakeFallback = {
 // ST4I Standard Process Feed v1 fallback (doc 56 nhóm C) — used only if Zod → JSON-Schema fails.
 const processResultIngestFallback = {
   type: "object",
-  required: ["schemaVersion", "serialNumber", "stepType", "result", "ts"],
+  // Khớp runtime (submitProcessResultCoreObject): chỉ serialNumber/stepType/result bắt buộc.
+  required: ["serialNumber", "stepType", "result"],
   properties: {
-    schemaVersion: { type: "string", enum: ["1.0"] },
+    schemaVersion: { type: "string", maxLength: 20, description: "Optional log-only provenance (server does NOT enforce '1.0')." },
     machineCode: { type: "string" },
-    serialNumber: { type: "string" },
-    stepType: { type: "string" },
+    serialNumber: { type: "string", maxLength: 128 },
+    stepType: { type: "string", maxLength: 64 },
     result: { type: "string", enum: ["pass", "fail", "warn", "skip"] },
-    ts: { type: "string", format: "date-time", description: "ISO-8601 with an explicit UTC offset (…Z or ±HH:MM)." },
-    recipe: { type: "object", properties: { code: { type: "string" }, version: { type: "string" }, checksum: { type: "string" } } },
-    metrics: { type: "array", items: { type: "object", additionalProperties: true } },
-    waveforms: { type: "array", items: { type: "object", additionalProperties: true } },
-    idempotencyKey: { type: "string" },
-    stationId: { type: "integer" },
-    lineCode: { type: "string" },
-    productionOrderCode: { type: "string" },
-    lotCode: { type: "string" },
+    ts: { type: "string", format: "date-time", description: "OPTIONAL — if sent, MUST carry an explicit UTC offset (…Z or ±HH:MM); absent ⇒ server stamps now()." },
+    recipe: { type: "object", required: ["code"], properties: { code: { type: "string", maxLength: 128 }, version: { type: "string", maxLength: 64 }, checksum: { type: "string", maxLength: 128 } } },
+    metrics: { type: "array", maxItems: 512, items: { type: "object", required: ["name", "value"], properties: { name: { type: "string", maxLength: 64 }, value: { type: "number", description: "number ONLY (string/boolean → 400)." }, unit: { type: "string", maxLength: 32 }, lsl: { type: "number" }, usl: { type: "number" }, nominal: { type: "number" } } } },
+    waveforms: { type: "array", maxItems: 64, items: { type: "object", required: ["name", "samples"], properties: { name: { type: "string", maxLength: 64 }, unit: { type: "string", maxLength: 32 }, rateHz: { type: "number" }, samples: { type: "array", maxItems: 100000, items: { type: "array", items: { type: "number" } } } } } },
+    idempotencyKey: { type: "string", minLength: 8, maxLength: 200 },
+    stationId: { type: "integer", description: "Numeric platform station id (a string value is rejected)." },
+    lineCode: { type: "string", maxLength: 50 },
+    productionOrderCode: { type: "string", maxLength: 80 },
+    lotCode: { type: "string", maxLength: 80 },
   },
 } as const;
 // CanonicalSample — the telemetry ingest item (mirrors services/telemetryBus.CanonicalSample).
@@ -379,6 +380,120 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "400": { description: "Empty/invalid samples", content: jsonErr() },
             ...errResponses(),
           },
+        },
+      },
+      // ── Machine lifecycle + config-sync (doc 61) — /api/machine/* proxy routes.
+      //    NOTE: these do NOT use the {ok,data,error} envelope; they return a bare
+      //    {success,...} object, and auth differs per endpoint (see each description). ──
+      "/api/machine/register": {
+        post: {
+          tags: ["Machine"],
+          summary: "Self-register a machine (PUBLIC — no key)",
+          description:
+            "doc 61 §3.2. PUBLIC (no credential). Identifies the physical device; the machine then awaits admin approval. " +
+            "Returns `{success, id, registrationStatus:'pending'}`.",
+          requestBody: { required: true, content: { "application/json": { schema: {
+            type: "object", required: ["serialNumber", "name", "machineType"],
+            properties: {
+              serialNumber: { type: "string", maxLength: 100 },
+              name: { type: "string", maxLength: 255 },
+              machineType: { type: "string", description: "MACHINE_TYPES enum, e.g. SCREWDRIVE | DISPENSING | WELDER | IOT_SENSOR | IOT_GATEWAY" },
+              model: { type: "string" }, manufacturer: { type: "string" }, firmwareVersion: { type: "string" },
+              syncMode: { type: "string", enum: ["online", "offline"] },
+            },
+          } } } },
+          responses: { "200": { description: "Registered / updated (awaiting approval)" }, "409": { description: "Conflict (retired / duplicate)" } },
+        },
+      },
+      "/api/machine/config": {
+        get: {
+          tags: ["Machine"],
+          summary: "Poll approval status (PUBLIC)",
+          description:
+            "doc 61 §3.2. PUBLIC. Returns `{success, isApproved, requiresClaim, apiKey:null, …}`. " +
+            "`apiKey` is ALWAYS null — obtain the key via POST /api/machine/claim.",
+          parameters: [{ name: "serialNumber", in: "query", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "Machine status" }, "404": { description: "Not found — call register first" } },
+        },
+      },
+      "/api/machine/claim": {
+        post: {
+          tags: ["Machine"],
+          summary: "Redeem a claim token (mct_) for a machine key (mk_) — PUBLIC",
+          description:
+            "doc 61 §3.2. PUBLIC (the token IS the credential). Single-use token. " +
+            "Returns `{success, apiKey:'mk_…', machineId, code}` — store the key, it is shown once.",
+          requestBody: { required: true, content: { "application/json": { schema: {
+            type: "object", required: ["serialNumber", "claimToken"],
+            properties: { serialNumber: { type: "string" }, claimToken: { type: "string", description: "mct_…" } },
+          } } } },
+          responses: { "200": { description: "Key claimed" }, "400": { description: "Invalid / expired / used token" }, "404": { description: "Machine not found" }, "429": { description: "Throttled" } },
+        },
+      },
+      "/api/machine/heartbeat": {
+        post: {
+          tags: ["Machine"],
+          summary: "Liveness heartbeat (auth: X-API-Key — NOT Bearer)",
+          description:
+            "doc 61 §7. Auth via `X-API-Key` header or `body.apiKey` (this route does NOT read Authorization: Bearer). Scope `equipment:read`. " +
+            "Optional `running[]` reports the config the machine is running for 2-way drift. " +
+            "Returns `{success, machineId, keyStatus, keyExpiresInDays, configDrift?}`.",
+          requestBody: { required: true, content: { "application/json": { schema: {
+            type: "object", required: ["apiKey"],
+            properties: {
+              apiKey: { type: "string", description: "mk_… (or send X-API-Key header)" },
+              running: { type: "array", maxItems: 32, items: { type: "object", required: ["configKind"], properties: {
+                configKind: { type: "string" }, code: { type: "string" }, version: { description: "string | number" }, checksum: { type: "string" } } } },
+            },
+          } } } },
+          responses: { "200": { description: "Heartbeat ack" }, "400": { description: "Missing apiKey" }, "401": { description: "Invalid key" } },
+        },
+      },
+      "/api/machine/config-sync/check": {
+        get: {
+          tags: ["Machine"],
+          summary: "Config-sync: check active config version (auth: mk_, scope equipment:read)",
+          description:
+            "doc 61 §6. Requires server flag `CONFIG_SYNC_GENERIC_ENABLED` (else HTTP 500 PRECONDITION_FAILED — do NOT retry). " +
+            "Auth via Authorization: Bearer / X-API-Key / ?apiKey. Returns `{success, configKind, code, version, checksum, resolvedBy}` " +
+            "(recipe|device_settings) or `{…, productModels:[…]}` (points).",
+          parameters: [
+            { name: "configKind", in: "query", required: true, schema: { type: "string", enum: ["recipe", "device_settings", "points", "model"] } },
+            { name: "apiKey", in: "query", required: false, schema: { type: "string" } },
+            { name: "configCode", in: "query", required: false, schema: { type: "string" } },
+            { name: "productModelCode", in: "query", required: false, schema: { type: "string" } },
+            { name: "variantCode", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: { "200": { description: "Active config version" }, "401": { description: "Invalid key" }, "500": { description: "config-sync disabled (flag off)" } },
+        },
+      },
+      "/api/machine/config-sync/get": {
+        get: {
+          tags: ["Machine"],
+          summary: "Config-sync: get full active config payload + checksum",
+          description: "doc 61 §6. Same params/auth as check. Returns `{…, name, payload:{…}}` — the full recipe parameter set to APPLY.",
+          parameters: [
+            { name: "configKind", in: "query", required: true, schema: { type: "string", enum: ["recipe", "device_settings", "points", "model"] } },
+            { name: "apiKey", in: "query", required: false, schema: { type: "string" } },
+            { name: "configCode", in: "query", required: false, schema: { type: "string" } },
+            { name: "productModelCode", in: "query", required: false, schema: { type: "string" } },
+            { name: "variantCode", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: { "200": { description: "Full config payload" }, "401": { description: "Invalid key" }, "500": { description: "config-sync disabled" } },
+        },
+      },
+      "/api/machine/config-sync/ack": {
+        post: {
+          tags: ["Machine"],
+          summary: "Config-sync: acknowledge applied config (2-way drift)",
+          description:
+            "doc 61 §6. Auth mk_ (scope equipment:read). The machine reports the config it applied. " +
+            "Returns `{success, machineId, configKind, driftState}` where driftState ∈ in_sync | drift | unknown.",
+          requestBody: { required: true, content: { "application/json": { schema: {
+            type: "object", required: ["configKind"],
+            properties: { configKind: { type: "string", maxLength: 32 }, apiKey: { type: "string" }, code: { type: "string", maxLength: 128 }, version: { description: "string | number" }, checksum: { type: "string", maxLength: 128 } },
+          } } } },
+          responses: { "200": { description: "Drift state" }, "401": { description: "Invalid key" }, "500": { description: "config-sync disabled" } },
         },
       },
       // ── R0 (doc 16 Khối 0) — inbound ERP/MES intake. Gated by ERP_INBOUND_ENABLED. ──
