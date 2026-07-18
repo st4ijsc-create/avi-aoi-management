@@ -74,7 +74,11 @@ const COLORS = {
 
 type TimeRange = "7d" | "30d" | "90d" | "365d";
 
-export default function Reports() {
+// doc 60 G — body without DashboardLayout so it embeds as the Reporting Studio
+// "Tổng quan/Phân tích" tab. NB: this is the quality-analytics dashboard (yield/trends/
+// COPQ), NOT the saved-reports list (that's the Build tab). Default export below keeps
+// the standalone /reports route.
+export function ReportsContent() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const [selectedFactory, setSelectedFactory] = useState<string>("all");
@@ -455,22 +459,20 @@ export default function Reports() {
 
   if (authLoading) {
     return (
-      <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
-        <div className="space-y-4">
-          <Skeleton className="h-9 w-64" />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full" />
-            ))}
-          </div>
-          <Skeleton className="h-72 w-full" />
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-64" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
         </div>
-      </DashboardLayout>
+        <Skeleton className="h-72 w-full" />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
+    <>
       <PageHeader
         icon={<BarChart3 className="h-6 w-6" />}
         title={t('reports.title')}
@@ -1306,6 +1308,16 @@ export default function Reports() {
         </TabsContent>
       </Tabs>
       </div>
+    </>
+  );
+}
+
+// Standalone /reports route — frames the analytics body in the app shell.
+export default function Reports() {
+  const { t } = useTranslation();
+  return (
+    <DashboardLayout title={t('reports.title')} navItems={navItems} currentPath="/reports">
+      <ReportsContent />
     </DashboardLayout>
   );
 }

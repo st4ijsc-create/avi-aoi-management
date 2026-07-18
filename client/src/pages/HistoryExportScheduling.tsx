@@ -121,7 +121,9 @@ const DAYS_OF_WEEK = [
   { value: 6, labelKey: 'reports.saturday' },
 ];
 
-export default function HistoryExportScheduling() {
+// doc 60 G — body without DashboardLayout so it embeds in the Reporting Studio Export
+// group. Default export below keeps the standalone /history-export-scheduling route.
+export function HistoryExportContent() {
   const { t } = useTranslation();
   // tRPC queries & mutations
   const utils = trpc.useUtils();
@@ -357,10 +359,9 @@ export default function HistoryExportScheduling() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <PageHeader
+    <div className="space-y-6">
+      {/* Header */}
+      <PageHeader
           icon={<Calendar className="h-6 w-6" />}
           title={t('reports.autoExportSchedule')}
           description={t('reports.autoExportDescription')}
@@ -987,6 +988,14 @@ export default function HistoryExportScheduling() {
           </DialogContent>
         </Dialog>
       </div>
+  );
+}
+
+// Standalone /history-export-scheduling route.
+export default function HistoryExportScheduling() {
+  return (
+    <DashboardLayout>
+      <HistoryExportContent />
     </DashboardLayout>
   );
 }

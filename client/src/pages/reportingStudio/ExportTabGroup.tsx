@@ -5,13 +5,16 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FileText, Presentation } from "lucide-react";
+import { FileText, Presentation, CalendarClock } from "lucide-react";
 import { PdfReportsContent } from "@/pages/PdfReports";
 import { PowerPointExportContent } from "@/pages/PowerPointExport";
+import { HistoryExportContent } from "@/pages/HistoryExportScheduling";
 
 const INNER = [
   { value: "pdf", labelKey: "reportingStudio.export.pdf", fallback: "PDF", icon: <FileText className="h-4 w-4" />, Content: PdfReportsContent },
   { value: "pptx", labelKey: "reportingStudio.export.pptx", fallback: "PowerPoint", icon: <Presentation className="h-4 w-4" />, Content: PowerPointExportContent },
+  // doc 60 G — fold scheduled history-export vào nhóm Export.
+  { value: "history", labelKey: "reportingStudio.export.history", fallback: "Lịch xuất lịch sử", icon: <CalendarClock className="h-4 w-4" />, Content: HistoryExportContent },
 ] as const;
 
 export function ExportTabGroup() {
