@@ -988,12 +988,23 @@ async function startServer() {
 
   // ── doc 56 Đ4 (CONFIG-SYNC) — REST proxies for the generic config-sync endpoints.
   // Gated server-side by CONFIG_SYNC_GENERIC_ENABLED (PRECONDITION_FAILED when off).
+  // Accept the machine key from X-API-Key, `Authorization: Bearer …`, OR ?apiKey= —
+  // so a device using Bearer auth (as doc 58 recommends for ingest) also satisfies the
+  // config-sync input refine (apiKey|machineCode) instead of getting BAD_REQUEST.
+  const machineBearer = (req: express.Request): string | undefined => {
+    const auth = req.header("authorization");
+    if (typeof auth === "string" && /^bearer\s+/i.test(auth)) {
+      const t = auth.replace(/^bearer\s+/i, "").trim();
+      if (t) return t;
+    }
+    return undefined;
+  };
   // GET /api/machine/config-sync/check?configKind=&apiKey=&configCode=&productModelCode=&variantCode=
   app.get("/api/machine/config-sync/check", async (req, res) => {
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
-      const apiKey = req.header("x-api-key") || (req.query.apiKey as string | undefined);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || (req.query.apiKey as string | undefined);
       const result = await caller.machineApi.checkConfigVersion({
         configKind: req.query.configKind as any,
         apiKey,
@@ -1014,7 +1025,7 @@ async function startServer() {
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
-      const apiKey = req.header("x-api-key") || (req.query.apiKey as string | undefined);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || (req.query.apiKey as string | undefined);
       const result = await caller.machineApi.getActiveConfig({
         configKind: req.query.configKind as any,
         apiKey,
@@ -1035,7 +1046,7 @@ async function startServer() {
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
-      const apiKey = req.header("x-api-key") || req.body?.apiKey;
+      const apiKey = req.header("x-api-key") || machineBearer(req) || req.body?.apiKey;
       const result = await caller.machineApi.ackConfigApplied({
         configKind: req.body?.configKind,
         apiKey,
