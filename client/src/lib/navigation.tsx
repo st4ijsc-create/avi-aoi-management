@@ -1670,6 +1670,18 @@ export const navGroups: NavGroup[] = [
     ],
     items: [
       {
+        // doc 59 Cụm D — "nhà Data" thống nhất: rail 3 nhóm (Sản phẩm&Chương trình /
+        // Dữ liệu chủ / Cấu hình nhà máy&Quản trị) ⇄ launcher managers. Một cửa vào duy
+        // nhất thay vì rải; các mục con vẫn giữ để deep-link.
+        href: "/data-management",
+        label: "Trung tâm dữ liệu",
+        icon: <Database className="h-4 w-4" />,
+        description: "Một nơi cho mọi dữ liệu: sản phẩm · dữ liệu chủ · cấu hình nhà máy",
+        requiredPermission: "masterdata",
+        permissionCategory: "settings",
+        section: "productProgram",
+      },
+      {
         href: "/master-data",
         label: "nav.masterData",
         icon: <Tags className="h-4 w-4" />,

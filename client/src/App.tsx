@@ -112,6 +112,7 @@ const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); /
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
+const DataManagementHub = React.lazy(() => import("./pages/DataManagementHub")); // doc 59 Cụm D: hub "nhà Data" thống nhất (rail category ⇄ launcher)
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
@@ -503,6 +504,7 @@ function Router() {
       <Route path="/import-export"><RouteGuard requireRole={["admin"]}><ImportExport /></RouteGuard></Route>
       <Route path="/user-assignments"><RouteGuard requireRole={["admin"]} requirePermission="admin_users"><UserAssignments /></RouteGuard></Route>
       <Route path="/corporate-management"><RouteGuard requireRole={["admin"]}><CorporateManagement /></RouteGuard></Route>
+      <Route path="/data-management"><RouteGuard navHref="/data-management"><DataManagementHub /></RouteGuard></Route>
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
       <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
