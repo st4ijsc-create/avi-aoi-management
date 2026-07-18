@@ -50,6 +50,37 @@ Có **4 loại tương tác** một máy nội bộ cần:
 
 > Máy AOI/AVI (kiểm board) dùng đường **doc 28** riêng. Guide này phục vụ **automation + IoT**.
 
+### 1.1 Ma trận phủ (coverage) — máy nội bộ ĐÃ chuẩn hóa
+
+Kiểm chứng từ source (`machineTypes.ts`, mig `0287`/`0289`/`0294`/`0295`) + bắn thật (§14):
+
+| Máy nội bộ | machineType (enum) | stepType (seed) | spec-limits (auto pass/fail) | config-sync recipe | Analytics/SPC |
+|---|---|---|---|---|---|
+| **Bắt vít** (screwdriver) | ✅ `SCREWDRIVE` | ✅ `screw_tightening` | ✅ torque, angle | ✅ (generic) | ✅ |
+| **Điểm keo** (dispenser) | ✅ `DISPENSING` | ✅ `glue_dispense` | ✅ volume, pressure | ✅ (generic) | ✅ |
+| **Hàn** (welder) | ✅ `WELDER` | ✅ `weld_spot` | ✅ weld_current, weld_time | ✅ (generic) | ✅ |
+| **Cảm biến IoT** (ESP32) | ✅ `IOT_SENSOR` / `IOT_GATEWAY` | — (telemetry) | — (telemetry) | — | ✅ (OT telemetry) |
+| Ép chi tiết | ✅ `ASSEMBLY` | ✅ `press_fit` | ⚠️ chưa seed | ✅ (generic) | ✅ |
+| Kiểm rò / chức năng | ✅ (any) | ✅ `leak_test` / `functional_test` | ⚠️ chưa seed | ✅ (generic) | ✅ |
+
+**Kết luận Q1 — CÓ, phủ đủ.** RESULT + TELEMETRY + config-sync + analytics/SPC là **generic hoàn toàn**
+(không có nhánh code theo từng loại máy). Máy bắt vít / điểm keo / hàn có **spec-limits seed sẵn** ⇒
+server tự chấm pass/fail + Cpk ngay. `leak_test`/`functional_test`/`press_fit` đã có `stepType` nhưng
+**chưa seed spec-limits** ⇒ vẫn ingest + phân tích được, chỉ chưa auto-gate (spec-gate fail-OPEN).
+
+### 1.2 Thêm LOẠI MÁY mới — chỉ cần DỮ LIỆU, KHÔNG sửa code
+
+Pipeline RESULT/TELEMETRY/mart/SPC bất biến với loại máy. Máy mới cần (theo thứ tự):
+1. **machineType** (nếu cần lưu typed): thêm giá trị vào pg enum `machinetypeenum` qua 1 migration
+   (ingest chấp nhận `machineType` optional nên không bắt buộc trước).
+2. **stepType**: insert 1 dòng vào `process_step_types` (bảng danh mục, KHÔNG phải enum ⇒ không migration).
+   Chỉ bị kiểm khi `PROCESS_ATTR_VALIDATE_MODE`=log/enforce.
+3. **spec-limits** (tùy chọn, để auto pass/fail + Cpk): insert vào `process_spec_limits`
+   `(machineType, stepType, metricKey, unit, lsl/usl/nominal)` — mẫu ở mig `0295`.
+4. **recipe** (tùy chọn, để config-sync): tạo `machine_recipes` active cho máy/loại máy.
+
+Không đụng `submitProcessResult`, telemetry bus, mart, hay SPC.
+
 ---
 
 ## 2. Quick start — 15 phút có dữ liệu lên hệ thống
@@ -60,9 +91,17 @@ Có **4 loại tương tác** một máy nội bộ cần:
 
 | Nền tảng | File | Dùng cho |
 |---|---|---|
+| **C# / .NET (WPF)** ⭐ | `csharp/St4iDeviceClient.cs` (+ demo `ExampleScrewdriver.cs`) | **Phần mềm máy WPF / dịch vụ Windows** (ngôn ngữ chính của đội) |
 | Python 3.8+ (`urllib`) | `python/st4i_device_client.py` | PC/gateway công nghiệp; bắt vít, keo, hàn |
 | Node.js ≥18 (`fetch`) | `nodejs/st4i_device_client.mjs` | Gateway/PC chạy Node |
 | ESP32 (Arduino, ArduinoJson v7) | `arduino/st4i_device_client.ino` | Cảm biến IoT nhiệt-ẩm |
+
+> **C#/WPF**: `St4iDeviceClient.cs` là 1 file thả vào project WPF (namespace `St4i.DeviceClient`),
+> dùng `HttpClient` + `System.Text.Json`. Biên dịch cho **netstandard2.0 / .NET Framework 4.7.2+ /
+> .NET 6/8/10**. Trên .NET 6+ **0 NuGet**; trên .NET Framework 4.x thêm gói `System.Text.Json`. API
+> giống hệt Python/Node (async): `SubmitProcessResultAsync` · `SubmitTelemetryAsync` ·
+> `CheckConfigAsync/GetConfigAsync/AckConfigAsync/SyncConfigAsync` · `HeartbeatAsync` ·
+> `EnrollAsync/ClaimAsync` · `FlushQueueAsync`.
 
 ### 2.2 Hello-world máy bắt vít (Python) — ĐÃ CHẠY THẬT
 
@@ -103,6 +142,40 @@ esp.submit_telemetry([
 ```
 
 > SDK tự thêm `deviceId = machine_code` cho mỗi sample (server dùng `deviceId` để quy máy — §5.2).
+
+### 2.4 Hello-world máy bắt vít (C# / WPF) — ĐÃ CHẠY THẬT
+
+```csharp
+using St4i.DeviceClient;
+
+// GIỮ 1 instance dùng chung cả vòng đời app (singleton) — KHÔNG new mỗi lần gửi.
+using var scrw = new St4iDeviceClient(
+    "https://factory.local:5000", mkKey: "mk_...", machineCode: "SCRW-01",
+    queuePath: @"C:\ProgramData\ST4I\scrw01_queue.jsonl");   // store-and-forward bền qua restart
+
+var ack = await scrw.SubmitProcessResultAsync(
+    serialNumber: "SN-2026-000777", stepType: "screw_tightening", result: "pass",
+    recipe: new Recipe { Code = "TQ-M3-08", Version = "2" },
+    metrics: new[] {
+        new Metric { Name = "torque", Value = 12.2, Unit = "Nm", Lsl = 10.5, Usl = 13.5, Nominal = 12.0 },
+        new Metric { Name = "angle",  Value = 358,  Unit = "deg" },
+    },
+    idempotencyKey: "SCRW-01:TQ-M3-08:000123");
+// ack.ProcessResultId = 27817 ; gửi lại cùng key ⇒ ack.Duplicate = true (cùng id)
+
+// Kéo recipe về máy (check → get → apply → ack)
+var sync = await scrw.SyncConfigAsync(async cfg => { LoadIntoController(cfg.Payload); return true; },
+                                      configKind: "recipe", cachedVersion: currentVersion);
+```
+
+> **WPF — 5 quy tắc bắt buộc** (chi tiết §11.4): (1) `St4iDeviceClient` là **singleton**
+> (HttpClient dài hạn); (2) LUÔN `await`, **KHÔNG** `.Result`/`.Wait()` trên UI thread (deadlock);
+> (3) vòng telemetry/heartbeat chạy trên **Task nền** + `CancellationToken`, cập nhật UI qua
+> `Dispatcher`; (4) `queuePath` đặt ở path bền (`%ProgramData%\ST4I\…`) để sống sót restart;
+> (5) `verifyTls:false` **chỉ** cho server dev self-signed trong LAN.
+
+Chạy thử demo: `dotnet run` trong `examples/device-client/csharp/` (đặt env `ST4I_SERVER`,
+`ST4I_MK_KEY`, `ST4I_ESP_KEY?`, `ST4I_VERIFY_TLS=0?`).
 
 ---
 
@@ -504,6 +577,37 @@ Tham chiếu simulator thật (khung firmware để nhân bản): `scripts/sim/s
 - Thay `readSensor()` bằng mã đọc DHT22/SHT31 thật; điền `SERVER_URL`, `MK_KEY`, `DEVICE_ID`,
   `GMT_OFFSET_SEC` + `TS_OFFSET_SUFFIX` (phải khớp nhau).
 
+### 11.4 C# / WPF — máy bất kỳ (RESULT + config-sync + telemetry) ⭐
+
+SDK đầy đủ: `examples/device-client/csharp/St4iDeviceClient.cs` (1 file thả vào project WPF).
+Demo chạy được: `examples/device-client/csharp/ExampleScrewdriver.cs` (`dotnet run`).
+
+**5 quy tắc WPF (bắt buộc để không sập UI / không rò socket):**
+1. **Singleton `HttpClient`** — `St4iDeviceClient` giữ 1 HttpClient dài hạn. Đăng ký client như
+   singleton (DI) hoặc field tĩnh; **KHÔNG** `new St4iDeviceClient()` mỗi lần gửi (cạn socket).
+2. **Async suốt** — `await` mọi hàm; **KHÔNG** `.Result`/`.Wait()`/`.GetAwaiter().GetResult()` trên
+   UI thread (deadlock do SynchronizationContext). SDK đã `ConfigureAwait(false)` bên trong.
+3. **Vòng nền** — telemetry/heartbeat chạy trên `Task.Run(...)` + `CancellationToken`, KHÔNG trên
+   Dispatcher; cập nhật UI qua `Dispatcher.BeginInvoke`. Dùng `PeriodicTimer` (.NET 6+) cho nhịp 30–60s.
+4. **Hàng đợi bền** — `queuePath` trỏ path bền (`%ProgramData%\ST4I\<machine>_queue.jsonl`) để mất
+   mạng không chặn chu trình sản xuất; SDK tự replay cùng `idempotencyKey`.
+5. **Khóa** — lưu `mk_` sau enroll/claim (hiện 1 lần); trên Windows nên DPAPI `ProtectedData` thay
+   cho quyền file. `verifyTls:false` chỉ cho dev self-signed.
+
+Vòng telemetry nền mẫu:
+```csharp
+_ = Task.Run(async () => {
+  while (!ct.IsCancellationRequested) {
+    try { await client.SubmitTelemetryAsync(ReadSensors(), ct); }
+    catch (St4iNetworkException) { /* đã xếp hàng cục bộ; sẽ replay */ }
+    await Task.Delay(TimeSpan.FromSeconds(30), ct);
+  }
+}, ct);
+```
+
+> Xử lý lỗi: bắt `St4iApiException` (4xx = lỗi vĩnh viễn, sửa payload/khóa — `e.Status`/`e.Code`)
+> vs `St4iNetworkException` (đã tự xếp hàng, sẽ replay). Xem §8–§9.
+
 ---
 
 ## 12. Cờ server đội ST4I/ops phải bật (checklist bàn giao)
@@ -524,6 +628,12 @@ Tham chiếu simulator thật (khung firmware để nhân bản): `scripts/sim/s
 ---
 
 ## 13. Phụ lục — tra nhanh
+
+**APIdocs (OpenAPI) trên hệ thống** — `GET /api/v1/openapi.json` (public, không cần khóa) trả spec
+OpenAPI 3.0.3 "Unified Machine API". Từ doc 61, spec này **ĐÃ được sửa để khớp runtime** và **bổ sung
+7 đường máy** (register/config/claim/heartbeat + config-sync check/get/ack) — trước đó bị **ẩn/404**
+(shadow bởi handler DEV_PORTAL) và **lệch schema** (value/ts/schemaVersion). Import URL này vào
+Postman/Swagger để sinh client. (Đặt `DEV_PORTAL=1` sẽ đổi URL này sang seed-spec Developer Portal.)
 
 **Endpoint quick-ref**
 
@@ -573,13 +683,24 @@ Mọi contract trong guide này bắn thật vào một API server đang chạy 
 | 12 | config-sync get | `200 {…,"payload":{"speedRpm":300,"angleTarget":720,"torqueTarget":12.5,"torqueTolerance":0.5}}` |
 | 13 | config-sync ack | `200 {"success":true,"machineId":243,"configKind":"recipe","driftState":"in_sync"}` |
 | 14 | SDK `sync_config` (check→get→apply→ack) | `{'changed':True,'version':'2','driftState':'in_sync'}`; lần 2 `{'changed':False}` |
+| 15 | **C# SDK** RESULT + waveform (dotnet run) | `id=27826..27830` (5 vít) |
+| 16 | **C# SDK** idempotent replay | `id=27826 duplicate=True` |
+| 17 | **C# SDK** config-sync `SyncConfigAsync` | `changed=True version=2 drift=in_sync` |
+| 18 | **C# SDK** telemetry + heartbeat | `accepted=2` · `{success:true,machineId:243,keyStatus:no_expiry}` |
+| 19 | Phủ loại máy (weld_spot/glue_dispense/leak_test/functional_test/press_fit) | tất cả `201` |
+| 20 | **APIdocs** `GET /api/v1/openapi.json` (sau fix shadow) | `200` — "Unified Machine API", **7 đường máy**, `ProcessResultIngest` khớp runtime (ts optional, value=number, stationId=integer) |
 
 ---
 
 ## 15. Tóm tắt
 
 - **Guide này = tài liệu quy chuẩn ĐÃ KIỂM CHỨNG cho đội dev viết phần mềm trong máy nội bộ.**
-  Nối tiếp doc 57 (spec) + doc 58 (onboarding) + `examples/device-client/` (SDK).
+  Nối tiếp doc 57 (spec) + doc 58 (onboarding) + `examples/device-client/` (SDK Python/Node/**C#**/ESP32).
+- **Phủ đủ máy nội bộ (§1.1)**: bắt vít / điểm keo / hàn / IoT — enum + stepType + spec-limits seed sẵn;
+  pipeline generic nên thêm loại máy mới chỉ cần DỮ LIỆU (§1.2). **SDK C#/WPF** (`csharp/St4iDeviceClient.cs`)
+  là ngôn ngữ chính của đội — API async giống Python/Node, đã chạy thật (§14 #15–18).
+- **APIdocs trên hệ thống (§13)**: `GET /api/v1/openapi.json` ĐÃ được sửa (bỏ shadow 404 + khớp
+  runtime + thêm 7 đường máy) — nay phản ánh đúng contract; import Postman/Swagger được.
 - **Bốn tương tác**: RESULT (`/api/v1/ingest/process-result`), TELEMETRY
   (`/api/v1/ingest/telemetry`), CONFIG-SYNC (`/api/machine/config-sync/*`), HEARTBEAT.
 - **Auth**: khóa `mk_` qua `Authorization: Bearer` (hoặc `X-API-Key`); lấy khóa qua

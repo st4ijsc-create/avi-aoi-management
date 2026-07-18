@@ -22,10 +22,17 @@ Chuẩn dữ liệu: **doc 57 — ST4I Standard Process Feed v1**
 
 | File | Ngôn ngữ | Dùng cho |
 |---|---|---|
+| `csharp/St4iDeviceClient.cs` | **C# / .NET (WPF)** | **Phần mềm máy WPF / dịch vụ Windows** — ngôn ngữ chính |
+| `csharp/ExampleScrewdriver.cs` | C# (`dotnet run`) | Ví dụ vòng đời: RESULT + waveform + config-sync + telemetry |
 | `python/st4i_device_client.py` | Python 3.8+ (chỉ stdlib `urllib`) | PC-based machine / gateway; bắt vít, keo, hàn |
 | `python/example_screwdriver.py` | Python | Ví dụ máy bắt vít gửi torque + waveform |
 | `arduino/st4i_device_client.ino` | ESP32 (Arduino) | Cảm biến IoT nhiệt-ẩm gửi telemetry |
 | `nodejs/st4i_device_client.mjs` | Node.js ≥ 18 (không dependency) | Gateway/PC chạy Node; có demo tích hợp |
+
+**C#/.NET (WPF)** — `St4iDeviceClient.cs` là 1 file thả vào project (namespace `St4i.DeviceClient`),
+dùng `HttpClient` + `System.Text.Json`, biên dịch cho netstandard2.0 / .NET Framework 4.7.2+ / .NET 6/8/10
+(0 NuGet trên .NET 6+; .NET Framework 4.x thêm gói `System.Text.Json`). API async giống Python/Node.
+Chi tiết + quy tắc WPF: **doc 61 §2.4 + §11.4**.
 
 Python client **chỉ dùng thư viện chuẩn** (`urllib`) nên copy-chạy ngay trên máy
 công nghiệp không có Internet để `pip install`. Nếu thích `requests` cho gọn, thay
@@ -188,6 +195,16 @@ ESP32 lấy giờ NTP rồi nối offset khớp `configTime`.
 ---
 
 ## Bắt đầu nhanh
+
+### C# / WPF
+Thả `csharp/St4iDeviceClient.cs` vào project WPF của bạn. Chạy demo:
+```bash
+cd csharp
+ST4I_SERVER="https://factory.local:5000" ST4I_MK_KEY="mk_..." dotnet run
+# dev self-signed: thêm ST4I_VERIFY_TLS=0 ; telemetry IoT: thêm ST4I_ESP_KEY=mk_...
+```
+Giữ 1 `St4iDeviceClient` singleton; `await` mọi hàm (không `.Result` trên UI thread); vòng
+telemetry/heartbeat trên Task nền. Quy tắc WPF đầy đủ: doc 61 §11.4.
 
 ### Python
 ```bash

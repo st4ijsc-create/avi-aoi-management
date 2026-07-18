@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Demo chay duoc cho SDK C# (doi dev copy chay thu).
+      dotnet run  (trong thu muc nay)
+    Bien moi truong: ST4I_SERVER, ST4I_MK_KEY (khoa may vit), ST4I_ESP_KEY (khoa cam bien IoT, tuy chon),
+                     ST4I_VERIFY_TLS=0 (server dev self-signed).
+    SDK St4iDeviceClient.cs bien dich duoc cho netstandard2.0, net472, net6/8/10; demo nay
+    dung net8.0 (LTS pho bien cho WPF hien dai) de chay truc tiep.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>st4i-example-screwdriver</AssemblyName>
+    <RootNamespace>St4i.DeviceClient.Example</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
