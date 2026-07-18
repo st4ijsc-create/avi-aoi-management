@@ -214,7 +214,7 @@ public sealed class LiveTransport : ITransport
             {
                 Name = GetString(d, "name") ?? "",
                 Value = GetDouble(d, "value") ?? 0.0,
-                Unit = GetString(d, "unit") ?? "",
+                Unit = GetString(d, "unit"),
                 Lsl = GetDouble(d, "lsl"),
                 Usl = GetDouble(d, "usl"),
                 Nominal = GetDouble(d, "nominal"),
@@ -234,7 +234,7 @@ public sealed class LiveTransport : ITransport
             list.Add(new Waveform
             {
                 Name = GetString(d, "name") ?? "",
-                Unit = GetString(d, "unit") ?? "",
+                Unit = GetString(d, "unit"),
                 RateHz = GetDouble(d, "rateHz"),
                 Samples = ReadSampleSeries(d),
             });
@@ -261,8 +261,8 @@ public sealed class LiveTransport : ITransport
         return new Recipe
         {
             Code = GetString(d, "code") ?? "",
-            Version = GetString(d, "version") ?? "",
-            Checksum = GetString(d, "checksum") ?? "",
+            Version = GetString(d, "version"),
+            Checksum = GetString(d, "checksum"),
         };
     }
 
@@ -316,8 +316,8 @@ public sealed class LiveTransport : ITransport
                 MeasuredValue = GetDouble(d, "measuredValue"),
                 Result = GetString(d, "result") ?? "",
                 Unit = GetString(d, "unit") ?? "",
-                DefectCatalogCode = GetString(d, "defectCatalogCode") ?? "",
-                DefectSeverity = GetString(d, "defectSeverity") ?? "",
+                DefectCatalogCode = GetString(d, "defectCatalogCode"),
+                DefectSeverity = GetString(d, "defectSeverity"),
                 ValueHeight = GetDouble(d, "valueHeight"),
                 ValueArea = GetDouble(d, "valueArea"),
                 ValueVolume = GetDouble(d, "valueVolume"),
