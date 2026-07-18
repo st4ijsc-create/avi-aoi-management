@@ -117,6 +117,8 @@ const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub
 const AIStudioHub = React.lazy(() => import("./pages/AIStudioHub")); // doc 59 Cụm H
 const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
 const ReportingStudio = React.lazy(() => import("./pages/ReportingStudio")); // doc 59 Cụm G
+const SettingsHub = React.lazy(() => import("./pages/SettingsHub")); // doc 59 cụm phụ — Settings hub
+const EngineeringStudioHub = React.lazy(() => import("./pages/EngineeringStudioHub")); // doc 59 cụm phụ — Engineering Studio
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
@@ -514,6 +516,9 @@ function Router() {
       <Route path="/product-workspace"><RouteGuard navHref="/product-workspace"><ProductWorkspaceHub /></RouteGuard></Route>
       <Route path="/ai-studio"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIStudioHub /></AIPageWrapper></RouteGuard></Route>
       <Route path="/maintenance-hub"><RouteGuard navHref="/maintenance-hub"><MaintenanceWorkspaceHub /></RouteGuard></Route>
+      {/* doc 59 cụm phụ — Settings + Engineering-Studio hub-launcher (additive). */}
+      <Route path="/settings-hub"><RouteGuard navHref="/settings-hub"><SettingsHub /></RouteGuard></Route>
+      <Route path="/engineering-studio"><RouteGuard navHref="/engineering-studio"><EngineeringStudioHub /></RouteGuard></Route>
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
       <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>

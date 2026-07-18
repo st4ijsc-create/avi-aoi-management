@@ -17,6 +17,7 @@
   Factory,
   Database,
   Shield,
+  SlidersHorizontal,
   BookOpen,
   Radio,
   AlertTriangle,
@@ -904,6 +905,16 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
+      {
+        // doc 59 cụm phụ — Engineering Studio: launcher danh mục (soạn thảo/điều phối/
+        // an toàn/chuẩn-hoá). Song song /engineering-home (landing tác vụ). Per-tile RBAC.
+        href: "/engineering-studio",
+        label: "Xưởng kỹ thuật",
+        icon: <FlaskConical className="h-4 w-4" />,
+        description: "Soạn thảo · điều phối · an toàn · chuẩn hoá — một danh mục",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
       // — Authoring & Programming —
       {
         href: "/engineering",
@@ -1518,6 +1529,17 @@ export const navGroups: NavGroup[] = [
       { key: "platform", label: "nav.section.platform" },
     ],
     items: [
+      {
+        // doc 59 cụm phụ — Settings Hub: một cửa cho mọi trang cài đặt (hệ thống/bảo mật/
+        // thiết bị/AI/mục tiêu). Per-tile RBAC (tile admin ẩn cho non-admin).
+        href: "/settings-hub",
+        label: "Trung tâm cài đặt",
+        icon: <SlidersHorizontal className="h-4 w-4" />,
+        description: "Cài đặt hệ thống · bảo mật · thiết bị · AI · mục tiêu — một nơi",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "platform",
+      },
       {
         href: "/admin-home",
         label: "nav.adminHome",
@@ -2227,15 +2249,44 @@ export function hasAccessToItem(
 /**
  * Get filtered navigation groups based on user role AND granular permissions.
  */
+/**
+ * doc 59 (nav-collapse) — leaf rows whose destination is now reached through a
+ * consolidation hub AND whose RBAC gate == the hub's gate (verified: an toàn để ẩn
+ * khỏi menu without any path-loss — route KHÔNG xoá, deep-link + ⌘K vẫn tới được).
+ * Bỏ 1 href khỏi set này để hiện lại row đó. Chỉ ẩn 28 row gate-khớp; các row lệch-gate
+ * (/scheduled-reports, /robot-model-health, /causal-graph, /products…) GIỮ trong menu.
+ */
+const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
+  // → /ai-studio (hub admin-only; 16 row đều requiredRole:'admin')
+  "/ai-models", "/model-versions", "/ai-brain", "/ai-monitoring", "/ai-performance",
+  "/ai-active-learning", "/ai-batch-jobs", "/ai-data-processing", "/ai-time-series",
+  "/ai-reports", "/ai-quality-gate", "/ai-image-search", "/ai-advanced-vision-lab",
+  "/anomaly-banks", "/mask-annotation", "/ai-settings",
+  // → /data-management (hub gate masterdata)
+  "/master-data", "/operator-badges", "/master-data-audit", "/data-quality", "/component-library",
+  // → /product-workspace (hub gate history_view)
+  "/golden-samples", "/defect-catalog", "/measurement-point-health", "/product-comparison",
+  // → /reporting-studio (hub gate reports_view). GIỮ /scheduled-reports (gate reports_schedule ≠ hub)
+  "/report-builder", "/pdf-reports", "/powerpoint-export",
+]);
+
+/** Remove collapsed rows from every group, then drop groups left empty. */
+function collapseNavGroups(groups: NavGroup[]): NavGroup[] {
+  return groups
+    .map(group => ({ ...group, items: group.items.filter(item => !COLLAPSED_INTO_HUB.has(item.href)) }))
+    .filter(group => group.items.length > 0);
+}
+
 export function getFilteredNavGroups(
   userRole?: string,
   hasPermission?: PermissionChecker,
   hasAnyCategoryPermission?: CategoryChecker,
 ): NavGroup[] {
-  // Admin sees everything
-  if (userRole === 'admin') return navGroups;
+  const base = collapseNavGroups(navGroups);
+  // Admin sees everything (except the hub-collapsed rows above)
+  if (userRole === 'admin') return base;
 
-  return navGroups
+  return base
     .filter(group => {
       // Legacy role gate
       if (group.requiredRole === 'admin' && userRole !== 'admin') {

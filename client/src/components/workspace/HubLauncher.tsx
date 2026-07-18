@@ -23,6 +23,12 @@ export interface HubTool {
   href: string;
   /** Module name; tile hidden unless the user has canView (admin always passes). */
   requiredPermission?: string;
+  /**
+   * Role gate for routes guarded by requireRole (not a module permission) — e.g.
+   * "admin" for /system-config. Without this, an admin-role-only tile with no
+   * requiredPermission would show to everyone and dead-end at the route guard.
+   */
+  requiredRole?: string;
   /** Short access note under the blurb (e.g. "Chỉ xem" / "Admin"). */
   note?: string;
   beta?: boolean;
@@ -42,17 +48,23 @@ export interface HubLauncherProps {
 
 export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
   const { t } = useTranslation();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isAdmin } = usePermissions();
 
   const visible = useMemo(
     () =>
       categories
         .map((c) => ({
           ...c,
-          tools: c.tools.filter((tool) => !tool.requiredPermission || hasPermission(tool.requiredPermission, "canView")),
+          tools: c.tools.filter(
+            (tool) =>
+              // module-permission gate (admin passes via hasPermission)
+              (!tool.requiredPermission || hasPermission(tool.requiredPermission, "canView")) &&
+              // role gate — a requireRole:'admin' route hides its tile for non-admins
+              (!tool.requiredRole || tool.requiredRole !== "admin" || isAdmin),
+          ),
         }))
         .filter((c) => c.tools.length > 0),
-    [categories, hasPermission],
+    [categories, hasPermission, isAdmin],
   );
 
   const [active, setActive] = useState(visible[0]?.key ?? "");
