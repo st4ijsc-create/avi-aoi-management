@@ -675,11 +675,36 @@ export const navGroups: NavGroup[] = [
         section: "monitoring",
         engineerOriented: true,
       },
+      {
+        // doc 56 Đ3/Đ5 — process-result analytics (pass/fail + SPC I-MR + fleet FPY)
+        // cho máy automation/IoT. Cùng thân với tab "Kết quả process" của MachineCockpit.
+        // (doc 59 QW: đưa surface đã-xây-nhưng-ẩn vào menu.)
+        href: "/process-analytics",
+        label: "nav.processAnalytics",
+        icon: <LineChart className="h-4 w-4" />,
+        description: "nav.processAnalyticsDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+        engineerOriented: true,
+      },
       // — Kết nối & Cài máy (section "connect") —
       // doc 36 follow-up — the 9 legacy MQTT/UNS rows now all <Redirect> into the
       // unified /connectivity hub. ONE hub row only; every surface (overview / devices /
       // topics / bulletin / replay / alerts / ng-rate / uns / profiles) is a TAB inside
       // the hub — no ?tab= deep-link rows in the menu (doc 39: tab-switcher menus removed).
+      {
+        // doc 56 Đ2b — wizard đăng ký HỢP NHẤT 3 nhánh (aoi_avi / automation / iot):
+        // cửa thêm-thiết-bị thống nhất (Cụm C sẽ redirect các wizard cũ vào đây). Trang
+        // tự gate cờ VITE_DEVICE_ONBOARD_WIZARD_V2_ENABLED bên trong. (doc 59 QW.)
+        href: "/device-onboarding",
+        label: "nav.deviceOnboarding",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.deviceOnboardingDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "connect",
+      },
       {
         href: "/machine-onboarding",
         label: "nav.machineOnboarding",

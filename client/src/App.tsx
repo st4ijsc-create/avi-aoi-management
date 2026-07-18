@@ -416,8 +416,8 @@ function Router() {
       {/* doc 56 Đ3/Đ2b — no navHref: authenticated-user access; PROCESS_ANALYTICS_ENABLED
           gates the data (empty-state when OFF) and DEVICE_ONBOARD_WIZARD_V2_ENABLED
           self-gates the wizard (fallback card when OFF). Menu entry deferred to Đ7 IA. */}
-      <Route path="/process-analytics"><RouteGuard><ProcessAnalyticsPage /></RouteGuard></Route>
-      <Route path="/device-onboarding"><RouteGuard><DeviceOnboardingHubV2 /></RouteGuard></Route>
+      <Route path="/process-analytics"><RouteGuard navHref="/process-analytics"><ProcessAnalyticsPage /></RouteGuard></Route>
+      <Route path="/device-onboarding"><RouteGuard navHref="/device-onboarding"><DeviceOnboardingHubV2 /></RouteGuard></Route>
       <Route path="/carbon-dashboard"><RouteGuard navHref="/carbon-dashboard"><CarbonDashboard /></RouteGuard></Route>
       <Route path="/pdf-reports"><RouteGuard navHref="/pdf-reports"><PdfReports /></RouteGuard></Route>
       <Route path="/powerpoint-export"><RouteGuard navHref="/powerpoint-export"><PowerPointExport /></RouteGuard></Route>
