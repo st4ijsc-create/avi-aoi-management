@@ -113,4 +113,15 @@ Workflow thiết kế 5-agent (read-only) + critic đã kiểm chứng approach 
 
 **Green cuối doc-59: tsc 0 · vite build 35s · Playwright LIVE render 8 surface (workspace/onboarding/data-hub/ai-studio/product/maintenance/quality-diagnose/reporting-studio) 0 lỗi code.** 6 commit thực thi E-I: `7b6152f3`(E/H/I+HubLauncher) `f2a69803`(F) `d5e9dd1b`(G).
 
-**CÒN (follow-up, ngoài A-I chính):** phụ (Settings/role-home/Engineering-Studio merge) · full-embed G (tách Reports/HistoryExport) + nav-collapse các row cũ khi muốn giảm sprawl mạnh hơn · Connections-hub (overlap MQTT MonitoringSettings⇄ConnectivityHub).
+### §10.3 — CỤM PHỤ + NAV-COLLAPSE (workflow 4-agent design + critic → hiện thực + Playwright LIVE) — commit `337a74ea`
+
+- **HubLauncher honor `requiredRole`**: tile admin-role (vd /system-config) ẩn cho non-admin → hết dead-end (critic risk#1).
+- **Settings Hub** `/settings-hub`: 5 nhóm (hệ thống/bảo mật/thiết bị/AI/mục tiêu), tile admin gate requiredRole. LIVE: 5 nhóm + note "Admin".
+- **Engineering-Studio** `/engineering-studio`: 4 nhóm (soạn/điều phối/an toàn/chuẩn), per-tile gate theo **ROUTE THẬT** (fleet-orchestration/control-plane/robot-control=machine_control dù nav khai machine_status — route là nguồn thật). GIỮ /engineering-home. LIVE render đúng.
+- **NAV-COLLAPSE 28 row**: `COLLAPSED_INTO_HUB` set (16 AI→ai-studio · 5 data→data-management · 4 product→product-workspace · 3 reporting→reporting-studio) lọc trong `getFilteredNavGroups` áp CẢ admin. **Nguyên tắc: chỉ ẩn khi gate row == gate hub** (permission độc lập, không bao hàm). GIỮ /scheduled-reports (reports_schedule≠reports_view — critic bắt lỗi), /robot-model-health + /causal-graph (non-admin, hub admin-only), tier:simple core. Route KHÔNG xoá → deep-link + ⌘K sống; reversible (bỏ href khỏi set). LIVE: /data-management group mở → master-data/operator-badges/data-quality vắng sidebar.
+- **DataManagementHub → HubLauncher** (per-tile RBAC) — hết dead-end tile.
+- **Role-home: HOÃN** (critic: merge 6 role-home đánh nhau RBAC 6-route, KHÔNG giảm route do hardcode Login/BottomNav/RouteGuard/Home + mig 0184 role_dashboard_defaults, mất kiosk-operator 430 dòng / KPI-admin / NG-ack-quality; LOC≈0).
+
+**Green cuối doc-59: tsc 0 · vite build 39.76s · Playwright LIVE 10 surface 0 lỗi code.** 19 commit `dc7e81e1`→`337a74ea`. Cleanup: test-user + dev server + artifacts xóa.
+
+**CÒN (follow-up nhỏ):** full-embed G (tách Reports/HistoryExport) · Connections-hub (overlap MQTT MonitoringSettings⇄ConnectivityHub) · role-home (nếu đổi ý về tradeoff) · gom thêm nav-collapse khi có hub mới.
