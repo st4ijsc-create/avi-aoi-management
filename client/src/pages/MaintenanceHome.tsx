@@ -21,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { FirstRunTour } from "@/components/FirstRunTour";
-import { ToolTile } from "@/components/patterns";
+import { RoleTileGrid } from "@/components/RoleTileGrid";
 import { trpc } from "@/lib/trpc";
 import {
   Wrench,
@@ -113,24 +113,12 @@ export default function MaintenanceHome() {
         {/* Role-aware "Today" summary (maintenance variant, zero-click) */}
         <TodayBriefing />
 
-        {/* Quick-access maintenance tools */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("maintenanceHome.toolsTitle", "Tools")}
-          </h2>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
-            {tools.map((tool) => (
-              <ToolTile
-                key={tool.key}
-                icon={tool.icon}
-                label={tool.label}
-                blurb={tool.blurb}
-                href={tool.href}
-                badge={tool.badge}
-              />
-            ))}
-          </div>
-        </section>
+        {/* Quick-access maintenance tools — doc 60 role-home: shared RoleTileGrid */}
+        <RoleTileGrid
+          title={t("maintenanceHome.toolsTitle", "Tools")}
+          tiles={tools.map((tool) => ({ icon: tool.icon, label: tool.label, description: tool.blurb, to: tool.href, badge: tool.badge }))}
+          gridClassName="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5"
+        />
       </div>
 
       {/* First-run coach — shown once per user on their landing */}

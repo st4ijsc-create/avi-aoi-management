@@ -21,6 +21,7 @@ import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { PageHeader, PageContainer, ToolTile } from "@/components/patterns";
+import { RoleTileGrid } from "@/components/RoleTileGrid";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -221,23 +222,8 @@ export default function QualityHome() {
           </button>
         )}
 
-        {/* Quick-access QC tools */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("quality.toolsTitle")}
-          </h2>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {tools.map((tool) => (
-              <ToolTile
-                key={tool.label}
-                icon={tool.icon}
-                label={tool.label}
-                blurb={tool.description}
-                href={tool.to}
-              />
-            ))}
-          </div>
-        </section>
+        {/* Quick-access QC tools — doc 60 role-home: shared RoleTileGrid */}
+        <RoleTileGrid title={t("quality.toolsTitle")} tiles={tools} />
 
         {/* Recent NG / review-needed */}
         <section className="space-y-3">

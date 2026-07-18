@@ -10,7 +10,8 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
-import { PageHeader, PageContainer, MetricCard, ToolTile } from "@/components/patterns";
+import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
+import { RoleTileGrid } from "@/components/RoleTileGrid";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -89,14 +90,8 @@ export default function ViewerHome() {
 
         <TodayBriefing />
 
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("viewer.viewsTitle", "Các bảng xem")}</h2>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {tiles.map((tile) => (
-              <ToolTile key={tile.to} icon={tile.icon} label={tile.label} blurb={tile.description} href={tile.to} />
-            ))}
-          </div>
-        </section>
+        {/* doc 60 role-home: shared RoleTileGrid */}
+        <RoleTileGrid title={t("viewer.viewsTitle", "Các bảng xem")} tiles={tiles} />
       </PageContainer>
     </DashboardLayout>
   );

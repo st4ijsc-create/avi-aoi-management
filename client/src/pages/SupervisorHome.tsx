@@ -13,7 +13,8 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
-import { PageHeader, PageContainer, ToolTile } from "@/components/patterns";
+import { PageHeader, PageContainer } from "@/components/patterns";
+import { RoleTileGrid } from "@/components/RoleTileGrid";
 import { trpc } from "@/lib/trpc";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -57,15 +58,8 @@ export default function SupervisorHome() {
         {/* Role-aware Today summary */}
         <TodayBriefing />
 
-        {/* KPI rollup tiles */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("supervisor.rollupTitle", "Tổng quan nhanh")}</h2>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {tiles.map((tile) => (
-              <ToolTile key={tile.to} icon={tile.icon} label={tile.label} blurb={tile.description} href={tile.to} />
-            ))}
-          </div>
-        </section>
+        {/* KPI rollup tiles — doc 60 role-home: shared RoleTileGrid */}
+        <RoleTileGrid title={t("supervisor.rollupTitle", "Tổng quan nhanh")} tiles={tiles} />
 
         {/* Attention / escalation list (recent NG, best-effort) */}
         <section className="space-y-3">
