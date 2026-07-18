@@ -44,6 +44,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import urlencode
 
 
 # ── Ngoại lệ ────────────────────────────────────────────────────────────────
@@ -335,7 +336,7 @@ class St4iDeviceClient:
                           KHÔNG tạo bản ghi trùng (doc 57 §5).
           ts         : ISO 3339 KÈM offset. Bỏ trống -> iso_now() (giờ local có offset).
 
-        Trả envelope data {processResultId} hoặc {idempotent: true} (replay).
+        Trả envelope data {processResultId, duplicate} — replay cùng key ⇒ duplicate:true.
         Khi mất mạng và hết retry: payload được đưa vào hàng đợi local, ném St4iNetworkError.
         """
         result = str(result).lower().strip()
@@ -364,7 +365,7 @@ class St4iDeviceClient:
         if waveforms:
             payload["waveforms"] = list(waveforms)
         if extra:
-            payload.update(extra)                # stationId/lineCode/lotCode/rawExtras…
+            payload.update(extra)                # lineCode/lotCode/productionOrderCode/stationId(SỐ)
 
         return self._send_with_retry("process", "/api/v1/ingest/process-result", payload)
 
@@ -427,6 +428,117 @@ class St4iDeviceClient:
                 payload=data,
             )
         return data if isinstance(data, dict) else {}
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Config-sync — kéo recipe/cấu hình (doc 56 Đ4; server cần CONFIG_SYNC_GENERIC_ENABLED)
+    #   Vòng lặp chuẩn:  check → (khác cache) → get → apply → ack
+    #   Auth: cùng khóa mk_ (scope equipment:read). Bearer + X-API-Key.
+    # ══════════════════════════════════════════════════════════════════════
+    def _cfg_get(self, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """GET 1 endpoint config-sync (check/get). Trả dict JSON đã parse."""
+        query = urlencode({k: v for k, v in params.items() if v is not None})
+        url = f"{self.server_url}{path}?{query}"
+        status, raw = self._http("GET", url, self._auth_headers(), None)
+        data = self._parse_json(raw)
+        # Proxy config-sync trả {success, ...} hoặc {success:false, retryable, message}
+        if status >= 400 or (isinstance(data, dict) and data.get("success") is False):
+            msg = data.get("message") if isinstance(data, dict) else ""
+            raise St4iApiError(msg or f"config-sync lỗi (HTTP {status})", status=status, payload=data)
+        return data if isinstance(data, dict) else {}
+
+    def check_config(
+        self,
+        config_kind: str = "recipe",
+        config_code: Optional[str] = None,
+        product_model_code: Optional[str] = None,
+        variant_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Kiểm tra version cấu hình đang active (nhẹ — chưa tải payload).
+        config_kind ∈ 'recipe' | 'device_settings' | 'points' | 'model'.
+        Trả {success, configKind, code, version, checksum, resolvedBy}
+            (recipe/device_settings), hoặc {..., productModels:[...]} (points).
+        So (code, version, checksum) với bản máy đang cache: khác ⇒ gọi get_config().
+        """
+        return self._cfg_get(
+            "/api/machine/config-sync/check",
+            {"configKind": config_kind, "machineCode": self.machine_code,
+             "configCode": config_code, "productModelCode": product_model_code, "variantCode": variant_code},
+        )
+
+    def get_config(
+        self,
+        config_kind: str = "recipe",
+        config_code: Optional[str] = None,
+        product_model_code: Optional[str] = None,
+        variant_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Tải payload cấu hình đầy đủ + checksum. Cùng tham số check_config().
+        Trả {success, configKind, code, name, version, checksum, resolvedBy, payload}.
+        Sau khi APPLY payload vào chương trình máy, gọi ack_config(...) để báo đã áp.
+        """
+        return self._cfg_get(
+            "/api/machine/config-sync/get",
+            {"configKind": config_kind, "machineCode": self.machine_code,
+             "configCode": config_code, "productModelCode": product_model_code, "variantCode": variant_code},
+        )
+
+    def ack_config(
+        self,
+        config_kind: str,
+        code: Optional[str] = None,
+        version: Optional[Union[str, int]] = None,
+        checksum: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Báo server cấu hình MÁY ĐÃ ÁP (đối soát drift 2 chiều).
+        Trả {success, machineId, configKind, driftState} — driftState ∈ in_sync|drift|unknown.
+        """
+        url = f"{self.server_url}/api/machine/config-sync/ack"
+        payload: Dict[str, Any] = {"configKind": config_kind}
+        if self.machine_code:
+            payload["machineCode"] = self.machine_code
+        if code is not None:
+            payload["code"] = code
+        if version is not None:
+            payload["version"] = version
+        if checksum is not None:
+            payload["checksum"] = checksum
+        headers = {"Content-Type": "application/json", **self._auth_headers()}
+        status, raw = self._http("POST", url, headers, json.dumps(payload).encode("utf-8"))
+        data = self._parse_json(raw)
+        if status >= 400 or (isinstance(data, dict) and data.get("success") is False):
+            msg = data.get("message") if isinstance(data, dict) else ""
+            raise St4iApiError(msg or f"ack_config lỗi (HTTP {status})", status=status, payload=data)
+        return data if isinstance(data, dict) else {}
+
+    def sync_config(
+        self,
+        apply_fn,
+        config_kind: str = "recipe",
+        cached_version: Optional[str] = None,
+        **selectors: Any,
+    ) -> Dict[str, Any]:
+        """
+        Vòng lặp pull hoàn chỉnh: check → (nếu version khác cached_version) get → apply_fn(payload)
+        → ack. apply_fn(cfg: dict) là hàm firmware nạp payload vào chương trình chạy; PHẢI
+        trả True nếu áp thành công (chỉ khi True mới ack). Trả:
+            {changed: bool, version, driftState?}   (changed=False ⇒ đã khớp, không làm gì)
+        """
+        chk = self.check_config(config_kind=config_kind, **selectors)
+        version = chk.get("version")
+        if version is not None and str(version) == str(cached_version):
+            return {"changed": False, "version": version}
+        cfg = self.get_config(config_kind=config_kind, **selectors)
+        applied = bool(apply_fn(cfg))
+        if not applied:
+            return {"changed": False, "version": version, "applied": False}
+        ack = self.ack_config(
+            config_kind=config_kind, code=cfg.get("code"),
+            version=cfg.get("version"), checksum=cfg.get("checksum"),
+        )
+        return {"changed": True, "version": cfg.get("version"), "driftState": ack.get("driftState")}
 
     # ══════════════════════════════════════════════════════════════════════
     # Gửi có retry + hàng đợi local (store-and-forward)

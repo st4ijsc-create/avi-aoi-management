@@ -8,6 +8,10 @@ Chuẩn dữ liệu: **doc 57 — ST4I Standard Process Feed v1**
 (`docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md`), song hành doc 28
 (Inspection Feed cho máy AOI/AVI) và doc 56 (Device Connectivity Standardization).
 
+> 📘 **Đội DEV viết phần mềm trong máy: đọc `docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md`**
+> — tài liệu tham chiếu quy chuẩn ĐÃ KIỂM CHỨNG LIVE (endpoint/envelope/mã lỗi/độ-bền + đính
+> chính các điểm lệch so với spec cũ). README này là quick-start; doc 61 là contract đầy đủ.
+
 > Máy **AOI/AVI** (kiểm tra board) dùng doc 28 (`submitInspection`).
 > Máy **automation** (bắt vít / điểm keo / hàn / leak-test…) và **IoT** (ESP32
 > nhiệt-ẩm, cảm biến LAN) dùng doc 57 — chính là bộ client này.
@@ -92,32 +96,36 @@ rồi dán vào `.ino`.
 
 ```jsonc
 {
-  "schemaVersion": "1.0",                 // BẮT BUỘC, = "1.0"
-  "machineCode":   "SCRW-01",             // nên gửi (auth vẫn resolve máy từ mk_)
-  "serialNumber":  "SN-2026-000777",      // BẮT BUỘC — trục genealogy/traceability
-  "stepType":      "screw_tightening",    // BẮT BUỘC — thuộc process_step_types
+  "schemaVersion": "1.0",                 // optional, log-only (server KHÔNG ép "1.0")
+  "machineCode":   "SCRW-01",             // optional — auth vẫn resolve máy từ mk_
+  "serialNumber":  "SN-2026-000777",      // BẮT BUỘC — trục genealogy (≤128 ký tự)
+  "stepType":      "screw_tightening",    // BẮT BUỘC — nên thuộc process_step_types (≤64)
   "result":        "pass",                // BẮT BUỘC — pass|fail|warn|skip (chữ thường)
-  "ts":            "2026-07-17T14:03:00.480+07:00",  // BẮT BUỘC — RFC3339 KÈM OFFSET
+  "ts":            "2026-07-17T14:03:00.480+07:00",  // optional — nếu GỬI thì PHẢI kèm offset UTC
   "recipe":   { "code": "TQ-M3-08", "version": "2.1", "checksum": "a1b2c3d4" },
-  "metrics":  [ { "name": "torque", "value": 0.82, "unit": "Nm",
+  "metrics":  [ { "name": "torque", "value": 0.82, "unit": "Nm",     // value CHỈ number
                   "lsl": 0.70, "usl": 0.95, "nominal": 0.82 } ],
   "waveforms":[ { "name": "torque_vs_angle", "unit": "Nm", "rateHz": 500,
-                  "samples": [[0,0.02],[90,0.15],[412,0.82]] } ],   // tổng ≤ ~64KB
-  "idempotencyKey": "SCRW-01:TQ-M3-08:88123",   // exactly-once (retry an toàn)
-  "stationId": "ST-SCRW-A", "lineCode": "LINE-01",
-  "productionOrderCode": "WO-20260717-01", "lotCode": "LOT-77"
+                  "samples": [[0,0.02],[90,0.15],[412,0.82]] } ],   // ≤64 sóng, ≤100k cặp/sóng
+  "idempotencyKey": "SCRW-01:TQ-M3-08:88123",   // exactly-once (8..200 ký tự)
+  "lineCode": "LINE-01", "lotCode": "LOT-77",    // genealogy (string) — optional
+  "productionOrderCode": "WO-20260717-01", "stationId": 12  // stationId PHẢI là SỐ
 }
 ```
 
 - **`stepType`** danh mục v1: `screw_tightening` · `glue_dispense` · `weld_spot` ·
   `leak_test` · `functional_test` · `press_fit` · `label_apply` · `vision_check`.
+  (Schema chỉ kiểm độ dài ≤64; vocab-check tùy cờ `PROCESS_ATTR_VALIDATE_MODE` phía server.)
 - **Đơn vị chuẩn** (§6 doc 57): `Nm` (torque) · `deg` · `mL` · `kPa`/`bar` · `°C` ·
-  `A` · `Hz` · `%RH`. Đơn vị lạ không kèm conversion → reject.
-- **Field lạ** ở top-level được bảo toàn nguyên văn vào `rawExtras` — đặt dữ liệu
-  vendor-custom ở đó (ví dụ `"rawExtras": { "nozzleTempC": 41.2 }`).
+  `A` · `Hz` · `%RH`. (Đường REST hiện KHÔNG kiểm registry đơn vị — dùng đơn vị chuẩn để
+  SPC/analytics đọc đúng.)
+- **`metrics[].value` CHỈ nhận number** — gửi chuỗi/boolean → **400**.
+- **Field lạ ở top-level bị server STRIP âm thầm** (`rawExtras` CHƯA cài cho process-result).
+  Đưa số đo vendor-custom vào `metrics[]` (dạng số), KHÔNG đặt ở top-level.
 
-Phản hồi: envelope `{ "ok": true, "data": { "processResultId": 123 } }` (hoặc
-`{ "data": { "idempotent": true } }` khi replay).
+Phản hồi: `{ "ok": true, "data": { "processResultId": 123, "duplicate": false } }` (HTTP 201);
+khi **replay** cùng `idempotencyKey` → `{ "data": { "processResultId": 123, "duplicate": true } }`
+(cùng id, KHÔNG ghi trùng).
 
 ### TELEMETRY (CanonicalSample)
 
@@ -132,6 +140,22 @@ Phản hồi: envelope `{ "ok": true, "data": { "processResultId": 123 } }` (ho�
 `ts` telemetry là **khuyến nghị** (vắng → server đóng dấu giờ nhận). Phản hồi
 `{ "ok": true, "data": { "accepted": n, "received": n, "machine": "…" } }` (HTTP 202).
 
+### CONFIG-SYNC (kéo recipe về máy)
+
+SDK Python/Node có sẵn vòng lặp `check → get → apply → ack` (server cần
+`CONFIG_SYNC_GENERIC_ENABLED=true`, scope `equipment:read`):
+
+```python
+def apply_recipe(cfg):
+    load_into_controller(cfg["payload"])   # mã firmware nạp recipe vào máy
+    return True
+res = c.sync_config(apply_recipe, config_kind="recipe", cached_version=current_version)
+# lần đầu: {'changed': True, 'version': '2', 'driftState': 'in_sync'} ; đã khớp: {'changed': False, …}
+```
+
+Hoặc gọi rời: `check_config()` / `get_config()` / `ack_config()` (Node: `checkConfig`/`getConfig`/
+`ackConfig`/`syncConfig`). Chi tiết contract + mã lỗi: **doc 61 §6**.
+
 ---
 
 ## Độ tin cậy: idempotency · retry · hàng đợi local
@@ -139,7 +163,7 @@ Phản hồi: envelope `{ "ok": true, "data": { "processResultId": 123 } }` (ho�
 Ba cơ chế bắt buộc để feed không mất dữ liệu và không ghi trùng (client đã cài sẵn):
 
 1. **`idempotencyKey`** — server dedup theo `(machineId, idempotencyKey)`. Gửi lại
-   cùng key → server trả `idempotent: true`, **không** tạo bản ghi trùng. **Đặt key
+   cùng key → server trả `duplicate: true` (cùng `processResultId`), **không** tạo bản ghi trùng. **Đặt key
    ổn định theo chu trình vật lý**, ví dụ `"<machineCode>:<recipeCode>:<cycleCounter>"`,
    để cùng một lần siết vít luôn cùng key qua mọi lần retry. (Nếu không truyền,
    client tự sinh key ngẫu nhiên — an toàn cho 1 lần, nhưng không dedup được sau
@@ -155,9 +179,11 @@ Ba cơ chế bắt buộc để feed không mất dữ liệu và không ghi tr�
    restart; hoặc RAM). Lần gửi sau client tự **replay** với **cùng `idempotencyKey`**,
    nên server dedup an toàn. Gọi `flush_queue()` / `flushQueue()` để xả thủ công.
 
-**Thời gian (`ts`)**: **luôn kèm offset** (`Z` hoặc `±hh:mm`). Giờ naive (không offset)
-bị server **reject** (`code: naive_timestamp`) — bài học lệch +7h của doc 27. Client
-Python/Node tự sinh `ts` có offset; ESP32 lấy giờ NTP rồi nối offset khớp `configTime`.
+**Thời gian (`ts`)**: optional, nhưng **nếu gửi thì luôn kèm offset** (`Z` hoặc `±hh:mm`).
+Giờ naive (không offset) bị server **reject** — HTTP 400 `ingest_failed`, `error.message`
+ghi rõ *"ts must carry an explicit UTC offset…"* (bài học lệch +7h của doc 27). Vắng `ts` ⇒
+server đóng dấu giờ nhận (`timeSource='server'`). Client Python/Node tự sinh `ts` có offset;
+ESP32 lấy giờ NTP rồi nối offset khớp `configTime`.
 
 ---
 
@@ -209,19 +235,28 @@ ST4I_SERVER="https://factory.local:5000" ST4I_MK_KEY="mk_live_xxxx" \
 ## Tự kiểm chứng (không ghi DB)
 
 Đội tích hợp có thể validate payload **offline** trước khi bắn thật qua tRPC
-(authenticated) `machineContract.validate({ version: "process-result@1.0", payload })`
-— trả `{ ok:true }` hoặc `{ ok:false, errors:[{path,message}] }`. 11 conformance case
-bắt buộc pass liệt kê ở doc 57 §11.1.
+`machineContract.validate({ contract: "process-result", version: "1.0", payload })` — trả
+`{ ok:true }` hoặc `{ ok:false, errors:[{path,message}] }`. LƯU Ý: đây là **`protectedProcedure`**
+(cần session USER đăng nhập, KHÔNG dùng khóa `mk_`); và `contract`/`version` là **hai field
+riêng** (chuỗi gộp `"process-result@1.0"` sẽ báo *Unknown process contract version*).
 
-## Mã lỗi thường gặp (envelope `{ ok:false, error:{ code, message } }`)
+## Mã lỗi thật (đường REST `/api/v1/ingest/process-result`) — envelope `{ ok:false, error:{ code, message } }`
 
-| HTTP | `code` | Xử lý phía firmware |
+> Đường REST **gộp MỌI lỗi validate thành `400 ingest_failed`** — chi tiết field sai nằm ở
+> `error.message` (text zod). Firmware đọc `error.message`, **không** dựa vào mã con.
+
+| HTTP | `error.code` | Nghĩa · Xử lý firmware |
 |---|---|---|
-| 400 | `missing_required`, `invalid_enum`, `naive_timestamp`, `unknown_unit`, `waveform_too_large`, `ingest_failed` | Sửa payload — **không** retry |
-| 401 | `unauthorized` | `mk_` sai/hết hạn → rotate khóa |
-| 403 | `forbidden` | Khóa thiếu scope `ingest:write` |
-| 409 | `unsupported_schema_version` | Server chưa hỗ trợ `schemaVersion` này |
-| 429 | `rate_limited` | Hạ tần suất — client tự backoff + retry |
+| 400 | `ingest_failed` | Payload sai (enum, `ts` naive, `value` không phải số, `stationId` không phải số, vượt waveform-cap), cờ ingest OFF, unknown stepType (enforce), auth máy tRPC fail, rate-limit. Đọc `error.message` → sửa, **không** retry |
+| 400 | `bad_request` | Chỉ telemetry: body rỗng/không `{samples:[…]}` |
+| 401 | `unauthorized` | Thiếu/sai `mk_` → rotate khóa, **không** retry |
+| 403 | `forbidden` | Khóa thiếu scope `ingest:write` (kèm `details.required/granted`) |
+| 500 | `internal_error` | Lỗi ngoài dự kiến (không lộ stack) |
+
+> tRPC trực tiếp (`/api/trpc/machineApi.submitProcessResult`) giữ mã gốc: `PRECONDITION_FAILED`
+> (412, cờ ingest OFF), `BAD_REQUEST` (400, zod), `UNAUTHORIZED`/`FORBIDDEN` (401/403),
+> `TOO_MANY_REQUESTS` (429, mặc định 600/phút/khóa). Config-sync/heartbeat proxy trả thêm cờ
+> `retryable` — chỉ retry khi `retryable=true` (429/503).
 | 503 | `db_unavailable` | Client retry + xếp hàng với cùng `idempotencyKey` |
 
 ---

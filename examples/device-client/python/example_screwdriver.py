@@ -154,11 +154,16 @@ def main():
                 ],
                 waveforms=[{"name": "torque_vs_angle", "unit": "Nm", "rateHz": 500, "samples": wave}],
                 idempotency_key=idem,
-                extra={"stationId": "ST-SCRW-A", "lineCode": "LINE-01",
-                       "rawExtras": {"spindleRpm": 320}},   # field vendor-custom -> rawExtras
+                # Genealogy (tùy chọn). LƯU Ý: stationId PHẢI là SỐ (platform station id) —
+                # gửi chuỗi bị 400. Firmware thường chỉ biết mã trạm dạng chuỗi nên dùng
+                # lineCode/lotCode (đều string). Field lạ top-level bị server STRIP âm thầm
+                # (rawExtras CHƯA cài cho process-result) -> đưa số đo vendor vào metrics[].
+                extra={"lineCode": "LINE-01", "lotCode": "LOT-2026-0001"},
             )
-            pid = data.get("processResultId") or ("idempotent" if data.get("idempotent") else "?")
-            print(f"[{i+1}] {verdict.upper():4} torque={torque}Nm angle={angle}° -> id={pid}")
+            # Replay cùng idempotencyKey trả processResultId gốc + duplicate:true (KHÔNG ghi trùng).
+            pid = data.get("processResultId", "?")
+            dup = " (duplicate)" if data.get("duplicate") else ""
+            print(f"[{i+1}] {verdict.upper():4} torque={torque}Nm angle={angle}° -> id={pid}{dup}")
         except St4iNetworkError as e:
             # Đã tự xếp vào hàng đợi local; sẽ replay ở chu trình sau khi có mạng.
             print(f"[{i+1}] MẤT MẠNG -> đã xếp hàng: {e}")

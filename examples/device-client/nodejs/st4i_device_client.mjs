@@ -201,6 +201,59 @@ export class St4iDeviceClient {
     return data;
   }
 
+  // ── Config-sync — kéo recipe/cấu hình (server cần CONFIG_SYNC_GENERIC_ENABLED) ──
+  //   Vòng lặp:  check → (khác cache) → get → apply → ack.  Auth: mk_ (scope equipment:read).
+  async _cfgGet(path, params) {
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)),
+    ).toString();
+    const { status, data } = await this._http("GET", `${this.serverUrl}${path}?${q}`, this._authHeaders(), null);
+    if (status >= 400 || (data && data.success === false))
+      throw new St4iApiError((data && data.message) || `config-sync lỗi (HTTP ${status})`, { status, payload: data });
+    return data;
+  }
+
+  /** Kiểm version cấu hình active (nhẹ). configKind ∈ recipe|device_settings|points|model. */
+  async checkConfig({ configKind = "recipe", configCode = null, productModelCode = null, variantCode = null } = {}) {
+    return this._cfgGet("/api/machine/config-sync/check",
+      { configKind, machineCode: this.machineCode, configCode, productModelCode, variantCode });
+  }
+
+  /** Tải payload cấu hình đầy đủ + checksum. Cùng tham số checkConfig(). */
+  async getConfig({ configKind = "recipe", configCode = null, productModelCode = null, variantCode = null } = {}) {
+    return this._cfgGet("/api/machine/config-sync/get",
+      { configKind, machineCode: this.machineCode, configCode, productModelCode, variantCode });
+  }
+
+  /** Báo server cấu hình máy ĐÃ ÁP. Trả {success, machineId, configKind, driftState}. */
+  async ackConfig({ configKind, code = null, version = null, checksum = null }) {
+    const payload = { configKind };
+    if (this.machineCode) payload.machineCode = this.machineCode;
+    if (code != null) payload.code = code;
+    if (version != null) payload.version = version;
+    if (checksum != null) payload.checksum = checksum;
+    const headers = { "Content-Type": "application/json", ...this._authHeaders() };
+    const { status, data } = await this._http("POST", `${this.serverUrl}/api/machine/config-sync/ack`, headers, JSON.stringify(payload));
+    if (status >= 400 || (data && data.success === false))
+      throw new St4iApiError((data && data.message) || `ackConfig lỗi (HTTP ${status})`, { status, payload: data });
+    return data;
+  }
+
+  /**
+   * Vòng lặp pull hoàn chỉnh: check → (nếu version khác cachedVersion) get → applyFn(cfg) → ack.
+   * applyFn(cfg) nạp cfg.payload vào chương trình máy, PHẢI trả true khi áp thành công.
+   * Trả {changed, version, driftState?}.
+   */
+  async syncConfig(applyFn, { configKind = "recipe", cachedVersion = null, ...selectors } = {}) {
+    const chk = await this.checkConfig({ configKind, ...selectors });
+    if (chk.version != null && String(chk.version) === String(cachedVersion))
+      return { changed: false, version: chk.version };
+    const cfg = await this.getConfig({ configKind, ...selectors });
+    if (!(await applyFn(cfg))) return { changed: false, version: chk.version, applied: false };
+    const ack = await this.ackConfig({ configKind, code: cfg.code, version: cfg.version, checksum: cfg.checksum });
+    return { changed: true, version: cfg.version, driftState: ack.driftState };
+  }
+
   // ── Gửi có retry + hàng đợi local ───────────────────────────────────────
   async _sendWithRetry(kind, path, payload) {
     if (this._queueLen() > 0) { try { await this.flushQueue(); } catch { /* mạng kém — thử tiếp */ } }
