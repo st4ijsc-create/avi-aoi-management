@@ -792,6 +792,17 @@ export const navGroups: NavGroup[] = [
       },
       // — Maintenance / predictive —
       {
+        // doc 59 Cụm I — Trung tâm bảo trì: hub-launcher (work-order · CMMS · copilot).
+        href: "/maintenance-hub",
+        label: "Trung tâm bảo trì",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "Một cửa cho bảo trì: lệnh công việc · CMMS/độ tin cậy · copilot",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "maintenance",
+        tier: "simple",
+      },
+      {
         href: "/technician-copilot",
         label: "nav.technicianCopilot",
         icon: <Wrench className="h-4 w-4" />,
@@ -1295,6 +1306,16 @@ export const navGroups: NavGroup[] = [
       },
       // ─ AI Control Plane (admin) ─
       {
+        // doc 59 Cụm H — AI Studio: hub-launcher hợp nhất ~17 surface control-plane.
+        href: "/ai-studio",
+        label: "AI Studio",
+        icon: <FlaskConical className="h-4 w-4" />,
+        description: "Một cửa: mô hình · giám sát · vận hành · vision lab · cài đặt",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "aiControlPlane",
+      },
+      {
         href: "/ai-brain",
         label: "nav.aiBrainDashboard",
         icon: <Brain className="h-4 w-4" />,
@@ -1679,6 +1700,17 @@ export const navGroups: NavGroup[] = [
         description: "Một nơi cho mọi dữ liệu: sản phẩm · dữ liệu chủ · cấu hình nhà máy",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
+        section: "productProgram",
+      },
+      {
+        // doc 59 Cụm E — Xưởng sản phẩm: hub-launcher hợp nhất định-nghĩa/chuẩn-vàng theo
+        // sản phẩm. Gate BẬC THẤP NHẤT (history_view) + per-tile RBAC trong hub.
+        href: "/product-workspace",
+        label: "Xưởng sản phẩm",
+        icon: <Package className="h-4 w-4" />,
+        description: "Định nghĩa sản phẩm · biến thể · chuẩn vàng · chất lượng — một nơi",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
         section: "productProgram",
       },
       {

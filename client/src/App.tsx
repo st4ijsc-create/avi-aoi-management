@@ -113,6 +113,9 @@ const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleMa
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 const DataManagementHub = React.lazy(() => import("./pages/DataManagementHub")); // doc 59 Cụm D: hub "nhà Data" thống nhất (rail category ⇄ launcher)
+const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub")); // doc 59 Cụm E
+const AIStudioHub = React.lazy(() => import("./pages/AIStudioHub")); // doc 59 Cụm H
+const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
@@ -505,6 +508,10 @@ function Router() {
       <Route path="/user-assignments"><RouteGuard requireRole={["admin"]} requirePermission="admin_users"><UserAssignments /></RouteGuard></Route>
       <Route path="/corporate-management"><RouteGuard requireRole={["admin"]}><CorporateManagement /></RouteGuard></Route>
       <Route path="/data-management"><RouteGuard navHref="/data-management"><DataManagementHub /></RouteGuard></Route>
+      {/* doc 59 Cụm E/H/I — hub-launcher hợp nhất (additive, giữ mọi route con). */}
+      <Route path="/product-workspace"><RouteGuard navHref="/product-workspace"><ProductWorkspaceHub /></RouteGuard></Route>
+      <Route path="/ai-studio"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIStudioHub /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/maintenance-hub"><RouteGuard navHref="/maintenance-hub"><MaintenanceWorkspaceHub /></RouteGuard></Route>
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
       <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
