@@ -161,8 +161,58 @@ export default function TraceabilityLineage() {
             {serialQuery && bySerial.isLoading && (
               <p className="text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
             )}
-            {serialQuery && sData && !sData.found && (
+            {serialQuery && sData && !sData.found && !fh && (
               <p className="text-muted-foreground">{t("trace.notFound", "Không tìm thấy dữ liệu cho")} {serialQuery}</p>
+            )}
+
+            {/* doc 63 DEP-05 (AUD-04) — Hành trình XUYÊN TRẠM: render ĐỘC LẬP với bySerial.found
+                (nguồn riêng getFullHistory — WIP có thể đã rotate nhưng lịch sử trạm vẫn còn). */}
+            {fh && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Radar className="h-4 w-4 text-primary" />
+                    {t("trace.stationJourney", "Hành trình xuyên trạm")}
+                    <span className="font-mono text-sm font-normal text-muted-foreground">{fh.unit_id}</span>
+                  </CardTitle>
+                  <CardDescription>
+                    {t("trace.stationJourneyDesc", "Gộp chain · kiểm tra AOI/AVI · process theo trạm · lắp linh kiện")}
+                    {" · "}
+                    <span className="font-mono text-[11px]">
+                      {fh.sources.chain_events}c / {fh.sources.inspections}i / {fh.sources.process_results}p / {fh.sources.installations}m
+                    </span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {fh.steps.length === 0 ? (
+                    <span className="text-muted-foreground">{t("common.noData", "Chưa có dữ liệu")}</span>
+                  ) : (
+                    <ol className="relative space-y-0 border-l border-border pl-4">
+                      {fh.steps.map((s, i) => (
+                        <li key={`${s.station}-${s.ts}-${i}`} className="relative py-1.5">
+                          <span className="absolute -left-[21px] top-2.5 size-2 rounded-full border border-border bg-muted" aria-hidden="true" />
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-medium">{s.station}</span>
+                            <StatusBadge value={s.result} />
+                            <span className="rounded border px-1 py-0 text-[10px] uppercase tracking-wide text-muted-foreground">{s.source.replace("genealogy_chain", "chain").replace("product_inspections", "aoi/avi").replace("process_results", "process")}</span>
+                            <span className="ml-auto font-mono text-[11px] text-muted-foreground">{s.ts ? new Date(s.ts).toLocaleString() : "—"}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {fh.materials.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 border-t pt-2">
+                      <span className="text-xs text-muted-foreground">{t("trace.materialsUsed", "Vật tư/linh kiện")}:</span>
+                      {fh.materials.map((m, i) => (
+                        <span key={i} className="rounded-full border px-2 py-0.5 font-mono text-[11px]">
+                          {m.part}{m.lot ? ` · ${m.lot}` : ""}{m.qty && m.qty > 1 ? ` ×${m.qty}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {sData && sData.found && (
@@ -232,54 +282,6 @@ export default function TraceabilityLineage() {
                     </Table>
                   </CardContent>
                 </Card>
-
-                {/* doc 63 DEP-05 (AUD-04) — Hành trình XUYÊN TRẠM đầy đủ (một timeline duy nhất) */}
-                {fh && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Radar className="h-4 w-4 text-primary" />
-                        {t("trace.stationJourney", "Hành trình xuyên trạm")}
-                      </CardTitle>
-                      <CardDescription>
-                        {t("trace.stationJourneyDesc", "Gộp chain · kiểm tra AOI/AVI · process theo trạm · lắp linh kiện")}
-                        {" · "}
-                        <span className="font-mono text-[11px]">
-                          {fh.sources.chain_events}c / {fh.sources.inspections}i / {fh.sources.process_results}p / {fh.sources.installations}m
-                        </span>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {fh.steps.length === 0 ? (
-                        <span className="text-muted-foreground">{t("common.noData", "Chưa có dữ liệu")}</span>
-                      ) : (
-                        <ol className="relative space-y-0 border-l border-border pl-4">
-                          {fh.steps.map((s, i) => (
-                            <li key={`${s.station}-${s.ts}-${i}`} className="relative py-1.5">
-                              <span className="absolute -left-[21px] top-2.5 size-2 rounded-full border border-border bg-muted" aria-hidden="true" />
-                              <div className="flex flex-wrap items-center gap-2 text-sm">
-                                <span className="font-medium">{s.station}</span>
-                                <StatusBadge value={s.result} />
-                                <span className="rounded border px-1 py-0 text-[10px] uppercase tracking-wide text-muted-foreground">{s.source.replace("genealogy_chain", "chain").replace("product_inspections", "aoi/avi").replace("process_results", "process")}</span>
-                                <span className="ml-auto font-mono text-[11px] text-muted-foreground">{s.ts ? new Date(s.ts).toLocaleString() : "—"}</span>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                      {fh.materials.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 border-t pt-2">
-                          <span className="text-xs text-muted-foreground">{t("trace.materialsUsed", "Vật tư/linh kiện")}:</span>
-                          {fh.materials.map((m, i) => (
-                            <span key={i} className="rounded-full border px-2 py-0.5 font-mono text-[11px]">
-                              {m.part}{m.lot ? ` · ${m.lot}` : ""}{m.qty && m.qty > 1 ? ` ×${m.qty}` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
 
                 {/* Downstream */}
                 <Card>

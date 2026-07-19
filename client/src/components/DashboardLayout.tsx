@@ -35,6 +35,8 @@ import { SiteSwitcher } from "./SiteSwitcher";
 import { SiteHealthDot } from "./SiteHealthDot";
 // doc 63 (AUD-01/G8) — shell-level freshness surface, flag-gated (HMI_ISA101_V2).
 import { FreshnessStrip } from "./FreshnessStrip";
+// doc 63 (FLW-01/G1) — shell alert chip: ack+resolve andon từ mọi trang, ≤3 chạm.
+import { ShellAlertChip } from "./ShellAlertChip";
 import { isIsa101V2 } from "@/lib/hmiFlags";
 import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
@@ -566,6 +568,9 @@ function DashboardLayoutContent({
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <AIActionInboxLauncher />
             <NotificationCenter />
+            {/* doc 63 (FLW-01/G1) — shell alert chip: đếm andon mở, chạm→drawer Ack/Resolve.
+                Ẩn khi 0 (ISA-101 im lặng). */}
+            {isIsa101V2() && <ShellAlertChip />}
             {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
                 state, never claims live when the socket is down. Byte-identical when off. */}
             {isIsa101V2() && <FreshnessStrip className="hidden sm:inline-flex" />}

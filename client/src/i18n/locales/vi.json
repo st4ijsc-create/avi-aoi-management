@@ -16476,5 +16476,17 @@
     "approve": "Duyệt",
     "reject": "Từ chối",
     "notApproved": "chưa second-approve"
+  },
+  "andonChip": {
+    "aria": "Cảnh báo đang mở",
+    "title": "Cảnh báo đang mở",
+    "desc": "Tiếp nhận rồi xử lý tại chỗ — không rời màn hình hiện tại.",
+    "ack": "Tiếp nhận",
+    "ackedAt": "Đã tiếp nhận",
+    "resolve": "Xử lý xong",
+    "acked": "Đã tiếp nhận (MTTA đã ghi).",
+    "resolved": "Đã xử lý xong (MTTR đã ghi).",
+    "notePh": "Ghi chú xử lý (tùy chọn, dùng cho nút Xử lý xong)",
+    "minShort": "ph"
   }
 }

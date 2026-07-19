@@ -7,8 +7,11 @@
 
 /**
  * ISA-101 HMI upgrades (doc 63): colour-coded PackML/E10 state badges, freshness surface,
- * severity token remap. Default OFF — set VITE_HMI_ISA101_V2=true to enable.
+ * shell alert chip, severity token remap.
+ *
+ * DEFAULT **ON** kể từ 2026-07-19 — user chốt "go live test" (live test nội bộ chính là
+ * phép kiểm GATE-1). Kill-switch: đặt VITE_HMI_ISA101_V2=false để về giao diện cũ.
  */
 export function isIsa101V2(): boolean {
-  return import.meta.env.VITE_HMI_ISA101_V2 === "true";
+  return import.meta.env.VITE_HMI_ISA101_V2 !== "false";
 }

@@ -160,6 +160,25 @@ Nguyên tắc: chỉ đổi tầng trình bày, tái dùng token/primitive sẵn
 - **DEP-08 → UI**: `ChangeoverQueue` nhúng trong ProductChangeoverWizard — operator chọn recipe (`changeover.recipeOptions`, gate machine_monitoring — catalog metadata) + gửi yêu cầu + "Yêu cầu của tôi"; người duyệt thấy hàng đợi pending với Duyệt (lỗi 2FA/SoD hiện nguyên văn từ server) / Từ chối (≥3 ký tự); người không có quyền → panel tự ẩn (FORBIDDEN → hide, không toast).
 - i18n mới: `freshness.* / cockpit.alarm* / trace.stationJourney* / changeover.*` ×3 locale.
 
+## Phụ lục B (2026-07-19) — GO-LIVE TEST: đóng hồ sơ
+
+**User chốt "go live test"** → live test nội bộ chính là phép kiểm GATE-1. Trạng thái đóng:
+
+| Mục | Trạng thái |
+|---|---|
+| Cờ `HMI_ISA101_V2` | **DEFAULT ON** (kill-switch `VITE_HMI_ISA101_V2=false`) — mọi bề mặt ISA-101 sống trong live test |
+| **FLW-01/G1 flagship** | ✅ ĐÓNG — `ShellAlertChip` ở header vỏ: chip đếm andon mở (tô theo mức nặng nhất, ẨN khi 0 = ISA-101 im lặng) → Sheet drawer → **Tiếp nhận** (`andon.acknowledge`, MTTA) → **Xử lý xong** (`andon.resolve`, MTTR) = **≤3 chạm, 0 chuyển màn, mọi trang**. Không lệnh chuyển động (ISO 10218) |
+| **AUD-08 severity** | ✅ ĐÓNG — `AlarmPriorityBadge` (4 hue token riêng) thay tone-system 5-tông ở EquipmentStandards (4 site): **critical ≠ high** lần đầu phân biệt được |
+| AUD-01/G8 FreshnessStrip · AUD-09 badges · AUD-02 alarm 4-trường · AUD-11 lang · AUD-05 ⌘K · AUD-04 serial-journey · DEP-05/06/08 · navbar AUD-N | ✅ ĐÓNG (các commit trước, giờ default-ON theo cờ) |
+
+### KHÔNG đóng được trong phiên (trung thực, kèm lý do)
+| Mục | Lý do | Kế |
+|---|---|---|
+| **IA-10 trục ISA-95 scoped-query** | Xâm lấn wiring **từng-trang** (~207 route đọc `useScope()`) + curate cây tài sản (nợ backfill machineType/site) — multi-session; làm ẩu = "scope-bar nói dối" (vi phạm bất biến trung thực) | Increment-2 sau live test |
+| **DEP-02 Hermes/CFX** | Cần **thiết bị thật 2 đầu** nói Hermes/CFX — chưa có pilot hardware | Khi pilot |
+| **Kiosk SCR-02 re-layout + hub deep-link** | Đổi hành vi điều hướng lớn — nên lấy feedback live test trước | Sau live test |
+| Panel-PC thật (glove-mode capacitive), máy yếu nhất, điểm-dữ-liệu-tối-đa/màn | Phần cứng/thông số chưa có | Chặn §S5 POC |
+
 ## GIẢ ĐỊNH & PHỤ THUỘC
 - **GĐ**: 7 vùng phủ hết ~207 route · `commandCenter.hierarchy` trả cây 5 tầng dùng được (nợ backfill machineType/site) · payload phần lớn có `lastEventAt` · DashboardLayout/Sidebar gánh được chrome.
 - **DEP-02** Hermes/CFX handshake+WIP · **DEP-05** full genealogy tRPC · **DEP-06** field cause alarm · **DEP-08** changeover 2-người.

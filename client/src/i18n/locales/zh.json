@@ -16504,5 +16504,17 @@
     "approve": "批准",
     "reject": "拒绝",
     "notApproved": "未二次批准"
+  },
+  "andonChip": {
+    "aria": "未关闭警报",
+    "title": "未关闭警报",
+    "desc": "就地确认并处理 — 无需离开当前页面。",
+    "ack": "确认",
+    "ackedAt": "已确认",
+    "resolve": "处理完成",
+    "acked": "已确认(MTTA 已记录)。",
+    "resolved": "已处理(MTTR 已记录)。",
+    "notePh": "处理备注(可选,用于处理完成)",
+    "minShort": "分"
   }
 }

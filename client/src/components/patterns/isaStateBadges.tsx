@@ -67,3 +67,5 @@ export const E10StateBadge = badgeFor("e10");
 export const AndonBadge = badgeFor("andon");
 /** PackML unit-mode chip (Production / Maintenance / Manual). */
 export const UnitModeChip = badgeFor("unitmode");
+/** ISA-18.2 alarm priority badge — 4 DISTINCT hues (critical≠high, AUD-08 fix). */
+export const AlarmPriorityBadge = badgeFor("alarm");

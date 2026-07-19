@@ -16497,5 +16497,17 @@
     "approve": "Approve",
     "reject": "Reject",
     "notApproved": "not second-approved"
+  },
+  "andonChip": {
+    "aria": "Open alarms",
+    "title": "Open alarms",
+    "desc": "Acknowledge and resolve in place — without leaving the current screen.",
+    "ack": "Acknowledge",
+    "ackedAt": "Acknowledged",
+    "resolve": "Resolve",
+    "acked": "Acknowledged (MTTA stamped).",
+    "resolved": "Resolved (MTTR stamped).",
+    "notePh": "Resolution note (optional, used by Resolve)",
+    "minShort": "m"
   }
 }
