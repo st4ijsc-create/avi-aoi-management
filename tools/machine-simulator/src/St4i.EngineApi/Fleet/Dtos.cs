@@ -103,7 +103,14 @@ public sealed record OnboardingRegisterRequest(string SerialNumber, string? Name
 
 public sealed record OnboardingPollRequest(string SerialNumber, bool IsDemo = true, string? ServerUrl = null);
 
-public sealed record OnboardingClaimRequest(string SerialNumber, string? ClaimToken, bool IsDemo = true, string? ServerUrl = null);
+/// <summary>E2: <c>Name</c>/<c>MachineType</c> added (optional — a client that doesn't send them still
+/// works, falling back to a generic Automation profile) so a successful claim can build the
+/// <see cref="MachineDescriptor"/> needed to join the sim fleet (see
+/// <see cref="OnboardingFleetJoin"/>) without OnboardingService having to remember state from the
+/// earlier Register call keyed by serialNumber. The WEB wizard already tracks both at the top of its
+/// onboarding flow (used by Register/Enroll already) — E2 just needs it threaded into the Claim POST
+/// body too.</summary>
+public sealed record OnboardingClaimRequest(string SerialNumber, string? ClaimToken, bool IsDemo = true, string? ServerUrl = null, string? Name = null, string? MachineType = null);
 
 public sealed record OnboardingEnrollRequest(string SerialNumber, string? EnrollToken, string? Name, string? MachineType, bool IsDemo = true, string? ServerUrl = null);
 

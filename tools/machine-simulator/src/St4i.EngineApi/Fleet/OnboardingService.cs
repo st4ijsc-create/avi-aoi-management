@@ -13,8 +13,14 @@ namespace St4i.EngineApi.Fleet;
 /// <c>OnboardingViewModel</c> — same demo-fabrication contract (default <c>isDemo=true</c> so it works
 /// with no live server reachable; Register goes straight to "Pending", PollApproval resolves "Approved"
 /// immediately, Claim/Enroll mint a demo mk_ key locally), with Live mode (<c>isDemo=false</c>) doing
-/// the real thing over a raw <see cref="HttpClient"/> (register/poll — no SDK method covers the REST
-/// bootstrap endpoints) or <see cref="St4iDeviceClient"/> (claim/enroll).
+/// the real thing over a raw <see cref="HttpClient"/> (register/poll/claim — the REST proxy contract
+/// verified against the real server, doc 61) or <see cref="St4iDeviceClient"/> (enroll only — no REST
+/// proxy exists for it, so its tRPC path is the sole way to reach it).
+///
+/// E2: deliberately has NO dependency on <see cref="FleetHost"/> — a successful Claim/Enroll here just
+/// returns the provisioned <c>mk_</c> credential; joining the machine into the live simulated fleet is
+/// the endpoint layer's job (see <see cref="St4i.EngineApi.Endpoints.OnboardingEndpoints"/> +
+/// <see cref="OnboardingFleetJoin"/>), keeping this class free of fleet state and independently testable.
 /// </summary>
 public sealed class OnboardingService
 {
@@ -123,14 +129,32 @@ public sealed class OnboardingService
         }
     }
 
+    /// <summary>E2: goes over the raw <see cref="HttpClient"/> (same <see cref="PostJsonAsync"/> helper
+    /// <see cref="LiveRegisterAsync"/> uses), NOT <see cref="St4iDeviceClient.ClaimAsync"/> — verified
+    /// against the real server (<c>server/_core/index.ts</c> + doc 61): the REST proxy is
+    /// <c>POST {serverUrl}/api/machine/claim {serialNumber,claimToken}</c> →
+    /// <c>{success,apiKey,machineId,code,message}</c>. <see cref="St4iDeviceClient.ClaimAsync"/> instead
+    /// posts to the DIFFERENT endpoint <c>/api/trpc/machine.claimKey</c> with a superjson-wrapped body
+    /// (<c>{"json":{...}}</c>) and unwraps a <c>result.data.json</c> envelope on the way back — a
+    /// mismatch with the documented/verified REST contract this method is meant to speak, so it was
+    /// dropped here in favor of matching Register/Poll's proven raw-HttpClient shape exactly. (Enroll has
+    /// no REST proxy on the server at all — <see cref="LiveEnrollAsync"/> correctly keeps using
+    /// <see cref="St4iDeviceClient.EnrollAsync"/>'s tRPC path, the only way to reach it.)</summary>
     private async Task<OnboardingStepResult> LiveClaimAsync(OnboardingClaimRequest req, CancellationToken ct)
     {
         try
         {
             var serverUrl = RequireServerUrl(req.ServerUrl);
-            var client = new St4iDeviceClient(serverUrl: serverUrl, serialNumber: req.SerialNumber);
-            var cred = await client.ClaimAsync(req.ClaimToken ?? string.Empty, req.SerialNumber, ct).ConfigureAwait(false);
-            return AbsorbCredential(cred, "Claimed", req.SerialNumber);
+            var body = new Dictionary<string, object?> { ["serialNumber"] = req.SerialNumber, ["claimToken"] = req.ClaimToken };
+            var json = await PostJsonAsync(serverUrl, "/api/machine/claim", body, ct).ConfigureAwait(false);
+
+            var apiKey = GetString(json, "apiKey");
+            if (string.IsNullOrEmpty(apiKey))
+                return new OnboardingStepResult("Idle", null, null, false, "Claim returned no apiKey.");
+
+            var code = GetString(json, "code") ?? req.SerialNumber;
+            CredentialStore.Save(code, apiKey);
+            return new OnboardingStepResult("Claimed", code, apiKey, false, $"Claimed — mk_ key stored for {code}");
         }
         catch (Exception ex)
         {
