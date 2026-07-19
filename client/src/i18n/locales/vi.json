@@ -16488,5 +16488,13 @@
     "resolved": "Đã xử lý xong (MTTR đã ghi).",
     "notePh": "Ghi chú xử lý (tùy chọn, dùng cho nút Xử lý xong)",
     "minShort": "ph"
+  },
+  "scopeAxis": {
+    "factory": "Xưởng",
+    "line": "Chuyền",
+    "machine": "Máy",
+    "clear": "Xoá phạm vi",
+    "prefix": "Phạm vi",
+    "notWired": "trang này chưa lọc"
   }
 }

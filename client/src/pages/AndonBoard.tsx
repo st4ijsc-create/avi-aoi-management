@@ -19,6 +19,9 @@
  * cockpit, line header → drill view) for setup use.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -96,10 +99,14 @@ export default function AndonBoard() {
   // ── Data: 15s poll fallback; socket events refetch sooner ────────────────
   const polling = usePollingInterval(POLL_MS);
   const utils = trpc.useUtils();
+  // doc 64 IA-10 S1 — trục phạm vi: URL kiosk (?factory=&lines=) THẮNG (cấu hình TV
+  // chủ đích); trục lấp khi URL không chỉ định → board theo Xưởng/Chuyền đã chọn.
+  const { scope: assetScope } = useScope(["factory", "line"]);
+  useScopeWired();
   const boardQuery = trpc.dashboard.getAndonBoard.useQuery(
     {
-      factoryId: params.factoryId ?? undefined,
-      lineIds: params.lineIds.length > 0 ? params.lineIds : undefined,
+      factoryId: params.factoryId ?? assetScope.factoryId ?? undefined,
+      lineIds: params.lineIds.length > 0 ? params.lineIds : assetScope.lineId !== undefined ? [assetScope.lineId] : undefined,
     },
     { ...polling, refetchOnReconnect: "always" },
   );

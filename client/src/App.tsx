@@ -9,6 +9,8 @@ import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SiteProvider } from "./contexts/SiteContext";
+// doc 64 IA-10 — trục phạm vi ISA-95 bền (Xưởng›Chuyền›Máy) sống qua điều hướng.
+import { AssetScopeProvider } from "./contexts/AssetScopeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
@@ -580,6 +582,8 @@ function App() {
             it from the header SiteSwitcher (admin-gated sites.list) and persists the
             active site to localStorage. Non-admins degrade to a static "All sites". */}
         <SiteProvider>
+          {/* doc 64 IA-10 — AssetScopeProvider: trục phạm vi tài sản, localStorage-persisted. */}
+          <AssetScopeProvider>
           <TooltipProvider>
             {/* U1 (doc 26): EngineeringProvider — store lastSelected {project/thiết bị/
                 workflow} làm fallback cho deep-link golden-thread giữa các trang Kỹ thuật. */}
@@ -611,6 +615,7 @@ function App() {
             </ProgrammingCopilotProvider>
             </EngineeringProvider>
           </TooltipProvider>
+          </AssetScopeProvider>
         </SiteProvider>
       </ThemeProvider>
     </ErrorBoundary>

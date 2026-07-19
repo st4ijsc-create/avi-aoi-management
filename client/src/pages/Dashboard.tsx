@@ -71,6 +71,9 @@ import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVis
 import type { WidgetData } from "@/components/WidgetDataExport";
 import CustomDashboardViewer from "@/components/CustomDashboardViewer";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Socket } from "socket.io-client";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { RealtimeBadge } from "@/components/RealtimeBadge";
@@ -569,9 +572,18 @@ export default function Dashboard() {
     };
   }, [ngTimeFilter]);
 
+  // doc 64 IA-10 S1 — trục phạm vi ISA-95: axis THẮNG dropdown factory cục bộ;
+  // machineId từ trục đi thẳng vào stats. getAllMachinesStats/getAllOEE server
+  // CHƯA nhận scope (DEP-S2, ghi doc 64) — các widget đó vẫn toàn-cục.
+  const { scope: assetScope } = useScope(["factory", "machine"]);
+  useScopeWired();
+  const effectiveFactoryId =
+    assetScope.factoryId ?? (selectedFactory !== "all" ? parseInt(selectedFactory) : undefined);
+
   // Fetch stats with comparison
   const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
+    machineId: assetScope.machineId,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {
@@ -588,7 +600,7 @@ export default function Dashboard() {
 
   // Fetch shift stats
   const { data: shiftStats } = trpc.dashboard.getShiftStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {

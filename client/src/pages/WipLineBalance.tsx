@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -64,7 +67,11 @@ function reasonLabel(t: (k: string, d: string) => string, code: string): string 
 export default function WipLineBalance() {
   const { t } = useTranslation();
   const [lineInput, setLineInput] = useState("");
-  const lineId = lineInput.trim() ? Number(lineInput.trim()) : undefined;
+  // doc 64 IA-10 S1 — trục phạm vi: ô nhập tay THẮNG (ý định tại-trang); trục lấp
+  // khi ô trống → chọn Chuyền ở header là WIP tự lọc theo chuyền đó.
+  const { scope: assetScope } = useScope(["line"]);
+  useScopeWired();
+  const lineId = lineInput.trim() ? Number(lineInput.trim()) : assetScope.lineId;
   const validLine = lineId !== undefined && Number.isFinite(lineId) && lineId > 0;
 
   const summary = trpc.wip.summary.useQuery(

@@ -16516,5 +16516,13 @@
     "resolved": "已处理(MTTR 已记录)。",
     "notePh": "处理备注(可选,用于处理完成)",
     "minShort": "分"
+  },
+  "scopeAxis": {
+    "factory": "车间",
+    "line": "产线",
+    "machine": "机器",
+    "clear": "清除范围",
+    "prefix": "范围",
+    "notWired": "此页面尚未过滤"
   }
 }

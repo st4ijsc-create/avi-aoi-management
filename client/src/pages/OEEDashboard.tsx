@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Redirect } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
@@ -168,6 +171,14 @@ export function OEEDashboardContent() {
     category: "unplanned" as DowntimeEvent['category'],
     reason: "",
   });
+
+  // doc 64 IA-10 S1 — máy từ trục phạm vi (header) tự chọn vào panel máy của trang.
+  // getAllOEE (lưới fleet) server chưa nhận scope — DEP-S2 (doc 64).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) setSelectedMachine(assetScope.machineId);
+  }, [assetScope.machineId]);
 
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();

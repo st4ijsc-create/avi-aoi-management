@@ -37,6 +37,8 @@ import { SiteHealthDot } from "./SiteHealthDot";
 import { FreshnessStrip } from "./FreshnessStrip";
 // doc 63 (FLW-01/G1) — shell alert chip: ack+resolve andon từ mọi trang, ≤3 chạm.
 import { ShellAlertChip } from "./ShellAlertChip";
+// doc 64 IA-10 — trục phạm vi ISA-95 + chip bất biến trung thực.
+import { AssetScopeBar, ScopeStatusChip } from "./AssetScopeBar";
 import { isIsa101V2 } from "@/lib/hmiFlags";
 import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
@@ -566,6 +568,8 @@ function DashboardLayoutContent({
 
           {/* Right — alerts · site-health dot · theme/lang. */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* doc 64 IA-10 S0.3 — trục phạm vi ISA-95 (Xưởng›Chuyền›Máy), bền qua điều hướng. */}
+            {isIsa101V2() && <AssetScopeBar className="hidden xl:flex" />}
             <AIActionInboxLauncher />
             <NotificationCenter />
             {/* doc 63 (FLW-01/G1) — shell alert chip: đếm andon mở, chạm→drawer Ack/Resolve.
@@ -582,7 +586,7 @@ function DashboardLayoutContent({
         {showBreadcrumbs && (
           // F2 — slim global breadcrumb row rendered ONCE from the shell (covers all
           // pages without editing each PageHeader). Query strings are stripped.
-          <div className="border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
             <Breadcrumb>
               <BreadcrumbList>
                 {breadcrumbs.map((crumb, i) => {
@@ -604,6 +608,9 @@ function DashboardLayoutContent({
                 })}
               </BreadcrumbList>
             </Breadcrumb>
+            {/* doc 64 IA-10 S0.4 — bất biến trung thực: trang chưa wire scope hiện rõ
+                "chưa lọc theo phạm vi" khi trục có selection (không ngầm-toàn-cục). */}
+            {isIsa101V2() && <ScopeStatusChip className="shrink-0" />}
           </div>
         )}
         <PermissionExpiryBanner />

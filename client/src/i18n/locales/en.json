@@ -16509,5 +16509,13 @@
     "resolved": "Resolved (MTTR stamped).",
     "notePh": "Resolution note (optional, used by Resolve)",
     "minShort": "m"
+  },
+  "scopeAxis": {
+    "factory": "Factory",
+    "line": "Line",
+    "machine": "Machine",
+    "clear": "Clear scope",
+    "prefix": "Scope",
+    "notWired": "this page is not filtered yet"
   }
 }

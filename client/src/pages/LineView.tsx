@@ -15,6 +15,9 @@
  * lệnh cần machine_control/canEdit (hiện-nhưng-khoá, doc 26 U4).
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useLocation, useRoute } from "wouter";
 import {
@@ -85,6 +88,9 @@ export default function LineView() {
 
   // ── Chọn tuyến: URL /line-view/:lineId? là nguồn sự thật; không có → tuyến đầu.
   const routeLineId = params?.lineId != null && /^\d+$/.test(params.lineId) ? Number(params.lineId) : null;
+  // doc 64 IA-10 S1 — trục phạm vi ISA-95 (đọc Chuyền từ header khi route không chỉ định).
+  const { scope: assetScope } = useScope(["line"]);
+  useScopeWired();
 
   const listPolling = usePollingInterval(15_000);
   const linesQ = trpc.lineController.listStates.useQuery(undefined, {
@@ -92,7 +98,8 @@ export default function LineView() {
     ...listPolling,
   });
   const lines = linesQ.data ?? [];
-  const selectedLineId = routeLineId ?? lines[0]?.lineId ?? null;
+  // doc 64 IA-10 S1 — ưu tiên: route param (link chia sẻ) → trục phạm vi (header) → tuyến đầu.
+  const selectedLineId = routeLineId ?? assetScope.lineId ?? lines[0]?.lineId ?? null;
 
   // ── Poll chi tiết ~5s (spec §5.2 — suy giảm mượt: PollFreshness hiện tuổi dữ liệu).
   const detailPolling = usePollingInterval(5_000);
