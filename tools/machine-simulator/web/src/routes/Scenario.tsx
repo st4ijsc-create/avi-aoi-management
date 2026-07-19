@@ -1,14 +1,415 @@
-import { SlidersHorizontal } from "lucide-react"
+import * as React from "react"
+import { motion } from "framer-motion"
+import {
+  AlertTriangle,
+  FolderInput,
+  Gauge,
+  Loader2,
+  Radio,
+  SlidersHorizontal,
+  Wifi,
+  WifiOff,
+  Zap,
+} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
-import { PlaceholderScreen } from "@/components/PlaceholderScreen"
+import {
+  useApplyScenario,
+  useApplyScenarioPreset,
+  useBurstScenario,
+  useScenario,
+  type ScenarioInput,
+} from "@/lib/api"
+import { cn } from "@/lib/utils"
+import { fadeSlideUp } from "@/theme/motion"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Slider } from "@/components/ui/slider"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { Switch } from "@/components/ui/switch"
+
+// How long after a local slider edit to ignore the ~1s poll's echoed values — long enough to cover
+// the debounced mutation's own round trip, short enough that a server-side change (another client, or
+// Burst's automatic revert ~4s later) still reaches this screen promptly.
+const LOCAL_EDIT_COOLDOWN_MS = 1200
+const APPLY_DEBOUNCE_MS = 200
+
+const PRESET_META: Record<string, { label: string; description: string; icon: LucideIcon }> = {
+  normal: {
+    label: "Ca bình thường",
+    description: "Tốc độ và tỷ lệ lỗi mặc định của dây chuyền — nền cho mọi demo khác.",
+    icon: Gauge,
+  },
+  "high-defect": {
+    label: "Lô lỗi cao",
+    description: "Tăng mạnh tỷ lệ lỗi tiêm thêm để trình diễn andon/cảnh báo.",
+    icon: AlertTriangle,
+  },
+  "sensor-drift": {
+    label: "Sensor drift",
+    description: "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ của IOT_SENSOR.",
+    icon: Radio,
+  },
+  "network-outage": {
+    label: "Mất mạng demo",
+    description: "Chuyển sang store-and-forward lỗi cao (~90%) trong khi fleet vẫn chạy.",
+    icon: WifiOff,
+  },
+  "hotfolder-aoi": {
+    label: "Hot-folder AOI",
+    description: "Ghi một file đo lường mẫu rồi để driver AOI đọc lại thật.",
+    icon: FolderInput,
+  },
+}
+
+function formatMultiplier(n: number): string {
+  return `${n.toFixed(2)}x`
+}
+
+function formatPercent(n: number): string {
+  return `${Math.round(n * 100)}%`
+}
+
+interface SliderRowProps {
+  label: string
+  displayValue: string
+  value: number
+  min: number
+  max: number
+  step: number
+  ariaLabel: string
+  onValueChange: (value: number) => void
+  onValueCommitted: (value: number) => void
+}
+
+function SliderRow({ label, displayValue, value, min, max, step, ariaLabel, onValueChange, onValueCommitted }: SliderRowProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-text-body">{label}</span>
+        <span className="font-numeric text-sm font-semibold text-navy-700">{displayValue}</span>
+      </div>
+      <Slider
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={ariaLabel}
+        onValueChange={(next) => onValueChange(next as number)}
+        onValueCommitted={(next) => onValueCommitted(next as number)}
+      />
+    </div>
+  )
+}
+
+interface PresetCardProps {
+  name: string
+  active: boolean
+  pending: boolean
+  onApply: () => void
+}
+
+function PresetCard({ name, active, pending, onApply }: PresetCardProps) {
+  const meta = PRESET_META[name] ?? { label: name, description: "Preset tùy chỉnh.", icon: SlidersHorizontal }
+  const Icon = meta.icon
+  return (
+    <button
+      type="button"
+      onClick={onApply}
+      disabled={pending}
+      aria-pressed={active}
+      className={cn(
+        "flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50 disabled:cursor-not-allowed disabled:opacity-60",
+        active ? "border-navy-600 bg-navy-50" : "border-border bg-surface-base hover:bg-surface-subtle"
+      )}
+    >
+      <div className="flex w-full items-center justify-between">
+        <Icon className={cn("size-4", active ? "text-navy-600" : "text-text-muted")} aria-hidden="true" />
+        {pending ? <Loader2 className="size-3.5 animate-spin text-navy-600" aria-hidden="true" /> : null}
+      </div>
+      <span className={cn("text-sm font-semibold", active ? "text-navy-700" : "text-text-strong")}>{meta.label}</span>
+      <span className="text-xs text-text-muted">{meta.description}</span>
+    </button>
+  )
+}
+
+function ScenarioSkeleton() {
+  return (
+    <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="h-4 w-96" />
+      </div>
+      <Skeleton className="h-16 w-full rounded-xl" />
+      <Skeleton className="h-56 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </div>
+  )
+}
 
 export default function Scenario() {
+  const scenarioQuery = useScenario()
+  const applyScenario = useApplyScenario()
+  const applyPreset = useApplyScenarioPreset()
+  const burst = useBurstScenario()
+
+  const [cycleRate, setCycleRate] = React.useState(1)
+  const [defectRate, setDefectRate] = React.useState(0)
+  const [faultRate, setFaultRate] = React.useState(0)
+  const [networkOutage, setNetworkOutage] = React.useState(false)
+  const [hotFolderStatus, setHotFolderStatus] = React.useState<string | null>(null)
+  const [pendingPreset, setPendingPreset] = React.useState<string | null>(null)
+
+  const latestRef = React.useRef<ScenarioInput>({ cycleRate: 1, defectRate: 0, faultRate: 0, networkOutage: false })
+  const lastEditAtRef = React.useRef(0)
+  const debounceRef = React.useRef<number | null>(null)
+  const syncedOnceRef = React.useRef(false)
+
+  const applyAll = React.useCallback((next: Partial<ScenarioInput>) => {
+    const merged = { ...latestRef.current, ...next }
+    latestRef.current = merged
+    lastEditAtRef.current = Date.now()
+    return merged
+  }, [])
+
+  const applyDebounced = React.useCallback(
+    (next: Partial<ScenarioInput>) => {
+      const merged = applyAll(next)
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null
+        applyScenario.mutate(merged)
+      }, APPLY_DEBOUNCE_MS)
+    },
+    [applyAll, applyScenario]
+  )
+
+  const applyImmediate = React.useCallback(
+    (next: Partial<ScenarioInput>) => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current)
+        debounceRef.current = null
+      }
+      const merged = applyAll(next)
+      applyScenario.mutate(merged)
+    },
+    [applyAll, applyScenario]
+  )
+
+  // Sync local slider state from the polled server snapshot — skipped for a short cooldown after any
+  // local edit (see LOCAL_EDIT_COOLDOWN_MS) so a mid-drag poll tick can't yank the thumb back under the
+  // user's pointer. TanStack Query's structural sharing already means `scenarioQuery.data` only gets a
+  // new reference when something actually changed content-wise, so this effect is a no-op on most polls.
+  React.useEffect(() => {
+    const current = scenarioQuery.data?.current
+    if (!current) return
+    if (syncedOnceRef.current && Date.now() - lastEditAtRef.current < LOCAL_EDIT_COOLDOWN_MS) return
+
+    syncedOnceRef.current = true
+    setCycleRate(current.cycleRate)
+    setDefectRate(current.defectRate)
+    setFaultRate(current.faultRate)
+    setNetworkOutage(current.networkOutage)
+    latestRef.current = {
+      cycleRate: current.cycleRate,
+      defectRate: current.defectRate,
+      faultRate: current.faultRate,
+      networkOutage: current.networkOutage,
+    }
+  }, [scenarioQuery.data])
+
+  React.useEffect(
+    () => () => {
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
+    },
+    []
+  )
+
+  const handlePreset = (name: string) => {
+    setPendingPreset(name)
+    applyPreset.mutate(name, {
+      onSuccess: (data) => {
+        lastEditAtRef.current = Date.now()
+        setCycleRate(data.scenario.cycleRate)
+        setDefectRate(data.scenario.defectRate)
+        setFaultRate(data.scenario.faultRate)
+        setNetworkOutage(data.scenario.networkOutage)
+        latestRef.current = {
+          cycleRate: data.scenario.cycleRate,
+          defectRate: data.scenario.defectRate,
+          faultRate: data.scenario.faultRate,
+          networkOutage: data.scenario.networkOutage,
+        }
+        if (data.hotFolderStatus) setHotFolderStatus(data.hotFolderStatus)
+      },
+      onSettled: () => setPendingPreset(null),
+    })
+  }
+
+  const handleBurst = () => {
+    burst.mutate(undefined, {
+      onSuccess: (data) => {
+        lastEditAtRef.current = Date.now()
+        setCycleRate(data.cycleRate)
+        setDefectRate(data.defectRate)
+        setFaultRate(data.faultRate)
+        setNetworkOutage(data.networkOutage)
+        latestRef.current = {
+          cycleRate: data.cycleRate,
+          defectRate: data.defectRate,
+          faultRate: data.faultRate,
+          networkOutage: data.networkOutage,
+        }
+      },
+    })
+  }
+
+  if (scenarioQuery.isPending) return <ScenarioSkeleton />
+
+  if (scenarioQuery.isError) {
+    return (
+      <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+        <h1 className="text-2xl font-semibold text-text-strong">Scenario</h1>
+        <p className="text-sm text-danger-text">
+          Could not reach the engine at the configured URL — check that St4i.EngineApi is running.
+        </p>
+      </motion.div>
+    )
+  }
+
+  const current = scenarioQuery.data?.current
+  const presets = scenarioQuery.data?.presets ?? []
+
   return (
-    <PlaceholderScreen
-      icon={SlidersHorizontal}
-      title="Scenario"
-      description="Cycle-rate, defect-rate and fault-rate sliders plus presets and burst mode — wired to /v1/scenario/*."
-      task="Coming in a later task"
-    />
+    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold text-text-strong">Scenario</h1>
+        <p className="text-sm text-text-muted">
+          Sliders + preset trình diễn — thay đổi ở đây tác động thật lên fleet đang chạy.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">Trạng thái hiện tại</span>
+            <span className="font-numeric text-sm text-text-body">{current?.statusLine ?? "—"}</span>
+            {hotFolderStatus ? <span className="text-xs text-text-muted">{hotFolderStatus}</span> : null}
+          </div>
+          {current ? <StatusBadge status={current.activePreset === "burst" ? "warn" : "info"}>{current.activePreset}</StatusBadge> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-strong">Điều chỉnh trực tiếp</h2>
+            <p className="text-xs text-text-muted">Mỗi lần kéo áp dụng ngay lên fleet đang chạy.</p>
+          </div>
+
+          <SliderRow
+            label="Tốc độ chu kỳ (Cycle rate)"
+            displayValue={formatMultiplier(cycleRate)}
+            value={cycleRate}
+            min={0.25}
+            max={8}
+            step={0.05}
+            ariaLabel="Cycle rate multiplier"
+            onValueChange={(v) => {
+              setCycleRate(v)
+              applyDebounced({ cycleRate: v })
+            }}
+            onValueCommitted={(v) => {
+              setCycleRate(v)
+              applyImmediate({ cycleRate: v })
+            }}
+          />
+
+          <SliderRow
+            label="Tỷ lệ lỗi (Defect rate)"
+            displayValue={formatPercent(defectRate)}
+            value={defectRate}
+            min={0}
+            max={1}
+            step={0.01}
+            ariaLabel="Extra defect rate"
+            onValueChange={(v) => {
+              setDefectRate(v)
+              applyDebounced({ defectRate: v })
+            }}
+            onValueCommitted={(v) => {
+              setDefectRate(v)
+              applyImmediate({ defectRate: v })
+            }}
+          />
+
+          <SliderRow
+            label="Tỷ lệ lỗi thiết bị (Fault rate)"
+            displayValue={formatPercent(faultRate)}
+            value={faultRate}
+            min={0}
+            max={1}
+            step={0.01}
+            ariaLabel="Fault rate"
+            onValueChange={(v) => {
+              setFaultRate(v)
+              applyDebounced({ faultRate: v })
+            }}
+            onValueCommitted={(v) => {
+              setFaultRate(v)
+              applyImmediate({ faultRate: v })
+            }}
+          />
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <label htmlFor="scenario-network-outage" className="flex items-center gap-2.5">
+              {networkOutage ? (
+                <WifiOff className="size-4 text-danger-text" aria-hidden="true" />
+              ) : (
+                <Wifi className="size-4 text-text-muted" aria-hidden="true" />
+              )}
+              <span className="flex flex-col">
+                <span className="text-sm font-medium text-text-body">Mất mạng (Network outage)</span>
+                <span className="text-[11px] text-text-muted">Chuyển transport sang store-and-forward lỗi cao.</span>
+              </span>
+              <Switch
+                id="scenario-network-outage"
+                checked={networkOutage}
+                onCheckedChange={(checked) => {
+                  setNetworkOutage(checked)
+                  applyImmediate({ networkOutage: checked })
+                }}
+              />
+            </label>
+
+            <Button type="button" variant="outline" onClick={handleBurst} disabled={burst.isPending}>
+              {burst.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Zap className="size-3.5" aria-hidden="true" />}
+              Burst (6x, 4s)
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-sm font-semibold text-text-strong">Preset trình diễn</h2>
+            <p className="text-xs text-text-muted">Mỗi nút đặt lại cả 3 chỉ số + trạng thái mạng, áp dụng một lần lên fleet đang chạy.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {presets.map((preset) => (
+              <PresetCard
+                key={preset.name}
+                name={preset.name}
+                active={current?.activePreset === preset.name}
+                pending={pendingPreset === preset.name && applyPreset.isPending}
+                onApply={() => handlePreset(preset.name)}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }

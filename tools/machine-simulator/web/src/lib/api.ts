@@ -135,6 +135,149 @@ export interface MachineDetail {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// GET/PUT /v1/settings, POST /v1/settings/probe — Task 7. Wire shapes mirror `Fleet/Dtos.cs`'s
+// `SettingsDto`/`SettingsUpdateRequest`/`ProbeRequest` and `St4i.EdgeCore.Infrastructure.ResilienceProbe`'s
+// `ProbeResult`.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface Settings {
+  serverUrl: string
+  verifyTls: boolean
+  language: string
+  /** The machine code whose stored `mk_` credential is used when Live/Auto mode (re)builds the live
+   * transport — see `FleetHost.UpdateSettings`'s `CredentialStore.Load(_machineCode)`. */
+  machineCode: string
+  mode: TransportMode
+}
+
+/** All fields optional — mirrors `SettingsUpdateRequest`: an omitted field leaves that setting
+ * unchanged server-side. */
+export interface SettingsUpdateInput {
+  serverUrl?: string
+  verifyTls?: boolean
+  language?: string
+  machineCode?: string
+}
+
+/** `ResilienceProbe.ProbeAsync` result — bounded to a 5s server-side HttpClient timeout, so this never
+ * hangs the caller regardless of whether `serverUrl` is unreachable/refused/DNS-fails (`reachable:
+ * false, status: 0` instead of a thrown error). */
+export interface ProbeResult {
+  reachable: boolean
+  status: number
+  paths: string[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst, GET /v1/scenario — Task 7. Wire shapes
+// mirror `Fleet/Dtos.cs`'s `ScenarioDto`/`ScenarioRequest`/`ScenarioPresetInfo` and
+// `St4i.EdgeCore.Engine.ScenarioConfig`.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `ScenarioDto` — the currently-active scenario. Field names deliberately differ from
+ * `ScenarioPresetConfig` below (`cycleRate` vs. `cycleRateMultiplier`, etc.) because that's what the two
+ * underlying C# records (`ScenarioRequest`/`ScenarioDto` vs. `ScenarioConfig`) actually name them. */
+export interface Scenario {
+  cycleRate: number
+  defectRate: number
+  faultRate: number
+  networkOutage: boolean
+  /** Kebab-case preset key ("normal", "high-defect", …), `"custom"` after a manual slider edit, or
+   * `"burst"` while a Burst spike is active. */
+  activePreset: string
+  /** Pre-formatted human-readable summary — safe to render directly. */
+  statusLine: string
+}
+
+export interface ScenarioInput {
+  cycleRate: number
+  defectRate: number
+  faultRate: number
+  networkOutage: boolean
+}
+
+/** `ScenarioConfig`'s own wire shape, as nested inside `ScenarioPreset.config` below. */
+export interface ScenarioPresetConfig {
+  cycleRateMultiplier: number
+  extraDefectRate: number
+  faultRate: number
+  networkOutage: boolean
+}
+
+export interface ScenarioPreset {
+  name: string
+  description: string
+  config: ScenarioPresetConfig
+  /** True only for the hot-folder-AOI preset — a one-shot demo (write+ingest a sample doc-28 file), not
+   * a persistent config, so applying it also returns a `hotFolderStatus` string (see
+   * `ScenarioPresetResult`). */
+  triggersHotFolderDemo: boolean
+}
+
+export interface ScenarioSnapshot {
+  current: Scenario
+  presets: ScenarioPreset[]
+}
+
+export interface ScenarioPresetResult {
+  scenario: Scenario
+  hotFolderStatus: string | null
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/onboarding/{register|poll|claim|enroll|paste-key} — Task 7. Wire shapes mirror
+// `Fleet/Dtos.cs`'s `Onboarding*Request`/`OnboardingStepResult`. `isDemo` defaults to `true` server-side
+// when omitted (fabricates the whole flow instantly, no live ST4I server needed) — every input type
+// below marks it optional for the same reason.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `OnboardingStepResult.Step` — open string (mirrors the server's own untyped `string`): `"Idle" |
+ * "Pending" | "Approved" | "Claimed" | "Enrolled"` in this build, but not narrowed to a union so an
+ * unrecognized token still renders instead of failing to type-check. */
+export interface OnboardingResult {
+  step: string
+  machineCode: string | null
+  mkKey: string | null
+  isApproved: boolean
+  message: string
+}
+
+export interface OnboardingRegisterInput {
+  serialNumber: string
+  name?: string
+  machineType?: string
+  isDemo?: boolean
+  serverUrl?: string
+}
+
+export interface OnboardingPollInput {
+  serialNumber: string
+  isDemo?: boolean
+  serverUrl?: string
+}
+
+export interface OnboardingClaimInput {
+  serialNumber: string
+  claimToken?: string
+  isDemo?: boolean
+  serverUrl?: string
+}
+
+export interface OnboardingEnrollInput {
+  serialNumber: string
+  enrollToken?: string
+  name?: string
+  machineType?: string
+  isDemo?: boolean
+  serverUrl?: string
+}
+
+export interface OnboardingPasteKeyInput {
+  machineCode: string
+  mkKey: string
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // POST /v1/machines/{code}/sync-config
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -190,6 +333,30 @@ const endpoints = {
   machineDetail: (code: string) => request<MachineDetail>(`/v1/machines/${encodeURIComponent(code)}`),
   syncConfig: (code: string) =>
     request<SyncConfigResult>(`/v1/machines/${encodeURIComponent(code)}/sync-config`, { method: "POST" }),
+
+  settings: () => request<Settings>("/v1/settings"),
+  updateSettings: (input: SettingsUpdateInput) =>
+    request<Settings>("/v1/settings", { method: "PUT", body: JSON.stringify(input) }),
+  probeSettings: (serverUrl: string) =>
+    request<ProbeResult>("/v1/settings/probe", { method: "POST", body: JSON.stringify({ serverUrl }) }),
+
+  scenario: () => request<ScenarioSnapshot>("/v1/scenario"),
+  applyScenario: (input: ScenarioInput) =>
+    request<Scenario>("/v1/scenario", { method: "POST", body: JSON.stringify(input) }),
+  applyScenarioPreset: (name: string) =>
+    request<ScenarioPresetResult>("/v1/scenario/preset", { method: "POST", body: JSON.stringify({ name }) }),
+  burstScenario: () => request<Scenario>("/v1/scenario/burst", { method: "POST" }),
+
+  onboardingRegister: (input: OnboardingRegisterInput) =>
+    request<OnboardingResult>("/v1/onboarding/register", { method: "POST", body: JSON.stringify(input) }),
+  onboardingPoll: (input: OnboardingPollInput) =>
+    request<OnboardingResult>("/v1/onboarding/poll", { method: "POST", body: JSON.stringify(input) }),
+  onboardingClaim: (input: OnboardingClaimInput) =>
+    request<OnboardingResult>("/v1/onboarding/claim", { method: "POST", body: JSON.stringify(input) }),
+  onboardingEnroll: (input: OnboardingEnrollInput) =>
+    request<OnboardingResult>("/v1/onboarding/enroll", { method: "POST", body: JSON.stringify(input) }),
+  onboardingPasteKey: (input: OnboardingPasteKeyInput) =>
+    request<OnboardingResult>("/v1/onboarding/paste-key", { method: "POST", body: JSON.stringify(input) }),
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -235,6 +402,8 @@ const QUERY_KEYS = {
   mode: ["mode"] as const,
   health: ["health"] as const,
   machine: (code: string) => ["machine", code] as const,
+  settings: ["settings"] as const,
+  scenario: ["scenario"] as const,
 }
 
 /**
@@ -339,4 +508,109 @@ export function useSyncConfig(code: string | undefined) {
       if (code) queryClient.invalidateQueries({ queryKey: QUERY_KEYS.machine(code) })
     },
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Settings — Task 7
+// ─────────────────────────────────────────────────────────────────────────
+
+/** One-shot fetch (not polled) — settings only change via this same client's own `PUT`, so there's
+ * nothing external to catch up with the way `useFleet`/`useMachine` do. */
+export function useSettings(): UseQueryResult<Settings> {
+  return useQuery({
+    queryKey: QUERY_KEYS.settings,
+    queryFn: endpoints.settings,
+  })
+}
+
+export function useUpdateSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: endpoints.updateSettings,
+    onSuccess: (data) => {
+      queryClient.setQueryData(QUERY_KEYS.settings, data)
+    },
+  })
+}
+
+/** `POST /v1/settings/probe` — deliberately NOT written into the `settings` query cache: probing is a
+ * point-in-time connectivity check against whatever URL the caller passes (typically the Settings
+ * form's current, possibly-unsaved input), not a settings mutation. The component reads the result off
+ * this mutation's own `data`/`isPending`/`isError`. */
+export function useProbeSettings() {
+  return useMutation({
+    mutationFn: (serverUrl: string) => endpoints.probeSettings(serverUrl),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Scenario — Task 7
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Polled at ~1s, same cadence as `useFleet` — needed so a Burst spike's automatic revert (server-side
+ * timer, ~4s after the call) and any other client's scenario change echo back into this screen's
+ * sliders/status line on their own, the same way the WPF reference app's `FleetService.ScenarioChanged`
+ * subscription does. */
+export function useScenario(): UseQueryResult<ScenarioSnapshot> {
+  return useQuery({
+    queryKey: QUERY_KEYS.scenario,
+    queryFn: endpoints.scenario,
+    refetchInterval: 1000,
+  })
+}
+
+function setScenarioCurrent(queryClient: ReturnType<typeof useQueryClient>, current: Scenario) {
+  queryClient.setQueryData(QUERY_KEYS.scenario, (old: ScenarioSnapshot | undefined) =>
+    old ? { ...old, current } : old
+  )
+}
+
+export function useApplyScenario() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: endpoints.applyScenario,
+    onSuccess: (data) => setScenarioCurrent(queryClient, data),
+  })
+}
+
+export function useApplyScenarioPreset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: endpoints.applyScenarioPreset,
+    onSuccess: (data) => setScenarioCurrent(queryClient, data.scenario),
+  })
+}
+
+export function useBurstScenario() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: endpoints.burstScenario,
+    onSuccess: (data) => setScenarioCurrent(queryClient, data),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Onboarding — Task 7. Each step is its own plain mutation (no shared query cache entry) — the wizard
+// keeps step/result state locally (see `routes/Onboarding.tsx`), since there's no `GET` to read
+// onboarding progress back from and each step's result only matters to the screen that just called it.
+// ─────────────────────────────────────────────────────────────────────────
+
+export function useOnboardingRegister() {
+  return useMutation({ mutationFn: endpoints.onboardingRegister })
+}
+
+export function useOnboardingPoll() {
+  return useMutation({ mutationFn: endpoints.onboardingPoll })
+}
+
+export function useOnboardingClaim() {
+  return useMutation({ mutationFn: endpoints.onboardingClaim })
+}
+
+export function useOnboardingEnroll() {
+  return useMutation({ mutationFn: endpoints.onboardingEnroll })
+}
+
+export function useOnboardingPasteKey() {
+  return useMutation({ mutationFn: endpoints.onboardingPasteKey })
 }
