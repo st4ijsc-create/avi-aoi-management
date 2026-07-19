@@ -4,7 +4,10 @@ using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.WPF;
 using Microsoft.Extensions.DependencyInjection;
+using St4i.EdgeCore.Drivers;
+using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4iMachineSimulator.Services;
@@ -82,13 +85,20 @@ public partial class App : Application
         services.AddSingleton(sp => new FleetViewModel(sp.GetRequiredService<FleetService>()));
         services.AddSingleton(sp => new DashboardView(sp.GetRequiredService<FleetViewModel>()));
 
+        // Task 17 — API Inspector. Singleton (like DashboardView/FleetViewModel above) so the trace
+        // history survives navigating away and back, rather than resubscribing to EventBus.Traced
+        // (and losing everything captured so far) on every nav click.
+        services.AddSingleton(sp => new InspectorViewModel(sp.GetRequiredService<EventBus>()));
+        services.AddSingleton(sp => new ApiInspectorView(sp.GetRequiredService<InspectorViewModel>()));
+
         services.AddSingleton(sp =>
         {
             var vm = new AppShellViewModel(
                 sp.GetRequiredService<EventBus>(),
                 sp.GetRequiredService<FleetService>(),
                 sp.GetRequiredService<DashboardView>(),
-                sp.GetRequiredService<FleetViewModel>());
+                sp.GetRequiredService<FleetViewModel>(),
+                sp.GetRequiredService<ApiInspectorView>());
             var auto = sp.GetRequiredService<AutoTransport>();
             // Background-thread event -> UI-thread property write; AppShellViewModel.HandleFallbackChanged
             // does the dispatcher marshaling itself so this subscription is safe from any thread.
@@ -185,7 +195,98 @@ public partial class App : Application
         if (vm.IsFleetRunning)
             throw new InvalidOperationException("selftest: StopFleet did not clear IsFleetRunning");
 
+        // ── Task 17: API Inspector ──────────────────────────────────────────────────────────
+        RunInspectorSelfTest();
+
         Console.WriteLine("SELFTEST OK");
+    }
+
+    /// <summary>
+    /// Task 17 headless check for the API Inspector. Deliberately does NOT reuse the fleet run above
+    /// (which drives readings through <see cref="AutoTransport"/> over an unconfigured
+    /// <see cref="LiveTransport"/> — see this task's brief note: early sends before the live→demo
+    /// fallback trips can show error/status-0 rows) — instead builds its own small
+    /// <see cref="EdgePipeline"/> directly over a fresh <see cref="SimulatedDriver"/> and a brand-new
+    /// <see cref="DemoTransport"/> (no <see cref="AutoTransport"/> involved at all), sharing only the
+    /// DI-resolved <see cref="EventBus"/> singleton the already-constructed <see cref="InspectorViewModel"/>
+    /// is listening to. That guarantees every event this method produces is a clean 201/202 success (see
+    /// <see cref="DemoTransport.AckProcessResult"/>/<see cref="DemoTransport.AckInspection"/>/
+    /// <see cref="DemoTransport.AckTelemetry"/>), which is what makes the assertions below deterministic
+    /// rather than dependent on the earlier fleet phase's AutoTransport fallback timing.
+    /// </summary>
+    private void RunInspectorSelfTest()
+    {
+        const int MinCapturedEvents = 10;
+
+        var eventBus = Services.GetRequiredService<EventBus>();
+        // Forces construction (and EventBus.Traced subscription) right now if nothing else has
+        // resolved it yet — InspectorViewModel is a DI singleton, built lazily on first resolution.
+        var inspectorVm = Services.GetRequiredService<InspectorViewModel>();
+
+        // Distinct MachineType per machine (Screwdrive->ProcessResult->201, AOI->Inspection->201,
+        // IotSensor->Telemetry->202 — see Drivers/Simulators' NewReading(cycle, ReadingKind.*, ...)
+        // calls) so the 201-vs-202 status split used by the filter check below is real, not contrived.
+        // "INSPECT-" prefixed codes so this batch is trivially distinguishable from the fleet's own
+        // "SCRW-01"-style roster, even though both share the same EventBus.
+        MachineDescriptor[] descriptors =
+        [
+            new("INSPECT-SCRW", "SN-ISCRW", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-ISCRW", null, 0.12),
+            new("INSPECT-AOI", "SN-IAOI", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-IAOI", null, 0.15),
+            new("INSPECT-IOT", "SN-IIOT", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.10),
+        ];
+        var sims = descriptors.Select((d, i) => FleetService.BuildSimulator(d, seed: 5000 + i)).ToList();
+        var driver = new SimulatedDriver(sims);
+        var profile = new MappingProfile { Name = "inspector-selftest", DeviceClass = "Mixed" };
+        var demoTransport = new DemoTransport(latencyMs: 5); // direct — no AutoTransport/live in this path
+        var pipeline = new EdgePipeline(driver, profile, demoTransport, eventBus);
+
+        var cts = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            try { await pipeline.RunAsync(cts.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { /* expected once cts.Cancel() below fires */ }
+        });
+
+        // ── capture + "real 201/202 successes" ──────────────────────────────────────────────
+        PumpDispatcherFor(TimeSpan.FromSeconds(2));
+
+        var ourCodes = descriptors.Select(d => d.Code).ToHashSet();
+        var ourEvents = inspectorVm.Events.Where(e => ourCodes.Contains(e.MachineCode)).ToList();
+        if (ourEvents.Count < MinCapturedEvents)
+            throw new InvalidOperationException($"selftest inspector: only captured {ourEvents.Count} event(s) from the dedicated selftest pipeline in 2s (wanted >= {MinCapturedEvents})");
+        var unclean = ourEvents.Where(e => e.Error is not null || e.Status is not (201 or 202)).ToList();
+        if (unclean.Count > 0)
+            throw new InvalidOperationException($"selftest inspector: expected only clean 201/202 successes, got [{string.Join(", ", unclean.Select(e => $"{e.MachineCode}:{e.Status}{(e.Error is null ? "" : ":" + e.Error)}"))}]");
+        if (!ourEvents.Any(e => e.Status == 202))
+            throw new InvalidOperationException("selftest inspector: no 202 (Telemetry) event captured — cannot verify the status-filter narrowing below is non-trivial");
+
+        Console.WriteLine($"SELFTEST inspector capture: {ourEvents.Count} event(s) from the dedicated pipeline, InspectorViewModel.Events.Count={inspectorVm.Events.Count}");
+
+        // ── a status filter narrows the list ─────────────────────────────────────────────────
+        var totalBeforeFilter = inspectorVm.FilteredEvents.Cast<object>().Count();
+        inspectorVm.FilterStatus = "202"; // Telemetry-only — see the ourEvents.Any(202) check above
+        var filteredCount = inspectorVm.FilteredEvents.Cast<object>().Count();
+        if (filteredCount == 0)
+            throw new InvalidOperationException("selftest inspector: status filter \"202\" matched 0 rows");
+        if (filteredCount >= totalBeforeFilter)
+            throw new InvalidOperationException($"selftest inspector: status filter did not narrow the list ({filteredCount} filtered vs {totalBeforeFilter} unfiltered)");
+        Console.WriteLine($"SELFTEST inspector filter: status=\"202\" narrowed {totalBeforeFilter} -> {filteredCount} row(s)");
+        inspectorVm.FilterStatus = InspectorViewModel.AllOption;
+
+        // ── Pause stops new rows from being added ────────────────────────────────────────────
+        inspectorVm.PauseResumeCommand.Execute(null);
+        if (!inspectorVm.IsPaused)
+            throw new InvalidOperationException("selftest inspector: PauseResumeCommand did not set IsPaused");
+        var countAtPause = inspectorVm.Events.Count;
+        PumpDispatcherFor(TimeSpan.FromSeconds(1)); // pipeline (still running) keeps publishing throughout
+        if (inspectorVm.Events.Count != countAtPause)
+            throw new InvalidOperationException($"selftest inspector: Events grew while IsPaused=true ({countAtPause} -> {inspectorVm.Events.Count})");
+        Console.WriteLine($"SELFTEST inspector pause: Events.Count held at {countAtPause} for 1s while paused");
+        inspectorVm.PauseResumeCommand.Execute(null);
+        if (inspectorVm.IsPaused)
+            throw new InvalidOperationException("selftest inspector: PauseResumeCommand did not clear IsPaused");
+
+        cts.Cancel();
     }
 
     /// <summary>

@@ -38,6 +38,13 @@
     <Color x:Key="Color.Badge.Fallback.Fg">#F2A544</Color>
     <Color x:Key="Color.Badge.Fallback.Border">#B4741F</Color>
 
+    <!-- Task 17 (API Inspector): low-alpha tints of the Status colors above, sized for a full
+         DataGridRow background rather than a small dot — a fast-scrolling trace stream stays
+         readable at ~16% alpha instead of a wall of saturated color. -->
+    <Color x:Key="Color.Status.OnlineRowBg">#2A33D17A</Color>
+    <Color x:Key="Color.Status.WarnRowBg">#2AF2C744</Color>
+    <Color x:Key="Color.Status.OfflineRowBg">#2AE85D5D</Color>
+
     <!-- Brushes (derived 1:1 from the colors above) -->
     <SolidColorBrush x:Key="Brush.Bg.App" Color="{StaticResource Color.Bg.App}" />
     <SolidColorBrush x:Key="Brush.Bg.Sidebar" Color="{StaticResource Color.Bg.Sidebar}" />
@@ -63,5 +70,9 @@
     <SolidColorBrush x:Key="Brush.Badge.Fallback.Bg" Color="{StaticResource Color.Badge.Fallback.Bg}" />
     <SolidColorBrush x:Key="Brush.Badge.Fallback.Fg" Color="{StaticResource Color.Badge.Fallback.Fg}" />
     <SolidColorBrush x:Key="Brush.Badge.Fallback.Border" Color="{StaticResource Color.Badge.Fallback.Border}" />
+
+    <SolidColorBrush x:Key="Brush.Status.OnlineRowBg" Color="{StaticResource Color.Status.OnlineRowBg}" />
+    <SolidColorBrush x:Key="Brush.Status.WarnRowBg" Color="{StaticResource Color.Status.WarnRowBg}" />
+    <SolidColorBrush x:Key="Brush.Status.OfflineRowBg" Color="{StaticResource Color.Status.OfflineRowBg}" />
 
 </ResourceDictionary>

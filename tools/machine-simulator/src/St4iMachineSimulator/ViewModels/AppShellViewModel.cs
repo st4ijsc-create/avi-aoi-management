@@ -26,6 +26,7 @@ public partial class AppShellViewModel : ObservableObject
     private readonly FleetService _fleetService;
     private readonly DashboardView _dashboardView;
     private readonly FleetViewModel _fleetViewModel;
+    private readonly ApiInspectorView _apiInspectorView;
 
     [ObservableProperty]
     private TransportMode mode = TransportMode.Auto;
@@ -64,17 +65,24 @@ public partial class AppShellViewModel : ObservableObject
     /// <summary>Values for the top-bar mode <c>ComboBox</c>.</summary>
     public IReadOnlyList<TransportMode> AvailableModes { get; } = Enum.GetValues<TransportMode>();
 
-    public AppShellViewModel(EventBus eventBus, FleetService fleetService, DashboardView dashboardView, FleetViewModel fleetViewModel)
+    public AppShellViewModel(
+        EventBus eventBus,
+        FleetService fleetService,
+        DashboardView dashboardView,
+        FleetViewModel fleetViewModel,
+        ApiInspectorView apiInspectorView)
     {
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _fleetService = fleetService ?? throw new ArgumentNullException(nameof(fleetService));
         _dashboardView = dashboardView ?? throw new ArgumentNullException(nameof(dashboardView));
         _fleetViewModel = fleetViewModel ?? throw new ArgumentNullException(nameof(fleetViewModel));
+        _apiInspectorView = apiInspectorView ?? throw new ArgumentNullException(nameof(apiInspectorView));
         _eventBus.Traced += OnTraced;
         _fleetViewModel.MachineSelected += OnMachineSelected;
 
-        // Nav[0] is Dashboard (Task 15) — the only real screen wired up so far; Nav rows 17-20 still
-        // fall back to SelectNavItem's placeholder text until their own tasks land.
+        // Nav[0] is Dashboard (Task 15), Nav[3] is API Inspector (Task 17) — the only real screens
+        // wired up so far; the remaining Nav rows still fall back to SelectNavItem's placeholder text
+        // until their own tasks (18-20) land.
         CurrentView = _dashboardView;
     }
 
@@ -88,9 +96,12 @@ public partial class AppShellViewModel : ObservableObject
     private void SelectNavItem(NavItem? item)
     {
         if (item is null) return;
-        CurrentView = item.Key == "dashboard"
-            ? _dashboardView
-            : $"{item.Title} — chưa triển khai (Task 16-20)";
+        CurrentView = item.Key switch
+        {
+            "dashboard" => _dashboardView,
+            "inspector" => _apiInspectorView,
+            _ => $"{item.Title} — chưa triển khai (Task 18-20)",
+        };
     }
 
     [RelayCommand]
