@@ -128,7 +128,7 @@ Nguyên tắc: chỉ đổi tầng trình bày, tái dùng token/primitive sẵn
 | Đợt | Nội dung | Gate |
 |---|---|---|
 | **Inc-1 (ship)** | ⌘K/AUD-05 · lang/AUD-11 · PollFreshness · **FreshnessStrip** + design-system spec | tsc+build |
-| **Inc-1b** | ✅ ĐÃ SHIP primitive (additive, byte-identical): **token oklch→index.css** · **isaStateBadges** (PackML/E10/Andon/UnitMode — AUD-09) · **SafetyProvenanceLabel** (AUD-16) · **stateVocabulary**. CÒN (operator-facing → đợt sau): wire badges vào cockpit · severity remap AUD-08 · FreshnessStrip vào shell · tile-desaturation FEA-F2 · alarm 4-field FEA-A1 | live Playwright panel-PC viewport |
+| **Inc-1b** | ✅ ĐÃ SHIP primitive (additive, byte-identical): **token oklch→index.css** · **isaStateBadges** (PackML/E10/Andon/UnitMode — AUD-09) · **SafetyProvenanceLabel** (AUD-16) · **stateVocabulary**. CÒN (sau cờ `HMI_ISA101_V2` default-OFF): ✅ **cockpit op-state→PackmlStateBadge** (đã wire, byte-identical off) · severity remap AUD-08 (app-wide) · FreshnessStrip vào shell header · tile-desaturation FEA-F2 · alarm 4-field FEA-A1 | live Playwright panel-PC viewport |
 | **Inc-2** | Trục ISA-95 scoped-query IA-10 (từng-trang, chưa-wire đọc "không-rõ") + shell chrome (Sidebar) + alert-chip/drawer FLW-01 + kiosk | **GATE-1 (3 operator thật)** |
 | **DEP** | DEP-06 cause · DEP-05 genealogy tRPC · DEP-02 Hermes/CFX · DEP-08 changeover 2-người | backend |
 

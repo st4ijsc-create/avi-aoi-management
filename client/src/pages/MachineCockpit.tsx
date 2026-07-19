@@ -54,6 +54,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { PackmlStateBadge } from "@/components/patterns/isaStateBadges";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
   Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
@@ -930,7 +932,8 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                     {d.liveState.value && (
                       <div className="space-y-1">
                         <KV k={t("cockpit.status", "Status")} v={<StatusBadge status={d.liveState.value.status ?? "unknown"} className="px-1.5 py-0 text-[11px]" />} />
-                        <KV k={t("cockpit.packml", "PackML / op")} v={d.liveState.value.operationStatus ?? "—"} />
+                        {/* doc 63 (AUD-09) — flag-gated: colour-coded PackML badge vs raw text (byte-identical when off) */}
+                        <KV k={t("cockpit.packml", "PackML / op")} v={isIsa101V2() && d.liveState.value.operationStatus ? <PackmlStateBadge state={d.liveState.value.operationStatus} className="px-1.5 py-0 text-[11px]" /> : (d.liveState.value.operationStatus ?? "—")} />
                         <KV k={t("cockpit.lastChange", "Last change")} v={tsToLocale(d.liveState.value.lastStatusChange)} />
                         <KV k={t("cockpit.heartbeat", "Heartbeat")} v={d.liveState.value.heartbeatStatus ?? "—"} />
                         <KV k={t("cockpit.lastHeartbeat", "Last heartbeat")} v={relTime(d.liveState.value.lastHeartbeat, now)} />
