@@ -580,8 +580,33 @@ function Router() {
   );
 }
 
+// doc64 S5-OPT-2 — kiosk direct-load: RouteGuard chỉ render con SAU khi auth.me về, nên
+// chunk trang bị NỐI TIẾP sau auth (POC: /andon 2.252ms, hụt 252ms). Warm chunk của màn
+// operator NGAY sau khe paint đầu → fetch+parse chạy SONG SONG với auth RTT (main thread
+// đang rảnh chờ mạng). Vite dedupe import() → React.lazy resolve tức thì khi guard mở.
+const OPERATOR_ROUTE_WARMERS: Record<string, () => Promise<unknown>> = {
+  "/andon": () => import("./pages/AndonBoard"),
+  "/dashboard": () => import("./pages/Dashboard"),
+  "/line-view": () => import("./pages/LineView"),
+  "/device-monitor": () => import("./pages/DeviceHub"),
+  "/oee-dashboard": () => import("./pages/OEEDashboard"),
+  "/wip-dashboard": () => import("./pages/WipLineBalance"),
+};
+
+function useOperatorRouteWarmer() {
+  useEffect(() => {
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
+    const base = "/" + (path.split("/")[1] ?? "");
+    const warm = OPERATOR_ROUTE_WARMERS[base];
+    if (!warm) return;
+    // double-rAF: nhường frame đầu paint xong rồi mới parse chunk.
+    requestAnimationFrame(() => requestAnimationFrame(() => { void warm(); }));
+  }, []);
+}
+
 function App() {
   useKioskMode();
+  useOperatorRouteWarmer();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>

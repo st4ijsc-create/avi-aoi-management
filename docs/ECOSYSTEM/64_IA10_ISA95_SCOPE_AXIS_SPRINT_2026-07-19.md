@@ -160,6 +160,29 @@ Script: `scripts/audit/s5-poc.mjs` (CDP throttle, PerformanceObserver LCP/longta
 ### Tools tái dùng (đã commit)
 `scripts/audit/audit-account.mjs on|off` (bật/tắt account POC: bcrypt + isActive + 2FA-clear) · `scripts/audit/s5-net-probe.mjs [route]` (liệt kê JS critical-path + tổng KB) · `s5-poc.mjs` env: `POC_ROUTE` / `POC_SKIP_SOAK` / `POC_SHOT` / `POC_FIRST_VISIT` / `POC_SOAK_MS`.
 
+## S5-OPT-2 — RENDER-STAGING (2026-07-19, cùng ngày; user "tiếp tục theo đề xuất")
+
+Chẩn đoán S5-OPT chốt "nghẽn còn lại = vòng đời chính trang, không phải bundle" → 3 vá render-staging + 1 hiệu chỉnh theo số đo:
+
+| Vá | Cơ chế | Căn cứ |
+|---|---|---|
+| **`DeferredMount`** (component mới) wrap thân tab overview /dashboard | double-rAF nhường đúng 1 frame paint rồi mount phần nặng (idle-callback + trần timeout); placeholder = `ChartSkeleton` — render #1 nhẹ → khe paint mở sớm | Attribution: main-thread kín 1,5→5s không có khe paint; hero KPI nằm ngoài tabs được paint trước |
+| **Route-warmer 6 màn operator** (App root) | RouteGuard nối tiếp auth→chunk; warmer bắn `import()` chunk của route hiện tại ngay sau khe paint đầu → fetch+parse chạy SONG SONG với auth RTT (main thread đang rảnh chờ mạng). Kịch bản thật: kiosk reload đầu ca | /andon hụt 252ms vì serial |
+| **DeviceHub: 3 tab không-default lazy, tab default (fleet) GIỮ EAGER** | 4 thân tab từng import tĩnh → parse cả 4 dù render 1. Lazy-cả-4 (thử đầu) làm direct-load TỆ HƠN (3,4→4,4s — thêm 1 nấc waterfall cho chính tab active) → hiệu chỉnh: default eager + 3 lazy | Số đo trước/sau; chunk hub 6,8K |
+
+### Số chính thức (batch warm — warmup 1 run bỏ, thứ tự cố định; máy dev ×4, steady-state)
+| Màn | V4 (trước OPT-2) | **V5 (sau OPT-2)** | Phán quyết G5 <2.000ms |
+|---|---|---|---|
+| **/andon (operator #1)** | 2.252ms | **1.836ms** (4 lần: 1.652/1.836/1.860/2.056 — 3/4 dưới vạch) | ✅ **PASS biên** — dao động quanh 1,65–2,06s; chốt hẳn khi đo panel thật |
+| /dashboard | 5.408ms (warm V4) | **3.764ms** (−1,6s) | ❌ — LCP neo empty-state card "Cảnh báo tỷ lệ đạt" (data-arrival ~3,7s); hero+chrome paint ~2,0–2,1s |
+| /line-view | 3.288ms | **3.208ms** (ngang — nghẽn là render tree + query, không phải chunk) | ❌ |
+| /device-monitor | 3.416ms | **~3,4–4,0s** (band; run xác nhận fleet-eager dính nhiễu máy nóng — 23 longtask 7,8s. Fleet-eager không tệ hơn baseline trong sai số; chunk hub 87,5K, 3 tab kia lười) | ❌ |
+| Interaction mọi màn | 19–89ms | 18–89ms | ✅ PASS |
+
+**GHI CHÚ NHIỄU (trung thực):** run ĐẦU ngay sau build bị cold FS-cache + máy bận → số ảo (chứng kiến /dashboard 12,2s; /device-monitor 4,8s) — batch chính thức bắt buộc warmup 1 run bỏ. Biến thiên run-to-run máy dev ±0,3–0,5s; ×4 chỉ là xấp xỉ panel — mọi phán quyết "biên" chờ HW thật.
+
+**Nợ đặt tên (nếu muốn ép tiếp <2s trên máy-dev-×4):** (1) /dashboard — 6 query danh mục dropdown (factory/workshop/line/assignment/order/model) bắn chung batch đầu: defer sau paint (`enabled` theo DeferredMount-ready) để batch đầu nhỏ + parse nhẹ; (2) /line-view — mổ tree sơ đồ tuyến; (3) boot chung ~1,7–2,0s: react-dom 1MB là sàn cứng của SPA CSR — muốn xuống nữa là chuyện SSR/streaming (ngoài phạm vi redesign này); (4) đo lại toàn bộ trên panel-PC thật khi có (GATE-1).
+
 ### Định nghĩa XONG (sprint)
 1. Trục hiện ở header mọi trang, cascade đúng cây, bền qua điều hướng, URL chia sẻ được.
 2. ≥ S1 pilot: đổi scope → dữ liệu đổi thật (proof chụp).

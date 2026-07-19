@@ -67,6 +67,7 @@ import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { RelatedViews } from "@/components/RelatedViews";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
+import { DeferredMount } from "@/components/DeferredMount";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import type { WidgetData } from "@/components/WidgetDataExport";
 import CustomDashboardViewer from "@/components/CustomDashboardViewer";
@@ -1617,6 +1618,10 @@ export default function Dashboard() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
+            {/* doc64 S5-OPT-2: toàn bộ thân tab overview (widget + 3 chart + AI) mount SAU
+                khe paint đầu — hero KPI/thẻ trạng thái phía trên paint được ngay thay vì
+                chờ cả cây nặng render xong (LCP ~5s → mục tiêu <2,5s). */}
+            <DeferredMount placeholder={<ChartSkeleton />}>
             {/* MQTT Alert Widget */}
             <MqttAlertWidget />
 
@@ -2001,6 +2006,7 @@ export default function Dashboard() {
 
             {/* AI Insights Widget */}
             <DashboardAIWidget />
+            </DeferredMount>
           </TabsContent>
 
           {/* NG Visual Tab */}

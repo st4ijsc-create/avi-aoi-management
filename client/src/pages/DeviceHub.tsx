@@ -15,10 +15,20 @@ import { Server, HeartPulse, Radio, Gauge } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TabbedHub, type TabbedHubTab, isWorkspaceShellEnabled } from "@/components/workspace";
 
+// doc64 S5-OPT-2: 4 thân tab từng import TĨNH → cả 4 page-body parse dù chỉ 1 tab render.
+// Cân bằng đo được (POC ×4): tab MẶC ĐỊNH (fleet) giữ EAGER — lazy nó chỉ thêm 1 nấc
+// waterfall cho chính màn direct-load (đo: 3,4s → 4,4s, phản tác dụng); 3 tab còn lại lazy
+// (parse khi user thật sự mở). Suspense bên dưới giữ chrome khi đổi tab lần đầu.
 import { UnifiedDeviceMonitorContent } from "./UnifiedDeviceMonitor";
-import { MachineHealthMonitoringContent } from "./MachineHealthMonitoring";
-import { FieldDevicesContent } from "./FieldDevices";
-import { OEEDashboardContent } from "./OEEDashboard";
+const MachineHealthMonitoringContent = lazy(() =>
+  import("./MachineHealthMonitoring").then((m) => ({ default: m.MachineHealthMonitoringContent })),
+);
+const FieldDevicesContent = lazy(() =>
+  import("./FieldDevices").then((m) => ({ default: m.FieldDevicesContent })),
+);
+const OEEDashboardContent = lazy(() =>
+  import("./OEEDashboard").then((m) => ({ default: m.OEEDashboardContent })),
+);
 
 const TABS: readonly TabbedHubTab[] = [
   { value: "fleet", labelKey: "deviceHub.tabs.fleet", fallback: "Fleet", icon: <Server className="h-4 w-4" />, Content: UnifiedDeviceMonitorContent },

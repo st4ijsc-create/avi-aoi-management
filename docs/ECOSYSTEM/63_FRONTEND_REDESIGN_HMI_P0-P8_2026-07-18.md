@@ -177,7 +177,7 @@ Nguyên tắc: chỉ đổi tầng trình bày, tái dùng token/primitive sẵn
 | ~~IA-10 trục ISA-95~~ | ✅ **ĐÃ ĐÓNG S0→S3+S4** (sprint doc 64, 2026-07-19): trục bền header + cascade cây thật + bất biến trung thực + **~22 bề mặt lọc server-side** + tool backfill + LIVE-proof mỗi wave | XONG |
 | **DEP-02 Hermes/CFX** | Cần **thiết bị thật 2 đầu** nói Hermes/CFX — chưa có pilot hardware | Khi pilot |
 | **Kiosk SCR-02 re-layout + hub deep-link** | Đổi hành vi điều hướng lớn — nên lấy feedback live test trước | Sau live test |
-| Panel-PC thật (glove-mode capacitive), máy yếu nhất, điểm-dữ-liệu-tối-đa/màn | Phần cứng/thông số chưa có — **§S5 POC đã chạy + S5-OPT đã thực thi** (entry bundle 10,3MB→1,46MB −86%; LCP ×4: /andon 2,25s biên, /dashboard ~4–5s → hạng mục kế **S5-OPT-2 render-staging /dashboard**; số đo đầy đủ doc 64), hiệu chỉnh lại khi có panel thật | Khi có HW |
+| Panel-PC thật (glove-mode capacitive), máy yếu nhất, điểm-dữ-liệu-tối-đa/màn | Phần cứng/thông số chưa có — **§S5 POC + S5-OPT + S5-OPT-2 đã thực thi** (entry 10,3MB→1,46MB −86%; render-staging: **/andon 1,84s PASS biên G5**, /dashboard 5,4→3,8s, còn lại ~3,2–3,4s — nợ đặt tên trong doc 64; số đo + phương pháp đầy đủ doc 64), hiệu chỉnh khi có panel thật | Khi có HW |
 | SiteContext merge vào trục | Federation cần site thứ 2 để verify (doc 13) | Khi có site 2 |
 
 ## GIẢ ĐỊNH & PHỤ THUỘC
