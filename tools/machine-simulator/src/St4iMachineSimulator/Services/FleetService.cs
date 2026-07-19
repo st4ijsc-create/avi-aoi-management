@@ -503,31 +503,12 @@ public sealed class FleetService : IDisposable
     // FLEET ROSTER + SIMULATOR FACTORY
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>descriptor→<see cref="IMachineSimulator"/> factory: switches on
-    /// <see cref="MachineDescriptor.MachineType"/> first (the authoritative signal), falling back to
-    /// <see cref="MachineDescriptor.DeviceClass"/> for any type string this build doesn't recognize
-    /// rather than throwing — keeps a stray/typo'd fleet.json-style entry from taking the whole fleet
-    /// down.</summary>
+    /// <summary>descriptor→<see cref="IMachineSimulator"/> factory. Task 21: delegates to EdgeCore's
+    /// <see cref="SimulatorFactory"/> (extracted from this method's original body, byte-identical
+    /// switch logic) so the headless <c>St4i.EdgeService</c> can build the exact same roster without
+    /// depending on this WPF project.</summary>
     internal static IMachineSimulator BuildSimulator(MachineDescriptor d, int seed) =>
-        (d.MachineType ?? "").Trim().ToUpperInvariant() switch
-        {
-            "SCREWDRIVE" => new ScrewdriveSim(d, seed),
-            "DISPENSING" => new DispensingSim(d, seed),
-            "WELDER" => new WelderSim(d, seed),
-            "ASSEMBLY" => new AssemblySim(d, seed),
-            "LEAK_TEST" => new LeakTestSim(d, seed),
-            "FUNCTIONAL_TEST" => new FunctionalTestSim(d, seed),
-            "IOT_SENSOR" => new IotSensorSim(d, seed),
-            "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed),
-            _ => FallbackByDeviceClass(d, seed),
-        };
-
-    private static IMachineSimulator FallbackByDeviceClass(MachineDescriptor d, int seed) => d.DeviceClass switch
-    {
-        DeviceClass.Iot => new IotSensorSim(d, seed),
-        DeviceClass.AoiAvi => new AoiInspectorSim(d, seed),
-        _ => new ScrewdriveSim(d, seed),
-    };
+        SimulatorFactory.Create(d, seed);
 
     private static IReadOnlyList<MachineDescriptor> BuildDefaultFleet() =>
     [
