@@ -6,6 +6,10 @@
  * `WS /v1/inspector/stream` backfills the EventBus's last ~200 buffered events (oldest-first) right
  * after the upgrade completes, then pushes every subsequent trace as its own JSON text frame for as
  * long as the socket stays open. Server-push-only — there is no client→server message contract.
+ * Final-review M-1: every RECONNECT (not the initial connection) appends `?skipBackfill=1` to the
+ * upgrade URL so `InspectorStreamEndpoint` skips that 200-event replay — without this, a WS blip or
+ * engine hiccup mid-exhibition would re-inject up to 200 already-seen rows into the ring as duplicates
+ * on every reconnect.
  * `ApiJson.Options` (camelCase properties, enums as their literal C# member name) is what serializes
  * every frame, so field names below are camelCase and `kind`/`mode` come back as e.g. `"ProcessResult"`
  * / `"Live"`, not lower-cased.
@@ -98,8 +102,11 @@ export type StreamConnectionState = "connecting" | "open" | "closed"
  * `lib/api.ts`, separate engine process on its own port). A production build defaults to
  * `window.location.origin` instead of `lib/api.ts`'s `""` — `new URL()` needs an absolute string to
  * parse, and same-origin IS the current page's origin when `St4i.EngineApi` is the one serving this
- * bundle (Task 9), so this still ends up hitting the same host:port the page itself loaded from. */
-function inspectorStreamUrl(): string {
+ * bundle (Task 9), so this still ends up hitting the same host:port the page itself loaded from.
+ *
+ * @param skipBackfill M-1: true on every reconnect (not the first connection) — sets `?skipBackfill=1`
+ * so the server doesn't replay its last 200 buffered events into a ring that already has them. */
+function inspectorStreamUrl(skipBackfill: boolean): string {
   const base =
     (import.meta.env.VITE_ENGINE_URL as string | undefined) ??
     (import.meta.env.DEV ? "http://localhost:5199" : window.location.origin)
@@ -108,6 +115,7 @@ function inspectorStreamUrl(): string {
   url.pathname = "/v1/inspector/stream"
   url.search = ""
   url.hash = ""
+  if (skipBackfill) url.searchParams.set("skipBackfill", "1")
   return url.toString()
 }
 
@@ -178,11 +186,15 @@ export function useInspectorStream(): UseInspectorStreamResult {
     let cancelled = false
     let socket: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    // M-1: false for the very first `connect()` this effect makes, true for every one after — i.e.
+    // every call the `onclose` reconnect timer below triggers, never the initial mount.
+    let hasConnectedBefore = false
 
     function connect() {
       if (cancelled) return
       setConnectionState("connecting")
-      socket = new WebSocket(inspectorStreamUrl())
+      socket = new WebSocket(inspectorStreamUrl(hasConnectedBefore))
+      hasConnectedBefore = true
 
       socket.onopen = () => {
         if (!cancelled) setConnectionState("open")

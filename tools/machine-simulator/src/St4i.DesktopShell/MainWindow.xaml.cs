@@ -59,6 +59,22 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // Final-review I-2(b): the engine answering GET /v1/fleet (just-checked above) only proves
+            // the API is up — it says nothing about whether wwwroot actually has a UI to serve (the
+            // mis-ordered-publish footgun the csproj-side guard now prevents at publish time, but an
+            // ALREADY-published bad package, or attaching to someone else's already-running engine
+            // that was, could still exist on disk). Probe the UI itself before hiding the splash so a
+            // broken package shows this shell's own clear message instead of the WebView2 navigating
+            // straight to ASP.NET's bare 404 page with no explanation.
+            if (!await ProbeWebUiReadyAsync())
+            {
+                ShowStatus(
+                    "Web UI not built — run `npm run build` in web/ then republish St4i.EngineApi " +
+                    "(see README.md's publish order).",
+                    isError: true);
+                return;
+            }
+
             await InitializeWebViewAsync();
         }
         catch (Exception ex)
@@ -124,6 +140,24 @@ public partial class MainWindow : Window
         {
             // Connection refused (nothing listening yet) / DNS blip / request timeout — all just mean
             // "not ready yet" from this poll loop's point of view, not a fatal error.
+            return false;
+        }
+    }
+
+    /// <summary>True once the engine answers a GET for the SPA shell itself with something other than
+    /// 404 — i.e. wwwroot actually has an <c>index.html</c> to serve (see Program.cs's
+    /// UseStaticFiles/MapFallbackToFile). Distinct from <see cref="ProbeReadyAsync"/>, which only
+    /// proves the API host process is up; an engine with an empty (mis-published) wwwroot still passes
+    /// that check.</summary>
+    private async Task<bool> ProbeWebUiReadyAsync()
+    {
+        try
+        {
+            using var response = await _probeClient.GetAsync($"{_engineBaseUrl}/");
+            return response.StatusCode != System.Net.HttpStatusCode.NotFound;
+        }
+        catch
+        {
             return false;
         }
     }

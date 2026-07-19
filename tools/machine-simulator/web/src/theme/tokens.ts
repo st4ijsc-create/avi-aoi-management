@@ -56,21 +56,6 @@ export const status = {
   neutral: "#94A3B8",
 } as const
 
-/**
- * AA-safe (>=4.5:1) text color per status, verified against each status's
- * own 10% tint fill (the actual background StatusBadge renders on) — a
- * same-hue tint reads as *lower* contrast than pure white would suggest, so
- * every entry here is darkened from the solid hue in `status` above, axe
- * confirmed. Don't use `status.neutral` as text at all — pair its dot with
- * a normal-contrast label instead.
- */
-export const statusText = {
-  ok: "#166534",
-  warn: "#B45309",
-  danger: "#B91C1C",
-  info: "#1D4ED8",
-} as const
-
 /** Recharts / multi-series chart palette, in draw order. */
 export const chartSeries = [
   navy[600],
@@ -94,7 +79,6 @@ export const tokens = {
   text,
   accent,
   status,
-  statusText,
   chartSeries,
   radius,
 } as const

@@ -62,6 +62,10 @@ export interface FleetKpis {
 export interface FleetSnapshot {
   machines: FleetTile[]
   kpis: FleetKpis
+  /** M-3: true server-truth of whether the fleet is currently running (`FleetHost.IsRunning`, mirrored
+   * onto `FleetSnapshotDto`) — used only to SEED the client-tracked run-state context below on first
+   * load/reload; day-to-day the Start/Stop mutations remain the source of truth for that context. */
+  isRunning: boolean
 }
 
 export interface FleetActionResult {
@@ -373,13 +377,22 @@ const endpoints = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Fleet runtime context — "is the fleet actively running" is only ever
-// reported back by the start/stop actions themselves (no field on
-// GET /v1/fleet or GET /v1/health says so), so it's tracked client-side as
-// plain shell-scoped state rather than shoehorned into the query cache.
+// Fleet runtime context — day-to-day "is the fleet actively running" is
+// tracked client-side as plain shell-scoped state (set from the start/stop
+// mutations' own results) rather than shoehorned into the query cache.
 // Dashboard's empty state and the TopBar Start/Stop buttons both read it;
 // starting/stopping the fleet is meaningful from ANY route, not just
 // Dashboard, so it lives above the router in App.tsx.
+//
+// M-3 (final-review): that client state used to start every session at
+// `false` regardless of server truth, so a page reload while a fleet was
+// genuinely running left the TopBar Stop button disabled until Start was
+// clicked once (a no-op server-side, since FleetHost.Start()/Stop() are
+// both idempotent — it "self-healed" but only after an extra, confusing
+// click). `FleetSnapshotDto.isRunning` now round-trips server truth on
+// GET /v1/fleet, so the provider below seeds its state from the FIRST
+// snapshot it observes each mount, then leaves the mutations in charge
+// exactly as before.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FleetRuntimeValue {
@@ -391,6 +404,22 @@ const FleetRuntimeContext = React.createContext<FleetRuntimeValue | null>(null)
 
 export function FleetRuntimeProvider({ children }: { children: React.ReactNode }) {
   const [isRunning, setIsRunning] = React.useState(false)
+  const seededRef = React.useRef(false)
+
+  // Same query key `useFleet()` polls (~1s) — this just adds another observer onto that SAME shared
+  // cache entry (TanStack Query dedupes by key), not a second network poll.
+  const { data } = useQuery({
+    queryKey: QUERY_KEYS.fleet,
+    queryFn: endpoints.fleet,
+    refetchInterval: 1000,
+  })
+
+  React.useEffect(() => {
+    if (seededRef.current || data === undefined) return
+    seededRef.current = true
+    setIsRunning(data.isRunning)
+  }, [data])
+
   const value = React.useMemo(() => ({ isRunning, setIsRunning }), [isRunning])
   return React.createElement(FleetRuntimeContext.Provider, { value }, children)
 }

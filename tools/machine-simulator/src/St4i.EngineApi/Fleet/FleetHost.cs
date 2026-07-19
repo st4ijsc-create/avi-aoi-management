@@ -209,7 +209,16 @@ public sealed class FleetHost
             fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
         }
 
-        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy));
+        // M-3: IsRunning is only ever WRITTEN under _gate (StartLocked/StopLocked) — read it under the
+        // same lock here too (a GET can land on a different thread than whichever POST last flipped it)
+        // rather than relying on an unsynchronized read of a plain, non-volatile bool.
+        bool isRunning;
+        lock (_gate)
+        {
+            isRunning = IsRunning;
+        }
+
+        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy), isRunning);
     }
 
     public MachineDetailDto? MachineDetail(string code) =>

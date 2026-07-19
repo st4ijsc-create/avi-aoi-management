@@ -46,6 +46,19 @@ public sealed class MachineState
     private long _judgedCount;
     private string? _cachedConfigVersion;
 
+    /// <summary>Folded-in high-water mark from every RAW counter reset observed so far (final-review
+    /// I-1) — see <see cref="_lastRawCycleCounter"/>'s remarks for why this exists.</summary>
+    private long _cycleOffset;
+
+    /// <summary>The last RAW <see cref="DeviceReading.CycleCounter"/> seen (i.e. straight off
+    /// <c>St4i.EdgeCore.Drivers.SimulatedDriver</c>, NOT the offset-adjusted <see cref="Cycles"/>
+    /// below) — tracked so <see cref="ApplyReading"/> can detect a driver restart
+    /// (<c>FleetHost.ApplyScenario</c>'s <c>StopLocked()+StartLocked()</c> on a cycle-rate/scenario
+    /// change builds a brand-new <c>SimulatedDriver</c> whose per-machine counters reset to 0) purely
+    /// from the counter going backwards, with no dependency on FleetHost telling this class a restart
+    /// happened.</summary>
+    private long _lastRawCycleCounter;
+
     public MachineState(MachineDescriptor descriptor)
     {
         Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
@@ -78,7 +91,21 @@ public sealed class MachineState
     {
         lock (_gate)
         {
-            Cycles = reading.CycleCounter;
+            // Final-review I-1: a speed-slider/scenario-preset change restarts the fleet's driver, which
+            // resets the RAW per-machine cycle counter back toward 1 — without this, the DISPLAYED
+            // Cycles (and every tile's spark/summary derived from it) would visibly rewind on the
+            // dashboard even though the fleet-wide KPI total (FleetHost._totalCycles, Interlocked and
+            // never reset by Stop/Start) keeps climbing. Detect the restart purely from the raw counter
+            // going backwards and fold the pre-restart high-water mark into a running offset, so the
+            // number a visitor is watching only ever climbs.
+            var rawCycleCounter = reading.CycleCounter;
+            if (rawCycleCounter < _lastRawCycleCounter)
+            {
+                _cycleOffset += _lastRawCycleCounter;
+            }
+
+            _lastRawCycleCounter = rawCycleCounter;
+            Cycles = _cycleOffset + rawCycleCounter;
 
             if (reading.Verdict != Verdict.Skip)
             {

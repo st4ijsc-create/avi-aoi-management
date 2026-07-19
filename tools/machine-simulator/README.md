@@ -55,8 +55,9 @@ dotnet run --project src/St4iMachineSimulator
 # window; prints "SELFTEST OK" and exits 0 on success. Useful in CI / before a build handoff.
 dotnet run --project src/St4iMachineSimulator -- --selftest
 
-# Run the xUnit suite (St4i.EdgeCore.Tests)
+# Run the xUnit suites (St4i.EdgeCore.Tests + St4i.EngineApi.Tests)
 dotnet test tests/St4i.EdgeCore.Tests/St4i.EdgeCore.Tests.csproj
+dotnet test tests/St4i.EngineApi.Tests/St4i.EngineApi.Tests.csproj
 ```
 
 The app boots straight into **Demo mode** with no configuration — it is the bulletproof,

@@ -41,4 +41,20 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- Final-review I-2 guard: the Content ItemGroup above quietly contributes zero items (and thus an
+       empty wwwroot/) when `web/dist` doesn't exist yet — the right behavior for a bare `dotnet build`
+       on a fresh checkout (Program.cs still serves the API fine with no UI to host), but NOT for a
+       `dotnet publish` someone is about to hand off/deploy: Program.cs's UseStaticFiles/
+       MapFallbackToFile still starts and still answers GET /v1/fleet with an empty wwwroot, so a
+       readiness probe (e.g. St4i.DesktopShell's) lies and the shell navigates a WebView2 to a raw 404.
+       Hard-fail any publish (any configuration) the moment web/dist/index.html is missing, naming the
+       exact fix, instead of silently producing that broken package. The correct-order publish (npm run
+       build THEN dotnet publish, per README.md §Publish) is unaffected — this Error never evaluates
+       true in that path. -->
+  <Target Name="St4iRequireWebUiBeforePublish" BeforeTargets="Publish">
+    <Error
+      Condition="!Exists('$(MSBuildProjectDirectory)\..\..\web\dist\index.html')"
+      Text="Refusing to publish St4i.EngineApi: web/dist/index.html not found. Run `npm run build` in tools/machine-simulator/web/ BEFORE `dotnet publish` (see README.md's publish order) -- otherwise wwwroot ships empty, the engine still answers /v1/fleet, and the desktop shell/WebView2 ends up showing a raw 404 instead of the UI." />
+  </Target>
 </Project>

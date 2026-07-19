@@ -14,6 +14,11 @@ namespace St4i.EngineApi.Hubs;
 /// long as the socket stays open. Server-push-only (no client→server message contract) — the headless
 /// host analogue of the WPF app's <c>ApiInspectorView</c>/<c>InspectorViewModel</c>, just over a raw
 /// WebSocket instead of data-binding.
+///
+/// Final-review M-1: the backfill is skipped when the client passes <c>?skipBackfill=1</c> on the
+/// upgrade request — <c>web/src/lib/inspector.ts</c> sets that on every RECONNECT (not the initial
+/// connection), because otherwise a WS blip/engine hiccup mid-exhibition re-injects up to 200 already-
+/// seen historical rows into the client's ring as duplicates every time it reconnects.
 /// </summary>
 public static class InspectorStreamEndpoint
 {
@@ -29,12 +34,14 @@ public static class InspectorStreamEndpoint
             }
 
             var eventBus = context.RequestServices.GetRequiredService<EventBus>();
+            var skipBackfill = context.Request.Query.TryGetValue("skipBackfill", out var flag) &&
+                (flag == "1" || string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase));
             using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-            await RunAsync(socket, eventBus, context.RequestAborted).ConfigureAwait(false);
+            await RunAsync(socket, eventBus, skipBackfill, context.RequestAborted).ConfigureAwait(false);
         });
     }
 
-    private static async Task RunAsync(WebSocket socket, EventBus eventBus, CancellationToken requestAborted)
+    private static async Task RunAsync(WebSocket socket, EventBus eventBus, bool skipBackfill, CancellationToken requestAborted)
     {
         // Unbounded: EventBus.Publish itself is already bounded (a 500-capacity ring — see its own
         // remarks), so a slow/stalled client can only ever cause this channel to grow to that same
@@ -52,9 +59,12 @@ public static class InspectorStreamEndpoint
 
         try
         {
-            foreach (var e in eventBus.Recent(200))
+            if (!skipBackfill)
             {
-                await SendAsync(socket, e, linkedCts.Token).ConfigureAwait(false);
+                foreach (var e in eventBus.Recent(200))
+                {
+                    await SendAsync(socket, e, linkedCts.Token).ConfigureAwait(false);
+                }
             }
 
             // Pumps (and discards) whatever the client sends — a WebSocket's receive loop must still run

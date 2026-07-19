@@ -23,7 +23,12 @@ public sealed record FleetTileDto(
 
 public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy);
 
-public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis);
+/// <summary><c>IsRunning</c> added for final-review M-3: before this, whether the fleet is actively
+/// running was only ever reported back by the start/stop POST responses, so a client that reloaded the
+/// page while a fleet was genuinely running had no way to recover that fact from a plain GET and its
+/// Stop button stayed disabled (self-healing only once Start was clicked, a no-op server-side). Mirrors
+/// <see cref="FleetHost.IsRunning"/> directly.</summary>
+public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis, bool IsRunning);
 
 public sealed record FleetActionResultDto(bool Running, string Mode);
 
