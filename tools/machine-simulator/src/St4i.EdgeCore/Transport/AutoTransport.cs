@@ -82,6 +82,16 @@ public sealed class AutoTransport : ITransport
             SetFallingBack(true);
             return await _demo.HeartbeatAsync(machineCode, ct).ConfigureAwait(false);
         }
+        catch (St4iConfigException)
+        {
+            // Defense-in-depth for any ITransport implementation that throws St4iConfigException
+            // directly rather than converting it to a failure result itself (LiveTransport, the normal
+            // case, already does that conversion internally — see its own HeartbeatAsync — so this
+            // branch is a belt-and-suspenders guard, not the primary path for the unconfigured-live
+            // scenario).
+            SetFallingBack(true);
+            return await _demo.HeartbeatAsync(machineCode, ct).ConfigureAwait(false);
+        }
 
         if (IsNetworkFailure(result))
         {
@@ -107,6 +117,12 @@ public sealed class AutoTransport : ITransport
         }
         catch (St4iNetworkException)
         {
+            SetFallingBack(true);
+            return await _demo.SyncConfigAsync(machineCode, configKind, cachedVersion, ct).ConfigureAwait(false);
+        }
+        catch (St4iConfigException)
+        {
+            // Defense-in-depth — see HeartbeatAsync's matching catch remarks above.
             SetFallingBack(true);
             return await _demo.SyncConfigAsync(machineCode, configKind, cachedVersion, ct).ConfigureAwait(false);
         }

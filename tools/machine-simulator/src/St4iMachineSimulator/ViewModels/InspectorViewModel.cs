@@ -2,12 +2,12 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
-using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using St4i.EdgeCore.Infrastructure;
+using St4iMachineSimulator.Infrastructure;
 
 namespace St4iMachineSimulator.ViewModels;
 
@@ -185,7 +185,7 @@ public sealed partial class InspectorViewModel : ObservableObject
     /// <c>MachineViewModel.RunOnUiThread</c> remarks) — a direct off-thread <c>ObservableCollection</c>
     /// add here would be a bug (WPF collections raise CollectionChanged synchronously, and bound
     /// controls require that to happen on the dispatcher thread).</summary>
-    private void OnTraced(ApiTraceEvent e) => RunOnUiThread(() =>
+    private void OnTraced(ApiTraceEvent e) => DispatcherHelper.RunOnUiThread(() =>
     {
         if (IsPaused) return;
         AddInternal(e);
@@ -246,21 +246,5 @@ public sealed partial class InspectorViewModel : ObservableObject
         if (!string.IsNullOrEmpty(e.Error)) return "Error";
         if (e.Status == 0) return "Queued/0";
         return e.Status.ToString(System.Globalization.CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>Same dispatcher-marshaling pattern as <c>MachineViewModel.RunOnUiThread</c>/
-    /// <c>FleetViewModel.RunOnUiThread</c>: inline if already on the UI thread, dispatched otherwise,
-    /// inline if there is no <see cref="Application.Current"/> yet.</summary>
-    private static void RunOnUiThread(Action action)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-        {
-            action();
-        }
-        else
-        {
-            dispatcher.Invoke(action);
-        }
     }
 }

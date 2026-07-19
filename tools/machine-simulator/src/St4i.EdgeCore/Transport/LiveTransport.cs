@@ -76,6 +76,18 @@ public sealed class LiveTransport : ITransport
             sw.Stop();
             return new TransportAck(Success: false, Queued: false, HttpStatus: e.Status, Error: e.Message, LatencyMs: sw.ElapsedMilliseconds);
         }
+        catch (St4iConfigException e)
+        {
+            // Live is UNCONFIGURED (no mk_ — see St4iDeviceClient.HttpSendAsync's guard) rather than
+            // reachable-but-rejecting. Treated the same as a network failure (Success:false, Queued:true)
+            // rather than a permanent 4xx: an unconfigured live side is exactly the case Auto mode
+            // (Task 19a) must fall back to demo for, and AutoTransport's fallback trigger keys off this
+            // Queued:true/Error-not-null shape (see AutoTransport.IsNetworkFailure) — a CONFIGURED live
+            // server's own St4iApiException (real 4xx) is caught separately above and must keep
+            // surfacing, not fall back.
+            sw.Stop();
+            return new TransportAck(Success: false, Queued: true, Error: e.Message, LatencyMs: sw.ElapsedMilliseconds);
+        }
     }
 
     private async Task<TransportAck> SendProcessResultAsync(CanonicalEnvelope env, Stopwatch sw, CancellationToken ct)
@@ -169,6 +181,12 @@ public sealed class LiveTransport : ITransport
         {
             return new HeartbeatResult(false, null, null, null);
         }
+        catch (St4iConfigException)
+        {
+            // Unconfigured (no mk_) — see SendAsync's St4iConfigException catch remarks. Same
+            // Success:false shape AutoTransport.HeartbeatAsync already treats as a fallback trigger.
+            return new HeartbeatResult(false, null, null, null);
+        }
     }
 
     public async Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct)
@@ -187,6 +205,12 @@ public sealed class LiveTransport : ITransport
         }
         catch (St4iApiException)
         {
+            return new ConfigSyncResult(false, cachedVersion, "error", Applied: false);
+        }
+        catch (St4iConfigException)
+        {
+            // Unconfigured (no mk_) — see SendAsync's St4iConfigException catch remarks. Same
+            // DriftState=="error" shape AutoTransport.SyncConfigAsync already treats as a fallback trigger.
             return new ConfigSyncResult(false, cachedVersion, "error", Applied: false);
         }
     }

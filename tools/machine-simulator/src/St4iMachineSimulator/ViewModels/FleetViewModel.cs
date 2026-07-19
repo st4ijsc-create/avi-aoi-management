@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using St4i.EdgeCore.Models;
+using St4iMachineSimulator.Infrastructure;
 using St4iMachineSimulator.Services;
 
 namespace St4iMachineSimulator.ViewModels;
@@ -88,7 +88,7 @@ public sealed partial class FleetViewModel : ObservableObject
     /// to the UI thread before touching any bound property (this class's own KPIs, or the target
     /// <see cref="MachineViewModel"/>'s), per the shell's threading rule.
     /// </summary>
-    private void OnCommitted(DeviceReading reading, TransportAck ack) => RunOnUiThread(() =>
+    private void OnCommitted(DeviceReading reading, TransportAck ack) => DispatcherHelper.RunOnUiThread(() =>
     {
         if (_byCode.TryGetValue(reading.MachineCode, out var machine))
         {
@@ -143,19 +143,4 @@ public sealed partial class FleetViewModel : ObservableObject
         RefreshFpySubText();
     }
 
-    /// <summary>Same dispatcher-marshaling pattern as <c>AppShellViewModel.RunOnUiThread</c> (Task 14):
-    /// inline if already on the UI thread, dispatched otherwise, inline if there is no
-    /// <see cref="Application.Current"/> yet.</summary>
-    private static void RunOnUiThread(Action action)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-        {
-            action();
-        }
-        else
-        {
-            dispatcher.Invoke(action);
-        }
-    }
 }

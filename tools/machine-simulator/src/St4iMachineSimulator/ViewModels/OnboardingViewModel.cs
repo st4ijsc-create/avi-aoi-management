@@ -2,13 +2,13 @@ using System.Collections.ObjectModel;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using St4i.DeviceClient;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4iMachineSimulator.Infrastructure;
 
 namespace St4iMachineSimulator.ViewModels;
 
@@ -167,7 +167,7 @@ public sealed partial class OnboardingViewModel : ObservableObject
                 ["machineType"] = MachineType,
             };
             var json = await PostJsonAsync("/api/machine/register", body, CancellationToken.None).ConfigureAwait(true);
-            RunOnUiThread(() =>
+            DispatcherHelper.RunOnUiThread(() =>
             {
                 var status = GetString(json, "registrationStatus") ?? "pending";
                 Step = OnboardingStep.Pending;
@@ -176,7 +176,7 @@ public sealed partial class OnboardingViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => Log($"Register failed: {ex.Message}"));
+            DispatcherHelper.RunOnUiThread(() => Log($"Register failed: {ex.Message}"));
         }
     }
 
@@ -196,7 +196,7 @@ public sealed partial class OnboardingViewModel : ObservableObject
         {
             var url = $"/api/machine/config?serialNumber={Uri.EscapeDataString(SerialNumber)}";
             var json = await GetJsonAsync(url, CancellationToken.None).ConfigureAwait(true);
-            RunOnUiThread(() =>
+            DispatcherHelper.RunOnUiThread(() =>
             {
                 var isApproved = GetBool(json, "isApproved");
                 var requiresClaim = GetBool(json, "requiresClaim");
@@ -213,7 +213,7 @@ public sealed partial class OnboardingViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => Log($"Poll approval failed: {ex.Message}"));
+            DispatcherHelper.RunOnUiThread(() => Log($"Poll approval failed: {ex.Message}"));
         }
     }
 
@@ -238,11 +238,11 @@ public sealed partial class OnboardingViewModel : ObservableObject
         {
             var client = new St4iDeviceClient(serverUrl: ServerUrl, serialNumber: SerialNumber);
             var cred = await client.ClaimAsync(ClaimToken, SerialNumber, CancellationToken.None).ConfigureAwait(true);
-            RunOnUiThread(() => AbsorbCredential(cred, OnboardingStep.Claimed, "Claimed"));
+            DispatcherHelper.RunOnUiThread(() => AbsorbCredential(cred, OnboardingStep.Claimed, "Claimed"));
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => Log($"Claim failed: {ex.Message}"));
+            DispatcherHelper.RunOnUiThread(() => Log($"Claim failed: {ex.Message}"));
         }
     }
 
@@ -268,17 +268,17 @@ public sealed partial class OnboardingViewModel : ObservableObject
             var client = new St4iDeviceClient(serverUrl: ServerUrl, serialNumber: SerialNumber);
             var machineInfo = new Dictionary<string, object> { ["name"] = Name, ["machineType"] = MachineType };
             var cred = await client.EnrollAsync(EnrollToken, SerialNumber, machineInfo, CancellationToken.None).ConfigureAwait(true);
-            RunOnUiThread(() => AbsorbCredential(cred, OnboardingStep.Enrolled, "Enrolled"));
+            DispatcherHelper.RunOnUiThread(() => AbsorbCredential(cred, OnboardingStep.Enrolled, "Enrolled"));
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => Log($"Enroll failed: {ex.Message}"));
+            DispatcherHelper.RunOnUiThread(() => Log($"Enroll failed: {ex.Message}"));
         }
     }
 
     /// <summary>Shared Claim/Enroll success path (Live mode only — Demo inlines its own fabricated
     /// version above since it has no <see cref="Credential"/> DTO to absorb). MUST run on the UI thread
-    /// (touches bound properties) — see the two callers' <c>RunOnUiThread</c> wrapping.</summary>
+    /// (touches bound properties) — see the two callers' <c>DispatcherHelper.RunOnUiThread</c> wrapping.</summary>
     private void AbsorbCredential(Credential cred, OnboardingStep succeededStep, string verb)
     {
         if (string.IsNullOrEmpty(cred.ApiKey))
@@ -415,26 +415,4 @@ public sealed partial class OnboardingViewModel : ObservableObject
         o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
             ? v.GetString()
             : null;
-
-    /// <summary>Same dispatcher-marshaling pattern as <c>MachineViewModel.RunOnUiThread</c>/
-    /// <c>InspectorViewModel.RunOnUiThread</c>: inline if already on the UI thread, dispatched
-    /// otherwise, inline if there is no <see cref="Application.Current"/> yet (e.g. <c>--selftest</c>,
-    /// which runs before <c>Application.Run</c> starts WPF's own message loop). Needed here because the
-    /// Live-mode HTTP/SDK awaits above have no <c>ConfigureAwait(false)</c> anywhere in their call
-    /// chain but that alone does NOT guarantee the continuation resumes on the UI thread (it resumes on
-    /// whatever <see cref="SynchronizationContext"/>, if any, was captured at the await point) — so
-    /// every bound-property write after one of those awaits goes through this helper rather than
-    /// assuming the thread.</summary>
-    private static void RunOnUiThread(Action action)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-        {
-            action();
-        }
-        else
-        {
-            dispatcher.Invoke(action);
-        }
-    }
 }

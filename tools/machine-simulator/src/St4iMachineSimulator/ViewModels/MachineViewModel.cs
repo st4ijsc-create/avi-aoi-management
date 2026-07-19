@@ -6,6 +6,7 @@ using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
+using St4iMachineSimulator.Infrastructure;
 
 namespace St4iMachineSimulator.ViewModels;
 
@@ -204,7 +205,7 @@ public sealed partial class MachineViewModel : ObservableObject
         try
         {
             var result = await _transport.SyncConfigAsync(Code, ConfigKind, _cachedConfigVersion, CancellationToken.None);
-            RunOnUiThread(() =>
+            DispatcherHelper.RunOnUiThread(() =>
             {
                 _cachedConfigVersion = result.Version;
                 DriftState = BuildDriftState(result);
@@ -212,7 +213,7 @@ public sealed partial class MachineViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            RunOnUiThread(() => DriftState = $"ERROR: {ex.Message}");
+            DispatcherHelper.RunOnUiThread(() => DriftState = $"ERROR: {ex.Message}");
         }
     }
 
@@ -359,21 +360,5 @@ public sealed partial class MachineViewModel : ObservableObject
         };
         var ackLabel = !ack.Success ? "ERR" : ack.Duplicate ? "dup" : ack.Queued ? "queued" : "ok";
         return $"#{reading.CycleCounter} {kindLabel} · {reading.Verdict} · ack:{ackLabel}";
-    }
-
-    /// <summary>Same dispatcher-marshaling pattern as <c>FleetViewModel.RunOnUiThread</c>/
-    /// <c>AppShellViewModel.RunOnUiThread</c>: inline if already on the UI thread, dispatched
-    /// otherwise, inline if there is no <see cref="Application.Current"/> yet.</summary>
-    private static void RunOnUiThread(Action action)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-        {
-            action();
-        }
-        else
-        {
-            dispatcher.Invoke(action);
-        }
     }
 }

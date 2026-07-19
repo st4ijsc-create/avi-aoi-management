@@ -67,4 +67,68 @@ public class LiveTransportTests
         Assert.DoesNotContain("\"defectSeverity\":\"\"", h.LastBody);
         Assert.DoesNotContain("\"defectCatalogCode\":\"\"", h.LastBody);
     }
+
+    // Task 19a — Auto-mode-graceful-when-unconfigured fix. An empty mkKey makes the wrapped
+    // St4iDeviceClient throw St4iConfigException SYNCHRONOUSLY out of HttpSendAsync — before it ever
+    // touches the HttpMessageHandler (see St4iDeviceClient.HttpSendAsync's `if
+    // (string.IsNullOrEmpty(MkKey)) throw new St4iConfigException(...)` guard, which runs before the
+    // real `_http.SendAsync` call). The Responder below throws if ever invoked, so this test also
+    // proves the handler is never reached. Before the fix, this St4iConfigException propagated straight
+    // out of SendAsync uninherited (LiveTransport only caught St4iNetworkException/St4iApiException),
+    // which is exactly the bug that made AutoTransport's failed-ack fallback logic never trigger for an
+    // unconfigured live transport (it never got an ack to inspect — it got an exception instead, and
+    // AutoTransport.SendAsync only catches St4iNetworkException around its own live call).
+    [Fact]
+    public async Task SendAsync_with_unconfigured_mkKey_returns_failed_queued_ack_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException(
+                "handler must never be reached — St4iConfigException (no mk_) should short-circuit before any HTTP call"),
+        };
+        var live = LiveTransport.ForMachine("http://x", "", "M1", null, true, h);
+        var env = new CanonicalEnvelope(ReadingKind.ProcessResult, "M1", "/api/v1/ingest/process-result",
+            new()
+            {
+                ["serialNumber"] = "SN1",
+                ["stepType"] = "screw_tightening",
+                ["result"] = "pass",
+                ["idempotencyKey"] = "M1:RC1:000001",
+            }, "M1:RC1:000001");
+
+        var ack = await live.SendAsync(env, default);
+
+        Assert.False(ack.Success);
+        Assert.True(ack.Queued);
+        Assert.NotNull(ack.Error);
+    }
+
+    [Fact]
+    public async Task HeartbeatAsync_with_unconfigured_mkKey_returns_failed_result_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException("handler must never be reached"),
+        };
+        var live = LiveTransport.ForMachine("http://x", "", "M1", null, true, h);
+
+        var result = await live.HeartbeatAsync("M1", default);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task SyncConfigAsync_with_unconfigured_mkKey_returns_error_drift_state_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException("handler must never be reached"),
+        };
+        var live = LiveTransport.ForMachine("http://x", "", "M1", null, true, h);
+
+        var result = await live.SyncConfigAsync("M1", "recipe", null, default);
+
+        Assert.False(result.Changed);
+        Assert.Equal("error", result.DriftState);
+    }
 }

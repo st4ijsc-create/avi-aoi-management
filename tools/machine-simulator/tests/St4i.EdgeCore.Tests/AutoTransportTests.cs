@@ -1,5 +1,6 @@
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
+using St4i.EdgeCore.Tests.Fakes;
 using Xunit;
 
 public class AutoTransportTests
@@ -85,6 +86,74 @@ public class AutoTransportTests
         await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => auto.SendAsync(env, default)));
 
         Assert.Equal(1, fireCount);
+        Assert.True(auto.IsFallingBack);
+    }
+
+    // Task 19a — the real-world case DownTransport (a hand-written stub) can't exercise: an actual
+    // LiveTransport wrapping an UNCONFIGURED St4iDeviceClient (empty mkKey). Before the LiveTransport
+    // fix this test targets, SendAsync would THROW St4iConfigException straight out of the live call
+    // (never returning an ack at all) — AutoTransport.SendAsync's TrySendLiveAsync only catches
+    // St4iNetworkException around that call, so the exception would propagate uncaught out of this test
+    // instead of falling back to demo. The CapturingHandler's Responder throws if ever invoked, proving
+    // the fallback happens without any HTTP round trip.
+    [Fact]
+    public async Task Falls_back_to_demo_when_live_is_unconfigured_no_mkKey()
+    {
+        var handler = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException("handler must never be reached — unconfigured live must short-circuit"),
+        };
+        var unconfiguredLive = St4i.EdgeCore.Transport.LiveTransport.ForMachine("http://x", "", "M1", null, true, handler);
+        var auto = new AutoTransport(unconfiguredLive, new DemoTransport(latencyMs: 0));
+
+        var env = new CanonicalEnvelope(ReadingKind.ProcessResult, "M1", "/api/v1/ingest/process-result",
+            new()
+            {
+                ["serialNumber"] = "SN1",
+                ["stepType"] = "screw_tightening",
+                ["result"] = "pass",
+                ["idempotencyKey"] = "M1:RC1:000001",
+            }, "M1:RC1:000001");
+
+        var ack = await auto.SendAsync(env, default);
+
+        Assert.True(ack.Success);          // fell back to demo, which always succeeds
+        Assert.True(auto.IsFallingBack);
+    }
+
+    // Same unconfigured-live scenario, but through Heartbeat/SyncConfig — the two calls where
+    // LiveTransport's SDK client throws St4iConfigException from a DIFFERENT internal path than
+    // SendAsync's (HttpSendAsync's own mk_ guard, reached directly from HeartbeatAsync/CheckConfigAsync
+    // rather than via SendWithRetryAsync), so they need their own regression coverage.
+    [Fact]
+    public async Task HeartbeatAsync_falls_back_to_demo_when_live_is_unconfigured()
+    {
+        var handler = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException("handler must never be reached"),
+        };
+        var unconfiguredLive = St4i.EdgeCore.Transport.LiveTransport.ForMachine("http://x", "", "M1", null, true, handler);
+        var auto = new AutoTransport(unconfiguredLive, new DemoTransport(latencyMs: 0));
+
+        var result = await auto.HeartbeatAsync("M1", default);
+
+        Assert.True(result.Success);       // demo heartbeat always reports success
+        Assert.True(auto.IsFallingBack);
+    }
+
+    [Fact]
+    public async Task SyncConfigAsync_falls_back_to_demo_when_live_is_unconfigured()
+    {
+        var handler = new CapturingHandler
+        {
+            Responder = (_, __) => throw new InvalidOperationException("handler must never be reached"),
+        };
+        var unconfiguredLive = St4i.EdgeCore.Transport.LiveTransport.ForMachine("http://x", "", "M1", null, true, handler);
+        var auto = new AutoTransport(unconfiguredLive, new DemoTransport(latencyMs: 0));
+
+        var result = await auto.SyncConfigAsync("M1", "recipe", null, default);
+
+        Assert.NotEqual("error", result.DriftState); // demo config-sync never reports "error"
         Assert.True(auto.IsFallingBack);
     }
 }

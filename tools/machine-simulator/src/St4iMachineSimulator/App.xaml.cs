@@ -27,11 +27,14 @@ public partial class App : Application
 {
     private const string SelfTestArg = "--selftest";
 
-    /// <summary>Placeholder Live server URL. Constructing a <see cref="LiveTransport"/> never makes a
-    /// network call by itself (see <c>St4iDeviceClient</c>'s constructor) — nothing here dials out
-    /// until the user actually selects Live/Auto mode with a real, reachable server, which Task 19
-    /// (Settings) will make configurable. Until then this only needs to be a syntactically valid URL so
-    /// the DI graph resolves.</summary>
+    /// <summary>Startup Live server URL/machine code, before Settings (Task 19a) has changed anything.
+    /// Constructing a <see cref="LiveTransport"/> never makes a network call by itself (see
+    /// <c>St4iDeviceClient</c>'s constructor) — nothing here dials out until the user actually selects
+    /// Live/Auto mode AND that call fires; even then, with the placeholder's empty mkKey, LiveTransport
+    /// itself now catches the resulting <c>St4iConfigException</c> and reports a graceful failure rather
+    /// than throwing (see LiveTransport's own remarks) — Settings' ServerUrl/VerifyTls/MachineCode
+    /// fields (backed by <see cref="St4iMachineSimulator.Services.TransportCoordinator.RebuildLive"/>)
+    /// are what actually make this configurable at runtime.</summary>
     private const string PlaceholderServerUrl = "http://localhost:5000";
     private const string PlaceholderMachineCode = "SIM-EDGE-00";
 
@@ -60,24 +63,36 @@ public partial class App : Application
     {
         services.AddSingleton<EventBus>();
 
-        // Live-first, Demo-fallback transport (doc 62 §7). LiveTransport wraps the reference SDK
-        // client; DemoTransport is the offline fabricator used both as the live-fallback target and
-        // (later, via the Mode combo) as a directly-selectable transport in its own right.
-        services.AddSingleton(_ =>
-        {
-            var live = LiveTransport.ForMachine(
-                serverUrl: PlaceholderServerUrl,
-                mkKey: string.Empty,
-                machineCode: PlaceholderMachineCode,
-                queuePath: null,
-                verifyTls: true);
-            var demo = new DemoTransport();
-            return new AutoTransport(live, demo);
-        });
-        // Alias so anything asking for the ITransport seam (e.g. FleetService) resolves the same
-        // singleton AutoTransport instance, without every consumer having to depend on the concrete
-        // type.
-        services.AddSingleton<ITransport>(sp => sp.GetRequiredService<AutoTransport>());
+        // Task 19a — Live/Demo/Auto transport-MODE system (doc 62 §7 + this task's brief). Each of
+        // Demo/Live/Auto is its own resolvable singleton (Settings rebuilds Live/Auto from user-entered
+        // connection settings — see TransportCoordinator.RebuildLive — and needs the concrete types, not
+        // just the ITransport seam); TransportCoordinator is the only thing that actually re-points the
+        // DI ITransport (SwitchableTransport, below) at whichever one matches the current Mode.
+        //
+        // DEFAULT MODE IS DEMO (TransportMode.Demo passed to TransportCoordinator's ctor here, mirrored
+        // by AppShellViewModel.Mode's own Demo field initializer) — the out-of-box exhibition run needs
+        // no server at all and produces only clean 201/202 successes, never an error/status-0 row (the
+        // bug this task fixes: the OLD default was Auto over an unconfigured Live, whose
+        // St4iConfigException used to escape LiveTransport uncaught — see LiveTransport's own remarks).
+        services.AddSingleton<DemoTransport>();
+        services.AddSingleton(_ => LiveTransport.ForMachine(
+            serverUrl: PlaceholderServerUrl,
+            mkKey: string.Empty,
+            machineCode: PlaceholderMachineCode,
+            queuePath: null,
+            verifyTls: true));
+        services.AddSingleton(sp => new AutoTransport(sp.GetRequiredService<LiveTransport>(), sp.GetRequiredService<DemoTransport>()));
+        services.AddSingleton(sp => new SwitchableTransport(sp.GetRequiredService<DemoTransport>()));
+        // Alias so anything asking for the ITransport seam (e.g. FleetService, every MachineViewModel's
+        // config-sync) resolves the same singleton SwitchableTransport instance — the one whose Inner
+        // TransportCoordinator swaps on every Mode change, without any consumer needing to know that.
+        services.AddSingleton<ITransport>(sp => sp.GetRequiredService<SwitchableTransport>());
+        services.AddSingleton(sp => new TransportCoordinator(
+            sp.GetRequiredService<SwitchableTransport>(),
+            sp.GetRequiredService<DemoTransport>(),
+            sp.GetRequiredService<LiveTransport>(),
+            sp.GetRequiredService<AutoTransport>(),
+            TransportMode.Demo));
 
         // Task 15 — fleet/dashboard. FleetService owns the pipeline; FleetViewModel/DashboardView are
         // singletons too so Start Fleet (top bar) and the Dashboard nav item are always looking at the
@@ -101,36 +116,45 @@ public partial class App : Application
         services.AddSingleton<OnboardingViewModel>();
         services.AddSingleton(sp => new OnboardingView(sp.GetRequiredService<OnboardingViewModel>()));
 
-        services.AddSingleton(sp =>
-        {
-            var vm = new AppShellViewModel(
-                sp.GetRequiredService<EventBus>(),
-                sp.GetRequiredService<FleetService>(),
-                sp.GetRequiredService<DashboardView>(),
-                sp.GetRequiredService<FleetViewModel>(),
-                sp.GetRequiredService<ApiInspectorView>(),
-                sp.GetRequiredService<OnboardingView>());
-            var auto = sp.GetRequiredService<AutoTransport>();
-            // Background-thread event -> UI-thread property write; AppShellViewModel.HandleFallbackChanged
-            // does the dispatcher marshaling itself so this subscription is safe from any thread.
-            auto.FallbackChanged += vm.HandleFallbackChanged;
-            return vm;
-        });
+        // Task 19a — Settings. Depends only on TransportCoordinator (NOT AppShellViewModel — see
+        // TransportCoordinator's class remarks for why: AppShellViewModel needs SettingsView for its own
+        // nav, so SettingsViewModel depending back on AppShellViewModel would be circular).
+        services.AddSingleton(sp => new SettingsViewModel(sp.GetRequiredService<TransportCoordinator>()));
+        services.AddSingleton(sp => new SettingsView(sp.GetRequiredService<SettingsViewModel>()));
+
+        services.AddSingleton(sp => new AppShellViewModel(
+            sp.GetRequiredService<EventBus>(),
+            sp.GetRequiredService<FleetService>(),
+            sp.GetRequiredService<DashboardView>(),
+            sp.GetRequiredService<FleetViewModel>(),
+            sp.GetRequiredService<ApiInspectorView>(),
+            sp.GetRequiredService<OnboardingView>(),
+            sp.GetRequiredService<SettingsView>(),
+            sp.GetRequiredService<TransportCoordinator>()));
 
         services.AddTransient<ShellView>();
     }
 
     /// <summary>
     /// Headless smoke test for the DI graph + shell ViewModel, run when launched with <c>--selftest</c>
-    /// (no window is ever created). Exercises exactly what the task brief asks for: Mode toggles
-    /// through Live/Demo/Auto, Nav is populated, and Start/StopFleet run without throwing. Throws on
-    /// any unmet assertion — App.OnStartup's caller (the WPF host) surfaces that as a non-zero exit.
+    /// (no window is ever created). Exercises exactly what the task brief asks for: default Mode is
+    /// Demo, Mode toggles through Live/Demo/Auto, Nav is populated, Start/StopFleet run without
+    /// throwing, the fleet's Demo-mode run produces ONLY clean 201/202 trace successes, switching to
+    /// Auto with an unconfigured live STILL produces clean successes (AutoTransport falls back to demo
+    /// — Task 19a's fix), and <see cref="ResilienceProbe"/> against a dead port reports
+    /// <c>Reachable=false</c> without throwing. Throws on any unmet assertion — App.OnStartup's caller
+    /// (the WPF host) surfaces that as a non-zero exit.
     /// </summary>
     private void RunSelfTest()
     {
         ProbeLiveCharts();
 
         var vm = Services.GetRequiredService<AppShellViewModel>();
+        var eventBus = Services.GetRequiredService<EventBus>();
+
+        // ── Task 19a: default Mode is Demo — the "bulletproof, no server needed" out-of-box state ──
+        if (vm.Mode != TransportMode.Demo)
+            throw new InvalidOperationException($"selftest: default Mode was {vm.Mode}, expected Demo (Task 19a default — was Auto before this task)");
 
         vm.Mode = TransportMode.Live;
         if (vm.Mode != TransportMode.Live)
@@ -144,21 +168,36 @@ public partial class App : Application
         if (vm.Mode != TransportMode.Auto)
             throw new InvalidOperationException("selftest: Mode did not change to Auto");
 
+        vm.Mode = TransportMode.Demo; // restore the default before the fleet run below
+        if (vm.Mode != TransportMode.Demo)
+            throw new InvalidOperationException("selftest: Mode did not restore to Demo");
+
         if (vm.Nav.Count == 0)
             throw new InvalidOperationException("selftest: Nav is empty");
 
         // ── Task 15: fleet -> EdgePipeline -> FleetViewModel wiring ─────────────────────────────
         // Committed fires on the pipeline's background Task and FleetViewModel/MachineViewModel
-        // marshal onto the WPF Dispatcher before touching any bound property (see their RunOnUiThread
-        // helpers) — but OnStartup runs BEFORE WPF's own message loop (Application.Run) starts, so a
-        // plain Thread.Sleep here would leave nothing pumping the dispatcher and those Invoke calls
-        // would never get to run. PumpDispatcherFor below runs a short nested Dispatcher.PushFrame
-        // loop instead, which actively processes queued Invoke/BeginInvoke calls for its duration —
-        // the standard WPF technique for "wait AND keep dispatching" from inside a synchronous method.
+        // marshal onto the WPF Dispatcher before touching any bound property (see their
+        // DispatcherHelper.RunOnUiThread calls) — but OnStartup runs BEFORE WPF's own message loop
+        // (Application.Run) starts, so a plain Thread.Sleep here would leave nothing pumping the
+        // dispatcher and those Invoke calls would never get to run. PumpDispatcherFor below runs a
+        // short nested Dispatcher.PushFrame loop instead, which actively processes queued Invoke/
+        // BeginInvoke calls for its duration — the standard WPF technique for "wait AND keep
+        // dispatching" from inside a synchronous method.
         var fleetVm = Services.GetRequiredService<FleetViewModel>();
         var initialMachineCount = fleetVm.Machines.Count;
         if (initialMachineCount == 0)
             throw new InvalidOperationException("selftest: FleetViewModel.Machines was empty before StartFleet — fleet roster did not build");
+
+        // Task 19a: capture every trace event the fleet's OWN machine codes produce from here on, so
+        // the Demo-mode-clean-successes assertion below only looks at readings driven through THIS run
+        // (not, e.g., a later dedicated pipeline's events sharing the same EventBus). The pipeline
+        // publishes sequentially on its own single background Task (see EdgePipeline.RunAsync's
+        // await-foreach loop) so a plain List add from this handler is safe with no extra locking.
+        var fleetCodes = fleetVm.Machines.Select(m => m.Code).ToHashSet();
+        var demoPhaseEvents = new List<ApiTraceEvent>();
+        void CaptureDemoPhase(ApiTraceEvent e) { if (fleetCodes.Contains(e.MachineCode)) demoPhaseEvents.Add(e); }
+        eventBus.Traced += CaptureDemoPhase;
 
         vm.StartFleetCommand.Execute(null);
         if (!vm.IsFleetRunning)
@@ -195,11 +234,41 @@ public partial class App : Application
             $"TotalCycles={fleetVm.TotalCycles}, OnlineCount={fleetVm.OnlineCount}, Fpy={fleetVm.Fpy:P1}, " +
             $"FpyKpi.SubText judged count {judgedAt1s}(t=1s) -> {judgedAt3s}(t=3s) [\"{fleetVm.FpyKpi.SubText}\"]");
 
+        eventBus.Traced -= CaptureDemoPhase;
+        AssertCleanTraceEvents(demoPhaseEvents, "default-Demo");
+        Console.WriteLine($"SELFTEST demo-mode clean: {demoPhaseEvents.Count} fleet event(s) (default Mode=Demo), all clean 201/202, no error/status-0 rows");
+
+        // ── Task 19a: switch to Auto with an UNCONFIGURED live — must STILL be clean (demo fallback) ──
+        // Before this task's LiveTransport fix, this exact scenario (Auto over a live side with no mk_)
+        // is what made the API Inspector show error/status-0 rows: LiveTransport let St4iConfigException
+        // escape uncaught, so AutoTransport's "failed ack with Queued -> fall back to demo" logic never
+        // got a chance to trigger (it never received an ack at all). Now LiveTransport converts that
+        // exception into a Queued:true/Error-not-null ack itself, so AutoTransport's EXISTING fallback
+        // logic kicks in automatically and every one of these events should be just as clean as the
+        // Demo-mode ones above.
+        var autoPhaseEvents = new List<ApiTraceEvent>();
+        void CaptureAutoPhase(ApiTraceEvent e) { if (fleetCodes.Contains(e.MachineCode)) autoPhaseEvents.Add(e); }
+        eventBus.Traced += CaptureAutoPhase;
+
+        vm.Mode = TransportMode.Auto;
+        if (vm.Mode != TransportMode.Auto)
+            throw new InvalidOperationException("selftest: Mode did not switch to Auto for the fallback check");
+
+        PumpDispatcherFor(TimeSpan.FromSeconds(2));
+        eventBus.Traced -= CaptureAutoPhase;
+
+        AssertCleanTraceEvents(autoPhaseEvents, "Auto (unconfigured live, demo fallback)");
+        Console.WriteLine($"SELFTEST auto-fallback clean: {autoPhaseEvents.Count} fleet event(s) (Mode=Auto, unconfigured live), all clean 201/202 via demo fallback — no error/status-0 rows");
+
+        vm.Mode = TransportMode.Demo; // restore the default for the remainder of this run
+        if (vm.Mode != TransportMode.Demo)
+            throw new InvalidOperationException("selftest: Mode did not restore to Demo after the Auto-fallback check");
+
         // ── Task 16: Machine Detail — per-class detail state + config-sync ─────────────────────
-        // The fleet has been running for 3s at this point (all 10 machines' first cycle fires
-        // near-simultaneously at t=0 — see SimulatedDriver's initial _nextDueAt seeding — so every
-        // DeviceClass should already have reported at least once), so this reuses that run rather
-        // than starting a second one.
+        // The fleet has been running for several seconds at this point (all 10 machines' first cycle
+        // fires near-simultaneously at t=0 — see SimulatedDriver's initial _nextDueAt seeding — so
+        // every DeviceClass should already have reported at least once), so this reuses that run
+        // rather than starting a second one.
         RunMachineDetailSelfTest(fleetVm);
 
         vm.StopFleetCommand.Execute(null);
@@ -212,21 +281,60 @@ public partial class App : Application
         // ── Task 18: Onboarding wizard ──────────────────────────────────────────────────────
         RunOnboardingSelfTest();
 
+        // ── Task 19a: ResilienceProbe against a dead port must report Reachable=false, never throw ──
+        RunResilienceProbeSelfTest();
+
         Console.WriteLine("SELFTEST OK");
     }
 
+    /// <summary>Shared assertion for the Task 19a Demo/Auto-fallback trace-cleanliness checks above:
+    /// every captured event must be a real success (HttpStatus 201 for ProcessResult/Inspection, 202 for
+    /// Telemetry — see <see cref="DemoTransport"/>'s Ack* methods) with no <see cref="ApiTraceEvent.Error"/>
+    /// — never a status-0/error row.</summary>
+    private static void AssertCleanTraceEvents(IReadOnlyCollection<ApiTraceEvent> events, string phaseLabel)
+    {
+        if (events.Count == 0)
+            throw new InvalidOperationException($"selftest: no trace events captured from the fleet during the {phaseLabel} phase");
+
+        var unclean = events.Where(e => e.Error is not null || e.Status is not (201 or 202)).ToList();
+        if (unclean.Count > 0)
+            throw new InvalidOperationException(
+                $"selftest: {phaseLabel} fleet run expected only clean 201/202 successes, got " +
+                $"[{string.Join(", ", unclean.Select(e => $"{e.MachineCode}:{e.Status}{(e.Error is null ? "" : ":" + e.Error)}"))}]");
+    }
+
     /// <summary>
-    /// Task 17 headless check for the API Inspector. Deliberately does NOT reuse the fleet run above
-    /// (which drives readings through <see cref="AutoTransport"/> over an unconfigured
-    /// <see cref="LiveTransport"/> — see this task's brief note: early sends before the live→demo
-    /// fallback trips can show error/status-0 rows) — instead builds its own small
-    /// <see cref="EdgePipeline"/> directly over a fresh <see cref="SimulatedDriver"/> and a brand-new
-    /// <see cref="DemoTransport"/> (no <see cref="AutoTransport"/> involved at all), sharing only the
+    /// Task 19a headless check for <see cref="ResilienceProbe"/>: probing a port nothing is listening on
+    /// (localhost, so the refusal is immediate — no need to wait out the probe's own 5s timeout) must
+    /// report <c>Reachable=false</c> rather than throwing. <see cref="ResilienceProbe.ProbeAsync"/>
+    /// already has <c>ConfigureAwait(false)</c> on its own internal awaits (see its source), so blocking
+    /// on it synchronously here via <c>GetAwaiter().GetResult()</c> is safe even though OnStartup runs
+    /// before Application.Run has installed WPF's SynchronizationContext — there's no captured context
+    /// for the continuation to deadlock waiting on.
+    /// </summary>
+    private static void RunResilienceProbeSelfTest()
+    {
+        var probe = new ResilienceProbe();
+        var result = probe.ProbeAsync("http://127.0.0.1:59999", CancellationToken.None).GetAwaiter().GetResult();
+
+        if (result.Reachable)
+            throw new InvalidOperationException($"selftest: ResilienceProbe against a dead port unexpectedly reported Reachable=true (Status={result.Status})");
+
+        Console.WriteLine($"SELFTEST resilience probe (dead port): Reachable={result.Reachable}, Status={result.Status} — no throw, as expected");
+    }
+
+    /// <summary>
+    /// Task 17 headless check for the API Inspector. Deliberately does NOT reuse the fleet run above —
+    /// even though that run is ALSO clean end to end now (Task 19a's default-Demo + Auto-fallback
+    /// checks above prove exactly that) — but builds its own small <see cref="EdgePipeline"/> directly
+    /// over a fresh <see cref="SimulatedDriver"/> and a brand-new <see cref="DemoTransport"/> (no
+    /// <see cref="AutoTransport"/>/<see cref="SwitchableTransport"/> involved at all), sharing only the
     /// DI-resolved <see cref="EventBus"/> singleton the already-constructed <see cref="InspectorViewModel"/>
-    /// is listening to. That guarantees every event this method produces is a clean 201/202 success (see
-    /// <see cref="DemoTransport.AckProcessResult"/>/<see cref="DemoTransport.AckInspection"/>/
-    /// <see cref="DemoTransport.AckTelemetry"/>), which is what makes the assertions below deterministic
-    /// rather than dependent on the earlier fleet phase's AutoTransport fallback timing.
+    /// is listening to. That isolates this check from the fleet phase's own timing/Mode state (which by
+    /// this point has already been toggled through Live/Demo/Auto/Demo/Auto/Demo above) and keeps its
+    /// event count/timing assertions deterministic — every event this method produces is a clean 201/202
+    /// success by construction (see <see cref="DemoTransport.AckProcessResult"/>/
+    /// <see cref="DemoTransport.AckInspection"/>/<see cref="DemoTransport.AckTelemetry"/>).
     /// </summary>
     private void RunInspectorSelfTest()
     {
@@ -406,9 +514,10 @@ public partial class App : Application
     /// populated from the fleet run <see cref="RunSelfTest"/> already did (SpcValues for an automation
     /// machine, TelemetryValues for an IoT machine, BoardPoints for an AOI machine, CycleLog for at
     /// least one machine), then exercises <see cref="MachineViewModel.SyncConfigCommand"/> end to end
-    /// against the DI-resolved <see cref="ITransport"/> (Auto → falls back to <see cref="DemoTransport"/>
-    /// with no live server reachable, same as the rest of this build) and asserts it completed without
-    /// faulting and actually changed <see cref="MachineViewModel.DriftState"/>.
+    /// against the DI-resolved <see cref="ITransport"/> (by the time this runs, <see cref="RunSelfTest"/>
+    /// has restored Mode to Demo — see its own Task 19a remarks — so this is a direct
+    /// <see cref="DemoTransport"/> call, not an Auto fallback) and asserts it completed without faulting
+    /// and actually changed <see cref="MachineViewModel.DriftState"/>.
     /// </summary>
     private static void RunMachineDetailSelfTest(FleetViewModel fleetVm)
     {
