@@ -1,0 +1,156 @@
+<UserControl x:Class="St4iMachineSimulator.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:St4iMachineSimulator.Controls"
+             xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:FleetViewModel}"
+             d:DesignWidth="1000" d:DesignHeight="700">
+    <!--
+        Task 15 — fleet dashboard: KPI row (ONLINE / TOTAL CYCLES / FPY, via KpiTile) + a grid of
+        per-machine tiles (status + driver-kind chip + pass-rate + throughput sparkline), both entirely
+        data-driven off FleetViewModel — "Start Fleet" in the shell's top bar is what actually makes
+        readings start arriving here (AppShellViewModel calls FleetService.Start(), which is what
+        FleetViewModel.Machines/Kpis react to).
+    -->
+    <UserControl.Resources>
+        <!-- Status dot: color follows MachineViewModel.StatusText (ambient DataContext inside the
+             machine-tile DataTemplate below), same 4-color vocabulary as the rest of the shell. -->
+        <Style x:Key="MachineStatusDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Fill" Value="{StaticResource Brush.Status.Unknown}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText}" Value="OK">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Online}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="WARN">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Warn}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="FAIL">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Offline}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="TELEMETRY">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DriverKindChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+
+        <Style x:Key="MachineTileStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+        </Style>
+
+        <Style x:Key="TileLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <Style x:Key="TileValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <!-- ═══ KPI row ═══════════════════════════════════════════════ -->
+            <ItemsControl ItemsSource="{Binding Kpis}" Margin="0,0,0,20">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:KpiViewModel}">
+                        <controls:KpiTile Margin="0,0,16,0" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Text="Fleet" FontSize="18" FontWeight="Bold" Margin="0,0,0,12" />
+
+            <!-- ═══ Machine tiles ═════════════════════════════════════════ -->
+            <ItemsControl ItemsSource="{Binding Machines}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:MachineViewModel}">
+                        <Border Style="{StaticResource MachineTileStyle}">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse Style="{StaticResource MachineStatusDotStyle}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Code}" FontSize="16" FontWeight="Bold"
+                                                   Margin="8,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <Border Grid.Column="1" Style="{StaticResource DriverKindChipStyle}">
+                                        <TextBlock Text="{Binding DriverKind}" FontSize="10"
+                                                   Foreground="{StaticResource Brush.Text.Secondary}" />
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock Text="{Binding MachineType}" Style="{StaticResource TileLabelStyle}" Margin="18,2,0,0" />
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Status" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource TileValueStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Pass rate" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{Binding PassRate, StringFormat={}{0:P0}}" Style="{StaticResource TileValueStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Cycles" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{Binding Cycles}" Style="{StaticResource TileValueStyle}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <lvc:CartesianChart Series="{Binding SparkSeries}"
+                                                     Height="44" Margin="0,12,0,0"
+                                                     Background="Transparent" />
+
+                                <TextBlock Text="{Binding LastCycleSummary}"
+                                           Style="{StaticResource TileLabelStyle}"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

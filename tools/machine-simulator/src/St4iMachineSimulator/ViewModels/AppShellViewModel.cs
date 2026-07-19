@@ -4,6 +4,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4iMachineSimulator.Services;
+using St4iMachineSimulator.Views;
 
 namespace St4iMachineSimulator.ViewModels;
 
@@ -21,6 +23,8 @@ public sealed record NavItem(string Title, string Key);
 public partial class AppShellViewModel : ObservableObject
 {
     private readonly EventBus _eventBus;
+    private readonly FleetService _fleetService;
+    private readonly DashboardView _dashboardView;
 
     [ObservableProperty]
     private TransportMode mode = TransportMode.Auto;
@@ -59,12 +63,16 @@ public partial class AppShellViewModel : ObservableObject
     /// <summary>Values for the top-bar mode <c>ComboBox</c>.</summary>
     public IReadOnlyList<TransportMode> AvailableModes { get; } = Enum.GetValues<TransportMode>();
 
-    public AppShellViewModel(EventBus eventBus)
+    public AppShellViewModel(EventBus eventBus, FleetService fleetService, DashboardView dashboardView)
     {
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
+        _fleetService = fleetService ?? throw new ArgumentNullException(nameof(fleetService));
+        _dashboardView = dashboardView ?? throw new ArgumentNullException(nameof(dashboardView));
         _eventBus.Traced += OnTraced;
 
-        CurrentView = $"{Nav[0].Title} — chưa triển khai (Task 15-20)";
+        // Nav[0] is Dashboard (Task 15) — the only real screen wired up so far; Nav rows 16-20 still
+        // fall back to SelectNavItem's placeholder text until their own tasks land.
+        CurrentView = _dashboardView;
     }
 
     /// <summary>Explicit alternative to two-way-binding <see cref="Mode"/> directly from the
@@ -77,13 +85,16 @@ public partial class AppShellViewModel : ObservableObject
     private void SelectNavItem(NavItem? item)
     {
         if (item is null) return;
-        CurrentView = $"{item.Title} — chưa triển khai (Task 15-20)";
+        CurrentView = item.Key == "dashboard"
+            ? _dashboardView
+            : $"{item.Title} — chưa triển khai (Task 16-20)";
     }
 
     [RelayCommand]
     private void StartFleet()
     {
         if (IsFleetRunning) return;
+        _fleetService.Start();
         IsFleetRunning = true;
         RefreshServerStatus();
     }
@@ -92,6 +103,7 @@ public partial class AppShellViewModel : ObservableObject
     private void StopFleet()
     {
         if (!IsFleetRunning) return;
+        _fleetService.Stop();
         IsFleetRunning = false;
         RefreshServerStatus();
     }
