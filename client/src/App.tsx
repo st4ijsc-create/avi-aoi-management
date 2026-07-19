@@ -545,7 +545,8 @@ function Router() {
       <Route path="/settings"><RouteGuard requirePermission="settings_view"><Settings /></RouteGuard></Route>
       {/* U7 (doc 21 §6 / §3 G-11) consolidation: the standalone Custom Dashboard is
           already embedded as the default tab of the Dashboard Center hub — redirect
-          the loose route in (reversible; CustomDashboard.tsx retained + embedded). */}
+          the loose route in (doc 67 W7: pages/CustomDashboard.tsx deleted — the
+          embedded copy lives on as components/CustomDashboardContent.tsx). */}
       <Route path="/custom-dashboard"><Redirect to="/dashboard-center?tab=custom-dashboard" /></Route>
 
       {/* ── ME (self) — read-open to every authenticated role ─────────────── */}

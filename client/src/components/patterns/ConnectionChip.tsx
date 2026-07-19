@@ -16,8 +16,25 @@
  */
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { relTimeShort } from "@/lib/format";
 
-export type ConnectionState = "connected" | "connecting" | "disconnected" | "error" | "unknown";
+/**
+ * doc 67 W7 GĐ1 — mở rộng thêm bộ ba nguồn-dữ-liệu "live | polling | offline"
+ * (thay LiveBadge/pill LIVE-POLLING local ở Control Tower / OpsConsole / Andon):
+ *   • live    → success (socket đang đẩy sự kiện)
+ *   • polling → warning (rơi về poll định kỳ — dữ liệu có thể trễ)
+ *   • offline → muted   (mất kết nối — KHÔNG giả vờ tươi)
+ * Các state cũ (connected/connecting/…) GIỮ NGUYÊN — backward-compatible.
+ */
+export type ConnectionState =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "error"
+  | "unknown"
+  | "live"
+  | "polling"
+  | "offline";
 
 export interface ConnectionChipProps {
   state: ConnectionState;
@@ -25,7 +42,13 @@ export interface ConnectionChipProps {
   label?: string;
   /** Animate the dot while connected/connecting (respects prefers-reduced-motion). */
   pulse?: boolean;
-  size?: "sm" | "md";
+  /**
+   * Mốc sự kiện dữ liệu gần nhất (ms epoch) — hiển thị tuổi "· 5s/3m/2h" qua
+   * relTimeShort, tự tick 10s. Bỏ trống → không hiển thị (hành vi cũ).
+   */
+  lastEventAt?: number;
+  /** `tv` = cỡ lớn cho bảng treo tường / kiosk nhìn xa (doc 67 W7). */
+  size?: "sm" | "md" | "tv";
   className?: string;
 }
 
@@ -71,17 +94,39 @@ const STATE_CONFIG: Record<ConnectionState, StateConfig> = {
     label: "Unknown",
     live: false,
   },
+  // ── doc 67 W7 — nguồn dữ liệu (token semantic: success/warning/muted) ──────
+  live: {
+    chip: "border-success/30 bg-success/15 text-success",
+    dot: "bg-success",
+    label: "LIVE",
+    live: true,
+  },
+  polling: {
+    chip: "border-warning/30 bg-warning/15 text-warning",
+    dot: "bg-warning",
+    label: "POLLING",
+    live: true,
+  },
+  offline: {
+    chip: "border-border bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground",
+    label: "OFFLINE",
+    live: false,
+  },
 };
 
 const SIZE = {
   sm: { pill: "gap-1.5 px-2 py-0.5 text-[11px]", dot: "size-1.5" },
   md: { pill: "gap-2 px-2.5 py-1 text-xs", dot: "size-2" },
+  // TV/kiosk: đọc được từ xa (ISA-101), đồng bộ với các bảng treo tường.
+  tv: { pill: "gap-2.5 px-3.5 py-1.5 text-base font-semibold", dot: "size-3" },
 } as const;
 
 export function ConnectionChip({
   state,
   label,
   pulse = false,
+  lastEventAt,
   size = "md",
   className,
 }: ConnectionChipProps): React.JSX.Element {
@@ -89,6 +134,15 @@ export function ConnectionChip({
   const sz = SIZE[size];
   const text = label ?? cfg.label;
   const animate = pulse && cfg.live;
+
+  // Tuổi sự kiện tự tick 10s (chỉ khi có lastEventAt — không thêm timer vô ích).
+  const [, bump] = React.useReducer((c: number) => c + 1, 0);
+  const hasAge = lastEventAt != null;
+  React.useEffect(() => {
+    if (!hasAge) return;
+    const id = setInterval(bump, 10_000);
+    return () => clearInterval(id);
+  }, [hasAge]);
 
   return (
     <span
@@ -114,6 +168,11 @@ export function ConnectionChip({
         <span className={cn("relative inline-flex rounded-full", sz.dot, cfg.dot)} />
       </span>
       {text}
+      {lastEventAt != null && (
+        <span className="tabular-nums opacity-75" aria-label={`Last event ${relTimeShort(lastEventAt)} ago`}>
+          · {relTimeShort(lastEventAt)}
+        </span>
+      )}
     </span>
   );
 }

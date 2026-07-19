@@ -96,6 +96,28 @@ export type { SparklineProps, SparkPoint } from "./Sparkline";
 export { ConnectionChip } from "./ConnectionChip";
 export type { ConnectionChipProps, ConnectionState } from "./ConnectionChip";
 
+// ── doc 67 W7 GĐ1 — tone chuẩn ISA-101 (ngưỡng KPI + severity + hex canvas) ───
+// Nguồn duy nhất thay các map local (PanelShell/DrillNode/opsconsole/
+// CommandCenter/AndonBoard/ExecutiveMobile). Formatter số ở @/lib/format.
+export {
+  PackmlStateBadge,
+  E10StateBadge,
+  AndonBadge,
+  UnitModeChip,
+  AlarmPriorityBadge,
+  oeeTone,
+  yieldTone,
+  severityTone,
+  severityDotClass,
+  severityTileClass,
+  toneHex,
+  stateHex,
+  TONE_TEXT_CLASS,
+  TONE_DOT_CLASS,
+  TONE_TILE_CLASS,
+} from "./isaStateBadges";
+export type { SemanticTone } from "./isaStateBadges";
+
 // ── doc 42 Đợt 1 (INFRA-1) — shared delete-confirm + entity-picker guard ──────
 // ConfirmDeleteDialog: thay nút thùng-rác 1-click bằng bước xác nhận thống nhất
 // (hard-delete / soft-archive + cảnh báo tham chiếu mồ côi). Không tự toast.

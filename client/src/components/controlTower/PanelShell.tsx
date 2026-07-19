@@ -14,55 +14,17 @@
 import * as React from "react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Lock, Wifi, WifiOff } from "lucide-react";
+import { ArrowUpRight, Lock } from "lucide-react";
 import { SectionCard } from "@/components/patterns";
+import { ConnectionChip } from "@/components/patterns/ConnectionChip";
 import { AsyncBoundary, type AsyncSkeletonPreset } from "@/components/AsyncBoundary";
 import { PollFreshness } from "@/components/PollFreshness";
 import { cn } from "@/lib/utils";
 
-// ── Formatting helpers (honest "—" for null/undefined) ───────────────────────
-export function pct(v: number | null | undefined, digits = 1): string {
-  return v == null || Number.isNaN(v) ? "—" : `${v.toFixed(digits)}%`;
-}
-export function num(v: number | null | undefined): string {
-  return v == null || Number.isNaN(v) ? "—" : v.toLocaleString();
-}
-export function int(v: number | null | undefined): string {
-  return v == null || Number.isNaN(v) ? "—" : Math.round(v).toLocaleString();
-}
-
-export type Tone = "default" | "success" | "warning" | "error" | "info" | "accent";
-
-/** OEE threshold → semantic tone (≥80 good · ≥60 warn · <60 poor · null neutral). */
-export function oeeTone(v: number | null | undefined): Tone {
-  if (v == null || Number.isNaN(v)) return "default";
-  if (v >= 80) return "success";
-  if (v >= 60) return "warning";
-  return "error";
-}
-
-export const TONE_TEXT: Record<Tone, string> = {
-  default: "text-muted-foreground",
-  success: "text-success",
-  warning: "text-warning",
-  error: "text-destructive",
-  info: "text-info",
-  accent: "text-primary",
-};
-
-/** Compact relative time ("5s", "3m", "2h", "4d") from a timestamp (ms) / ISO. */
-export function relTimeShort(input: number | string | Date | null | undefined, now = Date.now()): string {
-  if (input == null) return "—";
-  const ts = input instanceof Date ? input.getTime() : typeof input === "string" ? Date.parse(input) : input;
-  if (Number.isNaN(ts)) return "—";
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
+/* W7 GĐ2 (doc 67): pct/num/int/relTimeShort local → lib/format (fmtPct/fmtNum/
+ * fmtInt/relTimeShort) và Tone/oeeTone/TONE_TEXT local → isaStateBadges
+ * (SemanticTone/oeeTone/TONE_TEXT_CLASS). panels.tsx nay import thẳng từ nguồn
+ * shared — PanelShell chỉ còn shell + isAuthzError + LivePill. */
 
 /**
  * Is this tRPC error an authorization failure (role can't call the procedure)?
@@ -77,24 +39,28 @@ export function isAuthzError(error: unknown): boolean {
   return typeof msg === "string" && /unauthorized|forbidden|not authorized|permission|access denied/i.test(msg);
 }
 
-/** Small LIVE / POLLING pill reused across the tower. */
+/**
+ * Small LIVE / POLLING pill reused across the tower.
+ * W7 GĐ2: ngữ nghĩa riêng (API `live: boolean`, nhãn + tooltip i18n controlTower.*
+ * đã chuẩn W2) GIỮ NGUYÊN — chỉ phần thân render đổi sang ConnectionChip shared
+ * (state live|polling, size sm — cùng cỡ chữ/padding với pill cũ; icon Wifi cũ
+ * thay bằng chấm trạng thái chuẩn của chip).
+ */
 export function LivePill({ live }: { live: boolean }): React.JSX.Element {
   const { t } = useTranslation();
-  return live ? (
+  return (
     <span
-      className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
-      title={t("controlTower.liveHint", "Live via socket — poll fallback active")}
+      title={
+        live
+          ? t("controlTower.liveHint", "Live via socket — poll fallback active")
+          : t("controlTower.pollHint", "Socket offline — polling for fresh data")
+      }
     >
-      <Wifi className="h-3 w-3" aria-hidden="true" />
-      {t("controlTower.live", "LIVE")}
-    </span>
-  ) : (
-    <span
-      className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning"
-      title={t("controlTower.pollHint", "Socket offline — polling for fresh data")}
-    >
-      <WifiOff className="h-3 w-3" aria-hidden="true" />
-      {t("controlTower.polling", "POLLING")}
+      <ConnectionChip
+        state={live ? "live" : "polling"}
+        label={live ? t("controlTower.live", "LIVE") : t("controlTower.polling", "POLLING")}
+        size="sm"
+      />
     </span>
   );
 }

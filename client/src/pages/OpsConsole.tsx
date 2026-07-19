@@ -51,10 +51,13 @@ import AgeLabel from "@/components/opsconsole/AgeLabel";
 import AlertGroupCard from "@/components/opsconsole/AlertGroupCard";
 import {
   type AlertGroup, type AlertSource, type DecoratedAlert, type NormalAlert, type Severity,
-  SEVERITY_DOT, SEVERITY_RANK, SEVERITY_TILE, SOURCE_ICON,
+  SEVERITY_DOT, SEVERITY_RANK, SEVERITY_TILE_SOLID, SOURCE_ICON,
   FORECAST_EXPIRE_MS, OVERDUE_AFTER_MS,
   compareEscalation, isAckOnly, isResolveOnly,
 } from "@/components/opsconsole/model";
+// doc 67 W7 GĐ2 — formatter/empty-state chuẩn GĐ1 thay bản tự chế.
+import { fmtNum } from "@/lib/format";
+import EmptyState from "@/components/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -723,7 +726,9 @@ export default function OpsConsole() {
                     key={g.gkey}
                     className={cn(
                       "flex min-h-[18vh] flex-col gap-[0.6vh] rounded-lg border-4 p-[1vw]",
-                      SEVERITY_TILE[g.severity],
+                      // W7 GĐ2 (quyết định b đã duyệt): TV giữ nền ĐẶC — soft-tint
+                      // không đọc được từ xa trên TV xưởng.
+                      SEVERITY_TILE_SOLID[g.severity],
                       g.severity === "critical" && g.unackedCount > 0 && "animate-pulse",
                       g.overdue && "ring-4 ring-destructive ring-offset-2 ring-offset-background",
                       g.expired && "opacity-50",
@@ -802,10 +807,11 @@ export default function OpsConsole() {
             <RelatedViews pageId="ops-console" />
 
             <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-destructive" />
-              <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-warning" />
-              <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-warning" />
-              <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={counts.total} />
+              {/* W7 GĐ2: số KPI qua fmtNum chuẩn GĐ1 (tách nghìn theo locale). */}
+              <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={fmtNum(counts.critical)} accent="text-destructive" />
+              <Kpi label={t("opsConsole.kpiHigh", "High")} value={fmtNum(counts.high)} accent="text-warning" />
+              <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={fmtNum(counts.unacked)} accent="text-warning" />
+              <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={fmtNum(counts.total)} />
               {/* W1: server (andonRouter.metrics) coalesce avg NULL→0 khi CHƯA có ack
                   nào trong 24h — nên 0 là sentinel "chưa có dữ liệu", không phải MTTA
                   0 giây thật → hiển thị "—" thay vì con số gây hiểu nhầm. Nhãn nói rõ
@@ -815,7 +821,7 @@ export default function OpsConsole() {
                 value={
                   andonMetrics.data == null || !andonMetrics.data.avgMttaSeconds
                     ? "—"
-                    : `${andonMetrics.data.avgMttaSeconds}s`
+                    : `${fmtNum(andonMetrics.data.avgMttaSeconds)}s`
                 }
               />
             </div>
@@ -846,10 +852,15 @@ export default function OpsConsole() {
               {/* ── War Room ── */}
               <TabsContent value="warroom" className="mt-4 space-y-4">
                 {warRoom.length === 0 ? (
+                  /* W7 GĐ2 (việc 3): EmptyState allClear chuẩn GĐ1 thay khối Card
+                     tự chế — "rỗng" ở war-room là TIN TỐT (ISA-101). */
                   <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                      <CheckCircle2 className="mb-3 h-12 w-12 text-success/60" />
-                      <p className="text-lg">{t("opsConsole.allClear", "All clear — no open alerts")}</p>
+                    <CardContent className="py-4">
+                      <EmptyState
+                        allClear
+                        title="Không có cảnh báo đang mở"
+                        description="Cả 5 nguồn (Andon, dự báo, interlock, MQTT, ngưỡng) đều yên — hệ thống ổn định."
+                      />
                     </CardContent>
                   </Card>
                 ) : (

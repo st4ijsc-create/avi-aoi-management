@@ -41,7 +41,9 @@ import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
-import { MetricCard, PageHeader, StatusBadge, SectionCard } from "@/components/patterns";
+import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, stateHex, toneHex } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
+import { relTimeShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -74,23 +76,19 @@ type AlarmRow = EcosystemEvent;
 // SMALL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Semantic token colour for a rolled-up node status dot. */
-const STATUS_DOT: Record<NodeStatus, string> = {
-  ok: "bg-success",
-  warn: "bg-warning",
-  down: "bg-destructive",
-  idle: "bg-muted-foreground/50",
-  unknown: "bg-muted-foreground/30",
-};
+// ── doc 67 W7 GĐ2 (việc 1) — màu trạng thái lấy từ nguồn DS chung
+// (patterns/isaStateBadges): stateHex()/toneHex() cho material three.js + legend
+// (đọc CSS var theo theme, cache, fallback tĩnh khớp đúng bảng STATUS_HEX cũ),
+// severityDotClass() cho chấm 2D. Bảng STATUS_DOT/STATUS_HEX local đã xoá.
+// LƯU Ý ĐÃ DUYỆT: bảng cũ tự mâu thuẫn — STATUS_HEX.idle = amber (#f59e0b) trong
+// khi STATUS_DOT.idle = muted-xám; bản shared thống nhất idle → muted-xám, nên
+// node idle trên canvas 3D ĐỔI MÀU (amber → xám) là CHỦ ĐÍCH, không phải regression.
 
-/** three.js hex colour for a status (mirrors the twin's palette). */
-const STATUS_HEX: Record<NodeStatus, string> = {
-  ok: "#10b981",
-  warn: "#f59e0b",
-  down: "#ef4444",
-  idle: "#f59e0b",
-  unknown: "#94a3b8",
-};
+/** Chấm 2D theo NodeStatus. severityDotClass (GĐ1) nhận từ vựng severity nên
+ * chưa hiểu "down" của NodeStatus → ánh xạ về "critical" trước khi gọi
+ * (ok→success · warn→warning · down→danger · idle/unknown→muted). */
+const statusDotClass = (s: NodeStatus): string =>
+  severityDotClass(s === "down" ? "critical" : s);
 
 // ── W4 (doc 67) — nhãn tiếng Việt trực tiếp (UI tiếng Việt, key i18n cmd.* chưa
 // có trong JSON locale nên các chuỗi thô EN bị lộ; nhãn mới đi thẳng tiếng Việt). ──
@@ -148,12 +146,15 @@ function twinStateCategoryVi(state: string | null | undefined): string {
 
 function statusHexFromTwinState(state: string | null | undefined): string {
   switch ((state ?? "").toLowerCase()) {
-    case "running": case "execute": case "active": return STATUS_HEX.ok;
-    case "idle": return STATUS_HEX.idle;
+    case "running": case "execute": case "active": return toneHex("success");
+    // idle → muted-xám (trước là amber — đổi CHỦ ĐÍCH, xem ghi chú GĐ2 phía trên).
+    case "idle": return toneHex("muted");
+    // Cam "tạm dừng/giữ" + xám-lam "ngoại tuyến": hạng mục riêng của twin, DS chưa
+    // có tone tương đương → giữ hex như bản cũ (không thuộc bảng STATUS_HEX đã xoá).
     case "stopped": case "held": case "suspended": return "#f97316";
-    case "aborted": case "error": case "fault": case "estop": return STATUS_HEX.down;
+    case "aborted": case "error": case "fault": case "estop": return toneHex("danger");
     case "offline": return "#64748b";
-    default: return STATUS_HEX.unknown;
+    default: return toneHex("muted");
   }
 }
 
@@ -162,16 +163,6 @@ function severityTone(sev: EcosystemSeverity): "error" | "warning" | "info" {
   if (sev === "critical" || sev === "high") return "error";
   if (sev === "medium") return "warning";
   return "info";
-}
-
-function relTime(ts: number, now: number): string {
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
 }
 
 /** Walk a node's descendants, returning every id in its subtree (for scope filtering). */
@@ -313,7 +304,7 @@ function TreeNode({
         )}
 
         {/* status dot */}
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[node.status])} title={STATUS_VI[node.status]} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotClass(node.status))} title={STATUS_VI[node.status]} />
 
         {/* kind icon + name */}
         <span className="shrink-0 text-muted-foreground">{kindIcon(node.kind)}</span>
@@ -507,7 +498,7 @@ function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: 
         {factory.children.map((line) => (
           <div key={line.id} className="rounded-md border p-2">
             <div className="mb-1.5 flex items-center gap-2 text-sm font-medium">
-              <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[line.status])} />
+              <span className={cn("h-2 w-2 rounded-full", statusDotClass(line.status))} />
               <Layers className="h-3.5 w-3.5 text-muted-foreground" />
               {line.name}
             </div>
@@ -515,7 +506,7 @@ function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: 
               {(line.children ?? []).map((station) => (
                 <div key={station.id} className="flex flex-wrap items-center gap-1.5">
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[station.status])} />
+                    <span className={cn("h-1.5 w-1.5 rounded-full", statusDotClass(station.status))} />
                     {station.name}
                   </span>
                   {(station.children ?? []).map((dev) => (
@@ -677,7 +668,10 @@ function CenterOverview({
           }
         >
           {/* W4 (doc 67): role="img" + aria-label mô tả — nội dung WebGL vô hình
-              với screen-reader; kèm tóm tắt sr-only số liệu theo trạng thái. */}
+              với screen-reader; kèm tóm tắt sr-only số liệu theo trạng thái.
+              GĐ2 (việc 1): bg-[#0a0a0f] CỐ ĐỊNH có chủ đích — scene 3D (đèn,
+              emissive, grid slate) được cân sáng cho nền tối, phải giữ tối ở CẢ
+              light lẫn dark theme, không chuyển sang token nền theo theme. */}
           <div
             role="img"
             aria-label={sceneAriaLabel}
@@ -696,10 +690,12 @@ function CenterOverview({
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {/* W4 (doc 67): nhãn chữ tiếng Việt cạnh chấm màu (không chỉ dựa màu). */}
-            <Legend hex={STATUS_HEX.ok} label="Đang chạy" />
-            <Legend hex={STATUS_HEX.idle} label="Chờ" />
+            {/* GĐ2: legend đọc cùng nguồn stateHex — "Chờ" nay là muted-xám (đồng
+                bộ chấm 2D; đổi so với amber cũ là CHỦ ĐÍCH, xem ghi chú đầu file). */}
+            <Legend hex={stateHex("running")} label="Đang chạy" />
+            <Legend hex={stateHex("idle")} label="Chờ" />
             <Legend hex="#f97316" label="Tạm dừng/Giữ" />
-            <Legend hex={STATUS_HEX.down} label="Lỗi/E-stop" />
+            <Legend hex={stateHex("fault")} label="Lỗi/E-stop" />
             <Legend hex="#64748b" label="Ngoại tuyến" />
             {selectedDevice && (
               <span className="ml-auto text-foreground">
@@ -904,15 +900,17 @@ export default function CommandCenter() {
                   Khi cờ ECOSYSTEM_EVENTS tắt → mode="polling": nói rõ chỉ luồng sự kiện
                   là định kỳ, KHÔNG dùng icon WifiOff (gây hiểu lầm mất kết nối). */}
               {isLive ? (
+                /* GĐ2 (việc 3): emerald/amber hardcode → token success/warning
+                   (tự lật light/dark, đồng bộ DS). */
                 <Badge
-                  className="gap-1 bg-emerald-500 text-white"
+                  className="gap-1 bg-success text-success-foreground"
                   title="Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket"
                 >
                   <Radio className="h-3.5 w-3.5" /> Sự kiện: trực tiếp
                 </Badge>
               ) : (
                 <Badge
-                  className="gap-1 bg-amber-500 text-white"
+                  className="gap-1 bg-warning text-warning-foreground"
                   title="Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)"
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Sự kiện hệ sinh thái: định kỳ 15s
@@ -1079,11 +1077,16 @@ export default function CommandCenter() {
               contentClassName="p-2"
             >
               {scopedAlarms.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  {alarms.length === 0
-                    ? t("cmd.noAlarms", "No active alarms. All clear.")
-                    : t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
-                </div>
+                alarms.length === 0 ? (
+                  /* GĐ2 (việc 4): rỗng = TIN TỐT → EmptyState allClear DS (icon
+                     check success) thay div tự chế; nhánh "ngoài phạm vi chọn"
+                     là trạng thái lọc, giữ dòng trung tính. */
+                  <EmptyState allClear compact title="Không có cảnh báo đang hoạt động" />
+                ) : (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    {t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
+                  </div>
+                )
               ) : (
                 <ScrollArea className="h-[560px] pr-1">
                   <div className="space-y-1.5">
@@ -1095,7 +1098,7 @@ export default function CommandCenter() {
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={a.severity} label={SEVERITY_VI[a.severity]} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
                             <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_VI[a.kind] ?? a.kind}</Badge>
-                            <span className="ml-auto text-[10px] text-muted-foreground">{relTime(a.ts, now)}</span>
+                            <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts, now)}</span>
                           </div>
                           <div className="mt-1 font-medium leading-snug">{a.title}</div>
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">

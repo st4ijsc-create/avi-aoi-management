@@ -6,6 +6,12 @@
  */
 import type { ReactNode } from "react";
 import { Bell, Cpu, ShieldAlert, TrendingDown, Wifi } from "lucide-react";
+import {
+  TONE_DOT_CLASS,
+  TONE_TILE_CLASS,
+  severityDotClass,
+  severityTileClass,
+} from "@/components/patterns/isaStateBadges";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type AlertSource = "andon" | "predictive" | "interlock" | "mqtt" | "threshold";
@@ -59,18 +65,41 @@ export interface AlertGroup {
 
 export const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
+/**
+ * doc 67 W7 GĐ2 — severity map lấy từ nguồn chuẩn GĐ1 (isaStateBadges) thay bản
+ * local đã trôi. Hai chỗ LỆCH CÓ CHỦ Ý so với severityTone() shared:
+ *  - `high` GIỮ warning (shared gộp high→danger): console này phân biệt
+ *    critical≠high ở MỌI mặt (KPI text-destructive vs text-warning, TV header
+ *    ▲đỏ/●vàng, AUD-08) — để high đỏ như critical là mất một bậc escalation.
+ *  - `medium` mất bậc sáng /70 cũ (chấp nhận: cùng họ warning, còn kênh chữ).
+ *  - `low`: theo spec ĐÃ DUYỆT → muted (bỏ info-xanh cũ — blue local không mang
+ *    ngữ nghĩa riêng; low gồm cả Andon green thường nhật, xám trung tính đúng
+ *    mức "ít quan trọng nhất").
+ */
 export const SEVERITY_TILE: Record<Severity, string> = {
+  critical: severityTileClass("critical"),
+  high: TONE_TILE_CLASS.warning, // giữ-local: critical≠high (xem chú thích trên)
+  medium: severityTileClass("medium"),
+  low: severityTileClass("low"),
+};
+
+export const SEVERITY_DOT: Record<Severity, string> = {
+  critical: severityDotClass("critical"),
+  high: TONE_DOT_CLASS.warning, // giữ-local: critical≠high
+  medium: severityDotClass("medium"),
+  low: severityDotClass("low"),
+};
+
+/**
+ * TV-mode (fullscreen, nhìn từ 3-5m) — GIỮ nền ĐẶC local theo quyết định đã
+ * duyệt (b): soft-tint 10-15% không đọc được từ xa trên TV treo xưởng. CHỈ TV
+ * dùng map này; thẻ thường dùng SEVERITY_TILE soft-tint ở trên.
+ */
+export const SEVERITY_TILE_SOLID: Record<Severity, string> = {
   critical: "bg-destructive text-white border-destructive",
   high: "bg-warning text-white border-warning",
   medium: "bg-warning/70 text-black border-warning",
   low: "bg-info text-white border-info",
-};
-
-export const SEVERITY_DOT: Record<Severity, string> = {
-  critical: "bg-destructive",
-  high: "bg-warning",
-  medium: "bg-warning/70",
-  low: "bg-info",
 };
 
 export const SOURCE_ICON: Record<AlertSource, ReactNode> = {

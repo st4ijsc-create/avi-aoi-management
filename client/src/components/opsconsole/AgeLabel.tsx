@@ -7,17 +7,16 @@
  * số giây); từ 1 phút trở lên nhãn chỉ đổi theo phút → tick 10s là đủ.
  * memo: cha re-render (gõ search, chọn checkbox…) không làm nhãn render lại
  * khi raisedAt không đổi.
+ *
+ * doc 67 W7 GĐ2 — chuỗi hiển thị dùng relTimeShort chuẩn GĐ1 (lib/format —
+ * chính GĐ1 liệt kê "opsconsole ageLabel" là nguồn hợp nhất). Đối chiếu hành vi:
+ * <60s giống hệt ("42s"); từ 1 phút nhãn GỌN hơn bản formatAge cũ
+ * ("3m 20s"→"3m", "49h 3m"→"2h"→có bậc NGÀY "2d" cho predictive nhiều ngày) —
+ * đây là điểm hợp nhất đã duyệt, và làm comment tick 10s ở trên ĐÚNG tuyệt đối
+ * (nhãn giờ chỉ đổi theo phút thật). Cơ chế tick riêng GIỮ nguyên.
  */
 import { memo, useEffect, useState } from "react";
-
-export function formatAge(ms: number): string {
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ${sec % 60}s`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m`;
-}
+import { relTimeShort } from "@/lib/format";
 
 export const AgeLabel = memo(function AgeLabel({
   raisedAt,
@@ -38,7 +37,7 @@ export const AgeLabel = memo(function AgeLabel({
 
   return (
     <span className={className} title={new Date(ts).toLocaleString("vi-VN")}>
-      {formatAge(now - ts)}
+      {relTimeShort(ts, now)}
     </span>
   );
 });

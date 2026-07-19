@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
+import { fmtNum, fmtPct } from "@/lib/format";
+import { useDebouncedInvalidate } from "@/hooks/useDebouncedInvalidate";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
 import { PageContainer, PageHeader, StatChip, StatChipRow } from "@/components/patterns";
@@ -119,38 +121,35 @@ export default function ControlTower(): React.JSX.Element {
   //   • inspection/yield  → drillDown.corporateStats + dashboard.getStats;
   //   • oee               → mqttClient.getAllOEE (mean OEE live của panel corporate).
   // executiveReport / aiInsight KHÔNG đi theo event — hai nguồn chậm này giữ poll riêng.
-  const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // W7 GĐ2: phần TIMER của scheduleRefresh W6 → useDebouncedInvalidate shared (cùng
+  // ngữ nghĩa debounce-trailing 5s: mỗi event reset đồng hồ, tự clear khi unmount).
+  // Logic pendingKinds (gom kind trong cửa sổ → invalidate CHỌN LỌC nhóm nguồn)
+  // GIỮ NGUYÊN — chỉ chỗ setTimeout/clearTimeout tự chế được thay.
   const pendingKinds = useRef<Set<EcosystemKind>>(new Set());
+  const flushPendingKinds = useDebouncedInvalidate(() => {
+    const kinds = pendingKinds.current;
+    pendingKinds.current = new Set();
+    if (ALARM_EVENT_KINDS.some((k) => kinds.has(k))) {
+      void utils.alarmKpi.summary.invalidate();
+      void utils.dashboard.getAndonBoard.invalidate();
+      void utils.commandCenter.recentAlerts.invalidate();
+    }
+    if (PRODUCTION_EVENT_KINDS.some((k) => kinds.has(k))) {
+      void utils.drillDown.corporateStats.invalidate();
+      void utils.dashboard.getStats.invalidate();
+    }
+    if (kinds.has("oee")) {
+      void utils.mqttClient.getAllOEE.invalidate();
+    }
+  }, 5_000);
   const scheduleRefresh = useCallback(
     (evt: EcosystemEvent) => {
       pendingKinds.current.add(evt.kind);
-      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
-      invalidateTimer.current = setTimeout(() => {
-        const kinds = pendingKinds.current;
-        pendingKinds.current = new Set();
-        if (ALARM_EVENT_KINDS.some((k) => kinds.has(k))) {
-          void utils.alarmKpi.summary.invalidate();
-          void utils.dashboard.getAndonBoard.invalidate();
-          void utils.commandCenter.recentAlerts.invalidate();
-        }
-        if (PRODUCTION_EVENT_KINDS.some((k) => kinds.has(k))) {
-          void utils.drillDown.corporateStats.invalidate();
-          void utils.dashboard.getStats.invalidate();
-        }
-        if (kinds.has("oee")) {
-          void utils.mqttClient.getAllOEE.invalidate();
-        }
-      }, 5_000);
+      flushPendingKinds();
     },
-    [utils],
+    [flushPendingKinds],
   );
   useEcosystemEvents({ onEvent: scheduleRefresh });
-  useEffect(
-    () => () => {
-      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
-    },
-    [],
-  );
 
   // W6 (doc 67): nút "Làm mới" — refetchType:'active' tường minh: chỉ query đang có
   // observer (panel đang hiển thị) refetch ngay, phần còn lại chỉ bị đánh dấu stale.
@@ -278,14 +277,9 @@ export default function ControlTower(): React.JSX.Element {
 }
 
 // ── shared KPI strip ──────────────────────────────────────────────────────────
+// W7 GĐ2: fmtNum/fmtPct local → lib/format. Chip OEE gọi fmtPct(v, 0) để giữ đúng
+// hiển thị số nguyên ("97%") như bản Math.round cũ.
 type KpiSummary = inferRouterOutputs<AppRouter>["commandCenter"]["kpiSummary"];
-
-function fmtNum(v: number | null | undefined): string {
-  return v == null ? "—" : v.toLocaleString();
-}
-function fmtPct(v: number | null | undefined): string {
-  return v == null ? "—" : `${Math.round(v)}%`;
-}
 
 function KpiStrip({
   data,
@@ -333,7 +327,7 @@ function KpiStrip({
       <StatChip
         icon={<Gauge />}
         label={t("controlTower.kpi.oee", "OEE (mean)")}
-        value={fmtPct(oee)}
+        value={fmtPct(oee, 0)}
         tone={oee == null ? "default" : oee < 60 ? "warning" : "success"}
         onClick={() => setLocation("/oee-dashboard")}
         title={t("controlTower.kpi.oeeGo", "Mở bảng OEE đầy đủ")}

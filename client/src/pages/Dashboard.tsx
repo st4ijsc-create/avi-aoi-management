@@ -15,10 +15,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-// doc67 W4 (a11y/touch): Popover cho chip cảnh báo (tap mở được, không cần hover) +
-// Sheet "Bộ lọc" gom 3 Select phạm vi trên mobile <sm.
+// doc67 W4 (a11y/touch): Popover cho chip cảnh báo (tap mở được, không cần hover).
+// doc67 W7 GĐ2: Sheet "Bộ lọc" mobile đã bỏ cùng 3 Select phạm vi cục bộ — trục
+// ISA-95 toàn cục (AssetScopeBar shell) là nguồn phạm vi duy nhất.
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { 
   Activity, 
@@ -69,6 +69,12 @@ import {
   chartGridProps,
   chartAxisTick,
 } from "@/components/patterns";
+// doc67 W7 GĐ2 — nền móng DS dùng chung: sparkline SVG token-driven (thay bản
+// recharts inline), tone ISA-101 chuẩn (oeeTone 80/60 — QĐ #2; yieldTone 95/90)
+// và formatter thống nhất (null → '—', % 1 chữ số).
+import { Sparkline } from "@/components/patterns/Sparkline";
+import { oeeTone, yieldTone, TONE_TEXT_CLASS, toneHex } from "@/components/patterns/isaStateBadges";
+import { fmtPct, fmtInt } from "@/lib/format";
 import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { RelatedViews } from "@/components/RelatedViews";
@@ -87,11 +93,9 @@ import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { RealtimeBadge } from "@/components/RealtimeBadge";
 import { PollFreshness } from "@/components/PollFreshness";
 import { Link, useLocation } from "wouter";
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
+import {
+  XAxis,
+  YAxis,
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
   ResponsiveContainer,
@@ -205,9 +209,8 @@ export default function Dashboard() {
   const timeRangeStorageHydratedRef = useRef(false);
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>("");
-  const [selectedFactory, setSelectedFactory] = useState<string>("all");
-  const [selectedWorkshop, setSelectedWorkshop] = useState<string>("all");
-  const [selectedLine, setSelectedLine] = useState<string>("all");
+  // doc67 W7 GĐ2 — XÓA 3 state bộ lọc cục bộ selectedFactory/Workshop/Line:
+  // trục ISA-95 toàn cục (useScope → assetScope) là nguồn phạm vi duy nhất.
   const [selectedMachine, setSelectedMachine] = useState<MachineStats | null>(null);
   const [machineDetailOpen, setMachineDetailOpen] = useState(false);
   const [machineDialogStatusFilter, setMachineDialogStatusFilter] = useState<"all" | "OK" | "NG" | "NTF">("all");
@@ -216,8 +219,6 @@ export default function Dashboard() {
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
-  // doc67 W4 (mobile 390): Sheet gom 3 Select phạm vi (nhà máy/xưởng/line) dưới sm
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
   const [trendFilterWorkstationId, setTrendFilterWorkstationId] = useState<number | undefined>(undefined);
@@ -596,8 +597,8 @@ export default function Dashboard() {
   // duy nhất: sparkline 7 ngày không hỗ trợ machineId (có ghi chú trung thực).
   const { scope: assetScope } = useScope(["factory", "line", "machine"]);
   useScopeWired();
-  const effectiveFactoryId =
-    assetScope.factoryId ?? (selectedFactory !== "all" ? parseInt(selectedFactory) : undefined);
+  // doc67 W7 GĐ2 — dropdown factory cục bộ đã xóa: phạm vi CHỈ từ trục ISA-95.
+  const effectiveFactoryId = assetScope.factoryId;
 
   // Fetch stats with comparison
   // doc65 W2 (AUD-01) — lấy thêm dataUpdatedAt/isFetching để khai TUỔI DỮ LIỆU
@@ -722,10 +723,8 @@ export default function Dashboard() {
   // Fetch yield alert thresholds for realtime alerts
   const { data: yieldThresholds } = trpc.yieldThreshold.list.useQuery();
 
-  // Fetch factories, workshops, lines for filters
-  const { data: factories } = trpc.factory.list.useQuery();
-  const { data: workshops } = trpc.workshop.list.useQuery();
-  const { data: lines } = trpc.line.list.useQuery();
+  // doc67 W7 GĐ2 — XÓA 3 query factory/workshop/line.list: chỉ phục vụ 3 Select
+  // bộ lọc cục bộ đã bỏ (trục ISA-95 shell tự nạp danh mục của nó).
 
   // Fetch line product assignments and production orders for line info
   // doc67 W6 [P0] — 3 query này chỉ phục vụ tab "Bố cục" (thẻ line info) → gate
@@ -1079,18 +1078,6 @@ export default function Dashboard() {
     }
   }, [buildNGReportHtml, ngTimeFilter, t]);
 
-  // Filter workshops by selected factory
-  const filteredWorkshops = useMemo(() => {
-    if (!workshops || selectedFactory === "all") return workshops || [];
-    return workshops.filter(w => w.factoryId === parseInt(selectedFactory));
-  }, [workshops, selectedFactory]);
-
-  // Filter lines by selected workshop
-  const filteredLines = useMemo(() => {
-    if (!lines || selectedWorkshop === "all") return lines || [];
-    return lines.filter(l => l.workshopId === parseInt(selectedWorkshop));
-  }, [lines, selectedWorkshop]);
-
   // Group machines by production line
   const machinesByLine = useMemo(() => {
     if (!machinesStats) return new Map<string, MachineStats[]>();
@@ -1129,11 +1116,9 @@ export default function Dashboard() {
     const grouped = new Map<string, MachineStats[]>();
     
     machines.forEach(machine => {
-      // Apply filters
-      if (selectedFactory !== "all" && machine.factoryId !== parseInt(selectedFactory)) return;
-      if (selectedWorkshop !== "all" && machine.workshopId !== parseInt(selectedWorkshop)) return;
-      if (selectedLine !== "all" && machine.lineId !== parseInt(selectedLine)) return;
-      
+      // doc67 W7 GĐ2 — lọc factory/line đã thực hiện Ở SERVER theo trục ISA-95
+      // (getAllMachinesStats nhận effectiveFactoryId + assetScope.lineId); bộ lọc
+      // cục bộ trùng trục đã xóa. Chỉ còn lọc online/offline phía client.
       // Apply machine status filter
       if (machineStatusFilter !== "all") {
         const isOnline = onlineMachines.has(machine.code);
@@ -1149,18 +1134,19 @@ export default function Dashboard() {
     });
     
     return grouped;
-  }, [machinesStats, selectedFactory, selectedWorkshop, selectedLine, machineStatusFilter, onlineMachines]);
+  }, [machinesStats, machineStatusFilter, onlineMachines]);
 
   // doc65 W1 — sự thật số liệu per-machine:
   //  - fpy: dùng trường CANONICAL từ server (true first-pass yield, getMachineStats);
   //    fallback ok/total chỉ khi server chưa trả (dữ liệu cũ trong cache).
   //  - ng/total và ntf/total KHÔNG phải "FY"/"NTFY" — đó là tỷ lệ NG và tỷ lệ NTF,
   //    trả về dưới tên trung thực ngPct/ntfPct (nhãn hiển thị "NG %"/"NTF %").
+  // doc67 W7 GĐ2 — trả SỐ (không toFixed chuỗi); nơi hiển thị dùng fmtPct chung.
   const calculateYields = (machine: MachineStats) => {
     const total = machine.total || 1;
-    const fpy = (typeof machine.fpy === "number" ? machine.fpy : (machine.ok / total) * 100).toFixed(1);
-    const ngPct = ((machine.ng / total) * 100).toFixed(1);
-    const ntfPct = ((machine.ntf / total) * 100).toFixed(1);
+    const fpy = typeof machine.fpy === "number" ? machine.fpy : (machine.ok / total) * 100;
+    const ngPct = (machine.ng / total) * 100;
+    const ntfPct = (machine.ntf / total) * 100;
     return { fpy, ngPct, ntfPct };
   };
 
@@ -1229,18 +1215,14 @@ export default function Dashboard() {
     return alerts;
   }, [currentStats, yieldThresholds]);
 
-  // Get status color based on FPY
-  const getStatusColor = (fpy: number) => {
-    if (fpy >= 95) return "text-success border-success/50 bg-success/10";
-    if (fpy >= 85) return "text-warning border-warning/50 bg-warning/10";
-    return "text-destructive border-destructive/50 bg-destructive/10";
-  };
-
   // Get status indicator
+  // doc67 W7 GĐ2 — ngưỡng theo yieldTone chung (95/90 — thay bản local 95/85);
+  // getStatusColor local (dead code) đã xóa.
   const getStatusIndicator = (fpy: number) => {
-    if (fpy >= 95) return { icon: CheckCircle2, color: "text-success", label: t("dashboard.good") };
-    if (fpy >= 85) return { icon: AlertTriangle, color: "text-warning", label: t("dashboard.warning") };
-    return { icon: XCircle, color: "text-destructive", label: t("dashboard.needsAttention") };
+    const tone = yieldTone(fpy);
+    if (tone === "success") return { icon: CheckCircle2, color: TONE_TEXT_CLASS.success, label: t("dashboard.good") };
+    if (tone === "warning") return { icon: AlertTriangle, color: TONE_TEXT_CLASS.warning, label: t("dashboard.warning") };
+    return { icon: XCircle, color: TONE_TEXT_CLASS.danger, label: t("dashboard.needsAttention") };
   };
 
   // Trend indicator component
@@ -1258,39 +1240,17 @@ export default function Dashboard() {
     );
   };
 
-  // Sparkline component
-  // doc65 PRO-100: <2 điểm không vẽ (1 điểm ra "chấm mồ côi" — artifact agent bắt được).
-  const Sparkline = ({ data, dataKey, color }: { data: any[]; dataKey: string; color: string }) => {
-    if (!data || data.length < 2) return null;
-    return (
-      <div className="h-8 w-20">
-        <ResponsiveContainer width="100%" height="100%">
-          {/* margin 2px: đường không bị xén sát mép thẻ (artifact "vệt cắt");
-              YAxis ẩn domain min-max: chuỗi giá trị cao (FPY ~97%) hiển thị thành ĐƯỜNG
-              dao động thay vì khối area đặc lấp từ 0 — 5 sparkline cùng một họ hình. */}
-          <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-            <YAxis hide domain={["dataMin", "dataMax"]} />
-            <Area 
-              type="monotone" 
-              dataKey={dataKey} 
-              stroke={color} 
-              fill={color} 
-              fillOpacity={0.2}
-              strokeWidth={1.5}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
+  // doc67 W7 GĐ2 — Sparkline inline (recharts, tái tạo mỗi render, 5 ResponsiveContainer)
+  // đã XÓA: 5 call-site KPI dùng patterns/Sparkline (SVG thuần, token-driven).
 
   const pieData = useMemo(() => {
     const stats = (statsWithComparison as StatsWithComparison | undefined)?.current;
     if (!stats) return [];
+    // doc67 W7 GĐ2 — oklch hardcode → toneHex (đọc CSS var theo theme đang bật).
     return [
-      { name: "OK", value: stats.ok, color: "oklch(0.72 0.17 145)" },
-      { name: "NG", value: stats.ng, color: "oklch(0.65 0.2 25)" },
-      { name: "NTF", value: stats.ntf, color: "oklch(0.78 0.15 75)" },
+      { name: "OK", value: stats.ok, color: toneHex("success") },
+      { name: "NG", value: stats.ng, color: toneHex("danger") },
+      { name: "NTF", value: stats.ntf, color: toneHex("warning") },
     ].filter(item => item.value > 0);
   }, [statsWithComparison]);
 
@@ -1325,75 +1285,6 @@ export default function Dashboard() {
       ntf: Number(d.ntfCount) || 0,
     }));
   }, [dailyStats]);
-
-  // doc67 W4 (mobile 390): 3 Select phạm vi dùng chung cho hàng ngang (>=sm)
-  // và Sheet "Bộ lọc" (<sm) — một nguồn markup, tránh trùng lặp trôi logic.
-  const activeScopeFilterCount = [selectedFactory, selectedWorkshop, selectedLine].filter((v) => v !== "all").length;
-  const renderScopeFilters = (inSheet: boolean) => {
-    const triggerClass = inSheet ? "w-full" : "w-32 sm:w-44 shrink-0";
-    return (
-      <>
-        <div className={inSheet ? "space-y-1.5" : "contents"}>
-          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.factory")}</p>}
-          <Select value={selectedFactory} onValueChange={(v) => {
-            setSelectedFactory(v);
-            setSelectedWorkshop("all");
-            setSelectedLine("all");
-          }}>
-            <SelectTrigger className={triggerClass} aria-label={t("dashboard.factory")}>
-              {!inSheet && <Factory className="h-4 w-4 mr-1 sm:hidden" />}
-              <SelectValue placeholder={t("dashboard.factory")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("dashboard.allFactories")}</SelectItem>
-              {factories?.map((factory) => (
-                <SelectItem key={factory.id} value={String(factory.id)}>
-                  {factory.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className={inSheet ? "space-y-1.5" : "contents"}>
-          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.workshop")}</p>}
-          <Select value={selectedWorkshop} onValueChange={(v) => {
-            setSelectedWorkshop(v);
-            setSelectedLine("all");
-          }}>
-            <SelectTrigger className={triggerClass} aria-label={t("dashboard.workshop")}>
-              <SelectValue placeholder={t("dashboard.workshop")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("dashboard.allWorkshops")}</SelectItem>
-              {filteredWorkshops?.map((workshop) => (
-                <SelectItem key={workshop.id} value={String(workshop.id)}>
-                  {workshop.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className={inSheet ? "space-y-1.5" : "contents"}>
-          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.line", "Line")}</p>}
-          <Select value={selectedLine} onValueChange={setSelectedLine}>
-            <SelectTrigger className={triggerClass} aria-label={t("dashboard.line", "Line")}>
-              <SelectValue placeholder={t("dashboard.line", "Line")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
-              {filteredLines?.map((line) => (
-                <SelectItem key={line.id} value={String(line.id)}>
-                  {line.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </>
-    );
-  };
 
   return (
     <DashboardLayout
@@ -1475,34 +1366,10 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* doc67 W4 (mobile 390): >=sm hiển thị 3 Select nội tuyến; <sm gom vào Sheet "Bộ lọc"
-                (390px không đủ chỗ cho 3 trigger w-32 → chữ bị cắt). */}
-            <div className="hidden sm:contents">
-              {renderScopeFilters(false)}
-            </div>
-
-            <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="sm:hidden shrink-0 gap-1.5 relative" aria-label={t("dashboard.filters", "Bộ lọc")}>
-                  <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-                  {t("dashboard.filters", "Bộ lọc")}
-                  {activeScopeFilterCount > 0 && (
-                    <Badge variant="secondary" className="h-5 min-w-5 px-1 text-[10px]">
-                      {activeScopeFilterCount}
-                    </Badge>
-                  )}
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
-                <SheetHeader>
-                  <SheetTitle>{t("dashboard.filters", "Bộ lọc")}</SheetTitle>
-                </SheetHeader>
-                <div className="flex flex-col gap-4 px-4 pb-6">
-                  {renderScopeFilters(true)}
-                </div>
-              </SheetContent>
-            </Sheet>
-
+            {/* doc67 W7 GĐ2 — 3 Select Nhà máy/Phân xưởng/Dây chuyền cục bộ (cả bản
+                desktop lẫn Sheet mobile W4) đã XÓA: phạm vi ISA-95 chọn ở AssetScopeBar
+                của shell (một trục duy nhất, hết "hai hệ filter song song").
+                GIỮ Select khoảng-thời-gian + auto-refresh bên dưới. */}
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as DashboardTimeRange)}>
               <SelectTrigger className="w-28 sm:w-36 shrink-0">
                 <SelectValue />
@@ -1637,11 +1504,11 @@ export default function Dashboard() {
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.totalOutput")}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold">
-                        {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.total)}
                       </p>
                       <TrendIndicator value={trends?.output} suffix="%" />
                     </div>
-                    <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.output }))} width={80} height={32} showArea aria-label={t("dashboard.totalOutput")} />
                   </div>
                   <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
                     <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
@@ -1658,14 +1525,14 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2 mt-1">
                       {/* True FPY (server canonical) — was yieldRate (final yield) mislabelled as FPY */}
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : `${stats?.fpy?.toFixed(1) || 0}%`}
+                        {statsLoading ? "..." : fmtPct(stats?.fpy)}
                       </p>
                       <TrendIndicator value={trends?.fpy} suffix="pp" />
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      {t("dashboard.finalYield")}: {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                      {t("dashboard.finalYield")}: {statsLoading ? "..." : fmtPct(stats?.yieldRate)}
                     </p>
-                    <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.fpy }))} width={80} height={32} tone="good" showArea aria-label={t("dashboard.fpy")} />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
                     <Target className="h-5 w-5 text-success" />
@@ -1681,11 +1548,11 @@ export default function Dashboard() {
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ok)}
                       </p>
                       <TrendIndicator value={trends?.ok} />
                     </div>
-                    <Sparkline data={sparklineData} dataKey="ok" color="var(--success)" />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ok }))} width={80} height={32} tone="good" showArea aria-label="OK" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
                     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -1701,11 +1568,11 @@ export default function Dashboard() {
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-destructive">
-                        {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ng)}
                       </p>
                       <TrendIndicator value={trends?.ng} goodWhen="down" />
                     </div>
-                    <Sparkline data={sparklineData} dataKey="ng" color="var(--destructive)" />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ng }))} width={80} height={32} tone="critical" showArea aria-label="NG" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
                     <XCircle className="h-5 w-5 text-destructive" />
@@ -1721,11 +1588,11 @@ export default function Dashboard() {
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-warning">
-                        {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ntf)}
                       </p>
                       <TrendIndicator value={trends?.ntf} goodWhen="down" />
                     </div>
-                    <Sparkline data={sparklineData} dataKey="ntf" color="var(--warning)" />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ntf }))} width={80} height={32} tone="warning" showArea aria-label="NTF" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
                     <AlertTriangle className="h-5 w-5 text-warning" />
@@ -1767,7 +1634,7 @@ export default function Dashboard() {
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${alert.currentValue.toFixed(1)}%`}
+                          aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${fmtPct(alert.currentValue)}`}
                           className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
                             alert.level === 'critical'
                               ? 'bg-destructive/10 border border-destructive/30 text-destructive'
@@ -1778,7 +1645,7 @@ export default function Dashboard() {
                             : <AlertTriangle aria-hidden="true" className="h-3 w-3" />
                           }
                           <span className="font-medium">{alert.type}</span>
-                          <span>{alert.currentValue.toFixed(1)}%</span>
+                          <span>{fmtPct(alert.currentValue)}</span>
                         </button>
                       </PopoverTrigger>
                       <PopoverContent side="bottom" className="max-w-xs w-auto p-3">
@@ -1899,8 +1766,9 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-4 text-sm">
                         <span className="text-muted-foreground">{shift.total} {t("dashboard.pcsUnit", "pcs")}</span>
-                        <span className={shift.fpy >= 95 ? 'text-success' : shift.fpy >= 85 ? 'text-warning' : 'text-destructive'}>
-                          {shift.fpy}%
+                        {/* doc67 W7 GĐ2 — yieldTone chung (95/90, thay ternary local 95/85) + fmtPct */}
+                        <span className={TONE_TEXT_CLASS[yieldTone(shift.fpy)]}>
+                          {fmtPct(shift.fpy)}
                         </span>
                       </div>
                     </div>
@@ -2087,7 +1955,7 @@ export default function Dashboard() {
                         outerRadius={75}
                         paddingAngle={5}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, percent }) => `${name} ${fmtPct(percent * 100, 0)}`}
                       >
                         {pieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -2162,7 +2030,8 @@ export default function Dashboard() {
                       return (
                         <div key={`${ws.workstationId ?? "na"}-${ws.workstationCode ?? "code"}-${index}`} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                           <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-600">
+                            {/* doc67 W7 GĐ2 — orange hardcode → token warning */}
+                            <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-sm font-semibold text-warning">
                               {index + 1}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -2176,7 +2045,7 @@ export default function Dashboard() {
                               <div className="text-xs text-muted-foreground">{t("common.error")}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-info">{yieldRate.toFixed(1)}%</div>
+                              <div className="text-sm font-semibold text-info">{fmtPct(yieldRate)}</div>
                               <div className="text-xs text-muted-foreground">{t("dashboard.yield")}</div>
                             </div>
                           </div>
@@ -2217,7 +2086,10 @@ export default function Dashboard() {
                     <span>{t("dashboard.ngLevelAcceptable")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-orange-500" />
+                    {/* doc67 W7 GĐ2 — bậc 3/4 của thang NG cần HUE RIÊNG (giữa warning
+                        và destructive): dùng token --alarm-high (ISA-18.2 P2, cam,
+                        theme-aware) thay orange-500 hardcode. */}
+                    <div className="w-3 h-3 rounded bg-(--alarm-high)" />
                     <span>{t("dashboard.ngLevelWarning")}</span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -2286,7 +2158,7 @@ export default function Dashboard() {
                     ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).current.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{fmtPct((effectiveNGComparison as any).current.ngRate, 2)}</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
@@ -2315,7 +2187,7 @@ export default function Dashboard() {
                     ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).previous.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{fmtPct((effectiveNGComparison as any).previous.ngRate, 2)}</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
@@ -2348,7 +2220,7 @@ export default function Dashboard() {
                             <TrendingUp className="h-6 w-6 text-destructive" />
                           )}
                           <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-success' : 'text-destructive'}`}>
-                            {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{(effectiveNGComparison as any).changes.ngRateChange.toFixed(2)}%
+                            {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{fmtPct((effectiveNGComparison as any).changes.ngRateChange, 2)}
                           </span>
                         </div>
                         <div className="text-sm">
@@ -2470,7 +2342,7 @@ export default function Dashboard() {
                           <RechartsTooltip
                             contentStyle={chartTooltipStyle}
                             formatter={(value: number, name: string) => {
-                              if (name === 'ngRate') return [`${value.toFixed(2)}%`, t('dashboard.ngRate')];
+                              if (name === 'ngRate') return [fmtPct(value, 2), t('dashboard.ngRate')];
                               if (name === 'totalCount') return [value.toLocaleString(), t('dashboard.totalInspections')];
                               if (name === 'ngCount') return [value.toLocaleString(), t('dashboard.ngCountLabel')];
                               return [value, name];
@@ -2641,7 +2513,8 @@ export default function Dashboard() {
                 const lineOk = machines.reduce((sum, m) => sum + m.ok, 0);
                 const lineNg = machines.reduce((sum, m) => sum + m.ng, 0);
                 const lineNtf = machines.reduce((sum, m) => sum + m.ntf, 0);
-                const lineFpy = lineTotal > 0 ? ((lineOk / lineTotal) * 100).toFixed(1) : "0";
+                // doc67 W7 GĐ2 — giữ SỐ, hiển thị qua fmtPct + tone qua yieldTone chung.
+                const lineFpy = lineTotal > 0 ? (lineOk / lineTotal) * 100 : 0;
                 
                 // Get line info (product and production order)
                 const lineId = machines[0]?.lineId;
@@ -2685,12 +2558,12 @@ export default function Dashboard() {
                         <div className="flex items-center gap-6 text-sm">
                           <div className="text-center">
                             <p className="text-muted-foreground">{t("dashboard.output")}</p>
-                            <p className="font-semibold text-foreground">{lineTotal.toLocaleString()}</p>
+                            <p className="font-semibold text-foreground">{fmtInt(lineTotal)}</p>
                           </div>
                           <div className="text-center">
                             <p className="text-muted-foreground">{t("dashboard.fpy")}</p>
-                            <p className={`font-semibold ${parseFloat(lineFpy) >= 95 ? 'text-success' : parseFloat(lineFpy) >= 85 ? 'text-warning' : 'text-destructive'}`}>
-                              {lineFpy}%
+                            <p className={`font-semibold ${TONE_TEXT_CLASS[yieldTone(lineFpy)]}`}>
+                              {fmtPct(lineFpy)}
                             </p>
                           </div>
                           <div className="text-center">
@@ -2712,8 +2585,7 @@ export default function Dashboard() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {machines.map((machine) => {
                           const { fpy, ngPct, ntfPct } = calculateYields(machine);
-                          const fpyNum = parseFloat(fpy);
-                          const status = getStatusIndicator(fpyNum);
+                          const status = getStatusIndicator(fpy);
                           const StatusIcon = status.icon;
                           const machineImage = machine.image2DUrl || machine.image3DUrl || '/default-machine-2d.svg';
 
@@ -2737,8 +2609,9 @@ export default function Dashboard() {
                                 {visibleMetrics.fpy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
-                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-success' : fpyNum >= 70 ? 'text-warning' : 'text-destructive'}`}>
-                                      {fpy}%
+                                    {/* doc67 W7 GĐ2 — yieldTone chung 95/90 (thay ternary local 90/70 trôi lệch) */}
+                                    <p className={`text-base font-bold ${TONE_TEXT_CLASS[yieldTone(fpy)]}`}>
+                                      {fmtPct(fpy)}
                                     </p>
                                   </div>
                                 )}
@@ -2746,20 +2619,20 @@ export default function Dashboard() {
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     {/* doc65 W1 — giá trị là ng/total: nhãn trung thực "NG %" (trước đây ghi sai "FY") */}
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">NG %</p>
-                                    <p className="text-base font-bold text-destructive">{ngPct}%</p>
+                                    <p className="text-base font-bold text-destructive">{fmtPct(ngPct)}</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     {/* doc65 W1 — giá trị là ntf/total: nhãn trung thực "NTF %" (trước đây ghi sai "NTFY") */}
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">NTF %</p>
-                                    <p className="text-base font-bold text-warning">{ntfPct}%</p>
+                                    <p className="text-base font-bold text-warning">{fmtPct(ntfPct)}</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
                                   <div className="flex-1 text-center py-2 px-1 relative">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.output")}</p>
-                                    <p className="text-base font-bold text-info">{machine.total}</p>
+                                    <p className="text-base font-bold text-info">{fmtInt(machine.total)}</p>
                                   </div>
                                 )}
                                 {/* Status indicator */}
@@ -2902,7 +2775,7 @@ export default function Dashboard() {
               >
                 <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.fpy")}</p>
                 <p className="text-2xl font-bold text-success">
-                  {calculateYields(selectedMachine).fpy}%
+                  {fmtPct(calculateYields(selectedMachine).fpy)}
                 </p>
                 <p className="text-xs text-success/70 mt-1">{selectedMachine.ok} {t("common.items")}</p>
               </div>
@@ -2927,7 +2800,7 @@ export default function Dashboard() {
                 {/* doc65 W1 — nhãn trung thực: giá trị là ng/total (tỷ lệ NG), không phải "FY" */}
                 <p className="text-xs text-muted-foreground uppercase tracking-wider">NG %</p>
                 <p className="text-2xl font-bold text-destructive">
-                  {calculateYields(selectedMachine).ngPct}%
+                  {fmtPct(calculateYields(selectedMachine).ngPct)}
                 </p>
                 <p className="text-xs text-destructive/70 mt-1">{selectedMachine.ng} {t("common.items")}</p>
               </div>
@@ -2952,7 +2825,7 @@ export default function Dashboard() {
                 {/* doc65 W1 — nhãn trung thực: giá trị là ntf/total (tỷ lệ NTF), không phải "NTFY" */}
                 <p className="text-xs text-muted-foreground uppercase tracking-wider">NTF %</p>
                 <p className="text-2xl font-bold text-warning">
-                  {calculateYields(selectedMachine).ntfPct}%
+                  {fmtPct(calculateYields(selectedMachine).ntfPct)}
                 </p>
                 <p className="text-xs text-warning/70 mt-1">{selectedMachine.ntf} {t("common.items")}</p>
               </div>
@@ -2996,9 +2869,9 @@ export default function Dashboard() {
                         <PieChart>
                           <Pie
                             data={[
-                              { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, color: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, color: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, color: toneHex("warning") },
                             ].filter(d => d.value > 0)}
                             cx="50%"
                             cy="50%"
@@ -3009,9 +2882,9 @@ export default function Dashboard() {
                             label={({ name, value }) => `${name}: ${value}`}
                           >
                             {[
-                              { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, color: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, color: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, color: toneHex("warning") },
                             ].filter(d => d.value > 0).map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
@@ -3025,9 +2898,9 @@ export default function Dashboard() {
                     <div className="h-30 rounded-xl border border-border/50 bg-card p-3">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={[
-                          { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
-                          { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
-                          { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
+                          { name: "OK", value: selectedMachine.ok, fill: toneHex("success") },
+                          { name: "NG", value: selectedMachine.ng, fill: toneHex("danger") },
+                          { name: "NTF", value: selectedMachine.ntf, fill: toneHex("warning") },
                         ]}>
                           <CartesianGrid {...chartGridProps} opacity={0.3} />
                           <XAxis dataKey="name" tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
@@ -3035,9 +2908,9 @@ export default function Dashboard() {
                           <RechartsTooltip contentStyle={chartTooltipStyle} />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                             {[
-                              { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, fill: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, fill: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, fill: toneHex("warning") },
                             ].map((entry, index) => (
                               <Cell key={`bar-${index}`} fill={entry.fill} />
                             ))}
@@ -3275,7 +3148,9 @@ export default function Dashboard() {
                   const getNGColorClass = (rate: number) => {
                     if (rate <= 2) return "text-success bg-success/10 border-success/30";
                     if (rate <= 5) return "text-warning bg-warning/10 border-warning/30";
-                    if (rate <= 10) return "text-orange-500 bg-orange-500/10 border-orange-500/30";
+                    // doc67 W7 GĐ2 — bậc 3/4 thang NG: token --alarm-high (cam ISA-18.2 P2,
+                    // theme-aware) thay orange-500 hardcode; khớp chú giải tab NG trực quan.
+                    if (rate <= 10) return "text-(--alarm-high) bg-(--alarm-high)/10 border-(--alarm-high)/30";
                     return "text-destructive bg-destructive/10 border-destructive/30";
                   };
                   return (
@@ -3286,7 +3161,7 @@ export default function Dashboard() {
                           <p className="text-sm text-muted-foreground">{mp.measurementPointName}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-2xl font-bold">{ngRate.toFixed(1)}%</p>
+                          <p className="text-2xl font-bold">{fmtPct(ngRate)}</p>
                           <p className="text-xs text-muted-foreground">{t("dashboard.ngRate")}</p>
                         </div>
                       </div>
@@ -3602,8 +3477,10 @@ const LiveOeeWidget = memo(function LiveOeeWidget({
   const avgP = avgOf((m) => m.performance);
   const avgQ = avgOf((m) => m.quality);
   const avgOEE = avgOf((m) => m.oee);
-  const oeeColor = (v: number) => v >= 85 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--destructive)';
-  const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
+  // doc67 W7 GĐ2 — tone OEE theo oeeTone chung 80/60 (QUYẾT ĐỊNH #2: ngưỡng success
+  // đổi 85→80 CHỦ ĐÍCH, khớp PanelShell) + fmtPct chung (null → '—' thay "N/A").
+  const oeeClass = (v: number | null) => TONE_TEXT_CLASS[oeeTone(v)];
+  const fmt = (v: number | null) => fmtPct(v);
 
   return (
     <Card className={cardStyleProps.className} style={cardStyleProps.style}>
@@ -3626,7 +3503,7 @@ const LiveOeeWidget = memo(function LiveOeeWidget({
           ] as const).map((item) => (
             <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
               <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
-              <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? 'var(--muted-foreground)' : oeeColor(item.value) }}>{fmt(item.value)}</p>
+              <p className={cn("text-2xl font-bold mt-1", oeeClass(item.value))}>{fmt(item.value)}</p>
               <p className="text-[11px] text-muted-foreground">{item.label}</p>
             </a>
           ))}
@@ -3634,11 +3511,10 @@ const LiveOeeWidget = memo(function LiveOeeWidget({
         {/* Per-machine detail grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {oeeData.map((m) => {
-            const color = m.oee == null ? 'var(--muted-foreground)' : oeeColor(m.oee);
             return (
               <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
                 <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
-                <p className="text-xl font-bold" style={{ color }}>{fmt(m.oee)}</p>
+                <p className={cn("text-xl font-bold", oeeClass(m.oee))}>{fmt(m.oee)}</p>
                 <div className="text-[10px] text-muted-foreground space-y-0.5">
                   <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
                   <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>

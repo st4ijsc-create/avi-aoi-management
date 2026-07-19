@@ -28,8 +28,12 @@ import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Megaphone, MonitorOff, Settings } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { fmtPct } from "@/lib/format";
+import { severityDotClass, TONE_TILE_CLASS } from "@/components/patterns/isaStateBadges";
+import { ConnectionChip } from "@/components/patterns/ConnectionChip";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { useThrottledInvalidate } from "@/hooks/useDebouncedInvalidate";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PollFreshness } from "@/components/PollFreshness";
 import ManualHelp from "@/components/ManualHelp";
@@ -45,13 +49,18 @@ const POLL_MS = 15_000;
 const STALE_RELOAD_MS = 5 * 60 * 1000;
 const RELOAD_GUARD_KEY = "andon_board_last_reload";
 
-// Tile skin per status — semantic tokens only (theme-safe in light AND dark).
+// Tile skin per status — W7 GĐ2: crit/warn/good/offline lấy từ TONE_TILE_CLASS shared
+// (đối chiếu: khớp byte-identical với bản local cũ — không đổi hình thức TV).
+// GIỮ LOCAL có chủ đích:
+//   • andon: nền destructive ĐẶC + pulse — tín hiệu khẩn nhất phải đọc được từ 5–10 m,
+//     soft-tint shared (bg-destructive/15) sẽ làm nhạt;
+//   • idle: bg-card để phân biệt với offline (bg-muted/60) trên cùng lưới tile.
 const TILE_CLASS: Record<TileStatus, string> = {
   andon: "border-destructive bg-destructive text-destructive-foreground animate-pulse",
-  crit: "border-destructive bg-destructive/15 text-foreground",
-  warn: "border-warning bg-warning/15 text-foreground",
-  good: "border-success bg-success/10 text-foreground",
-  offline: "border-border bg-muted/60 text-muted-foreground",
+  crit: TONE_TILE_CLASS.danger,
+  warn: TONE_TILE_CLASS.warning,
+  good: TONE_TILE_CLASS.success,
+  offline: TONE_TILE_CLASS.muted,
   idle: "border-border bg-card text-muted-foreground",
 };
 
@@ -64,16 +73,9 @@ const YIELD_TEXT_CLASS: Record<TileStatus, string> = {
   idle: "text-muted-foreground",
 };
 
-const ANDON_STATE_DOT: Record<string, string> = {
-  red: "bg-destructive",
-  call: "bg-destructive",
-  yellow: "bg-warning",
-  green: "bg-success",
-};
-
-function fmtPct(v: number | null | undefined): string {
-  return v == null ? "—" : `${v.toFixed(v >= 100 ? 0 : 1)}%`;
-}
+// W7 GĐ2: chấm trạng thái Andon dùng severityDotClass shared (red/call → danger,
+// yellow → warning, green → success — khớp bản ANDON_STATE_DOT local cũ; state lạ
+// rơi về chấm muted thay vì không màu). fmtPct dùng bản lib/format (1 chữ số).
 
 export default function AndonBoard() {
   const { t } = useTranslation();
@@ -112,15 +114,12 @@ export default function AndonBoard() {
   );
   const board = boardQuery.data;
 
-  // Debounced socket-triggered refetch (events can burst).
-  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleRefetch = useCallback(() => {
-    if (refetchTimer.current) return;
-    refetchTimer.current = setTimeout(() => {
-      refetchTimer.current = null;
-      void utils.dashboard.getAndonBoard.invalidate();
-    }, 1500);
-  }, [utils]);
+  // Throttled socket-triggered refetch (events can burst) — W7 GĐ2: hook shared
+  // useThrottledInvalidate GIỮ đúng ngữ nghĩa bản tự chế cũ (timer đang chạy → bỏ
+  // qua, KHÔNG reset; fn chạy 1500ms sau lần gọi đầu mỗi đợt; tự clear khi unmount).
+  const scheduleRefetch = useThrottledInvalidate(() => {
+    void utils.dashboard.getAndonBoard.invalidate();
+  }, 1500);
 
   // ── B6: operator acknowledge (andon/canEdit — operators have it per RBAC) ────
   const { hasPermission } = usePermissions();
@@ -188,7 +187,6 @@ export default function AndonBoard() {
       socket.off("ng:alert", onDataEvent);
       socket.off("yield:warning", onDataEvent);
       socket.off("qualityGate:triggered", onDataEvent);
-      if (refetchTimer.current) clearTimeout(refetchTimer.current);
       releaseSharedSocket();
     };
   }, [scheduleRefetch]);
@@ -369,28 +367,23 @@ export default function AndonBoard() {
             <span className="hidden md:inline">{now.toLocaleTimeString("vi-VN", { hour12: false })}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span
-              role="status"
-              title={connState}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[clamp(0.55rem,0.7vw,0.85rem)] font-bold uppercase",
-                connState === "live" && "bg-success/15 text-success",
-                connState === "poll" && "bg-warning/15 text-warning",
-                connState === "offline" && "bg-destructive/15 text-destructive",
-              )}
-            >
-              <span className={cn(
-                "size-2 rounded-full",
-                connState === "live" && "bg-success animate-pulse",
-                connState === "poll" && "bg-warning",
-                connState === "offline" && "bg-destructive",
-              )} />
-              {connState === "live"
-                ? t("realtime.live", "Trực tiếp")
-                : connState === "poll"
-                  ? t("realtime.polling", "Định kỳ")
-                  : t("realtime.offline", "Mất kết nối")}
-            </span>
+            {/* W7 GĐ2: pill tự chế → ConnectionChip size='tv' (chuẩn GĐ1). Đổi hình
+                thức CÓ CHỦ ĐÍCH theo chip shared: offline = muted (không giả đỏ như
+                bản cũ — "mất kết nối" là mất tươi, không phải sự cố sản xuất).
+                KHÔNG truyền lastEventAt: PollFreshness ngay cạnh đã khai tuổi dữ liệu
+                — thêm tuổi vào chip sẽ hiện 2 con số trùng nhau. */}
+            <ConnectionChip
+              size="tv"
+              state={connState === "live" ? "live" : connState === "poll" ? "polling" : "offline"}
+              pulse={connState === "live"}
+              label={
+                connState === "live"
+                  ? t("realtime.live", "Trực tiếp")
+                  : connState === "poll"
+                    ? t("realtime.polling", "Định kỳ")
+                    : t("realtime.offline", "Mất kết nối")
+              }
+            />
             <PollFreshness updatedAt={boardQuery.dataUpdatedAt || undefined} isFetching={boardQuery.isFetching} />
             {/* Setup-only escape hatch — icon nhỏ nhưng hit-area ≥ 40px (W4 doc 67 touch) */}
             <Link
@@ -442,7 +435,7 @@ export default function AndonBoard() {
               >
                 <span className="flex items-center gap-2 text-[clamp(0.9rem,1.5vw,1.9rem)] font-extrabold uppercase">
                   {line.andonState && (
-                    <span className={cn("size-[0.9vw] min-h-3 min-w-3 rounded-full animate-pulse", ANDON_STATE_DOT[line.andonState])} />
+                    <span className={cn("size-[0.9vw] min-h-3 min-w-3 rounded-full animate-pulse", severityDotClass(line.andonState))} />
                   )}
                   {line.lineName ?? t("andonBoard.noLine", "Chưa gán line")}
                 </span>
@@ -558,7 +551,7 @@ export default function AndonBoard() {
                 const overdue = a.status === "raised" && now.getTime() - raisedMs > OVERDUE_MS;
                 return (
                 <span key={a.id} className="inline-flex items-center gap-2 text-[clamp(0.75rem,1.1vw,1.4rem)] font-bold">
-                  <span className={cn("size-[0.8vw] min-h-3 min-w-3 rounded-full animate-pulse", ANDON_STATE_DOT[a.state] ?? "bg-muted-foreground")} />
+                  <span className={cn("size-[0.8vw] min-h-3 min-w-3 rounded-full animate-pulse", severityDotClass(a.state))} />
                   <span className="uppercase text-muted-foreground">{a.lineName ?? a.machineCode ?? "—"}</span>
                   {a.machineCode && a.lineName && <span className="text-muted-foreground">· {a.machineCode}</span>}
                   <span>{a.title}</span>

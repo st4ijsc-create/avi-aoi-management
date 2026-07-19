@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { LucideIcon, Inbox, FileQuestion, Database, BarChart3, Settings, AlertCircle } from 'lucide-react';
+import { LucideIcon, Inbox, FileQuestion, Database, BarChart3, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,14 @@ interface EmptyStateProps {
   onAction?: () => void;
   className?: string;
   compact?: boolean;
+  /**
+   * doc 67 W7 GĐ1 — trạng thái "TẤT CẢ ỔN" (ISA-101: trạng thái quan-trọng-nhất,
+   * nhận diện được từ xa). "Rỗng" ở đây là TIN TỐT chứ không phải thiếu dữ liệu:
+   * icon CheckCircle2 tone success + thông điệp tích cực mặc định
+   * "Không có gì bất thường — hệ thống ổn định" (override qua title/description).
+   * Khi bật, `allClear` thắng `variant`. Mặc định false → không đổi hành vi cũ.
+   */
+  allClear?: boolean;
 }
 
 const variantConfig: Record<EmptyStateVariant, { 
@@ -75,13 +83,18 @@ export function EmptyState({
   actionLabel,
   onAction,
   className,
-  compact = false
+  compact = false,
+  allClear = false
 }: EmptyStateProps) {
   const { t } = useTranslation();
-  const config = variantConfig[variant];
+  const config = allClear
+    ? // Chuỗi tiếng Việt trực tiếp (không thêm key i18n ở GĐ1); override được.
+      { icon: CheckCircle2, titleKey: '', descriptionKey: '', iconColor: 'text-success' }
+    : variantConfig[variant];
   const Icon = CustomIcon || config.icon;
-  const title = customTitle || t(config.titleKey);
-  const description = customDescription || t(config.descriptionKey);
+  const title = customTitle || (allClear ? 'Không có gì bất thường' : t(config.titleKey));
+  const description =
+    customDescription || (allClear ? 'Hệ thống ổn định' : t(config.descriptionKey));
 
   if (compact) {
     return (
@@ -113,7 +126,7 @@ export function EmptyState({
     )}>
       <div className={cn(
         'rounded-full p-4 mb-4',
-        variant === 'error' ? 'bg-destructive/10' : 'bg-muted'
+        allClear ? 'bg-success/10' : variant === 'error' ? 'bg-destructive/10' : 'bg-muted'
       )}>
         <Icon className={cn('h-12 w-12', config.iconColor)} />
       </div>

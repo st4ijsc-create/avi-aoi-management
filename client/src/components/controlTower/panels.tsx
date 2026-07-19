@@ -30,9 +30,16 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PanelShell } from "./PanelShell";
+// W7 GĐ2 (doc 67): formatter + tone lấy thẳng từ nguồn shared. Alias pct/num/int
+// giữ tên gọn quen thuộc của các panel (hành vi fmt* giữ quy ước "—" trung thực).
+import { fmtInt as int, fmtNum as num, fmtPct as pct, relTimeShort } from "@/lib/format";
 import {
-  PanelShell, pct, num, int, oeeTone, TONE_TEXT, relTimeShort, type Tone,
-} from "./PanelShell";
+  oeeTone,
+  TONE_TEXT_CLASS,
+  yieldTone,
+  type SemanticTone,
+} from "@/components/patterns/isaStateBadges";
 import type { PanelKey } from "./personas";
 
 // Shared poll cadences (socket invalidation from the page keeps these fresh; the
@@ -50,14 +57,13 @@ const POLL_SLOW = 120_000;
  */
 export const PanelLiveContext = React.createContext(false);
 
-const VALUE_TONE: Record<Tone, string> = {
-  default: "text-foreground",
-  success: "text-success",
-  warning: "text-warning",
-  error: "text-destructive",
-  info: "text-info",
-  accent: "text-primary",
-};
+/**
+ * W7 GĐ2: VALUE_TONE local → TONE_TEXT_CLASS shared. Tone của Stat là SemanticTone
+ * + "default" (giá trị bình thường vẫn text-foreground — TONE_TEXT_CLASS không có
+ * bậc foreground, và làm mờ mọi số mặc định là đổi hình thức ngoài phạm vi wave).
+ * Layout Stat GIỮ NGUYÊN (StatChip chưa có variant tile — không mở rộng ở wave này).
+ */
+type StatTone = SemanticTone | "default";
 
 /** Compact stat tile (label + value) — no nested card chrome. */
 function Stat({
@@ -65,12 +71,12 @@ function Stat({
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
-  tone?: Tone;
+  tone?: StatTone;
   hint?: string;
 }): React.JSX.Element {
   return (
     <div className="rounded-md border border-border bg-muted/20 px-3 py-2" title={hint}>
-      <div className={cn("text-lg font-semibold tabular-nums", VALUE_TONE[tone])}>{value}</div>
+      <div className={cn("text-lg font-semibold tabular-nums", tone === "default" ? "text-foreground" : TONE_TEXT_CLASS[tone])}>{value}</div>
       <div className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
     </div>
   );
@@ -156,7 +162,9 @@ function CorporatePanel(): React.JSX.Element {
           <Stat
             label={t("controlTower.corporate.yield", "Final yield")}
             value={pct(s?.yieldRate ?? null)}
-            tone={s?.yieldRate == null ? "default" : s.yieldRate >= 95 ? "success" : s.yieldRate >= 85 ? "warning" : "error"}
+            /* W7 GĐ2: 95/85 local → yieldTone shared 95/90 (chuẩn DrillNode W4);
+               dải 85–90 đổi vàng→đỏ là chủ đích thống nhất ngưỡng. */
+            tone={yieldTone(s?.yieldRate ?? null)}
           />
           <Stat label={t("controlTower.corporate.fpy", "FPY")} value={pct(s?.fpy ?? null)} />
           <Stat
@@ -346,7 +354,7 @@ function AlarmHealthPanel(): React.JSX.Element {
   const openAlarms = kpiQ.data?.alarms.available ? kpiQ.data.alarms.value?.total ?? null : null;
 
   const rateStatus = d?.rate.status;
-  const rateTone: Tone = rateStatus === "critical" ? "error" : rateStatus === "warning" ? "warning" : "success";
+  const rateTone: StatTone = rateStatus === "critical" ? "danger" : rateStatus === "warning" ? "warning" : "success";
 
   return (
     <PanelShell
@@ -381,7 +389,7 @@ function AlarmHealthPanel(): React.JSX.Element {
         <Stat
           label={t("controlTower.alarmHealth.floodPeak", "Flood peak / 10m")}
           value={int(d?.flood.maxInWindow ?? null)}
-          tone={d?.flood.isFlooding ? "error" : "default"}
+          tone={d?.flood.isFlooding ? "danger" : "default"}
         />
         <Stat
           label={t("controlTower.alarmHealth.standing", "Standing")}
@@ -468,7 +476,7 @@ function LineOeePanel(): React.JSX.Element {
                 <TableCell className="text-right tabular-nums">{pct(l.availability)}</TableCell>
                 <TableCell className="text-right tabular-nums">{pct(l.performance)}</TableCell>
                 <TableCell className="text-right tabular-nums">{pct(l.quality)}</TableCell>
-                <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT[oeeTone(l.oee)])}>
+                <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT_CLASS[oeeTone(l.oee)])}>
                   {pct(l.oee)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{num(l.output)}</TableCell>
@@ -571,7 +579,7 @@ function ShiftComparePanel(): React.JSX.Element {
             {rows.map((s, i) => (
               <TableRow key={`${s.shiftLabel}-${i}`}>
                 <TableCell className="font-medium">{s.shiftLabel}</TableCell>
-                <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT[oeeTone(s.oee)])}>{pct(s.oee)}</TableCell>
+                <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT_CLASS[oeeTone(s.oee)])}>{pct(s.oee)}</TableCell>
                 <TableCell className="text-right tabular-nums">{num(s.output)}</TableCell>
                 <TableCell className="text-right tabular-nums">{pct(s.ngRate)}</TableCell>
               </TableRow>
@@ -653,8 +661,11 @@ function AndonRailPanel(): React.JSX.Element {
   const andons = board?.andons ?? [];
   const open = andons.filter((a) => a.status !== "resolved");
 
-  const stateTone = (state?: string | null): Tone =>
-    state === "red" ? "error" : state === "call" ? "warning" : state === "yellow" ? "warning" : "default";
+  // GIỮ LOCAL có chủ đích: mapping W2 của panel này để 'call' ở mức warning (chuông
+  // gọi ≠ sự cố đỏ trong rail); severityTone shared xếp call → danger nên KHÔNG dùng
+  // ở đây (đổi mức là đổi hành vi ngoài phạm vi wave). Chỉ tone-map đổi sang chuẩn.
+  const stateTone = (state?: string | null): SemanticTone =>
+    state === "red" ? "danger" : state === "call" ? "warning" : state === "yellow" ? "warning" : "muted";
 
   return (
     <PanelShell
@@ -687,7 +698,7 @@ function AndonRailPanel(): React.JSX.Element {
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{a.title || a.reason || t("controlTower.andonRail.signal", "Andon signal")}</div>
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className={cn("capitalize", TONE_TEXT[stateTone(a.state)])}>{a.state}</span>
+                <span className={cn("capitalize", TONE_TEXT_CLASS[stateTone(a.state)])}>{a.state}</span>
                 {a.lineName && <span>· {a.lineName}</span>}
                 {a.machineCode && <span>· {a.machineCode}</span>}
                 {a.raisedAt && <span className="ml-auto">{relTimeShort(a.raisedAt)}</span>}

@@ -40,6 +40,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { PollFreshness } from "@/components/PollFreshness";
 import { RelatedViews } from "@/components/RelatedViews";
+import { EmptyState } from "@/components/EmptyState";
+import { fmtInt, fmtIntCompact, fmtPct } from "@/lib/format";
+import {
+  oeeTone,
+  severityTone,
+  TONE_TEXT_CLASS,
+  yieldTone,
+  type SemanticTone,
+} from "@/components/patterns/isaStateBadges";
 import {
   Activity,
   AlertTriangle,
@@ -90,42 +99,10 @@ const SLOW_OPTS = {
   staleTime: 60_000,
 } as const;
 
-type Tone = "default" | "success" | "warning" | "info" | "destructive";
-
-const TONE_CLASS: Record<Tone, string> = {
-  default: "text-foreground",
-  success: "text-success",
-  warning: "text-warning",
-  info: "text-info",
-  destructive: "text-destructive",
-};
-
-function fmtInt(n: number): string {
-  return Math.round(n).toLocaleString();
-}
-// doc 67 W4.3: whole percentages render clean — "100%" never "100.0%" (the .0 was
-// what pushed 6-char values into truncation on 390px-wide 2-col tiles).
-function fmtPct(n: number, digits = 1): string {
-  return `${n.toFixed(digits).replace(/\.0+$/, "")}%`;
-}
-// doc 67 W4.3: deliberate compaction for large counts (doc 65 "Tỷ-hoá" precedent —
-// 1.234.567 → "1,23 Tr" in vi). Only kicks in above 6 digits; exact figures keep
-// their full locale grouping. Locale-aware via Intl compact notation (vi "Tr",
-// en "M", zh "万" scale) so no i18n keys are needed.
-function fmtIntCompact(n: number, locale: string): string {
-  const rounded = Math.round(n);
-  if (Math.abs(rounded) >= 1_000_000) {
-    try {
-      return new Intl.NumberFormat(locale, {
-        notation: "compact",
-        maximumFractionDigits: 2,
-      }).format(rounded);
-    } catch {
-      /* unknown locale tag → fall back to full grouping below */
-    }
-  }
-  return rounded.toLocaleString();
-}
+// W7 GĐ2: fmtInt/fmtPct/fmtIntCompact local → lib/format (fmtIntCompact GĐ1 vốn
+// chuẩn hóa từ chính bản này). Tone/TONE_CLASS local → SemanticTone/TONE_TEXT_CLASS
+// shared (isaStateBadges). Lưu ý fmtPct shared giữ 1 chữ số ("95.0%") và chỉ bỏ
+// phần thập phân từ 100 trở lên — quy ước đã chốt doc 67.
 
 /**
  * Client-side defence against degenerate LLM text (doc 46 FE-W0.3 spirit).
@@ -158,7 +135,7 @@ function KpiTile({
   label,
   value,
   unit,
-  tone = "default",
+  tone = "muted",
   sub,
   loading,
   className,
@@ -167,7 +144,7 @@ function KpiTile({
   label: string;
   value: string | null;
   unit?: string;
-  tone?: Tone;
+  tone?: SemanticTone;
   sub?: React.ReactNode;
   loading?: boolean;
   className?: string;
@@ -189,7 +166,7 @@ function KpiTile({
           /* doc 67 W4.3: NEVER truncate a KPI figure ("100.0…" is a wrong number).
              Instead the font clamps down on narrow screens (8vw ≈ 31px @390px) and
              the value itself is kept short by fmtPct/fmtIntCompact. */
-          <div className={`flex min-w-0 items-baseline gap-1 text-[clamp(1.5rem,8vw,2.25rem)] font-bold leading-none tabular-nums ${TONE_CLASS[tone]}`}>
+          <div className={`flex min-w-0 items-baseline gap-1 text-[clamp(1.5rem,8vw,2.25rem)] font-bold leading-none tabular-nums ${TONE_TEXT_CLASS[tone]}`}>
             <span>{value ?? "—"}</span>
             {value != null && unit && (
               <span className="text-lg font-semibold text-muted-foreground">{unit}</span>
@@ -255,17 +232,8 @@ function ErrorInline({
   );
 }
 
-function severityTone(sev?: string | null): Tone {
-  switch ((sev ?? "").toLowerCase()) {
-    case "critical":
-    case "error":
-      return "destructive";
-    case "warning":
-      return "warning";
-    default:
-      return "info";
-  }
-}
+// W7 GĐ2: severityTone local → bản shared isaStateBadges. Khác biệt CÓ CHỦ ĐÍCH
+// (đã duyệt GĐ1): mức không nhận diện / low / info → muted (trước đây → info xanh).
 
 export default function ExecutiveMobile(): React.JSX.Element {
   const { t, i18n } = useTranslation();
@@ -593,7 +561,9 @@ export default function ExecutiveMobile(): React.JSX.Element {
               icon={<Gauge />}
               label={t("executiveMobile.kpi.oee", "Live OEE")}
               value={avgOee != null ? fmtPct(avgOee) : null}
-              tone={avgOee == null ? "default" : avgOee >= 70 ? "success" : avgOee >= 50 ? "warning" : "destructive"}
+              /* W7 GĐ2: ngưỡng local 70/50 → oeeTone shared 80/60 — NGƯỠNG ĐỔI LÀ
+                 CHỦ ĐÍCH đã duyệt (OEE 72% từ xanh thành vàng). null → muted. */
+              tone={oeeTone(avgOee)}
               loading={oeeQ.isLoading}
               sub={
                 oeeQ.isError
@@ -609,7 +579,8 @@ export default function ExecutiveMobile(): React.JSX.Element {
               icon={<Percent />}
               label={t("executiveMobile.kpi.yield", "Yield (today)")}
               value={yieldRate != null ? fmtPct(yieldRate) : null}
-              tone={yieldRate == null ? "default" : yieldRate >= 95 ? "success" : yieldRate >= 85 ? "warning" : "destructive"}
+              /* W7 GĐ2: 95/85 local → yieldTone shared 95/90 (ngưỡng đổi đã duyệt). */
+              tone={yieldTone(yieldRate)}
               loading={statsQ.isLoading}
               sub={t("executiveMobile.kpi.finalYield", "Final yield")}
             />
@@ -617,7 +588,8 @@ export default function ExecutiveMobile(): React.JSX.Element {
               icon={<Target />}
               label={t("executiveMobile.kpi.fpy", "FPY (today)")}
               value={fpy != null ? fmtPct(fpy) : null}
-              tone={fpy == null ? "default" : fpy >= 95 ? "success" : fpy >= 85 ? "warning" : "destructive"}
+              /* W7 GĐ2: 95/85 local → yieldTone shared 95/90 (ngưỡng đổi đã duyệt). */
+              tone={yieldTone(fpy)}
               loading={statsQ.isLoading}
               sub={t("executiveMobile.kpi.firstPass", "First-pass yield")}
             />
@@ -692,16 +664,21 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   {[0, 1].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               ) : topRisks.length === 0 ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  {t("executiveMobile.risks.empty", "No active risks flagged")}
-                </div>
+                /* W7 GĐ2: empty tự chế → EmptyState allClear (GĐ1) — "không có rủi
+                   ro" là TIN TỐT. Điều kiện chỉ-khi-success của W2 giữ nguyên
+                   (nhánh isError đã render ErrorInline ở trên). */
+                <EmptyState
+                  allClear
+                  compact
+                  title={t("executiveMobile.risks.empty", "No active risks flagged")}
+                />
               ) : (
                 <ul className="space-y-2">
                   {topRisks.map((r) => {
                     const tone = severityTone(r.severity);
                     return (
                       <li key={r.id} className="flex items-start gap-2.5 rounded-md border p-2.5">
-                        <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_CLASS[tone]}`} aria-hidden />
+                        <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_TEXT_CLASS[tone]}`} aria-hidden />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="truncate text-sm font-medium">{r.title || t("executiveMobile.risks.untitled", "Risk")}</span>
@@ -753,13 +730,15 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   <Skeleton className="h-4 w-2/3" />
                 </>
               ) : !summary ? (
-                <div className="flex flex-col items-center gap-2 py-6 text-center text-sm text-muted-foreground">
-                  <Sparkles className="h-6 w-6" aria-hidden />
-                  <div>{t("executiveMobile.ai.empty", "No executive report yet.")}</div>
-                  <div className="text-xs">
-                    {t("executiveMobile.ai.emptyHint", "Scheduled summaries appear here; generate one in Management Insight.")}
-                  </div>
-                </div>
+                /* W7 GĐ2: empty tự chế → EmptyState compact. KHÔNG allClear — "chưa
+                   có báo cáo" là thiếu dữ liệu, không phải tin tốt. Icon Sparkles giữ
+                   ngữ nghĩa AI của bản cũ; điều kiện chỉ-khi-success W2 giữ nguyên. */
+                <EmptyState
+                  compact
+                  icon={Sparkles}
+                  title={t("executiveMobile.ai.empty", "No executive report yet.")}
+                  description={t("executiveMobile.ai.emptyHint", "Scheduled summaries appear here; generate one in Management Insight.")}
+                />
               ) : (
                 <>
                   {/* Meta row: period + generated time + honest source badge. */}
@@ -861,11 +840,14 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   )}
 
                   {/* Honest empty state: only on real success, and never while the
-                      truncated feed may still hide proposals beyond the cap. */}
+                      truncated feed may still hide proposals beyond the cap.
+                      W7 GĐ2: tự chế → EmptyState allClear ("đã xử lý hết" = tin tốt). */}
                   {!approvalsLoading && approvalsTotal === 0 && !aiInboxTruncated && (
-                    <div className="py-2 text-sm text-muted-foreground">
-                      {t("executiveMobile.approvals.empty", "You're all caught up.")}
-                    </div>
+                    <EmptyState
+                      allClear
+                      compact
+                      title={t("executiveMobile.approvals.empty", "You're all caught up.")}
+                    />
                   )}
                 </>
               )}
