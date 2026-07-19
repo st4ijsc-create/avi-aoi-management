@@ -1,0 +1,25 @@
+<UserControl x:Class="St4iMachineSimulator.Controls.StatusLight"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Width="12" Height="12" SnapsToDevicePixels="True">
+    <!--
+        Small colored dot used in the shell's top bar next to ServerStatus text. Purely presentational —
+        color is driven by the IsFallback dependency property (set via binding from ShellView), never by
+        logic living in this code-behind. Green = normal, amber = AutoTransport.IsFallingBack.
+    -->
+    <Grid>
+        <Ellipse x:Name="Dot" Fill="{StaticResource Brush.Status.Online}">
+            <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Online}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFallback, ElementName=Root}" Value="True">
+                            <Setter Property="Fill" Value="{StaticResource Brush.Status.Warn}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Ellipse.Style>
+        </Ellipse>
+    </Grid>
+</UserControl>

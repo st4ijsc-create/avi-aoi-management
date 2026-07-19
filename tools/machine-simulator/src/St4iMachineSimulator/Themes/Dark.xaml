@@ -1,0 +1,142 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Styles built on top of Colors.xaml's brushes. Implicit (no x:Key, TargetType-only) styles cover
+        the common controls so every screen built in later tasks (15-20) picks up the dark theme
+        automatically just by living under this Application; a handful of explicit x:Key styles cover
+        shell-specific chrome (sidebar nav rows, the fallback badge).
+    -->
+
+    <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+    <!-- ─── Window ─────────────────────────────────────────────────────── -->
+    <Style TargetType="Window">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.App}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="14" />
+    </Style>
+
+    <!-- ─── Text ───────────────────────────────────────────────────────── -->
+    <Style TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+    </Style>
+
+    <!-- ─── Buttons ────────────────────────────────────────────────────── -->
+    <Style TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Brush.Accent.Muted}" />
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Brush.Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Brush.Accent.Pressed}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Sidebar nav row: full-width, left-aligned, flat until hovered -->
+    <Style x:Key="NavItemButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="Padding" Value="14,10" />
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="6">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                           VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+                            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Top-bar action buttons (Start/Stop fleet): accent-tinted, a bit more compact than default -->
+    <Style x:Key="TopBarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinWidth" Value="92" />
+    </Style>
+
+    <!-- ─── ComboBox (mode toggle) ─────────────────────────────────────── -->
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Style.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter Property="Background" Value="{StaticResource Brush.Accent.Muted}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="ComboBox">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- ─── Chips / badges ─────────────────────────────────────────────── -->
+    <Style x:Key="FallbackBadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Brush.Badge.Fallback.Bg}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Badge.Fallback.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="10,4" />
+    </Style>
+
+    <Style x:Key="FallbackBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Badge.Fallback.Fg}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+</ResourceDictionary>
