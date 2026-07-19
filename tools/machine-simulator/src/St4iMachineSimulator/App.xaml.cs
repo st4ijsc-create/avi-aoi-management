@@ -262,16 +262,31 @@ public partial class App : Application
 
         Console.WriteLine($"SELFTEST inspector capture: {ourEvents.Count} event(s) from the dedicated pipeline, InspectorViewModel.Events.Count={inspectorVm.Events.Count}");
 
-        // ── a status filter narrows the list ─────────────────────────────────────────────────
+        // ── a status filter narrows the list, and ShownCount tracks the FILTERED count ──────────
+        // Regression check for a demo-visible bug: the header's "N shown" counter used to bind
+        // straight to Events.Count, so it kept reading the full unfiltered ring size (e.g. "96 shown")
+        // even while the grid itself was narrowed to 20 rows by the status filter below. ShownCount is
+        // now recomputed off FilteredEvents itself (see InspectorViewModel's constructor), so it must
+        // track FilteredEvents' count exactly, both with no filter active and after one narrows it.
         var totalBeforeFilter = inspectorVm.FilteredEvents.Cast<object>().Count();
+        if (totalBeforeFilter != inspectorVm.Events.Count)
+            throw new InvalidOperationException($"selftest inspector: with no filter active, FilteredEvents ({totalBeforeFilter}) should equal Events.Count ({inspectorVm.Events.Count})");
+        if (inspectorVm.ShownCount != inspectorVm.Events.Count)
+            throw new InvalidOperationException($"selftest inspector: with no filter active, ShownCount ({inspectorVm.ShownCount}) should equal Events.Count ({inspectorVm.Events.Count})");
+
         inspectorVm.FilterStatus = "202"; // Telemetry-only — see the ourEvents.Any(202) check above
         var filteredCount = inspectorVm.FilteredEvents.Cast<object>().Count();
         if (filteredCount == 0)
             throw new InvalidOperationException("selftest inspector: status filter \"202\" matched 0 rows");
         if (filteredCount >= totalBeforeFilter)
             throw new InvalidOperationException($"selftest inspector: status filter did not narrow the list ({filteredCount} filtered vs {totalBeforeFilter} unfiltered)");
-        Console.WriteLine($"SELFTEST inspector filter: status=\"202\" narrowed {totalBeforeFilter} -> {filteredCount} row(s)");
+        if (inspectorVm.ShownCount != filteredCount)
+            throw new InvalidOperationException($"selftest inspector: ShownCount ({inspectorVm.ShownCount}) did not track the filtered count ({filteredCount}) after applying the status filter — this is exactly the \"N shown\" header bug this pass fixed");
+        Console.WriteLine($"SELFTEST inspector filter: status=\"202\" narrowed {totalBeforeFilter} -> {filteredCount} row(s), ShownCount={inspectorVm.ShownCount}");
+
         inspectorVm.FilterStatus = InspectorViewModel.AllOption;
+        if (inspectorVm.ShownCount != inspectorVm.Events.Count)
+            throw new InvalidOperationException($"selftest inspector: after clearing the filter, ShownCount ({inspectorVm.ShownCount}) should equal Events.Count ({inspectorVm.Events.Count}) again");
 
         // ── Pause stops new rows from being added ────────────────────────────────────────────
         inspectorVm.PauseResumeCommand.Execute(null);

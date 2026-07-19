@@ -40,6 +40,13 @@ public sealed partial class InspectorViewModel : ObservableObject
 
         FilteredEvents = CollectionViewSource.GetDefaultView(Events);
         FilteredEvents.Filter = FilterPredicate;
+        // Recomputes ShownCount off the view's OWN CollectionChanged rather than hooking every place
+        // that can change what's visible (Events add/remove/Clear, FilteredEvents.Refresh() from a
+        // filter-property setter) individually — all of those already surface here for free, because
+        // ICollectionView raises Add/Remove when an item enters/leaves the filtered set and Reset on
+        // Refresh()/source Clear(). (Fix for a demo-visible bug: the header counter used to bind
+        // directly to Events.Count, which never reflected an active filter.)
+        FilteredEvents.CollectionChanged += (_, _) => RecomputeShownCount();
 
         // Late-subscriber catch-up: show whatever the EventBus already buffered (e.g. the fleet was
         // started before the user ever opened this nav item) rather than starting from a blank list.
@@ -105,6 +112,16 @@ public sealed partial class InspectorViewModel : ObservableObject
     /// attempt, then either a success or failure summary.</summary>
     [ObservableProperty]
     private string exportStatus = string.Empty;
+
+    /// <summary>Row count of <see cref="FilteredEvents"/> RIGHT NOW — i.e. what the grid is actually
+    /// showing, not <see cref="Events"/>'s unfiltered total. The header's "N shown" counter binds to
+    /// this (see <c>ApiInspectorView.xaml</c>) — previously it bound straight to <c>Events.Count</c>,
+    /// which stayed at the full ring size even while a filter was narrowing the grid (e.g. "96 shown"
+    /// with the grid displaying 20 filtered rows). Kept up to date by <see cref="RecomputeShownCount"/>,
+    /// which only runs when <see cref="FilteredEvents"/> itself actually changes (see the constructor's
+    /// <c>CollectionChanged</c> subscription) — O(n) on that change, not on every render.</summary>
+    [ObservableProperty]
+    private int shownCount;
 
     [RelayCommand]
     private void Clear()
@@ -189,6 +206,11 @@ public sealed partial class InspectorViewModel : ObservableObject
     {
         if (!string.IsNullOrEmpty(value) && !options.Contains(value)) options.Add(value);
     }
+
+    /// <summary>Recomputes <see cref="ShownCount"/> from <see cref="FilteredEvents"/>'s current
+    /// contents. Only ever called from the <c>FilteredEvents.CollectionChanged</c> subscription set up
+    /// in the constructor — never per-render.</summary>
+    private void RecomputeShownCount() => ShownCount = FilteredEvents.Cast<object>().Count();
 
     partial void OnFilterMachineChanged(string value) => FilteredEvents.Refresh();
 

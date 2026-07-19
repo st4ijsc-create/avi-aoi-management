@@ -65,9 +65,19 @@
                 <TextBlock Text="{Binding TotalEventCount, StringFormat={}{0:N0} total}"
                            Style="{StaticResource InspectorLabelStyle}"
                            Margin="18,4,0,0" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Events.Count, StringFormat={}{0:N0} shown}"
-                           Style="{StaticResource InspectorLabelStyle}"
-                           Margin="14,4,0,0" VerticalAlignment="Center" />
+                <!-- Primary number is ShownCount (the FILTERED row count actually in the grid right
+                     now), not Events.Count — fix for a demo-visible bug where this read e.g. "96 shown"
+                     while the grid displayed 20 filtered rows. Events.Count still shown after the
+                     slash for context (the unfiltered ring size). -->
+                <TextBlock Style="{StaticResource InspectorLabelStyle}"
+                           Margin="14,4,0,0" VerticalAlignment="Center">
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0:N0} / {1:N0} shown">
+                            <Binding Path="ShownCount" Mode="OneWay" />
+                            <Binding Path="Events.Count" Mode="OneWay" />
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
                 <Border Background="{StaticResource Brush.Badge.Fallback.Bg}"
                         BorderBrush="{StaticResource Brush.Badge.Fallback.Border}"
                         BorderThickness="1" CornerRadius="4" Padding="8,2"
