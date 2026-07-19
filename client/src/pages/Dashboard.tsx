@@ -80,6 +80,7 @@ import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Socket } from "socket.io-client";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { RealtimeBadge } from "@/components/RealtimeBadge";
+import { PollFreshness } from "@/components/PollFreshness";
 import { Link, useLocation } from "wouter";
 import { 
   AreaChart, 
@@ -208,7 +209,6 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
-  const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
@@ -588,7 +588,15 @@ export default function Dashboard() {
     assetScope.factoryId ?? (selectedFactory !== "all" ? parseInt(selectedFactory) : undefined);
 
   // Fetch stats with comparison
-  const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
+  // doc65 W2 (AUD-01) — lấy thêm dataUpdatedAt/isFetching để khai TUỔI DỮ LIỆU
+  // trung thực qua PollFreshness (thay chuỗi "Cập nhật lúc HH:mm" tĩnh cũ).
+  const {
+    data: statsWithComparison,
+    isLoading: statsLoading,
+    refetch: refetchStats,
+    dataUpdatedAt: statsUpdatedAt,
+    isFetching: statsFetching,
+  } = trpc.dashboard.getStatsWithComparison.useQuery({
     factoryId: effectiveFactoryId,
     machineId: assetScope.machineId,
     startDate: dateRange.startDate,
@@ -598,7 +606,13 @@ export default function Dashboard() {
   });
 
   // Fetch all machines stats
-  const { data: machinesStats, isLoading: machinesLoading, refetch: refetchMachines } = trpc.dashboard.getAllMachinesStats.useQuery({
+  const {
+    data: machinesStats,
+    isLoading: machinesLoading,
+    refetch: refetchMachines,
+    dataUpdatedAt: machinesUpdatedAt,
+    isFetching: machinesFetching,
+  } = trpc.dashboard.getAllMachinesStats.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
     // doc 64 IA-10 S2 — lưới máy lọc theo trục (server DEP-S2 đã nhận).
@@ -607,6 +621,19 @@ export default function Dashboard() {
   }, {
     refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
+
+  // doc65 W2 (AUD-01) — TUỔI DỮ LIỆU của các KPI chính: mốc MỚI NHẤT trong
+  // dataUpdatedAt của hai query nền tảng (stats + machines). PollFreshness tự
+  // tick mỗi giây nên "Ns trước" luôn tươi và có cảnh báo amber khi cũ — khác
+  // với chuỗi "Cập nhật lúc HH:mm" tĩnh cũ (không tick, không cảnh báo).
+  const kpiUpdatedAt = Math.max(statsUpdatedAt || 0, machinesUpdatedAt || 0) || undefined;
+  const kpiFetching = statsFetching || machinesFetching;
+  // Ngưỡng "cũ" = 2× chu kỳ auto-refresh hiện hành (sàn 15s để không nhấp nháy
+  // với chu kỳ 5s). Khi người dùng TẮT auto-refresh, dữ liệu già theo chủ ý →
+  // nới ngưỡng 5 phút (quá 5 phút vẫn cảnh báo trung thực).
+  const kpiRefreshMs =
+    isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : 0;
+  const kpiStaleAfterMs = kpiRefreshMs > 0 ? Math.max(kpiRefreshMs * 2, 15_000) : 300_000;
 
   // Fetch shift stats
   const { data: shiftStats } = trpc.dashboard.getShiftStats.useQuery({
@@ -799,18 +826,11 @@ export default function Dashboard() {
     { enabled: false } // Disable for now, will use ngTopNGPoints data
   );
 
-  // Update last refresh time
-  useEffect(() => {
-    if (statsWithComparison) {
-      setLastRefreshTime(new Date());
-    }
-  }, [statsWithComparison]);
-
-  // Manual refresh
+  // Manual refresh — mốc "cập nhật lúc" nay lấy thẳng từ dataUpdatedAt của
+  // react-query (doc65 W2), không cần state lastRefreshTime tự chế nữa.
   const handleRefresh = useCallback(() => {
     refetchStats();
     refetchMachines();
-    setLastRefreshTime(new Date());
   }, [refetchStats, refetchMachines]);
 
   // doc65 W1 [P1 đã duyệt] — builder HTML báo cáo NG dùng chung cho hai đường xuất:
@@ -1262,9 +1282,14 @@ export default function Dashboard() {
             <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
               <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
-              <span className="text-xs text-muted-foreground">
-                • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
-              </span>
+              {/* doc65 W2 (AUD-01) — TUỔI DỮ LIỆU KPI (poll) đặt CẠNH trạng thái
+                  SOCKET: RealtimeBadge nói về kết nối đẩy, PollFreshness nói về
+                  lần fetch KPI gần nhất — 2 khái niệm, cùng hiển thị. */}
+              <PollFreshness
+                updatedAt={kpiUpdatedAt}
+                isFetching={kpiFetching}
+                staleAfterMs={kpiStaleAfterMs}
+              />
             </span>
           }
           actions={
@@ -3186,14 +3211,27 @@ export default function Dashboard() {
 function MqttAlertWidget() {
   const { t } = useTranslation();
   // Rule-based alerts
-  const { data: unresolvedAlerts } = trpc.mqttAlert.unresolved.useQuery(undefined, {
+  // doc65 W2 (AUD-01) — widget poll 30s nhưng trước đây KHÔNG khai tuổi dữ liệu;
+  // lấy dataUpdatedAt/isFetching để gắn PollFreshness ở header widget.
+  const {
+    data: unresolvedAlerts,
+    dataUpdatedAt: ruleAlertsUpdatedAt,
+    isFetching: ruleAlertsFetching,
+  } = trpc.mqttAlert.unresolved.useQuery(undefined, {
     refetchInterval: 30000,
   });
 
   // Connection alerts from scheduler
-  const { data: connectionAlerts } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
+  const {
+    data: connectionAlerts,
+    dataUpdatedAt: connAlertsUpdatedAt,
+    isFetching: connAlertsFetching,
+  } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
     refetchInterval: 30000,
   });
+
+  // Mốc mới nhất giữa hai query của widget (poll 30s → ngưỡng cũ mặc định 60s).
+  const alertsUpdatedAt = Math.max(ruleAlertsUpdatedAt || 0, connAlertsUpdatedAt || 0) || undefined;
 
   const totalRuleAlerts = unresolvedAlerts?.length || 0;
   const totalConnectionAlerts = connectionAlerts?.total || 0;
@@ -3260,6 +3298,12 @@ function MqttAlertWidget() {
                 <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
               )}
             </div>
+            {/* doc65 W2 (AUD-01) — tuổi dữ liệu của widget poll-30s (mặc định cũ sau 60s) */}
+            <PollFreshness
+              updatedAt={alertsUpdatedAt}
+              isFetching={ruleAlertsFetching || connAlertsFetching}
+              className="ml-1 font-normal"
+            />
           </CardTitle>
           <div className="flex gap-2">
             <Link href="/mqtt-profiles?tab=alerts">

@@ -41,6 +41,7 @@ import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import { cn } from "@/lib/utils";
 
 import { LivePill } from "@/components/controlTower/PanelShell";
+import { PollFreshness } from "@/components/PollFreshness";
 import { PANEL_COMPONENTS } from "@/components/controlTower/panels";
 import {
   PERSONAS,
@@ -185,13 +186,28 @@ export default function ControlTower(): React.JSX.Element {
           ]}
         />
 
-        {/* Shared KPI strip (honest "—"; hidden gracefully when unauthorized) */}
-        <KpiStrip
-          data={kpiQ.data}
-          isLoading={kpiQ.isLoading}
-          isError={kpiQ.isError}
-          error={kpiQ.error}
-        />
+        {/* Shared KPI strip (honest "—"; hidden gracefully when unauthorized).
+            W2 (AUD-01): pill tuổi dữ liệu cạnh strip — PollFreshness tự tick 1s
+            TRONG chính nó (không setInterval ở root trang, tránh bài học OpsConsole);
+            amber khi quá 2× chu kỳ poll 20s của kpiSummary → poll fallback đã fail. */}
+        <div className="space-y-1">
+          {kpiQ.dataUpdatedAt > 0 && (
+            <div className="flex items-center justify-end gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Tuổi dữ liệu KPI:</span>
+              <PollFreshness
+                updatedAt={kpiQ.dataUpdatedAt}
+                isFetching={kpiQ.isFetching}
+                staleAfterMs={40_000}
+              />
+            </div>
+          )}
+          <KpiStrip
+            data={kpiQ.data}
+            isLoading={kpiQ.isLoading}
+            isError={kpiQ.isError}
+            error={kpiQ.error}
+          />
+        </div>
 
         {/* Persona panel grid */}
         <div className="grid gap-4 md:grid-cols-2">

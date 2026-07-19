@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayoutEditor, { DashboardLayout as LayoutType } from "@/components/DashboardLayoutEditor";
+import AsyncBoundary from "@/components/AsyncBoundary";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { 
@@ -298,15 +299,45 @@ export default function CustomDashboardContent() {
         </TabsList>
 
         <TabsContent value="my-layouts" className="mt-4">
-          <LayoutGridView layouts={myLayouts} />
+          <AsyncBoundary
+            isLoading={myDashboardsQuery.isLoading}
+            isError={myDashboardsQuery.isError}
+            error={myDashboardsQuery.error}
+            onRetry={() => myDashboardsQuery.refetch()}
+            preset="cards"
+            errorTitle="Không tải được danh sách bảng điều khiển"
+            retryLabel="Thử lại"
+          >
+            <LayoutGridView layouts={myLayouts} />
+          </AsyncBoundary>
         </TabsContent>
 
         <TabsContent value="shared" className="mt-4">
-          <LayoutGridView layouts={sharedLayouts} />
+          <AsyncBoundary
+            isLoading={publicDashboardsQuery.isLoading}
+            isError={publicDashboardsQuery.isError}
+            error={publicDashboardsQuery.error}
+            onRetry={() => publicDashboardsQuery.refetch()}
+            preset="cards"
+            errorTitle="Không tải được danh sách bảng điều khiển chia sẻ"
+            retryLabel="Thử lại"
+          >
+            <LayoutGridView layouts={sharedLayouts} />
+          </AsyncBoundary>
         </TabsContent>
 
         <TabsContent value="favorites" className="mt-4">
-          <LayoutGridView layouts={favoriteLayouts} />
+          <AsyncBoundary
+            isLoading={myDashboardsQuery.isLoading}
+            isError={myDashboardsQuery.isError}
+            error={myDashboardsQuery.error}
+            onRetry={() => myDashboardsQuery.refetch()}
+            preset="cards"
+            errorTitle="Không tải được danh sách bảng điều khiển"
+            retryLabel="Thử lại"
+          >
+            <LayoutGridView layouts={favoriteLayouts} />
+          </AsyncBoundary>
         </TabsContent>
       </Tabs>
     </div>

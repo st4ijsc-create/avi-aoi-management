@@ -136,6 +136,8 @@ function CorporatePanel(): React.JSX.Element {
       error={statsQ.error}
       isEmpty={!isLoading && !s}
       onRetry={statsQ.refetch}
+      dataUpdatedAt={statsQ.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="stats"
       emptyText={t("controlTower.corporate.empty", "No inspection data yet.")}
     >
@@ -210,6 +212,8 @@ function ExecSummaryPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && !summary}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="list"
       emptyText={t("controlTower.execSummary.empty", "No summary generated yet.")}
     >
@@ -288,6 +292,8 @@ function TopRisksPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && rows.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_FAST}
       preset="list"
       emptyText={t("controlTower.topRisks.empty", "No active insights. All clear.")}
     >
@@ -337,6 +343,8 @@ function AlarmHealthPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && !d}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_FAST}
       preset="stats"
       emptyText={t("controlTower.alarmHealth.empty", "No alarm activity in the window.")}
     >
@@ -408,6 +416,8 @@ function LineOeePanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && lines.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="table"
       emptyText={t("controlTower.lineOee.empty", "No OEE for the current shift yet.")}
     >
@@ -458,6 +468,8 @@ function PlanVsActualPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && rows.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="list"
       emptyText={t("controlTower.planVsActual.empty", "No production plan for the current shift.")}
     >
@@ -512,6 +524,8 @@ function ShiftComparePanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && rows.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="table"
       emptyText={t("controlTower.shiftCompare.empty", "No shift comparison data yet.")}
     >
@@ -562,6 +576,8 @@ function TopDowntimePanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && top.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_SLOW}
       preset="table"
       emptyText={t("controlTower.topDowntime.empty", "No machine downtime in the shift.")}
     >
@@ -624,6 +640,8 @@ function AndonRailPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && open.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_FAST}
       preset="list"
       emptyText={t("controlTower.andonRail.empty", "No active Andon signals. All clear.")}
     >
@@ -663,6 +681,8 @@ function LiveAlarmsPanel(): React.JSX.Element {
       error={q.error}
       isEmpty={!q.isLoading && alerts.length === 0}
       onRetry={q.refetch}
+      dataUpdatedAt={q.dataUpdatedAt}
+      pollIntervalMs={POLL_FAST}
       preset="list"
       emptyText={t("controlTower.liveAlarms.empty", "No active alarms. All clear.")}
     >

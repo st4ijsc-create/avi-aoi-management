@@ -444,6 +444,10 @@
       "corporate": "Bảng điều khiển tập đoàn",
       "insight": "Insight Quản lý",
       "home": "Trang chủ"
+    },
+    "error": {
+      "load": "Không tải được dữ liệu",
+      "retry": "Thử lại"
     }
   },
   "metricCatalog": {

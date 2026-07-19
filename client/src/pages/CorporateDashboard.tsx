@@ -23,6 +23,7 @@ import {
   ArrowRight
 } from "lucide-react";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import PollFreshness from "@/components/PollFreshness";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { 
   AreaChart, 
@@ -91,20 +92,66 @@ export default function CorporateDashboard() {
   // Fetch real data from API — các nguồn theo-kỳ đều nhận startDate (đã xác minh
   // server: dashboard.getStats + corporateFactoryStats.* nhận startDate/endDate
   // optional; getDailyStats nhận days không cap).
-  const { data: dashboardStats, isLoading: loadingStats } = trpc.dashboard.getStats.useQuery({ startDate: periodRange.startDate });
-  const { data: yieldByCorp, isLoading: loadingYield } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({ startDate: periodRange.startDate });
-  const { data: yieldByFactory } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({ startDate: periodRange.startDate });
+  // W2 (AUD-01): trang giao ban/TV mở hàng giờ — poll 60s cho dữ liệu chính để
+  // không "đứng yên vĩnh viễn" sau lần fetch lúc mount (giả-live). Lịch sử ngày
+  // (getDailyStats) đổi chậm → staleTime 5' + poll 5'. refetchOnWindowFocus giữ
+  // mặc định TanStack (true).
+  const POLL_MAIN_MS = 60_000;
+  const POLL_HISTORY_MS = 300_000;
+  const {
+    data: dashboardStats,
+    isLoading: loadingStats,
+    dataUpdatedAt: statsUpdatedAt,
+    isFetching: fetchingStats,
+  } = trpc.dashboard.getStats.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
+  const {
+    data: yieldByCorp,
+    isLoading: loadingYield,
+    dataUpdatedAt: yieldCorpUpdatedAt,
+    isFetching: fetchingYieldCorp,
+  } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
+  const {
+    data: yieldByFactory,
+    dataUpdatedAt: yieldFactoryUpdatedAt,
+    isFetching: fetchingYieldFactory,
+  } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
   // Danh mục thực thể (factory/line/machine) là số đăng ký HIỆN CÓ — không phải
   // chuỗi thời gian, không lọc theo kỳ được → card tương ứng ghi chú trung thực.
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
   const { data: machinesList } = trpc.machine.list.useQuery();
-  const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery({ days: periodRange.days });
+  const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery(
+    { days: periodRange.days },
+    { staleTime: POLL_HISTORY_MS, refetchInterval: POLL_HISTORY_MS },
+  );
   // Real OEE source: live per-machine OEE computed from MQTT (same source as OEEDashboard).
   // Returns [] when no live OEE has been reported — we surface that honestly as "N/A".
-  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  const {
+    data: allOEE,
+    dataUpdatedAt: oeeUpdatedAt,
+    isFetching: fetchingOEE,
+  } = trpc.mqttClient.getAllOEE.useQuery(undefined, { refetchInterval: POLL_MAIN_MS });
 
   const isLoading = loadingStats || loadingYield || loadingDaily;
+
+  // W2 (AUD-01): mốc tươi của trang = lần fetch thành công MỚI NHẤT trong các
+  // query dữ liệu chính (dataUpdatedAt = 0 khi chưa có dữ liệu → lọc bỏ).
+  const freshnessUpdatedAt = useMemo(() => {
+    const stamps = [statsUpdatedAt, yieldCorpUpdatedAt, yieldFactoryUpdatedAt, oeeUpdatedAt].filter(
+      (ts) => ts > 0,
+    );
+    return stamps.length ? Math.max(...stamps) : undefined;
+  }, [statsUpdatedAt, yieldCorpUpdatedAt, yieldFactoryUpdatedAt, oeeUpdatedAt]);
+  const freshnessFetching = fetchingStats || fetchingYieldCorp || fetchingYieldFactory || fetchingOEE;
 
   // Real corporate-wide average OEE: mean of live per-machine OEE values.
   // null when there is no live OEE data (honest "no data" rather than a fabricated number).
@@ -293,6 +340,13 @@ export default function CorporateDashboard() {
           description={t('corporate.dashboardDescription')}
           actions={
             <>
+              {/* W2 (AUD-01): freshness trung thực — "Cập nhật Xs trước"; amber khi
+                  quá 1,5× chu kỳ poll 60s (trễ mạng bình thường không nháy cảnh báo). */}
+              <PollFreshness
+                updatedAt={freshnessUpdatedAt}
+                isFetching={freshnessFetching}
+                staleAfterMs={POLL_MAIN_MS * 1.5}
+              />
               {canViewFederation && (
                 <Button
                   variant="outline"

@@ -122,22 +122,31 @@ export default function DrillDownDashboard(): React.JSX.Element {
   // ── Queries per level. Realtime = socket-first (U1 invalidate); refetchInterval
   //    60s is the POLL FALLBACK so an enabled level never freezes if the socket
   //    drops. Only the enabled level polls. ────────────────────────────────────
-  const { data: corporateStats, isLoading: corporateLoading } = trpc.drillDown.corporateStats.useQuery(
+  const { data: corporateStats, isLoading: corporateLoading, dataUpdatedAt: corporateUpdatedAt } = trpc.drillDown.corporateStats.useQuery(
     undefined,
     { enabled: drillState.level === "corporate", refetchInterval: 60_000 },
   );
-  const { data: factoryStats, isLoading: factoryLoading } = trpc.drillDown.factoriesByCorporate.useQuery(
+  const { data: factoryStats, isLoading: factoryLoading, dataUpdatedAt: factoryUpdatedAt } = trpc.drillDown.factoriesByCorporate.useQuery(
     { corporateCode: drillState.corporateCode! },
     { enabled: drillState.level === "factory" && !!drillState.corporateCode, refetchInterval: 60_000 },
   );
-  const { data: lineStats, isLoading: lineLoading } = trpc.drillDown.linesByFactory.useQuery(
+  const { data: lineStats, isLoading: lineLoading, dataUpdatedAt: lineUpdatedAt } = trpc.drillDown.linesByFactory.useQuery(
     { factoryId: drillState.factoryId! },
     { enabled: drillState.level === "line" && !!drillState.factoryId, refetchInterval: 60_000 },
   );
-  const { data: machineStats, isLoading: machineLoading } = trpc.drillDown.machinesByLine.useQuery(
+  const { data: machineStats, isLoading: machineLoading, dataUpdatedAt: machineUpdatedAt } = trpc.drillDown.machinesByLine.useQuery(
     { lineId: drillState.lineId! },
     { enabled: drillState.level === "machine" && !!drillState.lineId, refetchInterval: 60_000 },
   );
+
+  // ── W2 (AUD-01): freshness của TẦNG ĐANG XEM — chỉ 1 trong 4 query được
+  //    enabled theo drillState.level, nên độ tươi của trang = dataUpdatedAt của
+  //    đúng query đó (0 = chưa từng fetch → undefined, không bịa mốc). ─────────
+  const activeUpdatedAtRaw =
+    drillState.level === "corporate" ? corporateUpdatedAt :
+    drillState.level === "factory" ? factoryUpdatedAt :
+    drillState.level === "line" ? lineUpdatedAt : machineUpdatedAt;
+  const activeUpdatedAt = activeUpdatedAtRaw > 0 ? activeUpdatedAtRaw : undefined;
 
   // ── Realtime U1: socket-first + poll fallback ──
   const utils = trpc.useUtils();
@@ -309,8 +318,15 @@ export default function DrillDownDashboard(): React.JSX.Element {
   return (
     <DashboardLayout title={t("dashboard.drillDownDashboard", "Drill down dashboard")}>
       <div className="space-y-6">
-        {/* Canonical spine: breadcrumb + 6-tier stepper (honest degradation) */}
-        <DrillSpine state={drillState} onNavigate={handleNavigate} live={liveConnected} />
+        {/* Canonical spine: breadcrumb + 6-tier stepper (honest degradation).
+            W2 (AUD-01): badge độ tươi = socket + dataUpdatedAt của query đang
+            active — socket sống mà query fail/stale thì KHÔNG còn nhận LIVE. */}
+        <DrillSpine
+          state={drillState}
+          onNavigate={handleNavigate}
+          updatedAt={activeUpdatedAt}
+          connected={liveConnected}
+        />
 
         {/* U7 cross-links — the Command Center offers the live hierarchy TREE +
             factory twin of the same estate; this page is the interactive drill. */}

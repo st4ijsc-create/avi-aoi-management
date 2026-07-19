@@ -444,6 +444,10 @@
       "corporate": "Corporate dashboard",
       "insight": "Management insight",
       "home": "Home"
+    },
+    "error": {
+      "load": "Couldn't load data",
+      "retry": "Retry"
     }
   },
   "metricCatalog": {

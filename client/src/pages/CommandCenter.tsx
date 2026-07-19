@@ -46,9 +46,10 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useEcosystemEvents, type EcosystemEvent, type EcosystemSeverity } from "@/hooks/useEcosystemEvents";
+import PollFreshness from "@/components/PollFreshness";
 import {
   Gauge, Boxes, AlertTriangle, Bot, Network, Sparkles, Zap, Activity, Factory,
-  ChevronRight, ChevronDown, Cpu, Radio, RefreshCw, Wifi, WifiOff, ExternalLink,
+  ChevronRight, ChevronDown, Cpu, Radio, RefreshCw, ExternalLink,
   ListChecks, WifiOff as OfflineIcon, MapPin, Info, Layers, ServerCog,
 } from "lucide-react";
 
@@ -476,6 +477,14 @@ function CenterOverview({
       }
       action={
         <div className="flex items-center gap-2">
+          {/* AUD-01 (doc 65 W2): tuổi dữ liệu scene — poll 10s, amber khi >2× chu kỳ. */}
+          {factoryId != null && (
+            <PollFreshness
+              updatedAt={sceneQ.dataUpdatedAt || undefined}
+              isFetching={sceneQ.isFetching}
+              staleAfterMs={20_000}
+            />
+          )}
           {factoryId != null && (
             <Button size="sm" variant="outline" onClick={() => sceneQ.refetch()}>
               <RefreshCw className={cn("mr-1 h-4 w-4", sceneQ.isFetching && "animate-spin")} />
@@ -701,13 +710,23 @@ export default function CommandCenter() {
           description={t("cmd.subtitle", "One live pane: hierarchy, factory twin, KPIs and the unified alarm rail across the whole estate.")}
           actions={
             <div className="flex items-center gap-2">
+              {/* AUD-01 (doc 65 W2): badge PHẠM VI SỰ KIỆN — không được đọc như trạng thái
+                  kết nối toàn cục (header shell đã có đèn socket "Trực tiếp" riêng).
+                  Khi cờ ECOSYSTEM_EVENTS tắt → mode="polling": nói rõ chỉ luồng sự kiện
+                  là định kỳ, KHÔNG dùng icon WifiOff (gây hiểu lầm mất kết nối). */}
               {isLive ? (
-                <Badge className="gap-1 bg-emerald-500 text-white">
-                  <Wifi className="h-3.5 w-3.5" /> {t("cmd.live", "LIVE")}
+                <Badge
+                  className="gap-1 bg-emerald-500 text-white"
+                  title="Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket"
+                >
+                  <Radio className="h-3.5 w-3.5" /> Sự kiện: trực tiếp
                 </Badge>
               ) : (
-                <Badge className="gap-1 bg-amber-500 text-white">
-                  <WifiOff className="h-3.5 w-3.5" /> {t("cmd.polling", "POLLING")}
+                <Badge
+                  className="gap-1 bg-amber-500 text-white"
+                  title="Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Sự kiện hệ sinh thái: định kỳ 15s
                 </Badge>
               )}
               <Button size="sm" variant="outline" onClick={() => { hierarchyQ.refetch(); kpiQ.refetch(); alertsQ.refetch(); }}>
@@ -719,6 +738,17 @@ export default function CommandCenter() {
         />
 
         {/* ── TOP KPI STRIP ── */}
+        {/* AUD-01 (doc 65 W2): tuổi dữ liệu KPI — poll 15s, cảnh báo khi stale >2× chu kỳ. */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Chỉ số toàn hệ sinh thái (làm mới 15s)
+          </span>
+          <PollFreshness
+            updatedAt={kpiQ.dataUpdatedAt || undefined}
+            isFetching={kpiQ.isFetching}
+            staleAfterMs={30_000}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <MetricCard
             icon={<Activity className="h-4 w-4" />}
@@ -771,6 +801,14 @@ export default function CommandCenter() {
               icon={<ServerCog className="h-4 w-4" />}
               title={t("cmd.hierarchy", "Ecosystem hierarchy")}
               description={t("cmd.hierarchyHint", "Site → factory → line → station → machine / robot")}
+              action={
+                /* AUD-01 (doc 65 W2): tuổi dữ liệu cây — poll 10s, amber khi >2× chu kỳ. */
+                <PollFreshness
+                  updatedAt={hierarchyQ.dataUpdatedAt || undefined}
+                  isFetching={hierarchyQ.isFetching}
+                  staleAfterMs={20_000}
+                />
+              }
               contentClassName="p-2"
             >
               {hierarchyQ.isLoading ? (
@@ -811,6 +849,18 @@ export default function CommandCenter() {
                 selectedNode && selectedNode.kind !== "site"
                   ? t("cmd.railScoped", "Scoped to {{name}}", { name: selectedNode.name })
                   : (isLive ? t("cmd.railLive", "Live · unified alert stream") : t("cmd.railPoll", "Polling · seed + 15s refresh"))
+              }
+              action={
+                /* AUD-01 (doc 65 W2): tuổi dữ liệu rail khi ở chế độ poll 15s. Khi live,
+                   rail được socket đẩy trực tiếp và alertsQ ngừng poll → badge poll-age
+                   sẽ báo amber sai, nên chỉ hiện ở chế độ định kỳ. */
+                isLive ? undefined : (
+                  <PollFreshness
+                    updatedAt={alertsQ.dataUpdatedAt || undefined}
+                    isFetching={alertsQ.isFetching}
+                    staleAfterMs={30_000}
+                  />
+                )
               }
               contentClassName="p-2"
             >

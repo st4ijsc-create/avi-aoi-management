@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock, Wifi, WifiOff } from "lucide-react";
 import { SectionCard } from "@/components/patterns";
 import { AsyncBoundary, type AsyncSkeletonPreset } from "@/components/AsyncBoundary";
+import { PollFreshness } from "@/components/PollFreshness";
 import { cn } from "@/lib/utils";
 
 // ── Formatting helpers (honest "—" for null/undefined) ───────────────────────
@@ -109,6 +110,18 @@ export interface PanelShellProps {
   /** Extra header action (e.g. a LivePill) rendered before the link. */
   headerExtra?: React.ReactNode;
 
+  /**
+   * W2 (AUD-01): react-query `dataUpdatedAt` của query chính nuôi panel — khi có,
+   * header hiện pill tuổi dữ liệu (PollFreshness, tự tick 1s trong component con,
+   * KHÔNG re-render panel). Số cũ không bao giờ hiển thị như mới nữa.
+   */
+  dataUpdatedAt?: number;
+  /**
+   * Chu kỳ poll (ms) của panel — ngưỡng stale = 2× giá trị này (ISA-101: chỉ tô
+   * amber khi dữ liệu quá 2 chu kỳ poll, tức poll fallback cũng đã fail).
+   */
+  pollIntervalMs?: number;
+
   isLoading: boolean;
   isError?: boolean;
   error?: unknown;
@@ -133,6 +146,8 @@ export function PanelShell({
   linkHref,
   linkLabel,
   headerExtra,
+  dataUpdatedAt,
+  pollIntervalMs,
   isLoading,
   isError = false,
   error,
@@ -166,6 +181,15 @@ export function PanelShell({
       description={description}
       action={
         <div className="flex items-center gap-2">
+          {/* W2 (AUD-01): tuổi dữ liệu per-panel — PollFreshness tự tick trong chính nó,
+              amber chỉ khi quá 2× chu kỳ poll (poll fallback cũng đã fail). dataUpdatedAt=0
+              nghĩa là chưa fetch thành công lần nào → chưa có gì để khai tuổi. */}
+          {dataUpdatedAt != null && dataUpdatedAt > 0 && (
+            <PollFreshness
+              updatedAt={dataUpdatedAt}
+              staleAfterMs={(pollIntervalMs ?? 60_000) * 2}
+            />
+          )}
           {headerExtra}
           {/* When the role can't access the data, the deep-link is misleading — hide it. */}
           {!authz && deepLink}

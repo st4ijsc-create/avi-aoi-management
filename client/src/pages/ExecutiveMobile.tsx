@@ -24,7 +24,7 @@
  * full-bleed installable landing. Global providers (tRPC, i18n, theme, auth) live
  * at the app root, so everything still works standalone.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { PollFreshness } from "@/components/PollFreshness";
 import {
   Activity,
   AlertTriangle,
@@ -84,9 +85,6 @@ function fmtInt(n: number): string {
 }
 function fmtPct(n: number, digits = 1): string {
   return `${n.toFixed(digits)}%`;
-}
-function fmtTime(d: Date): string {
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 /**
@@ -180,6 +178,40 @@ function SectionTitle({
   );
 }
 
+// ── Honest inline error block (AUD-01 error-honesty) ──────────────────────────
+// Each section renders this INSTEAD of its reassuring empty-state when its query
+// failed — "no risks flagged" / "all caught up" may only ever render on success.
+function ErrorInline({
+  onRetry,
+  className,
+}: {
+  onRetry: () => void;
+  className?: string;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="alert"
+      className={`flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 ${className ?? ""}`}
+    >
+      <div className="flex min-w-0 items-center gap-2 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+        <span className="truncate">{t("executiveMobile.error.load", "Couldn't load data")}</span>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 shrink-0 gap-1.5"
+        onClick={onRetry}
+      >
+        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+        {t("executiveMobile.error.retry", "Retry")}
+      </Button>
+    </div>
+  );
+}
+
 function severityTone(sev?: string | null): Tone {
   switch ((sev ?? "").toLowerCase()) {
     case "critical":
@@ -196,8 +228,6 @@ export default function ExecutiveMobile(): React.JSX.Element {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
-
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(() => new Date());
 
   // Stable "start of today" so the getStats query key does not churn every render
   // (an ever-changing `now` endDate would trigger an infinite refetch loop).
@@ -239,7 +269,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
     enabled: canViewDeploys,
   });
 
-  // ── Manual refresh — refetch everything + stamp the time ─────────────────────
+  // ── Manual refresh — refetch everything ──────────────────────────────────────
   const anyFetching =
     statsQ.isFetching ||
     oeeQ.isFetching ||
@@ -259,9 +289,21 @@ export default function ExecutiveMobile(): React.JSX.Element {
     if (canViewThresholds) void thresholdQ.refetch();
     void aiInboxQ.refetch();
     if (canViewDeploys) void deployQ.refetch();
-    setLastRefreshed(new Date());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewWarRoom, canViewThresholds, canViewDeploys]);
+
+  // ── Freshness (AUD-01) — derived ONLY from react-query dataUpdatedAt ─────────
+  // This surface is poll-based (60s interval, no socket): the header indicator is
+  // PollFreshness fed by the newest successful fetch across the KPI-bearing
+  // queries. A never-fetched query reports dataUpdatedAt=0 → filtered out, so the
+  // stamp is undefined (honest "unknown") until real data lands. No client-side
+  // "Updated now" stamping — a refresh only moves the stamp when a fetch SUCCEEDS.
+  const freshestAt = useMemo(() => {
+    const ts = [statsQ.dataUpdatedAt, oeeQ.dataUpdatedAt, warRoomQ.dataUpdatedAt].filter(
+      (v) => v > 0,
+    );
+    return ts.length > 0 ? Math.max(...ts) : undefined;
+  }, [statsQ.dataUpdatedAt, oeeQ.dataUpdatedAt, warRoomQ.dataUpdatedAt]);
 
   // ── Derived KPI values ───────────────────────────────────────────────────────
   const stats = statsQ.data;
@@ -404,9 +446,29 @@ export default function ExecutiveMobile(): React.JSX.Element {
     aiInboxQ.isLoading ||
     (canViewDeploys && deployQ.isLoading);
 
+  // AUD-01: any failed approvals feed poisons the aggregate — a partial count
+  // (and especially "all caught up") would be a lie. Only permission-enabled
+  // queries participate.
+  const approvalsError =
+    (canViewThresholds && thresholdQ.isError) ||
+    aiInboxQ.isError ||
+    (canViewDeploys && deployQ.isError);
+  const retryApprovals = useCallback(() => {
+    if (canViewThresholds && thresholdQ.isError) void thresholdQ.refetch();
+    if (aiInboxQ.isError) void aiInboxQ.refetch();
+    if (canViewDeploys && deployQ.isError) void deployQ.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canViewThresholds,
+    canViewDeploys,
+    thresholdQ.isError,
+    aiInboxQ.isError,
+    deployQ.isError,
+  ]);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Sticky app bar — big title, live/updated stamp, manual refresh. */}
+      {/* Sticky app bar — big title, honest poll-freshness stamp, manual refresh. */}
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -416,9 +478,15 @@ export default function ExecutiveMobile(): React.JSX.Element {
             <div className="truncate text-base font-semibold leading-tight">
               {t("executiveMobile.title", "Executive briefing")}
             </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {t("executiveMobile.lastUpdated", "Updated {{time}}", { time: fmtTime(lastRefreshed) })}
-            </div>
+            {/* AUD-01: the ONLY freshness indicator on this page — driven by
+                react-query dataUpdatedAt (poll surface, no socket), so it goes
+                amber-stale by itself when polling silently stops delivering. */}
+            <PollFreshness
+              updatedAt={freshestAt}
+              isFetching={anyFetching}
+              staleAfterMs={150_000}
+              className="mt-0.5"
+            />
           </div>
           <Button
             variant="outline"
@@ -438,17 +506,23 @@ export default function ExecutiveMobile(): React.JSX.Element {
 
         {/* ── (1) KPI briefing ─────────────────────────────────────────────── */}
         <section aria-label={t("executiveMobile.kpi.title", "KPI briefing")}>
-          <SectionTitle
-            icon={<Activity />}
-            right={
-              <Badge variant="secondary" className="gap-1">
-                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-success" aria-hidden />
-                {t("executiveMobile.live", "Live")}
-              </Badge>
-            }
-          >
+          {/* AUD-01: no unconditional "Live" badge — this is a 60s poll surface;
+              the header PollFreshness is the single source of freshness truth. */}
+          <SectionTitle icon={<Activity />}>
             {t("executiveMobile.kpi.title", "KPI briefing")}
           </SectionTitle>
+
+          {/* Error-honesty: a failed KPI query renders an explicit error block —
+              the tiles alone would show a misleading quiet "—" / "no telemetry". */}
+          {(statsQ.isError || oeeQ.isError) && (
+            <ErrorInline
+              className="mb-3"
+              onRetry={() => {
+                if (statsQ.isError) void statsQ.refetch();
+                if (oeeQ.isError) void oeeQ.refetch();
+              }}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <KpiTile
@@ -458,11 +532,13 @@ export default function ExecutiveMobile(): React.JSX.Element {
               tone={avgOee == null ? "default" : avgOee >= 70 ? "success" : avgOee >= 50 ? "warning" : "destructive"}
               loading={oeeQ.isLoading}
               sub={
-                avgOee == null
-                  ? t("executiveMobile.kpi.noOee", "No live telemetry")
-                  : t("executiveMobile.kpi.machinesReporting", "{{count}} machines reporting", {
-                      count: oeeQ.data?.length ?? 0,
-                    })
+                oeeQ.isError
+                  ? null // error block above already explains — "no telemetry" would be a lie
+                  : avgOee == null
+                    ? t("executiveMobile.kpi.noOee", "No live telemetry")
+                    : t("executiveMobile.kpi.machinesReporting", "{{count}} machines reporting", {
+                        count: oeeQ.data?.length ?? 0,
+                      })
               }
             />
             <KpiTile
@@ -505,6 +581,8 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
                   {t("executiveMobile.kpi.planRestricted", "Requires production-monitoring access")}
                 </div>
+              ) : warRoomQ.isError ? (
+                <ErrorInline onRetry={() => void warRoomQ.refetch()} />
               ) : warRoomQ.isLoading ? (
                 <Skeleton className="h-9 w-32" />
               ) : plan == null ? (
@@ -539,7 +617,10 @@ export default function ExecutiveMobile(): React.JSX.Element {
           <SectionTitle icon={<AlertTriangle />}>{t("executiveMobile.risks.title", "Top risks")}</SectionTitle>
           <Card>
             <CardContent className="p-3">
-              {insightsQ.isLoading ? (
+              {insightsQ.isError ? (
+                /* AUD-01: NEVER show "no active risks" on a failed query. */
+                <ErrorInline onRetry={() => void insightsQ.refetch()} />
+              ) : insightsQ.isLoading ? (
                 <div className="space-y-2">
                   {[0, 1].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
@@ -592,7 +673,10 @@ export default function ExecutiveMobile(): React.JSX.Element {
           </SectionTitle>
           <Card>
             <CardContent className="space-y-3 p-4">
-              {summaryQ.isLoading ? (
+              {summaryQ.isError ? (
+                /* AUD-01: a failed fetch is NOT "no report yet". */
+                <ErrorInline onRetry={() => void summaryQ.refetch()} />
+              ) : summaryQ.isLoading ? (
                 <>
                   <Skeleton className="h-5 w-3/4" />
                   <Skeleton className="h-4 w-full" />
@@ -672,37 +756,45 @@ export default function ExecutiveMobile(): React.JSX.Element {
           <SectionTitle icon={<ClipboardCheck />}>{t("executiveMobile.approvals.title", "Pending approvals")}</SectionTitle>
           <Card>
             <CardContent className="space-y-3 p-4">
-              <div className="flex items-center gap-3">
-                {approvalsLoading ? (
-                  <Skeleton className="h-12 w-16" />
-                ) : (
-                  <div className={`text-5xl font-bold tabular-nums ${approvalsTotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
-                    {approvalsDisplay}
+              {/* AUD-01: on any failed feed, show the error INSTEAD of a partial
+                  count — the deep-link below stays available either way. */}
+              {approvalsError ? (
+                <ErrorInline onRetry={retryApprovals} />
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    {approvalsLoading ? (
+                      <Skeleton className="h-12 w-16" />
+                    ) : (
+                      <div className={`text-5xl font-bold tabular-nums ${approvalsTotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
+                        {approvalsDisplay}
+                      </div>
+                    )}
+                    <div className="text-sm text-muted-foreground">
+                      {t("executiveMobile.approvals.awaiting", "items awaiting a decision")}
+                    </div>
                   </div>
-                )}
-                <div className="text-sm text-muted-foreground">
-                  {t("executiveMobile.approvals.awaiting", "items awaiting a decision")}
-                </div>
-              </div>
 
-              {!approvalsLoading && approvalItems.length > 0 && (
-                <ul className="space-y-1.5">
-                  {approvalItems.map((it) => (
-                    <li key={it.key} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                      <Badge variant="outline" className="h-5 shrink-0 py-0 text-[10px]">{it.kind}</Badge>
-                      <span className="min-w-0 flex-1 truncate text-sm">{it.label}</span>
-                      {it.title && <span className="shrink-0 text-xs text-muted-foreground">{it.title}</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                  {!approvalsLoading && approvalItems.length > 0 && (
+                    <ul className="space-y-1.5">
+                      {approvalItems.map((it) => (
+                        <li key={it.key} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                          <Badge variant="outline" className="h-5 shrink-0 py-0 text-[10px]">{it.kind}</Badge>
+                          <span className="min-w-0 flex-1 truncate text-sm">{it.label}</span>
+                          {it.title && <span className="shrink-0 text-xs text-muted-foreground">{it.title}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
-              {/* Honest empty state: never claim "caught up" while the truncated
-                  feed may still hide proposals beyond the server cap. */}
-              {!approvalsLoading && approvalsTotal === 0 && !aiInboxTruncated && (
-                <div className="py-2 text-sm text-muted-foreground">
-                  {t("executiveMobile.approvals.empty", "You're all caught up.")}
-                </div>
+                  {/* Honest empty state: only on real success, and never while the
+                      truncated feed may still hide proposals beyond the cap. */}
+                  {!approvalsLoading && approvalsTotal === 0 && !aiInboxTruncated && (
+                    <div className="py-2 text-sm text-muted-foreground">
+                      {t("executiveMobile.approvals.empty", "You're all caught up.")}
+                    </div>
+                  )}
+                </>
               )}
 
               <Button

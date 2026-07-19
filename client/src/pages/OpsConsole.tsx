@@ -30,6 +30,7 @@ import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { PageHeader } from "@/components/patterns";
+import PollFreshness from "@/components/PollFreshness";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -259,6 +260,32 @@ export default function OpsConsole() {
     return () => window.clearInterval(i);
   }, []);
 
+  // ── W2 (AUD-01): freshness trung thực cho console poll ──────────────────────
+  // 4/5 nguồn poll 30s (andon 60s safety-net) nhưng nhãn "Tuổi" tự tăng theo
+  // đồng hồ client — mất mạng thì danh sách ĐỨNG IM mà tuổi vẫn chạy, càng
+  // giống thật. Lấy MIN(dataUpdatedAt của 5 query nguồn) — nguồn CŨ NHẤT là
+  // sự thật của cả console (mọi con số trên màn chỉ tươi bằng nguồn tệ nhất).
+  // Chỉ có mốc khi CẢ 5 nguồn đã fetch ít nhất một lần (dataUpdatedAt=0 =
+  // chưa từng fetch → chưa thể tuyên bố độ tươi).
+  const POLL_MS = 30_000;
+  const sourceStamps = [
+    andonQuery.dataUpdatedAt,
+    predictiveQuery.dataUpdatedAt,
+    interlockEvents.dataUpdatedAt,
+    mqttUnresolved.dataUpdatedAt,
+    thresholdHistory.dataUpdatedAt,
+  ];
+  const fetchedStamps = sourceStamps.filter((ts) => ts > 0);
+  const oldestUpdatedAt = fetchedStamps.length === sourceStamps.length ? Math.min(...fetchedStamps) : undefined;
+  const anySourceFetching =
+    andonQuery.isFetching || predictiveQuery.isFetching || interlockEvents.isFetching ||
+    mqttUnresolved.isFetching || thresholdHistory.isFetching;
+  // Quá 2 chu kỳ poll không có fetch thành công nào → coi là mất cập nhật.
+  // +15s dung sai: andon poll ở 60s (safety-net của socket) nên tuổi hợp lệ của
+  // nó chạm đúng 60s mỗi chu kỳ — không có dung sai thì banner nhấp nháy giả.
+  const STALE_AFTER_MS = POLL_MS * 2 + 15_000;
+  const pollStale = oldestUpdatedAt != null && now - oldestUpdatedAt > STALE_AFTER_MS;
+
   // ── normalise all sources into one list ─────────────────────────────────────
   const alerts = useMemo<NormalAlert[]>(() => {
     const out: NormalAlert[] = [];
@@ -461,6 +488,12 @@ export default function OpsConsole() {
           description={t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
           actions={
             <>
+              {/* W2 (AUD-01): độ tươi thật của console = nguồn poll CŨ NHẤT. */}
+              <PollFreshness
+                updatedAt={oldestUpdatedAt}
+                isFetching={anySourceFetching}
+                staleAfterMs={STALE_AFTER_MS}
+              />
               <Button variant="outline" size="sm" onClick={refreshAll}>
                 <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Refresh")}
               </Button>
@@ -498,6 +531,19 @@ export default function OpsConsole() {
             }
           />
         </div>
+
+        {/* W2 (AUD-01): mất cập nhật >2 chu kỳ poll → banner mỏng cảnh báo trên
+            đầu danh sách — nhãn "Tuổi" bên dưới vẫn chạy theo đồng hồ client nên
+            KHÔNG tự tố giác việc danh sách đã đứng im. */}
+        {pollStale && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {t("opsConsole.staleData", "Dữ liệu có thể đã cũ — mất kết nối cập nhật")}
+          </div>
+        )}
 
         <Tabs defaultValue="warroom">
           <TabsList>

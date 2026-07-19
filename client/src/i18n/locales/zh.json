@@ -444,6 +444,10 @@
       "corporate": "集团仪表板",
       "insight": "管理洞察",
       "home": "首页"
+    },
+    "error": {
+      "load": "数据加载失败",
+      "retry": "重试"
     }
   },
   "metricCatalog": {
