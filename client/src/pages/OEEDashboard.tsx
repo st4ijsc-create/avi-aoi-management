@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import { PageHeader } from "@/components/patterns";
+// doc 63 (AUD-09) — flag-gated E10 badge (own palette, distinct from PackML/alarm).
+import { E10StateBadge } from "@/components/patterns/isaStateBadges";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import { RelatedViews } from "@/components/RelatedViews";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -834,8 +837,15 @@ export function OEEDashboardContent() {
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                           {tiles.map((t) => (
                             <div key={t.k} className="rounded-md border p-3">
-                              <div className="text-xs text-muted-foreground">{t.label}</div>
-                              <div className={`text-xl font-semibold ${t.color}`}>
+                              {/* doc 63 (AUD-09) — flag-gated: E10 states get their OWN palette
+                                  (E10StateBadge) instead of sharing success/info/warning with
+                                  PackML; the minute value goes neutral (ISA-101 quiet). */}
+                              {isIsa101V2() ? (
+                                <E10StateBadge state={String(t.k)} label={t.label} className="mb-1" />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">{t.label}</div>
+                              )}
+                              <div className={`text-xl font-semibold ${isIsa101V2() ? "text-foreground" : t.color}`}>
                                 {Math.round(b.states[t.k])}
                                 <span className="text-xs text-muted-foreground ml-1">min</span>
                               </div>

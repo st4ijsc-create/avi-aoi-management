@@ -270,6 +270,8 @@ export const equipmentStandardsRouter = router({
       setpoint: z.string().max(96).optional(),
       deadband: z.string().max(96).optional(),
       rationalization: z.string().optional(),
+      // doc 63 DEP-06 — ISA-18.2 field #4 "probable cause" (authored at rationalization).
+      cause: z.string().max(4000).optional(),
       shelvedUntil: z.string().datetime().optional(),
       isSuppressed: z.boolean().optional(),
       scope: z.string().max(64).optional(),
@@ -294,6 +296,7 @@ export const equipmentStandardsRouter = router({
         setpoint: input.setpoint,
         deadband: input.deadband,
         rationalization: input.rationalization,
+        cause: input.cause,
         shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null,
         isSuppressed: input.isSuppressed ?? false,
         scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,

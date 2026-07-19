@@ -1025,6 +1025,25 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                           </div>
                           {a.description && <div className="mt-1 text-sm">{a.description}</div>}
                           {a.recommendedAction && <div className="mt-0.5 text-xs text-muted-foreground">→ {a.recommendedAction}</div>}
+                          {/* doc 63 (AUD-02 / DEP-06) — flag-gated ISA-18.2 4-field block: CAUSE /
+                              CONSEQUENCE / TIME-TO-RESPOND joined from master_alarms (field #4 "time"
+                              = the ts already shown above). Honest: absent governance → placeholder. */}
+                          {isIsa101V2() && (
+                            <div className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmCause", "Nguyên nhân")}: </span>
+                                {a.cause ?? <span className="italic text-muted-foreground">{t("cockpit.alarmNotRationalized", "chưa rationalize")}</span>}
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmConsequence", "Hậu quả")}: </span>
+                                {a.consequence ?? "—"}
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmTtr", "Phản ứng trong")}: </span>
+                                {a.timeToRespondMin != null ? `${a.timeToRespondMin} ${t("cockpit.minutes", "phút")}` : "—"}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

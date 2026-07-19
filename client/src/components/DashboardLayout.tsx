@@ -33,6 +33,9 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { SiteSwitcher } from "./SiteSwitcher";
 import { SiteHealthDot } from "./SiteHealthDot";
+// doc 63 (AUD-01/G8) — shell-level freshness surface, flag-gated (HMI_ISA101_V2).
+import { FreshnessStrip } from "./FreshnessStrip";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -563,6 +566,9 @@ function DashboardLayoutContent({
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <AIActionInboxLauncher />
             <NotificationCenter />
+            {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
+                state, never claims live when the socket is down. Byte-identical when off. */}
+            {isIsa101V2() && <FreshnessStrip className="hidden sm:inline-flex" />}
             <SiteHealthDot />
             <ThemeToggle />
             <LanguageSwitcher />

@@ -60,6 +60,7 @@ import {
   programProjects,
   programDeployments,
   genealogyChain,
+  masterAlarms,
 } from "../../../drizzle/schema";
 import {
   getLatestMachineStatus,
@@ -125,6 +126,62 @@ export interface NormalizedAssetAlarm {
   source: "andon" | "safety";
   /** Best-effort raw ref (andon reason / safety eventType) for traceability. */
   raw?: string | null;
+  // doc 63 DEP-06 (AUD-02) — ISA-18.2 governance fields joined from master_alarms by
+  // alarmKey (rationalized metadata). Null when the code has no master row yet — the
+  // FE renders an honest "chưa rationalize" placeholder, never invents content.
+  cause?: string | null;
+  consequence?: string | null;
+  /** Minutes the operator has to respond before the consequence occurs. */
+  timeToRespondMin?: number | null;
+  /** Derived EEMUA-191 priority (low|medium|high|critical) from the master row. */
+  masterPriority?: string | null;
+}
+
+/**
+ * doc 63 DEP-06 — batch-attach master_alarms governance metadata (cause / consequence /
+ * timeToRespond / derived priority) onto a normalized alarm list, matched by
+ * standardCode → alarmKey. ONE query for the distinct codes (no N+1); a generic row
+ * (assetType IS NULL) is used unless a scoped row matched first. Fail-safe: any error
+ * returns the input untouched (feed keeps working without governance enrichment).
+ */
+async function attachGovernance(alarms: NormalizedAssetAlarm[]): Promise<NormalizedAssetAlarm[]> {
+  if (alarms.length === 0) return alarms;
+  try {
+    const db = await getDb();
+    if (!db) return alarms;
+    const codes = [...new Set(alarms.map((a) => a.standardCode))];
+    const rows = await db
+      .select({
+        alarmKey: masterAlarms.alarmKey,
+        assetType: masterAlarms.assetType,
+        cause: masterAlarms.cause,
+        consequence: masterAlarms.consequence,
+        timeToRespond: masterAlarms.timeToRespond,
+        priority: masterAlarms.priority,
+      })
+      .from(masterAlarms)
+      .where(inArray(masterAlarms.alarmKey, codes));
+    if (rows.length === 0) return alarms;
+    // Prefer the generic (assetType null) row per key; any scoped row is a fallback.
+    const byKey = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) {
+      const cur = byKey.get(r.alarmKey);
+      if (!cur || (cur.assetType !== null && r.assetType === null)) byKey.set(r.alarmKey, r);
+    }
+    return alarms.map((a) => {
+      const m = byKey.get(a.standardCode);
+      if (!m) return a;
+      return {
+        ...a,
+        cause: m.cause ?? null,
+        consequence: m.consequence ?? null,
+        timeToRespondMin: m.timeToRespond ?? null,
+        masterPriority: m.priority ?? null,
+      };
+    });
+  } catch {
+    return alarms; // enrichment is best-effort — never break the feed
+  }
 }
 
 /** Map an andon `state` → an ISA-18.2 severity band (mirrors alarmNormalizer intent). */
@@ -201,7 +258,8 @@ export async function machineAlarms(machineId: number, limit = 50): Promise<Norm
     /* andon table absent → skip */
   }
 
-  return out.sort((a, b) => b.ts - a.ts).slice(0, cap);
+  // doc 63 DEP-06 — enrich with rationalized governance (cause/consequence/TTR/priority).
+  return attachGovernance(out.sort((a, b) => b.ts - a.ts).slice(0, cap));
 }
 
 /**
@@ -251,7 +309,8 @@ export async function robotAlarms(robotId: number, vendor: string, limit = 50): 
   } catch {
     /* safety table absent → skip */
   }
-  return out.sort((a, b) => b.ts - a.ts).slice(0, cap);
+  // doc 63 DEP-06 — same governance enrichment as machineAlarms.
+  return attachGovernance(out.sort((a, b) => b.ts - a.ts).slice(0, cap));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

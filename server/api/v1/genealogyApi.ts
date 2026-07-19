@@ -71,7 +71,10 @@ function pickString(obj: Record<string, unknown> | null | undefined, keys: strin
 
 // ─── GET /genealogy/:unitId ───────────────────────────────────────────────────
 
-async function assembleRecord(unitId: string): Promise<GenealogyRecord | null> {
+// doc 63 DEP-05 — exported so the tRPC layer (genealogyRouter.getFullHistory) can serve
+// the SAME aggregated record (chain ∪ inspections ∪ process_results ∪ installations)
+// that this REST endpoint returns, instead of the FE re-assembling a partial view.
+export async function assembleRecord(unitId: string): Promise<GenealogyRecord | null> {
   const { getDb } = await import("../../db/connection");
   const {
     genealogyChain,
