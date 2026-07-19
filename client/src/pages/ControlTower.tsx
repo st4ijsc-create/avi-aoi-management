@@ -23,6 +23,7 @@
  */
 import * as React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
@@ -158,7 +159,8 @@ export default function ControlTower(): React.JSX.Element {
                   aria-pressed={active}
                   title={t(meta.descKey, meta.descDefault)}
                   className={cn(
-                    "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    // W4 (doc 67): min-h-11 (44px) — vùng chạm đạt chuẩn găng tay/panel-PC.
+                    "min-h-11 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                     active
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -243,6 +245,10 @@ function KpiStrip({
   error: unknown;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // W4 (doc 67): chip KPI bấm được → điều hướng deep-view tương ứng (route đã
+  // xác minh tồn tại trong App.tsx). fleet/energy KHÔNG gắn vì /fleet và /energy
+  // không tồn tại (chỉ có /fleet-orchestration gated-permission và /energy-analytics).
+  const [, setLocation] = useLocation();
 
   // Unauthorized / forbidden → hide the strip quietly (the panels do the same).
   const code = (error as { data?: { code?: string } } | null | undefined)?.data?.code;
@@ -267,24 +273,34 @@ function KpiStrip({
   const ai = data.aiInsights.available ? data.aiInsights.value?.count ?? null : null;
   const energy = data.energy.available ? data.energy.value?.kwh ?? null : null;
 
+  // W4 (doc 67): 1280px làm 7 chip tràn + chip bị cắt đôi → wrap thành 2 hàng.
   return (
-    <StatChipRow>
+    <StatChipRow wrap>
       <StatChip
         icon={<Gauge />}
         label={t("controlTower.kpi.oee", "OEE (mean)")}
         value={fmtPct(oee)}
         tone={oee == null ? "default" : oee < 60 ? "warning" : "success"}
+        onClick={() => setLocation("/oee-dashboard")}
+        title={t("controlTower.kpi.oeeGo", "Mở bảng OEE đầy đủ")}
       />
-      <StatChip icon={<Boxes />} label={t("controlTower.kpi.wip", "WIP units")} value={fmtNum(wip)} />
+      <StatChip
+        icon={<Boxes />}
+        label={t("controlTower.kpi.wip", "WIP units")}
+        value={fmtNum(wip)}
+        onClick={() => setLocation("/wip-dashboard")}
+        title={t("controlTower.kpi.wipGo", "Mở bảng WIP đầy đủ")}
+      />
       {/* W1-P0: kpiSummary đếm cảnh báo ĐANG MỞ (andon chưa xử lý + sự kiện an toàn,
           KHÔNG theo cửa sổ thời gian) — nhãn phải nói rõ phạm vi để không mâu thuẫn
           với panel "Alarm health (24h)" vốn đếm cảnh báo PHÁT SINH trong 24h. */}
       <StatChip
         icon={<AlertTriangle />}
         label="Cảnh báo đang mở · nặng/cao"
-        title="Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h."
+        title="Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h. Bấm để mở Ops Console."
         value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
         tone={alarmsCrit ? "error" : "default"}
+        onClick={() => setLocation("/ops-console")}
       />
       <StatChip
         icon={<Bot />}
@@ -295,6 +311,8 @@ function KpiStrip({
         icon={<Network />}
         label={t("controlTower.kpi.sites", "Sites reporting")}
         value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
+        onClick={() => setLocation("/corporate-dashboard")}
+        title={t("controlTower.kpi.sitesGo", "Mở Corporate dashboard")}
       />
       <StatChip icon={<Sparkles />} label={t("controlTower.kpi.ai", "AI insights")} value={fmtNum(ai)} />
       <StatChip icon={<Zap />} label={t("controlTower.kpi.energy", "Energy kWh")} value={fmtNum(energy)} />

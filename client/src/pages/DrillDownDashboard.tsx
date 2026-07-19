@@ -46,7 +46,7 @@ import {
   type DrillLevel,
   type DrillDownState,
 } from "@/components/drilldown/DrillSpine";
-import { DrillNode, type DrillRow } from "@/components/drilldown/DrillNode";
+import { DrillNode, yieldTone, type DrillRow } from "@/components/drilldown/DrillNode";
 import {
   Building2,
   Factory,
@@ -242,12 +242,21 @@ export default function DrillDownDashboard(): React.JSX.Element {
 
   const isLoading = corporateLoading || factoryLoading || lineLoading || machineLoading;
   const maxValue = Math.max(...rows.map((r) => r.total), 1);
+  // W4 (ISA-101): NG bars scale against the tier's max NG — scaled by max Output
+  // they were invisible even on the worst node.
+  const maxNg = Math.max(...rows.map((r) => r.ng), 1);
+  // W4: worst yield of the tier — badge tone follows the same thresholds as the
+  // per-row yield badge (yieldTone) instead of unconditional destructive.
+  const lowestYield = rows.length > 0 ? Math.min(...rows.map((r) => r.yieldRate)) : 0;
 
   const pieData = [
     { name: "OK", value: rollup.ok, color: "var(--success)" },
     { name: "NG", value: rollup.ng, color: "var(--destructive)" },
     { name: "NTF", value: rollup.ntf, color: "var(--warning)" },
   ].filter((d) => d.value > 0);
+  // W4: donut center total + legend figures (outer labels overflowed the card
+  // edge and collided with the chat FAB).
+  const pieSum = pieData.reduce((acc, d) => acc + d.value, 0);
 
   // ── Level presentation (title + node icon + how a row behaves) ──
   const levelMeta = {
@@ -318,6 +327,9 @@ export default function DrillDownDashboard(): React.JSX.Element {
   return (
     <DashboardLayout title={t("dashboard.drillDownDashboard", "Drill down dashboard")}>
       <div className="space-y-6">
+        {/* W4 a11y: trang chưa có h1 — DashboardLayout chỉ hiện title ở sidebar,
+            không phải tiêu đề trang → h1 sr-only cho screen reader / landmark. */}
+        <h1 className="sr-only">Phân tích chi tiết</h1>
         {/* Canonical spine: breadcrumb + 6-tier stepper (honest degradation).
             W2 (AUD-01): badge độ tươi = socket + dataUpdatedAt của query đang
             active — socket sống mà query fail/stale thì KHÔNG còn nhận LIVE. */}
@@ -401,6 +413,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
                         key={row.key}
                         data={row}
                         maxValue={maxValue}
+                        maxNg={maxNg}
                         icon={levelMeta.icon}
                         onDrill={behaviour.onDrill}
                         leafAction={behaviour.leafAction}
@@ -423,6 +436,8 @@ export default function DrillDownDashboard(): React.JSX.Element {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
+                  {/* W4: bỏ label ngoài + labelLine (tràn mép card, bị FAB chat đè) —
+                      tổng vào tâm donut, số liệu từng phần vào Legend. */}
                   <PieChart>
                     <Pie
                       data={pieData}
@@ -432,14 +447,39 @@ export default function DrillDownDashboard(): React.JSX.Element {
                       outerRadius={80}
                       paddingAngle={5}
                       dataKey="value"
-                      label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                      label={false}
+                      labelLine={false}
                     >
                       {pieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
+                    <text
+                      x="50%"
+                      y="44%"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      className="fill-foreground text-xl font-bold"
+                    >
+                      {pieSum.toLocaleString()}
+                    </text>
+                    <text
+                      x="50%"
+                      y="53%"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      className="fill-muted-foreground text-xs"
+                    >
+                      Tổng
+                    </text>
                     <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => value.toLocaleString()} />
-                    <Legend />
+                    <Legend
+                      formatter={(value, entry) => {
+                        const v = Number((entry?.payload as { value?: number } | undefined)?.value ?? 0);
+                        const pct = pieSum > 0 ? Math.round((v / pieSum) * 100) : 0;
+                        return `${value} ${v.toLocaleString()} · ${pct}%`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -457,8 +497,10 @@ export default function DrillDownDashboard(): React.JSX.Element {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">{t("dashboard.lowestYield", "Lowest yield")}</span>
-                  <Badge variant="destructive">
-                    {rows.length > 0 ? Math.min(...rows.map((r) => r.yieldRate)).toFixed(1) : 0}%
+                  {/* W4: tone theo ngưỡng yieldTone (≥95 trung tính · 90–95 warning ·
+                      <90 destructive) thay vì đỏ vô điều kiện. */}
+                  <Badge variant={yieldTone(lowestYield)}>
+                    {rows.length > 0 ? lowestYield.toFixed(1) : 0}%
                   </Badge>
                 </div>
               </div>
@@ -466,8 +508,11 @@ export default function DrillDownDashboard(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Bar chart comparison */}
-        <SectionCard title={t("dashboard.productionComparison", "Production comparison")}>
+        {/* Bar chart comparison — W4: nói rõ khi chỉ vẽ 10/N hàng đầu (slice(0,10)). */}
+        <SectionCard
+          title={t("dashboard.productionComparison", "Production comparison")}
+          description={rows.length > 10 ? `Top 10 / ${rows.length}` : undefined}
+        >
           {isLoading ? (
             <Skeleton className="h-80 w-full" />
           ) : rows.length === 0 ? (

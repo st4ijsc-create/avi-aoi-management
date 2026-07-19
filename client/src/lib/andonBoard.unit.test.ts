@@ -79,11 +79,14 @@ describe("tileStatus priority", () => {
 });
 
 describe("agoLabel", () => {
-  it("formats s/m/h compactly and never goes negative", () => {
+  it("formats s/m/h/d compactly and never goes negative", () => {
     const now = 1_000_000_000;
     expect(agoLabel(now - 30_000, now)).toBe("30s");
     expect(agoLabel(now - 5 * 60_000, now)).toBe("5m");
     expect(agoLabel(now - 3 * 3_600_000, now)).toBe("3h");
+    expect(agoLabel(now - 23 * 3_600_000, now)).toBe("23h");
+    expect(agoLabel(now - 26 * 3_600_000, now)).toBe("1d");
+    expect(agoLabel(now - 2 * 24 * 3_600_000, now)).toBe("2d");
     expect(agoLabel(now + 60_000, now)).toBe("0s");
   });
 });

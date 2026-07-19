@@ -30,7 +30,7 @@
  * i18n via t("cmd.*","English default") fallbacks (nav keys added to locale files).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
@@ -89,6 +89,60 @@ const STATUS_HEX: Record<NodeStatus, string> = {
   idle: "#f59e0b",
   unknown: "#94a3b8",
 };
+
+// ── W4 (doc 67) — nhãn tiếng Việt trực tiếp (UI tiếng Việt, key i18n cmd.* chưa
+// có trong JSON locale nên các chuỗi thô EN bị lộ; nhãn mới đi thẳng tiếng Việt). ──
+
+/** Trạng thái node cây/lưới (title + sr). */
+const STATUS_VI: Record<NodeStatus, string> = {
+  ok: "Bình thường",
+  warn: "Cảnh báo",
+  down: "Dừng",
+  idle: "Chờ",
+  unknown: "Không rõ",
+};
+
+/** Mức độ cảnh báo trên rail. */
+const SEVERITY_VI: Record<EcosystemSeverity, string> = {
+  critical: "Nghiêm trọng",
+  high: "Cao",
+  medium: "Trung bình",
+  low: "Thấp",
+  info: "Thông tin",
+};
+
+/** Loại sự kiện (kind) trên rail. */
+const KIND_VI: Record<string, string> = {
+  inspection: "Kiểm tra",
+  andon: "Andon",
+  safety: "An toàn",
+  spc: "SPC",
+  quality_gate: "Cổng chất lượng",
+  escalation: "Leo thang",
+  maintenance: "Bảo trì",
+  downtime: "Dừng máy",
+  oee: "OEE",
+  task: "Nhiệm vụ",
+  workorder: "Lệnh SX",
+  anomaly: "Bất thường",
+  program: "Chương trình",
+  twin: "Bản sao số",
+  ng: "NG",
+  yield: "Tỷ lệ đạt",
+  event: "Sự kiện",
+};
+
+/** Nhóm trạng thái twin → nhãn tiếng Việt (đồng bộ với statusHexFromTwinState). */
+function twinStateCategoryVi(state: string | null | undefined): string {
+  switch ((state ?? "").toLowerCase()) {
+    case "running": case "execute": case "active": return "Đang chạy";
+    case "idle": return "Chờ";
+    case "stopped": case "held": case "suspended": return "Tạm dừng";
+    case "aborted": case "error": case "fault": case "estop": return "Lỗi/E-stop";
+    case "offline": return "Ngoại tuyến";
+    default: return "Không rõ";
+  }
+}
 
 function statusHexFromTwinState(state: string | null | undefined): string {
   switch ((state ?? "").toLowerCase()) {
@@ -195,32 +249,69 @@ function TreeNode({
   const isLeaf = node.kind === "machine" || node.kind === "robot";
   const selected = selectedId === node.id;
 
+  // W4 (doc 67) — pattern chạm cho node có con: chạm cả HÀNG luôn chọn node; nếu
+  // node đang ĐÓNG thì đồng thời MỞ (1 chạm = chọn + mở, kiểu VS Code); khi node
+  // đã được chọn và đang mở, chạm lần 2 lên hàng sẽ THU GỌN. Nút mũi tên vẫn
+  // toggle riêng (stopPropagation) cho thao tác chuột quen kiểu cũ.
+  const handleRowActivate = () => {
+    if (hasChildren && (!isOpen || selected)) onToggle(node.id);
+    onSelect(node.id);
+  };
+
+  // W4 (doc 67) — bàn phím theo WAI-ARIA tree (subset gọn, roving tabindex qua
+  // node đang chọn): Enter/Space = chọn; ArrowRight = mở; ArrowLeft = đóng.
+  // stopPropagation để phím không nổi bọt lên treeitem cha (DOM lồng nhau).
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return; // phím phát từ nút con → bỏ qua
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); e.stopPropagation();
+      onSelect(node.id);
+    } else if (e.key === "ArrowRight" && hasChildren && !isOpen) {
+      e.preventDefault(); e.stopPropagation();
+      onToggle(node.id);
+    } else if (e.key === "ArrowLeft" && hasChildren && isOpen) {
+      e.preventDefault(); e.stopPropagation();
+      onToggle(node.id);
+    }
+  };
+
   return (
     <div>
+      {/* W4 (doc 67): min-h-11 (44px) đạt chuẩn chạm; role="treeitem" + tabIndex
+          roving (node đang chọn = 0; fallback các site gốc khi chưa chọn gì). */}
       <div
+        role="treeitem"
+        aria-selected={selected}
+        aria-expanded={hasChildren ? isOpen : undefined}
+        aria-level={depth + 1}
+        tabIndex={selected ? 0 : selectedId == null && depth === 0 ? 0 : -1}
         className={cn(
-          "group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm cursor-pointer hover:bg-muted/60",
+          "group flex min-h-11 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm cursor-pointer hover:bg-muted/60",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           selected && "bg-primary/10 ring-1 ring-primary/30",
         )}
         style={{ paddingLeft: `${depth * 12 + 6}px` }}
-        onClick={() => onSelect(node.id)}
+        onClick={handleRowActivate}
+        onKeyDown={handleKeyDown}
       >
-        {/* expander */}
+        {/* expander — W4 (doc 67): hit-area 40×40 (h-10 w-10, margin âm giữ hàng
+            gọn), icon giữ nhỏ; tabIndex=-1 vì hàng treeitem đã nhận bàn phím. */}
         {hasChildren ? (
           <button
             type="button"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+            className="-my-1 -ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
             onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}
-            aria-label={isOpen ? "Collapse" : "Expand"}
+            aria-label={isOpen ? "Thu gọn" : "Mở rộng"}
           >
             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
         ) : (
-          <span className="w-3.5 shrink-0" />
+          <span className="-ml-1.5 w-10 shrink-0" />
         )}
 
         {/* status dot */}
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[node.status])} title={node.status} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[node.status])} title={STATUS_VI[node.status]} />
 
         {/* kind icon + name */}
         <span className="shrink-0 text-muted-foreground">{kindIcon(node.kind)}</span>
@@ -250,22 +341,26 @@ function TreeNode({
               <OfflineIcon className="h-2.5 w-2.5" />{node.counts.offline}
             </span>
           )}
-          {/* Open cockpit — leaf nodes only (U3 route) */}
+          {/* Open cockpit — leaf nodes only (U3 route).
+              W4 (doc 67): hiện THƯỜNG TRỰC (không hover-only — cảm ứng không có
+              hover), hit-area 40×40 (h-10 w-10, margin âm giữ hàng gọn); desktop
+              vẫn có hiệu ứng hover đổi màu/nền. */}
           {isLeaf && typeof node.refId === "number" && (
             <button
               type="button"
-              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"
-              title={t("cmd.openCockpit", "Open cockpit")}
+              className="-my-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title="Mở cockpit"
+              aria-label={`Mở cockpit ${node.name}`}
               onClick={(e) => { e.stopPropagation(); onOpenCockpit(node); }}
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-4 w-4" />
             </button>
           )}
         </span>
       </div>
 
       {hasChildren && isOpen && (
-        <div>
+        <div role="group">
           {node.children!.map((child) => (
             <TreeNode
               key={child.id}
@@ -423,7 +518,7 @@ function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: 
                         dev.status === "down" && "bg-destructive/15 text-destructive",
                         (dev.status === "idle" || dev.status === "unknown") && "bg-muted text-muted-foreground",
                       )}
-                      title={`${dev.name} · ${dev.status}`}
+                      title={`${dev.name} · ${STATUS_VI[dev.status]}`}
                     >
                       {dev.kind === "robot" ? <Bot className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
                       {dev.code}
@@ -467,12 +562,25 @@ function CenterOverview({
 
   const canRender3D = webglOk && devices.length > 0;
 
+  // W4 (doc 67) — a11y cho canvas 3D: aria-label mô tả + tóm tắt sr-only theo
+  // nhóm trạng thái (screen-reader không đọc được nội dung WebGL).
+  const activeAlarmCount = factoryNode?.counts.activeAlarms ?? 0;
+  const stateSummary = useMemo(() => {
+    const byCat = new Map<string, number>();
+    for (const d of devices) {
+      const cat = twinStateCategoryVi(d.state);
+      byCat.set(cat, (byCat.get(cat) ?? 0) + 1);
+    }
+    return [...byCat.entries()].map(([cat, n]) => `${n} ${cat.toLowerCase()}`).join(", ");
+  }, [devices]);
+  const sceneAriaLabel = `Bản sao số nhà máy${factoryNode ? ` ${factoryNode.name}` : ""} — ${devices.length} thiết bị, ${activeAlarmCount} cảnh báo đang hoạt động`;
+
   return (
     <SectionCard
       icon={<Factory className="h-4 w-4" />}
       title={
         factoryNode
-          ? `${factoryNode.name} — ${devices.length} ${t("cmd.devices", "devices")}`
+          ? `${factoryNode.name} — ${devices.length} thiết bị`
           : t("cmd.selectFactory", "Select a factory")
       }
       action={
@@ -504,23 +612,33 @@ function CenterOverview({
         </div>
       ) : canRender3D ? (
         <>
-          <div className="h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
+          {/* W4 (doc 67): role="img" + aria-label mô tả — nội dung WebGL vô hình
+              với screen-reader; kèm tóm tắt sr-only số liệu theo trạng thái. */}
+          <div
+            role="img"
+            aria-label={sceneAriaLabel}
+            className="h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]"
+          >
             <Canvas shadows onPointerMissed={() => setSelectedDeviceId(null)}>
               <Suspense fallback={null}>
                 <CompactTwinScene devices={devices} selectedId={selectedDeviceId} onSelect={setSelectedDeviceId} />
               </Suspense>
             </Canvas>
           </div>
+          <p className="sr-only">
+            {`Tóm tắt bản sao số: ${devices.length} thiết bị${stateSummary ? ` — ${stateSummary}` : ""}. ${activeAlarmCount} cảnh báo đang hoạt động trong phạm vi nhà máy này.`}
+          </p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            <Legend hex={STATUS_HEX.ok} label={t("cmd.lgRunning", "Running")} />
-            <Legend hex={STATUS_HEX.idle} label={t("cmd.lgIdle", "Idle")} />
-            <Legend hex="#f97316" label={t("cmd.lgHeld", "Held/Stopped")} />
-            <Legend hex={STATUS_HEX.down} label={t("cmd.lgDown", "Fault/E-stop")} />
-            <Legend hex="#64748b" label={t("cmd.lgOffline", "Offline")} />
+            {/* W4 (doc 67): nhãn chữ tiếng Việt cạnh chấm màu (không chỉ dựa màu). */}
+            <Legend hex={STATUS_HEX.ok} label="Đang chạy" />
+            <Legend hex={STATUS_HEX.idle} label="Chờ" />
+            <Legend hex="#f97316" label="Tạm dừng/Giữ" />
+            <Legend hex={STATUS_HEX.down} label="Lỗi/E-stop" />
+            <Legend hex="#64748b" label="Ngoại tuyến" />
             {selectedDevice && (
               <span className="ml-auto text-foreground">
                 {selectedDevice.name} · {selectedDevice.state}
-                {selectedDevice.activeTaskId != null ? ` · task #${selectedDevice.activeTaskId}` : ""}
+                {selectedDevice.activeTaskId != null ? ` · lệnh #${selectedDevice.activeTaskId}` : ""}
               </span>
             )}
           </div>
@@ -541,7 +659,7 @@ function CenterOverview({
 }
 
 function Legend({ hex, label }: { hex: string; label: string }) {
-  return <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm" style={{ background: hex }} /> {label}</span>;
+  return <span className="flex items-center gap-1"><span aria-hidden="true" className="inline-block h-3 w-3 rounded-sm" style={{ background: hex }} /> {label}</span>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -749,54 +867,72 @@ export default function CommandCenter() {
             staleAfterMs={30_000}
           />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-          <MetricCard
-            icon={<Activity className="h-4 w-4" />}
-            label={t("cmd.kpiOee", "OEE (mean)")}
-            value={oeeVal}
-            tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
-          />
-          <MetricCard
-            icon={<Boxes className="h-4 w-4" />}
-            label={t("cmd.kpiWip", "WIP units")}
-            value={wipVal}
-            delta={kpi?.wip.value?.bottleneck ? t("cmd.bottleneck", "Bottleneck: {{b}}", { b: kpi.wip.value.bottleneck }) : undefined}
-          />
-          <MetricCard
-            icon={<AlertTriangle className="h-4 w-4" />}
-            label={t("cmd.kpiAlarms", "Alarms crit / high")}
-            value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
-            tone={alarmsCrit ? "error" : "default"}
-          />
-          <MetricCard
-            icon={<Bot className="h-4 w-4" />}
-            label={t("cmd.kpiFleet", "Fleet tasks / robots")}
-            value={fleetTasks == null ? "—" : `${fleetTasks} / ${fleetRobots}`}
-          />
-          <MetricCard
-            icon={<Network className="h-4 w-4" />}
-            label={t("cmd.kpiSites", "Sites reporting")}
-            value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
-            delta={sitesStale + sitesDown > 0 ? t("cmd.sitesStaleDown", "{{s}} stale · {{d}} down", { s: sitesStale, d: sitesDown }) : undefined}
-            tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
-          />
-          <MetricCard
-            icon={<Sparkles className="h-4 w-4" />}
-            label={t("cmd.kpiAi", "AI insights")}
-            value={aiVal}
-          />
-          <MetricCard
-            icon={<Zap className="h-4 w-4" />}
-            label={t("cmd.kpiEnergy", "Energy kWh")}
-            value={energyVal}
-            delta={!kpi?.energy.available ? t("cmd.noEstateEnergy", "No estate rollup yet") : undefined}
-          />
+        {/* W4 (doc 67) — responsive 1280: xl mới lên 7 cột (1280 rơi về 4 cột,
+            hết cắt cụt nhãn); nhãn rút gọn tiếng Việt + title tooltip đầy đủ trên
+            wrapper (MetricCard truncate nội bộ — không sửa file DS ngoài phạm vi). */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <div title="OEE trung bình toàn hệ sinh thái (%)">
+            <MetricCard
+              icon={<Activity className="h-4 w-4" />}
+              label="OEE"
+              value={oeeVal}
+              tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
+            />
+          </div>
+          <div title="Số đơn vị WIP đang trên chuyền">
+            <MetricCard
+              icon={<Boxes className="h-4 w-4" />}
+              label="WIP"
+              value={wipVal}
+              delta={kpi?.wip.value?.bottleneck ? `Nút cổ chai: ${kpi.wip.value.bottleneck}` : undefined}
+            />
+          </div>
+          <div title="Cảnh báo nghiêm trọng / cao đang hoạt động">
+            <MetricCard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label="Cảnh báo"
+              value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
+              tone={alarmsCrit ? "error" : "default"}
+            />
+          </div>
+          <div title="Nhiệm vụ đội robot (chờ + đang chạy) / robot trực tuyến">
+            <MetricCard
+              icon={<Bot className="h-4 w-4" />}
+              label="Nhiệm vụ"
+              value={fleetTasks == null ? "—" : `${fleetTasks} / ${fleetRobots}`}
+            />
+          </div>
+          <div title="Số site đang báo cáo / tổng số site">
+            <MetricCard
+              icon={<Network className="h-4 w-4" />}
+              label="Site"
+              value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
+              delta={sitesStale + sitesDown > 0 ? `${sitesStale} trễ dữ liệu · ${sitesDown} mất kết nối` : undefined}
+              tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
+            />
+          </div>
+          <div title="Số gợi ý AI đang hoạt động">
+            <MetricCard
+              icon={<Sparkles className="h-4 w-4" />}
+              label="Gợi ý AI"
+              value={aiVal}
+            />
+          </div>
+          <div title="Năng lượng tiêu thụ toàn nhà máy (kWh)">
+            <MetricCard
+              icon={<Zap className="h-4 w-4" />}
+              label="Năng lượng"
+              value={energyVal}
+              delta={!kpi?.energy.available ? "Chưa có tổng hợp toàn hệ" : undefined}
+            />
+          </div>
         </div>
 
         {/* ── 3-PANE: tree · overview · rail ── */}
+        {/* W4 (doc 67): min-w-0 từng cột để nội dung truncate được trong grid. */}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           {/* LEFT — hierarchy tree */}
-          <div className="xl:col-span-3">
+          <div className="min-w-0 xl:col-span-3">
             <SectionCard
               icon={<ServerCog className="h-4 w-4" />}
               title={t("cmd.hierarchy", "Ecosystem hierarchy")}
@@ -817,6 +953,8 @@ export default function CommandCenter() {
                 <div className="py-8 text-center text-sm text-muted-foreground">{t("cmd.noSites", "No sites reporting yet.")}</div>
               ) : (
                 <ScrollArea className="h-[560px] pr-1">
+                  {/* W4 (doc 67): role="tree" cho cây WAI-ARIA (treeitem/group bên trong). */}
+                  <div role="tree" aria-label="Cây phân cấp hệ sinh thái">
                   {sites.map((site) => (
                     <TreeNode
                       key={site.id}
@@ -830,18 +968,19 @@ export default function CommandCenter() {
                       t={t}
                     />
                   ))}
+                  </div>
                 </ScrollArea>
               )}
             </SectionCard>
           </div>
 
           {/* CENTER — factory twin / status grid */}
-          <div className="xl:col-span-6">
+          <div className="min-w-0 xl:col-span-6">
             <CenterOverview factoryNode={centerFactoryNode} factoryId={centerFactoryId} t={t} />
           </div>
 
           {/* RIGHT — unified alarm rail */}
-          <div className="xl:col-span-3">
+          <div className="min-w-0 xl:col-span-3">
             <SectionCard
               icon={<Radio className="h-4 w-4" />}
               title={t("cmd.alarmRail", "Alarm rail")}
@@ -875,27 +1014,37 @@ export default function CommandCenter() {
                   <div className="space-y-1.5">
                     {scopedAlarms.map((a) => {
                       const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
-                      return (
-                        <div
-                          key={a.id}
-                          className={cn(
-                            "rounded-md border px-2 py-1.5 text-xs",
-                            clickable && "cursor-pointer hover:bg-muted/60",
-                          )}
-                          onClick={() => clickable && openAlarm(a)}
-                        >
+                      // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_VI/KIND_VI).
+                      const inner = (
+                        <>
                           <div className="flex items-center gap-1.5">
-                            <StatusBadge status={a.severity} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px] capitalize" />
-                            <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{a.kind}</Badge>
+                            <StatusBadge status={a.severity} label={SEVERITY_VI[a.severity]} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
+                            <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_VI[a.kind] ?? a.kind}</Badge>
                             <span className="ml-auto text-[10px] text-muted-foreground">{relTime(a.ts, now)}</span>
                           </div>
                           <div className="mt-1 font-medium leading-snug">{a.title}</div>
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                             <span>{a.source}</span>
-                            {a.scope?.machineId != null && <span>· machine #{a.scope.machineId}</span>}
-                            {a.scope?.robotId != null && <span>· robot #{a.scope.robotId}</span>}
-                            {clickable && <ExternalLink className="ml-auto h-3 w-3" />}
+                            {a.scope?.machineId != null && <span>· Máy #{a.scope.machineId}</span>}
+                            {a.scope?.robotId != null && <span>· Robot #{a.scope.robotId}</span>}
+                            {clickable && <ExternalLink className="ml-auto h-3 w-3" aria-hidden="true" />}
                           </div>
+                        </>
+                      );
+                      // W4 (doc 67): thẻ điều hướng được là <button> full-width thật
+                      // (bàn phím Tab/Enter + focus-visible ring); thẻ chỉ-đọc giữ <div>.
+                      return clickable ? (
+                        <button
+                          key={a.id}
+                          type="button"
+                          className="block w-full rounded-md border px-2 py-1.5 text-left text-xs cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => openAlarm(a)}
+                        >
+                          {inner}
+                        </button>
+                      ) : (
+                        <div key={a.id} className="rounded-md border px-2 py-1.5 text-xs">
+                          {inner}
                         </div>
                       );
                     })}

@@ -20,9 +20,13 @@
  *  - Read-only: approvals are shown as counts + top items with a deep-link to the
  *    full inbox where the real, permission-gated approve/reject actions live.
  *
- * This page is intentionally NOT wrapped in <DashboardLayout>: it is a lean,
- * full-bleed installable landing. Global providers (tRPC, i18n, theme, auth) live
- * at the app root, so everything still works standalone.
+ * This page does not mount its own <DashboardLayout>: it is a lean, installable
+ * landing. NOTE (doc 67 W4): with the persistent app-shell flag ON (default since
+ * doc 46 FE-W4.1) and /executive absent from CHROMELESS_SHELL_ROUTES, App.tsx DOES
+ * wrap this route in the shared DashboardLayout shell — which owns the single
+ * <main id="main-content"> landmark. Our content root is therefore a <div>, and
+ * the page title is the route's <h1>. Global providers (tRPC, i18n, theme, auth)
+ * live at the app root, so everything still works standalone if rendered bare.
  */
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -83,8 +87,28 @@ const TONE_CLASS: Record<Tone, string> = {
 function fmtInt(n: number): string {
   return Math.round(n).toLocaleString();
 }
+// doc 67 W4.3: whole percentages render clean — "100%" never "100.0%" (the .0 was
+// what pushed 6-char values into truncation on 390px-wide 2-col tiles).
 function fmtPct(n: number, digits = 1): string {
-  return `${n.toFixed(digits)}%`;
+  return `${n.toFixed(digits).replace(/\.0+$/, "")}%`;
+}
+// doc 67 W4.3: deliberate compaction for large counts (doc 65 "Tỷ-hoá" precedent —
+// 1.234.567 → "1,23 Tr" in vi). Only kicks in above 6 digits; exact figures keep
+// their full locale grouping. Locale-aware via Intl compact notation (vi "Tr",
+// en "M", zh "万" scale) so no i18n keys are needed.
+function fmtIntCompact(n: number, locale: string): string {
+  const rounded = Math.round(n);
+  if (Math.abs(rounded) >= 1_000_000) {
+    try {
+      return new Intl.NumberFormat(locale, {
+        notation: "compact",
+        maximumFractionDigits: 2,
+      }).format(rounded);
+    } catch {
+      /* unknown locale tag → fall back to full grouping below */
+    }
+  }
+  return rounded.toLocaleString();
 }
 
 /**
@@ -133,7 +157,7 @@ function KpiTile({
   className?: string;
 }): React.JSX.Element {
   return (
-    <Card className={className}>
+    <Card className={`min-w-0 ${className ?? ""}`}>
       <CardContent className="p-4">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -146,8 +170,11 @@ function KpiTile({
         {loading ? (
           <Skeleton className="h-9 w-20" />
         ) : (
-          <div className={`flex items-baseline gap-1 text-4xl font-bold leading-none tabular-nums ${TONE_CLASS[tone]}`}>
-            <span className="truncate">{value ?? "—"}</span>
+          /* doc 67 W4.3: NEVER truncate a KPI figure ("100.0…" is a wrong number).
+             Instead the font clamps down on narrow screens (8vw ≈ 31px @390px) and
+             the value itself is kept short by fmtPct/fmtIntCompact. */
+          <div className={`flex min-w-0 items-baseline gap-1 text-[clamp(1.5rem,8vw,2.25rem)] font-bold leading-none tabular-nums ${TONE_CLASS[tone]}`}>
+            <span>{value ?? "—"}</span>
             {value != null && unit && (
               <span className="text-lg font-semibold text-muted-foreground">{unit}</span>
             )}
@@ -225,7 +252,7 @@ function severityTone(sev?: string | null): Tone {
 }
 
 export default function ExecutiveMobile(): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
 
@@ -470,23 +497,26 @@ export default function ExecutiveMobile(): React.JSX.Element {
     <div className="min-h-screen bg-background text-foreground">
       {/* Sticky app bar — big title, honest poll-freshness stamp, manual refresh. */}
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3 lg:max-w-6xl">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Gauge className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-base font-semibold leading-tight">
+            <h1 className="truncate text-base font-semibold leading-tight">
               {t("executiveMobile.title", "Executive briefing")}
-            </div>
+            </h1>
             {/* AUD-01: the ONLY freshness indicator on this page — driven by
                 react-query dataUpdatedAt (poll surface, no socket), so it goes
                 amber-stale by itself when polling silently stops delivering. */}
-            <PollFreshness
-              updatedAt={freshestAt}
-              isFetching={anyFetching}
-              staleAfterMs={150_000}
-              className="mt-0.5"
-            />
+            {/* doc 67 W4: aria-live so SR users hear the stamp move on refresh. */}
+            <div aria-live="polite">
+              <PollFreshness
+                updatedAt={freshestAt}
+                isFetching={anyFetching}
+                staleAfterMs={150_000}
+                className="mt-0.5"
+              />
+            </div>
           </div>
           <Button
             variant="outline"
@@ -501,11 +531,24 @@ export default function ExecutiveMobile(): React.JSX.Element {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl space-y-6 px-4 pb-24 pt-4">
+      {/* doc 67 W4.2: the persistent app-shell (APP_SHELL_PERSISTENT default ON, and
+          /executive is NOT a chromeless route) wraps this page in DashboardLayout,
+          which already renders <main id="main-content"> — a second nested <main>
+          here is a landmark violation, so the content root is a <div>.
+          W4.5 (decision #3): ≥lg the four sections form 2 columns (left: KPI + Top
+          risks · right: AI summary + Pending approvals) via explicit col/row starts;
+          mobile keeps the original single-column DOM order. flex+gap-6 replaces
+          space-y-6 so a null OfflineBanner leaves no phantom gap. */}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-24 pt-4 lg:max-w-6xl">
         <OfflineBanner />
 
+        <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start">
+
         {/* ── (1) KPI briefing ─────────────────────────────────────────────── */}
-        <section aria-label={t("executiveMobile.kpi.title", "KPI briefing")}>
+        <section
+          aria-label={t("executiveMobile.kpi.title", "KPI briefing")}
+          className="min-w-0 lg:col-start-1 lg:row-start-1"
+        >
           {/* AUD-01: no unconditional "Live" badge — this is a 60s poll surface;
               the header PollFreshness is the single source of freshness truth. */}
           <SectionTitle icon={<Activity />}>
@@ -560,7 +603,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
             <KpiTile
               icon={<Package />}
               label={t("executiveMobile.kpi.output", "Output (today)")}
-              value={outputToday != null ? fmtInt(outputToday) : null}
+              value={outputToday != null ? fmtIntCompact(outputToday, i18n.language) : null}
               tone="info"
               loading={statsQ.isLoading}
               sub={t("executiveMobile.kpi.inspected", "Units inspected")}
@@ -613,7 +656,10 @@ export default function ExecutiveMobile(): React.JSX.Element {
         </section>
 
         {/* ── Top risks ────────────────────────────────────────────────────── */}
-        <section aria-label={t("executiveMobile.risks.title", "Top risks")}>
+        <section
+          aria-label={t("executiveMobile.risks.title", "Top risks")}
+          className="min-w-0 lg:col-start-1 lg:row-start-2"
+        >
           <SectionTitle icon={<AlertTriangle />}>{t("executiveMobile.risks.title", "Top risks")}</SectionTitle>
           <Card>
             <CardContent className="p-3">
@@ -654,14 +700,17 @@ export default function ExecutiveMobile(): React.JSX.Element {
         </section>
 
         {/* ── (2) AI executive summary ─────────────────────────────────────── */}
-        <section aria-label={t("executiveMobile.ai.title", "AI summary")}>
+        <section
+          aria-label={t("executiveMobile.ai.title", "AI summary")}
+          className="min-w-0 lg:col-start-2 lg:row-start-1"
+        >
           <SectionTitle
             icon={<Sparkles />}
             right={
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8"
+                className="h-11"
                 onClick={() => setLocation("/management-insight")}
               >
                 {t("executiveMobile.ai.viewFull", "Full report")}
@@ -752,7 +801,10 @@ export default function ExecutiveMobile(): React.JSX.Element {
         </section>
 
         {/* ── (3) Pending approvals ────────────────────────────────────────── */}
-        <section aria-label={t("executiveMobile.approvals.title", "Pending approvals")}>
+        <section
+          aria-label={t("executiveMobile.approvals.title", "Pending approvals")}
+          className="min-w-0 lg:col-start-2 lg:row-start-2"
+        >
           <SectionTitle icon={<ClipboardCheck />}>{t("executiveMobile.approvals.title", "Pending approvals")}</SectionTitle>
           <Card>
             <CardContent className="space-y-3 p-4">
@@ -808,6 +860,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
             </CardContent>
           </Card>
         </section>
+        </div>
 
         {/* ── Quick links to the full-desktop surfaces ─────────────────────── */}
         <nav aria-label={t("executiveMobile.links.title", "More")} className="space-y-1.5">
@@ -832,7 +885,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
           <Lightbulb className="mr-1 inline h-3 w-3" aria-hidden />
           {t("executiveMobile.footerNote", "All figures come from live plant data — no estimates.")}
         </p>
-      </main>
+      </div>
     </div>
   );
 }

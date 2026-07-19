@@ -40,7 +40,8 @@ import {
   Bar,
   Legend,
   LineChart,
-  Line
+  Line,
+  ReferenceLine
 } from "recharts";
 
 export default function CorporateDashboard() {
@@ -221,6 +222,9 @@ export default function CorporateDashboard() {
         isUnassigned: m.isUnassigned,
         factories: m.factories,
         yield: m.total > 0 ? Math.round(((m.ok + m.ntf) / m.total) * 10000) / 100 : 0,
+        // W4: sản lượng (tổng inspection trong kỳ) — nguồn dữ liệu đúng ngữ nghĩa
+        // cho pie "phân bố" (pie theo yield% là sai ngữ nghĩa part-of-whole).
+        output: m.total,
         // NOTE: per-corporate OEE and trend are intentionally omitted — there is no
         // real per-corporate OEE/historical data source. Showing yield×0.85 or trend=0
         // would be fabricated. Corporate-wide avg OEE (live) is shown in the KPI cards.
@@ -412,10 +416,12 @@ export default function CorporateDashboard() {
             value={corporateOverview.totalMachines}
             delta="Toàn thời gian"
           />
+          {/* W4: tone theo ngưỡng thật (≥98 success · ≥95 trung tính · <95 danger)
+              — success vô điều kiện là "màu nói dối" khi yield xấu. */}
           <MetricCard
             label={t('corporate.avgYield')}
             value={`${corporateOverview.avgYield}%`}
-            tone="success"
+            tone={corporateOverview.avgYield >= 98 ? "success" : corporateOverview.avgYield >= 95 ? "default" : "danger"}
           />
           {corporateOverview.avgOEE !== null ? (
             /* OEE là số ĐO TRỰC TIẾP (live MQTT) — không có lịch sử theo kỳ. */
@@ -517,16 +523,34 @@ export default function CorporateDashboard() {
                     <TrendingUp className="h-4 w-4 text-primary" />
                     {t('corporate.monthlyTrend')}
                   </CardTitle>
+                  {/* W4: kỳ ngắn → nói thật thay vì để trend 1-2 điểm gây hiểu nhầm. */}
+                  {monthlyTrend.length > 0 && monthlyTrend.length < 3 && (
+                    <p className="text-xs text-muted-foreground">Mới có {monthlyTrend.length} tháng dữ liệu</p>
+                  )}
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[280px]">
+                  <div
+                    className="h-[280px]"
+                    role="img"
+                    aria-label="Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%"
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={monthlyTrend}>
                         <CartesianGrid {...chartGridProps} />
                         <XAxis dataKey="month" tick={chartAxisTick} />
-                        <YAxis domain={[80, 100]} tick={chartAxisTick} />
+                        {/* W4: domain cứng [80,100] cắt mất tháng yield xấu — nới sàn theo dataMin. */}
+                        <YAxis
+                          domain={[(dataMin: number) => Math.min(80, Math.floor(dataMin - 2)), 100]}
+                          tick={chartAxisTick}
+                        />
                         <RechartsTooltip contentStyle={chartTooltipStyle} />
                         <Legend />
+                        <ReferenceLine
+                          y={95}
+                          stroke="var(--warning)"
+                          strokeDasharray="4 4"
+                          label={{ value: 'Mục tiêu', position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 11 }}
+                        />
                         <Line type="monotone" dataKey="yield" name={t('corporate.yieldPercent')} stroke="var(--success)" strokeWidth={2} dot={{ fill: 'var(--success)' }} />
                       </LineChart>
                     </ResponsiveContainer>
@@ -542,9 +566,12 @@ export default function CorporateDashboard() {
                   <Activity className="h-4 w-4 text-primary" />
                   {t('corporate.monthlyOutput')}
                 </CardTitle>
+                {monthlyTrend.length > 0 && monthlyTrend.length < 3 && (
+                  <p className="text-xs text-muted-foreground">Mới có {monthlyTrend.length} tháng dữ liệu</p>
+                )}
               </CardHeader>
               <CardContent>
-                <div className="h-[250px]">
+                <div className="h-[250px]" role="img" aria-label="Sản lượng theo tháng — biểu đồ cột">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrend}>
                       <CartesianGrid {...chartGridProps} />
@@ -568,13 +595,19 @@ export default function CorporateDashboard() {
               {/* Yield Distribution */}
               <Card className="glass-card">
                 <CardHeader>
+                  {/* W4: pie theo yield% là sai ngữ nghĩa (yield không phải part-of-whole)
+                      → pie theo SẢN LƯỢNG (tổng inspection trong kỳ) + đổi tiêu đề. */}
                   <CardTitle className="text-base flex items-center gap-2">
                     <PieChartIcon className="h-4 w-4 text-success" />
-                    {t('corporate.yieldDistribution')}
+                    Phân bố sản lượng theo tập đoàn
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div
+                    className="h-[300px]"
+                    role="img"
+                    aria-label="Phân bố sản lượng theo tập đoàn — biểu đồ tròn"
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -584,15 +617,18 @@ export default function CorporateDashboard() {
                           innerRadius={60}
                           outerRadius={100}
                           paddingAngle={5}
-                          dataKey="yield"
+                          dataKey="output"
                           nameKey="name"
-                          label={({ name, yield: y }) => `${name}: ${y}%`}
+                          label={({ name, value }) => `${name}: ${Number(value ?? 0).toLocaleString()}`}
                         >
                           {assignedCorporationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={chartColor(index)} />
                           ))}
                         </Pie>
-                        <RechartsTooltip contentStyle={chartTooltipStyle} />
+                        <RechartsTooltip
+                          contentStyle={chartTooltipStyle}
+                          formatter={(value: number) => [value.toLocaleString(), 'Sản lượng']}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -609,7 +645,11 @@ export default function CorporateDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[300px]">
+                <div
+                  className="h-[300px]"
+                  role="img"
+                  aria-label="So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang"
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={assignedCorporationData} layout="vertical">
                       <CartesianGrid {...chartGridProps} />

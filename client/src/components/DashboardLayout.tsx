@@ -12,7 +12,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarInset,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
@@ -409,22 +408,28 @@ function DashboardLayoutContent({
               </div>
             )}
             {/* doc 60 B — Favorites + Recent pinned above the nav (1-click to frequent pages). */}
-            <SidebarQuickAccess onNavigate={handleNavigate} />
-            {isMobile ? (
-              // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
-              <MobileDrillNav
-                groups={sidebarGroups}
-                currentPath={navActivePath}
-                onNavigate={handleNavigate}
-              />
-            ) : (
-              // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
-              <CascadingNav
-                groups={sidebarGroups}
-                currentPath={navActivePath}
-                onNavigate={handleNavigate}
-              />
-            )}
+            {/* doc 67 W4 [P1] — landmark <nav> có aria-label: Quick-access + nav chính là 2
+                vùng điều hướng riêng, SR phân biệt được (cả 2 component gốc chỉ render div). */}
+            <nav aria-label={t("nav.quickLinksLabel", "Liên kết nhanh")}>
+              <SidebarQuickAccess onNavigate={handleNavigate} />
+            </nav>
+            <nav aria-label={t("nav.primaryNavLabel", "Điều hướng chính")}>
+              {isMobile ? (
+                // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
+                <MobileDrillNav
+                  groups={sidebarGroups}
+                  currentPath={navActivePath}
+                  onNavigate={handleNavigate}
+                />
+              ) : (
+                // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
+                <CascadingNav
+                  groups={sidebarGroups}
+                  currentPath={navActivePath}
+                  onNavigate={handleNavigate}
+                />
+              )}
+            </nav>
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-sidebar-border">
@@ -529,12 +534,20 @@ function DashboardLayoutContent({
         {/* R1: resize handle removed — the desktop nav is now a fixed-width icon rail. */}
       </div>
 
-      <SidebarInset className="bg-background">
+      {/* doc 67 W4 [P1] — landmark: shadcn SidebarInset render <main>, tạo landmark <main>
+          THỨ HAI bọc cả topbar lẫn main#main-content (main lồng main — sai WAI-ARIA). Thay
+          bằng <div> cùng class (variant mặc định nên các rule peer-data-[variant=inset]
+          không áp) để main#main-content bên dưới là <main> DUY NHẤT của shell.
+          min-w-0 [P0]: cột nội dung là flex-item của SidebarProvider — phải co được, không
+          để topbar chật đẩy scrollWidth vượt viewport 1280 (đo thực tế 1423/1341). */}
+      <div data-slot="sidebar-inset" className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
         {/* F2 (doc 23 §5) — restructured context bar:
             [trigger] · Site/Scope switcher · WIDE global ⌘K search (center, widest) ·
             alerts (AI inbox + notifications) · site-health dot · theme/lang. Kiosk
             mode hides the whole bar via [data-app-chrome="header"]. */}
-        <div data-app-chrome="header" className="flex border-b border-border h-14 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+        {/* doc 67 W4 [P1] — <header> landmark thay div (vùng chrome đầu trang); giữ nguyên
+            data-app-chrome="header" nên CSS kiosk-mode không đổi. min-w-0 để hàng co thật. */}
+        <header data-app-chrome="header" className="flex border-b border-border h-14 min-w-0 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
           <SidebarTrigger className="h-10 w-10 rounded-lg shrink-0" />
@@ -572,9 +585,12 @@ function DashboardLayoutContent({
           </button>
 
           {/* Right — alerts · site-health dot · theme/lang. */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* doc 67 W4 [P0] — bỏ shrink-0, thêm min-w-0: cụm phải co được khi 1280px chật;
+              phần co dồn vào AssetScopeBar (min-w-0, selector tự truncate), các nút icon
+              giữ kích thước cố định của chúng. */}
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             {/* doc 64 IA-10 S0.3 — trục phạm vi ISA-95 (Xưởng›Chuyền›Máy), bền qua điều hướng. */}
-            {isIsa101V2() && <AssetScopeBar className="hidden xl:flex" />}
+            {isIsa101V2() && <AssetScopeBar className="hidden min-w-0 xl:flex" />}
             <AIActionInboxLauncher />
             <NotificationCenter />
             {/* doc 63 (FLW-01/G1) — shell alert chip: đếm andon mở, chạm→drawer Ack/Resolve.
@@ -582,17 +598,19 @@ function DashboardLayoutContent({
             {isIsa101V2() && <ShellAlertChip />}
             {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
                 state, never claims live when the socket is down. Byte-identical when off. */}
-            {isIsa101V2() && <FreshnessStrip className="hidden sm:inline-flex" />}
+            {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 sm:inline-flex" />}
             <SiteHealthDot />
             <ThemeToggle />
             <LanguageSwitcher />
           </div>
-        </div>
+        </header>
         {showBreadcrumbs && (
           // F2 — slim global breadcrumb row rendered ONCE from the shell (covers all
           // pages without editing each PageHeader). Query strings are stripped.
-          <div className="flex items-center justify-between gap-2 border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
-            <Breadcrumb>
+          // doc 67 W4 [P0] — min-w-0 cả hàng lẫn <Breadcrumb>: trail dài wrap/co trong
+          // viewport 1280 thay vì banh ngang (BreadcrumbList sẵn flex-wrap).
+          <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
+            <Breadcrumb className="min-w-0">
               <BreadcrumbList>
                 {breadcrumbs.map((crumb, i) => {
                   const isLast = i === breadcrumbs.length - 1;
@@ -636,7 +654,7 @@ function DashboardLayoutContent({
           {isBetaRoute(currentPath || location) && <BetaBanner />}
           {children}
         </main>
-      </SidebarInset>
+      </div>
       {/* E — Material 3 Bottom Navigation (phones only). "Menu" opens the full drawer. */}
       {isMobile && (
         <BottomNav

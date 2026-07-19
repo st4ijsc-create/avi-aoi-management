@@ -15,6 +15,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+// doc67 W4 (a11y/touch): Popover cho chip cảnh báo (tap mở được, không cần hover) +
+// Sheet "Bộ lọc" gom 3 Select phạm vi trên mobile <sm.
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { 
   Activity, 
@@ -52,7 +56,8 @@ import {
   Factory,
   FileDown,
   Calendar,
-  Palette
+  Palette,
+  SlidersHorizontal
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
@@ -211,6 +216,8 @@ export default function Dashboard() {
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
+  // doc67 W4 (mobile 390): Sheet gom 3 Select phạm vi (nhà máy/xưởng/line) dưới sm
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
   const [trendFilterWorkstationId, setTrendFilterWorkstationId] = useState<number | undefined>(undefined);
@@ -1265,14 +1272,86 @@ export default function Dashboard() {
     }));
   }, [dailyStats]);
 
+  // doc67 W4 (mobile 390): 3 Select phạm vi dùng chung cho hàng ngang (>=sm)
+  // và Sheet "Bộ lọc" (<sm) — một nguồn markup, tránh trùng lặp trôi logic.
+  const activeScopeFilterCount = [selectedFactory, selectedWorkshop, selectedLine].filter((v) => v !== "all").length;
+  const renderScopeFilters = (inSheet: boolean) => {
+    const triggerClass = inSheet ? "w-full" : "w-32 sm:w-44 shrink-0";
+    return (
+      <>
+        <div className={inSheet ? "space-y-1.5" : "contents"}>
+          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.factory")}</p>}
+          <Select value={selectedFactory} onValueChange={(v) => {
+            setSelectedFactory(v);
+            setSelectedWorkshop("all");
+            setSelectedLine("all");
+          }}>
+            <SelectTrigger className={triggerClass} aria-label={t("dashboard.factory")}>
+              {!inSheet && <Factory className="h-4 w-4 mr-1 sm:hidden" />}
+              <SelectValue placeholder={t("dashboard.factory")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("dashboard.allFactories")}</SelectItem>
+              {factories?.map((factory) => (
+                <SelectItem key={factory.id} value={String(factory.id)}>
+                  {factory.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className={inSheet ? "space-y-1.5" : "contents"}>
+          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.workshop")}</p>}
+          <Select value={selectedWorkshop} onValueChange={(v) => {
+            setSelectedWorkshop(v);
+            setSelectedLine("all");
+          }}>
+            <SelectTrigger className={triggerClass} aria-label={t("dashboard.workshop")}>
+              <SelectValue placeholder={t("dashboard.workshop")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("dashboard.allWorkshops")}</SelectItem>
+              {filteredWorkshops?.map((workshop) => (
+                <SelectItem key={workshop.id} value={String(workshop.id)}>
+                  {workshop.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className={inSheet ? "space-y-1.5" : "contents"}>
+          {inSheet && <p className="text-xs font-medium text-muted-foreground">{t("dashboard.line", "Line")}</p>}
+          <Select value={selectedLine} onValueChange={setSelectedLine}>
+            <SelectTrigger className={triggerClass} aria-label={t("dashboard.line", "Line")}>
+              <SelectValue placeholder={t("dashboard.line", "Line")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
+              {filteredLines?.map((line) => (
+                <SelectItem key={line.id} value={String(line.id)}>
+                  {line.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </>
+    );
+  };
+
   return (
     <DashboardLayout
       title={t("dashboard.title")}
       navItems={navItems}
       currentPath="/dashboard"
     >
-      {/* U11 — first-visit nudge to start from a role-aligned dashboard template */}
-      <DashboardTemplatePrompt />
+      {/* U11 — first-visit nudge to start from a role-aligned dashboard template.
+          doc67 W4: ẩn dưới md — trên mobile 390 banner chiếm chỗ KPI đầu màn. */}
+      <div className="hidden md:block">
+        <DashboardTemplatePrompt />
+      </div>
       <PageContainer fluid className="p-0 md:p-0 space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
         <PageHeader
@@ -1328,55 +1407,33 @@ export default function Dashboard() {
               )}
             </div>
 
-            <Select value={selectedFactory} onValueChange={(v) => {
-              setSelectedFactory(v);
-              setSelectedWorkshop("all");
-              setSelectedLine("all");
-            }}>
-              <SelectTrigger className="w-32 sm:w-44 shrink-0">
-                <Factory className="h-4 w-4 mr-1 sm:hidden" />
-                <SelectValue placeholder={t("dashboard.factory")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allFactories")}</SelectItem>
-                {factories?.map((factory) => (
-                  <SelectItem key={factory.id} value={String(factory.id)}>
-                    {factory.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* doc67 W4 (mobile 390): >=sm hiển thị 3 Select nội tuyến; <sm gom vào Sheet "Bộ lọc"
+                (390px không đủ chỗ cho 3 trigger w-32 → chữ bị cắt). */}
+            <div className="hidden sm:contents">
+              {renderScopeFilters(false)}
+            </div>
 
-            <Select value={selectedWorkshop} onValueChange={(v) => {
-              setSelectedWorkshop(v);
-              setSelectedLine("all");
-            }}>
-              <SelectTrigger className="w-32 sm:w-44 shrink-0">
-                <SelectValue placeholder={t("dashboard.workshop")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allWorkshops")}</SelectItem>
-                {filteredWorkshops?.map((workshop) => (
-                  <SelectItem key={workshop.id} value={String(workshop.id)}>
-                    {workshop.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedLine} onValueChange={setSelectedLine}>
-              <SelectTrigger className="w-32 sm:w-44 shrink-0">
-                <SelectValue placeholder={t("dashboard.line", "Line")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
-                {filteredLines?.map((line) => (
-                  <SelectItem key={line.id} value={String(line.id)}>
-                    {line.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="sm:hidden shrink-0 gap-1.5 relative" aria-label={t("dashboard.filters", "Bộ lọc")}>
+                  <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+                  {t("dashboard.filters", "Bộ lọc")}
+                  {activeScopeFilterCount > 0 && (
+                    <Badge variant="secondary" className="h-5 min-w-5 px-1 text-[10px]">
+                      {activeScopeFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>{t("dashboard.filters", "Bộ lọc")}</SheetTitle>
+                </SheetHeader>
+                <div className="flex flex-col gap-4 px-4 pb-6">
+                  {renderScopeFilters(true)}
+                </div>
+              </SheetContent>
+            </Sheet>
 
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as DashboardTimeRange)}>
               <SelectTrigger className="w-28 sm:w-36 shrink-0">
@@ -1416,13 +1473,14 @@ export default function Dashboard() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-9 w-9"
+                      aria-label={isAutoRefreshing ? t('dashboard.pauseAutoRefresh') : t('dashboard.enableAutoRefresh')}
                       onClick={() => setIsAutoRefreshing(!isAutoRefreshing)}
                     >
-                      {isAutoRefreshing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {isAutoRefreshing ? <Pause aria-hidden="true" className="h-4 w-4" /> : <Play aria-hidden="true" className="h-4 w-4" />}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1643,29 +1701,32 @@ export default function Dashboard() {
               </div>
               {yieldAlerts.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
+                  {/* doc67 W4 (a11y/touch): Tooltip hover-only vô dụng với găng tay/touch —
+                      đổi sang Popover (click/tap/Enter mở), nội dung message/ngưỡng/target giữ nguyên. */}
                   {yieldAlerts.map((alert, index) => (
-                    <TooltipProvider key={`${alert.type}-${alert.level}-${index}`}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
-                            alert.level === 'critical' 
-                              ? 'bg-destructive/10 border border-destructive/30 text-destructive' 
+                    <Popover key={`${alert.type}-${alert.level}-${index}`}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${alert.currentValue.toFixed(1)}%`}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                            alert.level === 'critical'
+                              ? 'bg-destructive/10 border border-destructive/30 text-destructive'
                               : 'bg-warning/10 border border-warning/30 text-warning'
                           }`}>
-                            {alert.level === 'critical' 
-                              ? <XCircle className="h-3 w-3" />
-                              : <AlertTriangle className="h-3 w-3" />
-                            }
-                            <span className="font-medium">{alert.type}</span>
-                            <span>{alert.currentValue.toFixed(1)}%</span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <p className="font-medium">{alert.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                          {alert.level === 'critical'
+                            ? <XCircle aria-hidden="true" className="h-3 w-3" />
+                            : <AlertTriangle aria-hidden="true" className="h-3 w-3" />
+                          }
+                          <span className="font-medium">{alert.type}</span>
+                          <span>{alert.currentValue.toFixed(1)}%</span>
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent side="bottom" className="max-w-xs w-auto p-3">
+                        <p className="text-sm font-medium">{alert.message}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
+                      </PopoverContent>
+                    </Popover>
                   ))}
                 </div>
               ) : (
@@ -1733,14 +1794,15 @@ export default function Dashboard() {
 
         {/* Tabs for Overview and Layout */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom")} className="w-full">
-          <TabsList className="flex w-full max-w-2xl flex-wrap sm:grid sm:grid-cols-4 h-auto">
-            <TabsTrigger value="overview" className="flex flex-1 items-center gap-2">
+          {/* doc67 W4 (mobile 390): tab tràn ngang → cuộn ngang + scroll-snap dưới sm thay vì wrap vỡ hàng */}
+          <TabsList className="flex w-full max-w-2xl flex-nowrap justify-start overflow-x-auto snap-x snap-mandatory sm:grid sm:grid-cols-4 h-auto">
+            <TabsTrigger value="overview" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <BarChart3 className="h-4 w-4" />{t("dashboard.overviewTab")}</TabsTrigger>
-            <TabsTrigger value="ng-visual" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="ng-visual" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <AlertTriangle className="h-4 w-4" />{t("dashboard.ngVisualTab")}</TabsTrigger>
-            <TabsTrigger value="layout" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="layout" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <LayoutGrid className="h-4 w-4" />{t("dashboard.layoutTab")}</TabsTrigger>
-            <TabsTrigger value="custom" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="custom" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <Palette className="h-4 w-4" />{t("dashboard.customTab")}</TabsTrigger>
           </TabsList>
 
@@ -2656,8 +2718,17 @@ export default function Dashboard() {
                           return (
                             <div
                               key={machine.id}
-                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${t("common.details")}: ${machine.name}`}
+                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               onClick={() => openMachineDetail(machine)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openMachineDetail(machine);
+                                }
+                              }}
                             >
                               {/* Metrics Bar at Top - Customizable */}
                               <div className="flex items-stretch bg-muted text-foreground">
@@ -2782,10 +2853,21 @@ export default function Dashboard() {
           </DialogHeader>
 
           {/* Stats Boxes at Top - Clickable to filter */}
+          {/* doc67 W4: grid-cols-2 dưới sm (4 ô nén trong dialog mobile) + 4 ô lọc bấm được bằng bàn phím */}
           {selectedMachine && (
-            <div className="grid grid-cols-4 gap-3 mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "all"}
+                aria-label={`${t("dashboard.filterBy")}: ${t("dashboard.totalOutput")}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("all");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "all"
                     ? "bg-primary/15 border-primary shadow-md scale-[1.02]"
                     : "bg-muted/30 border-transparent hover:bg-muted/50 hover:border-muted-foreground/20"
@@ -2799,7 +2881,17 @@ export default function Dashboard() {
                 </p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "OK"}
+                aria-label={`${t("dashboard.filterBy")}: OK`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("OK");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "OK"
                     ? "bg-success/20 border-success shadow-md scale-[1.02]"
                     : "bg-success/5 border-transparent hover:bg-success/10 hover:border-success/30"
@@ -2813,7 +2905,17 @@ export default function Dashboard() {
                 <p className="text-xs text-success/70 mt-1">{selectedMachine.ok} {t("common.items")}</p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "NG"}
+                aria-label={`${t("dashboard.filterBy")}: NG`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("NG");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "NG"
                     ? "bg-destructive/20 border-destructive shadow-md scale-[1.02]"
                     : "bg-destructive/5 border-transparent hover:bg-destructive/10 hover:border-destructive/30"
@@ -2828,7 +2930,17 @@ export default function Dashboard() {
                 <p className="text-xs text-destructive/70 mt-1">{selectedMachine.ng} {t("common.items")}</p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "NTF"}
+                aria-label={`${t("dashboard.filterBy")}: NTF`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("NTF");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "NTF"
                     ? "bg-warning/20 border-warning shadow-md scale-[1.02]"
                     : "bg-warning/5 border-transparent hover:bg-warning/10 hover:border-warning/30"
@@ -2968,9 +3080,25 @@ export default function Dashboard() {
                       {filteredInspections?.data?.map((inspection: InspectionResult) => (
                         <div
                           key={inspection.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/60 hover:shadow-sm transition-all group"
-                          onClick={() => {
-                            window.open(`/inspection/${inspection.id}`, '_blank');
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${t("common.details")}: ${inspection.serialNumber}`}
+                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/60 hover:shadow-sm transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(e) => {
+                            // doc67 W4: kiosk/panel-PC chặn window.open — điều hướng in-app;
+                            // desktop giữ Ctrl/Cmd+click để mở tab mới.
+                            if (e.ctrlKey || e.metaKey) {
+                              window.open(`/inspection/${inspection.id}`, '_blank');
+                              return;
+                            }
+                            e.preventDefault();
+                            setLocation(`/inspection/${inspection.id}`);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setLocation(`/inspection/${inspection.id}`);
+                            }
                           }}
                         >
                           <div className="flex items-center gap-3">

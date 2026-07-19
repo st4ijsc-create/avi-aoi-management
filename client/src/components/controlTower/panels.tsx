@@ -426,10 +426,20 @@ function LineOeePanel(): React.JSX.Element {
           <TableHeader>
             <TableRow>
               <TableHead>{t("controlTower.lineOee.line", "Line")}</TableHead>
-              <TableHead className="text-right">A%</TableHead>
-              <TableHead className="text-right">P%</TableHead>
-              <TableHead className="text-right">Q%</TableHead>
-              <TableHead className="text-right">OEE%</TableHead>
+              {/* W4 (doc 67): A/P/Q trần khó hiểu với người mới — abbr giải nghĩa
+                  (hover/đọc màn hình), giữ header ngắn để bảng không tràn. */}
+              <TableHead className="text-right">
+                <abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>
+              </TableHead>
+              <TableHead className="text-right">
+                <abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>
+              </TableHead>
+              <TableHead className="text-right">
+                <abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>
+              </TableHead>
+              <TableHead className="text-right">
+                <abbr title="Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)" className="no-underline">OEE%</abbr>
+              </TableHead>
               <TableHead className="text-right">{t("controlTower.lineOee.output", "Output")}</TableHead>
             </TableRow>
           </TableHeader>

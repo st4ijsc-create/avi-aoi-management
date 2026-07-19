@@ -17,8 +17,9 @@ import { useAssetScope } from "@/contexts/AssetScopeContext";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { ListFilter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface HNode {
@@ -98,42 +99,88 @@ export function AssetScopeBar({ className }: { className?: string }) {
   };
 
   // doc65 F: 40px vùng chạm (panel + găng); chữ vẫn text-xs cho gọn thị giác.
-  const selectCls = "h-10 w-auto min-w-24 max-w-40 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent focus:ring-1";
+  // doc 67 W4 [P0] — min-w-0 (bỏ min-w-24): selector là flex-item phải CO THẬT được khi
+  // topbar chật (panel-PC 1280×800 tràn ngang 1423/1280). Nhãn dài vẫn đọc được nhờ
+  // line-clamp-1 sẵn có của SelectTrigger (*:data-[slot=select-value]:line-clamp-1).
+  const selectCls = "h-10 w-auto min-w-0 max-w-40 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent focus:ring-1";
+  // Trong Popover thu gọn: select bản đầy đủ, chiếm hết bề ngang hàng.
+  const popoverSelectCls = "h-10 w-full min-w-0 text-xs";
+
+  const labelFactory = t("scopeAxis.factory", "Xưởng");
+  const labelLine = t("scopeAxis.line", "Chuyền");
+  const labelMachine = t("scopeAxis.machine", "Máy");
+
+  // Một selector cấp (Xưởng/Chuyền/Máy) — dùng lại cho cả chuỗi đầy đủ lẫn Popover thu gọn.
+  const renderSelect = (
+    kind: "factory" | "line" | "machine",
+    value: number | undefined,
+    nodes: HNode[],
+    label: string,
+    cls: string,
+    disabled = false,
+  ) => (
+    <Select value={value != null ? String(value) : ""} onValueChange={pick(kind, nodes)} disabled={disabled}>
+      <SelectTrigger className={cls} aria-label={label}>
+        <SelectValue placeholder={label} />
+      </SelectTrigger>
+      <SelectContent>
+        {nodes.map((n) => (
+          <SelectItem key={n.id} value={String(n.refId)}>{n.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
+  const hasSubScope = axis.lineId !== undefined || axis.machineId !== undefined;
 
   return (
-    <div className={cn("items-center gap-0.5 rounded-full border border-border/60 px-1", className)}>
-      <Select value={axis.factoryId != null ? String(axis.factoryId) : ""} onValueChange={pick("factory", factories)}>
-        <SelectTrigger className={selectCls} aria-label={t("scopeAxis.factory", "Xưởng")}>
-          <SelectValue placeholder={t("scopeAxis.factory", "Xưởng")} />
-        </SelectTrigger>
-        <SelectContent>
-          {factories.map((f) => (
-            <SelectItem key={f.id} value={String(f.refId)}>{f.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-muted-foreground/60">›</span>
-      <Select value={axis.lineId != null ? String(axis.lineId) : ""} onValueChange={pick("line", lines)} disabled={lines.length === 0}>
-        <SelectTrigger className={selectCls} aria-label={t("scopeAxis.line", "Chuyền")}>
-          <SelectValue placeholder={t("scopeAxis.line", "Chuyền")} />
-        </SelectTrigger>
-        <SelectContent>
-          {lines.map((l) => (
-            <SelectItem key={l.id} value={String(l.refId)}>{l.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-muted-foreground/60">›</span>
-      <Select value={axis.machineId != null ? String(axis.machineId) : ""} onValueChange={pick("machine", machines)} disabled={machines.length === 0}>
-        <SelectTrigger className={selectCls} aria-label={t("scopeAxis.machine", "Máy")}>
-          <SelectValue placeholder={t("scopeAxis.machine", "Máy")} />
-        </SelectTrigger>
-        <SelectContent>
-          {machines.map((m) => (
-            <SelectItem key={m.id} value={String(m.refId)}>{m.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className={cn("min-w-0 items-center gap-0.5 rounded-full border border-border/60 px-1", className)}>
+      {/* ≥2xl — chuỗi đầy đủ Xưởng › Chuyền › Máy (đủ chỗ). min-w-0 để cả cụm co được. */}
+      <div className="hidden min-w-0 items-center gap-0.5 2xl:flex">
+        {renderSelect("factory", axis.factoryId, factories, labelFactory, selectCls)}
+        <span className="text-muted-foreground/60" aria-hidden>›</span>
+        {renderSelect("line", axis.lineId, lines, labelLine, selectCls, lines.length === 0)}
+        <span className="text-muted-foreground/60" aria-hidden>›</span>
+        {renderSelect("machine", axis.machineId, machines, labelMachine, selectCls, machines.length === 0)}
+      </div>
+      {/* doc 67 W4 [P0] — <2xl (gồm panel-PC 1280×800): Xưởng inline, còn Chuyền + Máy thu
+          thành 1 nút icon mở Popover chứa BỘ SELECTOR ĐẦY ĐỦ (không cắt chức năng, chỉ đổi
+          chỗ đứng) — diệt tràn ngang tận gốc thay vì che bằng overflow-hidden. */}
+      <div className="flex min-w-0 items-center gap-0.5 2xl:hidden">
+        {renderSelect("factory", axis.factoryId, factories, labelFactory, selectCls)}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative size-10 shrink-0 rounded-full"
+              aria-label={t("scopeAxis.compactOpen", "Chọn phạm vi Chuyền / Máy")}
+            >
+              <ListFilter className="size-4" />
+              {/* Chấm báo trục con đang có selection (khi selector bị thu vào Popover). */}
+              {hasSubScope && (
+                <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" aria-hidden />
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-muted-foreground">{labelFactory}</span>
+                {renderSelect("factory", axis.factoryId, factories, labelFactory, popoverSelectCls)}
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-muted-foreground">{labelLine}</span>
+                {renderSelect("line", axis.lineId, lines, labelLine, popoverSelectCls, lines.length === 0)}
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-muted-foreground">{labelMachine}</span>
+                {renderSelect("machine", axis.machineId, machines, labelMachine, popoverSelectCls, machines.length === 0)}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
       {hasAny && (
         <Button
           variant="ghost"

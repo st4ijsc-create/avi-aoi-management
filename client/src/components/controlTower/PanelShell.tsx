@@ -163,10 +163,12 @@ export function PanelShell({
   const { t } = useTranslation();
   const authz = isError && isAuthzError(error);
 
+  // W4 (doc 67): vùng chạm ≥40px (min-h-10 + padding) nhưng GIỮ cỡ chữ text-xs;
+  // margin âm bù lại padding để header panel không phình cao hơn trước.
   const deepLink = (
     <Link
       href={linkHref}
-      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline"
+      className="-my-2 -mr-2 inline-flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-2 text-xs font-medium text-primary transition-colors hover:bg-accent/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {linkLabel ?? t("controlTower.openFull", "Open full view")}
       <ArrowUpRight className="h-3 w-3" aria-hidden="true" />

@@ -45,8 +45,14 @@ export interface DrillNodeLeafAction {
 
 export interface DrillNodeProps {
   data: DrillRow;
-  /** Max total across the current level → progress-bar scale. */
+  /** Max total across the current level → OK progress-bar scale. */
   maxValue: number;
+  /**
+   * W4: max NG across the current level → NG progress-bar scale. NG scaled
+   * against Output max was visually invisible (ISA-101: deviation must be the
+   * most salient thing). Falls back to maxValue when absent.
+   */
+  maxNg?: number;
   /** Continue drilling into this node's children. Undefined for a leaf tier. */
   onDrill?: () => void;
   /** Explicit leaf-out action (Open Line View / Open Cockpit). */
@@ -55,7 +61,8 @@ export interface DrillNodeProps {
   icon?: React.ReactNode;
 }
 
-function yieldTone(v: number): "default" | "secondary" | "destructive" {
+/** Shared yield badge tone (W4: also drives the dashboard's quick-stat badges). */
+export function yieldTone(v: number): "default" | "secondary" | "destructive" {
   if (v >= 95) return "default";
   if (v >= 90) return "secondary";
   return "destructive";
@@ -64,6 +71,7 @@ function yieldTone(v: number): "default" | "secondary" | "destructive" {
 export function DrillNode({
   data,
   maxValue,
+  maxNg,
   onDrill,
   leafAction,
   icon,
@@ -131,7 +139,8 @@ export function DrillNode({
         </div>
         <div className="flex items-center gap-2">
           <span className="w-12 text-xs text-muted-foreground">NG</span>
-          <Progress value={(data.ng / maxValue) * 100} className="h-2 flex-1 [&>div]:bg-destructive" />
+          {/* W4: NG scales against the tier's max NG (not max Output) so defects stay visible. */}
+          <Progress value={(data.ng / Math.max(maxNg ?? maxValue, 1)) * 100} className="h-2 flex-1 [&>div]:bg-destructive" />
           <span className="w-16 text-right text-xs font-medium">{data.ng.toLocaleString()}</span>
         </div>
       </div>
@@ -141,7 +150,7 @@ export function DrillNode({
           <Button
             variant="secondary"
             size="sm"
-            className="gap-1.5"
+            className="min-h-11 gap-1.5"
             aria-label={leafAction.ariaLabel}
             onClick={(e) => {
               e.stopPropagation();

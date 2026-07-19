@@ -188,7 +188,8 @@ export function DrillSpine({ state, onNavigate, updatedAt, connected = false }: 
     <div className="space-y-3">
       {/* Row 1 — breadcrumb of the drilled path + freshness strip (W2/AUD-01) */}
       <nav className="flex items-center gap-1 text-sm" aria-label={t("dashboard.drill.canonicalPath", "Corporate → Factory → Workshop → Line → Station → Machine")}>
-        <Button variant="ghost" size="sm" onClick={() => onNavigate("corporate")} className="gap-1" aria-label={t("dashboard.overview", "Overview")}>
+        {/* W4 touch: min-h-11 (44px) on every nav control — operator panel-PC with gloves. */}
+        <Button variant="ghost" size="sm" onClick={() => onNavigate("corporate")} className="min-h-11 gap-1" aria-label={t("dashboard.overview", "Overview")}>
           <Home className="h-4 w-4" />
         </Button>
         {crumbs.map((c, i) => (
@@ -197,7 +198,7 @@ export function DrillSpine({ state, onNavigate, updatedAt, connected = false }: 
             <Button
               variant={i === crumbs.length - 1 ? "secondary" : "ghost"}
               size="sm"
-              className="max-w-[220px] gap-1"
+              className="min-h-11 max-w-[220px] gap-1"
               onClick={() => navigateTier(TIERS.find((tt) => tt.level === c.level)!)}
             >
               <c.icon className="h-4 w-4 shrink-0" />
@@ -233,7 +234,8 @@ export function DrillSpine({ state, onNavigate, updatedAt, connected = false }: 
                 onClick={clickable ? () => navigateTier(tier) : undefined}
                 title={phase === "degraded" ? degradedHint(tier.key) : label}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  // W4 touch: min-h-11 (44px) — the stepper tiers are tap targets too.
+                  "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   phase === "active" && "bg-primary text-primary-foreground",
                   phase === "done" && "bg-primary/10 text-primary hover:bg-primary/20",
                   phase === "future" && "text-muted-foreground",

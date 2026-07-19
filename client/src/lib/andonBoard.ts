@@ -88,11 +88,13 @@ export function tileStatus(input: {
   return "good";
 }
 
-/** Compact "3m" / "2h" age label for ticker items. */
+/** Compact "3m" / "2h" / "2d" age label for ticker items. */
 export function agoLabel(fromMs: number, nowMs: number): string {
   const s = Math.max(0, Math.floor((nowMs - fromMs) / 1000));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }

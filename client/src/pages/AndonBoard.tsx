@@ -150,7 +150,12 @@ export default function AndonBoard() {
       socket.emit("subscribe", {}); // join the global room (andon/oee/alert pushes)
       socket.emit("admin:get_online_machines");
     };
-    const onDisconnect = () => setSocketConnected(false);
+    const onDisconnect = () => {
+      setSocketConnected(false);
+      // W4 (doc 67): without the socket the online-set is unknowable — drop to
+      // "unknown" (tiles stop claiming online/offline) instead of freezing stale.
+      setOnlineMachines(new Set());
+    };
     const onOnlineList = (data: { machines: string[] }) => setOnlineMachines(new Set(data.machines));
     const onStatusChange = (data: { machineCode: string; status: "online" | "offline" }) => {
       setOnlineMachines((prev) => {
@@ -213,12 +218,16 @@ export default function AndonBoard() {
   const lines = board?.lines ?? [];
   const viewCount = 1 + lines.length;
   const [viewIndex, setViewIndex] = useState(0);
+  // W4 (doc 67): a manual drill (tap on a line header) holds the view — the
+  // auto-cycle skips ticks until one full cycle period of idle has passed,
+  // so the board never yanks the screen away mid-inspection.
+  const lastManualAt = useRef(0);
   useEffect(() => {
     if (params.cycleSec <= 0 || viewCount <= 1) return;
-    const id = setInterval(
-      () => setViewIndex((i) => nextCycleIndex(i, viewCount)),
-      params.cycleSec * 1000,
-    );
+    const id = setInterval(() => {
+      if (Date.now() - lastManualAt.current < params.cycleSec * 1000) return;
+      setViewIndex((i) => nextCycleIndex(i, viewCount));
+    }, params.cycleSec * 1000);
     return () => clearInterval(id);
   }, [params.cycleSec, viewCount]);
   useEffect(() => {
@@ -235,6 +244,57 @@ export default function AndonBoard() {
   // alert_history table — so "4 open / 0 alerts" can no longer contradict.
   // `raised` = active but not yet acknowledged by anyone.
   const unackedAndons = (board?.andons ?? []).filter((a) => a.status === "raised").length;
+
+  // W4 (doc 67) honesty: ticker shows oldest UNACKED first (they need action),
+  // then acked, each oldest-first. Items raised > 4h ago and still unacked get
+  // an explicit "QUÁ HẠN" badge.
+  const OVERDUE_MS = 4 * 3_600_000;
+  const sortedAndons = useMemo(() => {
+    const arr = [...(board?.andons ?? [])];
+    arr.sort((a, b) => {
+      const rankA = a.status === "raised" ? 0 : 1;
+      const rankB = b.status === "raised" ? 0 : 1;
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(a.raisedAt).getTime() - new Date(b.raisedAt).getTime();
+    });
+    return arr;
+  }, [board?.andons]);
+
+  // W4 (doc 67) touch: hover-pause is useless on a touch panel — any pointerdown
+  // on the footer pauses the marquee; it resumes after 10s of idle. With ≤ 4
+  // andons there is no marquee at all (static wrapped list — always readable).
+  const [tickerPaused, setTickerPaused] = useState(false);
+  const tickerIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pauseTicker = useCallback(() => {
+    setTickerPaused(true);
+    if (tickerIdleTimer.current) clearTimeout(tickerIdleTimer.current);
+    tickerIdleTimer.current = setTimeout(() => setTickerPaused(false), 10_000);
+  }, []);
+  useEffect(() => () => {
+    if (tickerIdleTimer.current) clearTimeout(tickerIdleTimer.current);
+  }, []);
+  const staticTicker = sortedAndons.length > 0 && sortedAndons.length <= 4;
+
+  // W4 (doc 67) honesty: "Toàn bộ line" must not lie while a URL/scope filter is
+  // active — name what is actually shown (factory/line names come with the data).
+  const effFactoryId = params.factoryId ?? assetScope.factoryId ?? null;
+  const effLineCount = params.lineIds.length > 0 ? params.lineIds.length : assetScope.lineId !== undefined ? 1 : 0;
+  const isFiltered = effFactoryId != null || effLineCount > 0;
+  const filterLabel = useMemo(() => {
+    if (!isFiltered) return null;
+    const parts: string[] = [];
+    if (effLineCount > 0) {
+      const names = [...new Set(lines.map((l) => l.lineName).filter((n): n is string => !!n))];
+      parts.push(names.length > 0 ? names.join(" + ") : `${effLineCount} line`);
+    }
+    if (effFactoryId != null) {
+      const factoryName = lines.find((l) => l.factoryName)?.factoryName;
+      if (factoryName) parts.push(factoryName);
+      else if (parts.length === 0) parts.push(`Xưởng #${effFactoryId}`);
+    }
+    return parts.join(" · ");
+  }, [isFiltered, effLineCount, effFactoryId, lines]);
+
   const connState: "live" | "poll" | "offline" = boardQuery.isError
     ? "offline"
     : socketConnected
@@ -255,23 +315,30 @@ export default function AndonBoard() {
           <p className="truncate text-[clamp(0.65rem,0.9vw,1rem)] text-muted-foreground">
             {drilled && visibleLines[0]
               ? `${visibleLines[0].lineName ?? t("andonBoard.noLine", "Chưa gán line")} · ${visibleLines[0].factoryName ?? ""}`
-              : t("andonBoard.allLines", "Toàn bộ line")}
+              : filterLabel
+                ? `${filterLabel} (${t("andonBoard.filtered", "đang lọc")})`
+                : t("andonBoard.allLines", "Toàn bộ line")}
             {params.cycleSec > 0 && ` · ⟳${params.cycleSec}s`}
           </p>
         </div>
 
-        <div className="ml-auto grid auto-cols-fr grid-flow-col items-center gap-[1vw]">
+        {/* W4 (doc 67): mobile 390px — 3-col wrap dưới sm; TV/desktop giữ 1 hàng. */}
+        <div className="ml-auto grid grid-cols-3 items-center gap-[1vw] sm:grid-cols-none sm:auto-cols-fr sm:grid-flow-col">
+          {/* W4 (doc 67) honesty: 100% trên n=1 bo là vô nghĩa thống kê — hiện
+              n=… và dùng tone muted (không xanh/đỏ) khi mẫu < 20. */}
           <KpiTile
             label={t("andonBoard.finalYield", "Final Yield hôm nay")}
             value={fmtPct(kpis?.finalYield)}
-            tone={kpis?.finalYield == null ? "muted" : kpis.finalYield < params.critPct ? "crit" : kpis.finalYield < params.warnPct ? "warn" : "good"}
+            sub={kpis ? `n=${kpis.total}` : undefined}
+            tone={kpis?.finalYield == null || kpis.total < 20 ? "muted" : kpis.finalYield < params.critPct ? "crit" : kpis.finalYield < params.warnPct ? "warn" : "good"}
           />
           {/* doc65 V4: FPY dùng CÙNG quy tắc ngưỡng màu với Final Yield — 2 ô cạnh nhau
               cùng 100% mà một xanh một trắng là bất nhất tín hiệu. */}
           <KpiTile
             label={t("andonBoard.fpy", "FPY")}
             value={fmtPct(kpis?.fpy)}
-            tone={kpis?.fpy == null ? "muted" : kpis.fpy < params.critPct ? "crit" : kpis.fpy < params.warnPct ? "warn" : "good"}
+            sub={kpis ? `n=${kpis.firstTotal}` : undefined}
+            tone={kpis?.fpy == null || kpis.firstTotal < 20 ? "muted" : kpis.fpy < params.critPct ? "crit" : kpis.fpy < params.warnPct ? "warn" : "good"}
           />
           <KpiTile
             label={t("andonBoard.output", "Sản lượng")}
@@ -294,7 +361,11 @@ export default function AndonBoard() {
 
         <div className="flex flex-col items-end justify-center gap-1 pl-[0.5vw]">
           <div className="text-[clamp(1.4rem,2.6vw,3.4rem)] font-black leading-none tabular-nums">
-            {now.toLocaleTimeString("vi-VN", { hour12: false })}
+            {/* W4 (doc 67): mobile — ẩn giây dưới md cho khỏi tràn hàng KPI. */}
+            <span className="md:hidden">
+              {now.toLocaleTimeString("vi-VN", { hour12: false, hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="hidden md:inline">{now.toLocaleTimeString("vi-VN", { hour12: false })}</span>
           </div>
           <div className="flex items-center gap-2">
             <span
@@ -320,8 +391,12 @@ export default function AndonBoard() {
                   : t("realtime.offline", "Mất kết nối")}
             </span>
             <PollFreshness updatedAt={boardQuery.dataUpdatedAt || undefined} isFetching={boardQuery.isFetching} />
-            {/* Setup-only escape hatch — tiny, unobtrusive */}
-            <Link href="/dashboard" title={t("andonBoard.backToDashboard", "Về Dashboard")} className="text-muted-foreground/60 hover:text-foreground">
+            {/* Setup-only escape hatch — icon nhỏ nhưng hit-area ≥ 40px (W4 doc 67 touch) */}
+            <Link
+              href="/dashboard"
+              title={t("andonBoard.backToDashboard", "Về Dashboard")}
+              className="flex min-h-10 min-w-10 items-center justify-center text-muted-foreground/60 hover:text-foreground"
+            >
               <Settings className="size-[1vw] min-h-4 min-w-4" aria-hidden />
             </Link>
           </div>
@@ -357,6 +432,7 @@ export default function AndonBoard() {
               <button
                 type="button"
                 onClick={() => {
+                  lastManualAt.current = Date.now();
                   const idx = lines.indexOf(line);
                   setViewIndex(drilled ? 0 : idx + 1);
                 }}
@@ -410,7 +486,8 @@ export default function AndonBoard() {
                         {/* doc65 PRO-100: TV không có hover — mã máy được wrap tối đa 2 dòng
                             (break-all) thay vì ellipsis nuốt hậu tố định danh ("SIM-L2-CONVE…"). */}
                         {/* ​ sau '-' → wrap tại ranh giới token, không gãy giữa từ (CONVEY/OR). */}
-                        <span className="line-clamp-2 text-[clamp(0.7rem,1vw,1.3rem)] font-bold leading-tight [overflow-wrap:break-word]">{m.code.replace(/-/g, "-​")}</span>
+                        {/* W4 (doc 67) TV: ≥1.5vw (≈29px@FHD) — mã máy phải đọc được từ 5–10 m. */}
+                        <span className="line-clamp-2 text-[clamp(0.85rem,1.5vw,1.9rem)] font-bold leading-tight [overflow-wrap:break-word]">{m.code.replace(/-/g, "-​")}</span>
                         {status === "offline" && <MonitorOff className="size-[0.9vw] min-h-3 min-w-3 shrink-0" aria-hidden />}
                         {m.andonState === "yellow" && status !== "andon" && (
                           <AlertTriangle className="size-[0.9vw] min-h-3 min-w-3 shrink-0 text-warning" aria-hidden />
@@ -422,7 +499,7 @@ export default function AndonBoard() {
                       )}>
                         {m.finalYield == null ? t("andonBoard.idle", "—") : fmtPct(m.finalYield)}
                       </div>
-                      <div className="mt-auto flex items-baseline justify-between text-[clamp(0.6rem,0.85vw,1.05rem)] font-semibold opacity-90">
+                      <div className="mt-auto flex items-baseline justify-between text-[clamp(0.7rem,1vw,1.3rem)] font-semibold opacity-90">
                         <span>NG {m.ng}</span>
                         <span>{m.total} {t("andonBoard.boards", "bo")}</span>
                       </div>
@@ -436,9 +513,18 @@ export default function AndonBoard() {
       </main>
 
       {/* ── Bottom ticker: active Andon events ── */}
-      <footer className="border-t-2 border-border bg-card">
-        <div className="relative flex h-[clamp(2.2rem,4.5vh,4rem)] items-center overflow-hidden">
-          <span className="z-10 flex h-full shrink-0 items-center gap-2 bg-destructive px-[1vw] text-[clamp(0.7rem,1vw,1.3rem)] font-black uppercase text-destructive-foreground">
+      {/* W4 (doc 67) touch: any pointerdown on the footer pauses the marquee
+          (hover-pause never fires on a touch panel); resumes after 10s idle. */}
+      <footer className="border-t-2 border-border bg-card" onPointerDown={pauseTicker}>
+        <div
+          className={cn(
+            "andon-ticker-viewport relative flex items-center",
+            staticTicker
+              ? "min-h-[clamp(2.2rem,4.5vh,4rem)] max-h-[24vh] overflow-y-auto"
+              : "h-[clamp(2.2rem,4.5vh,4rem)] overflow-hidden",
+          )}
+        >
+          <span className="z-10 flex shrink-0 items-center gap-2 self-stretch bg-destructive px-[1vw] text-[clamp(0.7rem,1vw,1.3rem)] font-black uppercase text-destructive-foreground">
             <Megaphone className="size-[1vw] min-h-4 min-w-4" aria-hidden />
             Andon
           </span>
@@ -447,15 +533,41 @@ export default function AndonBoard() {
               {t("andonBoard.tickerEmpty", "Không có Andon đang mở — mọi line hoạt động bình thường")}
             </span>
           ) : (
-            // pause-on-hover so the "Tra mã" popover trigger holds still while open
-            <div className="andon-ticker-track flex items-center gap-[3vw] whitespace-nowrap pl-[2vw] hover:[animation-play-state:paused] focus-within:[animation-play-state:paused]">
-              {(board?.andons ?? []).map((a) => (
+            // W4 (doc 67): ≤ 4 andons → static wrapped list (no marquee — Ack is
+            // always tappable). More → marquee with duration ∝ item count;
+            // hover/focus pause kept for mouse users, pointerdown pause for touch.
+            <div
+              className={cn(
+                "flex items-center gap-[3vw]",
+                staticTicker
+                  ? "flex-wrap gap-y-1 px-[1vw] py-[0.4vh]"
+                  : "andon-ticker-track whitespace-nowrap pl-[2vw] hover:[animation-play-state:paused] focus-within:[animation-play-state:paused]",
+              )}
+              style={
+                staticTicker
+                  ? undefined
+                  : {
+                      animationDuration: `${10 + sortedAndons.length * 6}s`,
+                      animationPlayState: tickerPaused ? "paused" : undefined,
+                    }
+              }
+            >
+              {sortedAndons.map((a) => {
+                const raisedMs = new Date(a.raisedAt).getTime();
+                const overdue = a.status === "raised" && now.getTime() - raisedMs > OVERDUE_MS;
+                return (
                 <span key={a.id} className="inline-flex items-center gap-2 text-[clamp(0.75rem,1.1vw,1.4rem)] font-bold">
                   <span className={cn("size-[0.8vw] min-h-3 min-w-3 rounded-full animate-pulse", ANDON_STATE_DOT[a.state] ?? "bg-muted-foreground")} />
                   <span className="uppercase text-muted-foreground">{a.lineName ?? a.machineCode ?? "—"}</span>
                   {a.machineCode && a.lineName && <span className="text-muted-foreground">· {a.machineCode}</span>}
                   <span>{a.title}</span>
-                  <span className="text-muted-foreground">({agoLabel(new Date(a.raisedAt).getTime(), now.getTime())})</span>
+                  <span className="text-muted-foreground">({agoLabel(raisedMs, now.getTime())})</span>
+                  {/* W4 (doc 67) honesty: > 4h chưa ai xác nhận → nói thẳng. */}
+                  {overdue && (
+                    <span className="rounded bg-destructive px-1.5 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-black uppercase text-destructive-foreground">
+                      {t("andonBoard.overdue", "QUÁ HẠN")}
+                    </span>
+                  )}
                   {/* doc 37 B1: page-cited manual lookup for the alarm cause/remedy. Andon events
                       carry no vendor/nativeCode → broad search keyed off the event title + reason
                       (the fallback path; mapAlarm needs vendor+nativeCode which this shape lacks). */}
@@ -467,7 +579,7 @@ export default function AndonBoard() {
                     align="end"
                     className="text-[clamp(0.6rem,0.8vw,1rem)]"
                   />
-                  {/* B6: acknowledge — hover pauses the ticker so this stays clickable */}
+                  {/* B6: acknowledge — pointerdown/hover pauses the ticker so this stays tappable */}
                   {a.status === "raised" ? (
                     <button
                       type="button"
@@ -494,18 +606,37 @@ export default function AndonBoard() {
                     </span>
                   )}
                 </span>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
-        {/* Marquee keyframes — scoped to this board only */}
+        {/* Marquee keyframes — scoped to this board only. Duration is overridden
+            inline (10s + 6s/item) so 29 andons don't blur past in 30s.
+            prefers-reduced-motion: no marquee — the SAME items become a wrapped,
+            vertically scrollable list (nothing is swallowed). */}
         <style>{`
           .andon-ticker-track { animation: andon-ticker-scroll 30s linear infinite; will-change: transform; }
           @keyframes andon-ticker-scroll {
             0% { transform: translateX(100vw); }
             100% { transform: translateX(-100%); }
           }
-          @media (prefers-reduced-motion: reduce) { .andon-ticker-track { animation: none; } }
+          @media (prefers-reduced-motion: reduce) {
+            .andon-ticker-viewport {
+              height: auto;
+              min-height: clamp(2.2rem, 4.5vh, 4rem);
+              max-height: 24vh;
+              overflow-y: auto;
+            }
+            .andon-ticker-viewport .andon-ticker-track {
+              animation: none;
+              transform: none;
+              flex-wrap: wrap;
+              white-space: normal;
+              row-gap: 0.25rem;
+              padding: 0.3vh 1vw;
+            }
+          }
         `}</style>
       </footer>
     </div>
@@ -524,13 +655,15 @@ function KpiTile({
   tone: "good" | "warn" | "crit" | "neutral" | "muted";
 }) {
   return (
+    // W4 (doc 67): KPI row scales theo vh — chiều cao header là ràng buộc thật
+    // trên TV; vw làm chữ bé đi khi màn rộng nhưng header thấp.
     <div className="flex min-w-0 flex-col items-center justify-center px-[0.6vw] text-center">
-      <span className="truncate text-[clamp(0.55rem,0.75vw,0.95rem)] font-semibold uppercase tracking-wider text-muted-foreground">
+      <span className="truncate text-[clamp(0.55rem,1.4vh,0.95rem)] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <span
         className={cn(
-          "text-[clamp(1.2rem,2.2vw,3rem)] font-black leading-tight tabular-nums",
+          "text-[clamp(1.2rem,3.8vh,3rem)] font-black leading-tight tabular-nums",
           tone === "good" && "text-success",
           tone === "warn" && "text-warning",
           tone === "crit" && "text-destructive",
@@ -540,7 +673,7 @@ function KpiTile({
         {value}
       </span>
       {sub && (
-        <span className="truncate text-[clamp(0.55rem,0.7vw,0.9rem)] text-muted-foreground">{sub}</span>
+        <span className="truncate text-[clamp(0.55rem,1.3vh,0.9rem)] text-muted-foreground">{sub}</span>
       )}
     </div>
   );

@@ -127,7 +127,17 @@ export function StatChip({
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} title={title} aria-pressed={active} className={base}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        aria-pressed={active}
+        className={cn(
+          base,
+          // W4 (doc 67): chip bấm được phải có ring bàn phím rõ ràng (focus-visible).
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        )}
+      >
         {inner}
       </button>
     );
@@ -140,21 +150,64 @@ export function StatChip({
 }
 
 /**
- * <StatChipRow> — hàng ngang các StatChip, cuộn ngang khi tràn (không xuống dòng),
- * giữ chiều cao strip ~40px. Ẩn thanh cuộn thô, vẫn cuộn được bằng trackpad/kéo.
+ * <StatChipRow> — hàng ngang các StatChip.
+ *
+ * Hai biến thể (W4 doc 67 — touch/responsive):
+ *   • mặc định (`wrap` không truyền): GIỮ hành vi cũ — cuộn ngang khi tràn, không
+ *     xuống dòng (backward-compatible với mọi trang đang dùng). Khi thực sự tràn,
+ *     mép phải được fade bằng mask-image gradient để người dùng biết còn nội dung;
+ *     fade tự tắt khi đã cuộn tới cuối.
+ *   • `wrap`: flex-wrap — chip xếp nhiều hàng thay vì bị cắt đôi ở viewport hẹp
+ *     (vd 7 chip KPI ở 1280px → 2 hàng).
  */
 export function StatChipRow({
   children,
   className,
+  wrap = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Xếp nhiều hàng thay vì cuộn ngang. Mặc định false (giữ hành vi cũ). */
+  wrap?: boolean;
 }): React.JSX.Element {
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  // Còn nội dung khuất bên phải? (chỉ dùng cho biến thể cuộn)
+  const [fadeRight, setFadeRight] = React.useState(false);
+
+  React.useEffect(() => {
+    if (wrap) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      setFadeRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [wrap]);
+
+  if (wrap) {
+    return (
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
+        {children}
+      </div>
+    );
+  }
   return (
     <div
+      ref={scrollRef}
       className={cn(
         "flex items-center gap-2 overflow-x-auto pb-0.5",
         "[scrollbar-width:thin]",
+        // Fade-edge: mask trong suốt dần ở mép phải khi còn chip khuất — hoạt động
+        // trên mọi nền (card/muted) vì là mask chứ không phải overlay màu.
+        fadeRight &&
+          "[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] [-webkit-mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]",
         className,
       )}
     >
