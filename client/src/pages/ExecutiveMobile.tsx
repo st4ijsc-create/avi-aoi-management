@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { PollFreshness } from "@/components/PollFreshness";
+import { RelatedViews } from "@/components/RelatedViews";
 import {
   Activity,
   AlertTriangle,
@@ -502,8 +503,9 @@ export default function ExecutiveMobile(): React.JSX.Element {
             <Gauge className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
+            {/* doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.executiveMobile. */}
             <h1 className="truncate text-base font-semibold leading-tight">
-              {t("executiveMobile.title", "Executive briefing")}
+              {t("nav.executiveMobile", "Executive Briefing")}
             </h1>
             {/* AUD-01: the ONLY freshness indicator on this page — driven by
                 react-query dataUpdatedAt (poll surface, no socket), so it goes
@@ -541,6 +543,10 @@ export default function ExecutiveMobile(): React.JSX.Element {
           space-y-6 so a null OfflineBanner leaves no phantom gap. */}
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-24 pt-4 lg:max-w-6xl">
         <OfflineBanner />
+
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx):
+            trang đã rút khỏi menu, đường về Tổng quan nhà máy + Tổng quan tập đoàn. */}
+        <RelatedViews pageId="executive" />
 
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start">
 

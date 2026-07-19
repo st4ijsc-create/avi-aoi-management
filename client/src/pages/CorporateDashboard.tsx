@@ -340,7 +340,8 @@ export default function CorporateDashboard() {
         {/* Header */}
         <PageHeader
           icon={<Building2 className="h-6 w-6" />}
-          title={t('corporate.dashboard')}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.corporateDashboard.
+          title={t("nav.corporateDashboard", "Corporate Overview")}
           description={t('corporate.dashboardDescription')}
           actions={
             <>
@@ -380,13 +381,8 @@ export default function CorporateDashboard() {
           }
         />
 
-        {/* U7 cross-links — executive corporate roll-up; drill or go live. */}
-        <RelatedViews
-          links={[
-            { href: "/drill-down", labelKey: "nav.drillDown", labelDefault: "Drill-Down" },
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-          ]}
-        />
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
+        <RelatedViews pageId="corporate-dashboard" />
 
         {/* KPI Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

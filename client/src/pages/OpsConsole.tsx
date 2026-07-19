@@ -45,6 +45,7 @@ import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { PageHeader } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
 import PollFreshness from "@/components/PollFreshness";
 import AgeLabel from "@/components/opsconsole/AgeLabel";
 import AlertGroupCard from "@/components/opsconsole/AlertGroupCard";
@@ -660,7 +661,7 @@ export default function OpsConsole() {
     : "";
 
   return (
-    <DashboardLayout title={t("opsConsole.title", "Ops Console")} navItems={navItems} currentPath="/ops-console">
+    <DashboardLayout title={t("nav.opsConsole", "Alert Response")} navItems={navItems} currentPath="/ops-console">
       <div
         ref={rootRef}
         className={`space-y-6 p-6 transition-colors ${flash ? "animate-pulse bg-destructive/20" : ""} ${isFs ? "min-h-screen overflow-y-auto bg-background" : ""}`}
@@ -673,7 +674,7 @@ export default function OpsConsole() {
           <div className="flex min-h-screen flex-col gap-[1.5vh]">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-border pb-[1vh]">
               <h1 className="text-[clamp(1.1rem,3.2vh,2.4rem)] font-black uppercase tracking-wide">
-                {t("opsConsole.title", "Ops Console")} · TV
+                {t("nav.opsConsole", "Alert Response")} · TV
               </h1>
               <div className="flex items-center gap-3">
                 <span className="text-[clamp(0.9rem,2.6vh,1.8rem)] font-black tabular-nums text-destructive">
@@ -759,7 +760,8 @@ export default function OpsConsole() {
             {/* Header / KPI strip */}
             <PageHeader
               icon={<Activity className="h-6 w-6" />}
-              title={t("opsConsole.title", "Ops Console")}
+              // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.opsConsole.
+              title={t("nav.opsConsole", "Alert Response")}
               description={t("opsConsole.subtitle", "Unified War-Room + Alert Center — signal only, never controls a machine")}
               actions={
                 <>
@@ -795,6 +797,9 @@ export default function OpsConsole() {
                 </>
               }
             />
+
+            {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
+            <RelatedViews pageId="ops-console" />
 
             <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
               <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={counts.critical} accent="text-destructive" />

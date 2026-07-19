@@ -308,8 +308,9 @@ export default function AndonBoard() {
         <div className="flex min-w-0 flex-col justify-center">
           <div className="flex items-center gap-2">
             <Megaphone className="size-[1.6vw] min-h-5 min-w-5 text-primary" aria-hidden />
+            {/* doc 67 W5 (việc 2) — 1 key/trang: h1 = menu = nav.andonBoard ("Bảng Andon (TV)"). */}
             <h1 className="truncate text-[clamp(1.1rem,1.8vw,2.2rem)] font-black uppercase tracking-wide">
-              {t("andonBoard.title", "Bảng Andon")}
+              {t("nav.andonBoard", "Bảng Andon (TV)")}
             </h1>
           </div>
           <p className="truncate text-[clamp(0.65rem,0.9vw,1rem)] text-muted-foreground">

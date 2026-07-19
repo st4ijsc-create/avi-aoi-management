@@ -64,11 +64,12 @@ export default function DashboardCenter() {
   );
 
   return (
-    <DashboardLayout title={t("dashboardCenter.title")} navItems={navItems} currentPath="/dashboard-center">
+    <DashboardLayout title={t("nav.dashboardCenter", "Dashboard Management")} navItems={navItems} currentPath="/dashboard-center">
       <div className="space-y-6">
+        {/* doc 67 W5 (việc 1) — 1 key/trang: h1 = breadcrumb = menu = nav.dashboardCenter. */}
         <PageHeader
           icon={<LayoutDashboard className="h-6 w-6" />}
-          title={t("dashboardCenter.title")}
+          title={t("nav.dashboardCenter", "Dashboard Management")}
           description={t("dashboardCenter.description")}
         />
 

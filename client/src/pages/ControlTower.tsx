@@ -22,8 +22,8 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import * as React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
@@ -59,17 +59,30 @@ export default function ControlTower(): React.JSX.Element {
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
 
-  // ── persona: stored → role default → executive ─────────────────────────────
+  // ── persona: ?role= → stored → role default → executive ───────────────────
+  // doc 67 W5 (việc 4): ?role=executive|supervisor|operations deep-link thắng tất
+  // (không ghi localStorage — chỉ đổi tay mới lưu); còn lại: lựa chọn đã lưu →
+  // mặc định theo vai từ auth.me (executive/admin→Điều hành, supervisor/manager→
+  // Quản đốc, operator→Vận hành).
+  const search = useSearch();
+  const urlPersona = useMemo<Persona | null>(() => {
+    const raw = new URLSearchParams(search).get("role");
+    return raw && (PERSONAS as readonly string[]).includes(raw) ? (raw as Persona) : null;
+  }, [search]);
   const storedRef = useRef<Persona | null>(getStoredPersona());
   const [persona, setPersonaState] = useState<Persona>(
-    () => storedRef.current ?? personaForRole(user?.role),
+    () => urlPersona ?? storedRef.current ?? personaForRole(user?.role),
   );
-  // Once auth resolves and the user never picked one, adopt the role default.
+  // ?role= changes (client-side nav) take effect immediately.
   useEffect(() => {
-    if (storedRef.current == null && !loading) {
+    if (urlPersona != null) setPersonaState(urlPersona);
+  }, [urlPersona]);
+  // Once auth resolves and the user never picked one (and no ?role=), adopt the role default.
+  useEffect(() => {
+    if (urlPersona == null && storedRef.current == null && !loading) {
       setPersonaState(personaForRole(user?.role));
     }
-  }, [loading, user?.role, setPersonaState]);
+  }, [urlPersona, loading, user?.role, setPersonaState]);
 
   const setPersona = useCallback(
     (p: Persona) => {
@@ -128,7 +141,8 @@ export default function ControlTower(): React.JSX.Element {
       <PageContainer>
         <PageHeader
           icon={<LayoutDashboard className="h-6 w-6" />}
-          title={t("controlTower.title", "Control Tower")}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.controlTower.
+          title={t("nav.controlTower", "Factory Overview")}
           description={t(
             "controlTower.subtitle",
             "One live command surface — persona-configurable KPIs and signals, linking out to the specialised views for depth.",
@@ -176,17 +190,9 @@ export default function ControlTower(): React.JSX.Element {
           </span>
         </div>
 
-        {/* Cross-links to the specialised command surfaces (depth). */}
-        <RelatedViews
-          links={[
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-            { href: "/war-room", labelKey: "nav.warRoom", labelDefault: "War Room" },
-            { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
-            { href: "/mes-control-tower", labelKey: "nav.mesControlTower", labelDefault: "MES Hub" },
-            { href: "/corporate-dashboard", labelKey: "nav.corporateDashboard", labelDefault: "Corporate" },
-            { href: "/factory-command-view", labelKey: "nav.factoryCommandView", labelDefault: "Factory Command" },
-          ]}
-        />
+        {/* doc 67 W5 (việc 6) — cross-links từ map quan hệ 2-chiều tập trung
+            (RelatedViews.tsx): đường vào chính của các màn đã rút khỏi menu. */}
+        <RelatedViews pageId="control-tower" />
 
         {/* Shared KPI strip (honest "—"; hidden gracefully when unauthorized).
             W2 (AUD-01): pill tuổi dữ liệu cạnh strip — PollFreshness tự tick 1s

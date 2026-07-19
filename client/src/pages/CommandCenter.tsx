@@ -40,6 +40,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { RelatedViews } from "@/components/RelatedViews";
 import { MetricCard, PageHeader, StatusBadge, SectionCard } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -824,7 +825,8 @@ export default function CommandCenter() {
         {/* ── Header + live/poll badge ── */}
         <PageHeader
           icon={<Gauge className="h-6 w-6" />}
-          title={t("cmd.title", "Ecosystem Command Center")}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.commandCenter.
+          title={t("nav.commandCenter", "Layout & Digital Twin")}
           description={t("cmd.subtitle", "One live pane: hierarchy, factory twin, KPIs and the unified alarm rail across the whole estate.")}
           actions={
             <div className="flex items-center gap-2">
@@ -854,6 +856,10 @@ export default function CommandCenter() {
             </div>
           }
         />
+
+        {/* doc 67 W5 (việc 6) — trang đã rút khỏi menu: rail 2-chiều từ map tập trung
+            là đường quay về Tổng quan nhà máy + các màn anh em. */}
+        <RelatedViews pageId="command-center" />
 
         {/* ── TOP KPI STRIP ── */}
         {/* AUD-01 (doc 65 W2): tuổi dữ liệu KPI — poll 15s, cảnh báo khi stale >2× chu kỳ. */}

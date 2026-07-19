@@ -80,7 +80,8 @@ export const APPS: AppDescriptor[] = [
     labelKey: "nav.app.overview",
     blurbKey: "nav.app.overviewDesc",
     icon: Gauge,
-    landingHref: "/dashboard",
+    // doc 67 W5 — landing chính của Tổng quan là "Tổng quan nhà máy" (/control-tower).
+    landingHref: "/control-tower",
     navGroupIds: ["overview"],
     moduleCodes: ["CORE_DASHBOARD"],
     order: 0,
@@ -160,7 +161,11 @@ export const APPS: AppDescriptor[] = [
     labelKey: "nav.app.multisite",
     blurbKey: "nav.app.multisiteDesc",
     icon: Building2,
-    landingHref: "/corporate-dashboard",
+    // doc 67 W5 (việc 5) — landing đổi sang /federation-dashboard (MOD_FEDERATION):
+    // /corporate-dashboard nay thuộc scope Tổng quan (xem ROUTE_APP_OVERRIDES) nên
+    // không còn là cửa vào của app này; ngữ cảnh Đa nhà máy chỉ khi user chủ động
+    // chuyển app qua app-switcher.
+    landingHref: "/federation-dashboard",
     // Corporate items live in the overview/admin groups; resolved primarily by module.
     navGroupIds: ["admin", "overview"],
     moduleCodes: ["MOD_CORPORATE", "MOD_FEDERATION"],
@@ -230,6 +235,20 @@ for (const app of APPS) {
 
 const CORE_SET = new Set(CORE_MODULE_CODES);
 
+/**
+ * doc 67 W5 (việc 5) — route→app OVERRIDE, thắng cả module-ownership.
+ *
+ * /corporate-dashboard thuộc MOD_CORPORATE (app "multisite"), nên trước đây chỉ cần
+ * MỞ trang là useActiveApp đổi app-shell sang "Đa nhà máy" → sidebar co còn 2 mục,
+ * người dùng "mất menu". Về IA trang này là một màn TỔNG QUAN (group overview trên
+ * rail, tới từ RelatedViews của Tổng quan nhà máy) → ghim nó vào app "overview".
+ * Ngữ cảnh Đa nhà máy/Federation chỉ kích hoạt khi user chủ động chuyển app qua
+ * app-switcher (landing của app multisite giờ là /federation-dashboard).
+ */
+const ROUTE_APP_OVERRIDES: ReadonlyMap<string, string> = new Map([
+  ["/corporate-dashboard", "overview"],
+]);
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /** All apps in launcher order. */
@@ -261,6 +280,12 @@ export function getAppForGroup(groupId: string): AppDescriptor | undefined {
  */
 export function getAppForRoute(href: string): AppDescriptor | undefined {
   const path = (href || "").split("?")[0];
+  // doc 67 W5 — explicit IA override beats module ownership (see ROUTE_APP_OVERRIDES).
+  const overrideAppId = ROUTE_APP_OVERRIDES.get(path);
+  if (overrideAppId) {
+    const overrideApp = APP_BY_ID.get(overrideAppId);
+    if (overrideApp) return overrideApp;
+  }
   const mod = getModuleByRoute(path);
   if (mod) {
     const byModule = APP_BY_MODULE.get(mod.code);

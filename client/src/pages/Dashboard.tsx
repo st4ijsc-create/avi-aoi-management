@@ -1343,7 +1343,7 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout
-      title={t("dashboard.title")}
+      title={t("nav.dashboardMain")}
       navItems={navItems}
       currentPath="/dashboard"
     >
@@ -1356,7 +1356,8 @@ export default function Dashboard() {
         {/* Header with filters and auto-refresh controls */}
         <PageHeader
           icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
-          title={t("dashboard.productionDashboard")}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.dashboardMain.
+          title={t("nav.dashboardMain")}
           description={
             <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
@@ -1389,6 +1390,17 @@ export default function Dashboard() {
                 </Link>
               )}
             </div>
+
+          {/* doc 67 W5 (việc 6) — nút nhỏ admin-only: /dashboard-center đã dời sang
+              group Admin; đây là lối tắt tùy biến bố cục ngay trên header. */}
+          {user?.role === "admin" && (
+            <Link href="/dashboard-center" className="hidden sm:block">
+              <Button variant="outline" size="sm">
+                <SlidersHorizontal className="h-4 w-4 mr-1" />
+                {t("dashboard.customizeLayout", "Tùy chỉnh bố cục")}
+              </Button>
+            </Link>
+          )}
 
           {/* Filters - scrollable on mobile */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
@@ -1520,18 +1532,9 @@ export default function Dashboard() {
           }
         />
 
-        {/* U7 (doc 21 §3 G-11) — this operational dashboard stays as a rich landing;
-            point "see everything live" at the Command Center single pane of glass. */}
-        <RelatedViews
-          links={[
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-            { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
-            // doc65 PRO-100: /control-tower rời rail (gộp IA với Trung tâm chỉ huy) — reachable qua đây + ⌘K.
-            { href: "/control-tower", labelKey: "nav.controlTower", labelDefault: "Tháp vận hành" },
-            // W5-C (doc 27 F7): open the dedicated TV board (add ?kiosk=1&cycle=30 on the TV itself).
-            { href: "/andon", labelKey: "nav.andonBoard", labelDefault: "Bảng Andon (TV)" },
-          ]}
-        />
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx):
+            trang đã rút khỏi menu, đường về Tổng quan nhà máy + các màn anh em. */}
+        <RelatedViews pageId="dashboard" />
 
         {showNoTodayDataBanner && (
           <Card className="border-warning/40 bg-warning/5">

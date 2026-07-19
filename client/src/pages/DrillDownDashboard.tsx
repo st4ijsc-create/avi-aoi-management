@@ -325,11 +325,12 @@ export default function DrillDownDashboard(): React.JSX.Element {
   };
 
   return (
-    <DashboardLayout title={t("dashboard.drillDownDashboard", "Drill down dashboard")}>
+    <DashboardLayout title={t("nav.drillDown", "Corporate Analytics")}>
       <div className="space-y-6">
         {/* W4 a11y: trang chưa có h1 — DashboardLayout chỉ hiện title ở sidebar,
-            không phải tiêu đề trang → h1 sr-only cho screen reader / landmark. */}
-        <h1 className="sr-only">Phân tích chi tiết</h1>
+            không phải tiêu đề trang → h1 sr-only cho screen reader / landmark.
+            doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.drillDown. */}
+        <h1 className="sr-only">{t("nav.drillDown", "Phân tích tập đoàn")}</h1>
         {/* Canonical spine: breadcrumb + 6-tier stepper (honest degradation).
             W2 (AUD-01): badge độ tươi = socket + dataUpdatedAt của query đang
             active — socket sống mà query fail/stale thì KHÔNG còn nhận LIVE. */}
@@ -340,14 +341,8 @@ export default function DrillDownDashboard(): React.JSX.Element {
           connected={liveConnected}
         />
 
-        {/* U7 cross-links — the Command Center offers the live hierarchy TREE +
-            factory twin of the same estate; this page is the interactive drill. */}
-        <RelatedViews
-          links={[
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-            { href: "/corporate-dashboard", labelKey: "nav.corporateDashboard", labelDefault: "Corporate Dashboard" },
-          ]}
-        />
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
+        <RelatedViews pageId="drill-down" />
 
         {/* Summary rollup — real inspection metrics only (no fabricated OEE). */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

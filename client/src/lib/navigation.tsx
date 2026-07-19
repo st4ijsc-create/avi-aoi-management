@@ -171,9 +171,13 @@ export interface NavGroup {
  */
 export const navGroups: NavGroup[] = [
   // ──────────────────────────────────────────────────────────────────────────
-  // 1. OVERVIEW — Dashboard Center · War-Room (Ops Console) · drill-down.
-  //    Landing for viewer/user (read-only). defaultOpen so it's the first thing
-  //    every role sees.
+  // 1. OVERVIEW — doc 67 W5 (quyết định #1a): rút 9 mục chồng lấp còn 4 cửa rõ vai:
+  //    (1) /control-tower "Tổng quan nhà máy" — landing chính · (2) /ops-console
+  //    "Xử lý cảnh báo" · (3) /andon "Bảng Andon (TV)" · (4) /drill-down "Phân tích
+  //    tập đoàn". Các mục /command-center · /dashboard · /corporate-dashboard ·
+  //    /executive VẪN NẰM TRONG navGroups (RouteGuard navHref + breadcrumb + ⌘K
+  //    cần item tồn tại) nhưng bị ẨN khỏi rail qua COLLAPSED_INTO_HUB — truy cập
+  //    qua RelatedViews / deep-link / ⌘K. /dashboard-center DỜI sang group Admin.
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "overview",
@@ -184,32 +188,14 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "dashboard",
     items: [
       {
-        // doc 46 FE-W3.1 (D4) — Executive Control Tower: persona-configurable single
-        // surface hợp nhất 6 màn command, cross-link ra view chuyên sâu. Mục cửa-ngõ.
+        // doc 67 W5 — "Tổng quan nhà máy": landing chính của group, tab tự chọn theo
+        // vai (Điều hành/Quản đốc/Vận hành), cross-link ra các màn chuyên sâu.
         href: "/control-tower",
         label: "nav.controlTower",
         icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "Bảng điều hành 1-cửa theo persona: OEE/andon/kế hoạch/AI · liên kết ra 6 màn command chuyên sâu",
+        description: "Tổng quan nhà máy 1-cửa theo vai trò: OEE/andon/kế hoạch/AI · liên kết ra các màn chuyên sâu",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-      },
-      {
-        // U2 (doc 21 §6 G-3) — flagship single pane of glass: hierarchy tree +
-        // factory twin + KPI strip + unified live alarm rail. First/prominent item.
-        href: "/command-center",
-        label: "nav.commandCenter",
-        icon: <Gauge className="h-4 w-4" />,
-        description: "nav.commandCenterDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      {
-        href: "/dashboard",
-        label: "nav.dashboardMain",
-        icon: <BarChart3 className="h-4 w-4" />,
-        description: "nav.dashboardMainDesc",
-        requiredPermission: "dashboard_view",
-        permissionCategory: "dashboard",
       },
       {
         // P1: unified War-Room / Ops Console (consolidates Andon + Predictive + alerts).
@@ -230,23 +216,32 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
       },
-      // doc 39 — Dashboard Center: 3 ?tab= deep-link rows collapsed into ONE landing
-      // entry (Custom / Templates / Marketplace are tabs inside the page).
-      {
-        href: "/dashboard-center",
-        label: "nav.dashboardCenter",
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "nav.dashboardCenterDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
-      },
       {
         href: "/drill-down",
         label: "nav.drillDown",
         icon: <TrendingUp className="h-4 w-4" />,
         description: "nav.drillDownDesc",
         requiredPermission: "dashboard_drilldown",
+        permissionCategory: "dashboard",
+      },
+      // ── Ẩn khỏi rail (COLLAPSED_INTO_HUB) — giữ item cho RouteGuard/⌘K/breadcrumb ──
+      {
+        // U2 (doc 21 §6 G-3) — sơ đồ + twin + KPI strip + alarm rail. doc 67 W5:
+        // đổi tên "Sơ đồ & bản sao số"; vào từ RelatedViews của Tổng quan nhà máy.
+        href: "/command-center",
+        label: "nav.commandCenter",
+        icon: <Gauge className="h-4 w-4" />,
+        description: "nav.commandCenterDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        // doc 67 W5: đổi tên "Chất lượng sản xuất" (dashboard chất lượng/KPI sản xuất).
+        href: "/dashboard",
+        label: "nav.dashboardMain",
+        icon: <BarChart3 className="h-4 w-4" />,
+        description: "nav.dashboardMainDesc",
+        requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
       },
       {
@@ -259,11 +254,11 @@ export const navGroups: NavGroup[] = [
       },
       {
         // doc 46 FE-W3.5 (D5) — Executive mobile/PWA: OEE/KPI briefing + AI summary +
-        // duyệt nhanh, tối ưu điện thoại (cài PWA). Cửa-ngõ điều hành trên di động.
+        // duyệt nhanh, tối ưu điện thoại (cài PWA). doc 67 W5: "Bản tin điều hành".
         href: "/executive",
         label: "nav.executiveMobile",
         icon: <LayoutGrid className="h-4 w-4" />,
-        description: "Bảng điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
+        description: "Bản tin điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
         requiredPermission: "dashboard_corporate",
         permissionCategory: "dashboard",
       },
@@ -1541,6 +1536,19 @@ export const navGroups: NavGroup[] = [
         section: "platform",
       },
       {
+        // doc 67 W5 (việc 1) — DỜI từ group Tổng quan về Admin: quản lý/tùy biến
+        // dashboard (Custom / Templates / Marketplace) là tác vụ quản trị, không
+        // phải cửa vào hằng ngày. Giữ nguyên gate admin như cũ.
+        href: "/dashboard-center",
+        label: "nav.dashboardCenter",
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        description: "nav.dashboardCenterDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+        section: "platform",
+      },
+      {
         href: "/admin-home",
         label: "nav.adminHome",
         icon: <Activity className="h-4 w-4" />,
@@ -2271,11 +2279,14 @@ const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
   // doc 63 AUD-N4 — /data-comparison đã được Comparison Studio GỘP (doc 46 FE-W3.3);
   // gate khớp (analytics_advanced) → ẩn row near-dup khỏi rail; ⌘K vẫn tìm được (IA-09).
   "/data-comparison",
-  // doc 65 PRO-100 (user duyệt) — "Tháp vận hành" (/control-tower) tự mô tả là "hợp nhất
-  // 6 màn command" = trùng vai trò IA với "Trung tâm chỉ huy" (/command-center) đứng ngay
-  // cạnh trên rail (finding v3/v4: 2 mục cùng khái niệm cạnh nhau). Gate khớp
-  // (machine_status/machine_monitoring) → ẩn row khỏi rail; ⌘K + deep-link vẫn hoạt động.
-  "/control-tower",
+  // doc 67 W5 (quyết định #1a, ĐẢO doc 65 PRO-100) — /control-tower TRỞ LẠI rail làm
+  // "Tổng quan nhà máy" (landing chính); thay vào đó 4 mục overview chồng lấp dưới đây
+  // rút khỏi rail (item GIỮ trong navGroups để RouteGuard navHref/⌘K/breadcrumb sống;
+  // truy cập qua RelatedViews 2-chiều + deep-link + ⌘K — không trang nào bị khóa):
+  "/command-center",      // → RelatedViews từ /control-tower ("Sơ đồ & bản sao số")
+  "/dashboard",           // → RelatedViews ("Chất lượng sản xuất")
+  "/corporate-dashboard", // → RelatedViews ("Tổng quan tập đoàn")
+  "/executive",           // → RelatedViews ("Bản tin điều hành")
   // doc 65 PRO-100 nợ-nhỏ — /oee-dashboard là REDIRECT thuần về /device-monitor?tab=oee
   // (QA4F-1) nhưng vẫn còn row rail riêng → "2 đường vào 1 nội dung" + sidebar-active lệch
   // (finding vòng xác nhận). Gate khớp hub → ẩn row; ⌘K vẫn tìm được.
