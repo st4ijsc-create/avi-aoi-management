@@ -1,0 +1,123 @@
+[
+  {
+    "code": "SCRW-01",
+    "serialSeed": "SN-SCRW01",
+    "deviceClass": "automation",
+    "machineType": "SCREWDRIVE",
+    "stepType": "screw_tightening",
+    "driverKind": "simulated",
+    "recipeCode": "RC-SCRW-A",
+    "mappingProfile": "screwdrive",
+    "cycleSeconds": 0.8
+  },
+  {
+    "code": "SCRW-02",
+    "serialSeed": "SN-SCRW02",
+    "deviceClass": "automation",
+    "machineType": "SCREWDRIVE",
+    "stepType": "screw_tightening",
+    "driverKind": "simulated",
+    "recipeCode": "RC-SCRW-A",
+    "mappingProfile": "screwdrive",
+    "cycleSeconds": 1.0
+  },
+  {
+    "code": "DISP-01",
+    "serialSeed": "SN-DISP01",
+    "deviceClass": "automation",
+    "machineType": "DISPENSING",
+    "stepType": "glue_dispense",
+    "driverKind": "simulated",
+    "recipeCode": "RC-DISP-A",
+    "mappingProfile": "dispensing",
+    "cycleSeconds": 1.2
+  },
+  {
+    "code": "WELD-01",
+    "serialSeed": "SN-WELD01",
+    "deviceClass": "automation",
+    "machineType": "WELDER",
+    "stepType": "weld_spot",
+    "driverKind": "simulated",
+    "recipeCode": "RC-WELD-A",
+    "mappingProfile": "welder",
+    "cycleSeconds": 1.1
+  },
+  {
+    "code": "ASSY-01",
+    "serialSeed": "SN-ASSY01",
+    "deviceClass": "automation",
+    "machineType": "ASSEMBLY",
+    "stepType": "press_fit",
+    "driverKind": "simulated",
+    "recipeCode": "RC-ASSY-A",
+    "mappingProfile": null,
+    "cycleSeconds": 0.9
+  },
+  {
+    "code": "LEAK-01",
+    "serialSeed": "SN-LEAK01",
+    "deviceClass": "automation",
+    "machineType": "LEAK_TEST",
+    "stepType": "leak_test",
+    "driverKind": "simulated",
+    "recipeCode": "RC-LEAK-A",
+    "mappingProfile": null,
+    "cycleSeconds": 1.4
+  },
+  {
+    "code": "FCT-01",
+    "serialSeed": "SN-FCT01",
+    "deviceClass": "automation",
+    "machineType": "FUNCTIONAL_TEST",
+    "stepType": "functional_test",
+    "driverKind": "simulated",
+    "recipeCode": "RC-FCT-A",
+    "mappingProfile": null,
+    "cycleSeconds": 1.3
+  },
+  {
+    "code": "IOT-01",
+    "serialSeed": "SN-IOT01",
+    "deviceClass": "iot",
+    "machineType": "IOT_SENSOR",
+    "stepType": "telemetry",
+    "driverKind": "simulated",
+    "recipeCode": null,
+    "mappingProfile": "iot-sensor",
+    "cycleSeconds": 0.8
+  },
+  {
+    "code": "IOT-02",
+    "serialSeed": "SN-IOT02",
+    "deviceClass": "iot",
+    "machineType": "IOT_SENSOR",
+    "stepType": "telemetry",
+    "driverKind": "simulated",
+    "recipeCode": null,
+    "mappingProfile": "iot-sensor",
+    "cycleSeconds": 1.0
+  },
+  {
+    "code": "AOI-01",
+    "serialSeed": "SN-AOI01",
+    "deviceClass": "aoiAvi",
+    "machineType": "AOI",
+    "stepType": "inspection",
+    "driverKind": "simulated",
+    "recipeCode": "RC-AOI-A",
+    "mappingProfile": "aoi",
+    "cycleSeconds": 1.8
+  },
+  {
+    "code": "AOI-02",
+    "serialSeed": "SN-AOI02",
+    "deviceClass": "aoiAvi",
+    "machineType": "AOI",
+    "stepType": "inspection",
+    "driverKind": "simulated",
+    "recipeCode": "RC-AOI-A",
+    "mappingProfile": "aoi",
+    "cycleSeconds": 2.0
+  }
+]

@@ -82,15 +82,18 @@ public sealed class FleetService : IDisposable
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
-        Fleet = BuildDefaultFleet();
+        Fleet = LoadFleet();
     }
 
-    /// <summary>The fixed roster this build ships with — 2×SCREWDRIVE, 1×DISPENSING, 1×WELDER,
-    /// 1×ASSEMBLY, 1×LEAK_TEST, 1×FUNCTIONAL_TEST, 1×IOT_SENSOR, 2×AOI (10 machines, mixing all 3
-    /// <see cref="DeviceClass"/> values), at lively-but-readable cadences (&lt;2s each) so the
-    /// dashboard visibly updates during a live demo. These are the UN-SCALED cadences — see
-    /// <see cref="ApplyScenario"/> for how <see cref="ScenarioConfig.CycleRateMultiplier"/> scales
-    /// them at build time.</summary>
+    /// <summary>Task 22 — the roster this run is actually using: an external <c>fleet.json</c>
+    /// (11 machines out of the box — 2×SCREWDRIVE/1×DISPENSING/1×WELDER/1×ASSEMBLY/1×LEAK_TEST/
+    /// 1×FUNCTIONAL_TEST/2×IOT_SENSOR/2×AOI, mixing all 3 <see cref="DeviceClass"/> values) when one is
+    /// found next to the exe or via <c>--fleet &lt;path&gt;</c> — see <see cref="LoadFleet"/> — else the
+    /// smaller in-code <see cref="BuildDefaultFleet"/> fallback (kept so the app still runs with no
+    /// packaging file present at all, e.g. a debug F5 run before publish). Cadences are lively-but-
+    /// readable (&lt;2s each) so the dashboard visibly updates during a live demo — these are the
+    /// UN-SCALED cadences, see <see cref="ApplyScenario"/> for how
+    /// <see cref="ScenarioConfig.CycleRateMultiplier"/> scales them at build time.</summary>
     public IReadOnlyList<MachineDescriptor> Fleet { get; }
 
     /// <summary>The same DI-resolved <see cref="ITransport"/> this service drives the pipeline with
@@ -509,6 +512,52 @@ public sealed class FleetService : IDisposable
     /// depending on this WPF project.</summary>
     internal static IMachineSimulator BuildSimulator(MachineDescriptor d, int seed) =>
         SimulatorFactory.Create(d, seed);
+
+    /// <summary>
+    /// Task 22 packaging — resolves the fleet roster from an external <c>fleet.json</c> when one is
+    /// findable (see <see cref="ResolveFleetPath"/>), falling back to <see cref="BuildDefaultFleet"/>
+    /// when no path resolves, the file doesn't parse (<see cref="FleetConfigException"/> — a malformed
+    /// hand-edited fleet.json must never crash the exhibition kiosk on startup), or it parses to zero
+    /// machines (an accidentally-emptied fleet.json is treated the same as "missing", not "run nothing").
+    /// </summary>
+    private static IReadOnlyList<MachineDescriptor> LoadFleet()
+    {
+        var path = ResolveFleetPath();
+        if (path is not null)
+        {
+            try
+            {
+                var loaded = FleetConfig.Load(path);
+                if (loaded.Count > 0) return loaded;
+            }
+            catch (FleetConfigException)
+            {
+                // Malformed fleet.json — fall through to the in-code default below rather than take
+                // the whole kiosk down over a hand-editing mistake in a packaging file.
+            }
+        }
+
+        return BuildDefaultFleet();
+    }
+
+    /// <summary>Task 22 — <c>--fleet &lt;path&gt;</c> on the command line wins if present (same flag
+    /// name/shape as <c>St4i.EdgeService</c>'s — see its <c>Program.cs</c>); otherwise a
+    /// <c>fleet.json</c> sitting next to the running exe (<see cref="AppContext.BaseDirectory"/> — where
+    /// the csproj's CopyToOutputDirectory item lands it, both in a plain build/run and in a published
+    /// single-file output). Returns null (not a path) when neither resolves, so <see cref="LoadFleet"/>
+    /// goes straight to the in-code default without a wasted <see cref="File.Exists"/> round-trip inside
+    /// <see cref="FleetConfig.Load"/> for a path that was never going to exist.</summary>
+    private static string? ResolveFleetPath()
+    {
+        var args = Environment.GetCommandLineArgs();
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], "--fleet", StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        }
+
+        var besideExe = Path.Combine(AppContext.BaseDirectory, "fleet.json");
+        return File.Exists(besideExe) ? besideExe : null;
+    }
 
     private static IReadOnlyList<MachineDescriptor> BuildDefaultFleet() =>
     [

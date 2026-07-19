@@ -1,0 +1,10 @@
+{
+  "name": "screwdrive",
+  "deviceClass": "Automation",
+  "defaultStepType": "screw_tightening",
+  "defaultRecipeCode": "RC-SCRW-A",
+  "unitMap": {
+    "Nm": "Nm",
+    "deg": "deg"
+  }
+}

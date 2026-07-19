@@ -302,9 +302,10 @@ public partial class App : Application
             throw new InvalidOperationException("selftest: Mode did not restore to Demo after the Auto-fallback check");
 
         // ── Task 16: Machine Detail — per-class detail state + config-sync ─────────────────────
-        // The fleet has been running for several seconds at this point (all 10 machines' first cycle
+        // The fleet has been running for several seconds at this point (every machine's first cycle
         // fires near-simultaneously at t=0 — see SimulatedDriver's initial _nextDueAt seeding — so
-        // every DeviceClass should already have reported at least once), so this reuses that run
+        // every DeviceClass should already have reported at least once, regardless of whether the
+        // roster came from fleet.json (Task 22) or the smaller in-code fallback), so this reuses that run
         // rather than starting a second one.
         RunMachineDetailSelfTest(fleetVm);
 
@@ -480,51 +481,83 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Task 20 headless check for branding: the logo/icon asset FILES exist on disk under the project's
-    /// <c>Assets/</c> folder, and the csproj actually sets <c>&lt;ApplicationIcon&gt;</c> to the icon.
-    /// Locates the project directory by walking UP from <see cref="AppContext.BaseDirectory"/> (the
-    /// build output dir) looking for the .csproj, rather than assuming a fixed relative depth — robust
-    /// to both plain `dotnet build`/`dotnet run` output layouts and however deep the RID-specific
-    /// (win-x64) output folder nesting goes.
+    /// Task 20 headless check for branding: the logo/icon assets are actually embedded and loadable
+    /// through WPF's own resource system — <c>Assets\logo.png</c>/<c>Assets\icon.ico</c> are
+    /// <c>&lt;Resource&gt;</c> items (see the csproj), so they're baked straight into the assembly
+    /// manifest rather than copied as loose files to the output directory (loose files would only ever
+    /// exist under the SOURCE tree's <c>Assets\</c> folder, never in a build/publish output at all).
+    ///
+    /// Task 22 fix-pass: previously this located <c>Assets\logo.png</c>/<c>icon.ico</c> as loose files
+    /// by walking UP from <see cref="AppContext.BaseDirectory"/> looking for the .csproj — which only
+    /// ever worked because a plain `dotnet build`/`dotnet run` output happens to sit nested a few levels
+    /// under the still-present source tree on a dev machine. A `dotnet publish
+    /// -p:PublishSingleFile=true` output is a flat folder with NO source tree nearby at all (that's the
+    /// whole point of a self-contained single-file publish meant to run on a clean machine — doc 62 §13's
+    /// own "Verify đóng gói" bullet) — the walk-up threw <see cref="InvalidOperationException"/> there,
+    /// which this task's publish+`--selftest` verification is what actually caught it. Reading the
+    /// EMBEDDED resource via <see cref="Application.GetResourceStream(System.Uri)"/> (same relative-URI
+    /// pattern <see cref="LocalizationService"/> already proves works from BOTH a dev output dir and a
+    /// published single-file exe — see its own remarks) is deployment-topology-agnostic and, unlike the
+    /// old loose-file check, verifies what the shipped ASSEMBLY actually contains rather than merely
+    /// what happens to sit on a dev machine's disk next to it.
     /// </summary>
     private static void RunBrandingSelfTest()
     {
-        var projectDir = FindProjectDirectory();
-        var logoPath = Path.Combine(projectDir, "Assets", "logo.png");
-        var iconPath = Path.Combine(projectDir, "Assets", "icon.ico");
-        var csprojPath = Path.Combine(projectDir, "St4iMachineSimulator.csproj");
+        var logoBytes = ReadEmbeddedResourceLength("Assets/logo.png");
+        var iconBytes = ReadEmbeddedResourceLength("Assets/icon.ico");
 
-        if (!File.Exists(logoPath))
-            throw new InvalidOperationException($"selftest branding: logo.png not found at \"{logoPath}\"");
-        if (!File.Exists(iconPath))
-            throw new InvalidOperationException($"selftest branding: icon.ico not found at \"{iconPath}\"");
+        // The <ApplicationIcon> csproj declaration itself is a build-time-only concern (it bakes the
+        // icon into the exe's native resources, which is a `dotnet build`-time step, not something
+        // re-derivable from a running deployed process) — verified here on a BEST-EFFORT basis, only
+        // when the source tree happens to be reachable (dev build/run), so it still catches a
+        // mis-edited csproj during development without turning a real published deployment (with no
+        // source tree nearby, by design) into a false failure.
+        var projectDir = TryFindProjectDirectory();
+        if (projectDir is not null)
+        {
+            var csprojPath = Path.Combine(projectDir, "St4iMachineSimulator.csproj");
+            var csprojText = File.ReadAllText(csprojPath);
+            if (!csprojText.Contains("<ApplicationIcon>Assets\\icon.ico</ApplicationIcon>", StringComparison.Ordinal))
+                throw new InvalidOperationException("selftest branding: csproj does not set <ApplicationIcon>Assets\\icon.ico</ApplicationIcon>");
 
-        var logoBytes = new FileInfo(logoPath).Length;
-        var iconBytes = new FileInfo(iconPath).Length;
-        if (logoBytes == 0) throw new InvalidOperationException("selftest branding: logo.png exists but is 0 bytes");
-        if (iconBytes == 0) throw new InvalidOperationException("selftest branding: icon.ico exists but is 0 bytes");
-
-        if (!File.Exists(csprojPath))
-            throw new InvalidOperationException($"selftest branding: csproj not found at \"{csprojPath}\"");
-        var csprojText = File.ReadAllText(csprojPath);
-        if (!csprojText.Contains("<ApplicationIcon>Assets\\icon.ico</ApplicationIcon>", StringComparison.Ordinal))
-            throw new InvalidOperationException("selftest branding: csproj does not set <ApplicationIcon>Assets\\icon.ico</ApplicationIcon>");
-
-        Console.WriteLine($"SELFTEST branding: logo.png ({logoBytes} bytes) + icon.ico ({iconBytes} bytes) present under \"{Path.Combine(projectDir, "Assets")}\", csproj ApplicationIcon set");
+            Console.WriteLine($"SELFTEST branding: logo.png ({logoBytes} bytes) + icon.ico ({iconBytes} bytes) embedded resources loadable, csproj ApplicationIcon set (source tree found at \"{projectDir}\")");
+        }
+        else
+        {
+            Console.WriteLine($"SELFTEST branding: logo.png ({logoBytes} bytes) + icon.ico ({iconBytes} bytes) embedded resources loadable (no source tree nearby — published/deployed run, csproj ApplicationIcon check skipped)");
+        }
     }
 
-    /// <summary>Walks up from <paramref name="startDir"/> (defaults to <see cref="AppContext.BaseDirectory"/>)
-    /// looking for the directory containing <c>St4iMachineSimulator.csproj</c>.</summary>
-    private static string FindProjectDirectory(string? startDir = null)
+    /// <summary>Reads an embedded WPF <c>&lt;Resource&gt;</c> item (relative pack URI, resolved against
+    /// this assembly — the same pattern <see cref="LocalizationService"/> uses for its i18n dictionaries)
+    /// and returns its byte length, throwing if the stream is missing or empty.</summary>
+    private static long ReadEmbeddedResourceLength(string relativePath)
     {
-        var dir = new DirectoryInfo(startDir ?? AppContext.BaseDirectory);
+        var streamInfo = Application.GetResourceStream(new Uri(relativePath, UriKind.Relative));
+        if (streamInfo is null)
+            throw new InvalidOperationException($"selftest branding: embedded resource \"{relativePath}\" not found (Application.GetResourceStream returned null)");
+
+        using var stream = streamInfo.Stream;
+        if (stream.Length == 0)
+            throw new InvalidOperationException($"selftest branding: embedded resource \"{relativePath}\" is 0 bytes");
+
+        return stream.Length;
+    }
+
+    /// <summary>Best-effort (non-throwing) walk UP from <see cref="AppContext.BaseDirectory"/> looking
+    /// for the directory containing <c>St4iMachineSimulator.csproj</c> — returns null (not an exception)
+    /// when it hits the drive root without finding one, which is the EXPECTED outcome for a published
+    /// single-file exe run away from its source tree (see <see cref="RunBrandingSelfTest"/>'s remarks).</summary>
+    private static string? TryFindProjectDirectory()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
             if (File.Exists(Path.Combine(dir.FullName, "St4iMachineSimulator.csproj"))) return dir.FullName;
             dir = dir.Parent;
         }
 
-        throw new InvalidOperationException($"selftest branding: could not locate St4iMachineSimulator.csproj by walking up from \"{startDir ?? AppContext.BaseDirectory}\"");
+        return null;
     }
 
     /// <summary>

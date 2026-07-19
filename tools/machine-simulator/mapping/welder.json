@@ -1,0 +1,10 @@
+{
+  "name": "welder",
+  "deviceClass": "Automation",
+  "defaultStepType": "weld_spot",
+  "defaultRecipeCode": "RC-WELD-A",
+  "unitMap": {
+    "A": "A",
+    "ms": "ms"
+  }
+}
