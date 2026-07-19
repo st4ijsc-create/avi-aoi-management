@@ -27,4 +27,18 @@
     <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
     <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
   </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\web\dist')">
+    <!-- Task 9 — copies the ALREADY-BUILT web UI bundle (run `npm run build` in ../../web first; this
+         does not invoke npm itself) into wwwroot/ next to the built/published exe, so Program.cs's
+         UseStaticFiles/MapFallbackToFile can serve it. Condition guards a plain `dotnet build` on a
+         fresh checkout (before anyone has run `npm run build`) from failing — the ItemGroup simply
+         contributes zero items and the API-only host still builds and runs fine, just without a UI to
+         serve at "/". PreserveNewest (not Always) so an incremental `dotnet build` doesn't re-copy ~1-2MB
+         of assets every time when the dist/ bundle hasn't changed. -->
+    <Content Include="..\..\web\dist\**\*">
+      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

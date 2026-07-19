@@ -1,7 +1,18 @@
 /**
  * Task 4 — typed EngineApi client + TanStack Query hooks.
  *
- * Base URL: `VITE_ENGINE_URL` env var, default `http://localhost:5199` (Task 3's fixed dev port).
+ * Base URL: `VITE_ENGINE_URL` env var if set, overriding everything below.
+ *
+ * Without that override, the default depends on how this bundle is being served (Task 9):
+ *  - Vite dev server (`import.meta.env.DEV`, port 5173) — the engine is a separate process on its own
+ *    fixed port, so this defaults to `http://localhost:5199` (Task 3's fixed dev port), same as before.
+ *  - A production build (`npm run build` → `dist/`) — Task 9 has `St4i.EngineApi` serve that same
+ *    `dist/` bundle itself (static files + SPA fallback) on whatever port it's listening on, so the API
+ *    lives at the SAME origin the page was loaded from. Defaulting to `""` here makes every `fetch()`
+ *    call below a relative path (`/v1/...`), which resolves against that origin automatically — no
+ *    hardcoded port, works whether the desktop shell's engine child process ends up on 5199 or (rare,
+ *    e.g. port already taken) whatever it fell back to.
+ *
  * Wire shapes mirror `St4i.EngineApi.Fleet.Dtos` exactly (`Fleet/Dtos.cs`) — ASP.NET's minimal-API
  * default JSON options camelCase property names (`ConfigureHttpJsonOptions` uses
  * `JsonSerializerDefaults.Web`) but leave enum VALUES as their literal C# member name via the
@@ -19,7 +30,9 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query"
 
-const BASE_URL = (import.meta.env.VITE_ENGINE_URL as string | undefined) ?? "http://localhost:5199"
+const BASE_URL =
+  (import.meta.env.VITE_ENGINE_URL as string | undefined) ??
+  (import.meta.env.DEV ? "http://localhost:5199" : "")
 
 // ─────────────────────────────────────────────────────────────────────────
 // Wire types — 1:1 with Fleet/Dtos.cs

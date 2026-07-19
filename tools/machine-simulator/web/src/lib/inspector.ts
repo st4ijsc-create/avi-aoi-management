@@ -91,11 +91,18 @@ const RATE_TICK_MS = 500
 
 export type StreamConnectionState = "connecting" | "open" | "closed"
 
-/** Derives `ws(s)://<host>/v1/inspector/stream` from `VITE_ENGINE_URL` (default
- * `http://localhost:5199`), matching Task 4's `lib/api.ts` `BASE_URL` convention exactly so the two
- * only need the env var set in one place. */
+/** Derives `ws(s)://<host>/v1/inspector/stream` from `VITE_ENGINE_URL`, matching Task 4's
+ * `lib/api.ts` `BASE_URL` convention exactly so the two only need the env var set in one place.
+ *
+ * Without an override: dev mode (`import.meta.env.DEV`) defaults to `http://localhost:5199` (same as
+ * `lib/api.ts`, separate engine process on its own port). A production build defaults to
+ * `window.location.origin` instead of `lib/api.ts`'s `""` — `new URL()` needs an absolute string to
+ * parse, and same-origin IS the current page's origin when `St4i.EngineApi` is the one serving this
+ * bundle (Task 9), so this still ends up hitting the same host:port the page itself loaded from. */
 function inspectorStreamUrl(): string {
-  const base = (import.meta.env.VITE_ENGINE_URL as string | undefined) ?? "http://localhost:5199"
+  const base =
+    (import.meta.env.VITE_ENGINE_URL as string | undefined) ??
+    (import.meta.env.DEV ? "http://localhost:5199" : window.location.origin)
   const url = new URL(base)
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
   url.pathname = "/v1/inspector/stream"

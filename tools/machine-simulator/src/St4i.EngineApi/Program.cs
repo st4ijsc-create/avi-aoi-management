@@ -65,6 +65,18 @@ builder.Services.AddSingleton<OnboardingService>();
 
 var app = builder.Build();
 
+// Task 9 — serve the built web UI (`web/dist`, copied into `wwwroot/` at build time — see the
+// St4i.EngineApi.csproj Content item) from this SAME host as the API/WebSocket, so a single process +
+// single port is the whole standalone offline app (no separate static file server, no CORS needed for
+// same-origin requests). `UseDefaultFiles` resolves `/` → `index.html`; `UseStaticFiles` serves the
+// hashed JS/CSS/asset files vite emitted; `MapFallbackToFile` (registered after the API endpoints below,
+// lowest routing priority) sends any other GET that doesn't match an API route or a real static file to
+// `index.html` too, so the SPA's client-side router (wouter) handles deep links / refreshes on routes
+// like `/machines/aoi-01` instead of 404ing. Harmless no-op in dev (`wwwroot` doesn't exist there — Vite
+// serves the UI on :5173 instead, per Task 3/9's dev-mode split).
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors(CorsPolicy);
 app.UseWebSockets();
 
@@ -74,6 +86,8 @@ app.MapScenarioEndpoints();
 app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();
 app.MapInspectorStream();
+
+app.MapFallbackToFile("index.html");
 
 // Force-touch FleetHost now (rather than lazily on the first request) so its fleet.json/default-roster
 // resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is

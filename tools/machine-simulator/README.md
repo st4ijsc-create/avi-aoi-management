@@ -277,3 +277,198 @@ preset, never touches the pipeline/transport/UI:
 See `docs/ECOSYSTEM/62_MACHINE_SIMULATOR_EDGE_MIDDLEWARE_DESIGN_2026-07-18.md` §11 for the full
 detail, and `docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md` for the contract
 every driver ultimately targets.
+
+---
+
+## 13. Web UI standalone offline desktop package (Task 9) / Đóng gói web UI thành app desktop offline
+
+`web/` (Tasks 1-8) is a separate React/Vite UI for the same `St4i.EngineApi` engine host (Task 3) —
+7 screens, i18n (vi/en), dark mode. Task 9 packages it as a native, chrome-less desktop window that
+runs **fully offline** (Demo mode, the default) for a trade-exhibition machine with no internet.
+
+### 13.1 Dev mode — unchanged
+
+```powershell
+cd tools/machine-simulator
+dotnet run --project src/St4i.EngineApi          # engine + API + WS on :5199
+cd web && npm run dev                             # Vite dev server on :5173, proxies to :5199
+```
+
+`web/src/lib/api.ts`/`inspector.ts` default to `http://localhost:5199` in dev
+(`import.meta.env.DEV`) — this split is untouched by Task 9.
+
+### 13.2 Deliverable A (ships) — WebView2 desktop shell, no Rust needed
+
+**Environment reality this build targets:** Rust/Cargo/rustup are **absent** on the exhibition build
+box; a full Tauri build is not available without installing them (see §13.4). WebView2 Runtime and
+.NET SDK 10 **are** present, so this deliverable is built entirely from the .NET toolchain already
+on the machine — same end result as Tauri (a native window embedding Chromium, no browser chrome),
+just assembled from `dotnet publish` + a small WPF `WebView2` host instead of `cargo`/`tauri build`.
+
+**How it works:**
+1. `St4i.EngineApi` (the same ASP.NET host from Task 3) now also serves the built web UI —
+   `St4i.EngineApi.csproj` copies `web/dist/**` into `wwwroot/` at build time (Content item,
+   `Condition="Exists('..\..\web\dist')"` so a fresh checkout without a `web/dist` yet still builds);
+   `Program.cs` adds `UseDefaultFiles()` + `UseStaticFiles()` + `MapFallbackToFile("index.html")` (SPA
+   deep-link fallback) around the existing API/WebSocket endpoint maps. One process, one port, serves
+   UI + API + WS — no CORS needed for this same-origin path (though the dev-mode CORS policy for
+   `:5173`/`tauri://localhost` is untouched).
+2. `web/src/lib/api.ts`'s `BASE_URL` and `inspector.ts`'s `inspectorStreamUrl()` now default to a
+   **relative path** (`""`) / **`window.location.origin`** respectively in a production build
+   (`import.meta.env.PROD`) when `VITE_ENGINE_URL` isn't set — so a `npm run build` bundle served by
+   EngineApi automatically talks to whatever host:port it was loaded from, no hardcoded port. The
+   `VITE_ENGINE_URL` env var still overrides both when set (needed for the Tauri path — see §13.4).
+3. A new project, `src/St4i.DesktopShell` (WPF, `net10.0-windows`, `Microsoft.Web.WebView2` NuGet —
+   added to `St4iMachineSimulator.sln`): on startup, probes `GET http://localhost:5199/v1/fleet`; if
+   nothing answers, spawns `.\engine\St4i.EngineApi.exe` as a child process (stdout/stderr piped to
+   `%LOCALAPPDATA%\St4iMachineSimulator\logs\engine.log`, since it runs with no console window),
+   polls the same URL until it's ready (25s timeout, shows a status line in the window meanwhile),
+   then points a `WebView2` control (explicit user-data folder under `%LOCALAPPDATA%`) at
+   `http://localhost:5199/`. If an EngineApi is **already** running on that port (e.g. re-launching
+   the shell without closing a previous one), it attaches to it instead of spawning a second one —
+   and, correctly, does NOT kill a process it didn't start. Closing the window kills the engine child
+   process (`Process.Kill(entireProcessTree: true)`) if-and-only-if this shell instance owns it — no
+   orphaned `St4i.EngineApi.exe` left running after the visitor closes the app.
+
+**Build & publish (exact commands, run in order):**
+
+```powershell
+cd tools/machine-simulator
+
+# 1. Build the web UI
+cd web
+npm run build                     # -> web/dist/ (tsc -b && vite build)
+cd ..
+
+# 2. Publish the engine (now serving the UI too) — self-contained, single-file, win-x64
+dotnet publish src/St4i.EngineApi/St4i.EngineApi.csproj -c Release -r win-x64 `
+  --self-contained true -p:PublishSingleFile=true -o publish-desktop/engine
+
+# 3. Publish the desktop shell — self-contained, single-file, win-x64
+dotnet publish src/St4i.DesktopShell/St4i.DesktopShell.csproj -c Release -r win-x64 `
+  --self-contained true -p:PublishSingleFile=true -o publish-desktop
+```
+
+**Resulting layout** (the whole `publish-desktop/` folder is the shippable artifact — copy it
+anywhere on the exhibition PC and double-click the shell exe):
+
+```
+publish-desktop/
+  St4i.DesktopShell.exe        <- double-click THIS (native window, no browser chrome)
+  WebView2Loader.dll, *.dll    <- WPF/WebView2 native deps (single-file publish still needs these)
+  engine/
+    St4i.EngineApi.exe         <- spawned as a child process automatically, port 5199
+    wwwroot/                   <- the built web UI (from step 1)
+    fleet.json, mapping/*.json <- default 11-machine roster (§10)
+```
+
+**Run:** double-click `publish-desktop/St4i.DesktopShell.exe`. No dev server, no internet — Demo
+mode (the engine's default transport) fabricates the entire fleet locally. Engine port: **5199**
+(same fixed port as dev mode — `St4i.EngineApi.Program.cs`).
+
+**Verified LIVE (this task):** published the artifact per the commands above, copied the whole
+`publish-desktop/` folder to a clean directory outside the repo (no dev server, nothing else
+running on :5199/:5173), launched `St4i.DesktopShell.exe` — native window opened
+(`MainWindowTitle="ST4I Machine Simulator"`), engine child process (`St4i.EngineApi`, separate PID)
+came up and answered `GET /v1/fleet` within the poll window, dashboard rendered correctly (navy/white
+theme, Vietnamese UI, not blank), clicked **"Chạy Fleet"** — all 11 machines went online and started
+producing cycles (verified via a `GET /v1/fleet` snapshot mid-run: 34+ cycles, ~93% FPY, realistic
+per-machine sparklines/status), all with **zero network activity** (Demo mode). Closed the window —
+both the shell process and the engine child process exited cleanly, port 5199 freed, no orphan.
+Screenshots taken by capturing the actual native window's on-screen pixels (not a browser tab).
+
+### 13.3 Dev-mode split vs. packaged split — do not confuse the two
+
+| | Dev mode (§13.1) | Packaged (§13.2) |
+|---|---|---|
+| UI served by | Vite (`:5173`) | `St4i.EngineApi` itself (`:5199`, static files) |
+| `VITE_ENGINE_URL` default | `http://localhost:5199` (`import.meta.env.DEV`) | `""` / same-origin (`import.meta.env.PROD`) |
+| Processes | 2 (Vite + `dotnet run` EngineApi), started manually | 1 double-click (`St4i.DesktopShell.exe` spawns EngineApi) |
+
+### 13.4 Deliverable B (documented, NOT built) — Tauri path
+
+**What was attempted:** `where cargo rustup rustc` → nothing found; `where cl.exe` (the MSVC
+linker Rust's default `x86_64-pc-windows-msvc` target needs) → also nothing found. A working
+`rustup` + Tauri build here would mean installing **both** the Rust toolchain **and** Visual Studio
+Build Tools (C++ workload) — realistically a multi-GB download and tens of minutes, with real risk
+of stalling on this exhibition-prep box. Per this task's explicit instruction ("do not sink time
+into a fragile Rust install — Deliverable A is what ships"), **no install was attempted.** Deliverable
+A (§13.2) is fully built, verified, and is what ships for the show.
+
+**What IS done toward Deliverable B:** the `web/src-tauri/` scaffold already existed (Tauri 2,
+`create-tauri-app` defaults — `Cargo.toml`, `tauri.conf.json`, icons, a CORS allowlist for
+`tauri://localhost` already present in `St4i.EngineApi/Program.cs` from Task 3, anticipating exactly
+this path). This task added the one safe, non-Rust config change: `tauri.conf.json`'s
+`bundle.externalBin` now declares `"binaries/st4i-engineapi"` — Tauri's sidecar convention. Everything
+below is **documented, not compiled/verified** (no Rust toolchain in this environment) — treat it as
+a recipe, not a proven build.
+
+**To build the Tauri exe on a machine WITH Rust + MSVC Build Tools:**
+
+1. **Install Rust:** https://rustup.rs (`rustup-init.exe`, default `x86_64-pc-windows-msvc` target)
+   — needs the "Desktop development with C++" workload from Visual Studio Build Tools
+   (https://visualstudio.microsoft.com/visual-cpp-build-tools/) if not already present.
+2. **Publish the engine sidecar**, then copy+rename it into Tauri's expected sidecar path — Tauri
+   requires the binary filename suffixed with the Rust **target triple**:
+   ```powershell
+   dotnet publish src/St4i.EngineApi/St4i.EngineApi.csproj -c Release -r win-x64 `
+     --self-contained true -p:PublishSingleFile=true -o publish-tauri-engine
+   mkdir web/src-tauri/binaries -Force
+   copy publish-tauri-engine/St4i.EngineApi.exe `
+        web/src-tauri/binaries/st4i-engineapi-x86_64-pc-windows-msvc.exe
+   ```
+3. **Add the shell plugin** (needed to spawn the sidecar from Rust) —
+   `cargo add tauri-plugin-shell` in `web/src-tauri/`, and grant it permission in
+   `web/src-tauri/capabilities/default.json` (add `"shell:allow-execute"` to the `permissions`
+   array, scoped to the `st4i-engineapi` sidecar per Tauri's shell-plugin docs).
+4. **Spawn-on-startup / kill-on-exit**, in `web/src-tauri/src/lib.rs` (illustrative — adjust to
+   the actual `tauri-plugin-shell`/`tauri` 2.x API surface, which this environment cannot verify):
+   ```rust
+   use tauri_plugin_shell::ShellExt;
+   use tauri_plugin_shell::process::CommandChild;
+   use std::sync::Mutex;
+
+   struct EngineHandle(Mutex<Option<CommandChild>>);
+
+   #[cfg_attr(mobile, tauri::mobile_entry_point)]
+   pub fn run() {
+     tauri::Builder::default()
+       .plugin(tauri_plugin_shell::init())
+       .manage(EngineHandle(Mutex::new(None)))
+       .setup(|app| {
+         let sidecar = app.shell().sidecar("st4i-engineapi")?;
+         let (_rx, child) = sidecar.spawn().expect("failed to spawn St4i.EngineApi sidecar");
+         app.state::<EngineHandle>().0.lock().unwrap().replace(child);
+         // Poll http://localhost:5199/v1/fleet before navigating, same readiness check as
+         // St4i.DesktopShell.MainWindow's StartOrAttachToEngineAsync (§13.2) — omitted here for
+         // brevity; port the same logic.
+         Ok(())
+       })
+       .on_window_event(|window, event| {
+         if let tauri::WindowEvent::CloseRequested { .. } = event {
+           if let Some(child) = window.app_handle().state::<EngineHandle>().0.lock().unwrap().take() {
+             let _ = child.kill();
+           }
+         }
+       })
+       .run(tauri::generate_context!())
+       .expect("error while running tauri application");
+   }
+   ```
+5. **Build**, with `VITE_ENGINE_URL` forced to the sidecar's fixed port — Tauri's frontend loads
+   from the `tauri://localhost` custom protocol, NOT from `St4i.EngineApi`'s own HTTP server, so the
+   §13.2 same-origin default does **not** apply here; the existing CORS allowlist for
+   `tauri://localhost` in `Program.cs` exists precisely for this cross-origin call pattern:
+   ```powershell
+   cd web
+   $env:VITE_ENGINE_URL = "http://localhost:5199"
+   npm run build
+   npx tauri build
+   ```
+   Produces an MSI/NSIS installer (and a portable `.exe`) under `web/src-tauri/target/release/bundle/`.
+
+*(VI: môi trường build này KHÔNG có Rust/Cargo lẫn MSVC linker — cài cả hai để build Tauri thật sự
+sẽ tốn nhiều GB và nhiều phút, rủi ro treo máy ngay trước triển lãm, nên theo đúng chỉ dẫn task đã
+KHÔNG cài. Deliverable A (§13.2, WebView2 + EngineApi) đã build+publish+chạy thật LIVE offline,
+đó là thứ mang đi triển lãm. Phần Tauri ở trên là công thức đã ghi lại đầy đủ — CHƯA compile/verify
+— cho máy nào có sẵn Rust dùng sau này.)*

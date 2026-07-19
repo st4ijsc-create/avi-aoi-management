@@ -1,0 +1,10 @@
+<Application x:Class="St4i.DesktopShell.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <!--
+        No DI graph, no other windows — this whole app is "start the engine, show it in a WebView2", so
+        StartupUri going straight to MainWindow (unlike St4iMachineSimulator's App.xaml, which defers to
+        a DI composition root in code-behind) is intentional, not an oversight.
+    -->
+</Application>

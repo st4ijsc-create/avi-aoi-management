@@ -1,0 +1,41 @@
+<Window x:Class="St4i.DesktopShell.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="ST4I Machine Simulator"
+        Width="1440" Height="900"
+        MinWidth="1024" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="#0B1220">
+    <!--
+        Task 9 — the standalone desktop window. Plain WPF chrome (native title bar, resizable, min-size
+        floor) is kept — "no browser chrome" in the brief means no address bar/tabs/bookmarks (WebView2
+        never has those to begin with, it's an embeddable control), not a borderless/frameless window;
+        a normal title bar lets a visitor move/resize/minimize the app like any other Windows program.
+
+        Two layers: the WebView2 fills the window once the engine is ready; a simple dark splash
+        (StatusPanel) covers it until then, so there's never a flash of a blank white WebView2 control
+        while the child engine process boots (MainWindow.xaml.cs's StartOrAttachToEngineAsync usually
+        resolves in well under a second — it's a local process — but a slow exhibition-PC first boot,
+        antivirus scan, etc. can take a few seconds).
+    -->
+    <Grid>
+        <wv2:WebView2 x:Name="Browser" Visibility="Collapsed" />
+        <StackPanel x:Name="StatusPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock Text="ST4I Machine Simulator"
+                       Foreground="White"
+                       FontSize="24"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,12" />
+            <TextBlock x:Name="StatusText"
+                       Text="Starting engine…"
+                       Foreground="#9CA9C9"
+                       FontSize="14"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="480"
+                       TextAlignment="Center" />
+        </StackPanel>
+    </Grid>
+</Window>
