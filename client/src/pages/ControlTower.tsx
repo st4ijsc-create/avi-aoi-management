@@ -260,9 +260,13 @@ function KpiStrip({
         tone={oee == null ? "default" : oee < 60 ? "warning" : "success"}
       />
       <StatChip icon={<Boxes />} label={t("controlTower.kpi.wip", "WIP units")} value={fmtNum(wip)} />
+      {/* W1-P0: kpiSummary đếm cảnh báo ĐANG MỞ (andon chưa xử lý + sự kiện an toàn,
+          KHÔNG theo cửa sổ thời gian) — nhãn phải nói rõ phạm vi để không mâu thuẫn
+          với panel "Alarm health (24h)" vốn đếm cảnh báo PHÁT SINH trong 24h. */}
       <StatChip
         icon={<AlertTriangle />}
-        label={t("controlTower.kpi.alarms", "Alarms crit / high")}
+        label="Cảnh báo đang mở · nặng/cao"
+        title="Đếm cảnh báo chưa xử lý (mọi thời điểm): andon chưa resolve + sự kiện an toàn. Khác với panel 'Tình trạng cảnh báo (24h)' — đếm số phát sinh trong cửa sổ 24h."
         value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
         tone={alarmsCrit ? "error" : "default"}
       />

@@ -28,6 +28,13 @@ export interface DrillRow {
   ng: number;
   ntf: number;
   yieldRate: number;
+  /**
+   * W1: bucket "chưa gán" (thiếu mapping master data). Hàng render mờ (muted),
+   * mang badge "Thiếu mapping" + tooltip giải thích, và xếp cuối danh sách.
+   */
+  isUnassigned?: boolean;
+  /** Tooltip giải thích vì sao chưa gán + nơi khắc phục (Quản lý dữ liệu). */
+  unassignedNote?: string;
 }
 
 export interface DrillNodeLeafAction {
@@ -70,6 +77,8 @@ export function DrillNode({
       className={cn(
         "rounded-lg border p-4 transition-colors",
         interactive && "cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // W1: hàng "chưa gán" render mờ (dữ liệu thật nhưng thiếu mapping master data).
+        data.isUnassigned && "border-dashed bg-muted/30",
       )}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
@@ -88,10 +97,23 @@ export function DrillNode({
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {icon != null && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-          <span className="truncate font-medium">{data.name}</span>
-          {data.code && (
+          <span className={cn("truncate font-medium", data.isUnassigned && "text-muted-foreground")}>
+            {data.name}
+          </span>
+          {/* W1: hàng "chưa gán" — ẩn badge code sentinel ('Unknown'/'UNASSIGNED'),
+              thay bằng badge cảnh báo + tooltip hướng dẫn khắc phục. */}
+          {data.code && !data.isUnassigned && (
             <Badge variant="outline" className="shrink-0 text-xs">
               {data.code}
+            </Badge>
+          )}
+          {data.isUnassigned && (
+            <Badge
+              variant="outline"
+              className="shrink-0 border-dashed text-xs font-normal text-muted-foreground"
+              title={data.unassignedNote}
+            >
+              Thiếu mapping
             </Badge>
           )}
         </div>

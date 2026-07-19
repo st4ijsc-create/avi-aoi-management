@@ -798,6 +798,8 @@ export async function getTopBottomMachines(filters?: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
+  // doc65 W1 (additive optional) — scope trục ISA-95; no-op khi không truyền.
+  factoryId?: number;
   userId?: number;
   userRole?: string;
 }) {
@@ -807,6 +809,12 @@ export async function getTopBottomMachines(filters?: {
   const conditions: SQL[] = [];
   if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  // doc65 W1 — hierarchy filter, cùng subquery pattern như getDashboardStats (gap B3).
+  if (filters?.factoryId) {
+    conditions.push(inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, {
+      factoryId: filters.factoryId,
+    })));
+  }
 
   // Access filter by user assignments
   if (filters?.userId && filters?.userRole !== 'admin') {

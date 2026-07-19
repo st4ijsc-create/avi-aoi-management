@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -132,6 +133,8 @@ type MachineStats = {
   ng: number;
   ntf: number;
   yieldRate: number;
+  /** Canonical TRUE first-pass yield % per machine (server getMachineStats). */
+  fpy?: number;
   lineId?: number;
   lineName?: string;
   stationId?: number;
@@ -575,8 +578,10 @@ export default function Dashboard() {
   }, [ngTimeFilter]);
 
   // doc 64 IA-10 S1 — trục phạm vi ISA-95: axis THẮNG dropdown factory cục bộ;
-  // machineId từ trục đi thẳng vào stats. getAllMachinesStats/getAllOEE server
-  // CHƯA nhận scope (DEP-S2, ghi doc 64) — các widget đó vẫn toàn-cục.
+  // machineId từ trục đi thẳng vào stats.
+  // doc65 W1 — wired thêm: getDailyStats/getHourlyStats/getTopBottomMachines
+  // nay đều theo effectiveFactoryId (hourly nhận cả lineId/machineId). Còn lệch
+  // duy nhất: sparkline 7 ngày không hỗ trợ machineId (có ghi chú trung thực).
   const { scope: assetScope } = useScope(["factory", "line", "machine"]);
   useScopeWired();
   const effectiveFactoryId =
@@ -617,6 +622,9 @@ export default function Dashboard() {
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
     limit: 5,
+    // doc65 W1 — xếp hạng máy theo trục phạm vi ISA-95 (server nhận factoryId,
+    // additive optional). Trục máy đơn không áp cho ranking đa-máy.
+    factoryId: effectiveFactoryId,
   }, {
     refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
@@ -627,14 +635,22 @@ export default function Dashboard() {
   });
 
   // Fetch daily stats for sparklines
+  // doc65 W1 — sparkline theo trục phạm vi (trước đây chỉ theo dropdown factory
+  // cục bộ, lệch với KPI dùng effectiveFactoryId). Server chưa nhận machineId
+  // cho daily rollup → khi trục chọn tới mức MÁY, sparkline vẫn cấp nhà máy
+  // (có ghi chú trung thực tại khối KPI).
   const { data: dailyStats } = trpc.dashboard.getDailyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
     days: 7,
   });
 
   // Fetch hourly stats for timeline chart
+  // doc65 W1 — chart 24h theo trục phạm vi ISA-95 đầy đủ (server vốn ĐÃ nhận
+  // factoryId/lineId/machineId — trước đây client chỉ truyền dropdown factory).
   const { data: hourlyStats } = trpc.dashboard.getHourlyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     hours: 24,
   }, {
     refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
@@ -797,11 +813,11 @@ export default function Dashboard() {
     setLastRefreshTime(new Date());
   }, [refetchStats, refetchMachines]);
 
-  // Export NG Visual as PDF
-  const handleExportPDF = useCallback(async () => {
-    setExportingPDF(true);
-    try {
-      // Prepare data for PDF
+  // doc65 W1 [P1 đã duyệt] — builder HTML báo cáo NG dùng chung cho hai đường xuất:
+  //  - "Xuất PDF (in)": mở cửa sổ mới + print-stylesheet A4 + window.print()
+  //  - "Xuất HTML": tải tệp .html (behavior cũ, dưới nhãn trung thực)
+  const buildNGReportHtml = useCallback((opts: { autoPrint: boolean }) => {
+      // Prepare data for report
       const workstationData = ngWorkstationSummary ? (ngWorkstationSummary as any[]).map((ws: any) => ({
         code: ws.workstationCode || '',
         name: ws.workstationName || 'Unknown',
@@ -842,9 +858,22 @@ export default function Dashboard() {
             .ng-warning { color: #ca8a04; }
             .ng-danger { color: #dc2626; }
             .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
+            /* doc65 W1 — print-stylesheet: khổ A4, font hệ, bảng không vỡ hàng qua trang, ẩn phần tử không in */
+            @page { size: A4; margin: 12mm; }
+            @media print {
+              body { padding: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, "Helvetica Neue", sans-serif; }
+              table { page-break-inside: auto; }
+              tr { page-break-inside: avoid; }
+              thead { display: table-header-group; }
+              .no-print { display: none !important; }
+            }
           </style>
+          ${opts.autoPrint ? '<script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });</' + 'script>' : ''}
         </head>
         <body>
+          ${opts.autoPrint ? `<div class="no-print" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+            ${t("dashboard.exportReport")}: chọn "Save as PDF / Lưu thành PDF" trong hộp thoại in. <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">In / Lưu PDF</button>
+          </div>` : ''}
           <div class="header">
             <h1>${t("dashboard.ngReportTitle")}</h1>
             <div class="meta">
@@ -912,8 +941,41 @@ export default function Dashboard() {
         </html>
       `;
 
-      // Create blob and download
-      const blob = new Blob([htmlContent], { type: 'text/html' });
+      return htmlContent;
+  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter, t]);
+
+  // doc65 W1 [P1 đã duyệt] — "Xuất PDF (in)": PDF THẬT qua hộp thoại in của trình
+  // duyệt (người dùng chọn Save as PDF). Kiosk/panel-PC có thể chặn window.open
+  // → toast hướng dẫn cho phép popup hoặc dùng "Xuất HTML".
+  const handleExportPDF = useCallback(() => {
+    setExportingPDF(true);
+    try {
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast.error('Cửa sổ in bị trình duyệt chặn', {
+          description: 'Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng "Xuất HTML".',
+        });
+        return;
+      }
+      win.document.open();
+      win.document.write(buildNGReportHtml({ autoPrint: true }));
+      win.document.close();
+      win.focus();
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast.error(t("dashboard.exportReportError"), {
+        description: t("dashboard.exportReportErrorDesc"),
+      });
+    } finally {
+      setExportingPDF(false);
+    }
+  }, [buildNGReportHtml, t]);
+
+  // doc65 W1 — "Xuất HTML": giữ behavior tải tệp .html cũ, nay dưới nhãn trung thực.
+  const handleExportHTML = useCallback(() => {
+    setExportingPDF(true);
+    try {
+      const blob = new Blob([buildNGReportHtml({ autoPrint: false })], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -927,14 +989,14 @@ export default function Dashboard() {
         description: t("dashboard.exportSuccessDesc"),
       });
     } catch (error) {
-      console.error('Export PDF error:', error);
+      console.error('Export HTML error:', error);
       toast.error(t("dashboard.exportReportError"), {
         description: t("dashboard.exportReportErrorDesc"),
       });
     } finally {
       setExportingPDF(false);
     }
-  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter]);
+  }, [buildNGReportHtml, ngTimeFilter, t]);
 
   // Filter workshops by selected factory
   const filteredWorkshops = useMemo(() => {
@@ -958,7 +1020,7 @@ export default function Dashboard() {
       line: { id: number; name: string; workshopId: number } | null;
       workshop: { id: number; name: string; factoryId: number } | null;
       factory: { id: number; name: string } | null;
-      stats: { total: number; ok: number; ng: number; ntf: number; yieldRate: number };
+      stats: { total: number; ok: number; ng: number; ntf: number; yieldRate: number; fpy: number };
     };
     
     const machines = (machinesStats as MachineWithHierarchy[]).map(m => ({
@@ -972,6 +1034,8 @@ export default function Dashboard() {
       ng: m.stats.ng,
       ntf: m.stats.ntf,
       yieldRate: m.stats.yieldRate,
+      // doc65 W1 — FPY canonical per-machine từ server (true first-pass yield).
+      fpy: m.stats.fpy,
       lineId: m.line?.id,
       lineName: m.line?.name || t('dashboard.unclassified'),
       stationId: m.station?.id,
@@ -1006,13 +1070,17 @@ export default function Dashboard() {
     return grouped;
   }, [machinesStats, selectedFactory, selectedWorkshop, selectedLine, machineStatusFilter, onlineMachines]);
 
-  // Calculate FPY, FY, NTFY for a machine
+  // doc65 W1 — sự thật số liệu per-machine:
+  //  - fpy: dùng trường CANONICAL từ server (true first-pass yield, getMachineStats);
+  //    fallback ok/total chỉ khi server chưa trả (dữ liệu cũ trong cache).
+  //  - ng/total và ntf/total KHÔNG phải "FY"/"NTFY" — đó là tỷ lệ NG và tỷ lệ NTF,
+  //    trả về dưới tên trung thực ngPct/ntfPct (nhãn hiển thị "NG %"/"NTF %").
   const calculateYields = (machine: MachineStats) => {
     const total = machine.total || 1;
-    const fpy = ((machine.ok / total) * 100).toFixed(1);
-    const fy = ((machine.ng / total) * 100).toFixed(1);
-    const ntfy = ((machine.ntf / total) * 100).toFixed(1);
-    return { fpy, fy, ntfy };
+    const fpy = (typeof machine.fpy === "number" ? machine.fpy : (machine.ok / total) * 100).toFixed(1);
+    const ngPct = ((machine.ng / total) * 100).toFixed(1);
+    const ntfPct = ((machine.ntf / total) * 100).toFixed(1);
+    return { fpy, ngPct, ntfPct };
   };
 
   // Calculate yield alerts based on thresholds
@@ -1411,6 +1479,14 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
+          <>
+          {/* doc65 W1 — ghi chú trung thực: số KPI lọc tới mức MÁY theo trục, nhưng
+              sparkline 7 ngày (getDailyStats) chỉ hỗ trợ tới mức nhà máy. */}
+          {assetScope.machineId != null && (
+            <p className="text-xs text-muted-foreground -mb-2">
+              Đồ thị xu hướng 7 ngày trong các thẻ KPI: phạm vi toàn nhà máy (chưa lọc theo máy đang chọn)
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
@@ -1516,6 +1592,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           </div>
+          </>
         )}
 
         {/* Yield Alert Widget + Machine Status Widget - Side by Side */}
@@ -2071,20 +2148,35 @@ export default function Dashboard() {
                       <SelectItem value="month">{t("dashboard.last30Days")}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportPDF}
-                    disabled={exportingPDF || (effectiveNGSummary.source === 'none' && !ngTopNGPoints)}
-                    className="flex items-center gap-1"
-                  >
-                    {exportingPDF ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileDown className="h-4 w-4" />
-                    )}
-                    {exportingPDF ? t("dashboard.exporting") : t("dashboard.exportReport")}
-                  </Button>
+                  {/* doc65 W1 [P1 đã duyệt] — gom 2 lựa chọn xuất vào 1 nút:
+                      "Xuất PDF (in)" = print-dialog thật; "Xuất HTML" = tải tệp (behavior cũ, nhãn trung thực) */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={exportingPDF || (effectiveNGSummary.source === 'none' && !ngTopNGPoints)}
+                        className="flex items-center gap-1"
+                      >
+                        {exportingPDF ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileDown className="h-4 w-4" />
+                        )}
+                        {exportingPDF ? t("dashboard.exporting") : t("dashboard.exportReport")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleExportPDF}>
+                        <FileText className="h-4 w-4" />
+                        Xuất PDF (in)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleExportHTML}>
+                        <FileDown className="h-4 w-4" />
+                        Xuất HTML (tải tệp)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
@@ -2530,7 +2622,7 @@ export default function Dashboard() {
                     <CardContent className="p-6">
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {machines.map((machine) => {
-                          const { fpy, fy, ntfy } = calculateYields(machine);
+                          const { fpy, ngPct, ntfPct } = calculateYields(machine);
                           const fpyNum = parseFloat(fpy);
                           const status = getStatusIndicator(fpyNum);
                           const StatusIcon = status.icon;
@@ -2554,14 +2646,16 @@ export default function Dashboard() {
                                 )}
                                 {visibleMetrics.fy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
-                                    <p className="text-base font-bold text-destructive">{fy}%</p>
+                                    {/* doc65 W1 — giá trị là ng/total: nhãn trung thực "NG %" (trước đây ghi sai "FY") */}
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NG %</p>
+                                    <p className="text-base font-bold text-destructive">{ngPct}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
-                                    <p className="text-base font-bold text-warning">{ntfy}%</p>
+                                    {/* doc65 W1 — giá trị là ntf/total: nhãn trung thực "NTF %" (trước đây ghi sai "NTFY") */}
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NTF %</p>
+                                    <p className="text-base font-bold text-warning">{ntfPct}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
@@ -2701,9 +2795,10 @@ export default function Dashboard() {
                 }`}
                 onClick={() => setMachineDialogStatusFilter("NG")}
               >
-                <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.fy")}</p>
+                {/* doc65 W1 — nhãn trung thực: giá trị là ng/total (tỷ lệ NG), không phải "FY" */}
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">NG %</p>
                 <p className="text-2xl font-bold text-destructive">
-                  {calculateYields(selectedMachine).fy}%
+                  {calculateYields(selectedMachine).ngPct}%
                 </p>
                 <p className="text-xs text-destructive/70 mt-1">{selectedMachine.ng} {t("common.items")}</p>
               </div>
@@ -2715,9 +2810,10 @@ export default function Dashboard() {
                 }`}
                 onClick={() => setMachineDialogStatusFilter("NTF")}
               >
-                <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.ntfy")}</p>
+                {/* doc65 W1 — nhãn trung thực: giá trị là ntf/total (tỷ lệ NTF), không phải "NTFY" */}
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">NTF %</p>
                 <p className="text-2xl font-bold text-warning">
-                  {calculateYields(selectedMachine).ntfy}%
+                  {calculateYields(selectedMachine).ntfPct}%
                 </p>
                 <p className="text-xs text-warning/70 mt-1">{selectedMachine.ntf} {t("common.items")}</p>
               </div>
@@ -2935,8 +3031,9 @@ export default function Dashboard() {
                   <ThumbsDown className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
-                  <p className="font-medium">{t("dashboard.fyFullName")}</p>
-                  <p className="text-xs text-muted-foreground">{t("dashboard.fyDescription")}</p>
+                  {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NG (ng/total) */}
+                  <p className="font-medium">NG % — Tỷ lệ NG</p>
+                  <p className="text-xs text-muted-foreground">Số bo NG / tổng số kiểm tra trên máy</p>
                 </div>
               </div>
               <Button
@@ -2953,8 +3050,9 @@ export default function Dashboard() {
                   <AlertTriangle className="h-4 w-4 text-warning" />
                 </div>
                 <div>
-                  <p className="font-medium">{t("dashboard.ntfyFullName")}</p>
-                  <p className="text-xs text-muted-foreground">{t("dashboard.ntfyDescription")}</p>
+                  {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NTF (ntf/total) */}
+                  <p className="font-medium">NTF % — Tỷ lệ NTF</p>
+                  <p className="text-xs text-muted-foreground">Số bo NTF (lỗi ảo) / tổng số kiểm tra trên máy</p>
                 </div>
               </div>
               <Button

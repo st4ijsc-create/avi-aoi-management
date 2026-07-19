@@ -40,6 +40,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Activity, AlertTriangle, Bell, CheckCircle2, Maximize2, Minimize2,
   Volume2, VolumeX, ShieldAlert, Cpu, Wifi, TrendingDown, RefreshCw, Search,
 } from "lucide-react";
@@ -113,6 +117,46 @@ function interlockSeverity(action?: string | null): Severity {
   if (action === "reduce_speed") return "medium";
   return "low";
 }
+
+/**
+ * MQTT severity thật từ bản ghi thay vì hardcode "high" (W1).
+ * ĐÃ XÁC MINH: mqttAlert.unresolved đọc bảng mqtt_alert_history (server/db/mqtt.ts
+ * getUnresolvedMqttAlerts) — bảng này KHÔNG có cột severity trong schema
+ * (drizzle/schema/mqtt.ts:192-219). Severity critical/warning mà
+ * server/mqttAlertScheduler.ts:115,174,238,306 ghi ra nằm ở bảng KHÁC
+ * (mqtt_connection_alerts) chưa được console này đọc. Vì vậy: đọc phòng thủ
+ * `severity` nếu server bổ sung sau này — critical→critical; warning→medium
+ * (2 mức server ánh xạ vào thang 4 mức của console: warning < critical nên
+ * xếp medium); thiếu/không rõ → fallback "high" (giữ hành vi cũ, không hạ cấp
+ * cảnh báo hạ tầng khi chưa biết mức thật).
+ */
+function mqttSeverity(s?: string | null): Severity {
+  if (s === "critical") return "critical";
+  if (s === "warning") return "medium";
+  return "high";
+}
+
+/**
+ * Threshold severity (W1). ĐÃ XÁC MINH: alert.history đọc bảng alert_history và
+ * bảng cha alert_settings — cả hai đều KHÔNG có cột severity
+ * (drizzle/schema/alerts.ts:5-50). Đọc phòng thủ nếu record có, fallback "medium".
+ */
+function thresholdSeverity(s?: string | null): Severity {
+  if (s === "critical" || s === "high" || s === "medium" || s === "low") return s;
+  return "medium";
+}
+
+/**
+ * Khả năng hành động theo nguồn — nhãn nút phải nói đúng hành vi mutation (W1):
+ *  - interlock/mqtt: server CHỈ có resolve (đóng vĩnh viễn), không có ack riêng
+ *    → một nút "Xử lý xong" duy nhất, bọc xác nhận.
+ *  - predictive/threshold: console này CHỈ nối mutation acknowledge
+ *    (/predictive-alerts redirect về /ops-console — không còn trang riêng)
+ *    → một nút "Xác nhận" duy nhất, không hiện nút resolve giả.
+ *  - andon: có đủ cả ack lẫn resolve.
+ */
+const isResolveOnly = (s: AlertSource) => s === "interlock" || s === "mqtt";
+const isAckOnly = (s: AlertSource) => s === "predictive" || s === "threshold";
 
 function ageLabel(from: Date, now: number): string {
   const sec = Math.max(0, Math.floor((now - from.getTime()) / 1000));
@@ -275,7 +319,7 @@ export default function OpsConsole() {
         id: a.id,
         title: a.ruleName ?? "MQTT alert",
         message: a.message ?? "",
-        severity: "high",
+        severity: mqttSeverity(a.severity),
         acknowledged: false,
         resolved: false,
         raisedAt: a.triggeredAt ? new Date(a.triggeredAt) : new Date(),
@@ -292,7 +336,7 @@ export default function OpsConsole() {
         id: h.id,
         title: h.message ?? t("opsConsole.thresholdBreach", "Threshold breach"),
         message: t("opsConsole.triggeredValue", "Triggered value: {{v}}", { v: h.triggeredValue }),
-        severity: "medium",
+        severity: thresholdSeverity(h.severity),
         acknowledged: false,
         resolved: false,
         raisedAt: new Date(h.createdAt),
@@ -308,28 +352,33 @@ export default function OpsConsole() {
     });
   }, [andonQuery.data, predictiveQuery.data, interlockEvents.data, mqttUnresolved.data, thresholdHistory.data, t]);
 
-  // ── unified ack / resolve dispatch ──────────────────────────────────────────
+  // ── unified ack / resolve dispatch (W1: nhãn nút = đúng hành vi mutation) ───
+  // ack: CHỈ những nguồn có mutation acknowledge thật. interlock/mqtt không có
+  // ack trên server → không bao giờ đi qua đây (nút "Xác nhận" không hiện).
   const ack = useCallback((a: NormalAlert) => {
     switch (a.source) {
       case "andon": ackAndon.mutate({ id: a.id }); break;
       case "predictive": ackPredictive.mutate({ id: a.id }); break;
       case "threshold": ackThreshold.mutate({ id: a.id }); break;
-      // interlock + mqtt have no separate ack → resolve is the only action.
-      case "interlock": resolveInterlock.mutate({ id: a.id }); break;
-      case "mqtt": resolveMqtt.mutate({ id: a.id }); break;
     }
-  }, [ackAndon, ackPredictive, ackThreshold, resolveInterlock, resolveMqtt]);
+  }, [ackAndon, ackPredictive, ackThreshold]);
 
+  // resolve: CHỈ những nguồn có mutation resolve thật. predictive/threshold chỉ
+  // có ack ở console này → không hiện nút "Xử lý xong" giả cho chúng.
   const resolve = useCallback((a: NormalAlert) => {
     switch (a.source) {
       case "andon": resolveAndon.mutate({ id: a.id }); break;
       case "interlock": resolveInterlock.mutate({ id: a.id }); break;
       case "mqtt": resolveMqtt.mutate({ id: a.id }); break;
-      // predictive resolve needs notes → keep ack here; full resolve stays on its page.
-      case "predictive": ackPredictive.mutate({ id: a.id }); break;
-      case "threshold": ackThreshold.mutate({ id: a.id }); break;
     }
-  }, [resolveAndon, resolveInterlock, resolveMqtt, ackPredictive, ackThreshold]);
+  }, [resolveAndon, resolveInterlock, resolveMqtt]);
+
+  // interlock/mqtt resolve là đóng VĨNH VIỄN → bắt buộc xác nhận qua AlertDialog.
+  const [confirmAlert, setConfirmAlert] = useState<NormalAlert | null>(null);
+  const requestResolve = useCallback((a: NormalAlert) => {
+    if (isResolveOnly(a.source)) setConfirmAlert(a);
+    else resolve(a);
+  }, [resolve]);
 
   // ── full-screen / TV mode ───────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement>(null);
@@ -436,7 +485,18 @@ export default function OpsConsole() {
           <Kpi label={t("opsConsole.kpiHigh", "High")} value={counts.high} accent="text-warning" />
           <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={counts.unacked} accent="text-warning" />
           <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={counts.total} />
-          <Kpi label={t("opsConsole.kpiMtta", "MTTA (s, 24h)")} value={andonMetrics.data?.avgMttaSeconds ?? 0} />
+          {/* W1: server (andonRouter.metrics) coalesce avg NULL→0 khi CHƯA có ack
+              nào trong 24h — nên 0 là sentinel "chưa có dữ liệu", không phải MTTA
+              0 giây thật → hiển thị "—" thay vì con số gây hiểu nhầm. Nhãn nói rõ
+              phạm vi: chỉ đo sự kiện Andon, không gồm các nguồn cảnh báo khác. */}
+          <Kpi
+            label="MTTA Andon (24h)"
+            value={
+              andonMetrics.data == null || !andonMetrics.data.avgMttaSeconds
+                ? "—"
+                : `${andonMetrics.data.avgMttaSeconds}s`
+            }
+          />
         </div>
 
         <Tabs defaultValue="warroom">
@@ -487,14 +547,16 @@ export default function OpsConsole() {
                               </div>
                             </div>
                             <div className="flex shrink-0 flex-col gap-1">
-                              {!a.acknowledged && (
+                              {!isResolveOnly(a.source) && !a.acknowledged && (
                                 <Button size="sm" variant="secondary" disabled={isPending} onClick={() => ack(a)}>
-                                  {t("opsConsole.ack", "Ack")}
+                                  Xác nhận
                                 </Button>
                               )}
-                              <Button size="sm" variant="outline" disabled={isPending} onClick={() => resolve(a)}>
-                                {t("opsConsole.resolve", "Resolve")}
-                              </Button>
+                              {!isAckOnly(a.source) && (
+                                <Button size="sm" variant="outline" disabled={isPending} onClick={() => requestResolve(a)}>
+                                  Xử lý xong
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -602,14 +664,16 @@ export default function OpsConsole() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            {!a.acknowledged && (
+                            {!isResolveOnly(a.source) && !a.acknowledged && (
                               <Button size="sm" variant="outline" disabled={isPending} onClick={() => ack(a)}>
-                                {t("opsConsole.ack", "Ack")}
+                                Xác nhận
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost" disabled={isPending} onClick={() => resolve(a)}>
-                              {t("opsConsole.resolve", "Resolve")}
-                            </Button>
+                            {!isAckOnly(a.source) && (
+                              <Button size="sm" variant="ghost" disabled={isPending} onClick={() => requestResolve(a)}>
+                                Xử lý xong
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -620,12 +684,38 @@ export default function OpsConsole() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* W1: interlock/MQTT chỉ có mutation RESOLVE (đóng vĩnh viễn, server không
+            có ack riêng) → hành động phải qua bước xác nhận tường minh. */}
+        <AlertDialog
+          open={confirmAlert !== null}
+          onOpenChange={(open) => { if (!open) setConfirmAlert(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Xác nhận xử lý xong?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAlert
+                  ? `Cảnh báo "${confirmAlert.title}" (nguồn ${confirmAlert.source === "interlock" ? "Interlock" : "MQTT"}) sẽ bị đóng vĩnh viễn — không thể hoàn tác từ màn hình này.`
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Hủy</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => { if (confirmAlert) resolve(confirmAlert); setConfirmAlert(null); }}
+              >
+                Xử lý xong
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );
 }
 
-function Kpi({ label, value, accent }: { label: string; value: number; accent?: string }) {
+function Kpi({ label, value, accent }: { label: string; value: number | string; accent?: string }) {
   return (
     <Card>
       <CardContent className="p-4">

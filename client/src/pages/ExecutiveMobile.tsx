@@ -349,13 +349,26 @@ export default function ExecutiveMobile(): React.JSX.Element {
     pointDefId: number;
     productCode?: string | null;
   }>;
-  const aiInboxItems = (aiInboxQ.data?.items ?? []) as Array<{ id: string; title: string; type: string }>;
+  // aiInbox.list mixes proposal | insight | alert (server/services/aiActionInbox.ts
+  // InboxItemType). Only `proposal` items actually await a decision — insight/alert
+  // are FYI (and insights already surface in "Top risks" above), so counting them
+  // here would inflate the number AND double-show insights. Keep proposals only.
+  const aiInboxRaw = (aiInboxQ.data?.items ?? []) as Array<{ id: string; title: string; type: string }>;
+  const aiInboxProposals = useMemo(
+    () => aiInboxRaw.filter((it) => it.type === "proposal"),
+    [aiInboxQ.data], // eslint-disable-line react-hooks/exhaustive-deps -- aiInboxRaw is derived from aiInboxQ.data
+  );
+  // The unified feed is capped server-side at our `limit: 50` (listInbox slices the
+  // severity-sorted merge). A full page means proposals beyond the cap may have been
+  // cut, so the total is only a lower bound → render "N+" instead of an exact count.
+  const aiInboxTruncated = aiInboxRaw.length >= 50;
   const deployRows = (canViewDeploys ? deployQ.data ?? [] : []) as Array<{
     deployment: { id: number; projectId: number };
     project?: { code?: string | null } | null;
   }>;
 
-  const approvalsTotal = thresholdRows.length + aiInboxItems.length + deployRows.length;
+  const approvalsTotal = thresholdRows.length + aiInboxProposals.length + deployRows.length;
+  const approvalsDisplay = aiInboxTruncated ? `${approvalsTotal}+` : String(approvalsTotal);
 
   const approvalItems = useMemo(() => {
     const items: Array<{ key: string; kind: string; label: string; title: string }> = [];
@@ -367,7 +380,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
         title: r.productCode?.trim() || "",
       });
     }
-    for (const it of aiInboxItems.slice(0, 3)) {
+    for (const it of aiInboxProposals.slice(0, 3)) {
       items.push({
         key: `ai-${it.id}`,
         kind: t("executiveMobile.approvals.aiInbox", "AI inbox"),
@@ -384,7 +397,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
       });
     }
     return items.slice(0, 5);
-  }, [thresholdRows, aiInboxItems, deployRows, t]);
+  }, [thresholdRows, aiInboxProposals, deployRows, t]);
 
   const approvalsLoading =
     (canViewThresholds && thresholdQ.isLoading) ||
@@ -664,7 +677,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   <Skeleton className="h-12 w-16" />
                 ) : (
                   <div className={`text-5xl font-bold tabular-nums ${approvalsTotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
-                    {approvalsTotal}
+                    {approvalsDisplay}
                   </div>
                 )}
                 <div className="text-sm text-muted-foreground">
@@ -684,7 +697,9 @@ export default function ExecutiveMobile(): React.JSX.Element {
                 </ul>
               )}
 
-              {!approvalsLoading && approvalsTotal === 0 && (
+              {/* Honest empty state: never claim "caught up" while the truncated
+                  feed may still hide proposals beyond the server cap. */}
+              {!approvalsLoading && approvalsTotal === 0 && !aiInboxTruncated && (
                 <div className="py-2 text-sm text-muted-foreground">
                   {t("executiveMobile.approvals.empty", "You're all caught up.")}
                 </div>

@@ -8,6 +8,28 @@ import { nanoid } from "nanoid";
 import { invokeLLM } from "../_core/llm";
 
 // ============ DRILL DOWN ROUTER ============
+
+/**
+ * W1 (sự thật số liệu): bucket sentinel cho inspection CHƯA GÁN tập đoàn
+ * (corporateCode NULL/rỗng). Đây không phải mã tập đoàn thật — client hiển thị
+ * "Chưa gán tập đoàn" và factoriesByCorporate hiểu sentinel này là "match NULL".
+ */
+const UNASSIGNED_CORPORATE_CODE = 'Unknown';
+
+/** Shape 1 hàng của factoriesByCorporate (thêm optional isUnassigned — không đổi contract cũ). */
+type FactoryDrillStat = {
+  id: number;
+  code: string;
+  name: string;
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+  yieldRate: number;
+  /** true = bucket "chưa gán nhà máy" (factoryCode không khớp master data) — client render KHÔNG drill được. */
+  isUnassigned?: boolean;
+};
+
 export const drillDownRouter = router({
   // Get stats by corporate
   corporateStats: protectedProcedure
@@ -23,7 +45,7 @@ export const drillDownRouter = router({
       const corporateMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
       
       for (const inspection of inspections) {
-        const corpCode = inspection.corporateCode || 'Unknown';
+        const corpCode = inspection.corporateCode || UNASSIGNED_CORPORATE_CODE;
         
         if (!corporateMap.has(corpCode)) {
           corporateMap.set(corpCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
@@ -44,6 +66,9 @@ export const drillDownRouter = router({
         ng: stats.ng,
         ntf: stats.ntf,
         yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+        // W1: đánh dấu bucket "chưa gán tập đoàn" để client đổi nhãn + xếp cuối
+        // (hàng này VẪN drill được — factoriesByCorporate hiểu sentinel = NULL).
+        isUnassigned: code === UNASSIGNED_CORPORATE_CODE ? (true as const) : undefined,
       })).sort((a, b) => b.total - a.total);
     }),
 
@@ -52,16 +77,24 @@ export const drillDownRouter = router({
     .input(z.object({ corporateCode: z.string() }))
     .query(async ({ ctx, input }) => {
       const allFactories = await db.getFactories();
-      const { data: inspections } = await db.getProductInspections({ 
-        corporateCode: input.corporateCode,
+      // W1: 'Unknown' là sentinel "chưa gán tập đoàn" do corporateStats phát ra
+      // (corporateCode NULL) — không phải mã thật nên KHÔNG thể lọc eq() ở DB
+      // (trước đây trả rỗng → drill ngõ cụt). Lấy không lọc rồi giữ lại các
+      // inspection có corporateCode NULL/rỗng trong bộ nhớ.
+      const isUnassignedCorporate = input.corporateCode === UNASSIGNED_CORPORATE_CODE;
+      const { data: fetchedInspections } = await db.getProductInspections({
+        ...(isUnassignedCorporate ? {} : { corporateCode: input.corporateCode }),
         limit: 50000,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
+      const inspections = isUnassignedCorporate
+        ? fetchedInspections.filter(i => !i.corporateCode)
+        : fetchedInspections;
+
       // Group inspections by factory code
       const factoryStatsMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
-      
+
       for (const inspection of inspections) {
         const factoryCode = inspection.factoryCode || 'Unknown';
         
@@ -76,8 +109,8 @@ export const drillDownRouter = router({
         else if (inspection.overallResult === 'NTF') stats.ntf++;
       }
       
-      // Map to factories
-      return allFactories
+      // Map to factories (khớp master data)
+      const rows: FactoryDrillStat[] = allFactories
         .filter(f => factoryStatsMap.has(f.code))
         .map(factory => {
           const stats = factoryStatsMap.get(factory.code) || { total: 0, ok: 0, ng: 0, ntf: 0 };
@@ -93,6 +126,35 @@ export const drillDownRouter = router({
           };
         })
         .sort((a, b) => b.total - a.total);
+
+      // W1 (tổng các tầng phải khớp): trước đây .filter(has) VỨT IM LẶNG các bucket
+      // factoryCode không có trong master data (hoặc NULL) → tổng tầng Factory hụt so
+      // với tầng Corporate. Gom phần dư thành 1 hàng "Chưa gán nhà máy" KHÔNG drill
+      // được (isUnassigned: true) để chênh lệch được giải thích ngay trên UI.
+      const masterFactoryCodes = new Set(allFactories.map(f => f.code));
+      let unTotal = 0, unOk = 0, unNg = 0, unNtf = 0;
+      for (const [code, stats] of factoryStatsMap) {
+        if (masterFactoryCodes.has(code)) continue;
+        unTotal += stats.total;
+        unOk += stats.ok;
+        unNg += stats.ng;
+        unNtf += stats.ntf;
+      }
+      if (unTotal > 0) {
+        rows.push({
+          id: -1, // sentinel — client không dùng để drill (isUnassigned)
+          code: 'UNASSIGNED',
+          name: `Chưa gán nhà máy (${unTotal.toLocaleString('vi-VN')} kết quả)`,
+          total: unTotal,
+          ok: unOk,
+          ng: unNg,
+          ntf: unNtf,
+          yieldRate: unTotal > 0 ? (unOk / unTotal) * 100 : 0,
+          isUnassigned: true,
+        });
+      }
+
+      return rows;
     }),
 
   // Get lines by factory

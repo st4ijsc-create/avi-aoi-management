@@ -109,6 +109,8 @@ function toRow(item: AnyStat): DrillRow {
     ng: item.ng ?? 0,
     ntf: item.ntf ?? 0,
     yieldRate: item.yieldRate ?? (item.total > 0 ? (item.ok / item.total) * 100 : 0),
+    // W1: bucket "chưa gán" (corporate 'Unknown' / factory dư ngoài master data).
+    isUnassigned: "isUnassigned" in item && item.isUnassigned === true ? true : undefined,
   };
 }
 
@@ -192,7 +194,30 @@ export default function DrillDownDashboard(): React.JSX.Element {
     else if (drillState.level === "factory" && factoryStats) data = factoryStats;
     else if (drillState.level === "line" && lineStats) data = lineStats;
     else if (drillState.level === "machine" && machineStats) data = machineStats;
-    return data.map(toRow);
+    const level = drillState.level;
+    return (
+      data
+        .map(toRow)
+        // W1: hàng "chưa gán" — nhãn tiếng Việt rõ nghĩa + tooltip hướng khắc phục.
+        .map((row) => {
+          if (!row.isUnassigned) return row;
+          if (level === "corporate") {
+            return {
+              ...row,
+              name: "Chưa gán tập đoàn",
+              unassignedNote:
+                "Thiếu mapping tập đoàn — gán trong Quản lý dữ liệu. Bấm để xem các nhà máy của nhóm này.",
+            };
+          }
+          return {
+            ...row,
+            unassignedNote:
+              "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu.",
+          };
+        })
+        // W1: xếp các bucket "chưa gán" xuống cuối (sort ổn định — giữ thứ tự theo total).
+        .sort((a, b) => Number(a.isUnassigned ?? false) - Number(b.isUnassigned ?? false))
+    );
   }, [drillState.level, corporateStats, factoryStats, lineStats, machineStats]);
 
   const rollup = useMemo(() => {
@@ -243,6 +268,13 @@ export default function DrillDownDashboard(): React.JSX.Element {
 
   // Build the correct per-row behaviour for the active tier.
   const rowFor = (row: DrillRow) => {
+    // W1: hàng "Chưa gán nhà máy" (tầng factory trở xuống) là bucket giải thích
+    // chênh lệch tổng — KHÔNG drill được (không có id thật trong master data).
+    // Riêng tầng corporate, "Chưa gán tập đoàn" VẪN drill được (server hiểu
+    // sentinel 'Unknown' = corporateCode NULL).
+    if (row.isUnassigned && drillState.level !== "corporate") {
+      return { onDrill: undefined, leafAction: undefined };
+    }
     if (drillState.level === "line") {
       return {
         onDrill: () => drillInto(row),

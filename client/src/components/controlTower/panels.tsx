@@ -105,10 +105,23 @@ function CorporatePanel(): React.JSX.Element {
     return rows.reduce((a, m) => a + m.oee, 0) / rows.length;
   }, [oeeQ.data]);
 
-  const topCorps = useMemo(
-    () => [...(corpQ.data ?? [])].sort((a, b) => b.yieldRate - a.yieldRate).slice(0, 4),
-    [corpQ.data],
-  );
+  // W1-P2: server gộp inspection thiếu corporateCode thành nhóm 'Unknown' (name=code) —
+  // nhóm này KHÔNG được tham gia leaderboard (từng đứng đầu với 100%). Tách riêng:
+  // top-4 chỉ gồm tập đoàn thật; nhóm chưa gán xếp CUỐI, nhãn Việt + style muted.
+  const topCorps = useMemo(() => {
+    const isUnassigned = (c: { code: string | null; name: string | null }): boolean => {
+      const v = String(c.code ?? c.name ?? "").trim().toLowerCase();
+      return v === "" || v === "unknown" || v === "n/a" || v === "na";
+    };
+    const all = corpQ.data ?? [];
+    const ranked = all
+      .filter((c) => !isUnassigned(c))
+      .sort((a, b) => b.yieldRate - a.yieldRate)
+      .slice(0, 4)
+      .map((c) => ({ ...c, unassigned: false }));
+    const unassigned = all.filter(isUnassigned).map((c) => ({ ...c, unassigned: true }));
+    return [...ranked, ...unassigned];
+  }, [corpQ.data]);
 
   const s = statsQ.data;
   const isLoading = statsQ.isLoading;
@@ -150,13 +163,17 @@ function CorporatePanel(): React.JSX.Element {
             </div>
             <div className="space-y-1.5">
               {topCorps.map((c) => (
-                <div key={c.code} className="flex items-center gap-2 text-sm">
-                  <span className="w-28 truncate font-medium">{c.name}</span>
+                <div key={c.code} className={cn("flex items-center gap-2 text-sm", c.unassigned && "opacity-70")}>
+                  <span className={cn("w-28 truncate", c.unassigned ? "italic text-muted-foreground" : "font-medium")}>
+                    {c.unassigned ? "Chưa gán tập đoàn" : c.name}
+                  </span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
                       className={cn(
                         "h-full rounded-full",
-                        c.yieldRate >= 95 ? "bg-success" : c.yieldRate >= 85 ? "bg-warning" : "bg-destructive",
+                        c.unassigned
+                          ? "bg-muted-foreground/40"
+                          : c.yieldRate >= 95 ? "bg-success" : c.yieldRate >= 85 ? "bg-warning" : "bg-destructive",
                       )}
                       style={{ width: `${Math.max(0, Math.min(100, c.yieldRate))}%` }}
                     />
@@ -223,17 +240,48 @@ function ExecSummaryPanel(): React.JSX.Element {
   );
 }
 
+/** Severity → hạng để sort panel Top risks (cao trước). */
+const INSIGHT_SEVERITY_RANK: Record<string, number> = {
+  critical: 4, error: 4, high: 3, warning: 2,
+};
+
 /** Active AI insights / top risks (advisory, read-only). */
 function TopRisksPanel(): React.JSX.Element {
   const { t } = useTranslation();
-  const q = trpc.aiInsight.list.useQuery({ status: "new", limit: 8 }, { refetchInterval: POLL_FAST, staleTime: 15_000 });
-  const rows = q.data ?? [];
+  // W1-P1: lấy rộng (25) rồi lọc client-side — nguồn aiInsight đầy bản ghi info
+  // "Báo cáo điều hành" lặp mỗi ngày, làm ngập panel "Top risks" nếu lấy thô 8 dòng.
+  const q = trpc.aiInsight.list.useQuery({ status: "new", limit: 25 }, { refetchInterval: POLL_FAST, staleTime: 15_000 });
+
+  // Chỉ giữ mức cảnh báo trở lên (bỏ info/report), dedupe theo (title + ngày),
+  // sort severity giảm dần rồi createdAt mới nhất, cắt 8. Rỗng → empty text sẵn có.
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return (q.data ?? [])
+      .filter((r) => {
+        const sev = String(r.severity ?? "").toLowerCase();
+        if (!(sev in INSIGHT_SEVERITY_RANK)) return false; // info / report / lạ → loại
+        if (String(r.source ?? "").toLowerCase().includes("report")) return false;
+        const day = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : "";
+        const key = `${r.title}|${day}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const bySev =
+          (INSIGHT_SEVERITY_RANK[String(b.severity ?? "").toLowerCase()] ?? 0) -
+          (INSIGHT_SEVERITY_RANK[String(a.severity ?? "").toLowerCase()] ?? 0);
+        if (bySev !== 0) return bySev;
+        return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+      })
+      .slice(0, 8);
+  }, [q.data]);
 
   return (
     <PanelShell
       icon={<Lightbulb className="h-4 w-4 text-primary" />}
       title={t("controlTower.topRisks.title", "Top AI insights")}
-      description={t("controlTower.topRisks.desc", "Advisory — newest unreviewed signals")}
+      description="Tư vấn — mức cảnh báo trở lên, đã khử trùng lặp (bỏ báo cáo định kỳ/info)"
       linkHref="/management-insight"
       isLoading={q.isLoading}
       isError={q.isError}
@@ -268,6 +316,13 @@ function AlarmHealthPanel(): React.JSX.Element {
   const q = trpc.alarmKpi.summary.useQuery({ windowHours: 24 }, { refetchInterval: POLL_FAST, staleTime: 20_000 });
   const d = q.data;
 
+  // W1-P0: hai nguồn đếm cảnh báo khác phạm vi — panel này đếm PHÁT SINH trong 24h
+  // (andon + AI dự báo), còn dải KPI đầu trang đếm ĐANG MỞ không cửa sổ (andon chưa
+  // resolve + sự kiện an toàn). Đọc lại kpiSummary (chia cache với query của trang —
+  // cùng key `{}`) để hiển thị CẢ HAI số kèm chú thích, tránh "cùng tên khác giá trị".
+  const kpiQ = trpc.commandCenter.kpiSummary.useQuery({}, { refetchInterval: POLL_FAST, staleTime: 20_000 });
+  const openAlarms = kpiQ.data?.alarms.available ? kpiQ.data.alarms.value?.total ?? null : null;
+
   const rateStatus = d?.rate.status;
   const rateTone: Tone = rateStatus === "critical" ? "error" : rateStatus === "warning" ? "warning" : "success";
 
@@ -286,7 +341,11 @@ function AlarmHealthPanel(): React.JSX.Element {
       emptyText={t("controlTower.alarmHealth.empty", "No alarm activity in the window.")}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label={t("controlTower.alarmHealth.total", "Total alarms")} value={int(d?.totalAlarms ?? null)} />
+        <Stat
+          label="Phát sinh trong 24h"
+          value={int(d?.totalAlarms ?? null)}
+          hint="Số cảnh báo phát sinh trong cửa sổ 24h (andon + AI dự báo), kể cả đã xử lý — khác số 'đang mở' trên dải KPI."
+        />
         <Stat
           label={t("controlTower.alarmHealth.ratePerOp", "Alarm/h/op")}
           value={d ? d.rate.alarmsPerHourPerOperator.toFixed(1) : "—"}
@@ -311,6 +370,14 @@ function AlarmHealthPanel(): React.JSX.Element {
             andon: d.sourceCounts.andon,
             pred: d.sourceCounts.predictive,
           })}
+        </div>
+      )}
+      {/* Chú thích phân biệt hai phạm vi đếm (xem comment trên kpiQ). */}
+      {d && (
+        <div className="mt-2 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
+          Phát sinh 24h: {int(d.totalAlarms)}
+          {openAlarms != null && <> · Đang mở (mọi thời điểm, andon + an toàn): {int(openAlarms)}</>}
+          {" — hai phạm vi đếm khác nhau."}
         </div>
       )}
     </PanelShell>

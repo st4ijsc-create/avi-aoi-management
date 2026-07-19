@@ -142,6 +142,9 @@ export const dashboardRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
       limit: z.number().default(5),
+      // doc65 W1 (additive optional, an toàn) — trục phạm vi ISA-95: ranking
+      // trước đây luôn toàn-cục dù KPI đã lọc theo nhà máy. No-op khi không truyền.
+      factoryId: z.number().int().positive().optional(),
     }))
     .query(async ({ input, ctx }) => {
       return db.getTopBottomMachines({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
