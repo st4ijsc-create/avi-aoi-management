@@ -186,8 +186,12 @@ public sealed partial class ScenarioViewModel : ObservableObject
             "Tăng mạnh tỷ lệ lỗi tiêm thêm (bất kể vật lý mô phỏng riêng của từng máy) để trình diễn andon/alert.",
             new ScenarioConfig(CycleRateMultiplier: 1.0, ExtraDefectRate: 0.35, FaultRate: 0.05, NetworkOutage: false)),
 
+        // Fix-pass note: this preset is NOT a pure cycle-rate change — it also dials in a small amount
+        // of ExtraDefectRate/FaultRate (0.03/0.05) on top of the 5x speed-up, deliberately, so the demo
+        // reads as "a line under mild, intermittent stress" rather than just "fast" while the IoT drift
+        // event surfaces. Don't mistake the non-zero defect/fault values below for a copy-paste leftover.
         new("Sensor drift",
-            "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ có sẵn của IOT_SENSOR (mỗi 200 cycle) trong thời gian demo ngắn.",
+            "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ có sẵn của IOT_SENSOR (mỗi 200 cycle) trong thời gian demo ngắn — kèm một chút lỗi/fault nhẹ để trông giống dây chuyền đang chịu áp lực nhỏ.",
             new ScenarioConfig(CycleRateMultiplier: 5.0, ExtraDefectRate: 0.03, FaultRate: 0.05, NetworkOutage: false)),
 
         new("Mất mạng demo",

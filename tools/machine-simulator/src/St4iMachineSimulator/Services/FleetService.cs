@@ -31,6 +31,16 @@ public sealed class FleetService : IDisposable
 
     private static readonly TimeSpan BurstDuration = TimeSpan.FromSeconds(4);
 
+    /// <summary>Fix-pass — bound on how long a CycleRateMultiplier-driven restart (<see cref="ApplyScenario"/>)
+    /// waits for the OUTGOING pipeline's background task to unwind before starting the replacement.
+    /// Short and best-effort: <see cref="StopLocked"/> already detaches the outgoing pipeline's
+    /// <see cref="EdgePipeline.Committed"/> handler SYNCHRONOUSLY (the fix that actually eliminates every
+    /// stray old-generation event reaching <see cref="Committed"/>/VMs, regardless of how long the old
+    /// task takes to unwind) — this wait is a further narrowing of the window where the old and new
+    /// pipeline's background loops could both be mid-flight against the same transport/EventBus, not the
+    /// thing that makes the restart safe.</summary>
+    private const int RestartAwaitTimeoutMs = 300;
+
     /// <summary>Floor on a scaled <see cref="MachineDescriptor.CycleSeconds"/> — guards against a
     /// runaway near-zero interval if a future caller ever combines an extreme
     /// <see cref="ScenarioConfig.CycleRateMultiplier"/> with an already-fast sim.</summary>
@@ -47,17 +57,33 @@ public sealed class FleetService : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _runTask;
 
+    /// <summary>The currently-running pipeline's <see cref="EdgePipeline.Committed"/> subscription — held
+    /// so <see cref="StopLocked"/> can detach <see cref="OnPipelineCommitted"/> from it immediately
+    /// (fix-pass: previously the lambda subscribed in <see cref="StartLocked"/> was never unsubscribed,
+    /// so a cancelled-but-not-yet-unwound outgoing pipeline could still forward a straggling reading to
+    /// <see cref="Committed"/> after a restart had already started the replacement — see
+    /// <see cref="StopLocked"/>'s remarks).</summary>
+    private EdgePipeline? _currentPipeline;
+
     /// <summary>Lazily built once, then reused across every "Mất mạng demo" toggle — a fresh, real
     /// <see cref="DemoTransport"/> instance dedicated to the outage scenario (kept separate from
     /// <see cref="TransportCoordinator.Demo"/>, which normal Demo-mode traffic uses) so its own internal
     /// per-idempotency-key id counters never mix with a real Demo-mode session's.</summary>
     private DemoTransport? _outageTransport;
 
-    /// <summary>Non-null while a <see cref="Burst"/>'s automatic revert is pending; swapped out (via
-    /// <see cref="Interlocked.CompareExchange{T}(ref T,T,T)"/>) rather than protected by <see cref="_gate"/>
-    /// so overlapping Burst clicks can supersede each other without the revert task needing to hold the
-    /// same lock <see cref="ApplyScenario"/> itself takes.</summary>
+    /// <summary>Non-null while a <see cref="Burst"/>'s automatic revert is pending. Guarded by
+    /// <see cref="_gate"/> (fix-pass: previously read/swapped lock-free via
+    /// <see cref="Interlocked.Exchange{T}(ref T,T)"/>, which raced with <see cref="_burstBaseline"/>'s
+    /// own capture — see <see cref="Burst"/>'s remarks).</summary>
     private CancellationTokenSource? _burstRevertCts;
+
+    /// <summary>Fix-pass — the TRUE pre-burst <see cref="ScenarioConfig.CycleRateMultiplier"/> to revert
+    /// to, captured ONCE per burst "episode" (the first <see cref="Burst"/> call while
+    /// <see cref="_burstRevertCts"/> is null) rather than re-read on every overlapping click. Before this
+    /// fix, a SECOND click while a burst was still active re-read <c>_scenario.CycleRateMultiplier</c>,
+    /// which by then was already the BURST value (e.g. 6.0) — so the eventual revert restored to 6.0
+    /// instead of the real baseline (typically 1.0), leaving the fleet stuck at burst speed forever.</summary>
+    private double _burstBaseline = 1.0;
 
     private volatile ScenarioConfig _scenario = ScenarioConfig.Normal;
 
@@ -154,11 +180,21 @@ public sealed class FleetService : IDisposable
     /// restarts the running pipeline — but ONLY when it actually changed from what's currently applied,
     /// so dragging the Defect/Fault sliders never causes the visible "cycle count reset to 1" a restart
     /// produces (see <c>MachineViewModel.Cycles</c>' own remarks on why a restart resets it).
+    ///
+    /// Fix-pass: a multiplier-changed restart no longer does a bare <c>StopLocked(); StartLocked();</c>
+    /// back-to-back under one lock — <see cref="StopLocked"/> now detaches the outgoing pipeline's
+    /// <see cref="EdgePipeline.Committed"/> handler SYNCHRONOUSLY (so no straggling old-generation
+    /// reading can ever reach <see cref="Committed"/>/the VMs again, regardless of timing), and this
+    /// method additionally gives the outgoing background task up to <see cref="RestartAwaitTimeoutMs"/>
+    /// to actually unwind — awaited OUTSIDE <see cref="_gate"/> (never block other callers of
+    /// <see cref="Stop"/>/<see cref="ApplyScenario"/> while holding the lock) before starting the
+    /// replacement pipeline.
     /// </summary>
     public void ApplyScenario(ScenarioConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
 
+        Task? outgoingTask = null;
         lock (_gate)
         {
             var previous = _scenario;
@@ -169,7 +205,23 @@ public sealed class FleetService : IDisposable
             var multiplierChanged = Math.Abs(config.CycleRateMultiplier - previous.CycleRateMultiplier) > 1e-9;
             if (IsRunning && multiplierChanged)
             {
-                StopLocked();
+                outgoingTask = _runTask;
+                StopLocked(); // cancels + detaches Committed synchronously — see this method's own remarks
+            }
+        }
+
+        if (outgoingTask is not null)
+        {
+            // Best-effort: let the cancelled pipeline's Task.Run continuation actually finish before the
+            // replacement starts. Task.WhenAny never throws for a faulted awaited task (it just resolves
+            // to whichever completes first), and neither Task.Delay nor the outgoing task's own
+            // ConfigureAwait(false) continuation needs a captured SynchronizationContext — safe to block
+            // synchronously here from any thread (UI or the Burst-revert background continuation) with no
+            // deadlock risk.
+            Task.WhenAny(outgoingTask, Task.Delay(RestartAwaitTimeoutMs)).GetAwaiter().GetResult();
+
+            lock (_gate)
+            {
                 StartLocked();
             }
         }
@@ -179,22 +231,49 @@ public sealed class FleetService : IDisposable
 
     /// <summary>
     /// Task 19b — "Burst": <see cref="BurstMultiplier"/>× cycle-rate for <see cref="BurstDuration"/>,
-    /// then automatically restores whatever <see cref="ScenarioConfig.CycleRateMultiplier"/> was active
-    /// right before THIS call (not necessarily <see cref="ScenarioConfig.Normal"/>'s 1.0 — bursting from
-    /// an operator-set 1.5x returns to 1.5x). Overlapping clicks supersede: a newer <see cref="Burst"/>
-    /// cancels the previous one's pending revert via <see cref="_burstRevertCts"/>, so only the LATEST
-    /// click's timer ever fires — otherwise an earlier revert could stomp a later burst's multiplier back
-    /// down mid-flight. Fire-and-forget by design (mirrors the exhibition-tool "don't block the caller"
-    /// shape <see cref="MachineViewModel.SyncConfigCommand"/> already uses); the eventual revert surfaces
+    /// then automatically restores the TRUE pre-burst <see cref="ScenarioConfig.CycleRateMultiplier"/>
+    /// (not necessarily <see cref="ScenarioConfig.Normal"/>'s 1.0 — bursting from an operator-set 1.5x
+    /// returns to 1.5x). Overlapping clicks supersede: a newer <see cref="Burst"/> cancels the previous
+    /// one's pending revert, so only the LATEST click's timer ever fires — otherwise an earlier revert
+    /// could stomp a later burst's multiplier back down mid-flight.
+    ///
+    /// Fix-pass: <see cref="_burstBaseline"/> is captured ONCE per burst "episode" — only when NO burst
+    /// is currently pending (<see cref="_burstRevertCts"/> is null) — rather than re-read from
+    /// <see cref="_scenario"/> on every click. Re-reading on every click was the bug: a SECOND click
+    /// while the first burst was still active saw <c>_scenario.CycleRateMultiplier</c> already at
+    /// <see cref="BurstMultiplier"/> (e.g. 6.0), so it "baselined" on the burst value itself — the
+    /// eventual revert then restored 6.0, not the real pre-burst rate, leaving the fleet stuck at burst
+    /// speed forever. Now covered by <see cref="_gate"/> (was lock-free <c>Interlocked</c> juggling)
+    /// specifically so the "is a burst already pending" check and the baseline capture/CTS swap happen
+    /// as one atomic step.
+    ///
+    /// Fire-and-forget by design (mirrors the exhibition-tool "don't block the caller" shape
+    /// <see cref="MachineViewModel.SyncConfigCommand"/> already uses); the eventual revert surfaces
     /// through <see cref="ScenarioChanged"/> like any other <see cref="ApplyScenario"/> call.
     /// </summary>
     public void Burst()
     {
-        var baseline = _scenario.CycleRateMultiplier;
+        CancellationTokenSource cts;
+        double baseline;
+        lock (_gate)
+        {
+            cts = new CancellationTokenSource();
+            var previousCts = _burstRevertCts;
 
-        var cts = new CancellationTokenSource();
-        var previousCts = Interlocked.Exchange(ref _burstRevertCts, cts);
-        previousCts?.Cancel();
+            if (previousCts is null)
+            {
+                // No burst currently pending — THIS click is the start of a new episode, so its
+                // pre-burst value is the one true baseline for the eventual revert.
+                _burstBaseline = _scenario.CycleRateMultiplier;
+            }
+            // else: a burst is already active — _burstBaseline already holds the FIRST click's
+            // pre-burst value; deliberately do NOT overwrite it with _scenario.CycleRateMultiplier now
+            // (that would just be the burst value itself).
+
+            previousCts?.Cancel();
+            _burstRevertCts = cts;
+            baseline = _burstBaseline;
+        }
 
         ApplyScenario(_scenario with { CycleRateMultiplier = BurstMultiplier });
 
@@ -212,9 +291,17 @@ public sealed class FleetService : IDisposable
             return; // superseded by a newer Burst() call — that one owns the revert now
         }
 
-        // Only revert if nothing replaced this CTS while we were waiting (mirrors the guard above —
-        // belt-and-suspenders against a Burst() landing between the delay completing and this check).
-        if (Interlocked.CompareExchange(ref _burstRevertCts, null, cts) == cts)
+        // Only revert (and only clear _burstRevertCts, ending the "episode") if nothing replaced this
+        // CTS while we were waiting — belt-and-suspenders against a Burst() landing between the delay
+        // completing and this check.
+        bool shouldRevert;
+        lock (_gate)
+        {
+            shouldRevert = _burstRevertCts == cts;
+            if (shouldRevert) _burstRevertCts = null;
+        }
+
+        if (shouldRevert)
         {
             ApplyScenario(_scenario with { CycleRateMultiplier = baseline });
         }
@@ -231,6 +318,10 @@ public sealed class FleetService : IDisposable
     /// consumer, not a mock. Stops itself the moment its own file round-trips (or after a 5s safety net
     /// if it never does) rather than running forever, since <see cref="HotFolderAoiDriver.ReadAsync"/>
     /// otherwise waits indefinitely for the NEXT file.
+    ///
+    /// Fix-pass: deletes its whole <c>%TEMP%\st4i-sim-hotfolder-demo</c> base directory (in/archive/
+    /// error) in a <c>finally</c> once the round-trip completes or times out — previously this
+    /// accumulated one file-set per demo click/selftest run forever.
     /// </summary>
     public async Task<string> RunHotFolderAoiDemoAsync(CancellationToken ct)
     {
@@ -239,52 +330,71 @@ public sealed class FleetService : IDisposable
         var archiveDir = Path.Combine(baseDir, "archive");
         var errorDir = Path.Combine(baseDir, "error");
 
-        // ngRate: 1.0 is deliberate — this is a ONE-SHOT demo write, not the fleet's own AOI-01/AOI-02
-        // sims (which keep their normal ~5% rate): the demo must always visibly show a real defect
-        // flowing through, not a coin-flip clean pass.
-        var demoDescriptor = new MachineDescriptor(
-            "HOTFOLDER-DEMO", "SN-HOTFOLDER", DeviceClass.AoiAvi, "AOI", "inspection",
-            DriverKind.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
-        var sim = new AoiInspectorSim(demoDescriptor, seed: 777, pointsPerBoard: 8, ngRate: 1.0);
-        var reading = sim.NextCycle(cycle: 1);
-
-        var writtenPath = new Doc28Writer().WriteAtomic(watchDir, reading);
-
-        await using var driver = new HotFolderAoiDriver(watchDir, archiveDir, errorDir);
-        var profile = new MappingProfile { Name = "hotfolder-demo", DeviceClass = nameof(DeviceClass.AoiAvi) };
-        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        DeviceReading? ingested = null;
-        void OnCommitted(DeviceReading r, TransportAck a)
-        {
-            ingested = r;
-            timeoutCts.Cancel(); // one-shot demo: stop the instant our own file round-trips
-        }
-
-        pipeline.Committed += OnCommitted;
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(5)); // safety net if the file is never picked up
         try
         {
-            await pipeline.RunAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // expected: either our own success-cancel above, or the 5s safety net
+            // ngRate: 1.0 is deliberate — this is a ONE-SHOT demo write, not the fleet's own AOI-01/
+            // AOI-02 sims (which keep their normal ~5% rate): the demo must always visibly show a real
+            // defect flowing through, not a coin-flip clean pass.
+            var demoDescriptor = new MachineDescriptor(
+                "HOTFOLDER-DEMO", "SN-HOTFOLDER", DeviceClass.AoiAvi, "AOI", "inspection",
+                DriverKind.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
+            var sim = new AoiInspectorSim(demoDescriptor, seed: 777, pointsPerBoard: 8, ngRate: 1.0);
+            var reading = sim.NextCycle(cycle: 1);
+
+            var writtenPath = new Doc28Writer().WriteAtomic(watchDir, reading);
+
+            await using var driver = new HotFolderAoiDriver(watchDir, archiveDir, errorDir);
+            var profile = new MappingProfile { Name = "hotfolder-demo", DeviceClass = nameof(DeviceClass.AoiAvi) };
+            var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            DeviceReading? ingested = null;
+            void OnCommitted(DeviceReading r, TransportAck a)
+            {
+                ingested = r;
+                timeoutCts.Cancel(); // one-shot demo: stop the instant our own file round-trips
+            }
+
+            pipeline.Committed += OnCommitted;
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5)); // safety net if the file is never picked up
+            try
+            {
+                await pipeline.RunAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // expected: either our own success-cancel above, or the 5s safety net
+            }
+            finally
+            {
+                pipeline.Committed -= OnCommitted;
+            }
+
+            var fileName = Path.GetFileName(writtenPath);
+            if (ingested is null)
+            {
+                return $"Đã ghi {fileName} vào {watchDir} nhưng chưa xác nhận được HotFolderAoiDriver đọc lại trong 5s.";
+            }
+
+            var ngCount = ingested.Measurements.Count(m => string.Equals(m.Result, "NG", StringComparison.OrdinalIgnoreCase));
+            return $"Đã ghi {fileName} — HotFolderAoiDriver đọc lại thành công: {ngCount}/{ingested.Measurements.Count} điểm NG, verdict={ingested.Verdict}.";
         }
         finally
         {
-            pipeline.Committed -= OnCommitted;
+            // Best-effort: a locked file (e.g. an antivirus scan mid-flight, or the watcher's handle not
+            // yet released on some environments) must not turn an otherwise-successful demo into a
+            // reported failure — this cleanup is pure housekeeping, not part of the demo's own contract.
+            try
+            {
+                if (Directory.Exists(baseDir)) Directory.Delete(baseDir, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
-
-        var fileName = Path.GetFileName(writtenPath);
-        if (ingested is null)
-        {
-            return $"Đã ghi {fileName} vào {watchDir} nhưng chưa xác nhận được HotFolderAoiDriver đọc lại trong 5s.";
-        }
-
-        var ngCount = ingested.Measurements.Count(m => string.Equals(m.Result, "NG", StringComparison.OrdinalIgnoreCase));
-        return $"Đã ghi {fileName} — HotFolderAoiDriver đọc lại thành công: {ngCount}/{ingested.Measurements.Count} điểm NG, verdict={ingested.Verdict}.";
     }
 
     public void Dispose()
@@ -320,7 +430,8 @@ public sealed class FleetService : IDisposable
         // routing decision that depends on which class-specific profile was used.
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
         var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
-        pipeline.Committed += (reading, ack) => Committed?.Invoke(reading, ack);
+        pipeline.Committed += OnPipelineCommitted;
+        _currentPipeline = pipeline;
 
         var cts = new CancellationTokenSource();
         _cts = cts;
@@ -349,6 +460,20 @@ public sealed class FleetService : IDisposable
         });
     }
 
+    /// <summary>
+    /// Fix-pass: detaches <see cref="OnPipelineCommitted"/> from the OUTGOING <see cref="_currentPipeline"/>
+    /// SYNCHRONOUSLY, right here — before this method returns, i.e. before <see cref="ApplyScenario"/>'s
+    /// caller (or <see cref="Stop"/>'s) sees control back. This is what actually closes the restart race:
+    /// the outgoing pipeline's background <see cref="Task.Run"/> continuation may still be mid-flight for
+    /// a little while after <see cref="_cts"/> is cancelled (e.g. an in-flight <c>SendAsync</c> that was
+    /// already awaiting when Cancel() was called), and it CAN still publish one more
+    /// <see cref="EdgePipeline.Committed"/> invocation for that straggling reading — but since this
+    /// handler is already unsubscribed by then, that invocation is a no-op as far as this service (and
+    /// every VM downstream of <see cref="Committed"/>) is concerned. Eliminates the "cycle counts jump
+    /// backward / duplicate rows" symptom regardless of exactly how long the outgoing task takes to
+    /// unwind — <see cref="ApplyScenario"/>'s additional bounded await is a further narrowing on top, not
+    /// what makes this safe.
+    /// </summary>
     private void StopLocked()
     {
         if (!IsRunning) return;
@@ -357,7 +482,15 @@ public sealed class FleetService : IDisposable
         _cts = null;
         _runTask = null;
         IsRunning = false;
+
+        if (_currentPipeline is not null)
+        {
+            _currentPipeline.Committed -= OnPipelineCommitted;
+            _currentPipeline = null;
+        }
     }
+
+    private void OnPipelineCommitted(DeviceReading reading, TransportAck ack) => Committed?.Invoke(reading, ack);
 
     /// <summary>Assumes the caller already holds <see cref="_gate"/> (called only from
     /// <see cref="ApplyScenario"/>).</summary>

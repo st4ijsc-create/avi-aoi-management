@@ -676,6 +676,61 @@ public partial class App : Application
 
         Console.WriteLine($"SELFTEST scenario outage-restore: {restoredAcks.Count(a => a.Success && !a.Queued)}/{restoredAcks.Count} ack(s) clean again after restoring \"Ca bình thường\"");
 
+        // ── Restart race (fix-pass regression check): a CycleRateMultiplier-changing preset restarts
+        // the running pipeline exactly once — capture Committed events spanning that restart and assert
+        // no machine's CycleCounter sequence shows MORE than the ONE legitimate "reset to 1" a restart
+        // is supposed to produce (StartLocked always rebuilds fresh sims — see its own remarks). Before
+        // the fix, the OUTGOING pipeline's Committed handler stayed wired after Stop(), so a straggling
+        // old-generation reading could arrive interleaved with the new generation's — visible here as a
+        // SECOND decrease in a machine's cycle-counter sequence within this one restart's window.
+        var perMachineCycles = new Dictionary<string, List<long>>();
+        void CaptureCycles(DeviceReading r, TransportAck a)
+        {
+            if (!perMachineCycles.TryGetValue(r.MachineCode, out var list))
+            {
+                list = new List<long>();
+                perMachineCycles[r.MachineCode] = list;
+            }
+
+            list.Add(r.CycleCounter);
+        }
+
+        fleetService.Committed += CaptureCycles;
+        PumpDispatcherFor(TimeSpan.FromMilliseconds(500)); // a little pre-restart baseline, still at 1.0x
+
+        var sensorDriftPreset = scenarioVm.Presets.FirstOrDefault(p => p.Name == "Sensor drift")
+            ?? throw new InvalidOperationException("selftest scenario: \"Sensor drift\" preset not found in ScenarioViewModel.Presets");
+        scenarioVm.ApplyPresetCommand.Execute(sensorDriftPreset); // exactly one restart: CycleRateMultiplier 1.0 -> 5.0
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - sensorDriftPreset.Config.CycleRateMultiplier) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: \"Sensor drift\" did not apply CycleRateMultiplier (was {fleetService.Scenario.CycleRateMultiplier})");
+
+        PumpDispatcherFor(TimeSpan.FromSeconds(1.5)); // let the new (faster) pipeline run for a bit
+        fleetService.Committed -= CaptureCycles;
+
+        if (perMachineCycles.Count == 0)
+            throw new InvalidOperationException("selftest scenario: captured 0 readings across the Sensor-drift restart window");
+
+        foreach (var (machineCode, cycles) in perMachineCycles)
+        {
+            var decreases = 0;
+            for (var i = 1; i < cycles.Count; i++)
+            {
+                if (cycles[i] < cycles[i - 1]) decreases++;
+            }
+
+            if (decreases > 1)
+                throw new InvalidOperationException(
+                    $"selftest scenario: {machineCode} showed {decreases} cycle-counter decrease(s) across the Sensor-drift restart window " +
+                    $"(sequence: [{string.Join(",", cycles)}]) — expected at most 1 (the restart's own legitimate reset to 1); more than 1 means a " +
+                    "straggling old-generation reading interleaved with the new generation (the restart-race bug this fix pass closes)");
+        }
+
+        Console.WriteLine($"SELFTEST scenario restart-race: {perMachineCycles.Count} machine(s) captured across the Sensor-drift restart, each with at most 1 cycle-counter reset (no old/new pipeline overlap)");
+
+        scenarioVm.ApplyPresetCommand.Execute(normalPreset);
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 1.0) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: CycleRateMultiplier did not restore to 1.0x after re-applying \"Ca bình thường\" post Sensor-drift (was {fleetService.Scenario.CycleRateMultiplier})");
+
         // ── Burst throughput ─────────────────────────────────────────────────────────────────
         var baselineWindow = TimeSpan.FromSeconds(1.5);
         var baselineCount = MeasureThroughput(fleetService, baselineWindow);
@@ -707,6 +762,30 @@ public partial class App : Application
         if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 1.0) > 1e-6)
             throw new InvalidOperationException($"selftest scenario: CycleRateMultiplier did not restore to 1.0x after re-applying \"Ca bình thường\" (was {fleetService.Scenario.CycleRateMultiplier})");
 
+        // ── Burst-baseline correctness across OVERLAPPING clicks (fix-pass regression check) ──────
+        // Reproduces the bug directly: clicking Burst a SECOND time while the first burst is still
+        // active used to re-read _scenario.CycleRateMultiplier — by then already the BURST value 6.0 —
+        // as the new "baseline", so the eventual revert left the fleet stuck at 6x forever. Scenario is
+        // back at CycleRateMultiplier=1.0 here (just restored above), so 1.0 is the correct value to
+        // expect once BOTH bursts' revert windows have expired.
+        scenarioVm.BurstCommand.Execute(null);
+        PumpDispatcherFor(TimeSpan.FromSeconds(1)); // still well inside the first burst's 4s window
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 6.0) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: first overlapping Burst did not raise CycleRateMultiplier to 6.0x (was {fleetService.Scenario.CycleRateMultiplier})");
+
+        scenarioVm.BurstCommand.Execute(null); // second click WHILE the first burst is still active
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 6.0) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: second overlapping Burst did not keep CycleRateMultiplier at 6.0x (was {fleetService.Scenario.CycleRateMultiplier})");
+
+        PumpDispatcherFor(TimeSpan.FromSeconds(5)); // both bursts' 4s revert windows must have expired by now
+
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 1.0) > 1e-6)
+            throw new InvalidOperationException(
+                $"selftest scenario: after two overlapping Bursts, CycleRateMultiplier did not revert to the pre-burst baseline 1.0x " +
+                $"(was {fleetService.Scenario.CycleRateMultiplier}) — Burst-baseline-corruption regression");
+
+        Console.WriteLine("SELFTEST scenario double-burst: two overlapping Burst clicks correctly reverted CycleRateMultiplier to the true pre-burst baseline (1.0x), not the burst value");
+
         // ── "Hot-folder AOI" preset — one-shot doc28 write + REAL HotFolderAoiDriver ingest ────────
         // Fire-and-forget + pump + poll — same pattern RunMachineDetailSelfTest already uses for
         // SyncConfigCommand, and for the same reason: ApplyPresetAsync's own await (on
@@ -728,6 +807,14 @@ public partial class App : Application
             throw new InvalidOperationException($"selftest scenario: Hot-folder AOI demo did not report success — HotFolderStatus=\"{scenarioVm.HotFolderStatus}\"");
 
         Console.WriteLine($"SELFTEST scenario hot-folder: {scenarioVm.HotFolderStatus}");
+
+        // Fix-pass: RunHotFolderAoiDemoAsync must clean up its own %TEMP% base dir once the round trip
+        // completes — this used to accumulate one file-set per run forever.
+        var hotFolderBaseDir = Path.Combine(Path.GetTempPath(), "st4i-sim-hotfolder-demo");
+        if (Directory.Exists(hotFolderBaseDir))
+            throw new InvalidOperationException($"selftest scenario: hot-folder temp dir \"{hotFolderBaseDir}\" still exists after the demo completed — cleanup did not run");
+
+        Console.WriteLine($"SELFTEST scenario hot-folder cleanup: \"{hotFolderBaseDir}\" no longer exists");
     }
 
     /// <summary>Subscribes to <see cref="FleetService.Committed"/> for exactly <paramref name="window"/>
