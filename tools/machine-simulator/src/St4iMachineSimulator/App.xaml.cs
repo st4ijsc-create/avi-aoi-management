@@ -6,6 +6,7 @@ using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.WPF;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EdgeCore.Drivers;
+using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
@@ -27,6 +28,12 @@ public partial class App : Application
 {
     private const string SelfTestArg = "--selftest";
 
+    /// <summary>Headless "does the SIMULATOR's own EdgeCore LiveTransport actually reach a REAL running
+    /// ST4I server" smoke — <see cref="RunLiveSmoke"/>. Distinct from <see cref="SelfTestArg"/>: selftest
+    /// never dials out (it exercises the DI graph over Demo/Auto-fallback transports only); this dials a
+    /// server the caller names via env/args and prints every real ack it gets back.</summary>
+    private const string LiveSmokeArg = "--live-smoke";
+
     /// <summary>Startup Live server URL/machine code, before Settings (Task 19a) has changed anything.
     /// Constructing a <see cref="LiveTransport"/> never makes a network call by itself (see
     /// <c>St4iDeviceClient</c>'s constructor) — nothing here dials out until the user actually selects
@@ -43,6 +50,17 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // --live-smoke short-circuits BEFORE localization/DI: it needs neither (it talks to EdgeCore's
+        // LiveTransport directly, the same class the DI-resolved LiveTransport singleton below wraps) —
+        // see RunLiveSmoke's own remarks for why this is deliberately the simplest possible path, no
+        // window ever created, no dispatcher ever needed.
+        if (e.Args.Contains(LiveSmokeArg, StringComparer.OrdinalIgnoreCase))
+        {
+            var exitCode = RunLiveSmoke(e.Args);
+            Shutdown(exitCode);
+            return;
+        }
 
         // Task 20 — merges the default-language (vi) Strings dictionary. Must run before
         // ConfigureServices/BuildServiceProvider below: every ViewModel that builds Nav/Kpi text off
@@ -332,6 +350,285 @@ public partial class App : Application
         RunBrandingSelfTest();
 
         Console.WriteLine("SELFTEST OK");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // --live-smoke — proves the SIMULATOR's own EdgeCore LiveTransport (not just the reference SDK
+    // sample, and not DemoTransport/AutoTransport-fallback like --selftest above) reaches a REAL running
+    // ST4I server for every feed a machine can send, using the exact same LiveTransport/Normalizer/
+    // simulators the app's live/auto transport modes use at runtime. Reads server URL + mk_ key from env
+    // (ST4I_SERVER/ST4I_MK_KEY) with --server/--key as a fallback, never touches the DI container, and
+    // exits with the process's own exit code (0 only if the core feeds — RESULT/TELEMETRY/HEARTBEAT — all
+    // came back clean; INSPECTION/CONFIG-SYNC are reported honestly but never gate the exit code, since a
+    // server-side gate — e.g. no vision license, no recipe configured for this machine — is a legitimate,
+    // reachable-endpoint observation, not a bug in this tool).
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    private const string LiveSmokeMachineCode = "SN-SIMVERIFY-01";
+    private const string LiveSmokeSerialSeed = "SIMVERIFY-01";
+    private static readonly TimeSpan LiveSmokeCallTimeout = TimeSpan.FromSeconds(15);
+
+    private static int RunLiveSmoke(string[] args)
+    {
+        Console.WriteLine("=== ST4I EdgeCore LIVE SMOKE (--live-smoke) ===");
+
+        string server, mkKey;
+        try
+        {
+            (server, mkKey) = ResolveLiveSmokeConfig(args);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"FAIL config: {ex.Message}");
+            return 1;
+        }
+
+        Console.WriteLine($"Server={server}  MachineCode={LiveSmokeMachineCode}  MkKey={MaskKey(mkKey)}");
+
+        using var live = LiveTransport.ForMachine(
+            serverUrl: server,
+            mkKey: mkKey,
+            machineCode: LiveSmokeMachineCode,
+            queuePath: null,
+            verifyTls: false);
+
+        var resultOk = RunResultSmoke(live);
+        var telemetryOk = RunTelemetrySmoke(live);
+        RunInspectionSmoke(live); // honest-report-only — never gates the exit code, see remarks above
+        RunConfigSyncSmoke(live); // honest-report-only — never gates the exit code, see remarks above
+        var heartbeatOk = RunHeartbeatSmoke(live);
+
+        var coreOk = resultOk && telemetryOk && heartbeatOk;
+        Console.WriteLine(coreOk
+            ? "=== LIVE SMOKE: core feeds (RESULT/TELEMETRY/HEARTBEAT) all PASS ==="
+            : "=== LIVE SMOKE: at least one core feed (RESULT/TELEMETRY/HEARTBEAT) FAILED ===");
+        return coreOk ? 0 : 1;
+    }
+
+    /// <summary>env ST4I_SERVER/ST4I_MK_KEY, falling back to --server/--key args (in that priority order,
+    /// matching the task brief). Throws <see cref="InvalidOperationException"/> (caught by the caller,
+    /// printed, exit 1) rather than letting a missing config surface as an unhelpful NullReferenceException
+    /// deep inside <see cref="LiveTransport.ForMachine"/>.</summary>
+    private static (string Server, string MkKey) ResolveLiveSmokeConfig(string[] args)
+    {
+        var server = Environment.GetEnvironmentVariable("ST4I_SERVER");
+        var mkKey = Environment.GetEnvironmentVariable("ST4I_MK_KEY");
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], "--server", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                server = args[i + 1];
+            else if (string.Equals(args[i], "--key", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                mkKey = args[i + 1];
+        }
+
+        if (string.IsNullOrWhiteSpace(server))
+            throw new InvalidOperationException("no server URL — set ST4I_SERVER or pass --server <url>");
+        if (string.IsNullOrWhiteSpace(mkKey))
+            throw new InvalidOperationException("no mk_ key — set ST4I_MK_KEY or pass --key <mk_...>");
+
+        return (server, mkKey);
+    }
+
+    private static string MaskKey(string mkKey) =>
+        mkKey.Length <= 10 ? mkKey : $"{mkKey[..10]}…({mkKey.Length} chars)";
+
+    /// <summary>
+    /// RESULT feed: builds a real <see cref="ScrewdriveSim"/> reading, normalizes it through the exact
+    /// same <see cref="Normalizer"/> the app's live pipeline uses, and sends it via
+    /// <see cref="LiveTransport.SendAsync"/> TWICE with the identical <see cref="CanonicalEnvelope"/> (so
+    /// the same idempotencyKey both times — <see cref="Normalizer.BuildIdempotencyKey"/> is a pure
+    /// function of machine/recipe/cycle, so re-sending the same envelope is the correct way to prove
+    /// server-side dedup, not a race with a freshly-generated key). Expects send #1 to succeed with a
+    /// processResultId and send #2 to come back Duplicate=true with the SAME id.
+    /// </summary>
+    private static bool RunResultSmoke(LiveTransport live)
+    {
+        Console.WriteLine("--- RESULT (process-result) ---");
+        try
+        {
+            var descriptor = new MachineDescriptor(
+                Code: LiveSmokeMachineCode,
+                SerialSeed: LiveSmokeSerialSeed,
+                DeviceClass: DeviceClass.Automation,
+                MachineType: "SCREWDRIVE",
+                StepType: "screw_tightening",
+                DriverKind: DriverKind.Simulated,
+                RecipeCode: "RC-SIMVERIFY",
+                MappingProfile: null,
+                CycleSeconds: 1.0);
+            var sim = new ScrewdriveSim(descriptor, seed: 4201);
+            var reading = sim.NextCycle(cycle: 1);
+            var profile = MappingProfile.ForClass(DeviceClass.Automation);
+            var env = Normalizer.Normalize(reading, profile);
+
+            var ack1 = SendWithTimeout(live, env);
+            Console.WriteLine(
+                $"[RESULT send #1] serialNumber={reading.SerialNumber} idempotencyKey={env.IdempotencyKey} " +
+                $"-> Success={ack1.Success} Id={ack1.Id} Duplicate={ack1.Duplicate} Queued={ack1.Queued} " +
+                $"HttpStatus={ack1.HttpStatus} LatencyMs={ack1.LatencyMs} Error={ack1.Error}");
+
+            var ack2 = SendWithTimeout(live, env); // SAME envelope/idempotencyKey — proves server dedup
+            Console.WriteLine(
+                $"[RESULT send #2, same idempotencyKey] -> Success={ack2.Success} Id={ack2.Id} " +
+                $"Duplicate={ack2.Duplicate} Queued={ack2.Queued} HttpStatus={ack2.HttpStatus} " +
+                $"LatencyMs={ack2.LatencyMs} Error={ack2.Error}");
+
+            var pass = ack1.Success && ack1.Id.HasValue && ack2.Success && ack2.Duplicate && ack2.Id == ack1.Id;
+            Console.WriteLine(pass
+                ? $"PASS RESULT: processResultId={ack1.Id}, duplicate re-send correctly detected (same id={ack2.Id})"
+                : "FAIL RESULT: expected send #1 Success+Id and send #2 Duplicate=true with the SAME Id");
+            return pass;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL RESULT: unexpected exception {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>TELEMETRY feed: a real <see cref="IotSensorSim"/> reading (deviceId=<see cref="LiveSmokeMachineCode"/>
+    /// — Normalizer.NormalizeTelemetry stamps every sample's deviceId from DeviceReading.MachineCode) sent
+    /// via SendAsync. Expects a 202-style accept with Accepted>=1 sample.</summary>
+    private static bool RunTelemetrySmoke(LiveTransport live)
+    {
+        Console.WriteLine("--- TELEMETRY ---");
+        try
+        {
+            var descriptor = new MachineDescriptor(
+                Code: LiveSmokeMachineCode,
+                SerialSeed: LiveSmokeSerialSeed,
+                DeviceClass: DeviceClass.Iot,
+                MachineType: "IOT_SENSOR",
+                StepType: null,
+                DriverKind: DriverKind.Simulated,
+                RecipeCode: null,
+                MappingProfile: null,
+                CycleSeconds: 1.0);
+            var sim = new IotSensorSim(descriptor, seed: 4202);
+            var reading = sim.NextCycle(cycle: 1);
+            var profile = MappingProfile.ForClass(DeviceClass.Iot);
+            var env = Normalizer.Normalize(reading, profile);
+
+            var ack = SendWithTimeout(live, env);
+            Console.WriteLine(
+                $"[TELEMETRY deviceId={LiveSmokeMachineCode}, {reading.Telemetry.Count} sample(s)] " +
+                $"-> Success={ack.Success} Accepted={ack.Accepted} HttpStatus={ack.HttpStatus} " +
+                $"LatencyMs={ack.LatencyMs} Error={ack.Error}");
+
+            var pass = ack.Success && ack.Accepted >= 1;
+            Console.WriteLine(pass ? $"PASS TELEMETRY: accepted={ack.Accepted}" : "FAIL TELEMETRY: expected Success=true and Accepted>=1");
+            return pass;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL TELEMETRY: unexpected exception {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>INSPECTION feed: a real <see cref="AoiInspectorSim"/> reading with a unique serialNumber
+    /// (so a repeat run of this tool never collides with a prior run's board). Machine 246 is provisioned
+    /// as SCREWDRIVE, not AOI/AVI, so the server may legitimately gate this (no vision license, wrong
+    /// machine class, etc.) — that is reported HONESTLY as an OBSERVED (not FAIL) line and never affects
+    /// the process exit code, per the task's "reachable-but-gated is still a valid finding" instruction.</summary>
+    private static void RunInspectionSmoke(LiveTransport live)
+    {
+        Console.WriteLine("--- INSPECTION ---");
+        try
+        {
+            var serialSeed = $"{LiveSmokeSerialSeed}-INSP-{DateTimeOffset.UtcNow:HHmmssfff}";
+            var descriptor = new MachineDescriptor(
+                Code: LiveSmokeMachineCode,
+                SerialSeed: serialSeed,
+                DeviceClass: DeviceClass.AoiAvi,
+                MachineType: "AOI",
+                StepType: "inspection",
+                DriverKind: DriverKind.Simulated,
+                RecipeCode: null,
+                MappingProfile: null,
+                CycleSeconds: 1.0);
+            var sim = new AoiInspectorSim(descriptor, seed: 4203, pointsPerBoard: 5, ngRate: 0.0);
+            var reading = sim.NextCycle(cycle: 1);
+            var profile = MappingProfile.ForClass(DeviceClass.AoiAvi);
+            var env = Normalizer.Normalize(reading, profile);
+
+            var ack = SendWithTimeout(live, env);
+            Console.WriteLine(
+                $"[INSPECTION serialNumber={reading.SerialNumber}, {reading.Measurements.Count} point(s)] " +
+                $"-> Success={ack.Success} Id={ack.Id} Duplicate={ack.Duplicate} Queued={ack.Queued} " +
+                $"HttpStatus={ack.HttpStatus} LatencyMs={ack.LatencyMs} Error={ack.Error}");
+
+            Console.WriteLine(ack.Success && ack.Id.HasValue
+                ? $"PASS INSPECTION: inspectionId={ack.Id}"
+                : $"OBSERVED INSPECTION (server-gated or rejected — reported honestly, not a smoke failure): HttpStatus={ack.HttpStatus} Queued={ack.Queued} Error={ack.Error}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OBSERVED INSPECTION: unexpected exception {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>CONFIG-SYNC: <see cref="LiveTransport.SyncConfigAsync"/> for the "recipe" kind against a
+    /// null cached version (i.e. "what's the current version, whatever it is"). A 404/no-recipe-configured
+    /// response and a real network/API error both collapse to the SAME DriftState=="error" shape inside
+    /// LiveTransport (see its own remarks) — that's a genuine limitation of the ConfigSyncResult record,
+    /// not something this tool can see past, so this reports exactly what the record contains and calls it
+    /// OBSERVED rather than FAIL either way (still proves the endpoint round-tripped without throwing).</summary>
+    private static void RunConfigSyncSmoke(LiveTransport live)
+    {
+        Console.WriteLine("--- CONFIG-SYNC ---");
+        try
+        {
+            using var cts = new CancellationTokenSource(LiveSmokeCallTimeout);
+            var result = live.SyncConfigAsync(LiveSmokeMachineCode, "recipe", null, cts.Token).GetAwaiter().GetResult();
+            Console.WriteLine(
+                $"[CONFIG-SYNC recipe] -> Changed={result.Changed} Version={result.Version} " +
+                $"DriftState={result.DriftState} Applied={result.Applied}");
+
+            Console.WriteLine(result.DriftState != "error"
+                ? $"PASS CONFIG-SYNC: endpoint reachable, DriftState={result.DriftState}, Version={result.Version}"
+                : "OBSERVED CONFIG-SYNC (endpoint reachable but returned an error/gated DriftState — e.g. no recipe configured for this machine — reported honestly, not a smoke failure)");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OBSERVED CONFIG-SYNC: unexpected exception {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>HEARTBEAT: <see cref="LiveTransport.HeartbeatAsync"/> — expects Success=true with the
+    /// server echoing back machineId=246 and a keyStatus for the mk_ key under test.</summary>
+    private static bool RunHeartbeatSmoke(LiveTransport live)
+    {
+        Console.WriteLine("--- HEARTBEAT ---");
+        try
+        {
+            using var cts = new CancellationTokenSource(LiveSmokeCallTimeout);
+            var result = live.HeartbeatAsync(LiveSmokeMachineCode, cts.Token).GetAwaiter().GetResult();
+            Console.WriteLine(
+                $"[HEARTBEAT] -> Success={result.Success} MachineId={result.MachineId} " +
+                $"KeyStatus={result.KeyStatus} KeyExpiresInDays={result.KeyExpiresInDays}");
+
+            var pass = result.Success && result.MachineId.HasValue;
+            Console.WriteLine(pass
+                ? $"PASS HEARTBEAT: keyStatus={result.KeyStatus} machineId={result.MachineId}"
+                : "FAIL HEARTBEAT: expected Success=true with a MachineId echoed back");
+            return pass;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL HEARTBEAT: unexpected exception {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Shared short-timeout SendAsync wrapper for the live-smoke methods above — each call gets
+    /// its own fresh <see cref="CancellationTokenSource"/> (matching the "short timeouts so it can't hang"
+    /// requirement) rather than one shared token across the whole run, so a slow RESULT call can't eat into
+    /// TELEMETRY/INSPECTION's budget.</summary>
+    private static TransportAck SendWithTimeout(LiveTransport live, CanonicalEnvelope env)
+    {
+        using var cts = new CancellationTokenSource(LiveSmokeCallTimeout);
+        return live.SendAsync(env, cts.Token).GetAwaiter().GetResult();
     }
 
     /// <summary>Shared assertion for the Task 19a Demo/Auto-fallback trace-cleanliness checks above:
