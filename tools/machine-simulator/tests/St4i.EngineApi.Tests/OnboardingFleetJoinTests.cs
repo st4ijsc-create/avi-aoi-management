@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
@@ -151,6 +152,54 @@ public sealed class OnboardingFleetJoinTests
     {
         var descriptor = OnboardingFleetJoin.BuildDescriptor("E2-IOT-ALIAS-01", "SN-IOT-ALIAS-01", freeTextType);
         Assert.Equal(DeviceClass.Iot, descriptor.DeviceClass);
+    }
+
+    /// <summary>Live-confirmed onboarding bug fix — the web wizard's machineType field became a
+    /// dropdown of the real server's exact 24-value enum (`server/constants/machineTypes.ts
+    /// MACHINE_TYPES`, mirrored web-side in `web/src/lib/machineTypes.ts`) instead of free text, so
+    /// every option the visitor can pick is guaranteed valid for Live registration. This is the
+    /// ENGINE-side half of that promise: EVERY one of those 24 values must resolve to its documented
+    /// (non-fallback) <see cref="DeviceClass"/> here — never silently landing on
+    /// <see cref="FallbackProfile"/>, which would mean a dropdown option quietly onboards as a generic
+    /// automation cell instead of the type actually picked — AND must build into a real
+    /// <see cref="SimulatorFactory"/> simulator, so a freshly onboarded machine of ANY offered type
+    /// actually produces cycles once the fleet runs, not just the handful this suite already covered
+    /// individually (AOI, SCREWDRIVE, AUTOMATION).</summary>
+    [Theory]
+    [InlineData("AVI", DeviceClass.AoiAvi)]
+    [InlineData("AOI", DeviceClass.AoiAvi)]
+    [InlineData("SPI", DeviceClass.AoiAvi)]
+    [InlineData("AXI", DeviceClass.AoiAvi)]
+    [InlineData("ICT", DeviceClass.Automation)]
+    [InlineData("FCT", DeviceClass.Automation)]
+    [InlineData("CMM", DeviceClass.Automation)]
+    [InlineData("AUTOMATION", DeviceClass.Automation)]
+    [InlineData("FEEDER", DeviceClass.Automation)]
+    [InlineData("ASSEMBLY", DeviceClass.Automation)]
+    [InlineData("SCREWDRIVE", DeviceClass.Automation)]
+    [InlineData("DISPENSING", DeviceClass.Automation)]
+    [InlineData("ICT_FUNC", DeviceClass.Automation)]
+    [InlineData("ROBOT_TEST", DeviceClass.Automation)]
+    [InlineData("PACKAGING", DeviceClass.Automation)]
+    [InlineData("PALLETIZER", DeviceClass.Automation)]
+    [InlineData("ROBOT", DeviceClass.Automation)]
+    [InlineData("MOUNTER", DeviceClass.Automation)]
+    [InlineData("REFLOW", DeviceClass.Automation)]
+    [InlineData("STENCIL_PRINTER", DeviceClass.Automation)]
+    [InlineData("WAVE_SOLDER", DeviceClass.Automation)]
+    [InlineData("WELDER", DeviceClass.Automation)]
+    [InlineData("IOT_SENSOR", DeviceClass.Iot)]
+    [InlineData("IOT_GATEWAY", DeviceClass.Iot)]
+    public void BuildDescriptor_EveryServerEnumValue_ResolvesDocumentedDeviceClass_AndBuildsARealSimulator(
+        string machineType, DeviceClass expectedClass)
+    {
+        var descriptor = OnboardingFleetJoin.BuildDescriptor($"E2-ALLTYPES-{machineType}", "SN-ALLTYPES", machineType);
+        Assert.Equal(expectedClass, descriptor.DeviceClass);
+
+        // Must not throw, and must not silently produce nothing — every offered dropdown option needs
+        // to actually cycle once a machine of that type joins the fleet.
+        var sim = SimulatorFactory.Create(descriptor, seed: 1);
+        Assert.NotNull(sim);
     }
 
     [Fact]

@@ -200,7 +200,45 @@ export const vi = {
       namePlaceholder: "vd: Trạm vít 01",
       defaultName: "Trạm vít demo",
       typeLabel: "Loại máy",
-      typePlaceholder: "vd: Automation, IoT, AOI/AVI",
+      typeSelectPlaceholder: "Chọn loại máy",
+      // Nhãn nhóm trong danh sách chọn — nhóm chỉ để dễ tìm, KHÔNG ảnh hưởng giá trị gửi đi (luôn là
+      // đúng chuỗi enum bên dưới).
+      typeGroups: {
+        inspection: "Kiểm tra",
+        automation: "Tự động hóa",
+        iot: "IoT",
+      },
+      // Giá trị dropdown PHẢI khớp chính xác (phân biệt hoa/thường) với enum của server thật
+      // (server/constants/machineTypes.ts MACHINE_TYPES) — đây là lý do bug gốc: trường tự do trước
+      // đây gửi "Automation" (chữ thường) trong khi server chỉ chấp nhận "AUTOMATION", nên Live
+      // register luôn trả về HTTP 400. Nhãn hiển thị song ngữ, nhưng giá trị gửi đi luôn là khóa (vd.
+      // "AOI") — không phải nhãn.
+      machineTypes: {
+        AVI: "AVI — Kiểm tra ngoại quan tự động",
+        AOI: "AOI — Kiểm tra quang học tự động",
+        SPI: "SPI — Kiểm tra keo hàn",
+        AXI: "AXI — Kiểm tra X-quang tự động",
+        ICT: "ICT — Kiểm tra mạch điện (In-Circuit Test)",
+        FCT: "FCT — Kiểm tra chức năng",
+        CMM: "CMM — Máy đo tọa độ 3 chiều",
+        ICT_FUNC: "ICT_FUNC — ICT kết hợp kiểm tra chức năng",
+        MOUNTER: "MOUNTER — Máy gắn linh kiện SMT",
+        REFLOW: "REFLOW — Lò hàn reflow",
+        STENCIL_PRINTER: "STENCIL_PRINTER — Máy in kem hàn",
+        WAVE_SOLDER: "WAVE_SOLDER — Máy hàn sóng",
+        AUTOMATION: "AUTOMATION — Trạm tự động hóa chung",
+        ASSEMBLY: "ASSEMBLY — Trạm lắp ráp",
+        SCREWDRIVE: "SCREWDRIVE — Trạm siết vít tự động",
+        DISPENSING: "DISPENSING — Trạm bơm keo / chất lỏng",
+        FEEDER: "FEEDER — Bộ cấp linh kiện",
+        PACKAGING: "PACKAGING — Trạm đóng gói",
+        PALLETIZER: "PALLETIZER — Máy xếp pallet",
+        ROBOT: "ROBOT — Robot công nghiệp",
+        ROBOT_TEST: "ROBOT_TEST — Trạm kiểm tra bằng robot",
+        WELDER: "WELDER — Trạm hàn",
+        IOT_SENSOR: "IOT_SENSOR — Cảm biến IoT",
+        IOT_GATEWAY: "IOT_GATEWAY — Gateway IoT",
+      },
       serverUrlLabel: "Địa chỉ server",
       serverUrlPlaceholder: "https://your-st4i-server",
       submit: "Đăng ký máy",

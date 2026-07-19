@@ -197,7 +197,45 @@ export const en: Dictionary = {
       namePlaceholder: "e.g. Screw station 01",
       defaultName: "Demo screw station",
       typeLabel: "Machine type",
-      typePlaceholder: "e.g. Automation, IoT, AOI/AVI",
+      typeSelectPlaceholder: "Select machine type",
+      // Group labels in the select popup — grouping is cosmetic only, it does NOT change the value
+      // sent to the server (always the exact enum string below).
+      typeGroups: {
+        inspection: "Inspection",
+        automation: "Automation",
+        iot: "IoT",
+      },
+      // Dropdown values MUST match the real server's enum EXACTLY (case-sensitive —
+      // server/constants/machineTypes.ts MACHINE_TYPES). This is the root cause this fix addresses:
+      // the old free-text field sent "Automation" (lowercase tail) while the server only accepts
+      // "AUTOMATION", so every Live registration 400'd. Labels are bilingual; the value actually sent
+      // is always the key (e.g. "AOI"), never the label.
+      machineTypes: {
+        AVI: "AVI — Automated Visual Inspection",
+        AOI: "AOI — Automated Optical Inspection",
+        SPI: "SPI — Solder Paste Inspection",
+        AXI: "AXI — Automated X-ray Inspection",
+        ICT: "ICT — In-Circuit Test",
+        FCT: "FCT — Functional Circuit Test",
+        CMM: "CMM — Coordinate Measuring Machine",
+        ICT_FUNC: "ICT_FUNC — Combined ICT + functional test cell",
+        MOUNTER: "MOUNTER — SMT pick-and-place mounter",
+        REFLOW: "REFLOW — Reflow soldering oven",
+        STENCIL_PRINTER: "STENCIL_PRINTER — Solder-paste stencil printer",
+        WAVE_SOLDER: "WAVE_SOLDER — Wave / selective soldering",
+        AUTOMATION: "AUTOMATION — General automation station",
+        ASSEMBLY: "ASSEMBLY — Assembly station",
+        SCREWDRIVE: "SCREWDRIVE — Automatic screwdriving station",
+        DISPENSING: "DISPENSING — Glue / paste dispensing",
+        FEEDER: "FEEDER — Component feeder",
+        PACKAGING: "PACKAGING — Packaging station",
+        PALLETIZER: "PALLETIZER — Palletizer",
+        ROBOT: "ROBOT — Generic industrial robot",
+        ROBOT_TEST: "ROBOT_TEST — Robotic test cell",
+        WELDER: "WELDER — Welding cell",
+        IOT_SENSOR: "IOT_SENSOR — Self-developed IoT sensor",
+        IOT_GATEWAY: "IOT_GATEWAY — Self-developed IoT gateway",
+      },
       serverUrlLabel: "Server URL",
       serverUrlPlaceholder: "https://your-st4i-server",
       submit: "Register machine",

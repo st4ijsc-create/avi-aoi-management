@@ -94,4 +94,30 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
   )
 }
 
-export { Select, SelectTrigger, SelectValue, SelectPortal, SelectPositioner, SelectPopup, SelectItem }
+function SelectGroup({ ...props }: SelectPrimitive.Group.Props) {
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />
+}
+
+/** Non-interactive heading above a `SelectGroup`'s items — same eyebrow-label styling used across the
+ * app for section headings (KpiTile, Machines' filter groups, ApiInspector, Scenario, SpcChart). */
+function SelectGroupLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
+  return (
+    <SelectPrimitive.GroupLabel
+      data-slot="select-group-label"
+      className={cn("px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-text-muted uppercase select-none", className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPortal,
+  SelectPositioner,
+  SelectPopup,
+  SelectItem,
+  SelectGroup,
+  SelectGroupLabel,
+}

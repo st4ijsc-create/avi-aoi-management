@@ -33,11 +33,23 @@ import {
   type OnboardingResult,
 } from "@/lib/api"
 import { recordCredential } from "@/lib/credentials"
+import { DEFAULT_MACHINE_TYPE, MACHINE_TYPE_GROUPS } from "@/lib/machineTypes"
 import { cn } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectPortal,
+  SelectPositioner,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FormField } from "@/components/FormField"
@@ -182,6 +194,15 @@ function RegisterStep({
   onSubmit,
 }: RegisterStepProps) {
   const t = useT()
+  // Flat {value,label} list (grouping is only for the popup's JSX below) — lets `<SelectValue>`
+  // resolve the trigger's displayed text from the raw enum value without a separate lookup table.
+  const machineTypeItems = React.useMemo(
+    () =>
+      MACHINE_TYPE_GROUPS.flatMap((group) =>
+        group.types.map((type) => ({ value: type, label: t(`onboarding.register.machineTypes.${type}`) }))
+      ),
+    [t]
+  )
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -208,12 +229,36 @@ function RegisterStep({
           />
         </FormField>
         <FormField label={t("onboarding.register.typeLabel")} htmlFor="onb-type">
-          <Input
-            id="onb-type"
+          {/* Dropdown, not free text — the real ST4I server rejects `POST /api/machine/register` with
+              HTTP 400 unless machineType is EXACTLY one of its enum values (case-sensitive; see
+              `@/lib/machineTypes`). Every option here IS one of those exact values, so whatever gets
+              picked is always valid for Live — the value sent to register/claim/enroll is the item's
+              `value` (e.g. "AOI"), never the translated label. */}
+          <Select
+            items={machineTypeItems}
             value={machineType}
-            onChange={(e) => onMachineType(e.target.value)}
-            placeholder={t("onboarding.register.typePlaceholder")}
-          />
+            onValueChange={(value) => value && onMachineType(value)}
+          >
+            <SelectTrigger id="onb-type">
+              <SelectValue placeholder={t("onboarding.register.typeSelectPlaceholder")} />
+            </SelectTrigger>
+            <SelectPortal>
+              <SelectPositioner>
+                <SelectPopup>
+                  {MACHINE_TYPE_GROUPS.map((group) => (
+                    <SelectGroup key={group.id}>
+                      <SelectGroupLabel>{t(`onboarding.register.typeGroups.${group.id}`)}</SelectGroupLabel>
+                      {group.types.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {t(`onboarding.register.machineTypes.${type}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectPopup>
+              </SelectPositioner>
+            </SelectPortal>
+          </Select>
         </FormField>
         {!isDemo ? (
           <FormField label={t("onboarding.register.serverUrlLabel")} htmlFor="onb-server" className="sm:col-span-2">
@@ -563,7 +608,7 @@ export default function Onboarding() {
   const [serialNumber, setSerialNumber] = React.useState("SIM-0001")
   const [name, setName] = React.useState(() => t("onboarding.register.defaultName"))
   const [nameTouched, setNameTouched] = React.useState(false)
-  const [machineType, setMachineType] = React.useState("Automation")
+  const [machineType, setMachineType] = React.useState(DEFAULT_MACHINE_TYPE)
   const [serverUrl, setServerUrl] = React.useState("")
   const [claimToken, setClaimToken] = React.useState("")
   const [enrollToken, setEnrollToken] = React.useState("")
@@ -725,7 +770,7 @@ export default function Onboarding() {
     setSerialNumber("")
     setName(t("onboarding.register.defaultName"))
     setNameTouched(false)
-    setMachineType("Automation")
+    setMachineType(DEFAULT_MACHINE_TYPE)
   }
 
   const handleCopy = async () => {

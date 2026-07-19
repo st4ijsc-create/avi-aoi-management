@@ -45,8 +45,28 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // it actually tracks `t()`, not a lucky coincidence).
     await expect(page.getByLabel(viDict.onboarding.register.nameLabel)).toHaveValue(viDict.onboarding.register.defaultName)
 
+    // Machine type is now a DROPDOWN, not free text (live-confirmed bug fix: the real ST4I server
+    // rejects `POST /api/machine/register` with HTTP 400 unless machineType is EXACTLY one of its
+    // enum values). Trigger is labelled via FormField's htmlFor/id, same association already proven
+    // by Settings' language Select (`05-settings.spec.ts`) — defaults to a real, exact-cased value
+    // ("AOI"), never the old "Automation" free text a case-sensitive Live server would 400 on. Opening
+    // it here proves the popup genuinely renders grouped, exact-enum options.
+    const typeSelect = page.getByLabel(viDict.onboarding.register.typeLabel)
+    await expect(typeSelect).toContainText(viDict.onboarding.register.machineTypes.AOI)
+    await typeSelect.click()
+    await expect(page.getByText(viDict.onboarding.register.typeGroups.iot, { exact: true })).toBeVisible()
+    await expect(page.getByRole("option", { name: viDict.onboarding.register.machineTypes.IOT_SENSOR })).toBeVisible()
+    // Re-picking the already-selected option closes the popup without changing this run's type — the
+    // dedicated IOT_SENSOR run below is the one that actually switches types.
+    await page.getByRole("option", { name: viDict.onboarding.register.machineTypes.AOI }).click()
+
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+    // The value the browser actually POSTs — not just what the trigger displays — is the one thing a
+    // free-text field could get subtly wrong. Captured before the click so the request is in flight by
+    // the time this promise is awaited.
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+    expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ machineType: "AOI" })
 
     // Step 1 — Approval: a real pending moment (headline + "Pending" badge), not a silent jump.
     // `exact: true` on the badge — the description paragraph nearby contains the same word.
@@ -101,6 +121,11 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(viDict.machineDetail.notFoundState.title)).toHaveCount(0)
 
+    // `OnboardingFleetJoin.Profiles["AOI"]` maps to `DeviceClass.AoiAvi` — the joined machine's own
+    // detail page shows that resolved class, concrete proof the exact enum picked in the dropdown
+    // drove which simulator this machine actually got (not a generic fallback).
+    await expect(page.getByText(`${viDict.deviceClass.AoiAvi} · ${viDict.driverKind.Simulated}`)).toBeVisible()
+
     // Starting the fleet (the wizard's own click already requests a start) makes the newly-joined
     // machine cycle for real, not just sit idle in the roster. Same located-by-label-then-sibling
     // technique as `02-machine-detail.spec.ts`'s IoT pass-rate assertion — "Chu kỳ" (Cycles) is also
@@ -112,13 +137,65 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: 20_000 }).toBeGreaterThan(0)
   })
 
+  /** Second concrete run of the dropdown — this time switching AWAY from the AOI default — proves the
+   * Select genuinely drives what gets sent (not just that the default happens to already be valid),
+   * and exercises the OTHER end of `OnboardingFleetJoin.Profiles`: an IOT_SENSOR machine resolves to
+   * `DeviceClass.Iot` (a different simulator family than AOI's `AoiAvi`), not a generic fallback. */
+  test("registering as IOT_SENSOR through the dropdown sends the exact enum and joins the fleet as IoT", async ({ page }) => {
+    await gotoOnboarding(page)
+    const serial = `SIM-E2E-IOT-${Date.now()}`
+
+    await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+
+    const typeSelect = page.getByLabel(viDict.onboarding.register.typeLabel)
+    await typeSelect.click()
+    await page.getByRole("option", { name: viDict.onboarding.register.machineTypes.IOT_SENSOR }).click()
+    await expect(typeSelect).toContainText(viDict.onboarding.register.machineTypes.IOT_SENSOR)
+
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
+    await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+    expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ machineType: "IOT_SENSOR" })
+
+    await page.getByRole("button", { name: viDict.onboarding.poll.approveBtn }).click()
+
+    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST")
+    await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
+    expect(JSON.parse((await claimRequest).postData() ?? "{}")).toMatchObject({ machineType: "IOT_SENSOR" })
+
+    await expect(page.getByText(viDict.onboarding.done.joinedFleet({ code: serial }))).toBeVisible()
+
+    await page.getByRole("button", { name: viDict.onboarding.done.viewMachine }).click()
+    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible({ timeout: 15_000 })
+
+    // `OnboardingFleetJoin.Profiles["IOT_SENSOR"]` maps to `DeviceClass.Iot` — concrete, observable
+    // proof a non-default type resolved to the right simulator instead of silently falling back to a
+    // generic Automation profile.
+    await expect(page.getByText(`${viDict.deviceClass.Iot} · ${viDict.driverKind.Simulated}`)).toBeVisible()
+
+    const cyclesValue = page
+      .locator("p.text-xs.text-text-muted", { hasText: viDict.machineDetail.overview.cycles })
+      .locator("xpath=following-sibling::p[1]")
+    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: 20_000 }).toBeGreaterThan(0)
+
+    await assertNoSeriousA11yViolations(page)
+  })
+
   test("'register another machine' resets the wizard to a fresh step 0", async ({ page }) => {
     await gotoOnboarding(page)
     const serial = `SIM-E2E-RESET-${Date.now()}`
 
     const nameField = page.getByLabel(viDict.onboarding.register.nameLabel)
+    const typeSelect = page.getByLabel(viDict.onboarding.register.typeLabel)
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
     await nameField.fill("Custom name for this run")
+
+    // Switch machine type away from the default before completing this run, so the reset assertion
+    // below actually proves `handleReset` restores DEFAULT_MACHINE_TYPE — not just that it was never
+    // touched in the first place.
+    await typeSelect.click()
+    await page.getByRole("option", { name: viDict.onboarding.register.machineTypes.WELDER }).click()
+    await expect(typeSelect).toContainText(viDict.onboarding.register.machineTypes.WELDER)
+
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
     await page.getByRole("button", { name: viDict.onboarding.poll.approveBtn }).click()
     await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
@@ -134,9 +211,11 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // Completion-review #5: serial/name/machineType/nameTouched are cleared on reset — re-running
     // "as is" used to re-submit the SAME serial (RegisterMachine's dup-check turns that into a silent
     // "already in the fleet" no-op join) and kept the PREVIOUS custom name pinned regardless of a later
-    // language switch. Empty serial also means the submit button starts disabled again.
+    // language switch. Empty serial also means the submit button starts disabled again. machineType
+    // resets to DEFAULT_MACHINE_TYPE (AOI) too — not left on whatever the previous run picked (WELDER).
     await expect(serialField).toHaveValue("")
     await expect(nameField).toHaveValue(viDict.onboarding.register.defaultName)
+    await expect(typeSelect).toContainText(viDict.onboarding.register.machineTypes.AOI)
     await expect(page.getByRole("button", { name: viDict.onboarding.register.submit })).toBeDisabled()
   })
 
@@ -165,6 +244,16 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // would catch a typo in ANY key on this screen, not just the ones asserted by name above).
     await expect(page.getByText(/onboarding\.[a-zA-Z.]+/)).toHaveCount(0)
 
+    // Machine type dropdown labels track the language too — the trigger already shows AOI's English
+    // label (not the VI text, not a raw i18n key); opening the popup and checking one option's exact
+    // English label (vs. its VI counterpart being absent) proves the OTHER 23 options translate the
+    // same way, not just the one already-selected default.
+    await expect(page.getByLabel(en.onboarding.register.typeLabel)).toContainText(en.onboarding.register.machineTypes.AOI)
+    await page.getByLabel(en.onboarding.register.typeLabel).click()
+    await expect(page.getByRole("option", { name: en.onboarding.register.machineTypes.IOT_SENSOR })).toBeVisible()
+    await expect(page.getByRole("option", { name: viDict.onboarding.register.machineTypes.IOT_SENSOR })).toHaveCount(0)
+    await page.keyboard.press("Escape")
+
     // Switching to Live surfaces the server-URL field and swaps the mode indicator's message — the
     // visible "this is the real integration" signal the brief asked for. The indicator's new text
     // depends on whatever `serverUrl` Settings happens to have saved in this environment (prefilled
@@ -186,6 +275,13 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await page.getByLabel(viDict.onboarding.demoLiveToggle.aria).getByRole("radio", { name: viDict.onboarding.demoLiveToggle.live }).click()
     await page.getByLabel(viDict.onboarding.register.serverUrlLabel).fill("http://127.0.0.1:59999")
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+
+    // Explicitly pick AUTOMATION (uppercase, the real server's exact enum) — proves the fix directly:
+    // the OLD free-text field's default was "Automation" (mixed case), which a case-sensitive Live
+    // server would 400 on. This run's claim payload (asserted below) carries the exact enum string.
+    await page.getByLabel(viDict.onboarding.register.typeLabel).click()
+    await page.getByRole("option", { name: viDict.onboarding.register.machineTypes.AUTOMATION }).click()
+
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
 
     // The real engine tried a real TCP connect to an unreachable port and caught the exception —
@@ -247,7 +343,9 @@ test.describe("onboarding — register → approve → claim → done → joins 
       isDemo: false,
       serverUrl: "http://127.0.0.1:59999",
       name: viDict.onboarding.register.defaultName,
-      machineType: "Automation",
+      // Exact server enum casing ("AUTOMATION"), not the OLD free-text default ("Automation") that a
+      // case-sensitive Live server would reject with HTTP 400 — the bug this whole fix addresses.
+      machineType: "AUTOMATION",
     })
 
     await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
