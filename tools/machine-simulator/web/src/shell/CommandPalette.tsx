@@ -2,12 +2,13 @@ import * as React from "react"
 import { Palette, Search } from "lucide-react"
 import { useLocation } from "wouter"
 
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogPortal, DialogOverlay } from "@/components/ui/dialog"
 import { NAV_ITEMS, type NavItem } from "@/shell/Sidebar"
 
 const EXTRA_ITEMS: NavItem[] = [
-  { label: "Design tokens (reference)", path: "/tokens", icon: Palette },
+  { labelKey: "shell.commandPalette.designTokens", path: "/tokens", icon: Palette },
 ]
 
 const ALL_ITEMS: NavItem[] = [...NAV_ITEMS, ...EXTRA_ITEMS]
@@ -24,6 +25,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+  const t = useT()
   const [, navigate] = useLocation()
   const [query, setQuery] = React.useState("")
   const [activeIndex, setActiveIndex] = React.useState(0)
@@ -32,8 +34,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const results = React.useMemo(() => {
     const q = query.trim().toLowerCase()
     if (q.length === 0) return ALL_ITEMS
-    return ALL_ITEMS.filter((item) => item.label.toLowerCase().includes(q))
-  }, [query])
+    return ALL_ITEMS.filter((item) => t(item.labelKey).toLowerCase().includes(q))
+    // `t` changes identity with the active language, so this recomputes on a language switch too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, t])
 
   // Reset transient state every time the palette opens, and land focus in the search box.
   React.useEffect(() => {
@@ -77,7 +81,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <DialogContent
           showCloseButton={false}
           className="top-[18%] max-w-md translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-md"
-          aria-label="Command palette"
+          aria-label={t("shell.commandPalette.dialogAria")}
         >
           <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
             <Search className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
@@ -86,8 +90,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Jump to a screen…"
-              aria-label="Search screens"
+              placeholder={t("shell.commandPalette.searchPlaceholder")}
+              aria-label={t("shell.commandPalette.searchAria")}
               role="combobox"
               aria-expanded="true"
               aria-controls={LISTBOX_ID}
@@ -104,9 +108,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               real DOM focus off the input; the highlighted option is announced via
               aria-activedescendant instead, the standard "listbox popup" combobox pattern. A nested
               <button> inside role="option" is two interactive elements in one (axe: nested-interactive). */}
-          <ul id={LISTBOX_ID} role="listbox" aria-label="Screens" className="max-h-72 overflow-y-auto p-1.5">
+          <ul id={LISTBOX_ID} role="listbox" aria-label={t("shell.commandPalette.listboxAria")} className="max-h-72 overflow-y-auto p-1.5">
             {results.length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-text-muted">No screens match “{query}”.</li>
+              <li className="px-3 py-6 text-center text-sm text-text-muted">
+                {t("shell.commandPalette.noResults", { query })}
+              </li>
             ) : (
               results.map((item, index) => {
                 const Icon = item.icon
@@ -125,7 +131,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     )}
                   >
                     <Icon className={cn("size-4 shrink-0", active ? "text-white" : "text-navy-500")} aria-hidden="true" />
-                    {item.label}
+                    {t(item.labelKey)}
                   </li>
                 )
               })

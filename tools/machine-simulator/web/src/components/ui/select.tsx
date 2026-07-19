@@ -78,13 +78,16 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-3 pl-7 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-navy-50 data-highlighted:text-navy-700 dark:data-highlighted:bg-navy-800/60",
+        // `text-primary-text` (not `text-navy-700`) — navy-700 has no dark override and left the
+        // highlighted option's label unreadable against `dark:bg-navy-800/60` (same bug class as
+        // Scenario.tsx's PresetCard, Settings.tsx's ModeSelector).
+        "relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-3 pl-7 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-navy-50 data-highlighted:text-primary-text dark:data-highlighted:bg-navy-800/60",
         className
       )}
       {...props}
     >
       <SelectPrimitive.ItemIndicator className="absolute left-2 flex size-3.5 items-center justify-center">
-        <CheckIcon className="size-3.5 text-navy-600" aria-hidden="true" />
+        <CheckIcon className="size-3.5 text-primary-text" aria-hidden="true" />
       </SelectPrimitive.ItemIndicator>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>

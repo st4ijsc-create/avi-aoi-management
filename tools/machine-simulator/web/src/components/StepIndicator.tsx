@@ -33,7 +33,11 @@ export function StepIndicator({ steps, currentIndex, className }: StepIndicatorP
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors",
                   done && "border-navy-600 bg-navy-600 text-white",
-                  active && "border-navy-600 bg-white text-navy-600 ring-4 ring-navy-100",
+                  // `bg-surface-card`/`text-primary-text`/`ring-navy-600/20` (not `bg-white`/
+                  // `text-navy-600`/`ring-navy-100`) — those three have no dark override, so the
+                  // "active" step circle stayed a literal white disc with dark-navy text/ring in dark
+                  // mode instead of adapting (same class of bug as PresetCard/ModeSelector).
+                  active && "border-navy-600 bg-surface-card text-primary-text ring-4 ring-navy-600/20",
                   !done && !active && "border-border bg-surface-subtle text-text-muted"
                 )}
               >
@@ -42,7 +46,7 @@ export function StepIndicator({ steps, currentIndex, className }: StepIndicatorP
               <span
                 className={cn(
                   "w-20 text-center text-[11px] font-medium",
-                  active ? "text-navy-700" : done ? "text-text-body" : "text-text-muted"
+                  active ? "text-primary-text" : done ? "text-text-body" : "text-text-muted"
                 )}
               >
                 {step.label}

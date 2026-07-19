@@ -1,8 +1,9 @@
 import { CheckCircle2 } from "lucide-react"
 
+import { useT } from "@/i18n"
 import type { BoardPoint, BoardResult } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { border, status } from "@/theme/tokens"
+import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 import { StatusBadge, type statusBadgeVariants } from "@/components/ui/status-badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { VariantProps } from "class-variance-authority"
@@ -14,10 +15,10 @@ import type { VariantProps } from "class-variance-authority"
 const BOARD_WIDTH = 1600
 const BOARD_HEIGHT = 1200
 
-const RESULT_COLOR: Record<BoardResult, string> = {
-  OK: status.ok,
-  NG: status.danger,
-  NTF: status.warn,
+function resultColor(tokens: ChartTokens, result: BoardResult): string {
+  if (result === "OK") return tokens.ok
+  if (result === "NG") return tokens.danger
+  return tokens.warn
 }
 
 type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"]>
@@ -43,11 +44,14 @@ interface BoardViewProps {
  * for a passing cycle, not a missing-data state.
  */
 export function BoardView({ points, className }: BoardViewProps) {
+  const t = useT()
+  const chartTokens = useChartTokens()
+
   if (points.length === 0) {
     return (
       <div className={className}>
         <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
-          Waiting for the first inspection cycle…
+          {t("boardView.waiting")}
         </div>
       </div>
     )
@@ -66,7 +70,7 @@ export function BoardView({ points, className }: BoardViewProps) {
     <TooltipProvider>
       <div className={cn("flex flex-col gap-3", className)}>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status="neutral">{points.length} points inspected</StatusBadge>
+          <StatusBadge status="neutral">{t("boardView.pointsInspected", { count: points.length })}</StatusBadge>
           {(["NG", "NTF", "OK"] as const).map((r) =>
             counts[r] ? (
               <StatusBadge key={r} status={RESULT_BADGE_STATUS[r]}>
@@ -83,19 +87,19 @@ export function BoardView({ points, className }: BoardViewProps) {
             role="img"
             aria-label={
               isClean
-                ? `Board view — all ${points.length} inspected points OK, no defects located`
-                : `Board view — ${withBbox.length} defect location${withBbox.length === 1 ? "" : "s"} highlighted of ${points.length} points inspected`
+                ? t("boardView.ariaClean", { count: points.length })
+                : t("boardView.ariaDefects", { defectCount: withBbox.length, total: points.length })
             }
           >
             <defs>
               <pattern id="board-grid" width="80" height="80" patternUnits="userSpaceOnUse">
-                <path d="M 80 0 L 0 0 0 80" fill="none" stroke={border.DEFAULT} strokeWidth={1} />
+                <path d="M 80 0 L 0 0 0 80" fill="none" stroke={chartTokens.border} strokeWidth={1} />
               </pattern>
             </defs>
             <rect width={BOARD_WIDTH} height={BOARD_HEIGHT} fill="url(#board-grid)" />
 
             {withBbox.map((p) => {
-              const color = RESULT_COLOR[p.result]
+              const color = resultColor(chartTokens, p.result)
               const { x, y, w, h } = p.bbox
               const showLabel = w >= 70 && h >= 28
 
@@ -145,7 +149,7 @@ export function BoardView({ points, className }: BoardViewProps) {
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="flex items-center gap-2 rounded-full border border-ok/30 bg-surface-card/95 px-3 py-1.5 text-sm font-medium text-ok-text shadow-sm">
                 <CheckCircle2 className="size-4" aria-hidden="true" />
-                Clean board — no defects located
+                {t("boardView.cleanBoard")}
               </div>
             </div>
           ) : null}
@@ -154,11 +158,11 @@ export function BoardView({ points, className }: BoardViewProps) {
         <div className="flex flex-wrap items-center gap-4 text-xs text-text-muted">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-danger" aria-hidden="true" />
-            NG — defect located
+            {t("boardView.legend.ng")}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-warn" aria-hidden="true" />
-            NTF — flagged, not a true defect
+            {t("boardView.legend.ntf")}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-ok" aria-hidden="true" />

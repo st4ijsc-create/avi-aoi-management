@@ -12,7 +12,9 @@ import {
   Zap,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { toast } from "sonner"
 
+import { useT } from "@/i18n"
 import {
   useApplyScenario,
   useApplyScenarioPreset,
@@ -35,32 +37,16 @@ import { Switch } from "@/components/ui/switch"
 const LOCAL_EDIT_COOLDOWN_MS = 1200
 const APPLY_DEBOUNCE_MS = 200
 
-const PRESET_META: Record<string, { label: string; description: string; icon: LucideIcon }> = {
-  normal: {
-    label: "Ca bình thường",
-    description: "Tốc độ và tỷ lệ lỗi mặc định của dây chuyền — nền cho mọi demo khác.",
-    icon: Gauge,
-  },
-  "high-defect": {
-    label: "Lô lỗi cao",
-    description: "Tăng mạnh tỷ lệ lỗi tiêm thêm để trình diễn andon/cảnh báo.",
-    icon: AlertTriangle,
-  },
-  "sensor-drift": {
-    label: "Sensor drift",
-    description: "Tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định kỳ của IOT_SENSOR.",
-    icon: Radio,
-  },
-  "network-outage": {
-    label: "Mất mạng demo",
-    description: "Chuyển sang store-and-forward lỗi cao (~90%) trong khi fleet vẫn chạy.",
-    icon: WifiOff,
-  },
-  "hotfolder-aoi": {
-    label: "Hot-folder AOI",
-    description: "Ghi một file đo lường mẫu rồi để driver AOI đọc lại thật.",
-    icon: FolderInput,
-  },
+/** Raw server preset name (kebab-case) → i18n dictionary key segment (camelCase, under
+ * `scenario.presets.*`) + icon. Label/description are resolved through `t()` at render time so they
+ * follow the active language; an unrecognized preset name (a future server addition this build
+ * doesn't know about yet) falls back to the raw name + a generic "custom preset" description. */
+const PRESET_META: Record<string, { i18nKey: string; icon: LucideIcon }> = {
+  normal: { i18nKey: "normal", icon: Gauge },
+  "high-defect": { i18nKey: "highDefect", icon: AlertTriangle },
+  "sensor-drift": { i18nKey: "sensorDrift", icon: Radio },
+  "network-outage": { i18nKey: "networkOutage", icon: WifiOff },
+  "hotfolder-aoi": { i18nKey: "hotfolderAoi", icon: FolderInput },
 }
 
 function formatMultiplier(n: number): string {
@@ -88,7 +74,11 @@ function SliderRow({ label, displayValue, value, min, max, step, ariaLabel, onVa
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-text-body">{label}</span>
-        <span className="font-numeric text-sm font-semibold text-navy-700">{displayValue}</span>
+        {/* `text-primary-text` (not `text-navy-700`) — navy-700 is a fixed brand-scale color with no
+            dark override, so on a dark navy-800 card it measured 1.23:1 (axe `color-contrast`, nearly
+            invisible). `--primary-text` is this design system's own token for brand-accent text that
+            stays readable on both surfaces (index.css). */}
+        <span className="font-numeric text-sm font-semibold text-primary-text">{displayValue}</span>
       </div>
       <Slider
         min={min}
@@ -111,8 +101,11 @@ interface PresetCardProps {
 }
 
 function PresetCard({ name, active, pending, onApply }: PresetCardProps) {
-  const meta = PRESET_META[name] ?? { label: name, description: "Preset tùy chỉnh.", icon: SlidersHorizontal }
-  const Icon = meta.icon
+  const t = useT()
+  const meta = PRESET_META[name]
+  const Icon = meta?.icon ?? SlidersHorizontal
+  const label = meta ? t(`scenario.presets.${meta.i18nKey}.label`) : name
+  const description = meta ? t(`scenario.presets.${meta.i18nKey}.description`) : t("scenario.presetCustomDescription")
   return (
     <button
       type="button"
@@ -121,15 +114,19 @@ function PresetCard({ name, active, pending, onApply }: PresetCardProps) {
       aria-pressed={active}
       className={cn(
         "flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50 disabled:cursor-not-allowed disabled:opacity-60",
-        active ? "border-navy-600 bg-navy-50" : "border-border bg-surface-base hover:bg-surface-subtle"
+        // `bg-navy-600/10` (not `bg-navy-50`) — a translucent tint over whatever surface it sits on,
+        // so the "selected" card reads as a subtle brand tint in both themes instead of `navy-50`'s
+        // flat near-white fill, which stayed near-white even under dark mode (no dark override on the
+        // raw navy scale) — a jarring light card floating in the dark UI.
+        active ? "border-navy-600 bg-navy-600/10" : "border-border bg-surface-base hover:bg-surface-subtle"
       )}
     >
       <div className="flex w-full items-center justify-between">
-        <Icon className={cn("size-4", active ? "text-navy-600" : "text-text-muted")} aria-hidden="true" />
-        {pending ? <Loader2 className="size-3.5 animate-spin text-navy-600" aria-hidden="true" /> : null}
+        <Icon className={cn("size-4", active ? "text-primary-text" : "text-text-muted")} aria-hidden="true" />
+        {pending ? <Loader2 className="size-3.5 animate-spin text-primary-text" aria-hidden="true" /> : null}
       </div>
-      <span className={cn("text-sm font-semibold", active ? "text-navy-700" : "text-text-strong")}>{meta.label}</span>
-      <span className="text-xs text-text-muted">{meta.description}</span>
+      <span className={cn("text-sm font-semibold", active ? "text-primary-text" : "text-text-strong")}>{label}</span>
+      <span className="text-xs text-text-muted">{description}</span>
     </button>
   )
 }
@@ -149,6 +146,7 @@ function ScenarioSkeleton() {
 }
 
 export default function Scenario() {
+  const t = useT()
   const scenarioQuery = useScenario()
   const applyScenario = useApplyScenario()
   const applyPreset = useApplyScenarioPreset()
@@ -228,6 +226,8 @@ export default function Scenario() {
 
   const handlePreset = (name: string) => {
     setPendingPreset(name)
+    const meta = PRESET_META[name]
+    const presetLabel = meta ? t(`scenario.presets.${meta.i18nKey}.label`) : name
     applyPreset.mutate(name, {
       onSuccess: (data) => {
         lastEditAtRef.current = Date.now()
@@ -242,6 +242,7 @@ export default function Scenario() {
           networkOutage: data.scenario.networkOutage,
         }
         if (data.hotFolderStatus) setHotFolderStatus(data.hotFolderStatus)
+        toast.success(t("toast.scenarioPresetApplied", { name: presetLabel }))
       },
       onSettled: () => setPendingPreset(null),
     })
@@ -261,6 +262,7 @@ export default function Scenario() {
           faultRate: data.faultRate,
           networkOutage: data.networkOutage,
         }
+        toast.success(t("toast.scenarioBurstApplied"))
       },
     })
   }
@@ -270,10 +272,8 @@ export default function Scenario() {
   if (scenarioQuery.isError) {
     return (
       <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
-        <h1 className="text-2xl font-semibold text-text-strong">Scenario</h1>
-        <p className="text-sm text-danger-text">
-          Could not reach the engine at the configured URL — check that St4i.EngineApi is running.
-        </p>
+        <h1 className="text-2xl font-semibold text-text-strong">{t("scenario.title")}</h1>
+        <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       </motion.div>
     )
   }
@@ -284,16 +284,14 @@ export default function Scenario() {
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-text-strong">Scenario</h1>
-        <p className="text-sm text-text-muted">
-          Sliders + preset trình diễn — thay đổi ở đây tác động thật lên fleet đang chạy.
-        </p>
+        <h1 className="text-2xl font-semibold text-text-strong">{t("scenario.title")}</h1>
+        <p className="text-sm text-text-muted">{t("scenario.subtitle")}</p>
       </div>
 
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">Trạng thái hiện tại</span>
+            <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{t("scenario.currentState")}</span>
             <span className="font-numeric text-sm text-text-body">{current?.statusLine ?? "—"}</span>
             {hotFolderStatus ? <span className="text-xs text-text-muted">{hotFolderStatus}</span> : null}
           </div>
@@ -304,12 +302,12 @@ export default function Scenario() {
       <Card>
         <CardContent className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-strong">Điều chỉnh trực tiếp</h2>
-            <p className="text-xs text-text-muted">Mỗi lần kéo áp dụng ngay lên fleet đang chạy.</p>
+            <h2 className="text-sm font-semibold text-text-strong">{t("scenario.liveAdjust.title")}</h2>
+            <p className="text-xs text-text-muted">{t("scenario.liveAdjust.hint")}</p>
           </div>
 
           <SliderRow
-            label="Tốc độ chu kỳ (Cycle rate)"
+            label={t("scenario.cycleRate")}
             displayValue={formatMultiplier(cycleRate)}
             value={cycleRate}
             min={0.25}
@@ -327,7 +325,7 @@ export default function Scenario() {
           />
 
           <SliderRow
-            label="Tỷ lệ lỗi (Defect rate)"
+            label={t("scenario.defectRate")}
             displayValue={formatPercent(defectRate)}
             value={defectRate}
             min={0}
@@ -345,7 +343,7 @@ export default function Scenario() {
           />
 
           <SliderRow
-            label="Tỷ lệ lỗi thiết bị (Fault rate)"
+            label={t("scenario.faultRate")}
             displayValue={formatPercent(faultRate)}
             value={faultRate}
             min={0}
@@ -370,8 +368,8 @@ export default function Scenario() {
                 <Wifi className="size-4 text-text-muted" aria-hidden="true" />
               )}
               <span className="flex flex-col">
-                <span className="text-sm font-medium text-text-body">Mất mạng (Network outage)</span>
-                <span className="text-[11px] text-text-muted">Chuyển transport sang store-and-forward lỗi cao.</span>
+                <span className="text-sm font-medium text-text-body">{t("scenario.networkOutage")}</span>
+                <span className="text-[11px] text-text-muted">{t("scenario.networkOutageHint")}</span>
               </span>
               <Switch
                 id="scenario-network-outage"
@@ -385,7 +383,7 @@ export default function Scenario() {
 
             <Button type="button" variant="outline" onClick={handleBurst} disabled={burst.isPending}>
               {burst.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Zap className="size-3.5" aria-hidden="true" />}
-              Burst (6x, 4s)
+              {t("scenario.burst")}
             </Button>
           </div>
         </CardContent>
@@ -394,8 +392,8 @@ export default function Scenario() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold text-text-strong">Preset trình diễn</h2>
-            <p className="text-xs text-text-muted">Mỗi nút đặt lại cả 3 chỉ số + trạng thái mạng, áp dụng một lần lên fleet đang chạy.</p>
+            <h2 className="text-sm font-semibold text-text-strong">{t("scenario.presetsTitle")}</h2>
+            <p className="text-xs text-text-muted">{t("scenario.presetsHint")}</p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {presets.map((preset) => (

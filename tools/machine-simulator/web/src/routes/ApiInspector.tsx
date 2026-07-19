@@ -1,12 +1,15 @@
 import * as React from "react"
+import { motion } from "framer-motion"
 import { Download, Pause, Play, Terminal, Trash2 } from "lucide-react"
 
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import {
   traceStatusBucket,
   useInspectorStream,
   type StreamConnectionState,
 } from "@/lib/inspector"
+import { fadeSlideUp } from "@/theme/motion"
 import { Button } from "@/components/ui/button"
 import { TraceTable } from "@/components/TraceTable"
 
@@ -59,9 +62,10 @@ interface FilterSelectProps {
   value: string
   options: string[]
   onChange: (value: string) => void
+  allLabel: string
 }
 
-function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
+function FilterSelect({ label, value, options, onChange, allLabel }: FilterSelectProps) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
@@ -70,7 +74,7 @@ function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
         onChange={(event) => onChange(event.target.value)}
         className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        <option value={ALL}>All</option>
+        <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -91,6 +95,7 @@ interface StreamStatusIndicatorProps {
  * affordance — this is the same "is the live connection healthy" question, just for the inspector's
  * own socket instead of the polled HTTP health check. */
 function StreamStatusIndicator({ connectionState, paused, eventsPerSecond }: StreamStatusIndicatorProps) {
+  const t = useT()
   const live = !paused && connectionState === "open"
 
   const dotClass = paused
@@ -102,12 +107,12 @@ function StreamStatusIndicator({ connectionState, paused, eventsPerSecond }: Str
         : "bg-danger"
 
   const label = paused
-    ? "Paused"
+    ? t("inspector.status.paused")
     : connectionState === "open"
-      ? "Live"
+      ? t("inspector.status.live")
       : connectionState === "connecting"
-        ? "Connecting…"
-        : "Reconnecting…"
+        ? t("inspector.status.connecting")
+        : t("inspector.status.reconnecting")
 
   return (
     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-card px-2.5 py-1.5 text-xs text-text-muted">
@@ -121,6 +126,7 @@ function StreamStatusIndicator({ connectionState, paused, eventsPerSecond }: Str
 }
 
 export default function ApiInspector() {
+  const t = useT()
   const stream = useInspectorStream()
   const [filterMachine, setFilterMachine] = React.useState(ALL)
   const [filterKind, setFilterKind] = React.useState(ALL)
@@ -167,7 +173,7 @@ export default function ApiInspector() {
     // of how this table renders it.
     const wireShape = snapshot.map(({ id: _id, ...event }) => event)
     downloadJson(wireShape, exportFileName())
-    setExportNote(`Exported ${snapshot.length.toLocaleString()} event${snapshot.length === 1 ? "" : "s"} to file`)
+    setExportNote(t("inspector.exportedNote", { count: snapshot.length }))
     clearTimeout(exportNoteTimer.current)
     exportNoteTimer.current = setTimeout(() => setExportNote(null), 4000)
   }
@@ -175,23 +181,19 @@ export default function ApiInspector() {
   const emptyMessage =
     stream.events.length === 0
       ? stream.connectionState === "connecting"
-        ? "Connecting to the engine…"
-        : "No API traffic yet — start the fleet from the top bar to see live requests here."
-      : "No events match the current filters."
+        ? t("inspector.emptyConnecting")
+        : t("inspector.emptyNoTraffic")
+      : t("inspector.emptyNoMatch")
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-6 lg:p-8">
+    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex min-h-0 flex-1 flex-col gap-4 p-6 lg:p-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <Terminal className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">API Inspector</h1>
+            <h1 className="text-2xl font-semibold text-text-strong">{t("inspector.title")}</h1>
           </div>
-          <p className="text-sm text-text-muted">
-            Live, envelope-by-envelope feed of every request the fleet sends —{" "}
-            <span className="font-numeric tabular-nums">{stream.totalCount.toLocaleString()}</span> captured this
-            session.
-          </p>
+          <p className="text-sm text-text-muted">{t("inspector.subtitle", { count: stream.totalCount.toLocaleString() })}</p>
         </div>
         <StreamStatusIndicator
           connectionState={stream.connectionState}
@@ -202,17 +204,38 @@ export default function ApiInspector() {
 
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface-card p-3">
         <div className="flex flex-wrap items-end gap-3">
-          <FilterSelect label="Machine" value={filterMachine} options={machineOptions} onChange={setFilterMachine} />
-          <FilterSelect label="Kind" value={filterKind} options={kindOptions} onChange={setFilterKind} />
-          <FilterSelect label="Status" value={filterStatus} options={statusOptions} onChange={setFilterStatus} />
+          <FilterSelect
+            label={t("inspector.filters.machine")}
+            value={filterMachine}
+            options={machineOptions}
+            onChange={setFilterMachine}
+            allLabel={t("inspector.filters.all")}
+          />
+          <FilterSelect
+            label={t("inspector.filters.kind")}
+            value={filterKind}
+            options={kindOptions}
+            onChange={setFilterKind}
+            allLabel={t("inspector.filters.all")}
+          />
+          <FilterSelect
+            label={t("inspector.filters.status")}
+            value={filterStatus}
+            options={statusOptions}
+            onChange={setFilterStatus}
+            allLabel={t("inspector.filters.all")}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-sm">
             <span className="font-numeric font-semibold text-text-strong">{filteredEvents.length.toLocaleString()}</span>
-            <span className="text-text-muted"> shown</span>
+            <span className="text-text-muted"> {t("inspector.shownLabel")}</span>
             {filtersActive ? (
-              <span className="font-numeric text-text-muted"> of {stream.events.length.toLocaleString()} buffered</span>
+              <span className="font-numeric text-text-muted">
+                {" "}
+                {t("inspector.ofBuffered", { count: stream.events.length.toLocaleString() })}
+              </span>
             ) : null}
           </div>
 
@@ -228,15 +251,15 @@ export default function ApiInspector() {
               ) : (
                 <Pause className="size-3.5" aria-hidden="true" />
               )}
-              {stream.paused ? "Resume" : "Pause"}
+              {stream.paused ? t("inspector.resume") : t("inspector.pause")}
             </Button>
             <Button size="sm" variant="outline" onClick={handleClear} disabled={stream.events.length === 0}>
               <Trash2 className="size-3.5" aria-hidden="true" />
-              Clear
+              {t("inspector.clear")}
             </Button>
             <Button size="sm" variant="outline" onClick={handleExport} disabled={stream.events.length === 0}>
               <Download className="size-3.5" aria-hidden="true" />
-              Export
+              {t("inspector.export")}
             </Button>
           </div>
         </div>
@@ -249,6 +272,6 @@ export default function ApiInspector() {
       ) : null}
 
       <TraceTable rows={filteredEvents} emptyMessage={emptyMessage} className="min-h-0 flex-1" />
-    </div>
+    </motion.div>
   )
 }

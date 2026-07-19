@@ -2,6 +2,7 @@ import * as React from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { motion, useReducedMotion } from "framer-motion"
 
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { traceStatusTone, type TraceRow } from "@/lib/inspector"
 import { rowEnter } from "@/theme/motion"
@@ -104,6 +105,7 @@ interface TraceTableProps {
  * `aria-rowindex` per row since the DOM only ever holds the visible window, not every row in order.
  */
 export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
+  const t = useT()
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
 
@@ -127,7 +129,7 @@ export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
       <div
         ref={scrollRef}
         role="table"
-        aria-label="API trace events"
+        aria-label={t("inspector.title")}
         aria-rowcount={rows.length + 1}
         // Keyboard-focusable (axe `scrollable-region-focusable`): this div is the actual scroll
         // container (react-virtual scrolls it directly), so a keyboard-only user needs to be able to
@@ -145,15 +147,15 @@ export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
               "sticky top-0 z-10 border-b border-border bg-surface-subtle px-3"
             )}
           >
-            <HeaderCell>Time</HeaderCell>
-            <HeaderCell>Machine</HeaderCell>
-            <HeaderCell>Kind</HeaderCell>
-            <HeaderCell>Method</HeaderCell>
-            <HeaderCell>Path</HeaderCell>
-            <HeaderCell align="center">Status</HeaderCell>
-            <HeaderCell align="right">Latency</HeaderCell>
-            <HeaderCell align="center">Mode</HeaderCell>
-            <HeaderCell>Dup / Error</HeaderCell>
+            <HeaderCell>{t("inspector.table.time")}</HeaderCell>
+            <HeaderCell>{t("inspector.table.machine")}</HeaderCell>
+            <HeaderCell>{t("inspector.table.kind")}</HeaderCell>
+            <HeaderCell>{t("inspector.table.method")}</HeaderCell>
+            <HeaderCell>{t("inspector.table.path")}</HeaderCell>
+            <HeaderCell align="center">{t("inspector.table.status")}</HeaderCell>
+            <HeaderCell align="right">{t("inspector.table.latency")}</HeaderCell>
+            <HeaderCell align="center">{t("inspector.table.mode")}</HeaderCell>
+            <HeaderCell>{t("inspector.table.dupError")}</HeaderCell>
           </div>
 
           {rows.length === 0 ? (

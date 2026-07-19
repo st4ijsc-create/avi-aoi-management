@@ -1,10 +1,11 @@
 import { motion } from "framer-motion"
 import type { VariantProps } from "class-variance-authority"
 
-import type { DeviceClass, DriverKind, FleetTile } from "@/lib/api"
+import { useT } from "@/i18n"
+import type { FleetTile } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 import { staggerItem } from "@/theme/motion"
-import { status as statusTokens } from "@/theme/tokens"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,30 +16,18 @@ type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"
 
 // StatusText is the ENGINE's own verdict label (MachineState.cs) — authoritative, not re-derived
 // client-side. "Idle" is the pre-first-cycle default.
-const STATUS_META: Record<string, { status: BadgeStatus; label: string }> = {
-  Idle: { status: "neutral", label: "Idle" },
-  OK: { status: "ok", label: "OK" },
-  WARN: { status: "warn", label: "Warn" },
-  FAIL: { status: "danger", label: "Fail" },
-  TELEMETRY: { status: "info", label: "Telemetry" },
+const STATUS_META: Record<string, { status: BadgeStatus; key: string }> = {
+  Idle: { status: "neutral", key: "status.idle" },
+  OK: { status: "ok", key: "status.ok" },
+  WARN: { status: "warn", key: "status.warn" },
+  FAIL: { status: "danger", key: "status.fail" },
+  TELEMETRY: { status: "info", key: "status.telemetry" },
 }
 
-const DEVICE_CLASS_LABEL: Record<DeviceClass, string> = {
-  Automation: "Automation",
-  Iot: "IoT",
-  AoiAvi: "AOI / AVI",
-}
-
-const DRIVER_KIND_LABEL: Record<DriverKind, string> = {
-  Simulated: "Simulated",
-  HotFolderAoi: "Hot-folder AOI",
-  Mqtt: "MQTT",
-}
-
-function ringColor(passRate: number): string {
-  if (passRate >= 0.95) return statusTokens.ok
-  if (passRate >= 0.8) return statusTokens.warn
-  return statusTokens.danger
+function ringColor(tokens: ChartTokens, passRate: number): string {
+  if (passRate >= 0.95) return tokens.ok
+  if (passRate >= 0.8) return tokens.warn
+  return tokens.danger
 }
 
 /**
@@ -50,6 +39,8 @@ function ringColor(passRate: number): string {
  * Rendering that as a red 0% ring would misrepresent a perfectly healthy sensor as failing.
  */
 function PassRateRing({ passRate, applicable }: { passRate: number; applicable: boolean }) {
+  const t = useT()
+  const chartTokens = useChartTokens()
   const radius = 17
   const circumference = 2 * Math.PI * radius
 
@@ -58,7 +49,7 @@ function PassRateRing({ passRate, applicable }: { passRate: number; applicable: 
       <div
         className="relative flex size-11 shrink-0 items-center justify-center"
         role="img"
-        aria-label="Pass rate not applicable — telemetry only"
+        aria-label={t("machineCard.passRateNotApplicableAria")}
       >
         <svg viewBox="0 0 40 40" className="size-11" aria-hidden="true">
           <circle cx="20" cy="20" r={radius} fill="none" stroke="var(--border)" strokeWidth="4" />
@@ -78,7 +69,7 @@ function PassRateRing({ passRate, applicable }: { passRate: number; applicable: 
     <div
       className="relative flex size-11 shrink-0 items-center justify-center"
       role="img"
-      aria-label={`Pass rate ${pct}%`}
+      aria-label={t("machineCard.passRateAria", { pct })}
     >
       <svg viewBox="0 0 40 40" className="size-11 -rotate-90" aria-hidden="true">
         <circle cx="20" cy="20" r={radius} fill="none" stroke="var(--border)" strokeWidth="4" />
@@ -87,7 +78,7 @@ function PassRateRing({ passRate, applicable }: { passRate: number; applicable: 
           cy="20"
           r={radius}
           fill="none"
-          stroke={ringColor(passRate)}
+          stroke={ringColor(chartTokens, passRate)}
           strokeWidth="4"
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -109,7 +100,10 @@ interface MachineCardProps {
 }
 
 export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
-  const meta = STATUS_META[machine.statusText] ?? { status: "neutral" as const, label: machine.statusText }
+  const t = useT()
+  const meta = STATUS_META[machine.statusText]
+  const status = meta?.status ?? "neutral"
+  const label = meta ? t(meta.key) : machine.statusText
   const isActive = isRunning && machine.cycles > 0
 
   return (
@@ -122,32 +116,33 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
         <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <StatusBadge status={meta.status} className={cn(isActive && meta.status === "ok" && "animate-pulse")}>
-                {meta.label}
+              <StatusBadge status={status} className={cn(isActive && status === "ok" && "animate-pulse")}>
+                {label}
               </StatusBadge>
               <Badge variant="outline" className="shrink-0">
-                {DRIVER_KIND_LABEL[machine.driverKind]}
+                {t(`driverKind.${machine.driverKind}`)}
               </Badge>
             </div>
 
             <div className="flex flex-col">
               <span className="text-lg font-semibold text-text-strong">{machine.code}</span>
               <span className="text-xs font-medium tracking-wide text-text-muted uppercase">
-                {DEVICE_CLASS_LABEL[machine.deviceClass]}
+                {t(`deviceClass.${machine.deviceClass}`)}
               </span>
             </div>
 
             <div className="flex items-center gap-3">
               <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="text-[11px] text-text-muted">Cycle trend</span>
+                <span className="text-[11px] text-text-muted">{t("machineCard.cycleTrend")}</span>
                 <Sparkline data={machine.spark} height={28} />
               </div>
             </div>
 
             <div className="flex flex-col gap-0.5 border-t border-border pt-2.5">
               <span className="font-numeric text-sm font-semibold text-text-strong">
-                {machine.cycles.toLocaleString()} <span className="font-sans text-xs font-normal text-text-muted">cycles</span>
+                {machine.cycles.toLocaleString()}{" "}
+                <span className="font-sans text-xs font-normal text-text-muted">{t("machineCard.cyclesUnit")}</span>
               </span>
               <span className="truncate text-xs text-text-muted" title={machine.lastCycleSummary}>
                 {machine.lastCycleSummary}

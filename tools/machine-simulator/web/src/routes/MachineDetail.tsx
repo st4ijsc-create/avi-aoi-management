@@ -14,7 +14,8 @@ import {
 import type { VariantProps } from "class-variance-authority"
 import { Link, useParams } from "wouter"
 
-import { EngineApiError, useMachine, type DeviceClass, type DriverKind, type MachineDetail as MachineDetailDto } from "@/lib/api"
+import { useT } from "@/i18n"
+import { EngineApiError, useMachine, type DeviceClass, type MachineDetail as MachineDetailDto } from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -27,26 +28,20 @@ import { SpcChart } from "@/components/SpcChart"
 import { TelemetryChart } from "@/components/TelemetryChart"
 
 type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"]>
+type T = (key: string, vars?: Record<string, string | number>) => string
 
 // StatusText is the engine's own verdict label (MachineState.cs) — same map as MachineCard's.
-const STATUS_META: Record<string, { status: BadgeStatus; label: string }> = {
-  Idle: { status: "neutral", label: "Idle" },
-  OK: { status: "ok", label: "OK" },
-  WARN: { status: "warn", label: "Warn" },
-  FAIL: { status: "danger", label: "Fail" },
-  TELEMETRY: { status: "info", label: "Telemetry" },
+const STATUS_META: Record<string, { status: BadgeStatus; key: string }> = {
+  Idle: { status: "neutral", key: "status.idle" },
+  OK: { status: "ok", key: "status.ok" },
+  WARN: { status: "warn", key: "status.warn" },
+  FAIL: { status: "danger", key: "status.fail" },
+  TELEMETRY: { status: "info", key: "status.telemetry" },
 }
 
-const DEVICE_CLASS_LABEL: Record<DeviceClass, string> = {
-  Automation: "Automation",
-  Iot: "IoT",
-  AoiAvi: "AOI / AVI",
-}
-
-const DRIVER_KIND_LABEL: Record<DriverKind, string> = {
-  Simulated: "Simulated",
-  HotFolderAoi: "Hot-folder AOI",
-  Mqtt: "MQTT",
+function statusMetaFor(t: T, statusText: string): { status: BadgeStatus; label: string } {
+  const meta = STATUS_META[statusText]
+  return meta ? { status: meta.status, label: t(meta.key) } : { status: "neutral", label: statusText }
 }
 
 const CLASS_ICON: Record<DeviceClass, React.ComponentType<{ className?: string }>> = {
@@ -57,20 +52,21 @@ const CLASS_ICON: Record<DeviceClass, React.ComponentType<{ className?: string }
 
 type TabId = "overview" | "spc" | "telemetry" | "board" | "config" | "log"
 
-function primaryTabFor(deviceClass: DeviceClass): { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> } {
-  if (deviceClass === "Automation") return { id: "spc", label: "SPC", icon: LineChartIcon }
-  if (deviceClass === "Iot") return { id: "telemetry", label: "Telemetry", icon: Radio }
-  return { id: "board", label: "Board", icon: ScanEye }
+function primaryTabFor(t: T, deviceClass: DeviceClass): { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> } {
+  if (deviceClass === "Automation") return { id: "spc", label: t("machineDetail.tabs.spc"), icon: LineChartIcon }
+  if (deviceClass === "Iot") return { id: "telemetry", label: t("machineDetail.tabs.telemetry"), icon: Radio }
+  return { id: "board", label: t("machineDetail.tabs.board"), icon: ScanEye }
 }
 
 function BackLink() {
+  const t = useT()
   return (
     <Link
       href="/"
       className="inline-flex w-fit items-center gap-1.5 rounded-md text-sm text-text-muted transition-colors hover:text-navy-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy-600"
     >
       <ArrowLeft className="size-3.5" aria-hidden="true" />
-      Back to dashboard
+      {t("machineDetail.back")}
     </Link>
   )
 }
@@ -112,6 +108,7 @@ function DetailSkeleton() {
 }
 
 function NotFoundState({ code }: { code: string }) {
+  const t = useT()
   return (
     <motion.div
       initial="hidden"
@@ -126,11 +123,8 @@ function NotFoundState({ code }: { code: string }) {
             <div className="flex size-12 items-center justify-center rounded-full bg-danger/10">
               <ServerCrash className="size-6 text-danger-text" aria-hidden="true" />
             </div>
-            <h1 className="text-lg font-semibold text-text-strong">Machine not found</h1>
-            <p className="text-sm text-text-muted">
-              No machine with code <span className="font-numeric font-medium text-text-body">{code}</span> is
-              registered in this fleet. It may not have started yet, or the code was mistyped.
-            </p>
+            <h1 className="text-lg font-semibold text-text-strong">{t("machineDetail.notFoundState.title")}</h1>
+            <p className="text-sm text-text-muted">{t("machineDetail.notFoundState.description", { code })}</p>
           </CardContent>
         </Card>
       </div>
@@ -139,6 +133,7 @@ function NotFoundState({ code }: { code: string }) {
 }
 
 function ConnectivityErrorState() {
+  const t = useT()
   return (
     <motion.div
       initial="hidden"
@@ -147,17 +142,16 @@ function ConnectivityErrorState() {
       className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
     >
       <BackLink />
-      <p className="text-sm text-danger-text">
-        Could not reach the engine at the configured URL — check that St4i.EngineApi is running.
-      </p>
+      <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
     </motion.div>
   )
 }
 
 function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
-  const statusMeta = STATUS_META[machine.statusText] ?? { status: "neutral" as const, label: machine.statusText }
+  const t = useT()
+  const statusMeta = statusMetaFor(t, machine.statusText)
   const HeaderIcon = CLASS_ICON[machine.class]
-  const primaryTab = primaryTabFor(machine.class)
+  const primaryTab = primaryTabFor(t, machine.class)
   const passRateApplicable = machine.class !== "Iot"
 
   return (
@@ -172,8 +166,10 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-navy-50">
-            <HeaderIcon className="size-5 text-navy-600" aria-hidden="true" />
+          {/* `bg-navy-600/10`/`text-primary-text` (not `bg-navy-50`/`text-navy-600`) — dark-mode-adaptive
+              tint, see Dashboard.tsx's EmptyState icon badge for the same fix + rationale. */}
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-navy-600/10">
+            <HeaderIcon className="size-5 text-primary-text" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-2">
@@ -181,15 +177,15 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               <StatusBadge status={statusMeta.status}>{statusMeta.label}</StatusBadge>
             </div>
             <p className="text-sm text-text-muted">
-              {DEVICE_CLASS_LABEL[machine.class]} · {DRIVER_KIND_LABEL[machine.driverKind]}
+              {t(`deviceClass.${machine.class}`)} · {t(`driverKind.${machine.driverKind}`)}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-6">
-          <HeaderStat label="Cycles" value={machine.cycles.toLocaleString()} />
+          <HeaderStat label={t("machineDetail.headerCycles")} value={machine.cycles.toLocaleString()} />
           <HeaderStat
-            label="Pass rate"
+            label={t("machineDetail.headerPassRate")}
             value={passRateApplicable ? `${(machine.passRate * 100).toFixed(1)}%` : "—"}
           />
         </div>
@@ -201,7 +197,7 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
             <TabsList>
               <TabsTrigger value="overview">
                 <Gauge className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                Overview
+                {t("machineDetail.tabs.overview")}
               </TabsTrigger>
               <TabsTrigger value={primaryTab.id}>
                 <primaryTab.icon className="size-3.5" aria-hidden="true" data-icon="inline-start" />
@@ -209,11 +205,11 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               </TabsTrigger>
               <TabsTrigger value="config">
                 <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                Config
+                {t("machineDetail.tabs.config")}
               </TabsTrigger>
               <TabsTrigger value="log">
                 <History className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                Log
+                {t("machineDetail.tabs.log")}
               </TabsTrigger>
             </TabsList>
 
@@ -221,25 +217,25 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">Status</p>
+                    <p className="text-xs text-text-muted">{t("machineDetail.overview.status")}</p>
                     <StatusBadge status={statusMeta.status} className="mt-1.5">
                       {statusMeta.label}
                     </StatusBadge>
                   </div>
                   <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">Driver</p>
+                    <p className="text-xs text-text-muted">{t("machineDetail.overview.driver")}</p>
                     <p className="mt-1 text-lg font-semibold text-text-strong">
-                      {DRIVER_KIND_LABEL[machine.driverKind]}
+                      {t(`driverKind.${machine.driverKind}`)}
                     </p>
                   </div>
                   <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">Cycles</p>
+                    <p className="text-xs text-text-muted">{t("machineDetail.overview.cycles")}</p>
                     <p className="font-numeric mt-1 text-lg font-semibold text-text-strong">
                       {machine.cycles.toLocaleString()}
                     </p>
                   </div>
                   <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">Pass rate</p>
+                    <p className="text-xs text-text-muted">{t("machineDetail.overview.passRate")}</p>
                     <p className="font-numeric mt-1 text-lg font-semibold text-text-strong">
                       {passRateApplicable ? `${(machine.passRate * 100).toFixed(1)}%` : "—"}
                     </p>
@@ -249,22 +245,22 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <Card size="sm">
                     <CardContent className="flex flex-col gap-1.5">
-                      <h3 className="text-sm font-semibold text-text-strong">Last config sync</h3>
+                      <h3 className="text-sm font-semibold text-text-strong">{t("machineDetail.overview.lastConfigSync")}</h3>
                       <p className="font-numeric text-sm text-text-muted">{machine.driftState}</p>
                     </CardContent>
                   </Card>
                   <Card size="sm">
                     <CardContent className="flex flex-col gap-2">
-                      <h3 className="text-sm font-semibold text-text-strong">Recent cycles</h3>
+                      <h3 className="text-sm font-semibold text-text-strong">{t("machineDetail.overview.recentCycles")}</h3>
                       {machine.cycleLog.length === 0 ? (
-                        <p className="text-sm text-text-muted">No cycles logged yet.</p>
+                        <p className="text-sm text-text-muted">{t("cycleLogTable.empty")}</p>
                       ) : (
                         <ul className="flex flex-col gap-1.5">
                           {[...machine.cycleLog]
                             .reverse()
                             .slice(0, 5)
                             .map((row, i) => {
-                              const meta = verdictMeta(row.verdict)
+                              const meta = verdictMeta(t, row.verdict)
                               return (
                                 <li key={`${row.time}-${i}`} className="flex items-center justify-between gap-2 text-xs">
                                   <span className="font-numeric shrink-0 text-text-muted">

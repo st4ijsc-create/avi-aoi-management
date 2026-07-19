@@ -10,9 +10,10 @@ import {
   type TooltipContentProps,
 } from "recharts"
 
+import { useT } from "@/i18n"
 import type { TelemetrySeries } from "@/lib/api"
 import { formatMetric } from "@/lib/utils"
-import { border, chartSeries, surface, text } from "@/theme/tokens"
+import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 
 interface TelemetryChartProps {
   series: TelemetrySeries[]
@@ -66,46 +67,57 @@ function buildChartRows(series: TelemetrySeries[]): Array<Record<string, number 
  * instead of a blanket single text color, which would lose the at-a-glance series-to-line mapping a
  * multi-line tooltip needs.
  */
-function TelemetryTooltip({ active, payload, label }: TooltipContentProps) {
-  if (!active || !payload || payload.length === 0) return null
-  return (
-    <div
-      className="rounded-lg border px-3 py-2 text-xs"
-      style={{ backgroundColor: surface.card, borderColor: border.DEFAULT, boxShadow: "var(--shadow-md)" }}
-    >
-      <p className="mb-1 font-semibold text-text-strong">Sample {label}</p>
-      <div className="flex flex-col gap-1">
-        {payload.map((entry) => {
-          const rawKey = `${String(entry.dataKey ?? entry.name)}${RAW_SUFFIX}`
-          const raw = (entry.payload as Record<string, number | undefined> | undefined)?.[rawKey]
-          return (
-            <div key={String(entry.dataKey)} className="flex items-center gap-1.5">
-              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} aria-hidden="true" />
-              <span className="text-text-body">{entry.name}</span>
-              <span className="font-numeric ml-auto font-medium text-text-strong">
-                {raw === undefined ? "—" : formatMetric(raw)}
-              </span>
-            </div>
-          )
-        })}
+function buildTelemetryTooltip(t: (key: string, vars?: Record<string, string | number>) => string, chartTokens: ChartTokens) {
+  return function TelemetryTooltip({ active, payload, label }: TooltipContentProps) {
+    if (!active || !payload || payload.length === 0) return null
+    return (
+      <div
+        className="rounded-lg border px-3 py-2 text-xs"
+        style={{ backgroundColor: chartTokens.surfaceCard, borderColor: chartTokens.border, boxShadow: "var(--shadow-md)" }}
+      >
+        <p className="mb-1 font-semibold text-text-strong">{t("telemetryChart.tooltipSample", { sample: String(label) })}</p>
+        <div className="flex flex-col gap-1">
+          {payload.map((entry) => {
+            const rawKey = `${String(entry.dataKey ?? entry.name)}${RAW_SUFFIX}`
+            const raw = (entry.payload as Record<string, number | undefined> | undefined)?.[rawKey]
+            return (
+              <div key={String(entry.dataKey)} className="flex items-center gap-1.5">
+                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} aria-hidden="true" />
+                <span className="text-text-body">{entry.name}</span>
+                <span className="font-numeric ml-auto font-medium text-text-strong">
+                  {raw === undefined ? "—" : formatMetric(raw)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 }
 
 /** Multi-line telemetry chart for IoT machines — one line per reported metric on a shared, per-series
- * normalized axis (see `buildChartRows` doc comment for why), Recharts' `chartSeries` palette cycling
- * by declaration order so the same metric keeps the same color across a session even as new metrics
- * appear. */
+ * normalized axis (see `buildChartRows` doc comment for why), the theme's `chartSeries` palette
+ * cycling by declaration order so the same metric keeps the same color across a session even as new
+ * metrics appear. */
 export function TelemetryChart({ series, className }: TelemetryChartProps) {
+  const t = useT()
+  const chartTokens = useChartTokens()
   const data = React.useMemo(() => buildChartRows(series), [series])
   const hasData = series.some((s) => s.values.length > 0)
+  // Custom tooltip content — replaces Recharts' default, which colors each item's NAME/VALUE text in
+  // that series' own line color (measured well under AA 4.5:1 on white — axe `color-contrast`,
+  // confirmed live). Follows this app's established "colored dot for identification, AA-safe body
+  // text for content" split (same pattern as `StatusBadge`/`TraceTable`). Rebuilt each render (closes
+  // over the current `t`/`chartTokens`) — Recharts' `content` prop takes a fresh component/function
+  // each render just fine, no stable identity required.
+  const TelemetryTooltip = React.useMemo(() => buildTelemetryTooltip(t, chartTokens), [t, chartTokens])
 
   if (!hasData) {
     return (
       <div className={className}>
         <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
-          No telemetry samples yet — this machine hasn't reported a metric this session.
+          {t("telemetryChart.noSamples")}
         </div>
       </div>
     )
@@ -116,17 +128,17 @@ export function TelemetryChart({ series, className }: TelemetryChartProps) {
       <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
-            <CartesianGrid vertical={false} stroke={border.DEFAULT} strokeDasharray="3 3" />
+            <CartesianGrid vertical={false} stroke={chartTokens.border} strokeDasharray="3 3" />
             <XAxis
               dataKey="i"
-              tick={{ fill: text.muted, fontSize: 11 }}
-              axisLine={{ stroke: border.DEFAULT }}
+              tick={{ fill: chartTokens.textMuted, fontSize: 11 }}
+              axisLine={{ stroke: chartTokens.border }}
               tickLine={false}
-              label={{ value: "Sample", position: "insideBottom", offset: -2, fill: text.muted, fontSize: 11 }}
+              label={{ value: t("telemetryChart.xAxisLabel"), position: "insideBottom", offset: -2, fill: chartTokens.textMuted, fontSize: 11 }}
             />
             <YAxis
               domain={[0, 1]}
-              tick={{ fill: text.muted, fontSize: 11 }}
+              tick={{ fill: chartTokens.textMuted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={40}
@@ -139,7 +151,7 @@ export function TelemetryChart({ series, className }: TelemetryChartProps) {
                 type="monotone"
                 dataKey={s.metric}
                 name={s.metric}
-                stroke={chartSeries[i % chartSeries.length]}
+                stroke={chartTokens.chartSeries[i % chartTokens.chartSeries.length]}
                 strokeWidth={2}
                 dot={false}
                 connectNulls
@@ -158,7 +170,7 @@ export function TelemetryChart({ series, className }: TelemetryChartProps) {
               <span key={s.metric} className="flex items-center gap-1.5">
                 <span
                   className="size-2 rounded-full"
-                  style={{ backgroundColor: chartSeries[i % chartSeries.length] }}
+                  style={{ backgroundColor: chartTokens.chartSeries[i % chartTokens.chartSeries.length] }}
                   aria-hidden="true"
                 />
                 <span className="font-medium text-text-body">{s.metric}</span>
@@ -168,9 +180,7 @@ export function TelemetryChart({ series, className }: TelemetryChartProps) {
           })}
         </div>
         {series.length > 1 ? (
-          <span className="text-[11px] text-text-muted italic">
-            Each line scaled to its own range — see values above for actual readings
-          </span>
+          <span className="text-[11px] text-text-muted italic">{t("telemetryChart.perSeriesNote")}</span>
         ) : null}
       </div>
     </div>

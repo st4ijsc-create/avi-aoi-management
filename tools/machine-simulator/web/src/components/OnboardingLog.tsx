@@ -1,6 +1,7 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { rowEnter } from "@/theme/motion"
 
@@ -36,6 +37,7 @@ interface OnboardingLogProps {
  * failure, appends one line here so the wizard's network activity stays visible instead of only
  * flashing through the step indicator. Newest entry at the bottom, auto-scrolled into view. */
 export function OnboardingLog({ entries, className }: OnboardingLogProps) {
+  const t = useT()
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -48,14 +50,14 @@ export function OnboardingLog({ entries, className }: OnboardingLogProps) {
       ref={scrollRef}
       role="log"
       aria-live="polite"
-      aria-label="Onboarding activity"
+      aria-label={t("onboarding.log.ariaLabel")}
       className={cn(
         "flex max-h-64 min-h-[8rem] flex-col gap-1.5 overflow-y-auto rounded-lg border border-border bg-surface-subtle p-3",
         className
       )}
     >
       {entries.length === 0 ? (
-        <p className="m-auto text-sm text-text-muted">No activity yet — start with Register below.</p>
+        <p className="m-auto text-sm text-text-muted">{t("onboarding.log.empty")}</p>
       ) : (
         entries.map((entry) => (
           <motion.div

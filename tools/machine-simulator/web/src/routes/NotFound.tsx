@@ -1,13 +1,15 @@
 import { Compass } from "lucide-react"
 
+import { useT } from "@/i18n"
 import { PlaceholderScreen } from "@/components/PlaceholderScreen"
 
 export default function NotFound() {
+  const t = useT()
   return (
     <PlaceholderScreen
       icon={Compass}
-      title="Page not found"
-      description="That route doesn't exist. Use the sidebar or press ⌘K to jump to a screen."
+      title={t("notFound.title")}
+      description={t("notFound.description")}
       task="404"
     />
   )

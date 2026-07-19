@@ -1,6 +1,6 @@
 import { Line, LineChart, ResponsiveContainer } from "recharts"
 
-import { navy } from "@/theme/tokens"
+import { useChartTokens } from "@/theme/chartTokens"
 
 interface SparklineProps {
   data: number[]
@@ -13,8 +13,14 @@ interface SparklineProps {
  * Minimal Recharts line, no axes/grid/tooltip — a "vital signs" read, not a chart to inspect.
  * Guards Recharts' awkward handling of 0-1 point series: renders a flat muted rule instead of an
  * empty/broken plot when there isn't enough data yet (fresh machine, fleet just started).
+ *
+ * Default `color` resolves per-theme (`useChartTokens().line`) rather than a hardcoded navy-600 —
+ * navy-600 on a dark navy-900/800 card is nearly invisible, a real dark-mode gap this closes.
  */
-export function Sparkline({ data, color = navy[600], height = 32, className }: SparklineProps) {
+export function Sparkline({ data, color, height = 32, className }: SparklineProps) {
+  const chartTokens = useChartTokens()
+  const lineColor = color ?? chartTokens.line
+
   if (data.length < 2) {
     return (
       <div
@@ -46,7 +52,7 @@ export function Sparkline({ data, color = navy[600], height = 32, className }: S
           <Line
             type="monotone"
             dataKey="v"
-            stroke={color}
+            stroke={lineColor}
             strokeWidth={2}
             dot={false}
             isAnimationActive={false}

@@ -13,8 +13,10 @@ import {
   RefreshCw,
   UserPlus,
 } from "lucide-react"
+import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { useT } from "@/i18n"
 import {
   useFleetIsRunning,
   useOnboardingClaim,
@@ -38,12 +40,15 @@ import { FormField } from "@/components/FormField"
 import { OnboardingLog, type LogEntry, type LogTone } from "@/components/OnboardingLog"
 import { StepIndicator, type Step } from "@/components/StepIndicator"
 
-const STEPS: Step[] = [
-  { id: "register", label: "Đăng ký" },
-  { id: "poll", label: "Chờ duyệt" },
-  { id: "claim", label: "Claim / Enroll" },
-  { id: "done", label: "Hoàn tất" },
-]
+function useOnboardingSteps(): Step[] {
+  const t = useT()
+  return [
+    { id: "register", label: t("onboarding.steps.register") },
+    { id: "poll", label: t("onboarding.steps.poll") },
+    { id: "claim", label: t("onboarding.steps.claim") },
+    { id: "done", label: t("onboarding.steps.done") },
+  ]
+}
 
 function maskKey(key: string): string {
   if (key.length <= 12) return key
@@ -72,10 +77,11 @@ function DemoLiveToggle({
   onChange: (isDemo: boolean) => void
   disabled?: boolean
 }) {
+  const t = useT()
   return (
     <div
       role="radiogroup"
-      aria-label="Onboarding path"
+      aria-label={t("onboarding.demoLiveToggle.aria")}
       className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-subtle p-0.5"
     >
       {[
@@ -137,32 +143,38 @@ function RegisterStep({
   pending,
   onSubmit,
 }: RegisterStepProps) {
+  const t = useT()
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-text-muted">Đăng ký một máy mới với ST4I server (hoặc mô phỏng luồng demo).</p>
+        <p className="text-sm text-text-muted">{t("onboarding.register.description")}</p>
         <DemoLiveToggle isDemo={isDemo} onChange={onIsDemo} disabled={pending} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label="Số serial" htmlFor="onb-serial" className="sm:col-span-2">
+        <FormField label={t("onboarding.register.serialLabel")} htmlFor="onb-serial" className="sm:col-span-2">
           <Input
             id="onb-serial"
             value={serialNumber}
             onChange={(e) => onSerialNumber(e.target.value)}
-            placeholder="vd: SIM-0001"
+            placeholder={t("onboarding.register.serialPlaceholder")}
             required
           />
         </FormField>
-        <FormField label="Tên máy" htmlFor="onb-name">
-          <Input id="onb-name" value={name} onChange={(e) => onName(e.target.value)} placeholder="vd: Trạm vít 01" />
+        <FormField label={t("onboarding.register.nameLabel")} htmlFor="onb-name">
+          <Input
+            id="onb-name"
+            value={name}
+            onChange={(e) => onName(e.target.value)}
+            placeholder={t("onboarding.register.namePlaceholder")}
+          />
         </FormField>
-        <FormField label="Loại máy" htmlFor="onb-type">
+        <FormField label={t("onboarding.register.typeLabel")} htmlFor="onb-type">
           <Input
             id="onb-type"
             value={machineType}
             onChange={(e) => onMachineType(e.target.value)}
-            placeholder="vd: Automation, IoT, AOI/AVI"
+            placeholder={t("onboarding.register.typePlaceholder")}
           />
         </FormField>
         {!isDemo ? (
@@ -179,7 +191,7 @@ function RegisterStep({
 
       <Button onClick={onSubmit} disabled={pending || !serialNumber.trim()} className="w-fit">
         {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <UserPlus className="size-3.5" aria-hidden="true" />}
-        {pending ? "Đang đăng ký…" : "Đăng ký máy"}
+        {pending ? t("onboarding.register.submitting") : t("onboarding.register.submit")}
       </Button>
     </div>
   )
@@ -193,26 +205,27 @@ interface PollStepProps {
 }
 
 function PollStep({ serialNumber, pending, onPoll, onBack }: PollStepProps) {
+  const t = useT()
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Đang chờ quản trị viên duyệt <span className="font-numeric font-medium text-text-body">{serialNumber}</span>.
-        Ở chế độ demo, lần kiểm tra đầu tiên sẽ được duyệt ngay lập tức.
+        {t("onboarding.poll.waitingPrefix")} <span className="font-numeric font-medium text-text-body">{serialNumber}</span>
+        {t("onboarding.poll.waitingSuffix")}
       </p>
 
       <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-subtle px-3 py-2.5">
         <Clock3 className="size-4 shrink-0 text-navy-600" aria-hidden="true" />
-        <StatusBadge status="warn">Pending</StatusBadge>
+        <StatusBadge status="warn">{t("onboarding.poll.pending")}</StatusBadge>
       </div>
 
       <div className="flex items-center gap-2">
         <Button variant="outline" onClick={onBack} disabled={pending}>
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Quay lại
+          {t("onboarding.poll.back")}
         </Button>
         <Button onClick={onPoll} disabled={pending} className="w-fit">
           {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-3.5" aria-hidden="true" />}
-          {pending ? "Đang kiểm tra…" : "Kiểm tra duyệt"}
+          {pending ? t("onboarding.poll.checking") : t("onboarding.poll.check")}
         </Button>
       </div>
     </div>
@@ -244,23 +257,22 @@ function ClaimEnrollStep({
   onEnroll,
   onBack,
 }: ClaimEnrollStepProps) {
-  const tokenHint = isDemo ? "Không bắt buộc ở chế độ demo — token bất kỳ đều được bỏ qua." : undefined
+  const t = useT()
+  const tokenHint = isDemo ? t("onboarding.claim.claimTokenHintDemo") : undefined
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-text-muted">
-        Đã duyệt — nhận khóa <span className="font-numeric">mk_</span> bằng một trong hai cách bên dưới.
-      </p>
+      <p className="text-sm text-text-muted">{t("onboarding.claim.description")}</p>
 
       <Tabs defaultValue="claim">
         <TabsList>
-          <TabsTrigger value="claim">Claim (mct_)</TabsTrigger>
-          <TabsTrigger value="enroll">Enroll (met_)</TabsTrigger>
+          <TabsTrigger value="claim">{t("onboarding.claim.tabClaim")}</TabsTrigger>
+          <TabsTrigger value="enroll">{t("onboarding.claim.tabEnroll")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="claim" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label="Claim token" htmlFor="onb-claim-token" hint={tokenHint}>
+            <FormField label={t("onboarding.claim.claimTokenLabel")} htmlFor="onb-claim-token" hint={tokenHint}>
               <Input
                 id="onb-claim-token"
                 value={claimToken}
@@ -270,14 +282,14 @@ function ClaimEnrollStep({
             </FormField>
             <Button onClick={onClaim} disabled={claimPending} className="w-fit">
               {claimPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
-              {claimPending ? "Đang claim…" : "Claim"}
+              {claimPending ? t("onboarding.claim.claiming") : t("onboarding.claim.claimBtn")}
             </Button>
           </div>
         </TabsContent>
 
         <TabsContent value="enroll" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label="Enroll token" htmlFor="onb-enroll-token" hint={tokenHint}>
+            <FormField label={t("onboarding.claim.enrollTokenLabel")} htmlFor="onb-enroll-token" hint={tokenHint}>
               <Input
                 id="onb-enroll-token"
                 value={enrollToken}
@@ -287,7 +299,7 @@ function ClaimEnrollStep({
             </FormField>
             <Button onClick={onEnroll} disabled={enrollPending} className="w-fit">
               {enrollPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
-              {enrollPending ? "Đang enroll…" : "Enroll"}
+              {enrollPending ? t("onboarding.claim.enrolling") : t("onboarding.claim.enrollBtn")}
             </Button>
           </div>
         </TabsContent>
@@ -295,7 +307,7 @@ function ClaimEnrollStep({
 
       <Button variant="outline" onClick={onBack} disabled={claimPending || enrollPending} className="w-fit">
         <ArrowLeft className="size-3.5" aria-hidden="true" />
-        Quay lại
+        {t("onboarding.claim.back")}
       </Button>
     </div>
   )
@@ -324,40 +336,47 @@ function DoneStep({
   loadPending,
   onReset,
 }: DoneStepProps) {
+  const t = useT()
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-lg border border-ok/20 bg-ok/10 px-3 py-2.5">
         <CheckCircle2 className="size-5 shrink-0 text-ok-text" aria-hidden="true" />
         <div className="flex flex-col">
-          <span className="text-sm font-semibold text-text-strong">Đã lưu khóa cho {machineCode}</span>
-          <span className="text-xs text-text-muted">Khóa được mã hóa (DPAPI) và lưu trên máy chạy engine.</span>
+          <span className="text-sm font-semibold text-text-strong">{t("onboarding.done.savedFor", { code: machineCode })}</span>
+          <span className="text-xs text-text-muted">{t("onboarding.done.savedHint")}</span>
         </div>
       </div>
 
-      <FormField label="Mã máy" htmlFor="onb-done-code">
+      <FormField label={t("onboarding.done.machineCodeLabel")} htmlFor="onb-done-code">
         <Input id="onb-done-code" readOnly value={machineCode} className="font-numeric" />
       </FormField>
 
-      <FormField label="Khóa mk_">
+      <FormField label={t("onboarding.done.keyLabel")}>
         <div className="flex items-center gap-1.5">
           <Input readOnly value={revealed ? mkKey : maskKey(mkKey)} className="font-numeric" aria-label="mk_ key" />
-          <Button type="button" variant="outline" size="icon" onClick={onToggleReveal} aria-label={revealed ? "Ẩn khóa" : "Hiện khóa"}>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onToggleReveal}
+            aria-label={revealed ? t("onboarding.done.hide") : t("onboarding.done.reveal")}
+          >
             {revealed ? <EyeOff className="size-3.5" aria-hidden="true" /> : <Eye className="size-3.5" aria-hidden="true" />}
           </Button>
-          <Button type="button" variant="outline" size="icon" onClick={onCopy} aria-label="Sao chép khóa">
+          <Button type="button" variant="outline" size="icon" onClick={onCopy} aria-label={t("onboarding.done.copy")}>
             <Copy className="size-3.5" aria-hidden="true" />
           </Button>
         </div>
-        {copied ? <span className="text-[11px] text-ok-text">Đã sao chép.</span> : null}
+        {copied ? <span className="text-[11px] text-ok-text">{t("onboarding.done.copied")}</span> : null}
       </FormField>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={onLoadFleet} disabled={loadPending}>
           {loadPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PlayCircle className="size-3.5" aria-hidden="true" />}
-          Xem fleet
+          {t("onboarding.done.viewFleet")}
         </Button>
         <Button variant="outline" onClick={onReset}>
-          Đăng ký máy khác
+          {t("onboarding.done.registerAnother")}
         </Button>
       </div>
     </motion.div>
@@ -369,6 +388,7 @@ function DoneStep({
 // teammate's SDK output, etc.) that just needs storing against a machine code.
 // ─────────────────────────────────────────────────────────────────────────
 function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) => void }) {
+  const t = useT()
   const [code, setCode] = React.useState("")
   const [key, setKey] = React.useState("")
   const [savedFlash, setSavedFlash] = React.useState(false)
@@ -376,7 +396,7 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
 
   const handleSave = () => {
     if (!code.trim() || !key.trim()) {
-      onSaved("Cần nhập cả mã máy và khóa mk_.", "danger")
+      onSaved(t("onboarding.validation.needBoth"), "danger")
       return
     }
     pasteKey.mutate(
@@ -389,11 +409,15 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
             setCode("")
             setKey("")
             setSavedFlash(true)
+            toast.success(t("toast.onboardingKeyStored", { code: data.machineCode }))
             window.setTimeout(() => setSavedFlash(false), 2500)
           }
         },
         onError: (err) =>
-          onSaved(`Paste-key thất bại: ${err instanceof Error ? err.message : "lỗi không xác định"}`, "danger"),
+          onSaved(
+            t("onboarding.errors.pasteFailed", { message: err instanceof Error ? err.message : t("onboarding.errors.unknown") }),
+            "danger"
+          ),
       }
     )
   }
@@ -402,21 +426,24 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
     <Card>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-text-strong">Dán khóa mk_ có sẵn</h3>
-          {savedFlash ? <StatusBadge status="ok">Saved</StatusBadge> : null}
+          <h3 className="text-sm font-semibold text-text-strong">{t("onboarding.pasteCard.title")}</h3>
+          {savedFlash ? <StatusBadge status="ok">{t("onboarding.pasteCard.saved")}</StatusBadge> : null}
         </div>
-        <p className="text-sm text-text-muted">
-          Đã có khóa <span className="font-numeric">mk_</span> từ nơi khác (SDK, đồng nghiệp)? Lưu trực tiếp tại đây.
-        </p>
-        <FormField label="Mã máy" htmlFor="onb-paste-code">
-          <Input id="onb-paste-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="vd: SIM-0002" />
+        <p className="text-sm text-text-muted">{t("onboarding.pasteCard.description")}</p>
+        <FormField label={t("onboarding.pasteCard.codeLabel")} htmlFor="onb-paste-code">
+          <Input
+            id="onb-paste-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder={t("onboarding.pasteCard.codePlaceholder")}
+          />
         </FormField>
-        <FormField label="Khóa mk_" htmlFor="onb-paste-key">
+        <FormField label={t("onboarding.pasteCard.keyLabel")} htmlFor="onb-paste-key">
           <Input id="onb-paste-key" value={key} onChange={(e) => setKey(e.target.value)} placeholder="mk_…" />
         </FormField>
         <Button onClick={handleSave} disabled={pasteKey.isPending} className="w-fit">
           {pasteKey.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
-          {pasteKey.isPending ? "Đang lưu…" : "Lưu khóa"}
+          {pasteKey.isPending ? t("onboarding.pasteCard.saving") : t("onboarding.pasteCard.save")}
         </Button>
       </CardContent>
     </Card>
@@ -428,6 +455,8 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function Onboarding() {
+  const t = useT()
+  const STEPS = useOnboardingSteps()
   const [, navigate] = useLocation()
   const settingsQuery = useSettings()
   const isRunning = useFleetIsRunning()
@@ -467,7 +496,7 @@ export default function Onboarding() {
   const handleRegister = () => {
     const serial = serialNumber.trim()
     if (!serial) {
-      pushLog("Số serial là bắt buộc.", "danger")
+      pushLog(t("onboarding.errors.serialRequired"), "danger")
       return
     }
     register.mutate(
@@ -483,7 +512,8 @@ export default function Onboarding() {
           pushLog(data.message, resultTone(data))
           if (data.step !== "Idle") setStepIndex(1)
         },
-        onError: (err) => pushLog(`Đăng ký thất bại: ${err instanceof Error ? err.message : "lỗi không xác định"}`, "danger"),
+        onError: (err) =>
+          pushLog(t("onboarding.errors.registerFailed", { message: err instanceof Error ? err.message : t("onboarding.errors.unknown") }), "danger"),
       }
     )
   }
@@ -496,7 +526,8 @@ export default function Onboarding() {
           pushLog(data.message, resultTone(data))
           if (data.isApproved || data.step === "Approved") setStepIndex(2)
         },
-        onError: (err) => pushLog(`Kiểm tra duyệt thất bại: ${err instanceof Error ? err.message : "lỗi không xác định"}`, "danger"),
+        onError: (err) =>
+          pushLog(t("onboarding.errors.pollFailed", { message: err instanceof Error ? err.message : t("onboarding.errors.unknown") }), "danger"),
       }
     )
   }
@@ -516,9 +547,11 @@ export default function Onboarding() {
             recordCredential(data.machineCode)
             setResult({ machineCode: data.machineCode, mkKey: data.mkKey })
             setStepIndex(3)
+            toast.success(t("toast.onboardingKeyStored", { code: data.machineCode }))
           }
         },
-        onError: (err) => pushLog(`Claim thất bại: ${err instanceof Error ? err.message : "lỗi không xác định"}`, "danger"),
+        onError: (err) =>
+          pushLog(t("onboarding.errors.claimFailed", { message: err instanceof Error ? err.message : t("onboarding.errors.unknown") }), "danger"),
       }
     )
   }
@@ -540,9 +573,11 @@ export default function Onboarding() {
             recordCredential(data.machineCode)
             setResult({ machineCode: data.machineCode, mkKey: data.mkKey })
             setStepIndex(3)
+            toast.success(t("toast.onboardingKeyStored", { code: data.machineCode }))
           }
         },
-        onError: (err) => pushLog(`Enroll thất bại: ${err instanceof Error ? err.message : "lỗi không xác định"}`, "danger"),
+        onError: (err) =>
+          pushLog(t("onboarding.errors.enrollFailed", { message: err instanceof Error ? err.message : t("onboarding.errors.unknown") }), "danger"),
       }
     )
   }
@@ -566,20 +601,18 @@ export default function Onboarding() {
     try {
       await navigator.clipboard.writeText(result.mkKey)
       setCopied(true)
+      toast.success(t("toast.keyCopied"))
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
-      pushLog("Không thể sao chép — hãy chọn văn bản thủ công.", "danger")
+      pushLog(t("onboarding.errors.copyFailed"), "danger")
     }
   }
 
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-text-strong">Onboarding</h1>
-        <p className="text-sm text-text-muted">
-          Đăng ký, chờ duyệt và claim/enroll một máy mới với ST4I server — hoặc chạy toàn bộ luồng ở chế độ
-          demo, không cần server thật.
-        </p>
+        <h1 className="text-2xl font-semibold text-text-strong">{t("onboarding.title")}</h1>
+        <p className="text-sm text-text-muted">{t("onboarding.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -647,7 +680,7 @@ export default function Onboarding() {
         <div className="flex flex-col gap-6">
           <Card>
             <CardContent className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold text-text-strong">Nhật ký hoạt động</h3>
+              <h3 className="text-sm font-semibold text-text-strong">{t("onboarding.log.title")}</h3>
               <OnboardingLog entries={log} />
             </CardContent>
           </Card>

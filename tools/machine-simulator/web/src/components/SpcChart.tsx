@@ -11,8 +11,9 @@ import {
   YAxis,
 } from "recharts"
 
+import { useT } from "@/i18n"
 import { formatMetric } from "@/lib/utils"
-import { accent, border, navy, status, surface, text } from "@/theme/tokens"
+import { useChartTokens } from "@/theme/chartTokens"
 
 const HISTOGRAM_BINS = 8
 
@@ -69,11 +70,14 @@ function StatReadout({ label, value, tone }: { label: string; value: number; ton
  * `dot` render prop reuses the exact same series/scale as the line, which cannot drift out of sync.
  */
 export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
+  const t = useT()
+  const chartTokens = useChartTokens()
+
   if (values.length < 2) {
     return (
       <div className={className}>
         <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
-          Waiting for cycles — the SPC chart needs at least 2 judged readings.
+          {t("spcChart.waiting")}
         </div>
       </div>
     )
@@ -94,7 +98,8 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
   const latest = values[values.length - 1]
 
   // Closes over `ucl`/`lcl` — colors each rendered point red when it's outside the control limits,
-  // navy otherwise. See the component doc comment above for why this replaced a `Scatter` overlay.
+  // the theme's line color otherwise. See the component doc comment above for why this replaced a
+  // `Scatter` overlay.
   function renderValueDot(props: { cx?: number; cy?: number; value?: number }) {
     const { cx, cy, value } = props
     if (cx == null || cy == null || value == null) return null
@@ -105,8 +110,8 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
         cx={cx}
         cy={cy}
         r={flagged ? 4 : 2.5}
-        fill={flagged ? status.danger : navy[600]}
-        stroke={surface.card}
+        fill={flagged ? chartTokens.danger : chartTokens.line}
+        stroke={chartTokens.surfaceCard}
         strokeWidth={flagged ? 1.5 : 0}
       />
     )
@@ -115,16 +120,16 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
   return (
     <div className={className}>
       <div className="flex flex-wrap items-center gap-6 pb-4">
-        <StatReadout label="Latest" value={latest} tone={latest > ucl || latest < lcl ? "danger" : undefined} />
-        <StatReadout label="Mean" value={mean} />
+        <StatReadout label={t("spcChart.latest")} value={latest} tone={latest > ucl || latest < lcl ? "danger" : undefined} />
+        <StatReadout label={t("spcChart.mean")} value={mean} />
         <StatReadout label="UCL" value={ucl} />
         <StatReadout label="LCL" value={lcl} />
         {outOfControl.length > 0 ? (
           <span className="font-numeric ml-auto text-xs font-medium text-danger-text">
-            {outOfControl.length} of {values.length} out of control
+            {t("spcChart.outOfControl", { out: outOfControl.length, total: values.length })}
           </span>
         ) : (
-          <span className="ml-auto text-xs font-medium text-ok-text">All cycles within limits</span>
+          <span className="ml-auto text-xs font-medium text-ok-text">{t("spcChart.allWithinLimits")}</span>
         )}
       </div>
 
@@ -132,17 +137,17 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
         <div className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
-              <CartesianGrid vertical={false} stroke={border.DEFAULT} strokeDasharray="3 3" />
+              <CartesianGrid vertical={false} stroke={chartTokens.border} strokeDasharray="3 3" />
               <XAxis
                 dataKey="cycle"
-                tick={{ fill: text.muted, fontSize: 11 }}
-                axisLine={{ stroke: border.DEFAULT }}
+                tick={{ fill: chartTokens.textMuted, fontSize: 11 }}
+                axisLine={{ stroke: chartTokens.border }}
                 tickLine={false}
-                label={{ value: "Cycle", position: "insideBottom", offset: -2, fill: text.muted, fontSize: 11 }}
+                label={{ value: t("spcChart.xAxisLabel"), position: "insideBottom", offset: -2, fill: chartTokens.textMuted, fontSize: 11 }}
               />
               <YAxis
                 domain={[domainMin, domainMax]}
-                tick={{ fill: text.muted, fontSize: 11 }}
+                tick={{ fill: chartTokens.textMuted, fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
                 width={44}
@@ -150,43 +155,61 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
               />
               <RechartsTooltip
                 contentStyle={{
-                  backgroundColor: surface.card,
-                  border: `1px solid ${border.DEFAULT}`,
+                  backgroundColor: chartTokens.surfaceCard,
+                  border: `1px solid ${chartTokens.border}`,
                   borderRadius: 8,
                   boxShadow: "var(--shadow-md)",
                   fontSize: 12,
-                  color: text.body,
+                  color: chartTokens.textBody,
                 }}
-                labelStyle={{ color: text.strong, fontWeight: 600 }}
-                labelFormatter={(v) => `Cycle ${v}`}
-                formatter={(v) => [formatMetric(Number(v)), "Value"]}
+                labelStyle={{ color: chartTokens.textStrong, fontWeight: 600 }}
+                labelFormatter={(v) => t("spcChart.tooltipCycle", { cycle: v })}
+                formatter={(v) => [formatMetric(Number(v)), t("spcChart.tooltipValue")]}
               />
               <ReferenceLine
                 y={mean}
-                stroke={accent[600]}
+                stroke={chartTokens.accent600}
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
-                label={{ value: `Mean ${formatMetric(mean)}`, position: "insideTopRight", fill: accent[600], fontSize: 10, fontWeight: 600 }}
+                label={{
+                  value: t("spcChart.meanLabel", { value: formatMetric(mean) }),
+                  position: "insideTopRight",
+                  fill: chartTokens.accent600,
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
               />
               <ReferenceLine
                 y={ucl}
-                stroke={status.danger}
+                stroke={chartTokens.danger}
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
-                label={{ value: `UCL ${formatMetric(ucl)}`, position: "insideBottomRight", fill: status.danger, fontSize: 10, fontWeight: 600 }}
+                label={{
+                  value: t("spcChart.uclLabel", { value: formatMetric(ucl) }),
+                  position: "insideBottomRight",
+                  fill: chartTokens.danger,
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
               />
               <ReferenceLine
                 y={lcl}
-                stroke={status.danger}
+                stroke={chartTokens.danger}
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
-                label={{ value: `LCL ${formatMetric(lcl)}`, position: "insideTopRight", fill: status.danger, fontSize: 10, fontWeight: 600 }}
+                label={{
+                  value: t("spcChart.lclLabel", { value: formatMetric(lcl) }),
+                  position: "insideTopRight",
+                  fill: chartTokens.danger,
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
               />
               <Line
                 type="monotone"
                 dataKey="v"
-                name="Value"
-                stroke={navy[600]}
+                name={t("spcChart.tooltipValue")}
+                stroke={chartTokens.line}
                 strokeWidth={2}
                 dot={renderValueDot}
                 activeDot={{ r: 4 }}
@@ -201,7 +224,7 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
             <BarChart data={histogram} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <XAxis type="number" hide domain={[0, maxCount]} />
               <YAxis type="number" dataKey="bin" domain={[domainMin, domainMax]} hide />
-              <Bar dataKey="count" fill={accent[500]} fillOpacity={0.55} radius={[0, 3, 3, 0]} isAnimationActive={false} />
+              <Bar dataKey="count" fill={chartTokens.accent500} fillOpacity={0.55} radius={[0, 3, 3, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -209,12 +232,12 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
 
       <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-text-muted">
         <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-navy-600" aria-hidden="true" />
-          Value
+          <span className="size-2 rounded-full" style={{ backgroundColor: chartTokens.line }} aria-hidden="true" />
+          {t("spcChart.legend.value")}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-0.5 w-3 rounded-full bg-accent-600" aria-hidden="true" />
-          Mean
+          {t("spcChart.legend.mean")}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-0.5 w-3 rounded-full bg-danger" aria-hidden="true" />
@@ -222,7 +245,7 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2 rounded-full bg-accent-500/60" aria-hidden="true" />
-          Distribution
+          {t("spcChart.legend.distribution")}
         </span>
       </div>
     </div>

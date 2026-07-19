@@ -1,7 +1,9 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import { CircleCheck, CircleX, Globe, KeyRound, Loader2, Save, Server, ShieldCheck, Wifi } from "lucide-react"
+import { toast } from "sonner"
 
+import { useLanguage, useT } from "@/i18n"
 import {
   useMode,
   useOnboardingPasteKey,
@@ -19,20 +21,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectItem, SelectPopup, SelectPortal, SelectPositioner, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Switch } from "@/components/ui/switch"
 import { FormField } from "@/components/FormField"
 
-const MODE_OPTIONS: { value: TransportMode; label: string; hint: string }[] = [
-  { value: "Live", label: "Live", hint: "Gọi thẳng ST4I server thật." },
-  { value: "Demo", label: "Demo", hint: "Tự mô phỏng, không cần server." },
-  { value: "Auto", label: "Auto", hint: "Ưu tiên Live, tự rơi về Demo khi mất kết nối." },
-]
-
-const LANGUAGE_ITEMS = [
-  { value: "vi", label: "Tiếng Việt" },
-  { value: "en", label: "English" },
-]
+const MODE_VALUES: TransportMode[] = ["Live", "Demo", "Auto"]
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -49,35 +43,56 @@ function formatSavedAt(iso: string): string {
 // this screen doesn't reach into Task 4's shell component; both read/write the same `/v1/mode`.
 // ─────────────────────────────────────────────────────────────────────────
 function ModeSelector() {
+  const t = useT()
   const { data, isPending } = useMode()
   const setMode = useSetMode()
   const current = (setMode.isPending ? setMode.variables : undefined) ?? data?.mode ?? "Demo"
 
   return (
     <div className="flex flex-col gap-2">
-      <div role="radiogroup" aria-label="Chế độ vận hành" className="grid grid-cols-3 gap-2">
-        {MODE_OPTIONS.map((option) => {
-          const selected = current === option.value
+      <div role="radiogroup" aria-label={t("settings.mode.radioGroupAria")} className="grid grid-cols-3 gap-2">
+        {MODE_VALUES.map((value) => {
+          const selected = current === value
           return (
             <button
-              key={option.value}
+              key={value}
               type="button"
               role="radio"
               aria-checked={selected}
               disabled={isPending}
-              onClick={() => setMode.mutate(option.value)}
+              onClick={() => setMode.mutate(value)}
               className={cn(
                 "flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50",
-                selected ? "border-navy-600 bg-navy-50" : "border-border hover:bg-surface-subtle"
+                // `bg-navy-600/10`/`text-primary-text` (not `bg-navy-50`/`text-navy-700`) — see
+                // Scenario.tsx's `PresetCard` for why: the raw navy-50/700 scale has no dark override
+                // and axe measured 1.23:1 on a dark card.
+                selected ? "border-navy-600 bg-navy-600/10" : "border-border hover:bg-surface-subtle"
               )}
             >
-              <span className={cn("text-sm font-semibold", selected ? "text-navy-700" : "text-text-strong")}>
-                {option.label}
+              <span className={cn("text-sm font-semibold", selected ? "text-primary-text" : "text-text-strong")}>
+                {value}
               </span>
-              <span className="text-[11px] text-text-muted">{option.hint}</span>
+              <span className="text-[11px] text-text-muted">{t(`settings.mode.${value.toLowerCase()}.hint`)}</span>
             </button>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function SettingsSkeleton() {
+  return (
+    <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-7 w-32" />
+        <Skeleton className="h-4 w-96" />
+      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </div>
     </div>
   )
@@ -88,6 +103,8 @@ function ModeSelector() {
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  const t = useT()
+  const { setLanguage: setUiLanguage } = useLanguage()
   const settingsQuery = useSettings()
   const updateSettings = useUpdateSettings()
   const probe = useProbeSettings()
@@ -122,6 +139,9 @@ export default function Settings() {
         machineCode !== settingsQuery.data.machineCode
       : false
 
+  // The dropdown flips the live UI language immediately (see `handleLanguageChange`) — this mutation
+  // additionally persists the choice server-side (`SettingsDto.language`), same "Save" gate as every
+  // other field on this screen.
   const handleSave = () => {
     updateSettings.mutate(
       { serverUrl: serverUrl.trim(), verifyTls, language, machineCode: machineCode.trim() },
@@ -131,9 +151,16 @@ export default function Settings() {
           setVerifyTls(data.verifyTls)
           setLanguage(data.language)
           setMachineCode(data.machineCode)
+          toast.success(t("toast.settingsSaved"))
         },
+        onError: () => toast.error(t("toast.settingsSaveFailed")),
       }
     )
+  }
+
+  const handleLanguageChange = (value: string) => {
+    setLanguage(value)
+    if (value === "vi" || value === "en") setUiLanguage(value)
   }
 
   const handleProbe = () => {
@@ -144,7 +171,7 @@ export default function Settings() {
 
   const handlePasteKey = () => {
     if (!pasteCode.trim() || !pasteKey.trim()) {
-      setPasteMessage({ text: "Cần nhập cả mã máy và khóa mk_.", ok: false })
+      setPasteMessage({ text: t("settings.auth.needBoth"), ok: false })
       return
     }
     pasteKeyMutation.mutate(
@@ -157,19 +184,27 @@ export default function Settings() {
             setCredentials(recordCredential(data.machineCode))
             setPasteCode("")
             setPasteKey("")
+            toast.success(t("toast.onboardingKeyStored", { code: data.machineCode }))
           }
         },
         onError: (err) =>
-          setPasteMessage({ text: err instanceof Error ? err.message : "Lỗi không xác định", ok: false }),
+          setPasteMessage({ text: err instanceof Error ? err.message : t("settings.auth.unknownError"), ok: false }),
       }
     )
   }
 
+  if (settingsQuery.isPending) return <SettingsSkeleton />
+
+  const LANGUAGE_ITEMS = [
+    { value: "vi", label: t("settings.language.vi") },
+    { value: "en", label: t("settings.language.en") },
+  ]
+
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-text-strong">Settings</h1>
-        <p className="text-sm text-text-muted">Kết nối, chế độ vận hành, xác thực máy và ngôn ngữ — wired tới /v1/settings và /v1/mode.</p>
+        <h1 className="text-2xl font-semibold text-text-strong">{t("settings.title")}</h1>
+        <p className="text-sm text-text-muted">{t("settings.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -177,7 +212,7 @@ export default function Settings() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <Server className="size-4 text-navy-600" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text-strong">Kết nối máy chủ</h2>
+              <h2 className="text-sm font-semibold text-text-strong">{t("settings.connection.title")}</h2>
             </div>
 
             <FormField label="Server URL" htmlFor="settings-server-url">
@@ -191,8 +226,8 @@ export default function Settings() {
 
             <label htmlFor="settings-verify-tls" className="flex items-center justify-between gap-3">
               <span className="flex flex-col">
-                <span className="text-sm font-medium text-text-body">Xác thực TLS (Verify TLS)</span>
-                <span className="text-[11px] text-text-muted">Từ chối chứng chỉ HTTPS không hợp lệ.</span>
+                <span className="text-sm font-medium text-text-body">{t("settings.connection.verifyTlsLabel")}</span>
+                <span className="text-[11px] text-text-muted">{t("settings.connection.verifyTlsHint")}</span>
               </span>
               <Switch id="settings-verify-tls" checked={verifyTls} onCheckedChange={setVerifyTls} />
             </label>
@@ -202,19 +237,19 @@ export default function Settings() {
             <div className="flex flex-wrap items-center gap-3">
               <Button type="button" variant="outline" onClick={handleProbe} disabled={probe.isPending || !serverUrl.trim()}>
                 {probe.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Wifi className="size-3.5" aria-hidden="true" />}
-                {probe.isPending ? "Đang kiểm tra…" : "Kiểm tra kết nối"}
+                {probe.isPending ? t("settings.connection.checking") : t("settings.connection.check")}
               </Button>
 
               {probe.data ? (
                 probe.data.reachable ? (
                   <StatusBadge status="ok">
-                    Reachable · HTTP {probe.data.status} · {probe.data.paths.length} path
+                    {t("settings.connection.reachable", { status: probe.data.status, count: probe.data.paths.length })}
                   </StatusBadge>
                 ) : (
-                  <StatusBadge status="danger">Không thể kết nối</StatusBadge>
+                  <StatusBadge status="danger">{t("settings.connection.unreachable")}</StatusBadge>
                 )
               ) : probe.isError ? (
-                <StatusBadge status="danger">Yêu cầu kiểm tra thất bại</StatusBadge>
+                <StatusBadge status="danger">{t("settings.connection.requestFailed")}</StatusBadge>
               ) : null}
             </div>
           </CardContent>
@@ -224,9 +259,9 @@ export default function Settings() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-navy-600" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text-strong">Chế độ vận hành</h2>
+              <h2 className="text-sm font-semibold text-text-strong">{t("settings.mode.title")}</h2>
             </div>
-            <p className="text-sm text-text-muted">Áp dụng ngay lập tức — không cần bấm Lưu.</p>
+            <p className="text-sm text-text-muted">{t("settings.mode.appliesImmediately")}</p>
             <ModeSelector />
           </CardContent>
         </Card>
@@ -235,34 +270,39 @@ export default function Settings() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <KeyRound className="size-4 text-navy-600" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text-strong">Xác thực máy</h2>
+              <h2 className="text-sm font-semibold text-text-strong">{t("settings.auth.title")}</h2>
             </div>
 
             <FormField
-              label="Mã máy đang dùng để xác thực"
+              label={t("settings.auth.machineCodeLabel")}
               htmlFor="settings-machine-code"
-              hint="Khóa mk_ đã lưu cho mã này sẽ được dùng khi Live/Auto kết nối server thật."
+              hint={t("settings.auth.machineCodeHint")}
             >
               <Input
                 id="settings-machine-code"
                 value={machineCode}
                 onChange={(e) => setMachineCode(e.target.value)}
-                placeholder="vd: ENGINE-API-01"
+                placeholder={t("settings.auth.machineCodePlaceholder")}
               />
             </FormField>
 
             <Separator />
 
             <div className="flex flex-col gap-2">
-              <FormField label="Mã máy" htmlFor="settings-paste-code">
-                <Input id="settings-paste-code" value={pasteCode} onChange={(e) => setPasteCode(e.target.value)} placeholder="vd: SIM-0002" />
+              <FormField label={t("settings.auth.pasteCodeLabel")} htmlFor="settings-paste-code">
+                <Input
+                  id="settings-paste-code"
+                  value={pasteCode}
+                  onChange={(e) => setPasteCode(e.target.value)}
+                  placeholder={t("settings.auth.pasteCodePlaceholder")}
+                />
               </FormField>
-              <FormField label="Khóa mk_" htmlFor="settings-paste-key">
+              <FormField label={t("settings.auth.pasteKeyLabel")} htmlFor="settings-paste-key">
                 <Input id="settings-paste-key" value={pasteKey} onChange={(e) => setPasteKey(e.target.value)} placeholder="mk_…" />
               </FormField>
               <Button type="button" onClick={handlePasteKey} disabled={pasteKeyMutation.isPending} className="w-fit">
                 {pasteKeyMutation.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
-                {pasteKeyMutation.isPending ? "Đang lưu…" : "Lưu khóa"}
+                {pasteKeyMutation.isPending ? t("settings.auth.savingKey") : t("settings.auth.saveKey")}
               </Button>
               {pasteMessage ? (
                 <p className={cn("flex items-center gap-1.5 text-xs", pasteMessage.ok ? "text-ok-text" : "text-danger-text")} role="status">
@@ -275,9 +315,9 @@ export default function Settings() {
             <Separator />
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-text-body">Đã lưu trên trình duyệt này</span>
+              <span className="text-xs font-medium text-text-body">{t("settings.auth.savedTitle")}</span>
               {credentials.length === 0 ? (
-                <p className="text-xs text-text-muted">Chưa có khóa nào được ghi nhận trong phiên này.</p>
+                <p className="text-xs text-text-muted">{t("settings.auth.noneSaved")}</p>
               ) : (
                 <ul className="flex flex-col gap-1">
                   {credentials.map((cred) => (
@@ -291,9 +331,7 @@ export default function Settings() {
                   ))}
                 </ul>
               )}
-              <p className="text-[11px] text-text-muted">
-                Danh sách này chỉ ghi nhận trên trình duyệt — không phải danh sách đầy đủ trên máy chủ engine.
-              </p>
+              <p className="text-[11px] text-text-muted">{t("settings.auth.caveat")}</p>
             </div>
           </CardContent>
         </Card>
@@ -302,12 +340,12 @@ export default function Settings() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <Globe className="size-4 text-navy-600" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text-strong">Ngôn ngữ</h2>
+              <h2 className="text-sm font-semibold text-text-strong">{t("settings.language.title")}</h2>
             </div>
-            <FormField label="Ngôn ngữ giao diện" htmlFor="settings-language">
-              <Select items={LANGUAGE_ITEMS} value={language} onValueChange={(value) => value && setLanguage(value)}>
+            <FormField label={t("settings.language.label")} htmlFor="settings-language">
+              <Select items={LANGUAGE_ITEMS} value={language} onValueChange={(value) => value && handleLanguageChange(value)}>
                 <SelectTrigger id="settings-language">
-                  <SelectValue placeholder="Chọn ngôn ngữ" />
+                  <SelectValue placeholder={t("settings.language.placeholder")} />
                 </SelectTrigger>
                 <SelectPortal>
                   <SelectPositioner>
@@ -329,9 +367,9 @@ export default function Settings() {
       <div className="sticky bottom-6 flex items-center gap-3 self-start rounded-lg border border-border bg-surface-card px-4 py-3 shadow-md">
         <Button type="button" onClick={handleSave} disabled={!dirty || updateSettings.isPending}>
           {updateSettings.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Save className="size-3.5" aria-hidden="true" />}
-          {updateSettings.isPending ? "Đang lưu…" : "Lưu thay đổi"}
+          {updateSettings.isPending ? t("settings.saving") : t("settings.save")}
         </Button>
-        <span className="text-xs text-text-muted">{dirty ? "Có thay đổi chưa lưu." : "Đã lưu."}</span>
+        <span className="text-xs text-text-muted">{dirty ? t("settings.dirty") : t("settings.clean")}</span>
       </div>
     </motion.div>
   )

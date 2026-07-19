@@ -1,6 +1,8 @@
 import { RefreshCw } from "lucide-react"
+import { toast } from "sonner"
 import type { VariantProps } from "class-variance-authority"
 
+import { useT } from "@/i18n"
 import { useSyncConfig } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -28,6 +30,7 @@ interface ConfigSyncPanelProps {
 /** "Sync recipe" — fires `POST /v1/machines/{code}/sync-config` and shows what came back. Available on
  * every device class (Automation/IoT/AOI all pull recipe/mapping config the same way). */
 export function ConfigSyncPanel({ code, driftState, className }: ConfigSyncPanelProps) {
+  const t = useT()
   const syncConfig = useSyncConfig(code)
   const result = syncConfig.data
 
@@ -36,50 +39,62 @@ export function ConfigSyncPanel({ code, driftState, className }: ConfigSyncPanel
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-semibold text-text-strong">Recipe / config sync</h3>
-            <p className="text-sm text-text-muted">
-              Pull the latest recipe and mapping config for this machine from the server, and report
-              whether anything changed.
-            </p>
+            <h3 className="text-sm font-semibold text-text-strong">{t("configSyncPanel.title")}</h3>
+            <p className="text-sm text-text-muted">{t("configSyncPanel.description")}</p>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-subtle px-3 py-2.5">
             <div className="flex flex-col gap-0.5">
               <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-                Current state
+                {t("configSyncPanel.currentState")}
               </span>
               <span className="font-numeric text-sm text-text-body">{driftState}</span>
             </div>
-            <Button size="sm" onClick={() => syncConfig.mutate()} disabled={syncConfig.isPending}>
+            <Button
+              size="sm"
+              onClick={() =>
+                syncConfig.mutate(undefined, {
+                  onSuccess: () => toast.success(t("toast.configSynced", { code })),
+                  onError: () => toast.error(t("toast.configSyncFailed")),
+                })
+              }
+              disabled={syncConfig.isPending}
+            >
               <RefreshCw className={cn("size-3.5", syncConfig.isPending && "animate-spin")} aria-hidden="true" />
-              {syncConfig.isPending ? "Syncing…" : "Sync recipe"}
+              {syncConfig.isPending ? t("configSyncPanel.syncing") : t("configSyncPanel.syncBtn")}
             </Button>
           </div>
 
           {syncConfig.isError ? (
             <p role="alert" className="text-sm text-danger-text">
-              Sync failed: {syncConfig.error instanceof Error ? syncConfig.error.message : "unknown error"}
+              {t("configSyncPanel.syncFailed", {
+                message: syncConfig.error instanceof Error ? syncConfig.error.message : t("configSyncPanel.unknownError"),
+              })}
             </p>
           ) : null}
 
           {result ? (
             <div className="flex flex-col gap-2.5 rounded-lg border border-border p-3" role="status">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-muted">Last sync result</span>
+                <span className="text-xs font-medium text-text-muted">{t("configSyncPanel.lastResult")}</span>
                 <StatusBadge status={driftTone(result.driftState)}>{result.driftState ?? "—"}</StatusBadge>
               </div>
               <dl className="grid grid-cols-3 gap-2 text-xs">
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-text-muted">Changed</dt>
-                  <dd className="font-numeric font-medium text-text-strong">{result.changed ? "Yes" : "No"}</dd>
+                  <dt className="text-text-muted">{t("configSyncPanel.changed")}</dt>
+                  <dd className="font-numeric font-medium text-text-strong">
+                    {result.changed ? t("configSyncPanel.yes") : t("configSyncPanel.no")}
+                  </dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-text-muted">Version</dt>
+                  <dt className="text-text-muted">{t("configSyncPanel.version")}</dt>
                   <dd className="font-numeric font-medium text-text-strong">{result.version ?? "—"}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-text-muted">Applied</dt>
-                  <dd className="font-numeric font-medium text-text-strong">{result.applied ? "Yes" : "No"}</dd>
+                  <dt className="text-text-muted">{t("configSyncPanel.applied")}</dt>
+                  <dd className="font-numeric font-medium text-text-strong">
+                    {result.applied ? t("configSyncPanel.yes") : t("configSyncPanel.no")}
+                  </dd>
                 </div>
               </dl>
             </div>

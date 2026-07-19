@@ -1,6 +1,8 @@
 import { Command, Loader2, Play, Square } from "lucide-react"
+import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { useT } from "@/i18n"
 import {
   useFleetIsRunning,
   useHealth,
@@ -14,6 +16,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { NAV_ITEMS } from "@/shell/Sidebar"
+import { ThemeToggle } from "@/theme/ThemeToggle"
 
 const MODE_OPTIONS: { value: TransportMode; label: string }[] = [
   { value: "Live", label: "Live" },
@@ -22,6 +25,7 @@ const MODE_OPTIONS: { value: TransportMode; label: string }[] = [
 ]
 
 function ModeSwitch() {
+  const t = useT()
   const { data, isPending } = useMode()
   const setMode = useSetMode()
   // Optimistic while the PUT is in flight (negligible on a local engine, but keeps the segmented
@@ -32,7 +36,7 @@ function ModeSwitch() {
   return (
     <div
       role="radiogroup"
-      aria-label="Transport mode"
+      aria-label={t("shell.topBar.transportModeAria")}
       className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-subtle p-0.5"
     >
       {MODE_OPTIONS.map((option) => {
@@ -61,6 +65,7 @@ function ModeSwitch() {
 }
 
 function ServerStatusDot() {
+  const t = useT()
   const { isError, isPending } = useHealth()
   const state = isPending ? "pending" : isError ? "down" : "up"
 
@@ -75,7 +80,13 @@ function ServerStatusDot() {
         )}
         aria-hidden="true"
       />
-      <span>{state === "up" ? "Engine connected" : state === "down" ? "Engine offline" : "Connecting…"}</span>
+      <span>
+        {state === "up"
+          ? t("shell.topBar.engineConnected")
+          : state === "down"
+            ? t("shell.topBar.engineOffline")
+            : t("shell.topBar.connecting")}
+      </span>
     </div>
   )
 }
@@ -85,15 +96,23 @@ interface TopBarProps {
 }
 
 export function TopBar({ onOpenPalette }: TopBarProps) {
+  const t = useT()
   const [location] = useLocation()
   const isRunning = useFleetIsRunning()
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
   const { data: modeData } = useMode()
 
-  const pageTitle =
-    NAV_ITEMS.find((item) => (item.path === "/" ? location === "/" : location.startsWith(item.path)))
-      ?.label ?? "ST4I Machine Simulator"
+  // `/machines/:code` is checked ahead of the generic NAV_ITEMS match (which would otherwise resolve
+  // it to the generic "Machines" label via `startsWith("/machines")`) so the title reads "Machine
+  // {code}" on a machine's own detail page, same as the brief asks for.
+  const machineCode = location.startsWith("/machines/") ? decodeURIComponent(location.split("/")[2] ?? "") : null
+  const navMatch = NAV_ITEMS.find((item) => (item.path === "/" ? location === "/" : location.startsWith(item.path)))
+  const pageTitle = machineCode
+    ? t("shell.topBar.machineTitle", { code: machineCode })
+    : navMatch
+      ? t(navMatch.labelKey)
+      : t("shell.topBar.fallbackTitle")
 
   // HealthDto only carries {ok, mode} — AutoTransport.IsFallingBack isn't exposed over HTTP, so
   // there's no authoritative "did Auto actually fall back to Demo just now" signal to read. Auto
@@ -106,7 +125,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-base px-6">
       <div className="flex min-w-0 items-center gap-3">
         <h2 className="truncate text-sm font-semibold text-text-strong">{pageTitle}</h2>
-        {showDemoFallback ? <StatusBadge status="warn">Demo fallback</StatusBadge> : null}
+        {showDemoFallback ? <StatusBadge status="warn">{t("shell.topBar.demoFallback")}</StatusBadge> : null}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
@@ -115,7 +134,12 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
         <div className="flex items-center gap-1.5">
           <Button
             size="sm"
-            onClick={() => startFleet.mutate()}
+            onClick={() =>
+              startFleet.mutate(undefined, {
+                onSuccess: () => toast.success(t("toast.fleetStarted")),
+                onError: () => toast.error(t("toast.fleetStartFailed")),
+              })
+            }
             disabled={isRunning || startFleet.isPending}
           >
             {startFleet.isPending ? (
@@ -123,12 +147,16 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
             ) : (
               <Play className="size-3.5" aria-hidden="true" />
             )}
-            Start Fleet
+            {startFleet.isPending ? t("shell.topBar.starting") : t("shell.topBar.startFleet")}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            onClick={() => stopFleet.mutate()}
+            onClick={() =>
+              stopFleet.mutate(undefined, {
+                onSuccess: () => toast.success(t("toast.fleetStopped")),
+              })
+            }
             disabled={!isRunning || stopFleet.isPending}
           >
             {stopFleet.isPending ? (
@@ -136,7 +164,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
             ) : (
               <Square className="size-3.5" aria-hidden="true" />
             )}
-            Stop
+            {stopFleet.isPending ? t("shell.topBar.stopping") : t("shell.topBar.stop")}
           </Button>
         </div>
 
@@ -144,9 +172,12 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
 
         <ServerStatusDot />
 
+        <ThemeToggle />
+
         <button
           type="button"
           onClick={onOpenPalette}
+          aria-label={t("shell.topBar.paletteAria")}
           className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50"
         >
           <Command className="size-3.5" aria-hidden="true" />

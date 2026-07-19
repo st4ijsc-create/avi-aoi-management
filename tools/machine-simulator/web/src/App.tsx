@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Route, Switch } from "wouter"
 
+import { LanguageProvider } from "@/i18n"
 import { FleetRuntimeProvider } from "@/lib/api"
 import TokensShowcase from "@/routes/_tokens"
 import { Shell } from "@/shell/Shell"
+import { Toaster } from "@/components/ui/sonner"
+import { ThemeProvider } from "@/theme/ThemeToggle"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,16 +25,21 @@ const queryClient = new QueryClient({
 // living style reference, not a shell screen — everything else routes through <Shell>.
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <FleetRuntimeProvider>
-        <Switch>
-          <Route path="/tokens" component={TokensShowcase} />
-          <Route>
-            <Shell />
-          </Route>
-        </Switch>
-      </FleetRuntimeProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <QueryClientProvider client={queryClient}>
+          <FleetRuntimeProvider>
+            <Switch>
+              <Route path="/tokens" component={TokensShowcase} />
+              <Route>
+                <Shell />
+              </Route>
+            </Switch>
+            <Toaster />
+          </FleetRuntimeProvider>
+        </QueryClientProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   )
 }
 

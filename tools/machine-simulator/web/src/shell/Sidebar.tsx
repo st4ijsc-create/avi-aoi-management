@@ -9,21 +9,24 @@ import {
 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 
 export interface NavItem {
-  label: string
+  /** i18n dictionary key (not the literal label) — every consumer (Sidebar, TopBar's title, Command
+   * Palette) resolves it through `t()` so the label follows the active language. */
+  labelKey: string
   path: string
   icon: React.ComponentType<{ className?: string }>
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Machines", path: "/machines", icon: Factory },
-  { label: "Onboarding", path: "/onboarding", icon: PlugZap },
-  { label: "API Inspector", path: "/inspector", icon: Terminal },
-  { label: "Scenario", path: "/scenario", icon: SlidersHorizontal },
-  { label: "Settings", path: "/settings", icon: Settings },
+  { labelKey: "shell.nav.dashboard", path: "/", icon: LayoutDashboard },
+  { labelKey: "shell.nav.machines", path: "/machines", icon: Factory },
+  { labelKey: "shell.nav.onboarding", path: "/onboarding", icon: PlugZap },
+  { labelKey: "shell.nav.inspector", path: "/inspector", icon: Terminal },
+  { labelKey: "shell.nav.scenario", path: "/scenario", icon: SlidersHorizontal },
+  { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
 ]
 
 function isNavItemActive(location: string, path: string): boolean {
@@ -33,6 +36,7 @@ function isNavItemActive(location: string, path: string): boolean {
 
 export function Sidebar() {
   const [location] = useLocation()
+  const t = useT()
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar">
@@ -42,7 +46,7 @@ export function Sidebar() {
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold text-text-strong">ST4I</span>
-          <span className="text-[11px] text-text-muted">Machine Simulator</span>
+          <span className="text-[11px] text-text-muted">{t("shell.sidebar.brandSubtitle")}</span>
         </div>
       </div>
 
@@ -63,7 +67,7 @@ export function Sidebar() {
               aria-current={active ? "page" : undefined}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           )
         })}
