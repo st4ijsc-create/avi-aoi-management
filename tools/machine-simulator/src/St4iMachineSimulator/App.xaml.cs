@@ -97,7 +97,16 @@ public partial class App : Application
         // Task 15 — fleet/dashboard. FleetService owns the pipeline; FleetViewModel/DashboardView are
         // singletons too so Start Fleet (top bar) and the Dashboard nav item are always looking at the
         // same live state, however the shell got constructed.
-        services.AddSingleton(sp => new FleetService(sp.GetRequiredService<ITransport>(), sp.GetRequiredService<EventBus>()));
+        //
+        // Task 19b — FleetService now takes the CONCRETE SwitchableTransport (not just the ITransport
+        // seam) plus TransportCoordinator, so its ApplyScenario can swap the transport for the "Mất
+        // mạng demo" preset and restore the current Mode's real transport afterward (see FleetService's
+        // own remarks) — SwitchableTransport still implements ITransport, so every existing consumer of
+        // FleetService.Transport is unaffected.
+        services.AddSingleton(sp => new FleetService(
+            sp.GetRequiredService<SwitchableTransport>(),
+            sp.GetRequiredService<TransportCoordinator>(),
+            sp.GetRequiredService<EventBus>()));
         services.AddSingleton(sp => new FleetViewModel(sp.GetRequiredService<FleetService>()));
         services.AddSingleton(sp => new DashboardView(sp.GetRequiredService<FleetViewModel>()));
 
@@ -122,6 +131,12 @@ public partial class App : Application
         services.AddSingleton(sp => new SettingsViewModel(sp.GetRequiredService<TransportCoordinator>()));
         services.AddSingleton(sp => new SettingsView(sp.GetRequiredService<SettingsViewModel>()));
 
+        // Task 19b — Scenario control. Singleton (same lifetime pattern as every other nav screen's
+        // ViewModel) so slider/preset state — and the FleetService.ScenarioChanged subscription that
+        // mirrors Burst's automatic revert back onto the sliders — survives navigating away and back.
+        services.AddSingleton(sp => new ScenarioViewModel(sp.GetRequiredService<FleetService>()));
+        services.AddSingleton(sp => new ScenarioView(sp.GetRequiredService<ScenarioViewModel>()));
+
         services.AddSingleton(sp => new AppShellViewModel(
             sp.GetRequiredService<EventBus>(),
             sp.GetRequiredService<FleetService>(),
@@ -130,6 +145,7 @@ public partial class App : Application
             sp.GetRequiredService<ApiInspectorView>(),
             sp.GetRequiredService<OnboardingView>(),
             sp.GetRequiredService<SettingsView>(),
+            sp.GetRequiredService<ScenarioView>(),
             sp.GetRequiredService<TransportCoordinator>()));
 
         services.AddTransient<ShellView>();
@@ -270,6 +286,10 @@ public partial class App : Application
         // every DeviceClass should already have reported at least once), so this reuses that run
         // rather than starting a second one.
         RunMachineDetailSelfTest(fleetVm);
+
+        // ── Task 19b: Scenario control — defect injection / network outage / burst ─────────────
+        // Same "reuse the already-running fleet" reasoning as the Machine Detail check above.
+        RunScenarioSelfTest();
 
         vm.StopFleetCommand.Execute(null);
         if (vm.IsFleetRunning)
@@ -567,6 +587,199 @@ public partial class App : Application
             throw new InvalidOperationException($"selftest: {syncTarget.Code}'s DriftState did not change after SyncConfig ran (was \"{driftStateBeforeSync}\", still \"{syncTarget.DriftState}\")");
 
         Console.WriteLine($"SELFTEST config-sync: {syncTarget.Code} DriftState=\"{syncTarget.DriftState}\" (was \"{driftStateBeforeSync}\")");
+    }
+
+    /// <summary>
+    /// Task 19b headless check for the Scenario control screen: exercises the SAME
+    /// <see cref="ScenarioViewModel"/>/<see cref="FleetService"/> the "Scenario" nav screen binds to,
+    /// against the fleet <see cref="RunSelfTest"/> already has running (never starts a second one) —
+    /// <list type="bullet">
+    /// <item>"Lô lỗi cao" (High-defect lot) must raise the observed Fail rate in committed readings
+    /// MATERIALLY above the "Ca bình thường" baseline (doc 19b brief's first assertion).</item>
+    /// <item>"Mất mạng demo" (Network outage) must make acks come back queued/failed while the fleet
+    /// keeps running (doesn't crash/stop) — and turning it back off (re-applying "Ca bình thường") must
+    /// restore clean acks (the brief's reversibility requirement).</item>
+    /// <item><see cref="FleetService.Burst"/> must raise throughput (readings/sec) materially above a
+    /// same-length baseline window.</item>
+    /// </list>
+    /// </summary>
+    private void RunScenarioSelfTest()
+    {
+        var fleetService = Services.GetRequiredService<FleetService>();
+        var scenarioVm = Services.GetRequiredService<ScenarioViewModel>();
+
+        if (!fleetService.IsRunning)
+            throw new InvalidOperationException("selftest scenario: fleet was not running at the start of the Scenario checks");
+
+        // ── baseline "Ca bình thường" fail rate ─────────────────────────────────────────────
+        // Nothing before this method ever calls ApplyScenario, so Scenario should still be
+        // ScenarioConfig.Normal here — assert that rather than assuming it (a false assumption would
+        // make the "materially higher" comparison below meaningless).
+        if (fleetService.Scenario != ScenarioConfig.Normal)
+            throw new InvalidOperationException($"selftest scenario: expected Scenario to still be Normal before any preset is applied, was {fleetService.Scenario}");
+
+        var (normalFail, normalTotal) = MeasureFailRate(fleetService, TimeSpan.FromSeconds(2.5));
+        if (normalTotal == 0)
+            throw new InvalidOperationException("selftest scenario: captured 0 judged (non-Telemetry) readings during the Normal baseline window");
+        var normalRate = (double)normalFail / normalTotal;
+
+        // ── "Lô lỗi cao" (High-defect lot) preset ───────────────────────────────────────────
+        var highDefectPreset = scenarioVm.Presets.FirstOrDefault(p => p.Name == "Lô lỗi cao")
+            ?? throw new InvalidOperationException("selftest scenario: \"Lô lỗi cao\" preset not found in ScenarioViewModel.Presets");
+        scenarioVm.ApplyPresetCommand.Execute(highDefectPreset);
+        if (fleetService.Scenario != highDefectPreset.Config)
+            throw new InvalidOperationException("selftest scenario: FleetService.Scenario did not update after applying the \"Lô lỗi cao\" preset");
+
+        var (highFail, highTotal) = MeasureFailRate(fleetService, TimeSpan.FromSeconds(2.5));
+        if (highTotal == 0)
+            throw new InvalidOperationException("selftest scenario: captured 0 judged readings during the \"Lô lỗi cao\" window");
+        var highRate = (double)highFail / highTotal;
+
+        const double MinMaterialRateIncrease = 0.15; // 15 percentage points — see ScenarioAwareDriver's remarks for the expected ~35-40pp jump this preset actually produces
+        if (highRate <= normalRate + MinMaterialRateIncrease)
+            throw new InvalidOperationException(
+                $"selftest scenario: \"Lô lỗi cao\" fail rate ({highRate:P1}, {highFail}/{highTotal}) was not materially higher than Normal's " +
+                $"({normalRate:P1}, {normalFail}/{normalTotal}) — expected at least +{MinMaterialRateIncrease:P0}");
+
+        Console.WriteLine($"SELFTEST scenario defect: Normal fail rate {normalRate:P1} ({normalFail}/{normalTotal}) -> \"Lô lỗi cao\" {highRate:P1} ({highFail}/{highTotal})");
+
+        // ── "Mất mạng demo" (Network outage) preset ─────────────────────────────────────────
+        var outagePreset = scenarioVm.Presets.FirstOrDefault(p => p.Name == "Mất mạng demo")
+            ?? throw new InvalidOperationException("selftest scenario: \"Mất mạng demo\" preset not found in ScenarioViewModel.Presets");
+        scenarioVm.ApplyPresetCommand.Execute(outagePreset);
+        if (!fleetService.Scenario.NetworkOutage)
+            throw new InvalidOperationException("selftest scenario: NetworkOutage was not applied after the \"Mất mạng demo\" preset");
+
+        var outageAcks = MeasureAcks(fleetService, TimeSpan.FromSeconds(2));
+        if (!fleetService.IsRunning)
+            throw new InvalidOperationException("selftest scenario: fleet stopped running during the network-outage window — it must keep running through an outage");
+        if (outageAcks.Count == 0)
+            throw new InvalidOperationException("selftest scenario: captured 0 acks during the network-outage window");
+
+        var queuedOrFailed = outageAcks.Count(a => !a.Success || a.Queued);
+        if (queuedOrFailed == 0)
+            throw new InvalidOperationException($"selftest scenario: expected at least one queued/failed ack during the network-outage window, got {outageAcks.Count} all-clean ack(s)");
+
+        Console.WriteLine($"SELFTEST scenario outage: {queuedOrFailed}/{outageAcks.Count} ack(s) queued/failed while fleet kept running (IsRunning={fleetService.IsRunning})");
+
+        // ── restore "Ca bình thường" — NetworkOutage must clear and acks must go clean again ──────
+        var normalPreset = scenarioVm.Presets.First(p => p.Name == "Ca bình thường");
+        scenarioVm.ApplyPresetCommand.Execute(normalPreset);
+        if (fleetService.Scenario.NetworkOutage)
+            throw new InvalidOperationException("selftest scenario: NetworkOutage did not clear after re-applying the \"Ca bình thường\" preset");
+
+        var restoredAcks = MeasureAcks(fleetService, TimeSpan.FromSeconds(1.5));
+        if (restoredAcks.Count == 0)
+            throw new InvalidOperationException("selftest scenario: captured 0 acks after restoring the Normal preset");
+        if (restoredAcks.All(a => !a.Success || a.Queued))
+            throw new InvalidOperationException("selftest scenario: acks were STILL all queued/failed after restoring the Normal preset — NetworkOutage did not actually restore the real transport");
+
+        Console.WriteLine($"SELFTEST scenario outage-restore: {restoredAcks.Count(a => a.Success && !a.Queued)}/{restoredAcks.Count} ack(s) clean again after restoring \"Ca bình thường\"");
+
+        // ── Burst throughput ─────────────────────────────────────────────────────────────────
+        var baselineWindow = TimeSpan.FromSeconds(1.5);
+        var baselineCount = MeasureThroughput(fleetService, baselineWindow);
+
+        scenarioVm.BurstCommand.Execute(null);
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 6.0) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: Burst did not raise CycleRateMultiplier to 6.0x (was {fleetService.Scenario.CycleRateMultiplier})");
+
+        var burstWindow = TimeSpan.FromSeconds(1.5);
+        var burstCount = MeasureThroughput(fleetService, burstWindow);
+
+        var baselineRate = baselineCount / baselineWindow.TotalSeconds;
+        var burstRate = burstCount / burstWindow.TotalSeconds;
+        if (burstRate <= baselineRate * 1.3)
+            throw new InvalidOperationException(
+                $"selftest scenario: Burst throughput ({burstRate:0.0}/s, {burstCount} in {burstWindow.TotalSeconds}s) was not materially higher than " +
+                $"baseline ({baselineRate:0.0}/s, {baselineCount} in {baselineWindow.TotalSeconds}s)");
+
+        Console.WriteLine($"SELFTEST scenario burst: baseline {baselineRate:0.0} readings/s ({baselineCount}) -> burst {burstRate:0.0} readings/s ({burstCount})");
+
+        if (!fleetService.IsRunning)
+            throw new InvalidOperationException("selftest scenario: fleet is not running after the Burst throughput check");
+
+        // Restore CycleRateMultiplier to 1.0 rather than leaving the burst's own 4s auto-revert timer
+        // as the only thing that will do it — StopFleetCommand runs right after this method returns, so
+        // a pending revert firing later is harmless (ApplyScenario no-ops the restart when !IsRunning),
+        // but resetting explicitly here keeps this method's own effects fully undone before it returns.
+        scenarioVm.ApplyPresetCommand.Execute(normalPreset);
+        if (Math.Abs(fleetService.Scenario.CycleRateMultiplier - 1.0) > 1e-6)
+            throw new InvalidOperationException($"selftest scenario: CycleRateMultiplier did not restore to 1.0x after re-applying \"Ca bình thường\" (was {fleetService.Scenario.CycleRateMultiplier})");
+
+        // ── "Hot-folder AOI" preset — one-shot doc28 write + REAL HotFolderAoiDriver ingest ────────
+        // Fire-and-forget + pump + poll — same pattern RunMachineDetailSelfTest already uses for
+        // SyncConfigCommand, and for the same reason: ApplyPresetAsync's own await (on
+        // FleetService.RunHotFolderAoiDemoAsync) has no ConfigureAwait(false), so a raw
+        // ExecuteAsync(...).GetAwaiter().GetResult() here risks the classic sync-over-async deadlock if
+        // ANY SynchronizationContext is current on this thread when that await's continuation needs to
+        // post back (confirmed by trying it: it hung indefinitely). Pumping the dispatcher while polling
+        // sidesteps that regardless of whether such a context exists.
+        var hotFolderPreset = scenarioVm.Presets.FirstOrDefault(p => p.Name == "Hot-folder AOI")
+            ?? throw new InvalidOperationException("selftest scenario: \"Hot-folder AOI\" preset not found in ScenarioViewModel.Presets");
+        scenarioVm.ApplyPresetCommand.Execute(hotFolderPreset);
+        PumpDispatcherFor(TimeSpan.FromSeconds(6)); // comfortably above RunHotFolderAoiDemoAsync's own 5s safety-net timeout
+
+        if (scenarioVm.ApplyPresetCommand.IsRunning)
+            throw new InvalidOperationException("selftest scenario: Hot-folder AOI preset's ApplyPresetCommand was still running 6s after Execute");
+        if (scenarioVm.ApplyPresetCommand.ExecutionTask is { IsFaulted: true } faultedHotFolderTask)
+            throw new InvalidOperationException($"selftest scenario: Hot-folder AOI preset faulted: {faultedHotFolderTask.Exception}");
+        if (string.IsNullOrEmpty(scenarioVm.HotFolderStatus) || scenarioVm.HotFolderStatus.Contains("Lỗi", StringComparison.Ordinal))
+            throw new InvalidOperationException($"selftest scenario: Hot-folder AOI demo did not report success — HotFolderStatus=\"{scenarioVm.HotFolderStatus}\"");
+
+        Console.WriteLine($"SELFTEST scenario hot-folder: {scenarioVm.HotFolderStatus}");
+    }
+
+    /// <summary>Subscribes to <see cref="FleetService.Committed"/> for exactly <paramref name="window"/>
+    /// (via <see cref="PumpDispatcherFor"/>), returning (failCount, judgedTotal). "Judged" excludes
+    /// Telemetry readings (<see cref="Verdict.Skip"/>, no pass/fail concept) — same accounting rule
+    /// <c>FleetViewModel.OnCommitted</c> already uses for its own FPY. The handler only touches these two
+    /// local counters, and only from the background pipeline thread that fires <c>Committed</c> — the
+    /// calling (UI/selftest) thread is parked inside <see cref="PumpDispatcherFor"/> for the whole
+    /// window and only reads them after unsubscribing, so no synchronization is needed (same reasoning
+    /// as <see cref="RunSelfTest"/>'s own <c>CaptureDemoPhase</c>/<c>CaptureAutoPhase</c> handlers).</summary>
+    private static (int FailCount, int JudgedTotal) MeasureFailRate(FleetService fleetService, TimeSpan window)
+    {
+        var fail = 0;
+        var total = 0;
+        void OnCommitted(DeviceReading r, TransportAck a)
+        {
+            if (r.Verdict == Verdict.Skip) return;
+            total++;
+            if (r.Verdict == Verdict.Fail) fail++;
+        }
+
+        fleetService.Committed += OnCommitted;
+        PumpDispatcherFor(window);
+        fleetService.Committed -= OnCommitted;
+        return (fail, total);
+    }
+
+    /// <summary>Same capture shape as <see cref="MeasureFailRate"/>, but returns every
+    /// <see cref="TransportAck"/> committed during the window (used by the network-outage checks, which
+    /// care about <see cref="TransportAck.Success"/>/<see cref="TransportAck.Queued"/>, not Verdict).</summary>
+    private static List<TransportAck> MeasureAcks(FleetService fleetService, TimeSpan window)
+    {
+        var acks = new List<TransportAck>();
+        void OnCommitted(DeviceReading r, TransportAck a) => acks.Add(a);
+
+        fleetService.Committed += OnCommitted;
+        PumpDispatcherFor(window);
+        fleetService.Committed -= OnCommitted;
+        return acks;
+    }
+
+    /// <summary>Same capture shape as <see cref="MeasureFailRate"/>, but just counts every reading
+    /// committed during the window (used by the Burst throughput check).</summary>
+    private static int MeasureThroughput(FleetService fleetService, TimeSpan window)
+    {
+        var count = 0;
+        void OnCommitted(DeviceReading r, TransportAck a) => count++;
+
+        fleetService.Committed += OnCommitted;
+        PumpDispatcherFor(window);
+        fleetService.Committed -= OnCommitted;
+        return count;
     }
 
     /// <summary>

@@ -29,6 +29,7 @@ public partial class AppShellViewModel : ObservableObject
     private readonly ApiInspectorView _apiInspectorView;
     private readonly OnboardingView _onboardingView;
     private readonly SettingsView _settingsView;
+    private readonly ScenarioView _scenarioView;
     private readonly TransportCoordinator _transportCoordinator;
 
     /// <summary>Task 19a — DEFAULTS TO DEMO (was Auto): the out-of-box exhibition run must need no
@@ -82,6 +83,7 @@ public partial class AppShellViewModel : ObservableObject
         ApiInspectorView apiInspectorView,
         OnboardingView onboardingView,
         SettingsView settingsView,
+        ScenarioView scenarioView,
         TransportCoordinator transportCoordinator)
     {
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
@@ -91,6 +93,7 @@ public partial class AppShellViewModel : ObservableObject
         _apiInspectorView = apiInspectorView ?? throw new ArgumentNullException(nameof(apiInspectorView));
         _onboardingView = onboardingView ?? throw new ArgumentNullException(nameof(onboardingView));
         _settingsView = settingsView ?? throw new ArgumentNullException(nameof(settingsView));
+        _scenarioView = scenarioView ?? throw new ArgumentNullException(nameof(scenarioView));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
         _eventBus.Traced += OnTraced;
         _fleetViewModel.MachineSelected += OnMachineSelected;
@@ -106,8 +109,9 @@ public partial class AppShellViewModel : ObservableObject
         Mode = _transportCoordinator.Mode;
 
         // Nav[0] is Dashboard (Task 15), Nav[2] is Onboarding (Task 18), Nav[3] is API Inspector
-        // (Task 17), Nav[5] is Settings (Task 19a) — the only real screens wired up so far; "Machines"/
-        // "Scenario" still fall back to SelectNavItem's placeholder text until their own task lands.
+        // (Task 17), Nav[4] is Scenario (Task 19b), Nav[5] is Settings (Task 19a) — the only real
+        // screens wired up so far; "Machines" still falls back to SelectNavItem's placeholder text
+        // until its own task lands.
         CurrentView = _dashboardView;
     }
 
@@ -126,6 +130,7 @@ public partial class AppShellViewModel : ObservableObject
             "dashboard" => _dashboardView,
             "onboarding" => _onboardingView,
             "inspector" => _apiInspectorView,
+            "scenario" => _scenarioView,
             "settings" => _settingsView,
             _ => $"{item.Title} — chưa triển khai (Task 20)",
         };
