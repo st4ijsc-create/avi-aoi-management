@@ -1,8 +1,43 @@
-# Doc 67 — Product Review module "Tổng quan": Báo cáo cải tiến tổng thể (CHỜ DUYỆT)
+# Doc 67 — Product Review module "Tổng quan": Báo cáo cải tiến tổng thể + Kết quả thực thi W1-W8
 
-> **Ngày**: 2026-07-19 · **Phương pháp**: 13 AI agent song song (9 agent per-page + 4 agent lát cắt ngang IA/a11y-responsive/performance/component-reuse), audit **code + live** (server :3000, tài khoản audit doc-65 + 2FA, 21 screenshot fullpage × 3 viewport 1280×800 / 1920×1080 / 390×844, capture console + network + inventory DOM).
-> **Kết quả**: **196 findings** — **11 P0 · 62 P1 · 92 P2 · 31 P3**. 0 lỗi console, 0 API lỗi khi load (nền tảng ổn định — vấn đề nằm ở chất lượng sản phẩm, không phải cháy nổ).
-> **Trạng thái**: CHỜ USER DUYỆT trước khi thực thi.
+> **Ngày**: 2026-07-19 (audit) → 2026-07-20 (thực thi xong) · **Phương pháp**: 13 AI agent song song (9 agent per-page + 4 agent lát cắt ngang IA/a11y-responsive/performance/component-reuse), audit **code + live** (server :3000, tài khoản audit doc-65 + 2FA, 21 screenshot fullpage × 3 viewport 1280×800 / 1920×1080 / 390×844, capture console + network + inventory DOM).
+> **Kết quả audit**: **196 findings** — **11 P0 · 62 P1 · 92 P2 · 31 P3**. 0 lỗi console, 0 API lỗi khi load (nền tảng ổn định — vấn đề nằm ở chất lượng sản phẩm, không phải cháy nổ).
+> **Trạng thái**: ✅ **ĐÃ THỰC THI 8/8 WAVE** — user duyệt 5 quyết định §4, 8 commit trên `feat/hmi-dep` (`d839bb78`→`d0a03998`), mỗi wave gate tsc + build (+ i18n + unit test). Re-capture live đối chứng: **hScroll @1280 8/9 trang true→false**, landmark main 2→1 toàn module, console vẫn 0 lỗi. Xem §6.
+
+## §6. KẾT QUẢ THỰC THI (2026-07-20)
+
+**5 quyết định user duyệt**: (1) IA Full 9→4 + redirect role · (2) OEE 80/60 · (3) executive giữ + 2 cột desktop · (4) PDF thật print-stylesheet + thêm HTML · (5) mỗi wave 1 commit có gate trên `feat/hmi-dep`.
+
+**8 commit (mỗi commit = 1 wave, gate xanh trước khi commit)**:
+| Wave | Commit | Nội dung | Gate |
+|---|---|---|---|
+| W1 Sự thật số liệu | `d839bb78` | 6 agent: số cảnh báo ghi rõ phạm vi, filter kỳ nối thật, KPI Công ty→Nhà máy có dữ liệu, nút Xác nhận≠Resolve, PDF thật, FY/NTFY, Unknown→Chưa gán, tổng tầng khớp, approvals chỉ proposal | tsc+build |
+| W2 Freshness AUD-01 | `76a476f7` | 8 trang khai tuổi dữ liệu (PollFreshness/FreshnessStrip); executive xóa badge Live giả + ErrorInline 5 vùng; dashboard-center AsyncBoundary | tsc+build |
+| W3 Ops-console | `cb94dac5` | Gộp ×N alert-storm, bulk-ack, escalation QUÁ HẠN/HẾT HẠN, TV mode thật, còi WebAudio, bỏ re-render 1s | tsc+build |
+| W4 Responsive/touch/a11y | `c1275f1e` | Diệt hScroll tại gốc shell (AssetScopeBar + 2 main lồng SidebarInset), 44px, WAI-ARIA tree, Andon TV 29px, executive 2 cột, e2e spec | tsc+vitest+build |
+| W5 IA Full | `256bda97` | Menu 9→4, redirect theo role, tên nhất quán h1=breadcrumb=menu 3-locale, control-tower auto-persona, corporate hết nhảy app-shell, RelatedViews 2 chiều | tsc+i18n+build |
+| W6 Performance | `2741a3da` | Dashboard 27→15 procedure + socket-invalidate, 3D demand-mode + **fix air-gap HDR CDN**, drill-down SQL GROUP BY (smoke PG live), route-warmer, websocket-first | tsc+build |
+| W7 DS consolidation | `18b21012` | lib/format.ts + isaStateBadges (oeeTone 80/60) + ConnectionChip + EmptyState allClear + hooks; migrate 3 ngưỡng OEE + 5 map severity + 4 formatter; xóa 430 dòng CustomDashboard chết | tsc+vitest+build |
+| W8 Features + i18n | `d0a03998` | **1000 key i18n** (548 vi + 452 zh) máy-dịch vỡ; dashboard-center 3 tab + nút Xem + confirm xóa + 6-template; drill-down URL-state + điểm-xấu-nhất; Andon chuông+flash+spotlight; executive duyệt 1-chạm; command-center tree-search + OEE fallback + rail filter; control-tower kiosk | tsc+i18n+vitest 40/40+build |
+
+**Đối chứng live (capture before → after, 21 ảnh × 3 viewport)**:
+- ✅ **hScroll @panel1280**: 8/9 trang `true→false` (andon vốn false). Nguồn gốc = shell (SidebarInset/AssetScopeBar), sửa 1 chỗ khỏi toàn module. Test `e2e/overview-responsive.spec.ts` chống tái phát.
+- ✅ **Landmark `<main>` trùng**: 2→1 (executive 3→1) toàn module — do gỡ `<main>` lồng của shadcn SidebarInset.
+- ✅ **Console/API**: giữ 0 lỗi / 0 fail sau 8 wave.
+- ✅ **Ops-console**: bức tường 6.900px/192 nút → gộp thẻ ×N, vừa 1 màn, bulk-ack, escalation QUÁ HẠN, MTTA "—".
+- ✅ **Executive**: 2 cột desktop, badge Live giả→PollFreshness, all-clear EmptyState, "50+" trung thực.
+- ⚠️ **Tồn dư** (trung thực): mobile 390 `/dashboard` + `/executive` vẫn hScroll (W4 tập trung panel 1280; mobile là đợt sau); mỗi trang còn 1 nút icon shell chưa aria-label (dashboard 3→2). Không chặn phát hành, đưa vào backlog.
+
+**Nợ hoãn có chủ đích (ngoài phạm vi 8 wave, ghi để không quên)**:
+1. **Server mqtt severity**: `mqtt_alert_history` không có cột severity (severity thật ở `mqtt_connection_alerts`) — W1 map phòng thủ phía client, cần server expose để severity MQTT 100% thật.
+2. **Server safety_events không lọc thời gian** trong `commandCenter.kpiSummary.alarms` — nguồn "đơ số" cảnh báo đang-mở (W1 đã ghi rõ phạm vi trên UI, chưa sửa gốc server).
+3. **WebPush VAPID** cho executive (push-not-pull doc05) + **lịch gửi báo cáo NG theo ca** (cron+email đã có hạ tầng) — 2 tính năng automation lớn, tách thành initiative riêng.
+4. **AlarmCard + useUnifiedAlerts primitive** (W7 làm tone/format/badge/chip nhưng chưa hợp nhất khối alarm-card 4 kiểu thành 1 component — rủi ro thấp, để đợt DS kế).
+5. **CommandKpiStrip / MachineStatusTile / RadialGauge cho OEE**: cơ hội tái sử dụng còn lại, ROI trung bình.
+
+---
+
+# (Bản gốc báo cáo audit — giữ nguyên để tham chiếu)
 
 ## 0. Điểm sẵn-sàng-phát-hành per-page (0-10)
 
