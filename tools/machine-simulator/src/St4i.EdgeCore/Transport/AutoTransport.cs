@@ -150,6 +150,18 @@ public sealed class AutoTransport : ITransport
         {
             return (null, true);
         }
+        catch (St4iConfigException)
+        {
+            // Defense-in-depth — see HeartbeatAsync/SyncConfigAsync's matching catches. In practice
+            // LiveTransport itself never lets St4iConfigException escape SendAsync any more (it
+            // converts "unconfigured live" to a Queued:true ack and "configured but the SDK rejected
+            // the local payload" to a Queued:false/HttpStatus:400 ack — see LiveTransport.SendAsync's
+            // own remarks), so this only guards some OTHER ITransport implementation throwing directly.
+            // Unlike LiveTransport's own catch, a bare thrown exception here carries no Queued/HttpStatus
+            // signal to discriminate "unconfigured" from "malformed payload" — this is the SAME broad
+            // treatment already given to a thrown St4iNetworkException just above.
+            return (null, true);
+        }
     }
 
     /// <summary>

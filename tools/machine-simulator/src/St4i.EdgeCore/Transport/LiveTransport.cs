@@ -16,8 +16,12 @@ namespace St4i.EdgeCore.Transport;
 /// One client == one machine (per the SDK's own doc comment) — <see cref="ForMachine"/> is the normal
 /// entry point; the public ctor exists mainly so tests/tasks 7/13/14 can hand in a pre-built client
 /// (e.g. one that already has a loaded mk_ key or a fake <see cref="HttpMessageHandler"/>).
+///
+/// <see cref="IDisposable"/> (Task 19a fix pass): the wrapped <see cref="St4iDeviceClient"/> owns an
+/// <see cref="HttpClient"/> — see <see cref="Dispose"/>'s remarks for why this matters when Settings
+/// rebuilds the live connection at runtime.
 /// </summary>
-public sealed class LiveTransport : ITransport
+public sealed class LiveTransport : ITransport, IDisposable
 {
     private readonly St4iDeviceClient _client;
 
@@ -46,6 +50,14 @@ public sealed class LiveTransport : ITransport
     }
 
     public TransportMode Mode => TransportMode.Live;
+
+    /// <summary>Disposes the wrapped <see cref="St4iDeviceClient"/> (and, with it, its internal
+    /// <see cref="HttpClient"/>). Matters at runtime because <c>TransportCoordinator.RebuildLive</c>
+    /// (Settings' ServerUrl/VerifyTls/MachineCode fields) constructs a FRESH <see cref="LiveTransport"/>
+    /// on every change — without disposing the one being replaced, each edit would leak an
+    /// <see cref="HttpClient"/> (and its underlying socket pool) that nothing ever reclaims. Safe to
+    /// call more than once — <see cref="HttpClient.Dispose"/> itself is idempotent.</summary>
+    public void Dispose() => _client.Dispose();
 
     // ─────────────────────────────────────────────────────────────────────
     // SendAsync — dispatch by ReadingKind to the matching typed SDK call.
@@ -78,15 +90,24 @@ public sealed class LiveTransport : ITransport
         }
         catch (St4iConfigException e)
         {
-            // Live is UNCONFIGURED (no mk_ — see St4iDeviceClient.HttpSendAsync's guard) rather than
-            // reachable-but-rejecting. Treated the same as a network failure (Success:false, Queued:true)
-            // rather than a permanent 4xx: an unconfigured live side is exactly the case Auto mode
-            // (Task 19a) must fall back to demo for, and AutoTransport's fallback trigger keys off this
-            // Queued:true/Error-not-null shape (see AutoTransport.IsNetworkFailure) — a CONFIGURED live
-            // server's own St4iApiException (real 4xx) is caught separately above and must keep
-            // surfacing, not fall back.
+            // St4iConfigException is thrown for TWO unrelated reasons in the SDK, and only one of them
+            // means "fall back to demo": (1) UNCONFIGURED — no mk_ at all (St4iDeviceClient.HttpSendAsync's
+            // guard) — that's a live side that can never succeed until someone configures it, exactly the
+            // Auto-mode fallback case. (2) CONFIGURED but the SDK rejected the LOCAL PAYLOAD before ever
+            // sending it — SubmitProcessResultAsync's "result phải là pass|fail|warn|skip",
+            // SubmitInspectionAsync's "overallResult phải OK|NG|NTF", SubmitTelemetryAsync's
+            // empty-samples guard — nothing to do with reachability, and MUST surface (masking a real
+            // payload bug behind a "queued, couldn't reach server" ack would hide it, and Auto mode
+            // falling back to demo here would silently swallow bad data forever). Distinguish by
+            // MkKey: empty means case (1); non-empty means case (2), modeled as a synthetic 400 —
+            // same non-fallback shape a real St4iApiException 4xx gets above.
             sw.Stop();
-            return new TransportAck(Success: false, Queued: true, Error: e.Message, LatencyMs: sw.ElapsedMilliseconds);
+            if (string.IsNullOrEmpty(_client.MkKey))
+            {
+                return new TransportAck(Success: false, Queued: true, Error: e.Message, LatencyMs: sw.ElapsedMilliseconds);
+            }
+
+            return new TransportAck(Success: false, Queued: false, HttpStatus: 400, Error: e.Message, LatencyMs: sw.ElapsedMilliseconds);
         }
     }
 

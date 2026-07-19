@@ -78,25 +78,44 @@ public sealed class TransportCoordinator
     /// <see cref="Mode"/> is currently Live or Auto, re-points <see cref="SwitchableTransport"/> at the
     /// fresh instance so the change takes effect immediately. A rebuild while Mode is Demo still
     /// replaces the held Live/Auto instances (ready for the next switch to Live/Auto) without disturbing
-    /// what is actively serving traffic.
+    /// what is actively serving traffic. Disposes the REPLACED <see cref="LiveTransport"/> (releasing
+    /// its wrapped <see cref="HttpClient"/>) once nothing new can be routed to it — see
+    /// <see cref="LiveTransport.Dispose"/>'s remarks: Settings can call this once per keystroke
+    /// (ServerUrl/MachineCode use <c>UpdateSourceTrigger=PropertyChanged</c>), so without this every
+    /// edit would leak an HttpClient.
     /// </summary>
     public void RebuildLive(string serverUrl, string machineCode, string? mkKey, bool verifyTls)
     {
         var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, null, verifyTls);
         var newAuto = new AutoTransport(newLive, _demo);
 
+        LiveTransport oldLive;
         lock (_gate)
         {
+            // Narrow, accepted race (same risk class as FleetService.Stop's CTS-disposal remarks):
+            // AutoTransport fires FallbackChanged OUTSIDE its own internal lock (see its own
+            // SetFallingBack remarks), so a call already in flight on the OLD _auto right as this
+            // rebuild runs could still deliver one stray FallbackChanged notification after the
+            // unsubscribe below (or, rarely, miss one) — delegate -=/Invoke is thread-safe (no crash;
+            // Invoke captures its own snapshot), this is purely "at most one notification off" during a
+            // Settings-triggered rebuild, not worth synchronizing further for this exhibition tool.
             _auto.FallbackChanged -= OnFallbackChanged;
+            oldLive = _live;
             _live = newLive;
             _auto = newAuto;
             _auto.FallbackChanged += OnFallbackChanged;
         }
 
+        // Re-point the switchable to the FRESH instance before disposing the old one, so any call that
+        // arrives after this point never sees a disposed LiveTransport — the same narrow "already
+        // in-flight before the rebuild started" window noted above is the only case that could still
+        // observe the old client mid-disposal, and is accepted for the same reason.
         if (Mode is TransportMode.Live or TransportMode.Auto)
         {
             ApplyModeInternal(Mode);
         }
+
+        oldLive.Dispose();
     }
 
     private void ApplyModeInternal(TransportMode mode)

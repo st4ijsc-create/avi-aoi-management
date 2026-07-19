@@ -75,11 +75,15 @@
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                         <StackPanel Style="{StaticResource FieldStackStyle}">
                             <TextBlock Text="Server URL" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBox Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <!-- LostFocus (not PropertyChanged): each change here rebuilds a fresh
+                                 LiveTransport/HttpClient (TransportCoordinator.RebuildLive) — committing
+                                 per-keystroke would rebuild (and leak, before the disposal fix) one per
+                                 character typed. -->
+                            <TextBox Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource FieldStackStyle}" Width="160">
                             <TextBlock Text="Machine code (cho mk_)" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBox Text="{Binding MachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Text="{Binding MachineCode, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource FieldStackStyle}" Width="140">
                             <TextBlock Text="Mode" Style="{StaticResource FieldLabelStyle}" />

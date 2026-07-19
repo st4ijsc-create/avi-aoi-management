@@ -156,4 +156,38 @@ public class AutoTransportTests
         Assert.NotEqual("error", result.DriftState); // demo config-sync never reports "error"
         Assert.True(auto.IsFallingBack);
     }
+
+    // Fix-pass review crux #3 — the mirror-image regression of the unconfigured-live tests above: a
+    // CONFIGURED live (valid mk_) that reaches the server and gets a real 4xx back must SURFACE through
+    // AutoTransport too, not get masked as a demo fallback. Contrasts directly with
+    // Falls_back_to_demo_when_live_is_unconfigured_no_mkKey above — same AutoTransport, same envelope
+    // shape, the only difference is a valid vs empty mkKey (and the server actually responding 400
+    // instead of the handler never being reached).
+    [Fact]
+    public async Task Configured_live_4xx_surfaces_without_demo_fallback()
+    {
+        var handler = new CapturingHandler
+        {
+            Responder = (_, __) => (System.Net.HttpStatusCode.BadRequest,
+                "{\"error\":{\"message\":\"stepType không hợp lệ\",\"code\":\"VALIDATION\"}}"),
+        };
+        var configuredLive = St4i.EdgeCore.Transport.LiveTransport.ForMachine("http://x", "mk_valid", "M1", null, true, handler);
+        var auto = new AutoTransport(configuredLive, new DemoTransport(latencyMs: 0));
+
+        var env = new CanonicalEnvelope(ReadingKind.ProcessResult, "M1", "/api/v1/ingest/process-result",
+            new()
+            {
+                ["serialNumber"] = "SN1",
+                ["stepType"] = "screw_tightening",
+                ["result"] = "pass",
+                ["idempotencyKey"] = "M1:RC1:000001",
+            }, "M1:RC1:000001");
+
+        var ack = await auto.SendAsync(env, default);
+
+        Assert.False(ack.Success);
+        Assert.False(ack.Queued);
+        Assert.Equal(400, ack.HttpStatus);
+        Assert.False(auto.IsFallingBack); // a real 4xx must NOT be masked as a demo fallback
+    }
 }
