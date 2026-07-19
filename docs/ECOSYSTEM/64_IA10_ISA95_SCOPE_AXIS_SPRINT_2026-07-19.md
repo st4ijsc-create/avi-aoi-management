@@ -83,6 +83,7 @@ Gate mỗi batch như S1.
 | /quality-cockpit | ✅ trục seed cockpit-scope.machineId + wired-chip |
 | /history | ⏸ **DEP-S3** — `inspection.search` nhận **CODE string** (factoryCode/machineCode…), không ID; cần map id→code hoặc server thêm id |
 | /defect-heatmap | ⏸ **S3** — page wrapper thuần; 3 component con giữ state riêng, wire = 3× seeding |
+| (nuance) rail MachineWorkspace | ⏸ **S3** — rail fleet trái của /device-monitor (biến thể workspace) dùng nguồn máy RIÊNG, chưa theo trục; tab OEE nhúng thì ĐÃ lọc (proof 0/39) |
 
 ### S2-D tool backfill ✅
 `scripts/ops/backfill-machine-parents.mjs` — báo cáo máy mồ côi (chuỗi station→line→workshop→factory đứt) + gán từ CSV `machineCode,stationCode` (`--apply` mới ghi; chạy owner-role). Cây do người vận hành curate qua UI /layout; tool chỉ nối parent.
