@@ -26,4 +26,20 @@ public class NormalizerTests {
     Assert.Equal("/api/v1/ingest/inspection", env.Path);
     Assert.Equal("NG", env.Payload["overallResult"]);
   }
+  [Fact] public void Inspection_key_differs_by_serialNumber_same_machine_recipe_cycle0() {
+    // Two different boards inspected on the same machine+program, CycleCounter always 0 for
+    // INSPECTION readings (doc-28 files) — without SerialNumber in the key these collide and the
+    // server's (machineId, idempotencyKey) dedup would silently drop the second board.
+    var r1 = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.Inspection, RecipeCode="MB-X1", CycleCounter=0, SerialNumber="SN-AAA" };
+    var r2 = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.Inspection, RecipeCode="MB-X1", CycleCounter=0, SerialNumber="SN-BBB" };
+    var k1 = Normalizer.BuildIdempotencyKey(r1);
+    var k2 = Normalizer.BuildIdempotencyKey(r2);
+    Assert.NotEqual(k1, k2);
+    Assert.True(k1.Length >= 8);
+    Assert.True(k2.Length >= 8);
+  }
+  [Fact] public void ProcessResult_key_unchanged_by_inspection_fix() {
+    var r = new DeviceReading{ MachineCode="SCRW-01", RecipeCode="RC1", CycleCounter=1, Kind=ReadingKind.ProcessResult, SerialNumber="SN1", StepType="screw_tightening" };
+    Assert.Equal("SCRW-01:RC1:000001", Normalizer.BuildIdempotencyKey(r));
+  }
 }

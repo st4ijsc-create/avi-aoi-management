@@ -20,9 +20,19 @@ public static class Normalizer
     /// <summary>
     /// Stable idempotency key: "{machineCode}:{recipeCode ?? stepType ?? "cycle"}:{cycleCounter:D6}".
     /// Always >= 8 chars given a non-empty machine code (":cycle:" + 6-digit counter alone is 13 chars).
+    /// For Inspection readings, CycleCounter is always 0 (doc-28 files carry no cycle counter), so the
+    /// SerialNumber is included to keep the key unique per board — otherwise two different boards
+    /// inspected on the same machine+program would collide and the server's (machineId, idempotencyKey)
+    /// dedup would silently drop the second board, destroying per-serial traceability/FPY.
     /// </summary>
     public static string BuildIdempotencyKey(DeviceReading r)
     {
+        if (r.Kind == ReadingKind.Inspection)
+        {
+            var insBucket = r.RecipeCode ?? "insp";
+            return $"{r.MachineCode}:{insBucket}:{r.SerialNumber}:{r.CycleCounter:D6}";
+        }
+
         var bucket = r.RecipeCode ?? r.StepType ?? "cycle";
         return $"{r.MachineCode}:{bucket}:{r.CycleCounter:D6}";
     }
