@@ -14,8 +14,15 @@ import { AssetScopeProvider } from "./contexts/AssetScopeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
-import { ProgrammingCopilotDock } from "./components/programming/ProgrammingCopilotDock";
-import { AILocalChatBubble } from "./components/AILocalChatBubble";
+// doc64 S5-OPT: 2 component global-mount này kéo ~1.9MB lib vào bundle chính
+// (Dock→Panel→CodeEditor→@codemirror ~1MB; ChatBubble→react-markdown+AIToolResultCard→recharts).
+// Lazy để chúng tải SAU first-paint — hành vi giữ nguyên, chỉ xuất hiện muộn vài trăm ms.
+const ProgrammingCopilotDock = React.lazy(() =>
+  import("./components/programming/ProgrammingCopilotDock").then((m) => ({ default: m.ProgrammingCopilotDock })),
+);
+const AILocalChatBubble = React.lazy(() =>
+  import("./components/AILocalChatBubble").then((m) => ({ default: m.AILocalChatBubble })),
+);
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
 import DashboardLayout from "./components/DashboardLayout";
@@ -30,50 +37,50 @@ const History = React.lazy(() => import("./pages/History"));
 const DataSettings = React.lazy(() => import("./pages/DataSettings"));
 const ApiDocs = React.lazy(() => import("./pages/ApiDocs"));
 const ProductModels = React.lazy(() => import("./pages/ProductModels"));
-import InspectionDetail from "./pages/InspectionDetail";
-import Layout from "./pages/Layout";
-import Settings from "./pages/Settings";
-import CorporateLayout from "./pages/CorporateLayout";
-import Reports from "./pages/Reports";
-import Alerts from "./pages/Alerts";
-import Users from "./pages/Users";
-import ProductMachineMapping from "./pages/ProductMachineMapping";
-import ProductionOrders from "./pages/ProductionOrders";
+const InspectionDetail = React.lazy(() => import("./pages/InspectionDetail")); // doc64 S5-OPT: eager→lazy
+const Layout = React.lazy(() => import("./pages/Layout")); // doc64 S5-OPT: eager→lazy
+const Settings = React.lazy(() => import("./pages/Settings")); // doc64 S5-OPT: eager→lazy
+const CorporateLayout = React.lazy(() => import("./pages/CorporateLayout")); // doc64 S5-OPT: eager→lazy
+const Reports = React.lazy(() => import("./pages/Reports")); // doc64 S5-OPT: eager→lazy
+const Alerts = React.lazy(() => import("./pages/Alerts")); // doc64 S5-OPT: eager→lazy
+const Users = React.lazy(() => import("./pages/Users")); // doc64 S5-OPT: eager→lazy
+const ProductMachineMapping = React.lazy(() => import("./pages/ProductMachineMapping")); // doc64 S5-OPT: eager→lazy
+const ProductionOrders = React.lazy(() => import("./pages/ProductionOrders")); // doc64 S5-OPT: eager→lazy
 import Login from "./pages/Login";
-import Profile from "./pages/Profile";
-import ChangePassword from "./pages/ChangePassword";
-import AuditLogs from "./pages/AuditLogs";
-import SessionManagement from "./pages/SessionManagement";
-import ProductionSessionSignOff from "./pages/ProductionSessionSignOff";
-import { ProductComparison } from "./pages/ProductComparison";
+const Profile = React.lazy(() => import("./pages/Profile")); // doc64 S5-OPT: eager→lazy
+const ChangePassword = React.lazy(() => import("./pages/ChangePassword")); // doc64 S5-OPT: eager→lazy
+const AuditLogs = React.lazy(() => import("./pages/AuditLogs")); // doc64 S5-OPT: eager→lazy
+const SessionManagement = React.lazy(() => import("./pages/SessionManagement")); // doc64 S5-OPT: eager→lazy
+const ProductionSessionSignOff = React.lazy(() => import("./pages/ProductionSessionSignOff")); // doc64 S5-OPT: eager→lazy
+const ProductComparison = React.lazy(() => import("./pages/ProductComparison").then((m) => ({ default: m.ProductComparison }))); // doc64 S5-OPT: eager→lazy
 import Setup from "./pages/Setup";
 // doc 39 Wave 4 — the 9 MQTT/UNS pages are consolidated into one lazy Connectivity
 // hub (their bodies are imported as *Content there). Legacy routes redirect in.
 const ConnectivityHub = React.lazy(() => import("./pages/ConnectivityHub"));
-import SystemConfiguration from "./pages/SystemConfiguration";
-import ImportExport from "./pages/ImportExport";
-import UserAssignments from "./pages/UserAssignments";
-import ScheduledReports from "./pages/ScheduledReports";
-import ProcessManagement from "./pages/ProcessManagement";
-import WorkstationManagement from "./pages/WorkstationManagement";
-import CategoryAnalytics from "./pages/CategoryAnalytics";
-import UserGuide from "./pages/UserGuide";
-import AboutSystem from "./pages/AboutSystem";
-import BackupRestore from "./pages/BackupRestore";
-import OEEDashboard from "./pages/OEEDashboard";
-import OEETargetSettings from "./pages/OEETargetSettings";
-import MESControlTower from "./pages/MESControlTower";
-import WipLineBalance from "./pages/WipLineBalance";
-import TraceabilityLineage from "./pages/TraceabilityLineage";
-import RealtimeReportView from "./pages/RealtimeReportView";
-import CarbonDashboard from "./pages/CarbonDashboard";
-import DrillDownDashboard from "./pages/DrillDownDashboard";
-import DefectHeatmapPage from "./pages/DefectHeatmapPage";
-import DefectPredictionPage from "./pages/DefectPredictionPage";
-import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
+const SystemConfiguration = React.lazy(() => import("./pages/SystemConfiguration")); // doc64 S5-OPT: eager→lazy
+const ImportExport = React.lazy(() => import("./pages/ImportExport")); // doc64 S5-OPT: eager→lazy
+const UserAssignments = React.lazy(() => import("./pages/UserAssignments")); // doc64 S5-OPT: eager→lazy
+const ScheduledReports = React.lazy(() => import("./pages/ScheduledReports")); // doc64 S5-OPT: eager→lazy
+const ProcessManagement = React.lazy(() => import("./pages/ProcessManagement")); // doc64 S5-OPT: eager→lazy
+const WorkstationManagement = React.lazy(() => import("./pages/WorkstationManagement")); // doc64 S5-OPT: eager→lazy
+const CategoryAnalytics = React.lazy(() => import("./pages/CategoryAnalytics")); // doc64 S5-OPT: eager→lazy
+const UserGuide = React.lazy(() => import("./pages/UserGuide")); // doc64 S5-OPT: eager→lazy
+const AboutSystem = React.lazy(() => import("./pages/AboutSystem")); // doc64 S5-OPT: eager→lazy
+const BackupRestore = React.lazy(() => import("./pages/BackupRestore")); // doc64 S5-OPT: eager→lazy
+const OEEDashboard = React.lazy(() => import("./pages/OEEDashboard")); // doc64 S5-OPT: eager→lazy
+const OEETargetSettings = React.lazy(() => import("./pages/OEETargetSettings")); // doc64 S5-OPT: eager→lazy
+const MESControlTower = React.lazy(() => import("./pages/MESControlTower")); // doc64 S5-OPT: eager→lazy
+const WipLineBalance = React.lazy(() => import("./pages/WipLineBalance")); // doc64 S5-OPT: eager→lazy
+const TraceabilityLineage = React.lazy(() => import("./pages/TraceabilityLineage")); // doc64 S5-OPT: eager→lazy
+const RealtimeReportView = React.lazy(() => import("./pages/RealtimeReportView")); // doc64 S5-OPT: eager→lazy
+const CarbonDashboard = React.lazy(() => import("./pages/CarbonDashboard")); // doc64 S5-OPT: eager→lazy
+const DrillDownDashboard = React.lazy(() => import("./pages/DrillDownDashboard")); // doc64 S5-OPT: eager→lazy
+const DefectHeatmapPage = React.lazy(() => import("./pages/DefectHeatmapPage")); // doc64 S5-OPT: eager→lazy
+const DefectPredictionPage = React.lazy(() => import("./pages/DefectPredictionPage")); // doc64 S5-OPT: eager→lazy
+const RootCauseAnalysisPage = React.lazy(() => import("./pages/RootCauseAnalysisPage")); // doc64 S5-OPT: eager→lazy
 const CausalGraphEditorPage = React.lazy(() => import("./pages/CausalGraphEditorPage")); // Causal knowledge-graph admin editor (validated atomic write)
-import HistoryExportScheduling from "./pages/HistoryExportScheduling";
-import CorporateDashboard from "./pages/CorporateDashboard";
+const HistoryExportScheduling = React.lazy(() => import("./pages/HistoryExportScheduling")); // doc64 S5-OPT: eager→lazy
+const CorporateDashboard = React.lazy(() => import("./pages/CorporateDashboard")); // doc64 S5-OPT: eager→lazy
 const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDashboard"));
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
@@ -182,30 +189,30 @@ const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-
 const ApprovalsInbox = React.lazy(() => import("./pages/ApprovalsInbox")); // doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)
-import AOIPackages from "./pages/AOIPackages";
-import CorrelationAnalysis from "./pages/CorrelationAnalysis";
-import RoleBuilder from "./pages/RoleBuilder";
-import PdfReports from "./pages/PdfReports";
-import DataComparison from "./pages/DataComparison";
-import ReportBuilder from "./pages/ReportBuilder";
-import PowerPointExport from "./pages/PowerPointExport";
-import QualityGateTemplates from "./pages/QualityGateTemplates";
-import ProductionScheduling from "./pages/ProductionScheduling";
-import MachineRegistration from "./pages/MachineRegistration";
-import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
+const AOIPackages = React.lazy(() => import("./pages/AOIPackages")); // doc64 S5-OPT: eager→lazy
+const CorrelationAnalysis = React.lazy(() => import("./pages/CorrelationAnalysis")); // doc64 S5-OPT: eager→lazy
+const RoleBuilder = React.lazy(() => import("./pages/RoleBuilder")); // doc64 S5-OPT: eager→lazy
+const PdfReports = React.lazy(() => import("./pages/PdfReports")); // doc64 S5-OPT: eager→lazy
+const DataComparison = React.lazy(() => import("./pages/DataComparison")); // doc64 S5-OPT: eager→lazy
+const ReportBuilder = React.lazy(() => import("./pages/ReportBuilder")); // doc64 S5-OPT: eager→lazy
+const PowerPointExport = React.lazy(() => import("./pages/PowerPointExport")); // doc64 S5-OPT: eager→lazy
+const QualityGateTemplates = React.lazy(() => import("./pages/QualityGateTemplates")); // doc64 S5-OPT: eager→lazy
+const ProductionScheduling = React.lazy(() => import("./pages/ProductionScheduling")); // doc64 S5-OPT: eager→lazy
+const MachineRegistration = React.lazy(() => import("./pages/MachineRegistration")); // doc64 S5-OPT: eager→lazy
+const MachineOnboardingWizard = React.lazy(() => import("./pages/MachineOnboardingWizard")); // doc64 S5-OPT: eager→lazy
 const AoiOnboardingWizard = React.lazy(() => import("./pages/AoiOnboardingWizard")); // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)
 const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardingWizard")); // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)
 const ProductChangeoverWizard = React.lazy(() => import("./pages/ProductChangeoverWizard")); // doc 40 Wave 4 — operator changeover: quét sản phẩm mới → kiểm tra readiness/mapping/feeder → xác nhận đổi
 const FeederVerify = React.lazy(() => import("./pages/FeederVerify")); // doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)
-import CorporateManagement from "./pages/CorporateManagement";
-import LicenseManagement from "./pages/LicenseManagement";
-import MonitoringSettings from "./pages/MonitoringSettings";
+const CorporateManagement = React.lazy(() => import("./pages/CorporateManagement")); // doc64 S5-OPT: eager→lazy
+const LicenseManagement = React.lazy(() => import("./pages/LicenseManagement")); // doc64 S5-OPT: eager→lazy
+const MonitoringSettings = React.lazy(() => import("./pages/MonitoringSettings")); // doc64 S5-OPT: eager→lazy
 // doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
-import AdminMonitoring from "./pages/AdminMonitoring";
-import AnalyticsSettings from "./pages/AnalyticsSettings";
-import AdminSettings from "./pages/AdminSettings";
-import DashboardCenter from "./pages/DashboardCenter";
-import ProductionDashboard from "./pages/ProductionDashboard";
+const AdminMonitoring = React.lazy(() => import("./pages/AdminMonitoring")); // doc64 S5-OPT: eager→lazy
+const AnalyticsSettings = React.lazy(() => import("./pages/AnalyticsSettings")); // doc64 S5-OPT: eager→lazy
+const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc64 S5-OPT: eager→lazy
+const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
+const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy
 const StationAnalysis = React.lazy(() => import("./pages/StationAnalysis")); // Wave 1: code-split (2.7k LOC)
 const ComponentShowcase = React.lazy(() => import("./pages/ComponentShowcase")); // Wave 1: dev showcase of DS + foundation primitives
 
@@ -606,11 +613,16 @@ function App() {
               </AppShell>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
-                  lazy AI pages. The bubble hides itself when not logged in. */}
-              <AILocalChatBubble />
+                  lazy AI pages. The bubble hides itself when not logged in.
+                  doc64 S5-OPT: lazy + fallback null — tải sau first-paint, không chặn LCP. */}
+              <Suspense fallback={null}>
+                <AILocalChatBubble />
+              </Suspense>
               {/* doc 41 — Programming Copilot DOCK: mounted ONCE, renders only when a
                   programming surface (Engineering/IR/POU) has published a binding. */}
-              <ProgrammingCopilotDock />
+              <Suspense fallback={null}>
+                <ProgrammingCopilotDock />
+              </Suspense>
             </AiCopilotProvider>
             </ProgrammingCopilotProvider>
             </EngineeringProvider>

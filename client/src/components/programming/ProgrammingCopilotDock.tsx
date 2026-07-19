@@ -26,10 +26,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sparkles, X, AlertTriangle, XCircle, Info, Wand2, MessageCircleQuestion } from "lucide-react";
-import {
-  ProgrammingCopilotPanel,
-  type CopilotSeed,
-} from "@/components/programming/ProgrammingCopilotPanel";
+import { lazy, Suspense } from "react";
+import type { CopilotSeed } from "@/components/programming/ProgrammingCopilotPanel";
+// doc64 S5-OPT: Panel kéo CodeEditor→@codemirror (~1MB) — chỉ tải khi user MỞ dock,
+// không tải theo mỗi phiên chỉ vì dock được mount toàn cục.
+const ProgrammingCopilotPanel = lazy(() =>
+  import("@/components/programming/ProgrammingCopilotPanel").then((m) => ({ default: m.ProgrammingCopilotPanel })),
+);
 import { useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
 
 export function ProgrammingCopilotDock() {
@@ -182,15 +185,24 @@ export function ProgrammingCopilotDock() {
             </div>
           )}
 
-          {/* The reusable copilot engine, embedded + seeded from the host */}
-          <ProgrammingCopilotPanel
-            variant="embedded"
-            initialKind={binding.kind}
-            vendorInitial={binding.vendor}
-            contextCode={binding.code}
-            onApply={binding.onApply}
-            seed={seed}
-          />
+          {/* The reusable copilot engine, embedded + seeded from the host.
+              doc64 S5-OPT: chunk Panel (codemirror) tải lười lúc dock mở — spinner ngắn. */}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
+                {t("progCopilot.dock.loading", "Đang tải trình soạn…")}
+              </div>
+            }
+          >
+            <ProgrammingCopilotPanel
+              variant="embedded"
+              initialKind={binding.kind}
+              vendorInitial={binding.vendor}
+              contextCode={binding.code}
+              onApply={binding.onApply}
+              seed={seed}
+            />
+          </Suspense>
 
           {!binding.onApply && (
             <p className="flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-[10px] text-muted-foreground">

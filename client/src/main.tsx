@@ -8,7 +8,7 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
 import "./index.css";
-import "./i18n"; // Initialize i18n
+import { i18nReady } from "./i18n"; // Initialize i18n (vi fetch song song — doc64 S5-OPT V4)
 
 // Wave 1 (foundation): sane query defaults for the whole app. Previously the
 // client was constructed bare — staleTime 0 + refetchOnWindowFocus on = every
@@ -91,17 +91,21 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);
+// doc64 S5-OPT V4: chờ vi.json (fetch song song, bắt đầu từ lúc module ./i18n eval)
+// rồi mới render — không bao giờ flash key thô. loadVi tự nuốt lỗi nên .then luôn chạy.
+void i18nReady.then(() => {
+  createRoot(document.getElementById("root")!).render(
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
 
-// Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
-// Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
-initRum();
+  // Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
+  // Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
+  initRum();
+});
 
 // Phase 5 WS5.1 — PWA service worker. Đăng ký CHỈ khi VITE_ENABLE_SW='true'
 // (production PWA). Mặc định TẮT + tự UNREGISTER mọi SW cũ + xoá cache của nó:

@@ -4,16 +4,18 @@
  * On a user's FIRST visit to the ops dashboard, suggest picking a role-aligned layout
  * template (the DashboardTemplates system already exists) instead of facing an empty/generic
  * board. Dismissible and remembered per user+role (localStorage), so it never nags.
+ *
+ * doc64 S5-OPT (ISA-101): đổi VỎ modal → banner inline KHÔNG chặn. Modal auto-open đè màn
+ * giám sát ngay khi vào ca là anti-pattern HMI (content-first); nó còn "cướp" LCP (~4s, POC ×4)
+ * vì Radix Dialog portal paint muộn sau auth+mount. Banner render cùng first-paint của trang,
+ * logic nudge/dismiss/remember GIỮ NGUYÊN.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { LayoutTemplate } from "lucide-react";
+import { LayoutTemplate, X } from "lucide-react";
 
 function key(userId: string, role: string) {
   return `dashboardTemplate:${role}:${userId}`;
@@ -47,27 +49,30 @@ export function DashboardTemplatePrompt() {
     setOpen(false);
   };
 
-  if (!userId) return null;
+  if (!userId || !open) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) remember(); }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <LayoutTemplate className="h-5 w-5" /> {t("dashTemplate.title", "Bắt đầu với một mẫu bảng?")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("dashTemplate.desc", "Chọn một bố cục dựng sẵn phù hợp vai trò của bạn (sản xuất / chất lượng / thiết bị / điều hành) — có thể tùy chỉnh sau.")}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button variant="outline" onClick={remember}>{t("dashTemplate.skip", "Để sau")}</Button>
-          <Button onClick={() => { remember(); navigate("/dashboard-templates"); }}>
-            {t("dashTemplate.choose", "Chọn mẫu")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <div
+      role="region"
+      aria-label={t("dashTemplate.title", "Bắt đầu với một mẫu bảng?")}
+      className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-3 py-2 md:mx-6"
+    >
+      <LayoutTemplate className="h-4 w-4 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm font-medium">{t("dashTemplate.title", "Bắt đầu với một mẫu bảng?")}</span>{" "}
+        <span className="text-xs text-muted-foreground">
+          {t("dashTemplate.desc", "Chọn một bố cục dựng sẵn phù hợp vai trò của bạn (sản xuất / chất lượng / thiết bị / điều hành) — có thể tùy chỉnh sau.")}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button size="sm" onClick={() => { remember(); navigate("/dashboard-templates"); }}>
+          {t("dashTemplate.choose", "Chọn mẫu")}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={remember} aria-label={t("dashTemplate.skip", "Để sau")}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }
 

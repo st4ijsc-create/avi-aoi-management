@@ -120,7 +120,45 @@ Script: `scripts/audit/s5-poc.mjs` (CDP throttle, PerformanceObserver LCP/longta
 | Interaction (click→double-rAF) | **25ms** | < 200ms | ✅ PASS |
 | Soak /andon 2,8′ (poll 15s) | heap 33–75MB **dao động band, slope ÂM** (-12,6MB/′ do GC sau load) · 206 longtask | không tăng dần | ✅ không dấu hiệu leak (chỉ báo — ca 8h thật đo khi có panel) |
 
-**Chẩn đoán LCP-fail** (khớp P1 AUD-18): main chunk `index-*.js` **10,3MB (gzip 2,2MB)** + **61 trang import eager** trong App.tsx → parse/exec JS nghẹt CPU yếu. **→ S5-OPT (hạng mục kế, ưu tiên cao)**: (1) chuyển nốt eager→`React.lazy`; (2) `build.rollupOptions.manualChunks` tách vendor lớn (three/recharts/codemirror…); (3) đo lại POC sau mỗi bước. CHÚ THÍCH TRUNG THỰC: throttle ×4 là xấp xỉ — chuẩn cuối đo trên panel-PC thật khi có.
+**Chẩn đoán LCP-fail** (khớp P1 AUD-18): main chunk `index-*.js` **10,3MB (gzip 2,2MB)** + **61 trang import eager** trong App.tsx → parse/exec JS nghẹt CPU yếu. **→ S5-OPT ĐÃ THỰC THI — kết quả đầy đủ ở mục "S5-OPT — KẾT QUẢ" bên dưới** (entry −86%; manualChunks hoá ra KHÔNG cần). CHÚ THÍCH TRUNG THỰC: throttle ×4 là xấp xỉ — chuẩn cuối đo trên panel-PC thật khi có.
+
+## S5-OPT — KẾT QUẢ (2026-07-19, cùng ngày; lệnh user "làm S5-OPT")
+
+4 vòng vá→đo (mỗi vòng: tsc 0 + vite build + POC ×4 + **screenshot-verify**). Harness nâng 3 nấc giữa chừng: **lịch sử LCP-element** (biết ĐÍCH THỰC phần tử nào neo LCP — hết tối ưu mù) · interaction né nút điều hướng · chế độ **steady-state** (pre-dismiss nudge 1-lần-đời-user) · `POC_ROUTE`/`POC_SKIP_SOAK` đo mọi màn.
+
+### Bundle — entry critical-path (kết quả cứng)
+| Vòng | Thay đổi | Entry main | vs baseline |
+|---|---|---|---|
+| Baseline | 61 trang eager + 3 locale JSON inline + 2 global-mount rò lib | 10.334K (gzip 2.199K) | — |
+| V1 | 57 trang eager→`React.lazy` (giữ Login/Setup/Home) + **en/zh lazy-locale** (fallback vi — không flash key thô) | 3.270K (gzip 885K) | −68% |
+| V2 | Sourcemap mổ main → **de-leak 2 global-mount**: `AILocalChatBubble` (react-markdown + AIToolResultCard→recharts ~630K) + `ProgrammingCopilotDock` (Panel→CodeEditor→**@codemirror ~1MB**). Lazy cả hai ở App root + Panel chỉ tải khi MỞ dock | 2.117K (gzip 566K) | −79% |
+| V4 | **vi.json (~769K) rời main** → asset `?url` fetch SONG SONG + `i18nReady` gate render trong main.tsx (JSON.parse nhanh hơn eval JS-literal; không bao giờ flash key thô) | **1.460K (gzip 365K)** | **−86%** |
+
+`manualChunks` (bước 2 kế hoạch gốc): **KHÔNG cần** — sau lazy-hoá, Rollup tự tách theo dynamic-import graph (782 chunk; three/mermaid/codemirror/xlsx… đã ngoài critical path). Không thêm config = không thêm rủi ro circular-init.
+
+### LCP ×4 — element-attribution nói thật
+| Màn (steady-state) | LCP ×4 | Element neo LCP | Phán quyết G5 <2.000ms |
+|---|---|---|---|
+| /dashboard | **~4.100–5.100ms** (3 vòng: 4.112/4.728/5.116 — biến thiên máy dev) | content trang (empty-state/`h1`) paint ~4,7–5,1s; chrome shell paint 2,2–2,7s | ❌ **FAIL — nghẽn KHÔNG còn ở bundle** |
+| /andon (operator #1) | **2.252ms** | đồng hồ board `"14:41:02"` | ❌ biên (+252ms) — trên panel thật ít throttle hơn có thể đạt; đo lại khi có HW |
+| /line-view | 2.972ms | mô tả tuyến (content thật) | ❌ |
+| /device-monitor | 3.428ms | `h1` "OEE Dashboard" | ❌ |
+| Interaction (mọi màn) | 21–73ms | — | ✅ PASS (<200ms) |
+| Soak /andon 2,8′ (V2) | heap 18–60MB dao động, slope ÂM | — | ✅ không dấu hiệu leak (chỉ báo) |
+
+**Chẩn đoán chốt (bằng chứng attribution):** entry đã −86% nhưng LCP /dashboard đứng nguyên ~4–5s vì **vòng đời của CHÍNH trang**: chunk trang → 5+ query → render nặng (18 longtask ~6,5s). Boot chrome ~1,7–2,7s là sàn chung (react-dom + shell + auth). → Hạng mục kế được đặt tên: **S5-OPT-2 "render-staging /dashboard"** (skeleton-first, defer widget nặng sau first-paint, stagger query) — phẫu thuật monolith ~1.180 dòng, làm RIÊNG có kiểm chứng riêng, không nhét cuối phiên này. Màn operator (andon 2,25s) sẽ hưởng lợi trực tiếp nếu bóc thêm boot (~1,7s sàn).
+
+### Sửa sản phẩm kèm (căn cứ chuẩn — không phải "làm đẹp số")
+- **DashboardTemplatePrompt (doc10 U11): modal auto-open → banner inline không chặn** (`role="region"`, dismiss ghi nhớ y cũ). Căn cứ ISA-101 content-first: modal đè màn giám sát ngay khi vào ca là anti-pattern; attribution cũng chứng minh modal "cướp" LCP (~4,1s). Banner vẫn cướp LCP nếu đo first-visit (to + muộn theo auth) → POC mặc định đo steady-state (nudge chỉ hiện 1 lần/đời user), `POC_FIRST_VISIT=1` giữ kịch bản lần-đầu.
+
+### GOTCHA đo đạc (trả giá thật trong phiên)
+1. **Đo nhầm màn LOGIN**: vòng đầu ra "LCP 1.144ms PASS" — screenshot lật tẩy đó là trang login (account audit dính 2FA từ neutralize phiên trước → `requires2FA`, goto bị đá về /login). Số đẹp nhưng VÔ NGHĨA. Bài học cứng: **mọi phép đo phải screenshot-verify + LCP-element attribution trước khi tin**. `audit-account.mjs on` giờ clear luôn 2FA.
+2. Nút "đầu tiên" cho interaction có thể là nút điều hướng/submit → context destroyed giết cả phép đo → probe ưu tiên "Làm mới/Lọc", né logout/link, try/catch.
+3. `cd` trong lệnh probe đổi cwd bền của shell → POC nền chạy sai thư mục chết ESM. Luôn chạy từ repo root.
+4. Nợ i18n pre-existing lộ ra: vi.json có chuỗi dịch máy rác (`auth.loginTitle`="Login Tiêu đề") — ngoài scope, ghi nợ.
+
+### Tools tái dùng (đã commit)
+`scripts/audit/audit-account.mjs on|off` (bật/tắt account POC: bcrypt + isActive + 2FA-clear) · `scripts/audit/s5-net-probe.mjs [route]` (liệt kê JS critical-path + tổng KB) · `s5-poc.mjs` env: `POC_ROUTE` / `POC_SKIP_SOAK` / `POC_SHOT` / `POC_FIRST_VISIT` / `POC_SOAK_MS`.
 
 ### Định nghĩa XONG (sprint)
 1. Trục hiện ở header mọi trang, cascade đúng cây, bền qua điều hướng, URL chia sẻ được.
