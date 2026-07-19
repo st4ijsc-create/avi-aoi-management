@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
@@ -33,6 +35,13 @@ public partial class App : Application
     /// never dials out (it exercises the DI graph over Demo/Auto-fallback transports only); this dials a
     /// server the caller names via env/args and prints every real ack it gets back.</summary>
     private const string LiveSmokeArg = "--live-smoke";
+
+    /// <summary>Renders every shell screen to a real PNG for docs/marketing/visual-verification —
+    /// <see cref="RunCapture"/>. Unlike <see cref="SelfTestArg"/> (headless, never shows a window) this
+    /// DOES create + show the real <see cref="ShellView"/>, starts the fleet so tiles/charts have live
+    /// data, navigates through Dashboard/Machine-Detail(x2)/Inspector/Onboarding/Settings/Scenario, and
+    /// captures each to <c>&lt;outdir&gt;/&lt;NN&gt;-&lt;screen&gt;.png</c> before shutting down.</summary>
+    private const string CaptureArg = "--capture";
 
     /// <summary>Startup Live server URL/machine code, before Settings (Task 19a) has changed anything.
     /// Constructing a <see cref="LiveTransport"/> never makes a network call by itself (see
@@ -76,6 +85,13 @@ public partial class App : Application
         if (e.Args.Contains(SelfTestArg, StringComparer.OrdinalIgnoreCase))
         {
             RunSelfTest();
+            Shutdown(0);
+            return;
+        }
+
+        if (e.Args.Any(a => string.Equals(a, CaptureArg, StringComparison.OrdinalIgnoreCase)))
+        {
+            RunCapture(e.Args);
             Shutdown(0);
             return;
         }
@@ -350,6 +366,168 @@ public partial class App : Application
         RunBrandingSelfTest();
 
         Console.WriteLine("SELFTEST OK");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // --capture <outdir> — renders every shell screen to a real PNG (docs/marketing/visual
+    // verification). Unlike --selftest this DOES create + show the real ShellView (Demo mode, the
+    // default — see TransportCoordinator's remarks), starts the fleet so tiles/charts carry live data,
+    // then navigates through the same screens a visitor would (via SelectNavItemCommand/CurrentView —
+    // the exact paths OnMachineSelected/SelectNavItem already use) and captures each with
+    // RenderTargetBitmap + PngBitmapEncoder. Exits 0 unconditionally (a screen legitimately missing from
+    // the fleet roster, e.g. no AOI-class machine in fleet.json, is reported as a WARNING line, not a
+    // process failure — this is a screenshot tool, not an assertion suite like --selftest).
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    private const int CaptureWindowWidth = 1600;
+    private const int CaptureWindowHeight = 1000;
+
+    private void RunCapture(string[] args)
+    {
+        Console.WriteLine("=== ST4I Machine Simulator CAPTURE (--capture) ===");
+
+        var outDir = ResolveCaptureOutDir(args);
+        Directory.CreateDirectory(outDir);
+        Console.WriteLine($"outDir=\"{outDir}\"");
+
+        // Demo mode is already the DI-wired default (TransportCoordinator's ctor in ConfigureServices
+        // above) — the out-of-box capture run needs no server at all, same "bulletproof" property
+        // --selftest relies on.
+        var shell = Services.GetRequiredService<ShellView>();
+        shell.Width = CaptureWindowWidth;
+        shell.Height = CaptureWindowHeight;
+        shell.WindowStartupLocation = WindowStartupLocation.Manual;
+        shell.Left = 0;
+        shell.Top = 0;
+        shell.Show();
+        shell.UpdateLayout();
+        // Let the window actually open/measure/arrange before anything is captured — a Show() alone
+        // does not guarantee a completed layout/render pass has happened yet.
+        PumpDispatcherFor(TimeSpan.FromMilliseconds(500));
+        shell.UpdateLayout();
+
+        var vm = Services.GetRequiredService<AppShellViewModel>();
+        var fleetVm = Services.GetRequiredService<FleetViewModel>();
+
+        vm.StartFleetCommand.Execute(null);
+        // Let the fleet produce several real cycles so tiles/KPIs/charts/inspector all have live,
+        // non-empty data before the first capture (mirrors RunSelfTest's own t=1s/t=3s judged-count
+        // pumps above, just longer — this is for VISUAL content, not just "count advanced").
+        PumpDispatcherFor(TimeSpan.FromSeconds(4));
+
+        var savedPaths = new List<string>();
+        var index = 0;
+
+        void Capture(string screenName)
+        {
+            shell.UpdateLayout();
+            PumpDispatcherFor(TimeSpan.FromMilliseconds(600)); // let the newly-selected screen render/animate in
+            shell.UpdateLayout();
+            index++;
+            var path = Path.Combine(outDir, $"{index:D2}-{screenName}.png");
+            CaptureWindowToPng(shell, path);
+            savedPaths.Add(path);
+        }
+
+        NavItem NavByKey(string key) => vm.Nav.First(n => n.Key == key);
+
+        vm.SelectNavItemCommand.Execute(NavByKey("dashboard"));
+        Capture("dashboard");
+
+        var automationMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.Automation);
+        if (automationMachine is not null)
+        {
+            vm.CurrentView = new MachineDetailView(automationMachine);
+            Capture("machine-detail-automation");
+        }
+        else
+        {
+            Console.WriteLine("CAPTURE WARNING: no Automation-class machine in the fleet roster — skipping machine-detail-automation");
+        }
+
+        var aoiMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.AoiAvi);
+        if (aoiMachine is not null)
+        {
+            vm.CurrentView = new MachineDetailView(aoiMachine);
+            Capture("machine-detail-aoi");
+        }
+        else
+        {
+            Console.WriteLine("CAPTURE WARNING: no AOI/AVI-class machine in the fleet roster — skipping machine-detail-aoi");
+        }
+
+        vm.SelectNavItemCommand.Execute(NavByKey("inspector"));
+        Capture("api-inspector");
+
+        vm.SelectNavItemCommand.Execute(NavByKey("onboarding"));
+        Capture("onboarding");
+
+        vm.SelectNavItemCommand.Execute(NavByKey("settings"));
+        Capture("settings");
+
+        vm.SelectNavItemCommand.Execute(NavByKey("scenario"));
+        Capture("scenario");
+
+        vm.StopFleetCommand.Execute(null);
+
+        Console.WriteLine($"=== CAPTURE done: {savedPaths.Count} screenshot(s) written to \"{outDir}\" ===");
+        foreach (var path in savedPaths) Console.WriteLine(path);
+    }
+
+    /// <summary>Output dir precedence: the token right after <c>--capture</c> on the command line (as
+    /// long as it doesn't itself look like another flag), else a source-tree-relative default resolved
+    /// via <see cref="TryFindProjectDirectory"/> (dev build/run — matches the task's default of
+    /// <c>tools/machine-simulator/screenshots</c> next to this project regardless of where the repo is
+    /// checked out), else the literal fallback path for a deployed/published run with no source tree
+    /// nearby (see <see cref="TryFindProjectDirectory"/>'s own remarks on why that's a real, expected
+    /// case, not a bug).</summary>
+    private static string ResolveCaptureOutDir(string[] args)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!string.Equals(args[i], CaptureArg, StringComparison.OrdinalIgnoreCase)) continue;
+            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                return Path.GetFullPath(args[i + 1]);
+            break;
+        }
+
+        var projectDir = TryFindProjectDirectory();
+        if (projectDir is not null)
+            return Path.GetFullPath(Path.Combine(projectDir, "..", "..", "screenshots"));
+
+        return @"D:\SOURCES\avi-aoi-sim\tools\machine-simulator\screenshots";
+    }
+
+    /// <summary>Renders <paramref name="window"/>'s actual on-screen visual tree (client area — not the
+    /// OS non-client title bar, which <see cref="RenderTargetBitmap"/> never captures for any WPF
+    /// Window) to a PNG at <paramref name="path"/>. Calls <see cref="UIElement.UpdateLayout"/> first and
+    /// throws if the window has no measured size yet — a zero-size/unmeasured visual is exactly what
+    /// produces a blank PNG, so this fails loudly instead of silently writing an empty image.</summary>
+    private static void CaptureWindowToPng(Window window, string path)
+    {
+        window.UpdateLayout();
+
+        var width = window.ActualWidth;
+        var height = window.ActualHeight;
+        if (width < 2 || height < 2)
+            throw new InvalidOperationException(
+                $"capture: window ActualWidth/Height was {width}x{height} before rendering \"{path}\" — window was never laid out (Show()/UpdateLayout() did not run, or it's minimized)");
+
+        var dpi = VisualTreeHelper.GetDpi(window);
+        var pixelWidth = Math.Max(1, (int)Math.Ceiling(width * dpi.DpiScaleX));
+        var pixelHeight = Math.Max(1, (int)Math.Ceiling(height * dpi.DpiScaleY));
+
+        var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, 96.0 * dpi.DpiScaleX, 96.0 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        rtb.Render(window);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(rtb));
+        using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+        {
+            encoder.Save(fs);
+        }
+
+        var byteCount = new FileInfo(path).Length;
+        Console.WriteLine($"CAPTURE saved: {path}  ({byteCount:N0} bytes, {pixelWidth}x{pixelHeight} @ {dpi.DpiScaleX:F2}x DPI)");
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════════
