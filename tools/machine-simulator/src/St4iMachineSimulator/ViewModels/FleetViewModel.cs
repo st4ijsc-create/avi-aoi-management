@@ -31,13 +31,17 @@ public sealed partial class FleetViewModel : ObservableObject
             _fleetService.Fleet.Select(d => new MachineViewModel(d, _fleetService.Transport)));
         _byCode = Machines.ToDictionary(m => m.Code);
 
-        OnlineKpi = new KpiViewModel("ONLINE");
-        CyclesKpi = new KpiViewModel("TOTAL CYCLES");
-        FpyKpi = new KpiViewModel("FPY");
+        // Task 20 — each tile's Label is built from the CURRENT language's Str_Kpi_* resource, and
+        // carries its own key so OnLanguageChanged (below) can re-pull it after a language switch —
+        // see KpiViewModel.RefreshLabel's remarks.
+        OnlineKpi = new KpiViewModel(LocalizationService.GetString("Str_Kpi_Online"), "Str_Kpi_Online");
+        CyclesKpi = new KpiViewModel(LocalizationService.GetString("Str_Kpi_TotalCycles"), "Str_Kpi_TotalCycles");
+        FpyKpi = new KpiViewModel(LocalizationService.GetString("Str_Kpi_Fpy"), "Str_Kpi_Fpy");
         Kpis = new ObservableCollection<KpiViewModel> { OnlineKpi, CyclesKpi, FpyKpi };
         RefreshKpiDisplay();
 
         _fleetService.Committed += OnCommitted;
+        LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
     public ObservableCollection<MachineViewModel> Machines { get; }
@@ -143,4 +147,15 @@ public sealed partial class FleetViewModel : ObservableObject
         RefreshFpySubText();
     }
 
+    /// <summary>Task 20 — <see cref="LocalizationService.LanguageChanged"/> handler: re-pulls all 3 Kpi
+    /// tiles' labels through the newly-active language's resources. FleetViewModel is a DI singleton
+    /// that outlives the whole app, so this subscription (added in the constructor) is never
+    /// unsubscribed — same lifetime pattern as every other cross-component event this class/its peers
+    /// subscribe to (e.g. AppShellViewModel's EventBus.Traced).</summary>
+    private void OnLanguageChanged(string _) => DispatcherHelper.RunOnUiThread(() =>
+    {
+        OnlineKpi.RefreshLabel(LocalizationService.GetString);
+        CyclesKpi.RefreshLabel(LocalizationService.GetString);
+        FpyKpi.RefreshLabel(LocalizationService.GetString);
+    });
 }

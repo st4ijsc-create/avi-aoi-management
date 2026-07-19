@@ -64,7 +64,7 @@
         <StackPanel Margin="4">
             <!-- ═══ Header ═══════════════════════════════════════════ -->
             <StackPanel Margin="0,0,0,16">
-                <TextBlock Text="Scenario" FontSize="20" FontWeight="Bold" />
+                <TextBlock Text="{DynamicResource Str_Scenario_Title}" FontSize="20" FontWeight="Bold" />
                 <TextBlock Style="{StaticResource SectionSubtextStyle}"
                            Text="Sliders + preset trình diễn — thay đổi ở đây tác động THẬT lên fleet đang chạy (tốc độ chu kỳ, tỷ lệ lỗi tiêm thêm, sự cố mạng)." />
             </StackPanel>
@@ -72,7 +72,7 @@
             <!-- ═══ Status line ═════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Trạng thái kịch bản hiện tại" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Scenario_StatusHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Text="{Binding StatusLine}" Style="{StaticResource SectionSubtextStyle}" Margin="0,8,0,0" FontSize="13" />
                     <TextBlock Text="{Binding HotFolderStatus}"
                                Style="{StaticResource SectionSubtextStyle}" Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
@@ -83,7 +83,7 @@
             <!-- ═══ Sliders ═══════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Điều chỉnh trực tiếp" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Scenario_LiveAdjustHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Mỗi lần kéo áp dụng ngay lên fleet đang chạy (FleetService.ApplyScenario) — không cần bấm nút nào thêm." />
 
@@ -99,26 +99,26 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Cycle rate" Style="{StaticResource SliderRowLabelStyle}" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource Str_Scenario_CycleRate}" Style="{StaticResource SliderRowLabelStyle}" />
                         <Slider Grid.Row="0" Grid.Column="1" Minimum="0.25" Maximum="8" SmallChange="0.05" LargeChange="0.5"
                                 Value="{Binding CycleRate, Mode=TwoWay}" VerticalAlignment="Center" Margin="12,0" />
                         <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding CycleRate, StringFormat={}{0:0.00}x}" Style="{StaticResource SliderValueStyle}" />
 
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Defect rate" Style="{StaticResource SliderRowLabelStyle}" Margin="0,14,0,0" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource Str_Scenario_DefectRate}" Style="{StaticResource SliderRowLabelStyle}" Margin="0,14,0,0" />
                         <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" SmallChange="0.01" LargeChange="0.1"
                                 Value="{Binding DefectRate, Mode=TwoWay}" VerticalAlignment="Center" Margin="12,14,12,0" />
                         <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding DefectRate, StringFormat={}{0:P0}}" Style="{StaticResource SliderValueStyle}" Margin="0,14,0,0" />
 
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Fault rate" Style="{StaticResource SliderRowLabelStyle}" Margin="0,14,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource Str_Scenario_FaultRate}" Style="{StaticResource SliderRowLabelStyle}" Margin="0,14,0,0" />
                         <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" SmallChange="0.01" LargeChange="0.1"
                                 Value="{Binding FaultRate, Mode=TwoWay}" VerticalAlignment="Center" Margin="12,14,12,0" />
                         <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding FaultRate, StringFormat={}{0:P0}}" Style="{StaticResource SliderValueStyle}" Margin="0,14,0,0" />
                     </Grid>
 
                     <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
-                        <CheckBox Content="Network outage (mất mạng)" IsChecked="{Binding NetworkOutage, Mode=TwoWay}"
+                        <CheckBox Content="{DynamicResource Str_Scenario_NetworkOutage}" IsChecked="{Binding NetworkOutage, Mode=TwoWay}"
                                   VerticalAlignment="Center" Margin="0,0,24,0" />
-                        <Button Content="Burst (6x trong 4s)" Style="{StaticResource TopBarButtonStyle}" Command="{Binding BurstCommand}" />
+                        <Button Content="{DynamicResource Str_Scenario_Burst}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding BurstCommand}" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -126,7 +126,7 @@
             <!-- ═══ Presets ═══════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Kịch bản dựng sẵn" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Scenario_PresetsHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Mỗi nút đặt lại cả 3 slider + trạng thái mạng, rồi áp dụng một lần lên fleet đang chạy." />
 

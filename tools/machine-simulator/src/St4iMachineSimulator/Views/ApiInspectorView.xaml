@@ -30,10 +30,10 @@
              separate buttons instead, but a single toggle reads better for a rapid pause/inspect/resume
              workflow at a booth. -->
         <Style x:Key="PauseResumeButtonStyle" TargetType="Button" BasedOn="{StaticResource TopBarButtonStyle}">
-            <Setter Property="Content" Value="Pause" />
+            <Setter Property="Content" Value="{DynamicResource Str_Inspector_Pause}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsPaused}" Value="True">
-                    <Setter Property="Content" Value="Resume" />
+                    <Setter Property="Content" Value="{DynamicResource Str_Inspector_Resume}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -61,7 +61,7 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="API Inspector" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Text="{DynamicResource Str_Inspector_Title}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding TotalEventCount, StringFormat={}{0:N0} total}"
                            Style="{StaticResource InspectorLabelStyle}"
                            Margin="18,4,0,0" VerticalAlignment="Center" />
@@ -83,14 +83,14 @@
                         BorderThickness="1" CornerRadius="4" Padding="8,2"
                         Margin="14,0,0,0" VerticalAlignment="Center"
                         Visibility="{Binding IsPaused, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="PAUSED" Foreground="{StaticResource Brush.Badge.Fallback.Fg}" FontWeight="Bold" FontSize="11" />
+                    <TextBlock Text="{DynamicResource Str_Inspector_Paused}" Foreground="{StaticResource Brush.Badge.Fallback.Fg}" FontWeight="Bold" FontSize="11" />
                 </Border>
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <Button Style="{StaticResource PauseResumeButtonStyle}" Command="{Binding PauseResumeCommand}" Margin="0,0,8,0" />
-                <Button Content="Clear" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClearCommand}" Margin="0,0,8,0" />
-                <Button Content="Export…" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ExportCommand}" />
+                <Button Content="{DynamicResource Str_Inspector_Clear}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClearCommand}" Margin="0,0,8,0" />
+                <Button Content="{DynamicResource Str_Inspector_Export}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ExportCommand}" />
             </StackPanel>
         </Grid>
 
@@ -100,13 +100,13 @@
                 BorderBrush="{StaticResource Brush.Border}"
                 BorderThickness="1" CornerRadius="8" Padding="16,10" Margin="0,0,0,14">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Machine" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock Text="{DynamicResource Str_Inspector_Machine}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <ComboBox ItemsSource="{Binding MachineOptions}" SelectedItem="{Binding FilterMachine, Mode=TwoWay}" Width="140" />
 
-                <TextBlock Text="Kind" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
+                <TextBlock Text="{DynamicResource Str_Inspector_Kind}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
                 <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding FilterKind, Mode=TwoWay}" Width="140" />
 
-                <TextBlock Text="Status" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
+                <TextBlock Text="{DynamicResource Str_Field_Status}" Style="{StaticResource InspectorLabelStyle}" VerticalAlignment="Center" Margin="20,0,8,0" />
                 <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding FilterStatus, Mode=TwoWay}" Width="120" />
 
                 <TextBlock Text="{Binding ExportStatus}"

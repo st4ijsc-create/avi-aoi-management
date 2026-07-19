@@ -44,6 +44,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Task 20 — merges the default-language (vi) Strings dictionary. Must run before
+        // ConfigureServices/BuildServiceProvider below: every ViewModel that builds Nav/Kpi text off
+        // LocalizationService.GetString (AppShellViewModel, FleetViewModel) is constructed lazily off
+        // the service provider built from that point on, so the dictionary needs to already be merged
+        // by the time the first one resolves — including in the --selftest path.
+        LocalizationService.Initialize();
+
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
@@ -116,6 +123,15 @@ public partial class App : Application
         services.AddSingleton(sp => new InspectorViewModel(sp.GetRequiredService<EventBus>()));
         services.AddSingleton(sp => new ApiInspectorView(sp.GetRequiredService<InspectorViewModel>()));
 
+        // Task 20 — attract mode. Depends only on FleetViewModel/DashboardView/ApiInspectorView (NOT
+        // AppShellViewModel — that would be circular, since AppShellViewModel needs to react to this
+        // service's tour advances; see AttractModeService's own class remarks) so it can be constructed
+        // before AppShellViewModel/SettingsViewModel below, both of which depend on it.
+        services.AddSingleton(sp => new AttractModeService(
+            sp.GetRequiredService<FleetViewModel>(),
+            sp.GetRequiredService<DashboardView>(),
+            sp.GetRequiredService<ApiInspectorView>()));
+
         // Task 18 — Onboarding wizard. Singleton (same lifetime pattern as every other nav screen's
         // ViewModel) so the wizard's step/mk_ key/log state survives navigating away and back rather
         // than resetting. OnboardingViewModel's parameterless ctor builds its own HttpClient — never
@@ -127,8 +143,11 @@ public partial class App : Application
 
         // Task 19a — Settings. Depends only on TransportCoordinator (NOT AppShellViewModel — see
         // TransportCoordinator's class remarks for why: AppShellViewModel needs SettingsView for its own
-        // nav, so SettingsViewModel depending back on AppShellViewModel would be circular).
-        services.AddSingleton(sp => new SettingsViewModel(sp.GetRequiredService<TransportCoordinator>()));
+        // nav, so SettingsViewModel depending back on AppShellViewModel would be circular). Task 20 adds
+        // AttractModeService — same non-circular shape (AttractModeService doesn't depend on Settings).
+        services.AddSingleton(sp => new SettingsViewModel(
+            sp.GetRequiredService<TransportCoordinator>(),
+            sp.GetRequiredService<AttractModeService>()));
         services.AddSingleton(sp => new SettingsView(sp.GetRequiredService<SettingsViewModel>()));
 
         // Task 19b — Scenario control. Singleton (same lifetime pattern as every other nav screen's
@@ -146,7 +165,9 @@ public partial class App : Application
             sp.GetRequiredService<OnboardingView>(),
             sp.GetRequiredService<SettingsView>(),
             sp.GetRequiredService<ScenarioView>(),
-            sp.GetRequiredService<TransportCoordinator>()));
+            sp.GetRequiredService<TransportCoordinator>(),
+            sp.GetRequiredService<SettingsViewModel>(),
+            sp.GetRequiredService<AttractModeService>()));
 
         services.AddTransient<ShellView>();
     }
@@ -304,6 +325,11 @@ public partial class App : Application
         // ── Task 19a: ResilienceProbe against a dead port must report Reachable=false, never throw ──
         RunResilienceProbeSelfTest();
 
+        // ── Task 20: attract mode / i18n / branding assets ──────────────────────────────────
+        RunAttractModeSelfTest();
+        RunLocalizationSelfTest();
+        RunBrandingSelfTest();
+
         Console.WriteLine("SELFTEST OK");
     }
 
@@ -341,6 +367,164 @@ public partial class App : Application
             throw new InvalidOperationException($"selftest: ResilienceProbe against a dead port unexpectedly reported Reachable=true (Status={result.Status})");
 
         Console.WriteLine($"SELFTEST resilience probe (dead port): Reachable={result.Reachable}, Status={result.Status} — no throw, as expected");
+    }
+
+    /// <summary>
+    /// Task 20 headless check for <see cref="AttractModeService"/>: proves the tour actually advances
+    /// <see cref="AppShellViewModel.CurrentView"/> and that simulated input exits it — WITHOUT waiting
+    /// out the real 45s idle / 10s tour <see cref="System.Windows.Threading.DispatcherTimer"/>s (see
+    /// <see cref="AttractModeService.Tick"/>'s own remarks on why it's public specifically for this).
+    /// Runs after the fleet has been started at least once earlier in <see cref="RunSelfTest"/>, so
+    /// <c>FleetViewModel.Machines</c> has real entries and the tour's machine-detail stop is buildable —
+    /// but reuses no running state itself (Tick/AdvanceTour/NotifyActivity are synchronous, so no
+    /// dispatcher pumping is needed the way the fleet/scenario checks above require).
+    /// </summary>
+    private void RunAttractModeSelfTest()
+    {
+        var vm = Services.GetRequiredService<AppShellViewModel>();
+        var attract = Services.GetRequiredService<AttractModeService>();
+
+        // Known starting point so "CurrentView changed" below is meaningful.
+        vm.CurrentView = Services.GetRequiredService<DashboardView>();
+        attract.Enabled = true;
+
+        if (attract.IsActive)
+            throw new InvalidOperationException("selftest attract: IsActive was already true before any Tick() — unexpected leftover state");
+
+        var viewBeforeTick = vm.CurrentView;
+        attract.Tick(); // simulated idle-timeout — the real DispatcherTimer would take 45s to fire this
+
+        if (!attract.IsActive)
+            throw new InvalidOperationException("selftest attract: IsActive was still false after a simulated idle Tick()");
+        if (ReferenceEquals(vm.CurrentView, viewBeforeTick))
+            throw new InvalidOperationException("selftest attract: CurrentView did not change across the simulated idle Tick()");
+
+        Console.WriteLine($"SELFTEST attract tick: CurrentView changed ({viewBeforeTick?.GetType().Name} -> {vm.CurrentView?.GetType().Name}) after a simulated idle Tick(), IsActive={attract.IsActive}");
+
+        var viewAfterTick = vm.CurrentView;
+        attract.AdvanceTour(); // a second, explicit tour advance — proves the tour actually cycles, not just a one-shot jump
+        if (ReferenceEquals(vm.CurrentView, viewAfterTick))
+            throw new InvalidOperationException("selftest attract: CurrentView did not change on a second AdvanceTour() call");
+
+        Console.WriteLine($"SELFTEST attract advance: CurrentView changed again ({viewAfterTick?.GetType().Name} -> {vm.CurrentView?.GetType().Name})");
+
+        // Simulated visitor input must exit attract mode immediately.
+        attract.NotifyActivity();
+        if (attract.IsActive)
+            throw new InvalidOperationException("selftest attract: IsActive was still true after NotifyActivity() (simulated input)");
+        if (vm.CurrentView != Services.GetRequiredService<DashboardView>())
+            throw new InvalidOperationException("selftest attract: CurrentView did not return to Dashboard after NotifyActivity() exited attract mode");
+
+        Console.WriteLine("SELFTEST attract exit: NotifyActivity() (simulated input) exited attract mode (IsActive=false) and returned CurrentView to Dashboard");
+
+        attract.Enabled = false; // restore the default (off) for the remainder of this run
+    }
+
+    /// <summary>
+    /// Task 20 headless check for vi/en localization: proves <see cref="LocalizationService.SetLanguage"/>
+    /// actually swaps which Str_* resources resolve (checked both via <see cref="LocalizationService.GetString"/>
+    /// and directly off <c>Application.Current.Resources</c>, per the task brief), and that
+    /// <see cref="SettingsViewModel.Language"/> is wired straight through to it.
+    /// </summary>
+    private void RunLocalizationSelfTest()
+    {
+        const string ProbeKey = "Str_Kpi_Online";
+        const string ViExpected = "ĐANG HOẠT ĐỘNG";
+        const string EnExpected = "ONLINE";
+
+        // vi is the default — App.OnStartup already called LocalizationService.Initialize() before any
+        // DI resolution happened, so this should already be true without any SetLanguage call here.
+        if (LocalizationService.CurrentLanguage != "vi")
+            throw new InvalidOperationException($"selftest i18n: default language was \"{LocalizationService.CurrentLanguage}\", expected \"vi\"");
+        var viLabel = LocalizationService.GetString(ProbeKey);
+        if (viLabel != ViExpected)
+            throw new InvalidOperationException($"selftest i18n: {ProbeKey} under the default vi was \"{viLabel}\", expected \"{ViExpected}\"");
+
+        LocalizationService.SetLanguage("en");
+        if (LocalizationService.CurrentLanguage != "en")
+            throw new InvalidOperationException($"selftest i18n: CurrentLanguage after SetLanguage(\"en\") was \"{LocalizationService.CurrentLanguage}\"");
+        var enLabel = LocalizationService.GetString(ProbeKey);
+        if (enLabel != EnExpected)
+            throw new InvalidOperationException($"selftest i18n: {ProbeKey} under en (via GetString) was \"{enLabel}\", expected \"{EnExpected}\"");
+        // Directly off Application.Current.Resources / the merged dictionary lookup too — not just the
+        // GetString helper — proving the merged-dictionary swap itself, per the task brief.
+        var enViaResources = Application.Current!.Resources[ProbeKey] as string;
+        if (enViaResources != EnExpected)
+            throw new InvalidOperationException($"selftest i18n: Application.Current.Resources[\"{ProbeKey}\"] under en was \"{enViaResources}\", expected \"{EnExpected}\"");
+
+        LocalizationService.SetLanguage("vi");
+        if (LocalizationService.CurrentLanguage != "vi")
+            throw new InvalidOperationException("selftest i18n: SetLanguage(\"vi\") did not restore CurrentLanguage to \"vi\"");
+        var viLabelAgain = LocalizationService.GetString(ProbeKey);
+        if (viLabelAgain != ViExpected)
+            throw new InvalidOperationException($"selftest i18n: {ProbeKey} after switching back to vi was \"{viLabelAgain}\", expected \"{ViExpected}\"");
+
+        Console.WriteLine($"SELFTEST i18n round-trip: {ProbeKey} vi=\"{viLabel}\" -> en=\"{enLabel}\" (GetString + Application.Current.Resources agree) -> vi=\"{viLabelAgain}\"");
+
+        // ── SettingsViewModel.Language -> LocalizationService.SetLanguage wiring ────────────────
+        var settingsVm = Services.GetRequiredService<SettingsViewModel>();
+        if (settingsVm.Language != "vi")
+            throw new InvalidOperationException($"selftest i18n: SettingsViewModel.Language default was \"{settingsVm.Language}\", expected \"vi\"");
+
+        settingsVm.Language = "en";
+        if (LocalizationService.CurrentLanguage != "en")
+            throw new InvalidOperationException("selftest i18n: setting SettingsViewModel.Language=\"en\" did not switch LocalizationService.CurrentLanguage");
+        if (LocalizationService.GetString(ProbeKey) != EnExpected)
+            throw new InvalidOperationException($"selftest i18n: {ProbeKey} was not \"{EnExpected}\" after SettingsViewModel.Language=\"en\"");
+
+        settingsVm.Language = "vi";
+        if (LocalizationService.CurrentLanguage != "vi")
+            throw new InvalidOperationException("selftest i18n: setting SettingsViewModel.Language=\"vi\" did not restore LocalizationService.CurrentLanguage");
+
+        Console.WriteLine("SELFTEST i18n Settings wiring: SettingsViewModel.Language=\"en\"/\"vi\" round-tripped LocalizationService.CurrentLanguage correctly");
+    }
+
+    /// <summary>
+    /// Task 20 headless check for branding: the logo/icon asset FILES exist on disk under the project's
+    /// <c>Assets/</c> folder, and the csproj actually sets <c>&lt;ApplicationIcon&gt;</c> to the icon.
+    /// Locates the project directory by walking UP from <see cref="AppContext.BaseDirectory"/> (the
+    /// build output dir) looking for the .csproj, rather than assuming a fixed relative depth — robust
+    /// to both plain `dotnet build`/`dotnet run` output layouts and however deep the RID-specific
+    /// (win-x64) output folder nesting goes.
+    /// </summary>
+    private static void RunBrandingSelfTest()
+    {
+        var projectDir = FindProjectDirectory();
+        var logoPath = Path.Combine(projectDir, "Assets", "logo.png");
+        var iconPath = Path.Combine(projectDir, "Assets", "icon.ico");
+        var csprojPath = Path.Combine(projectDir, "St4iMachineSimulator.csproj");
+
+        if (!File.Exists(logoPath))
+            throw new InvalidOperationException($"selftest branding: logo.png not found at \"{logoPath}\"");
+        if (!File.Exists(iconPath))
+            throw new InvalidOperationException($"selftest branding: icon.ico not found at \"{iconPath}\"");
+
+        var logoBytes = new FileInfo(logoPath).Length;
+        var iconBytes = new FileInfo(iconPath).Length;
+        if (logoBytes == 0) throw new InvalidOperationException("selftest branding: logo.png exists but is 0 bytes");
+        if (iconBytes == 0) throw new InvalidOperationException("selftest branding: icon.ico exists but is 0 bytes");
+
+        if (!File.Exists(csprojPath))
+            throw new InvalidOperationException($"selftest branding: csproj not found at \"{csprojPath}\"");
+        var csprojText = File.ReadAllText(csprojPath);
+        if (!csprojText.Contains("<ApplicationIcon>Assets\\icon.ico</ApplicationIcon>", StringComparison.Ordinal))
+            throw new InvalidOperationException("selftest branding: csproj does not set <ApplicationIcon>Assets\\icon.ico</ApplicationIcon>");
+
+        Console.WriteLine($"SELFTEST branding: logo.png ({logoBytes} bytes) + icon.ico ({iconBytes} bytes) present under \"{Path.Combine(projectDir, "Assets")}\", csproj ApplicationIcon set");
+    }
+
+    /// <summary>Walks up from <paramref name="startDir"/> (defaults to <see cref="AppContext.BaseDirectory"/>)
+    /// looking for the directory containing <c>St4iMachineSimulator.csproj</c>.</summary>
+    private static string FindProjectDirectory(string? startDir = null)
+    {
+        var dir = new DirectoryInfo(startDir ?? AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "St4iMachineSimulator.csproj"))) return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException($"selftest branding: could not locate St4iMachineSimulator.csproj by walking up from \"{startDir ?? AppContext.BaseDirectory}\"");
     }
 
     /// <summary>

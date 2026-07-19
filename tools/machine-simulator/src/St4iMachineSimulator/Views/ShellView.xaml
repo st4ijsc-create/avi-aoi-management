@@ -55,18 +55,28 @@
                     BorderThickness="0,0,0,1">
                 <Grid Margin="24,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                        <TextBlock Text="Transport"
+                        <!-- Task 20 — branding: small logo mark in the top bar (Assets/logo.png,
+                             embedded as a WPF Resource — see St4iMachineSimulator.csproj). Leading "/"
+                             is required: this XAML file lives under Views/, so a source WITHOUT it would
+                             resolve relative to Views/ (i.e. "Views/Assets/logo.png", which doesn't
+                             exist) instead of the project root — unlike App.xaml's
+                             Source="Themes/Colors.xaml", which needs no leading "/" only because App.xaml
+                             itself already lives at the root. -->
+                        <Image Source="/Assets/logo.png" Height="28" Stretch="Uniform"
+                               VerticalAlignment="Center" Margin="0,0,20,0" />
+
+                        <TextBlock Text="{DynamicResource Str_Shell_Transport}"
                                    Foreground="{StaticResource Brush.Text.Secondary}"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                         <ComboBox ItemsSource="{Binding AvailableModes}"
                                   SelectedItem="{Binding Mode, Mode=TwoWay}"
                                   Width="110" />
 
-                        <Button Content="Start Fleet"
+                        <Button Content="{DynamicResource Str_Shell_StartFleet}"
                                 Style="{StaticResource TopBarButtonStyle}"
                                 Command="{Binding StartFleetCommand}"
                                 Margin="24,0,8,0" />
-                        <Button Content="Stop Fleet"
+                        <Button Content="{DynamicResource Str_Shell_StopFleet}"
                                 Style="{StaticResource TopBarButtonStyle}"
                                 Command="{Binding StopFleetCommand}" />
 
@@ -80,7 +90,7 @@
                     <Border Style="{StaticResource FallbackBadgeStyle}"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
                             Visibility="{Binding IsFallingBack, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="DEMO FALLBACK" Style="{StaticResource FallbackBadgeTextStyle}" />
+                        <TextBlock Text="{DynamicResource Str_Shell_DemoFallback}" Style="{StaticResource FallbackBadgeTextStyle}" />
                     </Border>
                 </Grid>
             </Border>

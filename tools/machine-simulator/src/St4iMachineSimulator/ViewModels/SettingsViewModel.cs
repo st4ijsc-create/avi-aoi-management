@@ -15,7 +15,7 @@ namespace St4iMachineSimulator.ViewModels;
 /// combo uses, see <see cref="TransportCoordinator"/>'s class remarks for why the two ViewModels don't
 /// depend on each other directly), a "Kiểm cờ / Check server" probe
 /// (<see cref="St4i.EdgeCore.Infrastructure.ResilienceProbe"/>), the stored-credentials view, a "Paste
-/// mk_" fast path, and placeholder Kiosk/Attract/Language toggles wired for real in a later task.
+/// mk_" fast path, and — wired for real as of Task 20 — Kiosk/Attract/Language.
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
@@ -27,13 +27,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     public const string DefaultMachineCode = "SIM-EDGE-00";
 
     private readonly TransportCoordinator _transportCoordinator;
+    private readonly AttractModeService _attractModeService;
     private readonly ResilienceProbe _probe = new();
 
-    public SettingsViewModel(TransportCoordinator transportCoordinator)
+    public SettingsViewModel(TransportCoordinator transportCoordinator, AttractModeService attractModeService)
     {
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
+        _attractModeService = attractModeService ?? throw new ArgumentNullException(nameof(attractModeService));
         _transportCoordinator.ModeChanged += OnCoordinatorModeChanged;
         Mode = _transportCoordinator.Mode;
+
+        // Task 20 — mirror THIS ViewModel's own defaults into the services that actually implement them,
+        // rather than relying on those services happening to default the same way independently.
+        _attractModeService.Enabled = Attract;
+        LocalizationService.SetLanguage(Language);
 
         RefreshCredentials();
     }
@@ -212,8 +219,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Placeholders — real behavior lands in Task 19b/20; exposed now so the Settings screen has a home
-    // for them and later wiring is a pure additive change.
+    // Task 20 — Kiosk / Attract / Language, wired for real. Kiosk mirrors AppShellViewModel.IsKiosk (see
+    // that class's remarks for why the actual window-property flipping lives in ShellView's code-behind,
+    // not here); Attract enables/disables AttractModeService directly (this ViewModel already depends on
+    // it — no mirroring needed, unlike Kiosk); Language drives LocalizationService.SetLanguage.
     // ─────────────────────────────────────────────────────────────────────
     [ObservableProperty]
     private bool kiosk;
@@ -221,6 +230,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool attract;
 
+    /// <summary>"vi" or "en" — bound to a ComboBox (not free-typed) in SettingsView.xaml so this can
+    /// never hold a value LocalizationService.SetLanguage would silently normalize away from what the
+    /// UI is showing.</summary>
     [ObservableProperty]
-    private string language = "vi";
+    private string language = LocalizationService.DefaultLanguage;
+
+    public IReadOnlyList<string> AvailableLanguages { get; } = ["vi", "en"];
+
+    partial void OnAttractChanged(bool value) => _attractModeService.Enabled = value;
+
+    partial void OnLanguageChanged(string value) => LocalizationService.SetLanguage(value);
 }

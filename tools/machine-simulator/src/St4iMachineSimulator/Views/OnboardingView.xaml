@@ -115,12 +115,12 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="Onboarding" FontSize="20" FontWeight="Bold" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_Title}" FontSize="20" FontWeight="Bold" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Register a machine, wait for admin approval, then claim or enroll to receive its mk_ key." />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <CheckBox Content="Demo mode (no server needed)"
+                    <CheckBox Content="{DynamicResource Str_Onboarding_DemoToggle}"
                               IsChecked="{Binding IsDemo, Mode=TwoWay}"
                               VerticalAlignment="Center" />
                 </StackPanel>
@@ -148,7 +148,7 @@
             <!-- ═══ 1. Register + Poll ═══════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="1. Register" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_Step1}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="POST /api/machine/register, then poll GET /api/machine/config for admin approval." />
 
@@ -172,8 +172,8 @@
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button Content="Register" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RegisterCommand}" Margin="0,0,8,0" />
-                        <Button Content="Poll approval" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PollApprovalCommand}" />
+                        <Button Content="{DynamicResource Str_Onboarding_Register}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RegisterCommand}" Margin="0,0,8,0" />
+                        <Button Content="{DynamicResource Str_Onboarding_PollApproval}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PollApprovalCommand}" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -181,7 +181,7 @@
             <!-- ═══ 2. Claim / Enroll ═══════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="2. Claim or enroll" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_ClaimEnroll}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Claim redeems a one-time mct_ token; Enroll redeems a zero-touch met_ token. Either yields the mk_ key." />
 
@@ -190,14 +190,14 @@
                             <TextBlock Text="Claim token (mct_)" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding ClaimToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Claim" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClaimCommand}"
+                        <Button Content="{DynamicResource Str_Onboarding_Claim}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClaimCommand}"
                                 VerticalAlignment="Bottom" Margin="0,0,24,0" />
 
                         <StackPanel Style="{StaticResource FieldStackStyle}">
                             <TextBlock Text="Enroll token (met_)" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding EnrollToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Enroll" Style="{StaticResource TopBarButtonStyle}" Command="{Binding EnrollCommand}"
+                        <Button Content="{DynamicResource Str_Onboarding_Enroll}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding EnrollCommand}"
                                 VerticalAlignment="Bottom" />
                     </StackPanel>
 
@@ -221,7 +221,7 @@
             <!-- ═══ Paste mk_ fast path ══════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Paste mk_ key" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_PasteKey}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Already have an mk_ key from another tool? Store it directly, skipping the wizard." />
 
@@ -234,7 +234,7 @@
                             <TextBlock Text="Machine code" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding PasteMachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Save" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteKeyCommand}" VerticalAlignment="Bottom" />
+                        <Button Content="{DynamicResource Str_Onboarding_Save}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteKeyCommand}" VerticalAlignment="Bottom" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -242,7 +242,7 @@
             <!-- ═══ Load fleet.json fast path ═══════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Load fleet.json" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_LoadFleet}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Preview a whole simulated fleet's roster from a fleet.json file." />
 
@@ -251,9 +251,9 @@
                             <TextBlock Text="fleet.json path" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding FleetPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Browse…" Style="{StaticResource TopBarButtonStyle}" Command="{Binding BrowseFleetFileCommand}"
+                        <Button Content="{DynamicResource Str_Onboarding_Browse}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding BrowseFleetFileCommand}"
                                 VerticalAlignment="Bottom" Margin="0,0,8,0" />
-                        <Button Content="Load" Style="{StaticResource TopBarButtonStyle}" Command="{Binding LoadFleetCommand}"
+                        <Button Content="{DynamicResource Str_Onboarding_Load}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding LoadFleetCommand}"
                                 VerticalAlignment="Bottom" />
                         <StackPanel Margin="24,0,0,0" VerticalAlignment="Bottom">
                             <TextBlock Text="Loaded" Style="{StaticResource FieldLabelStyle}" />
@@ -287,7 +287,7 @@
             <!-- ═══ Activity log ═════════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Activity log" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Onboarding_ActivityLog}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBox Text="{Binding StatusLog, Mode=OneWay}"
                              IsReadOnly="True"
                              TextWrapping="Wrap"

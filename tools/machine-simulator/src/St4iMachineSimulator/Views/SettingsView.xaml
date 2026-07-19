@@ -60,7 +60,7 @@
         <StackPanel Margin="4">
             <!-- ═══ Header ════════════════════════════════════════════════ -->
             <StackPanel Margin="0,0,0,16">
-                <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" />
+                <TextBlock Text="{DynamicResource Str_Settings_Title}" FontSize="20" FontWeight="Bold" />
                 <TextBlock Style="{StaticResource SectionSubtextStyle}"
                            Text="Kết nối server, chế độ truyền (Live/Demo/Auto), khóa mk_ đã lưu, và các tuỳ chọn trưng bày." />
             </StackPanel>
@@ -68,7 +68,7 @@
             <!-- ═══ Connection + Mode ════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Kết nối &amp; chế độ truyền" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Settings_ConnectionHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Đổi ServerUrl/VerifyTls/Machine code sẽ tự dựng lại LiveTransport. Đổi Mode ở đây tương đương đổi ở thanh trên." />
 
@@ -95,7 +95,7 @@
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button Content="Kiểm cờ / Check server" Style="{StaticResource TopBarButtonStyle}"
+                        <Button Content="{DynamicResource Str_Settings_CheckServer}" Style="{StaticResource TopBarButtonStyle}"
                                 Command="{Binding CheckFlagsCommand}" Margin="0,0,12,0" />
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="{Binding ProbeSummary}" Style="{StaticResource ValueStyle}" />
@@ -113,12 +113,12 @@
             <!-- ═══ Stored credentials ═══════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Khóa mk_ đã lưu" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Settings_CredentialsHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
                                Text="Danh sách machine code đã có mk_ (DPAPI, theo user Windows hiện tại) và tra cứu nhanh một machine code." />
 
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                        <Button Content="Refresh" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RefreshCredentialsCommand}" Margin="0,0,12,0" />
+                        <Button Content="{DynamicResource Str_Settings_Refresh}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RefreshCredentialsCommand}" Margin="0,0,12,0" />
                         <ItemsControl ItemsSource="{Binding StoredMachineCodes}" VerticalAlignment="Center">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -142,7 +142,7 @@
                             <TextBlock Text="Kiểm tra machine code" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding CheckMachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Check" Style="{StaticResource TopBarButtonStyle}" Command="{Binding CheckCredentialCommand}"
+                        <Button Content="{DynamicResource Str_Settings_Check}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding CheckCredentialCommand}"
                                 VerticalAlignment="Bottom" Margin="0,0,16,0" />
                         <TextBlock Text="{Binding CheckResult}" Style="{StaticResource ValueStyle}" VerticalAlignment="Bottom" />
                     </StackPanel>
@@ -157,25 +157,25 @@
                             <TextBlock Text="mk_ key" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox Text="{Binding PasteMkKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
-                        <Button Content="Save" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteMkCommand}" VerticalAlignment="Bottom" />
+                        <Button Content="{DynamicResource Str_Settings_Save}" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteMkCommand}" VerticalAlignment="Bottom" />
                     </StackPanel>
                     <TextBlock Text="{Binding PasteStatus}" Style="{StaticResource SectionSubtextStyle}" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
-            <!-- ═══ Kiosk / Attract / Language placeholders ══════════════════ -->
+            <!-- ═══ Kiosk / Attract / Language (Task 20 — wired for real) ════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Trưng bày (Kiosk / Attract / Ngôn ngữ)" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_Settings_ExhibitHeader}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource SectionSubtextStyle}"
-                               Text="Các tuỳ chọn này được kết nối thật ở Task 19b/20 — hiện chỉ lưu trạng thái." />
+                               Text="Kiosk: toàn màn hình không viền (F11 để bật/tắt, Esc để thoát). Attract: sau ~45s không thao tác, tự chuyển màn hình trình diễn. Ngôn ngữ đổi ngay lập tức." />
 
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                        <CheckBox Content="Kiosk mode" IsChecked="{Binding Kiosk, Mode=TwoWay}" Margin="0,0,24,0" />
-                        <CheckBox Content="Attract mode" IsChecked="{Binding Attract, Mode=TwoWay}" Margin="0,0,24,0" />
+                        <CheckBox Content="{DynamicResource Str_Settings_Kiosk}" IsChecked="{Binding Kiosk, Mode=TwoWay}" Margin="0,0,24,0" />
+                        <CheckBox Content="{DynamicResource Str_Settings_Attract}" IsChecked="{Binding Attract, Mode=TwoWay}" Margin="0,0,24,0" />
                         <StackPanel Style="{StaticResource FieldStackStyle}" Width="140">
-                            <TextBlock Text="Language" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBox Text="{Binding Language, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="{DynamicResource Str_Settings_Language}" Style="{StaticResource FieldLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding AvailableLanguages}" SelectedItem="{Binding Language, Mode=TwoWay}" />
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>

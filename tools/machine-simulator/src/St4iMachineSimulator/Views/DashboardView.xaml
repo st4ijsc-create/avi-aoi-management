@@ -84,7 +84,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <TextBlock Text="Fleet" FontSize="18" FontWeight="Bold" Margin="0,0,0,12" />
+            <TextBlock Text="{DynamicResource Str_Dashboard_FleetHeader}" FontSize="18" FontWeight="Bold" Margin="0,0,0,12" />
 
             <!-- ═══ Machine tiles ═════════════════════════════════════════ -->
             <ItemsControl ItemsSource="{Binding Machines}">
@@ -137,15 +137,15 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Status" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{DynamicResource Str_Field_Status}" Style="{StaticResource TileLabelStyle}" />
                                         <TextBlock Text="{Binding StatusText}" Style="{StaticResource TileValueStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Pass rate" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{DynamicResource Str_Field_PassRate}" Style="{StaticResource TileLabelStyle}" />
                                         <TextBlock Text="{Binding PassRate, StringFormat={}{0:P0}}" Style="{StaticResource TileValueStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Cycles" Style="{StaticResource TileLabelStyle}" />
+                                        <TextBlock Text="{DynamicResource Str_Field_Cycles}" Style="{StaticResource TileLabelStyle}" />
                                         <TextBlock Text="{Binding Cycles}" Style="{StaticResource TileValueStyle}" />
                                     </StackPanel>
                                 </Grid>

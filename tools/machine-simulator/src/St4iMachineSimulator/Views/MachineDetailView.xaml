@@ -103,7 +103,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="← Dashboard"
+                <Button Grid.Column="0" Content="{DynamicResource Str_MachineDetail_Back}"
                         Style="{StaticResource TopBarButtonStyle}"
                         Command="{Binding DataContext.BackToDashboardCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
 
@@ -126,19 +126,19 @@
                         <ColumnDefinition Width="2*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Status" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{DynamicResource Str_Field_Status}" Style="{StaticResource LabelStyle}" />
                         <TextBlock Text="{Binding StatusText}" Style="{StaticResource ValueStyle}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1">
-                        <TextBlock Text="Pass rate" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{DynamicResource Str_Field_PassRate}" Style="{StaticResource LabelStyle}" />
                         <TextBlock Text="{Binding PassRate, StringFormat={}{0:P0}}" Style="{StaticResource ValueStyle}" />
                     </StackPanel>
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="Cycles" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{DynamicResource Str_Field_Cycles}" Style="{StaticResource LabelStyle}" />
                         <TextBlock Text="{Binding Cycles}" Style="{StaticResource ValueStyle}" />
                     </StackPanel>
                     <StackPanel Grid.Column="3">
-                        <TextBlock Text="Last cycle" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{DynamicResource Str_MachineDetail_LastCycle}" Style="{StaticResource LabelStyle}" />
                         <TextBlock Text="{Binding LastCycleSummary}" Style="{StaticResource ValueStyle}" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Grid>
@@ -147,7 +147,7 @@
             <!-- ═══ Automation: SPC chart ════════════════════════════════ -->
             <Border Style="{StaticResource AutomationPanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="SPC — individuals chart (I-MR approx.)" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_MachineDetail_Spc}" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock Style="{StaticResource LabelStyle}" Margin="0,2,0,0"
                                Text="Value line + mean/UCL/LCL (mean ± 3σ over the visible window)" />
                     <lvc:CartesianChart Series="{Binding SpcSeries}" Height="260" Margin="0,12,0,0" Background="Transparent" />
@@ -157,7 +157,7 @@
             <!-- ═══ IoT: telemetry chart ═════════════════════════════════ -->
             <Border Style="{StaticResource IotPanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Telemetry" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_MachineDetail_Telemetry}" Style="{StaticResource SectionHeaderStyle}" />
                     <lvc:CartesianChart Series="{Binding TelemetrySeries}" Height="260" Margin="0,12,0,0" Background="Transparent" />
                 </StackPanel>
             </Border>
@@ -165,7 +165,7 @@
             <!-- ═══ AOI: board view ══════════════════════════════════════ -->
             <Border Style="{StaticResource AoiPanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Board — latest inspection" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_MachineDetail_Board}" Style="{StaticResource SectionHeaderStyle}" />
                     <controls:BoardView Points="{Binding BoardPoints}" Height="420" Margin="0,12,0,0" />
                 </StackPanel>
             </Border>
@@ -173,13 +173,13 @@
             <!-- ═══ Config sync ══════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Config sync" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_MachineDetail_ConfigSync}" Style="{StaticResource SectionHeaderStyle}" />
                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
-                        <Button Content="Sync recipe"
+                        <Button Content="{DynamicResource Str_MachineDetail_SyncRecipe}"
                                 Style="{StaticResource TopBarButtonStyle}"
                                 Command="{Binding SyncConfigCommand}" />
                         <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="Drift state" Style="{StaticResource LabelStyle}" />
+                            <TextBlock Text="{DynamicResource Str_MachineDetail_DriftState}" Style="{StaticResource LabelStyle}" />
                             <TextBlock Text="{Binding DriftState}" Style="{StaticResource ValueStyle}" />
                         </StackPanel>
                     </StackPanel>
@@ -189,7 +189,7 @@
             <!-- ═══ Cycle log ════════════════════════════════════════════ -->
             <Border Style="{StaticResource PanelStyle}">
                 <StackPanel>
-                    <TextBlock Text="Cycle log" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="{DynamicResource Str_MachineDetail_CycleLog}" Style="{StaticResource SectionHeaderStyle}" />
                     <DataGrid ItemsSource="{Binding CycleLog}" Margin="0,10,0,0" MaxHeight="360">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat={}{0:HH:mm:ss}}" Width="100" />
