@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Simulators;
@@ -52,7 +53,21 @@ public sealed class FleetHost
     private readonly EventBus _eventBus;
     private readonly ResilienceProbe _probe = new();
     private readonly ILogger<FleetHost>? _logger;
-    private readonly Dictionary<string, MachineState> _states;
+
+    /// <summary>E1: per-machine live state, keyed case-insensitively by <see cref="MachineDescriptor.Code"/>.
+    /// Was a plain <see cref="Dictionary{TKey,TValue}"/> built once in the ctor and never structurally
+    /// mutated after — safe to read lock-free only because of that invariant. <see cref="RegisterMachine"/>
+    /// breaks that invariant (machines can now be added after construction), so this is now a
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/>: additions are safe to interleave with
+    /// <see cref="Snapshot"/>/<see cref="MachineDetail"/> readers on other threads with no lock needed on
+    /// the read side — <c>.Values</c> hands back a point-in-time copy, never a torn live view.</summary>
+    private readonly ConcurrentDictionary<string, MachineState> _states;
+
+    /// <summary>E1: mutable backing store for the fleet roster — only ever mutated (by
+    /// <see cref="RegisterMachine"/>) under <see cref="_gate"/>, same lock <see cref="StartLocked"/>/
+    /// <see cref="StopLocked"/> already use. The public <see cref="Fleet"/> property hands back a
+    /// defensive copy so external readers never see a torn list mid-mutation.</summary>
+    private readonly List<MachineDescriptor> _fleet;
 
     private CancellationTokenSource? _cts;
     private Task? _runTask;
@@ -80,11 +95,22 @@ public sealed class FleetHost
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger;
 
-        Fleet = LoadFleet();
-        _states = Fleet.ToDictionary(d => d.Code, d => new MachineState(d), StringComparer.OrdinalIgnoreCase);
+        _fleet = LoadFleet().ToList();
+        _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
+        foreach (var descriptor in _fleet)
+        {
+            _states[descriptor.Code] = new MachineState(descriptor);
+        }
     }
 
-    public IReadOnlyList<MachineDescriptor> Fleet { get; }
+    /// <summary>Point-in-time copy of the fleet roster. E1: no longer a fixed, ctor-built list —
+    /// <see cref="RegisterMachine"/> can append to it after construction, so this getter takes
+    /// <see cref="_gate"/> to hand back a stable snapshot rather than exposing the live, mutable
+    /// backing list to a caller that might enumerate it while a registration is in flight.</summary>
+    public IReadOnlyList<MachineDescriptor> Fleet
+    {
+        get { lock (_gate) return _fleet.ToArray(); }
+    }
 
     public ITransport Transport => _transport;
 
@@ -120,10 +146,13 @@ public sealed class FleetHost
         if (IsRunning) return;
         LastError = null;
 
+        // Assumes the caller already holds _gate (Start()/ApplyScenario()/RegisterMachine() all do) —
+        // reads _fleet directly rather than through the Fleet property so a Register-while-running
+        // restart always rebuilds sims from the CURRENT roster, including whatever was just added.
         var multiplier = _scenario.CycleRateMultiplier > 0 ? _scenario.CycleRateMultiplier : 1.0;
         var effectiveFleet = Math.Abs(multiplier - 1.0) < 1e-9
-            ? Fleet
-            : Fleet.Select(d => d with { CycleSeconds = Math.Max(MinCycleSeconds, d.CycleSeconds / multiplier) }).ToList();
+            ? _fleet
+            : _fleet.Select(d => d with { CycleSeconds = Math.Max(MinCycleSeconds, d.CycleSeconds / multiplier) }).ToList();
 
         var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
@@ -196,12 +225,27 @@ public sealed class FleetHost
     // ─────────────────────────────────────────────────────────────────────
     public FleetSnapshotDto Snapshot()
     {
+        // M-3: IsRunning is only ever WRITTEN under _gate (StartLocked/StopLocked) — read it under the
+        // same lock here too (a GET can land on a different thread than whichever POST last flipped it)
+        // rather than relying on an unsynchronized read of a plain, non-volatile bool. E1: read it FIRST
+        // so both the per-tile status projection and the online count use the exact same running/stopped
+        // verdict — no window where one reflects a stale value the other doesn't.
+        bool isRunning;
+        lock (_gate)
+        {
+            isRunning = IsRunning;
+        }
+
+        // _states.Values (ConcurrentDictionary) is a point-in-time copy, safe to enumerate here even if
+        // RegisterMachine adds an entry on another thread concurrently (E1) — no lock needed.
         var machines = _states.Values
             .OrderBy(s => s.Code, StringComparer.Ordinal)
-            .Select(s => s.ToTile())
+            .Select(s => s.ToTile(isRunning))
             .ToList();
 
-        var online = machines.Count(m => m.Cycles > 0);
+        // E1 (health-truth): online must reflect the RUNNING state, not "ever produced a cycle" — the
+        // pre-fix bug was a stopped fleet that stayed "N/N online" forever because Cycles never resets.
+        var online = isRunning ? machines.Count(m => m.Cycles > 0) : 0;
         var totalCycles = Interlocked.Read(ref _totalCycles);
         double fpy;
         lock (_kpiGate)
@@ -209,20 +253,72 @@ public sealed class FleetHost
             fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
         }
 
-        // M-3: IsRunning is only ever WRITTEN under _gate (StartLocked/StopLocked) — read it under the
-        // same lock here too (a GET can land on a different thread than whichever POST last flipped it)
-        // rather than relying on an unsynchronized read of a plain, non-volatile bool.
-        bool isRunning;
-        lock (_gate)
-        {
-            isRunning = IsRunning;
-        }
-
         return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy), isRunning);
     }
 
     public MachineDetailDto? MachineDetail(string code) =>
         _states.TryGetValue(code, out var state) ? state.ToDetail() : null;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DYNAMIC REGISTRATION (E1) — foundation for the onboarding overhaul (E2 calls this).
+    // ─────────────────────────────────────────────────────────────────────
+    /// <summary>Adds a machine to the LIVE fleet roster at runtime. Returns <see langword="false"/>
+    /// (no-op, no throw) if <paramref name="descriptor"/>'s <see cref="MachineDescriptor.Code"/>
+    /// already exists (case-insensitively) — E2's onboarding flow can call this speculatively without
+    /// pre-checking for a race against another registration.
+    ///
+    /// Concurrency: everything here happens under <see cref="_gate"/> — the same lock
+    /// <see cref="StartLocked"/>/<see cref="StopLocked"/>/<see cref="ApplyScenario"/> already serialize
+    /// on — so a concurrent <see cref="Start"/>/<see cref="Stop"/>/<see cref="ApplyScenario"/> call can't
+    /// interleave with this one. <see cref="Snapshot"/>/<see cref="MachineDetail"/> take no lock at all
+    /// (by design — they're hot GET paths) and remain safe to call concurrently with this method because
+    /// <see cref="_states"/> is a <see cref="ConcurrentDictionary{TKey,TValue}"/>: the new entry either
+    /// isn't visible yet or is fully constructed when it becomes visible, never torn.
+    ///
+    /// If the fleet is currently running, the pipeline is restarted (<see cref="StopLocked"/> then
+    /// <see cref="StartLocked"/>, same pattern <see cref="ApplyScenario"/> uses for a cycle-rate change)
+    /// so the rebuilt <c>SimulatedDriver</c> roster includes the new machine and it actually starts
+    /// producing cycles — every other machine's <see cref="MachineState"/> (and its I-1 cycle-offset)
+    /// survives the restart untouched, exactly as it does for a scenario-triggered restart today. If the
+    /// fleet is stopped, the new machine is simply included the next time <see cref="Start"/> runs.
+    ///
+    /// Either way, the new machine is visible in the very next <see cref="Snapshot"/> immediately —
+    /// idle status, 0 cycles — since its <see cref="MachineState"/> is inserted before this method
+    /// returns.</summary>
+    public bool RegisterMachine(MachineDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        if (string.IsNullOrWhiteSpace(descriptor.Code))
+        {
+            throw new ArgumentException("MachineDescriptor.Code must not be null/blank.", nameof(descriptor));
+        }
+
+        lock (_gate)
+        {
+            if (_fleet.Any(d => string.Equals(d.Code, descriptor.Code, StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            _fleet.Add(descriptor);
+            // TryAdd (not the indexer): the _fleet duplicate-check above is the source of truth under
+            // this same lock, so a collision here would indicate _fleet/_states drifted out of sync —
+            // fail loudly (silently returning false here) rather than clobber an existing MachineState.
+            if (!_states.TryAdd(descriptor.Code, new MachineState(descriptor)))
+            {
+                _fleet.RemoveAt(_fleet.Count - 1);
+                return false;
+            }
+
+            if (IsRunning)
+            {
+                StopLocked();
+                StartLocked();
+            }
+
+            return true;
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // SCENARIO

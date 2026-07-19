@@ -9,7 +9,12 @@ public static class FleetEndpoints
 {
     public static void MapFleetEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/v1/health", (FleetHost host) => Results.Ok(new HealthDto(true, host.Mode)));
+        // E1: Ok used to be hardcoded true — a client had no way to tell a genuinely faulted engine
+        // (StartLocked's pipeline task threw, LastError set, IsRunning flipped back to false — see
+        // FleetHost.StartLocked's catch) from a healthy one. LastError is null both before the fleet has
+        // ever been started and after a clean Stop(), so this stays true in both of those ordinary
+        // states too — it only goes false once something has actually gone wrong.
+        app.MapGet("/v1/health", (FleetHost host) => Results.Ok(new HealthDto(host.LastError is null, host.Mode)));
 
         app.MapGet("/v1/fleet", (FleetHost host) => Results.Ok(host.Snapshot()));
 

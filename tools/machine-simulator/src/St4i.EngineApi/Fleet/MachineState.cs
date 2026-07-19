@@ -25,6 +25,12 @@ public sealed record BoardPointDto(string PointCode, string Result, Bbox? Bbox, 
 /// </summary>
 public sealed class MachineState
 {
+    /// <summary>E1: the status value a tile/detail reports before its first cycle — and, since E1,
+    /// also the value <see cref="ToTile(bool)"/> reports whenever the fleet pipeline isn't running,
+    /// regardless of the last real verdict. Already understood by the web UI's <c>MachineCard</c>
+    /// <c>STATUS_META</c> map (neutral badge, "status.idle" label) — no new status vocabulary needed.</summary>
+    private const string IdleStatusText = "Idle";
+
     /// <summary>Sparkline depth — same cap as the WPF dashboard tile's Spark collection.</summary>
     private const int MaxSparkPoints = 30;
 
@@ -68,7 +74,7 @@ public sealed class MachineState
 
     public string Code => Descriptor.Code;
 
-    public string StatusText { get; private set; } = "Idle";
+    public string StatusText { get; private set; } = IdleStatusText;
 
     /// <summary>Running pass rate in [0,1] — Pass and Warn both count as "success" (mirrors
     /// Normalizer.ComputeOverallResult treating Warn as OK); Telemetry readings are excluded entirely.</summary>
@@ -178,8 +184,19 @@ public sealed class MachineState
         }
     }
 
-    /// <summary>Snapshot for one <c>GET /v1/fleet</c> row.</summary>
-    public FleetTileDto ToTile()
+    /// <summary>Snapshot for one <c>GET /v1/fleet</c> row, reporting the machine's real last-observed
+    /// status. Equivalent to <see cref="ToTile(bool)"/> with <c>fleetRunning: true</c> — kept for
+    /// existing callers/tests that don't care about the running/stopped distinction.</summary>
+    public FleetTileDto ToTile() => ToTile(fleetRunning: true);
+
+    /// <summary>Snapshot for one <c>GET /v1/fleet</c> row. E1 (health-truth): when the fleet pipeline is
+    /// NOT running, <paramref name="fleetRunning"/> is false and the reported status is forced to
+    /// <see cref="IdleStatusText"/> regardless of the last real verdict — otherwise a stopped fleet keeps
+    /// showing every tile as whatever it last was (e.g. "OK"/green), which is exactly the "always
+    /// healthy after Stop" bug this exists to fix. <see cref="Cycles"/>/<see cref="PassRate"/>/
+    /// <see cref="LastCycleSummary"/>/the spark line are left untouched either way: a machine that ran
+    /// then stopped should still show its last-known counters, just flagged idle instead of live.</summary>
+    public FleetTileDto ToTile(bool fleetRunning)
     {
         lock (_gate)
         {
@@ -187,7 +204,7 @@ public sealed class MachineState
                 Code,
                 Descriptor.DeviceClass,
                 Descriptor.DriverKind,
-                StatusText,
+                fleetRunning ? StatusText : IdleStatusText,
                 PassRate,
                 Cycles,
                 LastCycleSummary,
