@@ -1,4 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
@@ -305,9 +308,14 @@ export default function ProductionDashboard() {
   const { data: factoriesData } = trpc.factory.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
 
+  // doc 64 IA-10 S3-D — trục phạm vi: dropdown tại-trang THẮNG ("all" = chưa chọn),
+  // trục lấp; compare-mode vẫn tắt filter (so sánh toàn cục là chủ đích).
+  const { scope: assetScope } = useScope(["factory", "line"]);
+  useScopeWired();
+
   const commonInput = {
-    factoryId: !compareMode && selectedFactory !== "all" ? Number(selectedFactory) : undefined,
-    lineId: !compareMode && selectedLine !== "all" ? Number(selectedLine) : undefined,
+    factoryId: !compareMode ? (selectedFactory !== "all" ? Number(selectedFactory) : assetScope.factoryId) : undefined,
+    lineId: !compareMode ? (selectedLine !== "all" ? Number(selectedLine) : assetScope.lineId) : undefined,
     startDate: dateRange.start,
     endDate: dateRange.end,
   };

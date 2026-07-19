@@ -84,6 +84,9 @@ import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkel
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo, useCallback } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { HistoryInfiniteScroll } from "@/components/HistoryInfiniteScroll";
 import { Link } from "wouter";
 import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
@@ -252,6 +255,11 @@ export default function History() {
   const utils = trpc.useUtils();
   const bulkAcknowledgeMutation = trpc.inspection.bulkAcknowledge.useMutation();
 
+  // doc 64 IA-10 S3-A — trục phạm vi gửi ID; server resolve id→code (DEP-S3 đã đóng).
+  // CODE gõ tay tại trang luôn THẮNG id (server ưu tiên code).
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
+
   const { data, isLoading, refetch } = trpc.inspection.search.useQuery({
     factoryCode: filters.factoryCode || undefined,
     workshopCode: filters.workshopCode || undefined,
@@ -263,6 +271,9 @@ export default function History() {
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     limit,
     offset: (page - 1) * limit,
     sortBy,
@@ -280,6 +291,9 @@ export default function History() {
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     limit: analysisLimit, // Progressive loading for analysis
     offset: 0,
   });

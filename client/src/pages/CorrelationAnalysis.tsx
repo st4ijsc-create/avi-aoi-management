@@ -1,4 +1,7 @@
-import { useState, useMemo, type CSSProperties } from "react";
+import { useState, useMemo, useEffect, type CSSProperties } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -116,6 +119,16 @@ export function CorrelationAnalysisContent() {
   // History
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [viewingSaved, setViewingSaved] = useState<any | null>(null);
+
+  // doc 64 IA-10 S3-D — trục phạm vi seed máy khi trang chưa chọn (picker vẫn thắng sau).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined && !selectedMachine) {
+      setSelectedMachine(String(assetScope.machineId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetScope.machineId]);
 
   // --- Queries ---
   const productModelsQuery = trpc.productModel.list.useQuery();

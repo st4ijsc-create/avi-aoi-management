@@ -4,6 +4,9 @@
  * list context the standalone /machine/:id cockpit lacked).
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
@@ -25,7 +28,16 @@ export interface MachineRailProps {
 export function MachineRail({ selectedId, onSelect }: MachineRailProps) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const machinesQ = trpc.machine.list.useQuery();
+  // doc 64 IA-10 S3-C — rail đổi nguồn sang machineStatus.listWithStatus (đã nhận
+  // trục ở DEP-S2): chọn Xưởng/Chuyền/Máy ở header là rail lọc server-side theo,
+  // thay vì machine.list toàn-cục (row thiếu parent nên không client-filter được).
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
+  const machinesQ = trpc.machineStatus.listWithStatus.useQuery({
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
+  });
 
   const machines = useMemo(() => {
     const rows = (machinesQ.data ?? []) as MachineRow[];

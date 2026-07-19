@@ -39,6 +39,7 @@ import { FreshnessStrip } from "./FreshnessStrip";
 import { ShellAlertChip } from "./ShellAlertChip";
 // doc 64 IA-10 — trục phạm vi ISA-95 + chip bất biến trung thực.
 import { AssetScopeBar, ScopeStatusChip } from "./AssetScopeBar";
+import { useAssetScope } from "@/contexts/AssetScopeContext";
 import { isIsa101V2 } from "@/lib/hmiFlags";
 import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
@@ -284,6 +285,10 @@ function DashboardLayoutContent({
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
+  // doc 64 IA-10 S3 — trục có selection? (cho hàng chip standalone khi breadcrumb ẩn).
+  const { axis: assetAxis } = useAssetScope();
+  const hasAssetAxis =
+    assetAxis.factoryId !== undefined || assetAxis.lineId !== undefined || assetAxis.machineId !== undefined;
 
   // Filter groups based on user role + granular permissions + license modules.
   // `accessibleGroups` = everything this user COULD see; `visibleGroups` then also
@@ -611,6 +616,14 @@ function DashboardLayoutContent({
             {/* doc 64 IA-10 S0.4 — bất biến trung thực: trang chưa wire scope hiện rõ
                 "chưa lọc theo phạm vi" khi trục có selection (không ngầm-toàn-cục). */}
             {isIsa101V2() && <ScopeStatusChip className="shrink-0" />}
+          </div>
+        )}
+        {/* doc 64 IA-10 S3 — route mồ côi/ẩn-breadcrumb (vd /alarm-kpi) vẫn phải có chip
+            (bất biến không được phụ thuộc chỗ đứng breadcrumb). Hàng mảnh, chỉ hiện khi
+            trục có selection. */}
+        {!showBreadcrumbs && isIsa101V2() && hasAssetAxis && (
+          <div className="flex justify-end border-b border-border bg-card/60 px-3 py-1 sm:px-4">
+            <ScopeStatusChip className="shrink-0" />
           </div>
         )}
         <PermissionExpiryBanner />

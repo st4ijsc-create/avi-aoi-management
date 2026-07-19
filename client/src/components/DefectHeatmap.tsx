@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
@@ -106,6 +109,12 @@ export function DefectHeatmap() {
   const [machineId, setMachineId] = useState<number | undefined>();
   const [productModelId, setProductModelId] = useState<number | undefined>();
   const [annotationType, setAnnotationType] = useState<string | undefined>();
+  // doc 64 IA-10 S3-B — trục phạm vi seed máy (picker tại-tab vẫn đổi được sau).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) setMachineId(assetScope.machineId);
+  }, [assetScope.machineId]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [zoom, setZoom] = useState(1);

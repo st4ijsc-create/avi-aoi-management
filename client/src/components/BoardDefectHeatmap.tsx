@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +56,12 @@ export function BoardDefectHeatmap() {
   const [productModelId, setProductModelId] = useState<number | undefined>();
   const [machineId, setMachineId] = useState<number | undefined>();
   const [defectCatalogId, setDefectCatalogId] = useState<number | undefined>();
+  // doc 64 IA-10 S3-B — trục phạm vi seed máy (picker tại-tab vẫn đổi được sau).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) setMachineId(assetScope.machineId);
+  }, [assetScope.machineId]);
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [gridSize, setGridSize] = useState(50);
   const [logicalMode, setLogicalMode] = useState(false);

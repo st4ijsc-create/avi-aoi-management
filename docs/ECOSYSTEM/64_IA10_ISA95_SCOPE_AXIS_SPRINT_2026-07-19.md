@@ -91,6 +91,21 @@ Gate mỗi batch như S1.
 ### S2-E SiteContext merge → **DEFER có căn cứ**
 SiteSwitcher = tầng FEDERATION đa-site (multi-instance), semantics khác trục tài sản nội-site; memory doc13: federation "cần ≥2 sites để test". Merge mù = không verify được. Để khi có site thứ 2; trục hiện tại đứng cạnh SiteSwitcher không xung đột.
 
+## S3 — KẾT QUẢ (2026-07-19, cùng ngày)
+
+| Mục | Kết quả |
+|---|---|
+| **S3-A /history** | ✅ server `inspection.search` nhận `factoryId/lineId/machineId` (resolve id→CODE 1-query/cấp; **CODE gõ tay THẮNG id**) + wire cả 2 query (list + allData phân tích) |
+| **S3-B /defect-heatmap** | ✅ Board + DefectHeatmap: seed máy từ trục (effect — picker tại-tab vẫn thắng sau); TrendAnalysisChart nhận `machineId` prop từ page (đã có props sẵn) |
+| **S3-C rail MachineWorkspace** | ✅ `MachineRail` đổi nguồn `machine.list` (không parent, không filter được) → `machineStatus.listWithStatus` **đã-scoped DEP-S2** → rail lọc server-side 3 cấp; không đụng machine.list (nhiều consumer) |
+| **S3-D batch** | ✅ 7 trang: **alarm-kpi** (summary+lineId/machineId) · **sla-cockpit** (andon.list scoped; metrics server chưa nhận → DEP-S4) · **war-room** (seed factory) · **production-dashboard** (dropdown thắng, trục lấp; compare-mode giữ toàn cục chủ đích) · **energy** (machineId lấp sau Apply) · **correlation** (seed máy khi trống) · **comparison-studio** (factory lấp + lineId vào 3 feed nhận: station-overview/yield-by-product/compare) |
+
+### DEP-S4 (server chưa nhận scope — ứng viên đợt sau)
+`andon.metrics{lineId?,machineId?}` · `field.health/healthSummary{...}` · `warRoom.briefing{lineId?}` · `measurementPoint.listUnmapped{machineId?}`.
+
+### Trạng thái phủ trục sau S3
+**~21 bề mặt wired** (6 pilot + 4 Quality + 7 S3-D + rail + heatmap×3 + history) trên khoảng ~30 trang mang dữ liệu theo-tài-sản; các trang còn lại hoặc thuộc DEP-S4 hoặc admin/AI control-plane (ít giá trị trục). SiteContext merge vẫn chờ site 2 (federation).
+
 ### Định nghĩa XONG (sprint)
 1. Trục hiện ở header mọi trang, cascade đúng cây, bền qua điều hướng, URL chia sẻ được.
 2. ≥ S1 pilot: đổi scope → dữ liệu đổi thật (proof chụp).

@@ -20,6 +20,9 @@
  * such an Andon that is still not resolved. When nothing is available → honest empty.
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -142,8 +145,15 @@ export default function SlaCockpit() {
   const [windowHours, setWindowHours] = useState<number>(24);
 
   const polling = usePollingInterval(30_000);
+  // doc 64 IA-10 S3-D — danh sách andon theo trục Chuyền/Máy; metrics tổng hợp server
+  // CHƯA nhận scope (andon.metrics chỉ sinceHours — DEP-S4, doc 64) → giữ toàn cục.
+  const { scope: assetScope } = useScope(["line", "machine"]);
+  useScopeWired();
   const metricsQ = trpc.andon.metrics.useQuery({ sinceHours: windowHours }, { staleTime: 20_000, ...polling });
-  const listQ = trpc.andon.list.useQuery({ limit: LIST_CAP }, { staleTime: 20_000, ...polling });
+  const listQ = trpc.andon.list.useQuery(
+    { limit: LIST_CAP, lineId: assetScope.lineId, machineId: assetScope.machineId },
+    { staleTime: 20_000, ...polling },
+  );
   const escQ = trpc.alertEscalation.recentEscalations.useQuery(
     { limit: 200 },
     { staleTime: 20_000, retry: false, ...polling },

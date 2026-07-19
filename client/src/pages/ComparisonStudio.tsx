@@ -20,6 +20,9 @@
  * example, is only carried by the Shift feed and is null in the current Full-Sim env.
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -163,7 +166,12 @@ export function ComparisonStudioContent(): React.JSX.Element {
   const [benchmark, setBenchmark] = useState<BenchmarkMode>("best");
   const [targetValue, setTargetValue] = useState<string>("");
 
-  const factoryScope = factoryId ?? undefined;
+  // doc 64 IA-10 S3-D — trục phạm vi: FactorySelect tại-trang THẮNG, trục lấp; Chuyền
+  // từ trục truyền vào 3 feed nhận lineId (station-overview / yield-by-product / compare).
+  const { scope: assetScope } = useScope(["factory", "line"]);
+  useScopeWired();
+  const factoryScope = factoryId ?? assetScope.factoryId ?? undefined;
+  const lineScope = assetScope.lineId;
 
   // Window Date objects for the inspection-window dimensions (line/product).
   const winStart = useMemo(() => new Date(`${rangeFrom}T00:00:00`), [rangeFrom]);
@@ -176,7 +184,7 @@ export function ComparisonStudioContent(): React.JSX.Element {
   // ── Data feeds — all four hooks are always called (rules of hooks); only the
   //    active dimension's query is enabled, the rest stay idle. ────────────────
   const lineQ = trpc.productionDashboard.getStationOverview.useQuery(
-    { factoryId: factoryScope, startDate: winStart, endDate: winEnd },
+    { factoryId: factoryScope, lineId: lineScope, startDate: winStart, endDate: winEnd },
     { enabled: dimension === "line" },
   );
 
@@ -186,13 +194,13 @@ export function ComparisonStudioContent(): React.JSX.Element {
   );
 
   const productQ = trpc.reportAggregators.yieldByProduct.useQuery(
-    { startDate: rangeFrom, endDate: rangeTo, factoryId: factoryScope },
+    { startDate: rangeFrom, endDate: rangeTo, factoryId: factoryScope, lineId: lineScope },
     { enabled: dimension === "product" },
   );
 
   const periodWin = useMemo(() => currentWindow(periodType), [periodType]);
   const periodQ = trpc.dataComparison.compare.useQuery(
-    { periodType, currentStart: periodWin.start, currentEnd: periodWin.end, factoryId: factoryScope },
+    { periodType, currentStart: periodWin.start, currentEnd: periodWin.end, factoryId: factoryScope, lineId: lineScope },
     { enabled: dimension === "period" },
   );
 

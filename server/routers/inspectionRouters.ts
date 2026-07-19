@@ -43,9 +43,36 @@ export const inspectionRouter = router({
       // W7-B (doc 27 V3): "ntfScore" pre-sorts the verify queue by suspected
       // false-call likelihood (DESC NULLS LAST). Default: newest first.
       sortBy: z.enum(["time", "ntfScore"]).optional(),
+      // doc 64 IA-10 S3 (DEP-S3) — trục phạm vi gửi ID; server resolve id→CODE rồi
+      // tái dùng đường lọc theo code sẵn có. CODE tường minh (gõ tay) luôn THẮNG id.
+      factoryId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+      machineId: z.number().int().positive().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      return db.searchInspections({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
+      const { factoryId, lineId, machineId, ...codeInput } = input;
+      // Resolve id→code (chỉ khi code tương ứng chưa được truyền — code thắng id).
+      if (factoryId !== undefined || lineId !== undefined || machineId !== undefined) {
+        const { getDb } = await import("../db/connection");
+        const { machines, productionLines, factories } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const dbc = await getDb();
+        if (dbc) {
+          if (machineId !== undefined && !codeInput.machineCode) {
+            const [m] = await dbc.select({ code: machines.code }).from(machines).where(eq(machines.id, machineId)).limit(1);
+            if (m?.code) codeInput.machineCode = m.code;
+          }
+          if (lineId !== undefined && !codeInput.lineCode) {
+            const [l] = await dbc.select({ code: productionLines.code }).from(productionLines).where(eq(productionLines.id, lineId)).limit(1);
+            if (l?.code) codeInput.lineCode = l.code;
+          }
+          if (factoryId !== undefined && !codeInput.factoryCode) {
+            const [f] = await dbc.select({ code: factories.code }).from(factories).where(eq(factories.id, factoryId)).limit(1);
+            if (f?.code) codeInput.factoryCode = f.code;
+          }
+        }
+      }
+      return db.searchInspections({ ...codeInput, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   getById: protectedProcedure

@@ -17,6 +17,9 @@
  * RBAC: route gate machine_status (App.tsx). Trang chỉ đọc — không mutation.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import {
   Gauge,
@@ -171,6 +174,12 @@ export default function WarRoom() {
   const [dateStr, setDateStr] = useState<string>(() => todayLocalISODate());
   const [shiftId, setShiftId] = useState<number | undefined>(undefined);
   const [factoryId, setFactoryId] = useState<number | undefined>(undefined);
+  // doc 64 IA-10 S3-D — trục phạm vi seed Xưởng (picker tại-trang vẫn đổi được sau).
+  const { scope: assetScope } = useScope(["factory"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.factoryId !== undefined) setFactoryId(assetScope.factoryId);
+  }, [assetScope.factoryId]);
 
   const fs = useFullscreen();
 

@@ -16,6 +16,9 @@
  * server/routers/energyRouter.ts — do not change without re-checking.
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
@@ -112,14 +115,17 @@ export default function EnergyAnalyticsPage() {
 
   const machinesQuery = trpc.machine.list.useQuery(undefined, { enabled: canView });
 
+  // doc 64 IA-10 S3-D — trục phạm vi: picker máy tại-trang (Apply) THẮNG, trục lấp khi "all".
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
   const range = useMemo(() => {
-    const mId = applied.machineId !== "all" ? Number(applied.machineId) : undefined;
+    const mId = applied.machineId !== "all" ? Number(applied.machineId) : assetScope.machineId;
     return {
       from: new Date(applied.from),
       to: new Date(applied.to),
       ...(mId != null && Number.isFinite(mId) ? { machineId: mId } : {}),
     };
-  }, [applied]);
+  }, [applied, assetScope.machineId]);
 
   const thrKw = useMemo(() => {
     const n = Number(applied.thresholdKw);
