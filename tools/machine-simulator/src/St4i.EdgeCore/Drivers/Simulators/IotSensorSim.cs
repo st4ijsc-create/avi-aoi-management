@@ -1,0 +1,47 @@
+using St4i.EdgeCore.Models;
+
+namespace St4i.EdgeCore.Drivers.Simulators;
+
+/// <summary>
+/// IoT sensor hub (IOT_SENSOR) — doc-62 §6: temperature/humidity/current dạng sin+nhiễu (sinusoid +
+/// noise), sự kiện drift (periodic calibration-drift events), quality good/uncertain. TELEMETRY
+/// kind carries no pass/fail verdict (doc-62 §6: "(telemetry, không verdict)").
+/// </summary>
+public sealed class IotSensorSim : SimulatorBase
+{
+    private const double TempBaseC = 24.0, TempAmplitudeC = 3.0, TempNoiseStd = 0.3;
+    private const double HumidityBasePct = 55.0, HumidityAmplitudePct = 8.0, HumidityNoiseStd = 1.0;
+    private const double CurrentBaseA = 1.2, CurrentAmplitudeA = 0.15, CurrentNoiseStd = 0.02;
+
+    private const double PeriodCycles = 120.0; // one full sinusoidal cycle every 120 samples
+    private const long DriftEveryCycles = 200; // a slow calibration-drift "event" every N cycles
+    private const double DriftMagnitudeC = 1.5;
+
+    public IotSensorSim(MachineDescriptor d, int seed) : base(d, seed)
+    {
+    }
+
+    public override DeviceReading NextCycle(long cycle)
+    {
+        var rng = Rng(cycle);
+        var phase = 2.0 * Math.PI * (cycle % (long)PeriodCycles) / PeriodCycles;
+
+        // Drift: a deterministic, index-driven offset that "sticks" for a block of cycles once
+        // every DriftEveryCycles — simulates sensor calibration drift without any wall-clock input.
+        var driftBucket = cycle / DriftEveryCycles;
+        var isDriftEvent = driftBucket % 2 == 1;
+        var drift = isDriftEvent ? DriftMagnitudeC : 0.0;
+        var quality = isDriftEvent ? "uncertain" : "good";
+
+        var temperature = TempBaseC + drift + TempAmplitudeC * Math.Sin(phase) + rng.NextGaussian(0, TempNoiseStd);
+        var humidity = HumidityBasePct + HumidityAmplitudePct * Math.Sin(phase + Math.PI / 3) + rng.NextGaussian(0, HumidityNoiseStd);
+        var current = CurrentBaseA + CurrentAmplitudeA * Math.Sin(phase + Math.PI / 6) + rng.NextGaussian(0, CurrentNoiseStd);
+
+        var reading = NewReading(cycle, ReadingKind.Telemetry, Descriptor.StepType);
+        reading.Verdict = Verdict.Skip; // no pass/fail concept applies to telemetry
+        reading.Telemetry.Add(new TelemetrySample("temperature", Math.Round(temperature, 2), "C", quality));
+        reading.Telemetry.Add(new TelemetrySample("humidity", Math.Round(humidity, 2), "%RH", quality));
+        reading.Telemetry.Add(new TelemetrySample("current", Math.Round(current, 3), "A", quality));
+        return reading;
+    }
+}
