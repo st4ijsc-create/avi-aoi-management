@@ -72,7 +72,13 @@ function ModeSelector() {
               <span className={cn("text-sm font-semibold", selected ? "text-primary-text" : "text-text-strong")}>
                 {value}
               </span>
-              <span className="text-[11px] text-text-muted">{t(`settings.mode.${value.toLowerCase()}.hint`)}</span>
+              {/* `text-primary-text` (not `text-text-muted`) when selected — axe measured 4.4:1 for
+                  `text-text-muted` on the `bg-navy-600/10` tint (fails AA 4.5:1 by a hair); the value
+                  span above already uses `text-primary-text` on this same selected background for
+                  the identical reason (see this button's className comment). */}
+              <span className={cn("text-[11px]", selected ? "text-primary-text" : "text-text-muted")}>
+                {t(`settings.mode.${value.toLowerCase()}.hint`)}
+              </span>
             </button>
           )
         })}

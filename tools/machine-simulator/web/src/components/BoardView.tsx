@@ -84,7 +84,14 @@ export function BoardView({ points, className }: BoardViewProps) {
           <svg
             viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
             className="h-auto w-full"
-            role="img"
+            // `role="img"` only for a clean board (no interactive children at all — a genuinely
+            // static diagram). A board WITH defects nests real focusable `role="button"` points
+            // (below) inside this element for their tooltips — `role="img"` on an ancestor with
+            // focusable descendants is axe's `nested-interactive`/`no-focusable-content` violation
+            // (an "image" is expected to be an atomic leaf for assistive tech). `role="group"` with
+            // the same descriptive label is the correct pattern for "a labeled cluster of
+            // individually-focusable controls" (Task 10 — caught by axe on AOI-01's board).
+            role={isClean ? "img" : "group"}
             aria-label={
               isClean
                 ? t("boardView.ariaClean", { count: points.length })

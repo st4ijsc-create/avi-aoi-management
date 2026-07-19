@@ -3,7 +3,6 @@ import type { VariantProps } from "class-variance-authority"
 
 import { useT } from "@/i18n"
 import type { FleetTile } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 import { staggerItem } from "@/theme/motion"
 import { Badge } from "@/components/ui/badge"
@@ -116,7 +115,7 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
         <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <StatusBadge status={status} className={cn(isActive && status === "ok" && "animate-pulse")}>
+              <StatusBadge status={status} pulse={isActive && status === "ok"}>
                 {label}
               </StatusBadge>
               <Badge variant="outline" className="shrink-0">

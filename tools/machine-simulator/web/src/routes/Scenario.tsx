@@ -126,7 +126,10 @@ function PresetCard({ name, active, pending, onApply }: PresetCardProps) {
         {pending ? <Loader2 className="size-3.5 animate-spin text-primary-text" aria-hidden="true" /> : null}
       </div>
       <span className={cn("text-sm font-semibold", active ? "text-primary-text" : "text-text-strong")}>{label}</span>
-      <span className="text-xs text-text-muted">{description}</span>
+      {/* `text-primary-text` (not `text-text-muted`) when active — same fix/reasoning as this
+          button's own className comment above and Settings.tsx's ModeSelector hint span: axe
+          measured 4.4:1 for `text-text-muted` on the active `bg-navy-600/10` tint (Task 10). */}
+      <span className={cn("text-xs", active ? "text-primary-text" : "text-text-muted")}>{description}</span>
     </button>
   )
 }

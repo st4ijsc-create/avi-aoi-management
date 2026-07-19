@@ -48,16 +48,23 @@ const dotVariants = cva("size-1.5 shrink-0 rounded-full", {
 function StatusBadge({
   className,
   status,
+  pulse,
   children,
   ...props
-}: React.ComponentProps<"span"> & VariantProps<typeof statusBadgeVariants>) {
+}: React.ComponentProps<"span"> & VariantProps<typeof statusBadgeVariants> & { pulse?: boolean }) {
   return (
     <span
       data-slot="status-badge"
       className={cn(statusBadgeVariants({ status }), className)}
       {...props}
     >
-      <span aria-hidden="true" className={cn(dotVariants({ status }))} />
+      {/* `pulse` animates only this decorative dot (`aria-hidden`), never the badge/text — putting
+          `animate-pulse` on the whole badge (an earlier version of MachineCard did, via `className`)
+          cycles the TEXT through Tailwind's default 1 → 0.5 opacity keyframe too, which axe caught
+          dipping a `text-ok-text`-on-`bg-ok/10` badge to ~3.28:1 (mid-pulse) against its required
+          4.5:1 (Task 10 — MachineCard's active-OK status badge). A pulsing status dot next to
+          stable, always-readable text is also the more common "this is live" affordance anyway. */}
+      <span aria-hidden="true" className={cn(dotVariants({ status }), pulse && "animate-pulse")} />
       {children}
     </span>
   )

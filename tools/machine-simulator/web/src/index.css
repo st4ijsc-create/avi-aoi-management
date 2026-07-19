@@ -60,7 +60,11 @@
      color — it's an idle/disabled indicator only, always paired with a
      normal-contrast text label. */
   --ok-text: #166534;
-  --warn-text: #b45309;
+  /* Was #b45309 (amber-700) — computed to exactly 4.50:1 against the composited bg-warn/10 tint,
+     i.e. right on the AA boundary; real browser/axe rounding measured it as low as 4.05–4.37:1 in
+     practice (Task 10 — every `StatusBadge status="warn"` in the app, e.g. Dashboard's "watch" FPY
+     delta, BoardView's NTF legend, the tokens showcase). amber-800 gives real margin (6.36:1). */
+  --warn-text: #92400e;
   --danger-text: #b91c1c;
   --info-text: #1d4ed8;
 

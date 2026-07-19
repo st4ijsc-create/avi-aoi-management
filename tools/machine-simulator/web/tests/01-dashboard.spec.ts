@@ -1,0 +1,71 @@
+import { expect, test } from "@playwright/test"
+
+import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { setFleetRunning } from "./support/engine"
+import { gotoDashboard } from "./support/screens"
+import { vi as viDict } from "../src/i18n/vi"
+
+/**
+ * Dashboard happy path: empty state → Start Fleet → live tiles populate → Stop Fleet.
+ *
+ * `00-visual-and-a11y.spec.ts` already covers the empty-state screenshot/axe pass pristine; this
+ * spec is about BEHAVIOR (the fleet actually starts/stops through the real UI, against the real
+ * engine) rather than pixels — the populated grid's per-card numbers/sparklines/status colors are
+ * inherently live (see that file's top comment), so this spec verifies them with DOM/role
+ * assertions instead of a masked pixel snapshot, per the task brief's own guidance for
+ * inherently-non-deterministic regions.
+ */
+test.describe("dashboard — fleet start/stop", () => {
+  test.beforeEach(async ({ request }) => {
+    // Defensive — makes this spec independently re-runnable even if it isn't the first to touch the
+    // fleet (e.g. run in isolation via --grep).
+    await setFleetRunning(request, false)
+  })
+
+  test("empty state renders, Start Fleet populates the grid, Stop Fleet freezes it", async ({ page }) => {
+    await gotoDashboard(page)
+
+    // Empty state: no cycles yet, roster known, fleet not running. (Not `getByRole("heading", …)` —
+    // the empty-state title renders as a plain <p>, not an ARIA heading.)
+    await expect(page.getByText(viDict.dashboard.empty.title, { exact: true })).toBeVisible()
+    const startButton = page.getByRole("banner").getByRole("button", { name: viDict.shell.topBar.startFleet })
+    const stopButton = page.getByRole("banner").getByRole("button", { name: viDict.shell.topBar.stop })
+    await expect(startButton).toBeEnabled()
+    await expect(stopButton).toBeDisabled()
+
+    // Start — via the empty-state's own CTA (a second, equally-real entry point to the same action
+    // as the TopBar button exercised by the Stop half of this test below). Scoped to `main` — the
+    // TopBar's own Start button (in `<header>`, already bound above as `startButton`) carries the
+    // identical label.
+    await page.getByRole("main").getByRole("button", { name: viDict.dashboard.empty.cta }).click()
+    await expect(page.getByText(viDict.toast.fleetStarted)).toBeVisible()
+    await expect(startButton).toBeDisabled()
+    await expect(stopButton).toBeEnabled()
+
+    // The grid replaces the empty state once real cycles land — `<main>` holds exactly one `button`
+    // per roster machine once populated (the empty-state CTA button it replaces is the only other
+    // candidate, and it's gone by construction: Dashboard renders the grid XOR the empty state).
+    await expect(page.locator("main").getByRole("button")).toHaveCount(11, { timeout: 20_000 })
+
+    // At least one machine has actually cycled — the KPI's "online" count left zero.
+    await expect(page.getByText(viDict.dashboard.kpi.onlineNone)).toHaveCount(0, { timeout: 20_000 })
+
+    // A representative card rendered with its real identity (deterministic — machine codes come from
+    // the checked-in fleet.json roster, not simulated data).
+    await expect(page.getByText("SCRW-01", { exact: true })).toBeVisible()
+    await expect(page.getByText("AOI-01", { exact: true })).toBeVisible()
+
+    // Real, populated-state a11y pass — color-coded status badges / pass-rate rings / sparklines only
+    // exist once live data flows, so this is genuinely additional coverage over the pristine baseline
+    // in 00-visual-and-a11y.spec.ts, not a duplicate of it.
+    await assertNoSeriousA11yViolations(page)
+
+    // Stop — cycles already happened, so the grid stays populated (frozen), it does not revert to
+    // the empty state (`showEmpty` requires zero cycles ever, which is no longer true).
+    await stopButton.click()
+    await expect(page.getByText(viDict.toast.fleetStopped)).toBeVisible()
+    await expect(startButton).toBeEnabled()
+    await expect(stopButton).toBeDisabled()
+    await expect(page.locator("main").getByRole("button")).toHaveCount(11)
+  })
+})
