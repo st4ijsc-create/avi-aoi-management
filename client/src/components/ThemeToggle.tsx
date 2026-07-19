@@ -15,6 +15,7 @@ export function ThemeToggle() {
           variant="ghost"
           size="icon"
           className="h-10 w-10 rounded-lg"
+          aria-label="Đổi giao diện sáng/tối"
           onClick={toggleTheme}
         >
           {theme === "dark" ? (

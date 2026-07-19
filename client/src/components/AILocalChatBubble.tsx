@@ -1587,7 +1587,8 @@ export function AILocalChatBubble() {
       <Button
         size="icon"
         className={cn(
-          "h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-all relative",
+          // doc65 PRO-100: 56→48px — vẫn ≥40 chuẩn chạm nhưng đè ít nội dung góc màn hơn.
+          "h-12 w-12 rounded-full shadow-lg hover:shadow-xl transition-all relative",
           open && !minimized && "bg-muted text-muted-foreground hover:bg-muted border",
         )}
         onClick={() => {

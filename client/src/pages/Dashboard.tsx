@@ -1110,12 +1110,17 @@ export default function Dashboard() {
   };
 
   // Sparkline component
+  // doc65 PRO-100: <2 điểm không vẽ (1 điểm ra "chấm mồ côi" — artifact agent bắt được).
   const Sparkline = ({ data, dataKey, color }: { data: any[]; dataKey: string; color: string }) => {
-    if (!data || data.length === 0) return null;
+    if (!data || data.length < 2) return null;
     return (
       <div className="h-8 w-20">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
+          {/* margin 2px: đường không bị xén sát mép thẻ (artifact "vệt cắt");
+              YAxis ẩn domain min-max: chuỗi giá trị cao (FPY ~97%) hiển thị thành ĐƯỜNG
+              dao động thay vì khối area đặc lấp từ 0 — 5 sparkline cùng một họ hình. */}
+          <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+            <YAxis hide domain={["dataMin", "dataMax"]} />
             <Area 
               type="monotone" 
               dataKey={dataKey} 
@@ -1165,6 +1170,10 @@ export default function Dashboard() {
       output: d.totalProducts,
       fpy: Number(d.fpy) || 0,
       finalYield: Number(d.finalYield) || 0,
+      // doc65 PRO-100: server vốn ĐÃ trả per-day ok/ng/ntf — map để sparkline đủ 5/5 card.
+      ok: Number(d.okCount) || 0,
+      ng: Number(d.ngCount) || 0,
+      ntf: Number(d.ntfCount) || 0,
     }));
   }, [dailyStats]);
 
@@ -1450,7 +1459,7 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-success">
@@ -1458,6 +1467,7 @@ export default function Dashboard() {
                       </p>
                       <TrendIndicator value={trends?.ok} />
                     </div>
+                    <Sparkline data={sparklineData} dataKey="ok" color="var(--success)" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
                     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -1469,7 +1479,7 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-destructive">
@@ -1477,6 +1487,7 @@ export default function Dashboard() {
                       </p>
                       <TrendIndicator value={trends?.ng} goodWhen="down" />
                     </div>
+                    <Sparkline data={sparklineData} dataKey="ng" color="var(--destructive)" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
                     <XCircle className="h-5 w-5 text-destructive" />
@@ -1488,7 +1499,7 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-warning">
@@ -1496,6 +1507,7 @@ export default function Dashboard() {
                       </p>
                       <TrendIndicator value={trends?.ntf} goodWhen="down" />
                     </div>
+                    <Sparkline data={sparklineData} dataKey="ntf" color="var(--warning)" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
                     <AlertTriangle className="h-5 w-5 text-warning" />

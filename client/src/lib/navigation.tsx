@@ -2276,6 +2276,10 @@ const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
   // cạnh trên rail (finding v3/v4: 2 mục cùng khái niệm cạnh nhau). Gate khớp
   // (machine_status/machine_monitoring) → ẩn row khỏi rail; ⌘K + deep-link vẫn hoạt động.
   "/control-tower",
+  // doc 65 PRO-100 nợ-nhỏ — /oee-dashboard là REDIRECT thuần về /device-monitor?tab=oee
+  // (QA4F-1) nhưng vẫn còn row rail riêng → "2 đường vào 1 nội dung" + sidebar-active lệch
+  // (finding vòng xác nhận). Gate khớp hub → ẩn row; ⌘K vẫn tìm được.
+  "/oee-dashboard",
 ]);
 
 /** Remove collapsed rows from every group, then drop groups left empty. */

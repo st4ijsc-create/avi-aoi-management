@@ -599,14 +599,16 @@ export function OEEDashboardContent() {
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
-              {/* doc65 V1: thanh tiến trình phải mang màu THEO NGƯỠNG — 0% mà thanh teal đầy là nói dối thị giác */}
-              <Progress value={avgOEE} className={cn("mt-2", avgOEE >= 85 ? "[&>div]:bg-success" : avgOEE >= 60 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive")} />
+              {/* doc65 PRO-100: caption ĐỨNG TRƯỚC progress → hàng caption 4 card cùng độ cao
+                  (card này từng chèn progress giữa làm caption tụt ~16px so 3 card kia). */}
               <p className="text-xs text-muted-foreground mt-1">
                 {/* doc65 V5: không phán xét khi CHƯA có dữ liệu — 0 máy giám sát ≠ "cần cải thiện" */}
                 {!allOEE?.length
                   ? t('oee.noData', 'Chưa có dữ liệu')
                   : avgOEE >= 85 ? t('oee.worldClass', 'Hàng đầu (≥85%)') : avgOEE >= 60 ? t('oee.typical', 'Trung bình (60–85%)') : t('oee.needsImprovement')}
               </p>
+              {/* doc65 V1: thanh tiến trình phải mang màu THEO NGƯỠNG — 0% mà thanh teal đầy là nói dối thị giác */}
+              <Progress value={avgOEE} className={cn("mt-1.5", avgOEE >= 85 ? "[&>div]:bg-success" : avgOEE >= 60 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive")} />
             </CardContent>
           </Card>
 
@@ -636,7 +638,7 @@ export function OEEDashboardContent() {
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold whitespace-nowrap">
-                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)}
+                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0).toLocaleString("vi-VN")}
                 <span className="ml-1 text-base font-medium text-muted-foreground">{t('oee.minutes', 'phút')}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">

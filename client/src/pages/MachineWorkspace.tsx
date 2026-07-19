@@ -23,7 +23,7 @@ import { FieldDevicesContent } from "./FieldDevices";
 // No machine selected → fleet-wide views (keeps /device-monitor?tab=oee|health|field
 // working under the workspace flag, so /oee-dashboard + /machine-health redirects land right).
 const FLEET_TABS: readonly TabbedHubTab[] = [
-  { value: "oee", labelKey: "deviceHub.tabs.oee", fallback: "OEE & Downtime", icon: <Gauge className="h-4 w-4" />, Content: OEEDashboardContent },
+  { value: "oee", labelKey: "deviceHub.tabs.oee", fallback: "OEE & Dừng máy", icon: <Gauge className="h-4 w-4" />, Content: OEEDashboardContent },
   { value: "health", labelKey: "deviceHub.tabs.health", fallback: "Health", icon: <HeartPulse className="h-4 w-4" />, Content: MachineHealthMonitoringContent },
   { value: "field", labelKey: "deviceHub.tabs.field", fallback: "Field Devices", icon: <Radio className="h-4 w-4" />, Content: FieldDevicesContent },
 ];

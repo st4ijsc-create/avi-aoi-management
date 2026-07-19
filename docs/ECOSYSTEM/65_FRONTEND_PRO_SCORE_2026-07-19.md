@@ -112,6 +112,21 @@ Tiến trình: 72,2% (máy v1) → 84,2% (tổng v2) → 89,2% (v3) → 93,5% (v
 - Andon tile: mã máy wrap theo token '-' (zero-width-space), hết ellipsis nuốt hậu tố lẫn hết gãy giữa từ "CONVEY/OR".
 **Vòng xác nhận (2 agent, 6 màn):** oee **5/5** · andon 4/5 · sessions 4/5 · quality 4/5 · dashboard 3/5 · line-view 3/5 — mọi fail nêu ra đều đã vá NGAY trong batch chót ở trên (polarity NTF, UA-unknown-ish, break-token, trục X, selector, timestamp). Nit mới phát sinh (caption lệch 16px card-1 OEE, "5 Sự kiện" hoa giữa cụm, 2 marker legend cùng họ cam-đỏ, sparkline artifact chấm đơn, "Tỉ/Tỷ" chính tả toàn hệ, 2-đường-vào-OEE trên sidebar) → **nợ nhỏ vòng sau**; reviewer đối kháng mỗi vòng soi tinh hơn — điểm gate chính thức giữ ở phép đo v5: **97,1%**.
 
+## Vòng đóng-nợ (user: "xử lý nốt phần còn nợ", cùng ngày)
+- **"Nợ backend per-day" HOÁ RA KHÔNG TỒN TẠI**: đọc `server/db/statistics.ts::getDailyStats` — server ĐÃ trả `okCount/ngCount/ntfCount` mỗi ngày từ W5-E (doc 27); chỉ FE chưa map. → sparkline **5/5 KPI card** (OK xanh/NG đỏ/NTF vàng theo token) không đụng server, không restart.
+- Sparkline artifact: `<2 điểm không vẽ` (hết "chấm mồ côi") + margin 2px (hết vệt xén mép).
+- OEE: caption chuyển LÊN TRƯỚC progress → hàng caption 4 card cùng độ cao; "sự kiện"/"tổng số máy" chữ thường.
+- **Tỷ/Tỉ**: chuẩn hoá 23 chỗ "Tỉ lệ"→"Tỷ lệ" toàn vi.json (đa số 150-vs-23), JSON round-trip validate.
+- Quality: 2 series legend tách họ màu (báo-giả → xanh dương #3b82f6; lọt-lỗi giữ đỏ) + trục X dd/MM. ★GOTCHA: regex qua `bash node -e` bị nuốt backslash (`\d`→`d`) — Edit tool mới giữ nguyên; đã kiểm cả 2 chart.
+- **IA**: `/oee-dashboard` là redirect thuần (QA4F-1) nhưng còn row rail riêng → vào `COLLAPSED_INTO_HUB` (gate khớp hub) — hết "2 đường vào 1 nội dung"/sidebar-active lệch.
+- Shell: FAB 56→48px (vẫn ≥40 chạm, đè ít hơn) · `nav.beta` "Thử nghiệm"→"Beta" (brand "SYNAPSE Platform" hết ellipsis) · ThemeToggle thêm aria-label · sessions "phiên đang hoạt động" nhất quán.
+- **Theme-toggle history "thiếu"**: probe DOM xác nhận sun-icon HIỆN DIỆN trên /history → finding là misread ảnh của agent, không phải bug — đóng không sửa.
+- tsc 0 + build xanh + máy audit giữ **100% (79/79)**.
+
+**Verify agent (3 màn) — mọi mục nhắm ✓** (sparkline 5/5 không chấm mồ côi, NTF-tăng đỏ, selects hết cắt, caption 4 card OEE cùng baseline + chữ thường, legend tách hue xanh-dương/đỏ, trục X dd/MM, title Cockpit khớp nav). Findings lớp mới → **vá luôn cùng vòng**: FPY sparkline "khối đặc" → YAxis ẩn domain min-max (chuỗi ~97% thành đường dao động, 5 sparkline cùng họ) · card OK/NG/NTF `flex-1 min-w-0` (hết vệt xén mép) · "2.277 phút" có dấu nghìn · **fill ngày trống trục category** (gap 14–18/07 từng bị nén 1 bước làm dốc trend cuối méo — chèn null-day, connectNulls giữ đường liền) · nguồn "OEE & Downtime" thứ 2 = fallback MachineWorkspace + thêm key chính thức `deviceHub.tabs.oee` · 2 "Tỉ lệ" sót (nằm trong chính FIXES map — ghi đè sau normalize) sửa tận gốc map.
+**Misread ảnh đã xác minh bằng chân lý khác (KHÔNG sửa):** "báo giá" — vi.json 0 khớp, 12 "báo giả" đúng (nét dấu hỏi trên font render nhỏ); theme-toggle "thiếu" ở history — probe DOM xác nhận sun-icon hiện diện. Bài học: findings agent-thị-giác phải đối chiếu nguồn chân lý (file/DOM) trước khi sửa.
+**★GOTCHA công cụ (lặp 3 lần trong phiên):** chuỗi thay thế đi qua `bash node -e` bị nuốt backslash/lệch indentation — mọi sửa code chứa regex/JSX phải dùng Edit tool, node-script chỉ cho thao tác chuỗi thuần.
+
 ## Phương pháp — bài học tái dùng
 - **Screenshot-verify + element-attribution trước khi tin bất kỳ số nào** (2FA đá về login từng cho "PASS" ảo; cn-missing crash từng bị ErrorBoundary nuốt cho máy-100% ảo trên dist cũ).
 - Máy đo (khách quan, chạy lại được) + thị giác đa-agent đối kháng (bắt cái máy không thấy) là cặp bổ khuyết; agent mỗi vòng soi tinh hơn — dừng ở ngưỡng lợi-ích-giảm-dần và ghi advisory làm backlog.

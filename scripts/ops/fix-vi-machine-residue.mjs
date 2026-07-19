@@ -152,7 +152,7 @@ const FIXES = {
   "settings.machineType_ICT": "ICT",
   "settings.machineType_SPI": "SPI",
   "wipDashboard.subtitle": "Theo dõi WIP thời gian thực: thời gian lưu, nút thắt và điều phối chuyền",
-  "qualityCockpit.fce.subtitle": "Tỉ lệ báo giả = NTF / số lần máy báo NG · tỉ lệ lọt lỗi tính từ dữ liệu truy vết trạm — hai chỉ số cần cân đối khi tinh chỉnh",
+  "qualityCockpit.fce.subtitle": "Tỷ lệ báo giả = NTF / số lần máy báo NG · tỷ lệ lọt lỗi tính từ dữ liệu truy vết trạm — hai chỉ số cần cân đối khi tinh chỉnh",
   "qualityCockpit.fce.escapeUnavailable": "Chưa có dữ liệu truy vết trạm trong khoảng này",
   "qualityCockpit.fce.escapeScopeNote": "Phạm vi lọt lỗi tính theo sản phẩm + khoảng thời gian (dữ liệu truy vết không gắn với từng máy)",
   "qualityCockpit.corrections.title": "Máy hay báo giả (từ nhật ký sửa kết quả)",
@@ -168,6 +168,13 @@ const FIXES = {
   "oee.downtimeToday": "Thời gian dừng hôm nay",
   "oee.minutes": "phút",
   "qualityCockpit.title": "Cockpit chất lượng",
+  // caption sau con số: chữ thường giữa cụm
+  "oee.events": "sự kiện",
+  "oee.totalMachines": "tổng số máy",
+  "session.sessionsLoggedIn": "phiên đang hoạt động",
+  // badge gọn để tên brand "SYNAPSE Platform" trong rail không bị ellipsis
+  "nav.beta": "Beta",
+  "deviceHub.tabs.oee": "OEE & Dừng máy",
 };
 
 const raw = fs.readFileSync(FILE, "utf8");
@@ -180,7 +187,7 @@ for (const [path, val] of Object.entries(FIXES)) {
   const leaf = parts[parts.length - 1];
   if (o && typeof o[leaf] === "string") {
     if (o[leaf] !== val) { if (!dry) o[leaf] = val; applied++; }
-  } else if (o && o[leaf] === undefined && path.startsWith("settings.machineType_")) {
+  } else if (o && o[leaf] === undefined && path.startsWith("settings.machineType_") || path === "deviceHub.tabs.oee") {
     // nhóm nhãn machineType: key MỚI được phép thêm (fallback util đọc key này)
     if (!dry) o[leaf] = val;
     applied++;

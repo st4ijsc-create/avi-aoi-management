@@ -67,7 +67,21 @@ export function FalseCallEscapePanel({ scope }: { scope: FalseCallEscapeScope })
       row.escapeRate = p.escapeRate;
       byDay.set(p.day, row);
     }
-    return Array.from(byDay.values()).sort((a, b) => a.day.localeCompare(b.day));
+    const sorted = Array.from(byDay.values()).sort((a, b) => a.day.localeCompare(b.day));
+    // doc65 PRO-100: trục category — ngày TRỐNG phải được chèn (null) để khoảng cách tick
+    // tỷ lệ với thời gian thật; thiếu nó, gap 14–18/07 bị nén thành 1 bước → dốc trend cuối
+    // trông sai. connectNulls trên 2 Line đã có sẵn nên đường vẫn liền.
+    if (sorted.length > 1) {
+      const filled: typeof sorted = [];
+      const first = new Date(sorted[0].day + "T00:00:00");
+      const last = new Date(sorted[sorted.length - 1].day + "T00:00:00");
+      for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        filled.push(byDay.get(key) ?? { day: key });
+      }
+      return filled;
+    }
+    return sorted;
   }, [data]);
 
   if (isLoading) {
@@ -163,7 +177,8 @@ export function FalseCallEscapePanel({ scope }: { scope: FalseCallEscapeScope })
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                  {/* doc65 PRO-100: trục ngày dd/MM đồng bộ filter vi-VN */}
+                  <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d)); return m ? `${m[3]}/${m[2]}` : String(d); }} />
                   <YAxis tick={{ fontSize: 10 }} unit="%" />
                   <Tooltip
                     formatter={(value: any, name: string) => [
@@ -176,7 +191,7 @@ export function FalseCallEscapePanel({ scope }: { scope: FalseCallEscapeScope })
                     type="monotone"
                     dataKey="falseCallRate"
                     name={t("qualityCockpit.fce.falseCallRate")}
-                    stroke="#f97316"
+                    stroke="#3b82f6"
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     connectNulls
