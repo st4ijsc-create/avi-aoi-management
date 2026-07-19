@@ -437,7 +437,17 @@
       "deploy": "Deploy",
       "awaiting": "items awaiting a decision",
       "open": "Open full inbox",
-      "empty": "You're all caught up."
+      "empty": "You're all caught up.",
+      "approve": "Approve",
+      "approveAria": "Approve: {{title}}",
+      "dismiss": "Dismiss",
+      "dismissAria": "Dismiss: {{title}}",
+      "approved": "Action approved",
+      "dismissed": "Dismissed",
+      "actionFailed": "Could not complete the action",
+      "confirmTitle": "Approve this AI action?",
+      "confirmBody": "The proposed action below will be executed immediately.",
+      "openItemAria": "Review in full inbox: {{title}}"
     },
     "links": {
       "title": "More",

@@ -17,6 +17,16 @@
  *
  * Realtime: U1 socket-first (invalidate drillDown on inspection/ng/yield/quality
  * events, debounced) + a 60s poll fallback so the numbers never freeze.
+ *
+ * doc 67 W8 — DRILL-STATE VÀO URL (deep-link):
+ *   /drill-down?range=today|7d|30d|all&corp=<code>&factory=<id>&line=<id>&focus=<machineCode>
+ * Tầng đang xem suy ra từ param sâu nhất (line → tầng máy, factory → tầng line,
+ * corp → tầng nhà máy). Mỗi bước drill là 1 history entry (replace:false) → nút
+ * Back của trình duyệt lùi đúng MỘT TẦNG. Param thiếu cha (?line=7 trần từ
+ * Andon) hoặc ?focus=<machineCode> được hydrate/validate qua master data
+ * (factory/line/workshop/station/machine.list) rồi normalize URL bằng replace;
+ * id không tồn tại → rơi về tầng trên. focus=<machineCode> highlight node (ring
+ * 5s + scroll tới).
  */
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -39,6 +49,7 @@ import {
   chartAxisTick,
 } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -66,6 +77,7 @@ import {
   Activity,
   BarChart3,
   Info,
+  Crosshair,
 } from "lucide-react";
 import {
   BarChart,
@@ -137,6 +149,56 @@ function drillRangeFrom(range: DrillRange): Date | undefined {
   return start;
 }
 
+/**
+ * doc 67 W8 — sentinel "chưa gán tập đoàn" (khớp UNASSIGNED_CORPORATE_CODE phía
+ * server annotationRouters): corporateStats phát code 'Unknown' cho inspection
+ * có corporateCode NULL/rỗng, và factoriesByCorporate hiểu sentinel = match NULL.
+ */
+const UNASSIGNED_CORPORATE_CODE = "Unknown";
+
+/** doc 67 W8 — drill params đọc từ URL (chưa validate với master data). */
+interface DrillUrlParams {
+  range: DrillRange;
+  corp?: string;
+  factoryId?: number;
+  lineId?: number;
+  /** Deep-link từ Andon/alarm: mã máy cần drill tới + highlight (ring 5s). */
+  focus?: string;
+}
+
+function parsePositiveInt(raw: string | null): number | undefined {
+  if (raw == null) return undefined;
+  const n = Number.parseInt(raw, 10);
+  // id âm (sentinel -1 "chưa gán") / NaN không bao giờ là id drill hợp lệ.
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function parseDrillSearch(search: string): DrillUrlParams {
+  const sp = new URLSearchParams(search);
+  return {
+    range: parseDrillRange(sp.get("range")),
+    corp: sp.get("corp")?.trim() || undefined,
+    factoryId: parsePositiveInt(sp.get("factory")),
+    lineId: parsePositiveInt(sp.get("line")),
+    focus: sp.get("focus")?.trim() || undefined,
+  };
+}
+
+/**
+ * doc 67 W8 — search-string CHUẨN của drill-down (thứ tự param cố định →
+ * effect normalize so sánh chuỗi hội tụ, không loop replace). range luôn ghi
+ * tường minh (W6: số liệu luôn khai kỳ).
+ */
+function buildDrillSearch(p: DrillUrlParams): string {
+  const q = new URLSearchParams();
+  q.set("range", p.range);
+  if (p.corp) q.set("corp", p.corp);
+  if (p.factoryId != null) q.set("factory", String(p.factoryId));
+  if (p.lineId != null) q.set("line", String(p.lineId));
+  if (p.focus) q.set("focus", p.focus);
+  return q.toString();
+}
+
 /** Normalise any tier's stat into the shared KPI row. */
 function toRow(item: AnyStat): DrillRow {
   const id = "id" in item ? item.id : undefined;
@@ -159,21 +221,143 @@ export default function DrillDownDashboard(): React.JSX.Element {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const [drillState, setDrillState] = useState<DrillDownState>({ level: "corporate" });
 
-  // ── doc 67 W6: kỳ dữ liệu — nguồn sự thật là URL (?range=today|7d|30d|all),
-  //    mặc định "Hôm nay". Đổi kỳ chỉ ghi URL (replace) → không rác history. ──
-  const range = parseDrillRange(new URLSearchParams(search).get("range"));
+  // ── doc 67 W8: NGUỒN SỰ THẬT của drill-state là URL (?corp/&factory/&line +
+  //    ?focus deep-link). F5 giữ chỗ, link gửi được, Back lùi đúng 1 tầng. ─────
+  const params = useMemo(() => parseDrillSearch(search), [search]);
+
+  // ── doc 67 W6: kỳ dữ liệu — URL (?range=today|7d|30d|all), mặc định "Hôm nay".
+  //    Đổi kỳ chỉ ghi URL (replace, GIỮ nguyên drill params) → không rác history.
+  const range = params.range;
   const rangeFrom = drillRangeFrom(range);
   const rangeLabel = DRILL_RANGE_LABELS[range];
-  const handleRangeChange = useCallback(
-    (value: string) => {
-      setLocation(`/drill-down?range=${parseDrillRange(value)}`, { replace: true });
-    },
-    [setLocation],
-  );
   // Input kỳ truyền xuống cả 4 tầng (máy cũng nhận — thiếu thì tổng các tầng lệch).
   const periodInput = rangeFrom ? { from: rangeFrom } : {};
+
+  // ── W8: master data để (a) hydrate tên node khi vào bằng deep-link, (b)
+  //    validate id (không tồn tại → rơi về tầng trên), (c) resolve cha còn thiếu
+  //    (?line=7 trần từ Andon) và ?focus=<machineCode> → line chứa máy. Chỉ fetch
+  //    khi URL thật sự cần (enabled), cache 5 phút — KHÔNG poll. ───────────────
+  const needFactoryMaster = params.factoryId != null || params.lineId != null || params.focus != null;
+  const needLineMaster = params.lineId != null || params.focus != null;
+  const { data: masterFactories } = trpc.factory.list.useQuery(undefined, {
+    enabled: needFactoryMaster,
+    staleTime: 300_000,
+  });
+  const { data: masterWorkshops } = trpc.workshop.list.useQuery(undefined, {
+    enabled: needLineMaster,
+    staleTime: 300_000,
+  });
+  const { data: masterLines } = trpc.line.list.useQuery(undefined, {
+    enabled: needLineMaster,
+    staleTime: 300_000,
+  });
+  const { data: masterStations } = trpc.station.list.useQuery(undefined, {
+    enabled: params.focus != null,
+    staleTime: 300_000,
+  });
+  const { data: masterMachines } = trpc.machine.list.useQuery(undefined, {
+    enabled: params.focus != null,
+    staleTime: 300_000,
+  });
+
+  // ── W8: resolve + validate URL params với master data. Khi master chưa về
+  //    (pending) thì dùng nguyên params (optimistic) và HOÃN normalize URL. ────
+  const resolved = useMemo(() => {
+    let { corp, factoryId, lineId, focus } = params;
+    const focusMastersReady =
+      !!masterMachines && !!masterStations && !!masterLines && !!masterWorkshops && !!masterFactories;
+    const lineMastersReady = !!masterLines && !!masterWorkshops && !!masterFactories;
+    const pending =
+      (focus != null && !focusMastersReady) ||
+      (lineId != null && !lineMastersReady) ||
+      (factoryId != null && !masterFactories);
+
+    // focus=<machineCode> → line chứa máy (đè lên line/factory/corp nếu lệch).
+    if (focus != null && focusMastersReady) {
+      const machine = masterMachines!.find((m) => m.code === focus);
+      const station = machine ? masterStations!.find((s) => s.id === machine.stationId) : undefined;
+      if (station) lineId = station.lineId;
+      else focus = undefined; // mã máy không tồn tại → bỏ focus, giữ phần còn lại
+    }
+    // line → suy factory/corp thật từ master data (validate + hydrate cha thiếu).
+    if (lineId != null && lineMastersReady) {
+      const line = masterLines!.find((l) => l.id === lineId);
+      if (!line) {
+        lineId = undefined; // line không tồn tại → rơi về tầng trên
+      } else {
+        const workshop = masterWorkshops!.find((w) => w.id === line.workshopId);
+        const factory = workshop ? masterFactories!.find((f) => f.id === workshop.factoryId) : undefined;
+        if (factory) {
+          factoryId = factory.id;
+          corp = factory.corporateCode ?? UNASSIGNED_CORPORATE_CODE;
+        }
+      }
+    }
+    // factory → validate + suy corp (corporateCode NULL → sentinel 'Unknown').
+    if (factoryId != null && masterFactories) {
+      const factory = masterFactories.find((f) => f.id === factoryId);
+      if (!factory) {
+        factoryId = undefined; // factory không tồn tại → rơi về tầng trên
+      } else {
+        corp = factory.corporateCode ?? UNASSIGNED_CORPORATE_CODE;
+      }
+    }
+    // corp: không có danh mục tập đoàn độc lập phía client (corporateStats sinh
+    // từ inspection + sentinel) → chấp nhận chuỗi bất kỳ; server trả rỗng nếu lạ.
+    return { corp, factoryId, lineId, focus, pending };
+  }, [params, masterFactories, masterWorkshops, masterLines, masterStations, masterMachines]);
+
+  // ── W8: normalize URL (replace — không thêm history) khi params ≠ dạng chuẩn:
+  //    thêm cha còn thiếu, bỏ id chết, range tường minh. So sánh chuỗi chuẩn
+  //    (thứ tự param cố định trong buildDrillSearch) nên hội tụ sau 1 replace. ──
+  useEffect(() => {
+    if (resolved.pending) return;
+    const desired = buildDrillSearch({
+      range,
+      corp: resolved.corp,
+      factoryId: resolved.factoryId,
+      lineId: resolved.lineId,
+      focus: resolved.focus,
+    });
+    const current = search.startsWith("?") ? search.slice(1) : search;
+    if (desired !== current) setLocation(`/drill-down?${desired}`, { replace: true });
+  }, [resolved, range, search, setLocation]);
+
+  // ── W8: cache tên node đã biết lúc click (URL chỉ mang id/code) — breadcrumb
+  //    hiện tên ngay, không đợi master list; master data ghi đè khi về. ─────────
+  const nameHintRef = useRef(new Map<string, string>());
+  const rememberName = useCallback((key: string, name: string) => {
+    nameHintRef.current.set(key, name);
+  }, []);
+
+  const drillState = useMemo<DrillDownState>(() => {
+    const { corp, factoryId, lineId } = resolved;
+    const corporateName =
+      corp == null
+        ? undefined
+        : corp === UNASSIGNED_CORPORATE_CODE
+          ? "Chưa gán tập đoàn"
+          : nameHintRef.current.get(`c:${corp}`) ?? corp;
+    const factoryName =
+      factoryId != null
+        ? masterFactories?.find((f) => f.id === factoryId)?.name ?? nameHintRef.current.get(`f:${factoryId}`)
+        : undefined;
+    const lineName =
+      lineId != null
+        ? masterLines?.find((l) => l.id === lineId)?.name ?? nameHintRef.current.get(`l:${lineId}`)
+        : undefined;
+    if (lineId != null) {
+      return { level: "machine", corporateCode: corp, corporateName, factoryId, factoryName, lineId, lineName };
+    }
+    if (factoryId != null) {
+      return { level: "line", corporateCode: corp, corporateName, factoryId, factoryName };
+    }
+    if (corp != null) {
+      return { level: "factory", corporateCode: corp, corporateName };
+    }
+    return { level: "corporate" };
+  }, [resolved, masterFactories, masterLines]);
 
   // ── Queries per level. Realtime = socket-first (U1 invalidate); refetchInterval
   //    60s is the POLL FALLBACK so an enabled level never freezes if the socket
@@ -227,26 +411,60 @@ export default function DrillDownDashboard(): React.JSX.Element {
     [],
   );
 
-  // ── Navigation within the drill ──
-  const handleNavigate = useCallback((level: DrillLevel, data?: Partial<DrillDownState>) => {
-    if (level === "corporate") setDrillState({ level: "corporate" });
-    else setDrillState({ level, ...data } as DrillDownState);
-  }, []);
+  // ── W8: mọi điều hướng drill = ghi URL, replace:false → mỗi bước drill là 1
+  //    history entry, nút Back của trình duyệt lùi đúng MỘT TẦNG (drill 3 tầng
+  //    → Back 3 lần về gốc). focus chủ động bỏ khi drill tiếp (highlight đã xong).
+  const pushDrill = useCallback(
+    (p: { corp?: string; factoryId?: number; lineId?: number; focus?: string }) => {
+      setLocation(`/drill-down?${buildDrillSearch({ range, ...p })}`, { replace: false });
+    },
+    [range, setLocation],
+  );
 
-  const drillInto = useCallback((row: DrillRow) => {
-    setDrillState((prev) => {
-      if (prev.level === "corporate") {
-        return { level: "factory", corporateCode: row.code, corporateName: row.name };
+  // Đổi kỳ chỉ replace URL và GIỮ nguyên vị trí drill + focus.
+  const handleRangeChange = useCallback(
+    (value: string) => {
+      setLocation(
+        `/drill-down?${buildDrillSearch({
+          range: parseDrillRange(value),
+          corp: resolved.corp,
+          factoryId: resolved.factoryId,
+          lineId: resolved.lineId,
+          focus: resolved.focus,
+        })}`,
+        { replace: true },
+      );
+    },
+    [setLocation, resolved],
+  );
+
+  // ── Navigation within the drill (breadcrumb / stepper về tầng đã qua) ──
+  const handleNavigate = useCallback(
+    (level: DrillLevel, data?: Partial<DrillDownState>) => {
+      if (level === "corporate") pushDrill({});
+      else if (level === "factory") pushDrill({ corp: data?.corporateCode });
+      else if (level === "line") pushDrill({ corp: data?.corporateCode, factoryId: data?.factoryId });
+      else pushDrill({ corp: data?.corporateCode, factoryId: data?.factoryId, lineId: data?.lineId });
+    },
+    [pushDrill],
+  );
+
+  const drillInto = useCallback(
+    (row: DrillRow) => {
+      const { level } = drillState;
+      if (level === "corporate" && row.code) {
+        rememberName(`c:${row.code}`, row.name);
+        pushDrill({ corp: row.code });
+      } else if (level === "factory" && row.id != null) {
+        rememberName(`f:${row.id}`, row.name);
+        pushDrill({ corp: resolved.corp, factoryId: row.id });
+      } else if (level === "line" && row.id != null) {
+        rememberName(`l:${row.id}`, row.name);
+        pushDrill({ corp: resolved.corp, factoryId: resolved.factoryId, lineId: row.id });
       }
-      if (prev.level === "factory") {
-        return { ...prev, level: "line", factoryId: row.id, factoryName: row.name };
-      }
-      if (prev.level === "line") {
-        return { ...prev, level: "machine", lineId: row.id, lineName: row.name };
-      }
-      return prev;
-    });
-  }, []);
+    },
+    [drillState, resolved, pushDrill, rememberName],
+  );
 
   // ── Leaf-out navigation (continuous spine) ──
   const openLineView = useCallback((lineId: number) => setLocation(`/line-view/${lineId}`), [setLocation]);
@@ -301,9 +519,99 @@ export default function DrillDownDashboard(): React.JSX.Element {
   // W4 (ISA-101): NG bars scale against the tier's max NG — scaled by max Output
   // they were invisible even on the worst node.
   const maxNg = Math.max(...rows.map((r) => r.ng), 1);
-  // W4: worst yield of the tier — badge tone follows the same thresholds as the
-  // per-row yield badge (yieldTone) instead of unconditional destructive.
-  const lowestYield = rows.length > 0 ? Math.min(...rows.map((r) => r.yieldRate)) : 0;
+  // ── doc 67 W8 (việc 2): 'Yield thấp nhất' hết là con số chết — chọn NODE xấu
+  //    nhất của tầng (loại hàng isUnassigned + hàng không có sản lượng: line
+  //    đứng im 0% không phải "yield tệ"), hiển thị TÊN + giá trị, click drill
+  //    thẳng vào node đó. Tone theo ngưỡng yieldTone như W4. ───────────────────
+  const worstRow = useMemo<DrillRow | null>(() => {
+    let worst: DrillRow | null = null;
+    for (const r of rows) {
+      if (r.isUnassigned || r.total <= 0) continue;
+      if (!worst || r.yieldRate < worst.yieldRate) worst = r;
+    }
+    return worst;
+  }, [rows]);
+
+  // ── W8 (việc 3): highlight node theo deep-link ?focus=<machineCode> (hoặc khi
+  //    bấm node xấu nhất ở tầng máy) — ring 5s rồi tự tắt, node tự scroll tới. ──
+  const [highlightCode, setHighlightCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (params.focus) setHighlightCode(params.focus);
+  }, [params.focus]);
+  useEffect(() => {
+    // Chỉ bắt đầu đếm 5s khi node highlight THẬT SỰ có mặt trong danh sách đang render.
+    if (!highlightCode || !rows.some((r) => r.code === highlightCode)) return;
+    const timer = setTimeout(() => setHighlightCode(null), 5_000);
+    return () => clearTimeout(timer);
+  }, [highlightCode, rows]);
+
+  // Click 'Yield thấp nhất': tầng còn drill được → drillInto; tầng máy (lá) →
+  // highlight node (ring 5s + scroll) thay vì rời trang.
+  const focusWorstRow = useCallback(() => {
+    if (!worstRow) return;
+    if (drillState.level === "machine") setHighlightCode(worstRow.code ?? null);
+    else drillInto(worstRow);
+  }, [worstRow, drillState.level, drillInto]);
+
+  // ── W8 (việc 2): 'Đi tới điểm xấu nhất' — tự drill theo nhánh yield thấp nhất
+  //    qua các tầng (corporate→factory→line, mỗi tầng chọn min yieldRate, loại
+  //    isUnassigned/không sản lượng), dừng ở tầng máy của line xấu nhất. Đích
+  //    cuối là MỘT history entry (Back 1 lần về chỗ đứng trước khi bấm). ────────
+  const [walkingToWorst, setWalkingToWorst] = useState(false);
+  const goToWorstPath = useCallback(async () => {
+    if (walkingToWorst) return;
+    setWalkingToWorst(true);
+    try {
+      const pInput = rangeFrom ? { from: rangeFrom } : {};
+      const pickWorst = <T extends { total: number; yieldRate: number; isUnassigned?: boolean }>(
+        list: readonly T[],
+      ): T | null => {
+        let worst: T | null = null;
+        for (const item of list) {
+          if (item.isUnassigned || item.total <= 0) continue;
+          if (!worst || item.yieldRate < worst.yieldRate) worst = item;
+        }
+        return worst;
+      };
+
+      let corp = drillState.corporateCode;
+      let factoryId = drillState.factoryId;
+      const lineId = drillState.lineId;
+
+      if (lineId != null) {
+        // Đã đứng ở tầng máy — điểm xấu nhất là máy xấu nhất ngay trước mặt.
+        if (worstRow?.code) setHighlightCode(worstRow.code);
+        return;
+      }
+      if (corp == null) {
+        const corps = await utils.drillDown.corporateStats.fetch(rangeFrom ? { from: rangeFrom } : undefined);
+        const worst = pickWorst(corps ?? []);
+        if (!worst) return;
+        corp = worst.code;
+        rememberName(`c:${worst.code}`, worst.name);
+      }
+      if (factoryId == null) {
+        const factories = await utils.drillDown.factoriesByCorporate.fetch({ corporateCode: corp, ...pInput });
+        const worst = pickWorst(factories ?? []);
+        if (!worst) {
+          pushDrill({ corp }); // không còn nhánh drill được — dừng ở tầng sâu nhất đã tới
+          return;
+        }
+        factoryId = worst.id;
+        rememberName(`f:${worst.id}`, worst.name);
+      }
+      const lines = await utils.drillDown.linesByFactory.fetch({ factoryId, ...pInput });
+      const worstLine = pickWorst(lines ?? []);
+      if (!worstLine) {
+        pushDrill({ corp, factoryId });
+        return;
+      }
+      rememberName(`l:${worstLine.id}`, worstLine.name);
+      pushDrill({ corp, factoryId, lineId: worstLine.id });
+    } finally {
+      setWalkingToWorst(false);
+    }
+  }, [walkingToWorst, rangeFrom, drillState, worstRow, utils, pushDrill, rememberName]);
 
   const pieData = [
     { name: "OK", value: rollup.ok, color: "var(--success)" },
@@ -490,6 +798,8 @@ export default function DrillDownDashboard(): React.JSX.Element {
                         icon={levelMeta.icon}
                         onDrill={behaviour.onDrill}
                         leafAction={behaviour.leafAction}
+                        // W8 (việc 3): deep-link ?focus=<machineCode> / node xấu nhất → ring 5s.
+                        highlighted={highlightCode != null && row.code === highlightCode}
                       />
                     );
                   })}
@@ -568,14 +878,39 @@ export default function DrillDownDashboard(): React.JSX.Element {
                   <span className="text-sm text-muted-foreground">{t("dashboard.highestYield", "Highest yield")}</span>
                   <Badge variant="default">{Math.max(...rows.map((r) => r.yieldRate), 0).toFixed(1)}%</Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">{t("dashboard.lowestYield", "Lowest yield")}</span>
-                  {/* W4: tone theo ngưỡng yieldTone (≥95 trung tính · 90–95 warning ·
-                      <90 destructive) thay vì đỏ vô điều kiện. */}
-                  <Badge variant={yieldTone(lowestYield)}>
-                    {rows.length > 0 ? lowestYield.toFixed(1) : 0}%
-                  </Badge>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="shrink-0 text-sm text-muted-foreground">{t("dashboard.lowestYield", "Lowest yield")}</span>
+                  {/* W8 (việc 2): hết con số chết — TÊN node xấu nhất + giá trị,
+                      click → drill thẳng vào node (tầng máy → highlight ring).
+                      Tone giữ ngưỡng yieldTone (W4). Loại isUnassigned + node
+                      không sản lượng khỏi lựa chọn min. */}
+                  {worstRow ? (
+                    <button
+                      type="button"
+                      onClick={focusWorstRow}
+                      title={`${worstRow.name} — bấm để đi tới node này`}
+                      className="flex min-h-11 min-w-0 items-center justify-end gap-2 rounded-md px-1.5 text-right transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="min-w-0 truncate text-sm font-medium">{worstRow.name}</span>
+                      <Badge variant={yieldTone(worstRow.yieldRate)}>{worstRow.yieldRate.toFixed(1)}%</Badge>
+                    </button>
+                  ) : (
+                    <Badge variant="outline">—</Badge>
+                  )}
                 </div>
+                {/* W8 (việc 2): tự drill theo nhánh yield thấp nhất qua các tầng
+                    (corporate→factory→line), dừng ở tầng máy của line xấu nhất. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 w-full gap-1.5"
+                  onClick={() => void goToWorstPath()}
+                  disabled={walkingToWorst || isLoading || worstRow == null}
+                >
+                  <Crosshair className="h-4 w-4" />
+                  {walkingToWorst ? "Đang tìm điểm xấu nhất…" : "Đi tới điểm xấu nhất"}
+                </Button>
               </div>
             </SectionCard>
           </div>

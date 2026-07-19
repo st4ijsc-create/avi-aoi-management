@@ -29,7 +29,7 @@
  * short-TTL cache below. `kpiSummary` reuses already-aggregated service functions.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   factories,
@@ -38,6 +38,7 @@ import {
   safetyEvents,
   sites,
   siteKpiRollup,
+  oeeMetrics,
 } from "../../../drizzle/schema";
 import { tasks, robots } from "../../../drizzle/schema";
 import { buildSceneGraph, type SceneGraph, type DeviceNode, type NormalizedState } from "../twin/sceneGraph";
@@ -83,6 +84,13 @@ export interface KpiField<T> {
   source: string;
   /** false when the source is off / errored → the FE renders "—" not "0". */
   available: boolean;
+  /**
+   * doc67 W8 [P2] — optional FRESHNESS label when the value comes from a
+   * fallback tier (e.g. "hôm nay" = mean of today's persisted snapshots, not
+   * live). FE renders it as a small honest label next to the value. Absent for
+   * live-sourced values (backward compatible).
+   */
+  sourceLabel?: string;
 }
 
 export interface KpiSummary {
@@ -563,6 +571,41 @@ export async function buildKpiSummary(user: InboxUser, scope?: HierarchyScope): 
       : field<{ a: number | null; p: number | null; q: number | null; oee: number | null }>(null, "oeeService.getAllMachinesOEELive", false);
   } catch {
     oee = field<{ a: number | null; p: number | null; q: number | null; oee: number | null }>(null, "oeeService.getAllMachinesOEELive", false);
+  }
+
+  // doc67 W8 [P2] — FALLBACK TẦNG 2: nguồn live rỗng / không đủ yếu tố (oee null)
+  // → mean OEE NGÀY HIỆN TẠI từ các snapshot oee_metrics đã persist (bởi
+  // oeeService.persistOEEMetric / oeeSnapshotScheduler — KHÔNG tính lại OEE ở
+  // đây, chỉ lấy mean qua aggregateOee sẵn có). Cột lưu %×100 → /100 trước khi
+  // gộp. Kèm sourceLabel "hôm nay" để FE hiện nhãn độ-tươi trung thực; không có
+  // snapshot hôm nay → giữ honest null như cũ.
+  if ((!oee.available || oee.value?.oee == null) && db) {
+    try {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const snapRows = await db
+        .select({
+          availability: oeeMetrics.availability,
+          performance: oeeMetrics.performance,
+          quality: oeeMetrics.quality,
+          oee: oeeMetrics.oee,
+        })
+        .from(oeeMetrics)
+        .where(gte(oeeMetrics.timestamp, startOfToday));
+      const agg = aggregateOee(
+        (snapRows as Array<{ availability: number | null; performance: number | null; quality: number | null; oee: number | null }>).map((r) => ({
+          availability: r.availability != null ? Number(r.availability) / 100 : null,
+          performance: r.performance != null ? Number(r.performance) / 100 : null,
+          quality: r.quality != null ? Number(r.quality) / 100 : null,
+          oee: r.oee != null ? Number(r.oee) / 100 : null,
+        })),
+      );
+      if (agg.oee != null) {
+        oee = { ...field(agg, "oee_metrics (mean snapshot hôm nay)", true), sourceLabel: "hôm nay" };
+      }
+    } catch {
+      /* snapshot table absent/errored → keep the honest null from tier 1 */
+    }
   }
 
   // ── WIP + alarms + fleet + sites (direct reads over the EXISTING data paths) ──

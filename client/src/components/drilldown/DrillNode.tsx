@@ -59,6 +59,12 @@ export interface DrillNodeProps {
   leafAction?: DrillNodeLeafAction;
   /** Small tier icon shown before the name. */
   icon?: React.ReactNode;
+  /**
+   * doc 67 W8 (việc 3): highlight node theo deep-link (?focus=<machineCode> từ
+   * Andon/alarm) hoặc 'Yield thấp nhất' — ring nổi bật (page tự tắt sau 5s) và
+   * node tự cuộn vào giữa màn hình khi bật.
+   */
+  highlighted?: boolean;
 }
 
 /** Shared yield badge tone (W4: also drives the dashboard's quick-stat badges). */
@@ -75,18 +81,29 @@ export function DrillNode({
   onDrill,
   leafAction,
   icon,
+  highlighted,
 }: DrillNodeProps): React.JSX.Element {
   // Whole-row click: prefer continuing the drill; otherwise (leaf) open the cockpit.
   const primary = onDrill ?? leafAction?.onClick;
   const interactive = typeof primary === "function";
 
+  // W8 (việc 3): khi được highlight (deep-link Andon/alarm) tự cuộn node vào
+  // giữa viewport — ring mà nằm dưới fold thì highlight vô nghĩa.
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (highlighted) rootRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted]);
+
   return (
     <div
+      ref={rootRef}
       className={cn(
         "rounded-lg border p-4 transition-colors",
         interactive && "cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         // W1: hàng "chưa gán" render mờ (dữ liệu thật nhưng thiếu mapping master data).
         data.isUnassigned && "border-dashed bg-muted/30",
+        // W8: ring highlight theo deep-link/điểm-xấu-nhất (page tắt sau 5s).
+        highlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}

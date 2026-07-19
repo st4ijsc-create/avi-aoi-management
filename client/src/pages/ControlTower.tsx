@@ -29,7 +29,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import {
   LayoutDashboard, RefreshCw, Gauge, Boxes, AlertTriangle, Bot, Network,
-  Sparkles, Zap,
+  Sparkles, Zap, Minimize2,
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
@@ -81,20 +81,37 @@ export default function ControlTower(): React.JSX.Element {
     const raw = new URLSearchParams(search).get("role");
     return raw && (PERSONAS as readonly string[]).includes(raw) ? (raw as Persona) : null;
   }, [search]);
+
+  // ── doc 67 W8 — kiosk TV wall (?kiosk=1) ───────────────────────────────────
+  // TÁI DÙNG cơ chế hệ thống sẵn có: App.tsx gọi useKioskMode() toàn cục (đọc
+  // ?kiosk=1 một lần lúc mount, gắn .kiosk-mode lên <html>) và index.css ~693 ẩn
+  // [data-app-chrome="sidebar"/"header"] + zero padding main. Trang này chỉ thêm
+  // phần RIÊNG cho Control Tower: (a) tự chọn persona 'Vận hành' (alarm rail +
+  // andon + downtime — hợp treo xưởng) trừ khi ?role= chỉ định khác; (b) phóng
+  // nội dung ~1.3× cho khoảng cách xem TV (class biến thể [zoom:1.3] trên
+  // container); (c) ẩn RelatedViews + persona selector + nút Làm mới (TV không
+  // tương tác — auto-refresh socket/poll GIỮ NGUYÊN); (d) nút thoát nhỏ ở góc.
+  // Cùng cách nhận diện với useKioskMode: kiosk=1 hoặc kiosk=true.
+  const kiosk = useMemo(() => {
+    const raw = new URLSearchParams(search).get("kiosk");
+    return raw === "1" || raw === "true";
+  }, [search]);
   const storedRef = useRef<Persona | null>(getStoredPersona());
+  // W8: kiosk (không ?role=) THẮNG lựa chọn đã lưu — TV wall luôn mở 'Vận hành'.
   const [persona, setPersonaState] = useState<Persona>(
-    () => urlPersona ?? storedRef.current ?? personaForRole(user?.role),
+    () => urlPersona ?? (kiosk ? "operations" : storedRef.current ?? personaForRole(user?.role)),
   );
-  // ?role= changes (client-side nav) take effect immediately.
+  // ?role= changes (client-side nav) take effect immediately; kiosk falls back to operations.
   useEffect(() => {
     if (urlPersona != null) setPersonaState(urlPersona);
-  }, [urlPersona]);
-  // Once auth resolves and the user never picked one (and no ?role=), adopt the role default.
+    else if (kiosk) setPersonaState("operations");
+  }, [urlPersona, kiosk]);
+  // Once auth resolves and the user never picked one (and no ?role=/?kiosk), adopt the role default.
   useEffect(() => {
-    if (urlPersona == null && storedRef.current == null && !loading) {
+    if (urlPersona == null && !kiosk && storedRef.current == null && !loading) {
       setPersonaState(personaForRole(user?.role));
     }
-  }, [urlPersona, loading, user?.role, setPersonaState]);
+  }, [urlPersona, kiosk, loading, user?.role, setPersonaState]);
 
   const setPersona = useCallback(
     (p: Persona) => {
@@ -167,9 +184,21 @@ export default function ControlTower(): React.JSX.Element {
 
   const panelKeys = PERSONA_PANELS[persona];
 
+  // W8: thoát kiosk = bỏ ?kiosk khỏi URL bằng điều hướng ĐẦY ĐỦ (reload), vì
+  // useKioskMode() ở App chỉ đọc location.search MỘT LẦN lúc mount ([] deps) —
+  // client-side setLocation sẽ không gỡ .kiosk-mode khỏi <html>.
+  const exitKiosk = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    const url = new URL(window.location.href);
+    url.searchParams.delete("kiosk");
+    window.location.assign(url.pathname + url.search + url.hash);
+  }, []);
+
   return (
     <DashboardLayout>
-      <PageContainer>
+      {/* W8: [zoom:1.3] phóng toàn bộ nội dung ~1.3× cho TV wall (Tailwind
+          arbitrary property — Chrome/Edge kiosk hỗ trợ zoom chuẩn hoá). */}
+      <PageContainer className={cn(kiosk && "[zoom:1.3]")}>
         <PageHeader
           icon={<LayoutDashboard className="h-6 w-6" />}
           // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.controlTower.
@@ -181,15 +210,21 @@ export default function ControlTower(): React.JSX.Element {
           actions={
             <div className="flex items-center gap-2">
               <LivePill live={isLive} />
-              <Button variant="outline" size="sm" onClick={refreshAll}>
-                <RefreshCw className={cn("mr-1 h-4 w-4", (kpiQ.isFetching || statusQ.isFetching) && "animate-spin")} />
-                {t("controlTower.refresh", "Refresh")}
-              </Button>
+              {/* W8: TV không tương tác — ẩn nút Làm mới khi kiosk (socket +
+                  poll fallback vẫn tự làm mới, xem PanelLiveContext bên dưới). */}
+              {!kiosk && (
+                <Button variant="outline" size="sm" onClick={refreshAll}>
+                  <RefreshCw className={cn("mr-1 h-4 w-4", (kpiQ.isFetching || statusQ.isFetching) && "animate-spin")} />
+                  {t("controlTower.refresh", "Refresh")}
+                </Button>
+              )}
             </div>
           }
         />
 
-        {/* Persona selector (persisted; defaults from role) */}
+        {/* Persona selector (persisted; defaults from role).
+            W8: ẩn khi kiosk — persona đã chốt 'Vận hành' (hoặc ?role=). */}
+        {!kiosk && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-muted-foreground">{t("controlTower.viewAs", "View as")}:</span>
           <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1">
@@ -220,10 +255,12 @@ export default function ControlTower(): React.JSX.Element {
             {t(PERSONA_META[persona].descKey, PERSONA_META[persona].descDefault)}
           </span>
         </div>
+        )}
 
         {/* doc 67 W5 (việc 6) — cross-links từ map quan hệ 2-chiều tập trung
-            (RelatedViews.tsx): đường vào chính của các màn đã rút khỏi menu. */}
-        <RelatedViews pageId="control-tower" />
+            (RelatedViews.tsx): đường vào chính của các màn đã rút khỏi menu.
+            W8: ẩn khi kiosk — TV wall không điều hướng. */}
+        {!kiosk && <RelatedViews pageId="control-tower" />}
 
         {/* Shared KPI strip (honest "—"; hidden gracefully when unauthorized).
             W2 (AUD-01): pill tuổi dữ liệu cạnh strip — PollFreshness tự tick 1s
@@ -271,6 +308,20 @@ export default function ControlTower(): React.JSX.Element {
             })}
           </div>
         </PanelLiveContext.Provider>
+
+        {/* W8: nút thoát kiosk — nhỏ, mờ, góc dưới-phải; 40×40px tối thiểu
+            (h-10 w-10, chưa tính zoom 1.3×). Bỏ ?kiosk khỏi URL qua exitKiosk. */}
+        {kiosk && (
+          <button
+            type="button"
+            onClick={exitKiosk}
+            title={t("controlTower.exitKiosk", "Thoát chế độ kiosk")}
+            aria-label={t("controlTower.exitKiosk", "Thoát chế độ kiosk")}
+            className="fixed bottom-3 right-3 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card/70 text-muted-foreground opacity-60 shadow-sm backdrop-blur transition-opacity hover:opacity-100 hover:text-foreground"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </button>
+        )}
       </PageContainer>
     </DashboardLayout>
   );

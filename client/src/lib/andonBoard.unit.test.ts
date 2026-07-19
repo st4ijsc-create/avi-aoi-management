@@ -9,14 +9,24 @@ import {
   nextCycleIndex,
   tileStatus,
   agoLabel,
+  isNewAndonRaise,
   ANDON_DEFAULT_WARN_PCT,
   ANDON_DEFAULT_CRIT_PCT,
 } from "./andonBoard";
 
 describe("parseAndonBoardParams", () => {
   it("parses the full URL contract", () => {
-    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92");
-    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92 });
+    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92&sound=0");
+    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92, sound: false });
+  });
+
+  it("W8: sound defaults ON; only explicit 0/false/off mutes", () => {
+    expect(parseAndonBoardParams("").sound).toBe(true);
+    expect(parseAndonBoardParams("?sound=1").sound).toBe(true);
+    expect(parseAndonBoardParams("?sound=garbage").sound).toBe(true); // unknown value → keep ringing
+    expect(parseAndonBoardParams("?sound=0").sound).toBe(false);
+    expect(parseAndonBoardParams("?sound=false").sound).toBe(false);
+    expect(parseAndonBoardParams("?sound=off").sound).toBe(false);
   });
 
   it("falls back safely on garbage", () => {
@@ -39,7 +49,31 @@ describe("parseAndonBoardParams", () => {
     expect(parseAndonBoardParams("")).toEqual({
       cycleSec: 0, lineIds: [], factoryId: null, theme: null,
       warnPct: ANDON_DEFAULT_WARN_PCT, critPct: ANDON_DEFAULT_CRIT_PCT,
+      sound: true,
     });
+  });
+});
+
+describe("isNewAndonRaise (W8 chime/flash/spotlight trigger)", () => {
+  it("rings on a new red/call/yellow raise", () => {
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "red" })).toBe(true);
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "call" })).toBe(true);
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "yellow" })).toBe(true);
+  });
+  it("stays silent on ack/resolve/escalate echoes", () => {
+    expect(isNewAndonRaise({ event: "acknowledged", status: "acknowledged", state: "red" })).toBe(false);
+    expect(isNewAndonRaise({ event: "resolved", status: "resolved", state: "red" })).toBe(false);
+    expect(isNewAndonRaise({ event: "escalated", status: "raised", state: "red" })).toBe(false);
+  });
+  it("legacy payload without `event` falls back to status", () => {
+    expect(isNewAndonRaise({ status: "raised", state: "red" })).toBe(true);
+    expect(isNewAndonRaise({ status: "acknowledged", state: "red" })).toBe(false);
+  });
+  it("green raise = return-to-normal → no bell; garbage → no bell", () => {
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "green" })).toBe(false);
+    expect(isNewAndonRaise({ event: "raised", status: "raised" })).toBe(false);
+    expect(isNewAndonRaise(null)).toBe(false);
+    expect(isNewAndonRaise(undefined)).toBe(false);
   });
 });
 

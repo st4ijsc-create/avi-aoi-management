@@ -25,9 +25,9 @@
  * action here already exists and is server-authorised. Where a source has no safe
  * inline action, it links out to its domain page instead.
  */
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
@@ -290,6 +290,28 @@ export default function ApprovalsInbox() {
   const aiBusy = confirmM.isPending || dismissM.isPending;
   const deployBusy = approveDeployM.isPending || rejectDeployM.isPending;
 
+  // ── doc 67 W8 (việc 2) — ?focus= deep-link: scroll to the item + 3s highlight ──
+  // Anchors: focus-th-{id} (threshold row) · focus-{type}-{id} (AI inbox item,
+  // e.g. focus-proposal-<uuid> / focus-insight-123) · focus-dp-{id} (deploy row).
+  // Runs once after the feeds settle; a missing anchor (item decided/dismissed
+  // meanwhile, or outside the user's scope) is silently ignored.
+  const search = useSearch();
+  const focusParam = useMemo(() => new URLSearchParams(search).get("focus"), [search]);
+  const focusDoneRef = useRef(false);
+  const focusLoading =
+    (canViewThresholds && thresholdQ.isLoading) || inboxQ.isLoading || (canViewDeploys && deployQ.isLoading);
+  useEffect(() => {
+    if (!focusParam || focusDoneRef.current || focusLoading) return;
+    const el = document.getElementById(`focus-${focusParam}`);
+    if (!el) return;
+    focusDoneRef.current = true;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const cls = ["ring-2", "ring-primary", "ring-offset-1", "bg-primary/5"];
+    el.classList.add(...cls);
+    const timer = setTimeout(() => el.classList.remove(...cls), 3000);
+    return () => clearTimeout(timer);
+  }, [focusParam, focusLoading]);
+
   const summaryTiles = useMemo(() => ([
     { key: "total", label: t("approvalsInbox.summary.total", "Total pending"), value: totalPending, emphasis: true },
     { key: "threshold", label: t("approvalsInbox.threshold.title", "Threshold changes"), value: thresholdCount, emphasis: false },
@@ -382,7 +404,7 @@ export default function ApprovalsInbox() {
                         const own = isOwn(r);
                         const canAct = canDecideThresholds && !own;
                         return (
-                          <TableRow key={r.id}>
+                          <TableRow key={r.id} id={`focus-th-${r.id}`}>
                             <TableCell>
                               <div className="font-medium">{r.pointCode?.trim() || `MP-${r.pointDefId}`}</div>
                               {r.productCode && (
@@ -487,6 +509,7 @@ export default function ApprovalsInbox() {
                     return (
                       <li
                         key={`${item.type}:${item.id}`}
+                        id={`focus-${item.type}-${item.id}`}
                         className="flex flex-wrap items-start gap-3 rounded-md border p-3"
                       >
                         <div className="min-w-0 flex-1">
@@ -610,7 +633,7 @@ export default function ApprovalsInbox() {
                         const hasDiff = r.artifact?.content != null && r.prevContent != null;
                         return (
                           <Fragment key={r.deployment.id}>
-                            <TableRow>
+                            <TableRow id={`focus-dp-${r.deployment.id}`}>
                               <TableCell>
                                 <div className="font-medium">{r.project?.code?.trim() || `#${r.deployment.projectId}`}</div>
                                 <div className="text-xs text-muted-foreground">

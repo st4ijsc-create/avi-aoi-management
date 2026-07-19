@@ -12,6 +12,8 @@
  *   ?factory=1      numeric factory ID — server-side filter
  *   ?theme=dark     force dark/light (default: whatever the app theme is)
  *   ?warn=95&crit=90  yield thresholds (%) for tile colours
+ *   ?sound=0        W8 (doc 67): tắt chuông WebAudio khi có Andon MỚI raise
+ *                   (mặc định BẬT; "0"/"false"/"off" đều tắt)
  */
 
 export interface AndonBoardParams {
@@ -21,6 +23,7 @@ export interface AndonBoardParams {
   theme: "dark" | "light" | null;
   warnPct: number;
   critPct: number;
+  sound: boolean; // W8: chime on new andon raise (default true, ?sound=0 off)
 }
 
 export const ANDON_DEFAULT_WARN_PCT = 95;
@@ -52,7 +55,35 @@ export function parseAndonBoardParams(search: string): AndonBoardParams {
   const critPct = Number.isFinite(critRaw) && critRaw > 0 && critRaw <= 100 ? critRaw : ANDON_DEFAULT_CRIT_PCT;
   if (warnPct < critPct) warnPct = critPct; // never let the bands invert
 
-  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct };
+  // W8 (doc 67): default ON — a shopfloor TV must ring unless explicitly muted.
+  const soundRaw = params.get("sound");
+  const sound = !(soundRaw === "0" || soundRaw === "false" || soundRaw === "off");
+
+  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct, sound };
+}
+
+/**
+ * W8 (doc 67): is this `andon:event` payload a NEW raise (vs an ack/resolve/
+ * escalate echo)? Server shape (server/_core/socket.ts AndonRealtimeEvent):
+ * `event` = lifecycle phase of THIS emit; older emitters may omit it, in which
+ * case `status === "raised"` is the raise signal (matches the server's own
+ * `event ?? "raised"` logging fallback). A green raise is a return-to-normal
+ * signal — never ring the bell for it.
+ */
+export function isNewAndonRaise(
+  ev:
+    | {
+        event?: string | null;
+        status?: string | null;
+        state?: string | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!ev) return false;
+  const phase = ev.event ?? (ev.status === "raised" ? "raised" : null);
+  if (phase !== "raised") return false;
+  return ev.state === "red" || ev.state === "call" || ev.state === "yellow";
 }
 
 /**

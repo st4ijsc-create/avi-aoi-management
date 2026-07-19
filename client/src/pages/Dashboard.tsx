@@ -68,6 +68,8 @@ import {
   chartTooltipStyle,
   chartGridProps,
   chartAxisTick,
+  // doc67 W8 (việc 2) — chấm severity DS cho dải cảnh báo khẩn.
+  severityDotClass,
 } from "@/components/patterns";
 // doc67 W7 GĐ2 — nền móng DS dùng chung: sparkline SVG token-driven (thay bản
 // recharts inline), tone ISA-101 chuẩn (oeeTone 80/60 — QĐ #2; yieldTone 95/90)
@@ -217,7 +219,27 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
+  // doc 67 W8 (việc 2): đọc ?tab= lúc mount để deep-link từ Dashboard Center
+  // ("Mở" dashboard tùy chỉnh → /dashboard?tab=custom&dashboardId=...) vào đúng tab.
+  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">(() => {
+    const tabParam = new URLSearchParams(window.location.search).get("tab");
+    return tabParam === "overview" || tabParam === "layout" || tabParam === "ng-visual" ||
+      tabParam === "corporate-stats" || tabParam === "custom"
+      ? tabParam
+      : "overview";
+  });
+  // doc67 W8 [P2] (việc 1) — TAB SYNC URL: ghi ngược ?tab= khi đổi tab (replace,
+  // GIỮ các query param khác như dashboardId) — bookmark/kiosk mở đúng tab.
+  // Tab mặc định "overview" thì xoá param cho URL sạch (khớp mount-read ở trên).
+  const handleTabChange = useCallback((v: string) => {
+    const tab = v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom";
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    if (tab === "overview") params.delete("tab");
+    else params.set("tab", tab);
+    const qs = params.toString();
+    setLocation(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [setLocation]);
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
@@ -1455,6 +1477,65 @@ export default function Dashboard() {
           }
         />
 
+        {/* doc67 W8 [P2] (việc 2) — DẢI CẢNH BÁO KHẨN: trước đây urgentAlerts chỉ
+            toast rồi biến mất (state nhận từ socket nhưng mảng không render).
+            Dải mỏng aria-live="polite" cố định đầu trang (dưới PageHeader) giữ các
+            cảnh báo CHƯA dismiss: chấm severity + tiêu đề + "Xem" → /ops-console +
+            X bỏ từng cái; >3 thì collapse phần dư thành dòng "×N". */}
+        {urgentAlerts.length > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Cảnh báo khẩn chưa xử lý"
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 space-y-1"
+          >
+            {urgentAlerts.slice(0, 3).map((a) => (
+              <div key={a.id} className="flex min-w-0 items-center gap-2 text-sm">
+                <span
+                  aria-hidden="true"
+                  className={cn("h-2 w-2 shrink-0 rounded-full", severityDotClass(a.severity))}
+                />
+                <span className="truncate font-medium">{a.title}</span>
+                <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline">
+                  {a.message}
+                </span>
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setLocation("/ops-console")}
+                  >
+                    Xem
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    aria-label={`Bỏ cảnh báo: ${a.title}`}
+                    onClick={() => setUrgentAlerts((prev) => prev.filter((x) => x.id !== a.id))}
+                  >
+                    <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {urgentAlerts.length > 3 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>×{urgentAlerts.length - 3} cảnh báo khẩn khác</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setLocation("/ops-console")}
+                >
+                  Xem tất cả
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx):
             trang đã rút khỏi menu, đường về Tổng quan nhà máy + các màn anh em. */}
         <RelatedViews pageId="dashboard" />
@@ -1719,7 +1800,8 @@ export default function Dashboard() {
         </div>
 
         {/* Tabs for Overview and Layout */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom")} className="w-full">
+        {/* doc67 W8 (việc 1) — onValueChange qua handleTabChange: state + ?tab= URL (replace). */}
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           {/* doc67 W4 (mobile 390): tab tràn ngang → cuộn ngang + scroll-snap dưới sm thay vì wrap vỡ hàng */}
           <TabsList className="flex w-full max-w-2xl flex-nowrap justify-start overflow-x-auto snap-x snap-mandatory sm:grid sm:grid-cols-4 h-auto">
             <TabsTrigger value="overview" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">

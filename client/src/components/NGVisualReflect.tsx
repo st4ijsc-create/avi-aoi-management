@@ -38,31 +38,34 @@ interface NGVisualReflectProps {
 }
 
 // Color coding based on NG rate
+// doc67 W8 [P3] — bậc 3/4 thang NG (5-10%): orange-500 hardcode → token
+// --alarm-high (cam ISA-18.2 P2, theme-aware) — đồng bộ chú giải tab NG trực
+// quan của Dashboard (W7-B đã đổi trang sang token). Các bậc khác giữ nguyên.
 function getNGColor(ngRate: number): string {
   if (ngRate <= 2) return "bg-green-500";
   if (ngRate <= 5) return "bg-yellow-500";
-  if (ngRate <= 10) return "bg-orange-500";
+  if (ngRate <= 10) return "bg-(--alarm-high)";
   return "bg-red-500";
 }
 
 function getNGColorClass(ngRate: number): string {
   if (ngRate <= 2) return "text-green-500 border-green-500";
   if (ngRate <= 5) return "text-yellow-500 border-yellow-500";
-  if (ngRate <= 10) return "text-orange-500 border-orange-500";
+  if (ngRate <= 10) return "text-(--alarm-high) border-(--alarm-high)";
   return "text-red-500 border-red-500";
 }
 
 function getNGBgClass(ngRate: number): string {
   if (ngRate <= 2) return "bg-green-500/10";
   if (ngRate <= 5) return "bg-yellow-500/10";
-  if (ngRate <= 10) return "bg-orange-500/10";
+  if (ngRate <= 10) return "bg-(--alarm-high)/10";
   return "bg-red-500/10";
 }
 
 function getNGStatus(ngRate: number): { labelKey: string; icon: React.ReactNode } {
   if (ngRate <= 2) return { labelKey: "dashboard.ngGood", icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> };
   if (ngRate <= 5) return { labelKey: "dashboard.ngAcceptable", icon: <Minus className="h-4 w-4 text-yellow-500" /> };
-  if (ngRate <= 10) return { labelKey: "dashboard.ngWarning", icon: <AlertTriangle className="h-4 w-4 text-orange-500" /> };
+  if (ngRate <= 10) return { labelKey: "dashboard.ngWarning", icon: <AlertTriangle className="h-4 w-4 text-(--alarm-high)" /> };
   return { labelKey: "dashboard.ngCritical", icon: <XCircle className="h-4 w-4 text-red-500" /> };
 }
 
@@ -292,7 +295,8 @@ export default function NGVisualReflect({
             <span>2-5% ({t('dashboard.ngAcceptable')})</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded bg-orange-500" />
+            {/* doc67 W8 [P3] — token --alarm-high thay orange-500 (khớp chú giải trang). */}
+            <div className="w-3 h-3 rounded bg-(--alarm-high)" />
             <span>5-10% ({t('dashboard.ngWarning')})</span>
           </div>
           <div className="flex items-center gap-1">

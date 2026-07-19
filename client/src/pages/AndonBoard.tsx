@@ -13,7 +13,13 @@
  *     filters/theme/thresholds — see lib/andonBoard.ts for the URL contract,
  *   • realtime: socket-first (shared socket, global room events trigger a
  *     debounced refetch), 15s poll fallback via usePollingInterval, PollFreshness
- *     staleness label, and a reload-once safeguard when data is stale > 5 min.
+ *     staleness label, and a reload-once safeguard when data is stale > 5 min,
+ *   • W8 (doc 67) "tiếng chuông": a NEW andon raise (isNewAndonRaise — never
+ *     ack/resolve echoes) rings a 2-note WebAudio chime (?sound=0 mutes),
+ *     flashes a destructive full-screen border (reduced-motion: 1 static beat)
+ *     and — when auto-cycling — spotlights the raising line for one cycle
+ *     (never stealing a fresh manual drill). Bursts within 5s collapse to one
+ *     chime + one flash.
  *
  * No interaction is required; tiles stay clickable (machine → /machine/:id
  * cockpit, line header → drill view) for setup use.
@@ -42,12 +48,17 @@ import {
   nextCycleIndex,
   tileStatus,
   agoLabel,
+  isNewAndonRaise,
   type TileStatus,
 } from "@/lib/andonBoard";
 
 const POLL_MS = 15_000;
 const STALE_RELOAD_MS = 5 * 60 * 1000;
 const RELOAD_GUARD_KEY = "andon_board_last_reload";
+// W8 (doc 67): burst guard — many raises within 5s → one chime + one flash.
+const SIGNAL_THROTTLE_MS = 5_000;
+// W8: flash lasts ~2.5s (3 beats; reduced-motion = 1 static beat, same span).
+const FLASH_MS = 2_500;
 
 // Tile skin per status — W7 GĐ2: crit/warn/good/offline lấy từ TONE_TILE_CLASS shared
 // (đối chiếu: khớp byte-identical với bản local cũ — không đổi hình thức TV).
@@ -121,6 +132,86 @@ export default function AndonBoard() {
     void utils.dashboard.getAndonBoard.invalidate();
   }, 1500);
 
+  // ── W8 (doc 67) "tiếng chuông": chime + flash + spotlight on a NEW raise ──
+  // CHIME — WebAudio 2 notes (880→660 Hz, 0.6s). Autoplay-policy pattern copied
+  // from OpsConsole W3 (việc 7): ONE shared AudioContext created on mount so we
+  // KNOW whether the policy blocks us (state "suspended" → honest footer chip
+  // "Chạm để bật chuông"); the first pointerdown anywhere (listener once)
+  // resumes it. ?sound=0 skips all of this (no context, no chip).
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const ensureAudio = useCallback((): AudioContext | null => {
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return null;
+      if (!audioCtxRef.current) {
+        const ctx: AudioContext = new AC();
+        ctx.onstatechange = () => setAudioBlocked(ctx.state !== "running");
+        audioCtxRef.current = ctx;
+      }
+      return audioCtxRef.current;
+    } catch { return null; }
+  }, []);
+  const unlockAudio = useCallback(() => {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    if (ctx.state !== "running") {
+      void ctx.resume()
+        .then(() => setAudioBlocked(ctx.state !== "running"))
+        .catch(() => setAudioBlocked(true));
+    } else setAudioBlocked(false);
+  }, [ensureAudio]);
+  useEffect(() => {
+    if (!params.sound) return;
+    const ctx = ensureAudio();
+    if (ctx) setAudioBlocked(ctx.state !== "running");
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      void audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+    };
+  }, [params.sound, ensureAudio, unlockAudio]);
+
+  const chime = useCallback(() => {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    if (ctx.state !== "running") { setAudioBlocked(true); return; }
+    try {
+      // Two descending notes (~880→660 Hz over 0.6s) — a "bell", not the OpsConsole
+      // square-wave klaxon: the TV rings many times a shift and must not grate.
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, t0);
+      osc.frequency.setValueAtTime(660, t0 + 0.3);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.14, t0 + 0.02);
+      gain.gain.setValueAtTime(0.14, t0 + 0.27);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.14, t0 + 0.33);
+      gain.gain.setValueAtTime(0.14, t0 + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.62);
+    } catch { /* audio unavailable — stay silent */ }
+  }, [ensureAudio]);
+
+  // FLASH — full-screen destructive border, 3 beats over ~2.5s (CSS below;
+  // prefers-reduced-motion collapses it to 1 static beat of the same span).
+  const [flashNew, setFlashNew] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+  }, []);
+  // Burst guard (chime + flash share it) and spotlight bookkeeping. linesRef is
+  // assigned in the auto-cycle section below (closure reads it at event time).
+  const lastSignalAt = useRef(0);
+  const spotlightAt = useRef(0);
+
   // ── B6: operator acknowledge (andon/canEdit — operators have it per RBAC) ────
   const { hasPermission } = usePermissions();
   const canAck = hasPermission("andon", "canEdit");
@@ -165,12 +256,49 @@ export default function AndonBoard() {
       });
     };
     const onDataEvent = () => scheduleRefetch();
+    // W8 (doc 67): andon:event still refetches like every data event, but a NEW
+    // raise (never ack/resolve echoes — isNewAndonRaise) additionally rings the
+    // chime, flashes the border and spotlights the raising line. A burst of
+    // raises within 5s collapses to ONE chime + ONE flash.
+    const onAndonEvent = (ev: {
+      event?: string;
+      status?: string;
+      state?: string;
+      lineId?: number | null;
+      machineId?: number | null;
+    }) => {
+      scheduleRefetch();
+      if (!isNewAndonRaise(ev)) return;
+      const nowMs = Date.now();
+      if (nowMs - lastSignalAt.current < SIGNAL_THROTTLE_MS) return;
+      lastSignalAt.current = nowMs;
+      if (params.sound) chime();
+      setFlashNew(true);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlashNew(false), FLASH_MS);
+      // AUTO-SPOTLIGHT — only while auto-cycling, and NEVER over a fresh manual
+      // drill (< cycleSec since the last tap keeps the operator's view). Jumps
+      // to the raising line's view; the normal cycle resumes from there after
+      // one full cycle period (spotlightAt holds the tick, mirror of W4
+      // lastManualAt).
+      if (params.cycleSec <= 0) return;
+      if (nowMs - lastManualAt.current < params.cycleSec * 1000) return;
+      const ls = linesRef.current;
+      let idx = ev.lineId != null ? ls.findIndex((l) => l.lineId === ev.lineId) : -1;
+      if (idx < 0 && ev.machineId != null) {
+        idx = ls.findIndex((l) => l.machines.some((m) => m.machineId === ev.machineId));
+      }
+      if (idx >= 0) {
+        spotlightAt.current = nowMs;
+        setViewIndex(idx + 1);
+      }
+    };
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("machine:online_list", onOnlineList);
     socket.on("machine:status_change", onStatusChange);
-    socket.on("andon:event", onDataEvent);
+    socket.on("andon:event", onAndonEvent);
     socket.on("dashboard:update", onDataEvent);
     socket.on("ng:alert", onDataEvent);
     socket.on("yield:warning", onDataEvent);
@@ -182,14 +310,14 @@ export default function AndonBoard() {
       socket.off("disconnect", onDisconnect);
       socket.off("machine:online_list", onOnlineList);
       socket.off("machine:status_change", onStatusChange);
-      socket.off("andon:event", onDataEvent);
+      socket.off("andon:event", onAndonEvent);
       socket.off("dashboard:update", onDataEvent);
       socket.off("ng:alert", onDataEvent);
       socket.off("yield:warning", onDataEvent);
       socket.off("qualityGate:triggered", onDataEvent);
       releaseSharedSocket();
     };
-  }, [scheduleRefetch]);
+  }, [scheduleRefetch, chime, params.sound, params.cycleSec]);
 
   // ── Stale-data safeguard: reload once if nothing fresh for > 5 min ───────
   useEffect(() => {
@@ -214,16 +342,21 @@ export default function AndonBoard() {
 
   // ── Auto-cycle: view 0 = all lines, then one per line ─────────────────────
   const lines = board?.lines ?? [];
+  // W8: the socket handler above reads the CURRENT lines at event time to map a
+  // raise → view index without re-subscribing the socket on every data change.
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const viewCount = 1 + lines.length;
   const [viewIndex, setViewIndex] = useState(0);
   // W4 (doc 67): a manual drill (tap on a line header) holds the view — the
   // auto-cycle skips ticks until one full cycle period of idle has passed,
-  // so the board never yanks the screen away mid-inspection.
+  // so the board never yanks the screen away mid-inspection. W8: a spotlight
+  // (auto-jump to a freshly raised line) holds it the same way, for ONE cycle.
   const lastManualAt = useRef(0);
   useEffect(() => {
     if (params.cycleSec <= 0 || viewCount <= 1) return;
     const id = setInterval(() => {
-      if (Date.now() - lastManualAt.current < params.cycleSec * 1000) return;
+      if (Date.now() - Math.max(lastManualAt.current, spotlightAt.current) < params.cycleSec * 1000) return;
       setViewIndex((i) => nextCycleIndex(i, viewCount));
     }, params.cycleSec * 1000);
     return () => clearInterval(id);
@@ -301,6 +434,14 @@ export default function AndonBoard() {
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-background text-foreground">
+      {/* W8 (doc 67): NEW-raise flash — full-screen destructive border, 3 beats
+          ~2.5s (reduced-motion: 1 static beat). Pure overlay, never eats input. */}
+      {flashNew && (
+        <div
+          aria-hidden
+          className="andon-flash-overlay pointer-events-none absolute inset-0 z-50 border-[max(0.6rem,1vw)] border-destructive"
+        />
+      )}
       {/* ── Top strip: title + KPIs + health + clock ── */}
       <header className="flex items-stretch gap-[1vw] border-b-2 border-border bg-card px-[1.2vw] py-[0.8vh]">
         <div className="flex min-w-0 flex-col justify-center">
@@ -509,7 +650,19 @@ export default function AndonBoard() {
       {/* ── Bottom ticker: active Andon events ── */}
       {/* W4 (doc 67) touch: any pointerdown on the footer pauses the marquee
           (hover-pause never fires on a touch panel); resumes after 10s idle. */}
-      <footer className="border-t-2 border-border bg-card" onPointerDown={pauseTicker}>
+      <footer className="relative border-t-2 border-border bg-card" onPointerDown={pauseTicker}>
+        {/* W8 (doc 67): autoplay policy blocks the chime until a user gesture —
+            say so honestly (OpsConsole W3 pattern) instead of ringing silently.
+            Any tap anywhere unlocks (window pointerdown once) → chip vanishes. */}
+        {params.sound && audioBlocked && (
+          <button
+            type="button"
+            onClick={unlockAudio}
+            className="absolute bottom-[0.5vh] right-[0.5vw] z-20 min-h-10 rounded-md border border-warning bg-card px-2.5 py-1 text-[clamp(0.6rem,0.9vw,1.1rem)] font-semibold text-warning"
+          >
+            {t("andonBoard.tapToEnableSound", "Chạm để bật chuông")}
+          </button>
+        )}
         <div
           className={cn(
             "andon-ticker-viewport relative flex items-center",
@@ -614,6 +767,16 @@ export default function AndonBoard() {
           @keyframes andon-ticker-scroll {
             0% { transform: translateX(100vw); }
             100% { transform: translateX(-100%); }
+          }
+          /* W8 (doc 67): NEW-raise border flash — 3 beats across the 2.5s the
+             overlay is mounted; reduced-motion collapses to 1 static beat. */
+          .andon-flash-overlay { animation: andon-flash-pulse 2.5s ease-in-out; opacity: 0; }
+          @keyframes andon-flash-pulse {
+            0%, 30%, 63%, 100% { opacity: 0; }
+            13%, 46%, 80% { opacity: 1; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .andon-flash-overlay { animation: none; opacity: 0.9; }
           }
           @media (prefers-reduced-motion: reduce) {
             .andon-ticker-viewport {

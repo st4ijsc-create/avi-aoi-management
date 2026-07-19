@@ -45,6 +45,7 @@ import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, sta
 import { EmptyState } from "@/components/EmptyState";
 import { relTimeShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,9 @@ type NodeKind = HierarchyNode["kind"];
 
 // A unified alarm row: the live EcosystemEvent envelope, which the SeedAlert mirrors.
 type AlarmRow = EcosystemEvent;
+
+// doc67 W8 — ngưỡng "tồn đọng" của rail cảnh báo: quá 24h chưa xử lý.
+const DAY_MS = 86_400_000;
 
 // ════════════════════════════════════════════════════════════════════════════
 // SMALL HELPERS
@@ -187,6 +191,48 @@ function collectScope(node: HierarchyNode): {
   return { factoryIds, machineIds, robotIds, lineIds };
 }
 
+/**
+ * doc67 W8 [P2] — TREE SEARCH: lọc cây theo text (tên/mã, đã lowercase) +
+ * toggle "chỉ node có cảnh báo" (dựa roll-up counts.activeAlarms — server đã
+ * cộng dồn con lên cha nên nhánh sạch bị cắt cả cụm, nhánh chứa cảnh báo giữ
+ * nguyên đường xuống lá). Node khớp text giữ NGUYÊN nhánh con (vẫn lọc theo
+ * alarmOnly) để duyệt tiếp được; nhánh không chứa kết quả bị cắt.
+ */
+function filterHierarchy(nodes: HierarchyNode[], q: string, alarmOnly: boolean): HierarchyNode[] {
+  const out: HierarchyNode[] = [];
+  for (const n of nodes) {
+    if (alarmOnly && n.counts.activeAlarms === 0) continue; // roll-up: nhánh sạch → cắt
+    const selfMatch =
+      q === "" || n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q);
+    const kids = n.children ? filterHierarchy(n.children, q, alarmOnly) : [];
+    if (selfMatch) {
+      // Node khớp: giữ toàn bộ con (chỉ áp alarmOnly, bỏ điều kiện text) để
+      // chọn "Factory A" vẫn mở xem được line/máy bên trong.
+      out.push({
+        ...n,
+        children: q === "" ? kids : n.children ? filterHierarchy(n.children, "", alarmOnly) : [],
+      });
+    } else if (kids.length > 0) {
+      out.push({ ...n, children: kids });
+    }
+  }
+  return out;
+}
+
+/** doc67 W8 — highlight đoạn khớp trong tên node (giữ text thuần khi không khớp). */
+function HighlightedName({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query);
+  if (idx < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-warning/40 px-0 text-inherit">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 /** Find a node anywhere in the tree by id. */
 function findNode(sites: HierarchyNode[], id: string): HierarchyNode | null {
   let hit: HierarchyNode | null = null;
@@ -226,7 +272,7 @@ function kindIcon(kind: NodeKind) {
 }
 
 function TreeNode({
-  node, depth, expanded, onToggle, selectedId, onSelect, onOpenCockpit, t,
+  node, depth, expanded, onToggle, selectedId, onSelect, onOpenCockpit, t, highlight = "",
 }: {
   node: HierarchyNode;
   depth: number;
@@ -236,6 +282,8 @@ function TreeNode({
   onSelect: (id: string) => void;
   onOpenCockpit: (node: HierarchyNode) => void;
   t: (k: string, f: string) => string;
+  /** doc67 W8 — chuỗi tìm kiếm (lowercase) để highlight đoạn khớp trong tên. */
+  highlight?: string;
 }) {
   const hasChildren = (node.children?.length ?? 0) > 0;
   const isOpen = expanded.has(node.id);
@@ -308,7 +356,7 @@ function TreeNode({
 
         {/* kind icon + name */}
         <span className="shrink-0 text-muted-foreground">{kindIcon(node.kind)}</span>
-        <span className="truncate font-medium">{node.name}</span>
+        <span className="truncate font-medium"><HighlightedName text={node.name} query={highlight} /></span>
 
         {/* deviceType chip (leaves only) */}
         {isLeaf && node.deviceType && (
@@ -365,6 +413,7 @@ function TreeNode({
               onSelect={onSelect}
               onOpenCockpit={onOpenCockpit}
               t={t}
+              highlight={highlight}
             />
           ))}
         </div>
@@ -761,6 +810,44 @@ export default function CommandCenter() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // ── doc67 W8 [P2] — TREE SEARCH: ô tìm kiếm (debounce 200ms) + toggle
+  // "chỉ node có cảnh báo". Cây hiển thị = bản lọc; expand của người dùng GIỮ
+  // NGUYÊN (auto-expand chỉ cộng thêm khi bộ lọc đang bật, không ghi đè state). ──
+  const [treeSearch, setTreeSearch] = useState("");
+  const [treeSearchDebounced, setTreeSearchDebounced] = useState("");
+  const [alarmOnlyFilter, setAlarmOnlyFilter] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setTreeSearchDebounced(treeSearch.trim().toLowerCase()), 200);
+    return () => clearTimeout(id);
+  }, [treeSearch]);
+  const treeFilterActive = treeSearchDebounced !== "" || alarmOnlyFilter;
+  const visibleSites = useMemo<HierarchyNode[]>(
+    () => (treeFilterActive ? filterHierarchy(sites, treeSearchDebounced, alarmOnlyFilter) : sites),
+    [sites, treeFilterActive, treeSearchDebounced, alarmOnlyFilter],
+  );
+  // Tự expand nhánh CHỨA kết quả (ancestor của match); KHÔNG tự mở toàn bộ cây
+  // con dưới một node đã khớp text (tránh bung ồ ạt khi khớp tên factory).
+  const autoExpanded = useMemo<Set<string> | null>(() => {
+    if (!treeFilterActive) return null;
+    const ids = new Set<string>();
+    const q = treeSearchDebounced;
+    const walk = (n: HierarchyNode, underMatch: boolean) => {
+      if (!n.children?.length) return;
+      if (!underMatch) ids.add(n.id);
+      const selfMatch = q !== "" && (n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q));
+      n.children.forEach((c) => walk(c, underMatch || selfMatch));
+    };
+    visibleSites.forEach((s) => walk(s, false));
+    return ids;
+  }, [treeFilterActive, treeSearchDebounced, visibleSites]);
+  const effectiveExpanded = useMemo<Set<string>>(
+    () => (autoExpanded ? new Set([...expanded, ...autoExpanded]) : expanded),
+    [expanded, autoExpanded],
+  );
+
+  // ── doc67 W8 [P2] — RAIL FILTER: chip mức độ (Tất cả / Nghiêm trọng / Cao). ──
+  const [railSeverity, setRailSeverity] = useState<"all" | "critical" | "high">("all");
+
   // Auto-expand the first site + its first factory once loaded (once).
   const didInit = useRef(false);
   useEffect(() => {
@@ -852,6 +939,16 @@ export default function CommandCenter() {
     });
   }, [alarms, scopeFilter, selectedNode]);
 
+  // doc67 W8 [P2] — RAIL FILTER: áp chip mức độ lên danh sách đã scope, rồi tách
+  // nhóm "Hôm nay" (≤24h) vs "Tồn đọng" (>24h, dựa ageMs = now − a.ts; `now`
+  // tick 15s sẵn có). Cảnh báo tồn đọng mang badge "tồn đọng Nd" tone warning.
+  const railAlarms = useMemo<AlarmRow[]>(
+    () => (railSeverity === "all" ? scopedAlarms : scopedAlarms.filter((a) => a.severity === railSeverity)),
+    [scopedAlarms, railSeverity],
+  );
+  const todayRailAlarms = useMemo<AlarmRow[]>(() => railAlarms.filter((a) => now - a.ts <= DAY_MS), [railAlarms, now]);
+  const backlogRailAlarms = useMemo<AlarmRow[]>(() => railAlarms.filter((a) => now - a.ts > DAY_MS), [railAlarms, now]);
+
   const openCockpit = useCallback((node: HierarchyNode) => {
     if (typeof node.refId !== "number") return;
     // U3 routes (delivered next phase) — wire now; they resolve once U3 lands.
@@ -866,6 +963,51 @@ export default function CommandCenter() {
     else if (a.kind === "andon") setLocation("/ops-console");
     else if (a.kind === "safety") setLocation("/safety-workforce");
   }, [setLocation]);
+
+  // doc67 W8 — thẻ cảnh báo rail (tách từ inline map cũ để dùng cho cả 2 nhóm
+  // Hôm nay / Tồn đọng); backlog=true thêm badge "tồn đọng Nd" tone warning.
+  const renderAlarmRow = (a: AlarmRow, backlog: boolean) => {
+    const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
+    const backlogDays = Math.max(1, Math.floor((now - a.ts) / DAY_MS));
+    // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_VI/KIND_VI).
+    const inner = (
+      <>
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={a.severity} label={SEVERITY_VI[a.severity]} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
+          <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_VI[a.kind] ?? a.kind}</Badge>
+          {backlog && (
+            <Badge className="border-warning/40 bg-warning/15 px-1 py-0 text-[10px] font-medium text-warning" variant="outline">
+              tồn đọng {backlogDays}d
+            </Badge>
+          )}
+          <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts, now)}</span>
+        </div>
+        <div className="mt-1 font-medium leading-snug">{a.title}</div>
+        <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span>{a.source}</span>
+          {a.scope?.machineId != null && <span>· Máy #{a.scope.machineId}</span>}
+          {a.scope?.robotId != null && <span>· Robot #{a.scope.robotId}</span>}
+          {clickable && <ExternalLink className="ml-auto h-3 w-3" aria-hidden="true" />}
+        </div>
+      </>
+    );
+    // W4 (doc 67): thẻ điều hướng được là <button> full-width thật
+    // (bàn phím Tab/Enter + focus-visible ring); thẻ chỉ-đọc giữ <div>.
+    return clickable ? (
+      <button
+        key={a.id}
+        type="button"
+        className="block w-full rounded-md border px-2 py-1.5 text-left text-xs cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => openAlarm(a)}
+      >
+        {inner}
+      </button>
+    ) : (
+      <div key={a.id} className="rounded-md border px-2 py-1.5 text-xs">
+        {inner}
+      </div>
+    );
+  };
 
   // ── KPI display helpers (honest "—" on available:false) ──
   const fmtNum = (v: number | null | undefined) => (v == null ? "—" : String(v));
@@ -945,10 +1087,14 @@ export default function CommandCenter() {
             wrapper (MetricCard truncate nội bộ — không sửa file DS ngoài phạm vi). */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <div title="OEE trung bình toàn hệ sinh thái (%)">
+            {/* doc67 W8 [P2] — sourceLabel (fallback tầng 2 server): nhãn nhỏ
+                "hôm nay" cạnh giá trị = mean snapshot NGÀY HIỆN TẠI, không phải
+                live — trung thực độ tươi. Field optional → backward compatible. */}
             <MetricCard
               icon={<Activity className="h-4 w-4" />}
               label="OEE"
               value={oeeVal}
+              delta={kpi?.oee.sourceLabel ? `Trung bình ${kpi.oee.sourceLabel} (snapshot)` : undefined}
               tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
             />
           </div>
@@ -1025,24 +1171,60 @@ export default function CommandCenter() {
               ) : sites.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">{t("cmd.noSites", "No sites reporting yet.")}</div>
               ) : (
-                <ScrollArea className="h-[560px] pr-1">
-                  {/* W4 (doc 67): role="tree" cho cây WAI-ARIA (treeitem/group bên trong). */}
-                  <div role="tree" aria-label="Cây phân cấp hệ sinh thái">
-                  {sites.map((site) => (
-                    <TreeNode
-                      key={site.id}
-                      node={site}
-                      depth={0}
-                      expanded={expanded}
-                      onToggle={toggle}
-                      selectedId={selectedId}
-                      onSelect={setSelectedId}
-                      onOpenCockpit={openCockpit}
-                      t={t}
+                <>
+                  {/* doc67 W8 [P2] — TREE SEARCH: ô lọc (debounce 200ms) + toggle
+                      "chỉ node có cảnh báo"; tự expand nhánh chứa kết quả +
+                      highlight đoạn khớp. Giữ nguyên role="tree" ARIA W4. */}
+                  <div className="mb-2 space-y-1.5 px-1">
+                    <Input
+                      value={treeSearch}
+                      onChange={(e) => setTreeSearch(e.target.value)}
+                      placeholder="Tìm theo tên / mã node…"
+                      aria-label="Tìm kiếm node trong cây phân cấp"
+                      className="h-8 text-sm"
                     />
-                  ))}
+                    <button
+                      type="button"
+                      aria-pressed={alarmOnlyFilter}
+                      onClick={() => setAlarmOnlyFilter((v) => !v)}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        alarmOnlyFilter
+                          ? "border-destructive/40 bg-destructive/10 text-destructive"
+                          : "border-border text-muted-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                      Chỉ node có cảnh báo
+                    </button>
                   </div>
-                </ScrollArea>
+                  {visibleSites.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      Không có node khớp bộ lọc.
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[520px] pr-1">
+                      {/* W4 (doc 67): role="tree" cho cây WAI-ARIA (treeitem/group bên trong). */}
+                      <div role="tree" aria-label="Cây phân cấp hệ sinh thái">
+                      {visibleSites.map((site) => (
+                        <TreeNode
+                          key={site.id}
+                          node={site}
+                          depth={0}
+                          expanded={effectiveExpanded}
+                          onToggle={toggle}
+                          selectedId={selectedId}
+                          onSelect={setSelectedId}
+                          onOpenCockpit={openCockpit}
+                          t={t}
+                          highlight={treeSearchDebounced}
+                        />
+                      ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </>
               )}
             </SectionCard>
           </div>
@@ -1076,6 +1258,27 @@ export default function CommandCenter() {
               }
               contentClassName="p-2"
             >
+              {/* doc67 W8 [P2] — hàng chip lọc mức độ (luôn hiện để bỏ lọc được
+                  cả khi danh sách lọc ra rỗng). */}
+              <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1" role="group" aria-label="Lọc mức độ cảnh báo">
+                {([["all", "Tất cả"], ["critical", "Nghiêm trọng"], ["high", "Cao"]] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={railSeverity === v}
+                    onClick={() => setRailSeverity(v)}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      railSeverity === v
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted/60",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               {scopedAlarms.length === 0 ? (
                 alarms.length === 0 ? (
                   /* GĐ2 (việc 4): rỗng = TIN TỐT → EmptyState allClear DS (icon
@@ -1087,45 +1290,26 @@ export default function CommandCenter() {
                     {t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
                   </div>
                 )
+              ) : railAlarms.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Không có cảnh báo ở mức đã lọc.
+                </div>
               ) : (
-                <ScrollArea className="h-[560px] pr-1">
+                <ScrollArea className="h-[532px] pr-1">
                   <div className="space-y-1.5">
-                    {scopedAlarms.map((a) => {
-                      const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
-                      // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_VI/KIND_VI).
-                      const inner = (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <StatusBadge status={a.severity} label={SEVERITY_VI[a.severity]} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
-                            <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_VI[a.kind] ?? a.kind}</Badge>
-                            <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts, now)}</span>
-                          </div>
-                          <div className="mt-1 font-medium leading-snug">{a.title}</div>
-                          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <span>{a.source}</span>
-                            {a.scope?.machineId != null && <span>· Máy #{a.scope.machineId}</span>}
-                            {a.scope?.robotId != null && <span>· Robot #{a.scope.robotId}</span>}
-                            {clickable && <ExternalLink className="ml-auto h-3 w-3" aria-hidden="true" />}
-                          </div>
-                        </>
-                      );
-                      // W4 (doc 67): thẻ điều hướng được là <button> full-width thật
-                      // (bàn phím Tab/Enter + focus-visible ring); thẻ chỉ-đọc giữ <div>.
-                      return clickable ? (
-                        <button
-                          key={a.id}
-                          type="button"
-                          className="block w-full rounded-md border px-2 py-1.5 text-left text-xs cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => openAlarm(a)}
-                        >
-                          {inner}
-                        </button>
-                      ) : (
-                        <div key={a.id} className="rounded-md border px-2 py-1.5 text-xs">
-                          {inner}
-                        </div>
-                      );
-                    })}
+                    {/* doc67 W8 [P2] — separator nhóm "Hôm nay" vs "Tồn đọng" (>24h). */}
+                    {todayRailAlarms.length > 0 && (
+                      <div className="px-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Hôm nay ({todayRailAlarms.length})
+                      </div>
+                    )}
+                    {todayRailAlarms.map((a) => renderAlarmRow(a, false))}
+                    {backlogRailAlarms.length > 0 && (
+                      <div className="border-t px-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-warning">
+                        Tồn đọng &gt;24h ({backlogRailAlarms.length})
+                      </div>
+                    )}
+                    {backlogRailAlarms.map((a) => renderAlarmRow(a, true))}
                   </div>
                 </ScrollArea>
               )}

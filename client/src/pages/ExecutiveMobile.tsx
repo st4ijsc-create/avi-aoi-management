@@ -17,8 +17,15 @@
  *    loops server-side, so we only ever render clean structured fields).
  *  - Real-time-light: refetch on window focus + a manual refresh button + a poll
  *    fallback (no sockets). Big glanceable numbers, large tap targets.
- *  - Read-only: approvals are shown as counts + top items with a deep-link to the
- *    full inbox where the real, permission-gated approve/reject actions live.
+ *  - Approvals (doc 67 W8): AI-inbox PROPOSAL items get an INLINE 1-tap
+ *    Duyệt/Bỏ qua — Duyệt reuses the EXISTING `aiCopilot.confirmAction` HITL
+ *    mutation (token == actionId from aiInbox.list; no step-up/2FA on that path —
+ *    verified against server/services/aiCopilotActions.ts, same call
+ *    ApprovalsInbox makes inline) behind a one-step AlertDialog; Bỏ qua reuses
+ *    `aiInbox.dismiss`. Threshold + deploy approvals stay DEEP-LINK ONLY on
+ *    purpose: both need SoD context (and deploy adds step-up 2FA) that lives in
+ *    the full inbox. Every row deep-links to /approvals-inbox?focus=… which
+ *    scrolls-and-highlights the item (W8 việc 2).
  *
  * This page does not mount its own <DashboardLayout>: it is a lean, installable
  * landing. NOTE (doc 67 W4): with the persistent app-shell flag ON (default since
@@ -28,15 +35,26 @@
  * the page title is the route's <h1>. Global providers (tRPC, i18n, theme, auth)
  * live at the app root, so everything still works standalone if rendered bare.
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { PollFreshness } from "@/components/PollFreshness";
 import { RelatedViews } from "@/components/RelatedViews";
@@ -53,6 +71,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   ChevronRight,
   ClipboardCheck,
   Gauge,
@@ -65,6 +84,7 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  XCircle,
 } from "lucide-react";
 
 // ── Query options shared by the "live-ish" queries ─────────────────────────────
@@ -406,7 +426,18 @@ export default function ExecutiveMobile(): React.JSX.Element {
   // InboxItemType). Only `proposal` items actually await a decision — insight/alert
   // are FYI (and insights already surface in "Top risks" above), so counting them
   // here would inflate the number AND double-show insights. Keep proposals only.
-  const aiInboxRaw = (aiInboxQ.data?.items ?? []) as Array<{ id: string; title: string; type: string }>;
+  const aiInboxRaw = (aiInboxQ.data?.items ?? []) as Array<{
+    id: string;
+    title: string;
+    type: string;
+    // proposal-only HITL fields (server/services/aiActionInbox.ts InboxItem):
+    // actionId == token == ai_pending_actions.id — the confirm token for
+    // aiCopilot.confirmAction. `actions` lists the supported 1-tap verbs.
+    actions?: string[];
+    actionId?: string;
+    token?: string;
+    tool?: string;
+  }>;
   const aiInboxProposals = useMemo(
     () => aiInboxRaw.filter((it) => it.type === "proposal"),
     [aiInboxQ.data], // eslint-disable-line react-hooks/exhaustive-deps -- aiInboxRaw is derived from aiInboxQ.data
@@ -423,22 +454,41 @@ export default function ExecutiveMobile(): React.JSX.Element {
   const approvalsTotal = thresholdRows.length + aiInboxProposals.length + deployRows.length;
   const approvalsDisplay = aiInboxTruncated ? `${approvalsTotal}+` : String(approvalsTotal);
 
+  // doc 67 W8 — each row now carries a contextual deep-link (?focus= is handled by
+  // ApprovalsInbox: scroll + 3s highlight) and, for AI PROPOSALS only, the HITL
+  // confirm token for the inline Duyệt/Bỏ qua. Threshold/deploy stay link-only
+  // (SoD / step-up-2FA flows live in the full inbox — see header note).
   const approvalItems = useMemo(() => {
-    const items: Array<{ key: string; kind: string; label: string; title: string }> = [];
+    const items: Array<{
+      key: string;
+      kind: string;
+      label: string;
+      title: string;
+      href: string;
+      proposal?: { actionId: string; token: string; tool?: string };
+    }> = [];
     for (const r of thresholdRows.slice(0, 3)) {
       items.push({
         key: `th-${r.id}`,
         kind: t("executiveMobile.approvals.threshold", "Threshold"),
         label: r.pointCode?.trim() || `MP-${r.pointDefId}`,
         title: r.productCode?.trim() || "",
+        href: `/approvals-inbox?tab=threshold&focus=th-${r.id}`,
       });
     }
     for (const it of aiInboxProposals.slice(0, 3)) {
+      const actionId = it.actionId ?? it.id;
+      const token = it.token ?? it.id;
+      // Only offer inline approve when the server explicitly lists the verb AND
+      // the confirm token is present (contract: aiCopilot.confirmAction).
+      const canApprove = (it.actions ?? []).includes("approve") && !!actionId && !!token;
       items.push({
         key: `ai-${it.id}`,
         kind: t("executiveMobile.approvals.aiInbox", "AI inbox"),
         label: it.title,
         title: "",
+        href: `/approvals-inbox?tab=ai&focus=proposal-${it.id}`,
+        proposal: canApprove ? { actionId, token, tool: it.tool } : undefined,
       });
     }
     for (const r of deployRows.slice(0, 3)) {
@@ -447,10 +497,73 @@ export default function ExecutiveMobile(): React.JSX.Element {
         kind: t("executiveMobile.approvals.deploy", "Deploy"),
         label: r.project?.code?.trim() || `#${r.deployment.projectId}`,
         title: "",
+        href: `/approvals-inbox?tab=deploy&focus=dp-${r.deployment.id}`,
       });
     }
     return items.slice(0, 5);
   }, [thresholdRows, aiInboxProposals, deployRows, t]);
+
+  // ── doc 67 W8 (việc 1) — 1-tap Duyệt/Bỏ qua on AI proposals ─────────────────
+  // Duyệt reuses the EXISTING HITL confirm (aiCopilot.confirmAction, token ==
+  // actionId — same call ApprovalsInbox/AIActionInbox make; NO step-up on this
+  // path) behind a one-step AlertDialog; Bỏ qua reuses aiInbox.dismiss (HITL
+  // cancel). Both invalidate aiInbox.list (+count badge) and toast the REAL
+  // server outcome — never an optimistic success.
+  const utils = trpc.useUtils();
+  const confirmM = trpc.aiCopilot.confirmAction.useMutation();
+  const dismissM = trpc.aiInbox.dismiss.useMutation();
+  const aiActionBusy = confirmM.isPending || dismissM.isPending;
+  const [confirmTarget, setConfirmTarget] = useState<{
+    actionId: string;
+    token: string;
+    tool?: string;
+    label: string;
+  } | null>(null);
+
+  const invalidateAiInbox = useCallback(() => {
+    void utils.aiInbox.list.invalidate();
+    void utils.aiInbox.count.invalidate();
+  }, [utils]);
+
+  const approveConfirmed = useCallback(async () => {
+    const target = confirmTarget;
+    if (!target) return;
+    setConfirmTarget(null);
+    try {
+      const res = await confirmM.mutateAsync({
+        actionId: target.actionId,
+        token: target.token,
+        lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
+      });
+      if (res.ok) {
+        toast.success(res.message ?? t("executiveMobile.approvals.approved", "Action approved"));
+      } else {
+        toast.error(res.message ?? t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+      }
+    } catch {
+      toast.error(t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+    } finally {
+      invalidateAiInbox();
+    }
+  }, [confirmTarget, confirmM, i18n.language, t, invalidateAiInbox]);
+
+  const dismissProposal = useCallback(
+    async (id: string) => {
+      try {
+        const res = await dismissM.mutateAsync({ type: "proposal", id });
+        if (res.ok) {
+          toast.success(t("executiveMobile.approvals.dismissed", "Dismissed"));
+        } else {
+          toast.error(res.message ?? t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+        }
+      } catch {
+        toast.error(t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+      } finally {
+        invalidateAiInbox();
+      }
+    },
+    [dismissM, t, invalidateAiInbox],
+  );
 
   const approvalsLoading =
     (canViewThresholds && thresholdQ.isLoading) ||
@@ -677,17 +790,31 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   {topRisks.map((r) => {
                     const tone = severityTone(r.severity);
                     return (
-                      <li key={r.id} className="flex items-start gap-2.5 rounded-md border p-2.5">
-                        <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_TEXT_CLASS[tone]}`} aria-hidden />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium">{r.title || t("executiveMobile.risks.untitled", "Risk")}</span>
-                            {r.machineCode && (
-                              <Badge variant="outline" className="h-4 shrink-0 py-0 text-[10px]">{r.machineCode}</Badge>
-                            )}
+                      /* doc 67 W8 (việc 2) — tappable row: deep-link to the full
+                         inbox with ?focus=insight-{id} (scroll + highlight there).
+                         NOTE: a per-machine target was considered but risks only
+                         carry machineCode (a code string) while the machine
+                         cockpit route is /machine/:id (numeric id; /machines/{id}
+                         does not exist) — no client-side code→id resolution, so
+                         the inbox is the honest contextual target. */
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => setLocation(`/approvals-inbox?focus=insight-${r.id}`)}
+                          className="flex min-h-11 w-full items-start gap-2.5 rounded-md border p-2.5 text-left hover:bg-accent"
+                        >
+                          <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_TEXT_CLASS[tone]}`} aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-sm font-medium">{r.title || t("executiveMobile.risks.untitled", "Risk")}</span>
+                              {r.machineCode && (
+                                <Badge variant="outline" className="h-4 shrink-0 py-0 text-[10px]">{r.machineCode}</Badge>
+                              )}
+                            </div>
+                            {r.body && <p className="line-clamp-2 text-xs text-muted-foreground">{r.body}</p>}
                           </div>
-                          {r.body && <p className="line-clamp-2 text-xs text-muted-foreground">{r.body}</p>}
-                        </div>
+                          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        </button>
                       </li>
                     );
                   })}
@@ -830,10 +957,47 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   {!approvalsLoading && approvalItems.length > 0 && (
                     <ul className="space-y-1.5">
                       {approvalItems.map((it) => (
-                        <li key={it.key} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                          <Badge variant="outline" className="h-5 shrink-0 py-0 text-[10px]">{it.kind}</Badge>
-                          <span className="min-w-0 flex-1 truncate text-sm">{it.label}</span>
-                          {it.title && <span className="shrink-0 text-xs text-muted-foreground">{it.title}</span>}
+                        /* doc 67 W8 — row body = deep-link button (?focus= scroll +
+                           highlight in the full inbox); PROPOSAL rows add the
+                           inline Duyệt/Bỏ qua strip below (separate buttons — a
+                           row-wide button would nest interactive elements). */
+                        <li key={it.key} className="overflow-hidden rounded-md border">
+                          <button
+                            type="button"
+                            onClick={() => setLocation(it.href)}
+                            className="flex h-11 w-full min-w-0 items-center gap-2 px-3 text-left hover:bg-accent"
+                            aria-label={t("executiveMobile.approvals.openItemAria", "Review in full inbox: {{title}}", { title: it.label })}
+                          >
+                            <Badge variant="outline" className="h-5 shrink-0 py-0 text-[10px]">{it.kind}</Badge>
+                            <span className="min-w-0 flex-1 truncate text-sm">{it.label}</span>
+                            {it.title && <span className="shrink-0 text-xs text-muted-foreground">{it.title}</span>}
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                          </button>
+                          {it.proposal && (
+                            <div className="flex gap-2 border-t bg-muted/30 px-3 py-2">
+                              <Button
+                                className="h-11 flex-1"
+                                disabled={aiActionBusy}
+                                onClick={() =>
+                                  setConfirmTarget({ ...it.proposal!, label: it.label })
+                                }
+                                aria-label={t("executiveMobile.approvals.approveAria", "Approve: {{title}}", { title: it.label })}
+                              >
+                                <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
+                                {t("executiveMobile.approvals.approve", "Approve")}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="h-11 flex-1"
+                                disabled={aiActionBusy}
+                                onClick={() => void dismissProposal(it.proposal!.actionId)}
+                                aria-label={t("executiveMobile.approvals.dismissAria", "Dismiss: {{title}}", { title: it.label })}
+                              >
+                                <XCircle className="mr-1 h-4 w-4" aria-hidden />
+                                {t("executiveMobile.approvals.dismiss", "Dismiss")}
+                              </Button>
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -862,6 +1026,42 @@ export default function ExecutiveMobile(): React.JSX.Element {
               </Button>
             </CardContent>
           </Card>
+
+          {/* doc 67 W8 — one-step confirm before executing an AI proposal: names
+              the action (tool) + the object (server-built summary). Confirm calls
+              the EXISTING HITL aiCopilot.confirmAction — nothing new executes. */}
+          <AlertDialog
+            open={confirmTarget != null}
+            onOpenChange={(o) => {
+              if (!o) setConfirmTarget(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t("executiveMobile.approvals.confirmTitle", "Approve this AI action?")}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("executiveMobile.approvals.confirmBody", "The proposed action below will be executed immediately.")}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {confirmTarget && (
+                <div className="space-y-2 rounded-md bg-muted/40 p-3">
+                  {confirmTarget.tool && (
+                    <Badge variant="outline" className="font-mono text-[10px]">{confirmTarget.tool}</Badge>
+                  )}
+                  <div className="text-sm font-medium leading-relaxed">{confirmTarget.label}</div>
+                </div>
+              )}
+              <AlertDialogFooter>
+                <AlertDialogCancel className="h-11">{t("common.cancel", "Cancel")}</AlertDialogCancel>
+                <AlertDialogAction className="h-11" onClick={() => void approveConfirmed()}>
+                  <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
+                  {t("executiveMobile.approvals.approve", "Approve")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </section>
         </div>
 

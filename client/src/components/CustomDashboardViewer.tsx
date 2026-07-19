@@ -61,7 +61,11 @@ const ROLE_TEMPLATE_ID = "__role_template__";
 
 export default function CustomDashboardViewer() {
   const { t } = useTranslation();
-  const [selectedDashboardId, setSelectedDashboardId] = useState<string>("");
+  // doc 67 W8 (việc 2): đọc ?dashboardId= lúc mount — deep-link "Mở" từ Dashboard
+  // Center chọn đúng dashboard; khi có param, auto-select mặc định bị bỏ qua.
+  const [selectedDashboardId, setSelectedDashboardId] = useState<string>(() => {
+    return new URLSearchParams(window.location.search).get("dashboardId") || "";
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const utils = trpc.useUtils();
 
@@ -144,6 +148,16 @@ export default function CustomDashboardViewer() {
       setSelectedDashboardId(String((fav || sortedDashboards[0]).id));
     }
   }, [sortedDashboards, selectedDashboardId, effectiveSettled, effective, hasOwnDashboards, allDashboards, roleTemplateDashboard]);
+
+  // doc 67 W8 (việc 2): ?dashboardId= trỏ tới dashboard không còn tồn tại/không
+  // truy cập được → xoá selection để nhánh auto-select ở trên chạy như bình thường.
+  useEffect(() => {
+    if (!selectedDashboardId || selectedDashboardId === ROLE_TEMPLATE_ID) return;
+    if (myDashboardsQuery.isLoading || publicDashboardsQuery.isLoading) return;
+    if (!allDashboards.some((d: any) => String(d.id) === selectedDashboardId)) {
+      setSelectedDashboardId("");
+    }
+  }, [selectedDashboardId, allDashboards, myDashboardsQuery.isLoading, publicDashboardsQuery.isLoading]);
 
   const selectedDashboard = useMemo(() => {
     if (selectedDashboardId === ROLE_TEMPLATE_ID) return roleTemplateDashboard;

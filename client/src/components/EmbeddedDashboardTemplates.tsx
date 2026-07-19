@@ -31,7 +31,9 @@ import {
 } from "lucide-react";
 
 // Predefined system templates
-const SYSTEM_TEMPLATES = [
+// doc 67 W8 (việc 5): export để CustomDashboardContent tái dùng làm empty-state
+// quick-start (grid 6 template 1-click khi user chưa có dashboard nào).
+export const SYSTEM_TEMPLATES = [
   {
     id: "production-overview",
     name: "Production Overview",
@@ -124,7 +126,9 @@ const SYSTEM_TEMPLATES = [
   },
 ];
 
-export default function EmbeddedDashboardTemplates() {
+// doc 67 W8 (P3): `embedded` — khi render trong hub /dashboard-center, PageHeader
+// của hub đã có tiêu đề + mô tả nên section con bỏ h2+description lặp (giữ nút hành động).
+export default function EmbeddedDashboardTemplates({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -233,17 +237,19 @@ export default function EmbeddedDashboardTemplates() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <LayoutTemplate className="h-5 w-5" />
-            Dashboard Templates
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('dashboard.selectOrCreateTemplate')}
-          </p>
-        </div>
+      {/* Header — embedded (doc 67 W8 P3): bỏ h2+description lặp với PageHeader hub */}
+      <div className={embedded ? "flex items-center justify-end" : "flex items-center justify-between"}>
+        {!embedded && (
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <LayoutTemplate className="h-5 w-5" />
+              Dashboard Templates
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t('dashboard.selectOrCreateTemplate')}
+            </p>
+          </div>
+        )}
         {isAdmin && (
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
