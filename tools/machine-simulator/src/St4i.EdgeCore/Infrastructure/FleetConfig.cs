@@ -40,28 +40,42 @@ public static class FleetConfig
 
     /// <summary>Parses <paramref name="path"/> into a list of <see cref="MachineDescriptor"/>.
     /// Returns an empty list if the file doesn't exist (a fleet with no config file is simply an
-    /// empty fleet, not an error). Throws <see cref="FleetConfigException"/> — never a raw
-    /// <see cref="JsonException"/> — if the file exists but can't be parsed into the expected shape.</summary>
+    /// empty fleet, not an error). Throws <see cref="FleetConfigException"/> — never a raw framework
+    /// exception — if the path exists but isn't a loadable/parseable fleet file (including a path that
+    /// is actually a directory — see the guard below); see the catch-all further down for why this
+    /// matters beyond just the JSON-parsing cases.</summary>
     public static IReadOnlyList<MachineDescriptor> Load(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
+        // Fix-pass (post-Task-22 review): explicit — <see cref="File.Exists"/> is a FILE-existence
+        // check, so it is FALSE for a directory. Without this guard, a fleet.json path that's actually
+        // a directory (an operator's config mistake) would fall straight into the "!File.Exists ->
+        // empty fleet" branch below and silently produce a ZERO-machine fleet — masking the real
+        // mistake as if no fleet.json had been provided at all — rather than the clear, path-carrying
+        // error every other bad-input case in this method raises. This is also the simplest portable
+        // repro for the class of bug the catch-all further down closes: File.ReadAllText throws
+        // UnauthorizedAccessException (not IOException) against a directory on Windows, and — before
+        // that catch-all existed — that exact exception type escaped this method entirely unwrapped,
+        // past FleetService.LoadFleet's own `catch (FleetConfigException)`, out of the DI constructor /
+        // App.OnStartup: an unhandled startup crash despite this class's whole "never a raw framework
+        // exception" promise. See FleetConfigTests.Load_path_is_a_directory_throws_FleetConfigException_not_UnauthorizedAccessException.
+        if (Directory.Exists(path))
+        {
+            throw new FleetConfigException(path, "Fleet config path is a directory, not a file");
+        }
+
         if (!File.Exists(path)) return Array.Empty<MachineDescriptor>();
 
-        string json;
         try
         {
-            json = File.ReadAllText(path);
+            var json = File.ReadAllText(path);
+            var machines = JsonSerializer.Deserialize<List<MachineDescriptor>>(json, Options);
+            return (IReadOnlyList<MachineDescriptor>?)machines ?? Array.Empty<MachineDescriptor>();
         }
         catch (IOException e)
         {
             throw new FleetConfigException(path, "Could not read fleet config file", e);
-        }
-
-        try
-        {
-            var machines = JsonSerializer.Deserialize<List<MachineDescriptor>>(json, Options);
-            return (IReadOnlyList<MachineDescriptor>?)machines ?? Array.Empty<MachineDescriptor>();
         }
         catch (JsonException e)
         {
@@ -72,6 +86,17 @@ public static class FleetConfig
             // Thrown by System.Text.Json when the JSON shape doesn't match MachineDescriptor's
             // constructor (e.g. wrong types) — same "clear, path-carrying" contract as a parse error.
             throw new FleetConfigException(path, "Fleet config JSON does not match the expected machine shape", e);
+        }
+        catch (Exception e) when (e is not FleetConfigException)
+        {
+            // Fix-pass (post-Task-22 review): a bare catch-all, deliberately LAST — every failure mode
+            // this method didn't anticipate above (e.g. an ACL-denied fleet.json that DOES pass
+            // File.Exists but still throws UnauthorizedAccessException from File.ReadAllText; a
+            // PathTooLongException; any other framework exception this method's author didn't foresee)
+            // must still come out as a FleetConfigException, never a raw framework exception, because
+            // FleetService.LoadFleet's whole "a bad fleet.json must never take down the kiosk" contract
+            // is a `catch (FleetConfigException)` around this call.
+            throw new FleetConfigException(path, $"Failed to load fleet config: {e.Message}", e);
         }
     }
 }

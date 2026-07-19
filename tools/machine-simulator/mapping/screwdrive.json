@@ -1,4 +1,5 @@
 {
+  "_note": "Future-extensibility placeholder — not yet consulted by the runtime pipeline (doc 62 §11 P2 'Mapping UI'). See README.md §10.",
   "name": "screwdrive",
   "deviceClass": "Automation",
   "defaultStepType": "screw_tightening",

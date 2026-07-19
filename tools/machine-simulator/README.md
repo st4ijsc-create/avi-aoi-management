@@ -224,6 +224,19 @@ dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
   fleet.json --smoke N`, and the WPF `--selftest` run (which now organically exercises the shipped
   `fleet.json`, not just the in-code fallback).
 
+> **Not yet wired into the runtime pipeline.** `fleet.json` itself IS live — `FleetService` actually
+> loads and runs it (see above). The `mapping/*.json` **presets** are not: nothing in this build calls
+> `MappingProfile.FromJson` against them yet — `FleetService`/`EdgeWorker` both build one shared,
+> generic `MappingProfile` ("Mixed") for the whole pipeline, since `Normalizer` today only ever
+> consults `DefaultStepType`/`UnitMap`, never per-machine `DeviceClass` routing. They ship as
+> future-extensibility placeholders that demonstrate the per-class `MappingProfile` shape (and
+> `fleet.json`'s `mappingProfile` field already references them by name) — actually resolving that
+> reference into a real per-machine profile at pipeline-build time is doc 62 §11's **P2** ("Mapping
+> UI") scope, not this build's.
+>
+> *(VI: `mapping/*.json` CHƯA được runtime đọc — chỉ là placeholder cho lộ trình P2 doc 62 §11, minh
+> hoạ shape MappingProfile cho từng lớp máy; pipeline hiện tại dùng 1 profile chung "Mixed".)*
+
 ---
 
 ## 11. Publish — self-contained single-file exe / Đóng gói exe độc lập

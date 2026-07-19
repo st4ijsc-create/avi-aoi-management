@@ -75,4 +75,30 @@ public class FleetConfigTests
             File.Delete(tmp);
         }
     }
+
+    /// <summary>Post-Task-22 review fix: a bad fleet.json must never take down the kiosk, but
+    /// <c>UnauthorizedAccessException</c> escaped <see cref="FleetConfig.Load"/> unwrapped before this
+    /// fix — past <c>FleetService.LoadFleet</c>'s own <c>catch (FleetConfigException)</c>, out of the DI
+    /// constructor / App.OnStartup, an unhandled startup crash. A path that is actually a DIRECTORY is
+    /// the simplest portable repro: <see cref="File.Exists"/> is false for a directory (it's specifically
+    /// a FILE-existence check), so without <see cref="FleetConfig.Load"/>'s explicit
+    /// <see cref="Directory.Exists"/> guard this would silently fall through to the "path doesn't exist"
+    /// branch and return an EMPTY fleet — masking a real config mistake — rather than raising a clear,
+    /// path-carrying error; WITH that guard it takes the same "never a raw framework exception" path this
+    /// whole class promises everywhere else.</summary>
+    [Fact]
+    public void Load_path_is_a_directory_throws_FleetConfigException_not_UnauthorizedAccessException()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "fleet-is-a-dir-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var ex = Assert.Throws<FleetConfigException>(() => FleetConfig.Load(dir));
+            Assert.Contains(dir, ex.Message);
+        }
+        finally
+        {
+            Directory.Delete(dir);
+        }
+    }
 }
