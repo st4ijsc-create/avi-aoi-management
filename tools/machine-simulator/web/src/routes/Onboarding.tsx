@@ -2,21 +2,25 @@ import * as React from "react"
 import { motion } from "framer-motion"
 import {
   ArrowLeft,
+  ArrowUpRight,
   CheckCircle2,
   Clock3,
   Copy,
   Eye,
   EyeOff,
+  FlaskConical,
+  Globe,
   KeyRound,
   Loader2,
   PlayCircle,
   RefreshCw,
+  ShieldCheck,
   UserPlus,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
-import { useT } from "@/i18n"
+import { useLanguage, useT } from "@/i18n"
 import {
   useFleetIsRunning,
   useOnboardingClaim,
@@ -85,8 +89,8 @@ function DemoLiveToggle({
       className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-subtle p-0.5"
     >
       {[
-        { value: true, label: "Demo" },
-        { value: false, label: "Live" },
+        { value: true, label: t("onboarding.demoLiveToggle.demo") },
+        { value: false, label: t("onboarding.demoLiveToggle.live") },
       ].map((option) => {
         const selected = isDemo === option.value
         return (
@@ -106,6 +110,40 @@ function DemoLiveToggle({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/** Persistent "which world am I in" strip — the segmented control above only shows on the Register
+ * step, so once the wizard moves on to Poll/Claim/Done there was previously NO visible sign of
+ * whether the flow was fabricating everything locally or genuinely calling `serverUrl`. Rendered
+ * once, above `StepIndicator`, so it stays visible through the whole wizard. */
+function ModeIndicator({ isDemo, serverUrl }: { isDemo: boolean; serverUrl: string }) {
+  const t = useT()
+  const trimmedServer = serverUrl.trim()
+  const detail = isDemo
+    ? t("onboarding.modeHint.demo")
+    : trimmedServer
+      ? t("onboarding.modeHint.live", { server: trimmedServer })
+      : t("onboarding.modeHint.liveNoServer")
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+        isDemo ? "border-info/20 bg-info/10 text-info-text" : "border-warn/20 bg-warn/10 text-warn-text"
+      )}
+    >
+      {isDemo ? (
+        <FlaskConical className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <Globe className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="font-semibold">{isDemo ? t("onboarding.modeHint.demoLabel") : t("onboarding.modeHint.liveLabel")}</span>
+      {/* Same tint color as the label, not `text-text-muted` — `StatusBadge`'s own doc comment notes
+          plain muted-gray text isn't verified to hold AA 4.5:1 on a colored `/10` tint background,
+          only the paired `-text` token is. */}
+      <span className="min-w-0 truncate">{detail}</span>
     </div>
   )
 }
@@ -178,12 +216,12 @@ function RegisterStep({
           />
         </FormField>
         {!isDemo ? (
-          <FormField label="Server URL" htmlFor="onb-server" className="sm:col-span-2">
+          <FormField label={t("onboarding.register.serverUrlLabel")} htmlFor="onb-server" className="sm:col-span-2">
             <Input
               id="onb-server"
               value={serverUrl}
               onChange={(e) => onServerUrl(e.target.value)}
-              placeholder="https://your-st4i-server"
+              placeholder={t("onboarding.register.serverUrlPlaceholder")}
             />
           </FormField>
         ) : null}
@@ -199,24 +237,50 @@ function RegisterStep({
 
 interface PollStepProps {
   serialNumber: string
+  isDemo: boolean
   pending: boolean
   onPoll: () => void
   onBack: () => void
 }
 
-function PollStep({ serialNumber, pending, onPoll, onBack }: PollStepProps) {
+/** The believable "register → wait → approve" moment (W1): a real pending state (spinner + the
+ * `"Đang chờ duyệt trên hệ thống ST4I"` headline) that only ever advances on an explicit action —
+ * never silently on its own. Demo and Live share that shape but diverge on what the action IS: Demo
+ * exposes it honestly as "Duyệt máy (mô phỏng admin)" (the presenter IS the simulated admin, so the
+ * button says so instead of pretending to poll a server that isn't there); Live is a genuine
+ * `GET /api/machine/config` poll that can legitimately keep returning "still pending" until a real
+ * admin approves in the SYNAPSE Admin Console — its own instruction callout tells the visitor to go
+ * do that first. */
+function PollStep({ serialNumber, isDemo, pending, onPoll, onBack }: PollStepProps) {
   const t = useT()
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-text-muted">
-        {t("onboarding.poll.waitingPrefix")} <span className="font-numeric font-medium text-text-body">{serialNumber}</span>
-        {t("onboarding.poll.waitingSuffix")}
-      </p>
-
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-subtle px-3 py-2.5">
-        <Clock3 className="size-4 shrink-0 text-navy-600" aria-hidden="true" />
-        <StatusBadge status="warn">{t("onboarding.poll.pending")}</StatusBadge>
+      <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-subtle px-3 py-2.5">
+        {pending ? (
+          <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-navy-600" aria-hidden="true" />
+        ) : (
+          <Clock3 className="mt-0.5 size-4 shrink-0 text-navy-600" aria-hidden="true" />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-text-strong">{t("onboarding.poll.pendingTitle")}</span>
+            <StatusBadge status="warn" pulse={pending}>
+              {t("onboarding.poll.pending")}
+            </StatusBadge>
+          </div>
+          <p className="text-xs text-text-muted">
+            {t("onboarding.poll.waitingPrefix")} <span className="font-numeric font-medium text-text-body">{serialNumber}</span>
+            {isDemo ? t("onboarding.poll.waitingSuffixDemo") : t("onboarding.poll.waitingSuffixLive")}
+          </p>
+        </div>
       </div>
+
+      {!isDemo ? (
+        <div className="flex items-start gap-2 rounded-lg border border-info/20 bg-info/10 px-3 py-2.5 text-xs text-info-text">
+          <Globe className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{t("onboarding.poll.liveInstruction")}</span>
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-2">
         <Button variant="outline" onClick={onBack} disabled={pending}>
@@ -224,8 +288,20 @@ function PollStep({ serialNumber, pending, onPoll, onBack }: PollStepProps) {
           {t("onboarding.poll.back")}
         </Button>
         <Button onClick={onPoll} disabled={pending} className="w-fit">
-          {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-3.5" aria-hidden="true" />}
-          {pending ? t("onboarding.poll.checking") : t("onboarding.poll.check")}
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : isDemo ? (
+            <ShieldCheck className="size-3.5" aria-hidden="true" />
+          ) : (
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+          )}
+          {isDemo
+            ? pending
+              ? t("onboarding.poll.approving")
+              : t("onboarding.poll.approveBtn")
+            : pending
+              ? t("onboarding.poll.liveChecking")
+              : t("onboarding.poll.liveCheckBtn")}
         </Button>
       </div>
     </div>
@@ -258,7 +334,11 @@ function ClaimEnrollStep({
   onBack,
 }: ClaimEnrollStepProps) {
   const t = useT()
-  const tokenHint = isDemo ? t("onboarding.claim.claimTokenHintDemo") : undefined
+  // Live's claim field gets its own, more specific hint (where to find the mct_ code) — Enroll has
+  // no Live-specific guidance of its own (no REST proxy exists for it; see e2-report.md §3), so it
+  // only ever shows the demo caveat.
+  const claimHint = isDemo ? t("onboarding.claim.claimTokenHintDemo") : t("onboarding.claim.claimTokenHintLive")
+  const enrollHint = isDemo ? t("onboarding.claim.claimTokenHintDemo") : undefined
 
   return (
     <div className="flex flex-col gap-4">
@@ -272,7 +352,7 @@ function ClaimEnrollStep({
 
         <TabsContent value="claim" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label={t("onboarding.claim.claimTokenLabel")} htmlFor="onb-claim-token" hint={tokenHint}>
+            <FormField label={t("onboarding.claim.claimTokenLabel")} htmlFor="onb-claim-token" hint={claimHint}>
               <Input
                 id="onb-claim-token"
                 value={claimToken}
@@ -289,7 +369,7 @@ function ClaimEnrollStep({
 
         <TabsContent value="enroll" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label={t("onboarding.claim.enrollTokenLabel")} htmlFor="onb-enroll-token" hint={tokenHint}>
+            <FormField label={t("onboarding.claim.enrollTokenLabel")} htmlFor="onb-enroll-token" hint={enrollHint}>
               <Input
                 id="onb-enroll-token"
                 value={enrollToken}
@@ -322,6 +402,7 @@ interface DoneStepProps {
   copied: boolean
   onLoadFleet: () => void
   loadPending: boolean
+  onViewMachine: () => void
   onReset: () => void
 }
 
@@ -334,16 +415,21 @@ function DoneStep({
   copied,
   onLoadFleet,
   loadPending,
+  onViewMachine,
   onReset,
 }: DoneStepProps) {
   const t = useT()
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
+      {/* E2 made Claim/Enroll actually join the machine into the live simulated fleet (previously
+          this screen's own "View fleet" CTA promised a payoff that didn't exist — functional-audit.md
+          #2) — this banner now says so explicitly instead of only logging it in the activity feed. */}
       <div className="flex items-center gap-3 rounded-lg border border-ok/20 bg-ok/10 px-3 py-2.5">
         <CheckCircle2 className="size-5 shrink-0 text-ok-text" aria-hidden="true" />
         <div className="flex flex-col">
           <span className="text-sm font-semibold text-text-strong">{t("onboarding.done.savedFor", { code: machineCode })}</span>
           <span className="text-xs text-text-muted">{t("onboarding.done.savedHint")}</span>
+          <span className="text-xs text-ok-text">{t("onboarding.done.joinedFleet", { code: machineCode })}</span>
         </div>
       </div>
 
@@ -371,7 +457,11 @@ function DoneStep({
       </FormField>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={onLoadFleet} disabled={loadPending}>
+        <Button onClick={onViewMachine} disabled={loadPending}>
+          {loadPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <ArrowUpRight className="size-3.5" aria-hidden="true" />}
+          {t("onboarding.done.viewMachine")}
+        </Button>
+        <Button variant="outline" onClick={onLoadFleet} disabled={loadPending}>
           {loadPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <PlayCircle className="size-3.5" aria-hidden="true" />}
           {t("onboarding.done.viewFleet")}
         </Button>
@@ -456,6 +546,7 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
 
 export default function Onboarding() {
   const t = useT()
+  const { language } = useLanguage()
   const STEPS = useOnboardingSteps()
   const [, navigate] = useLocation()
   const settingsQuery = useSettings()
@@ -470,7 +561,8 @@ export default function Onboarding() {
   const [stepIndex, setStepIndex] = React.useState(0)
   const [isDemo, setIsDemo] = React.useState(true)
   const [serialNumber, setSerialNumber] = React.useState("SIM-0001")
-  const [name, setName] = React.useState("Trạm vít demo")
+  const [name, setName] = React.useState(() => t("onboarding.register.defaultName"))
+  const [nameTouched, setNameTouched] = React.useState(false)
   const [machineType, setMachineType] = React.useState("Automation")
   const [serverUrl, setServerUrl] = React.useState("")
   const [claimToken, setClaimToken] = React.useState("")
@@ -479,6 +571,19 @@ export default function Onboarding() {
   const [revealed, setRevealed] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
   const [log, setLog] = React.useState<LogEntry[]>([])
+
+  // Default machine name tracks the active UI language (W1 — was hardcoded Vietnamese regardless of
+  // language, functional-audit.md #4) but only until the visitor actually edits it — `nameTouched`
+  // keeps a later language switch from clobbering a name someone typed themselves.
+  React.useEffect(() => {
+    if (!nameTouched) setName(t("onboarding.register.defaultName"))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language])
+
+  const handleNameChange = React.useCallback((v: string) => {
+    setNameTouched(true)
+    setName(v)
+  }, [])
 
   // First switch to Live prefills the server URL from Settings, so the tester isn't typing it twice —
   // only if the field is still empty (don't clobber a value they already edited).
@@ -539,6 +644,11 @@ export default function Onboarding() {
         claimToken: claimToken.trim() || undefined,
         isDemo,
         serverUrl: isDemo ? undefined : serverUrl.trim() || undefined,
+        // E2 added these to OnboardingClaimRequest — the fleet-join glue needs them to pick the
+        // right simulator profile; without them the machine still joins the fleet, just as a
+        // generic Automation profile (see e2-report.md §3).
+        name: name.trim() || undefined,
+        machineType: machineType.trim() || undefined,
       },
       {
         onSuccess: (data) => {
@@ -587,6 +697,15 @@ export default function Onboarding() {
     navigate("/")
   }
 
+  /** "Xem máy vừa thêm" — jumps straight to the just-joined machine's own detail page (`/machines/
+   * :code`) rather than the fleet-wide view, since that's the one place a visitor can immediately
+   * confirm THIS specific machine (not just some tile in the grid) is real and cycling. Starts the
+   * fleet too, same as `handleLoadFleet`, so there's something to see the moment it lands. */
+  const handleViewMachine = () => {
+    if (!isRunning) startFleet.mutate()
+    if (result) navigate(`/machines/${encodeURIComponent(result.machineCode)}`)
+  }
+
   const handleReset = () => {
     setStepIndex(0)
     setResult(null)
@@ -618,6 +737,7 @@ export default function Onboarding() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="h-fit">
           <CardContent className="flex flex-col gap-6">
+            <ModeIndicator isDemo={isDemo} serverUrl={serverUrl} />
             <StepIndicator steps={STEPS} currentIndex={stepIndex} />
 
             {stepIndex === 0 ? (
@@ -625,7 +745,7 @@ export default function Onboarding() {
                 serialNumber={serialNumber}
                 onSerialNumber={setSerialNumber}
                 name={name}
-                onName={setName}
+                onName={handleNameChange}
                 machineType={machineType}
                 onMachineType={setMachineType}
                 isDemo={isDemo}
@@ -640,6 +760,7 @@ export default function Onboarding() {
             {stepIndex === 1 ? (
               <PollStep
                 serialNumber={serialNumber}
+                isDemo={isDemo}
                 pending={poll.isPending}
                 onPoll={handlePoll}
                 onBack={() => setStepIndex(0)}
@@ -671,6 +792,7 @@ export default function Onboarding() {
                 copied={copied}
                 onLoadFleet={handleLoadFleet}
                 loadPending={startFleet.isPending}
+                onViewMachine={handleViewMachine}
                 onReset={handleReset}
               />
             ) : null}

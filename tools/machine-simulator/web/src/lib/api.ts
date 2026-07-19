@@ -278,6 +278,11 @@ export interface OnboardingClaimInput {
   claimToken?: string
   isDemo?: boolean
   serverUrl?: string
+  /** E2 (`Fleet/Dtos.cs`'s `OnboardingClaimRequest`): the fleet-join glue on the engine's endpoint
+   * layer builds the joined machine's simulator profile from these — omitting them still joins the
+   * fleet, just as a generic Automation profile at a default cycle rate. */
+  name?: string
+  machineType?: string
 }
 
 export interface OnboardingEnrollInput {

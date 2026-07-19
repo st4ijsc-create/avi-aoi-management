@@ -2,46 +2,76 @@ import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
 import { gotoOnboarding } from "./support/screens"
+import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
 
 /**
  * Onboarding happy path (Demo mode — the default, no live ST4I server needed): the full
- * Register → Approval → Claim → Done step flow, plus the independent "paste an existing mk_ key"
- * card. Every step below is a REAL `POST /v1/onboarding/*` call against `OnboardingService`'s demo
- * branch (fabricated results, but a real HTTP round trip) — nothing here is mocked.
+ * Register → Approval (real pending moment → explicit "approve" action) → Claim → Done step flow,
+ * plus the independent "paste an existing mk_ key" card. Every step below is a REAL
+ * `POST /v1/onboarding/*` call against `OnboardingService`'s demo branch (fabricated results, but a
+ * real HTTP round trip) — nothing here is mocked.
+ *
+ * W1: Claim/Enroll now also join the newly-onboarded machine into the live simulated fleet
+ * (`OnboardingFleetJoin`, E2) — this spec follows through on that all the way to `/machines/:code`
+ * actually finding it, not just trusting the activity-log message that says so.
  */
 test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
-test.describe("onboarding — register → approve → claim → done", () => {
-  test("completes the wizard in demo mode and reveals/copies the fabricated mk_ key", async ({ page }) => {
+test.describe("onboarding — register → approve → claim → done → joins the fleet", () => {
+  test("completes the wizard in demo mode, joins the live fleet, and reveals/copies the fabricated mk_ key", async ({
+    page,
+  }) => {
     await gotoOnboarding(page)
 
     // Unique per run so this test is safe to re-run without depending on any server-side dedup
     // (Demo mode is stateless per call anyway — this is just defensive hygiene).
     const serial = `SIM-E2E-${Date.now()}`
 
+    // Mode indicator (persistent across all 4 steps, not just Register) starts on Demo. Asserted via
+    // its long, unique detail sentence — not the bare "Demo"/"Live" label text, which also appears
+    // verbatim on the TopBar's own transport-mode radiogroup and the segmented toggle just below this
+    // (three legitimate, unrelated matches for the same two words on this one screen).
+    await expect(page.getByText(viDict.onboarding.modeHint.demo)).toBeVisible()
+
     // Step 0 — Register. Demo/Live toggle already defaults to Demo. Scoped to this screen's own
     // radiogroup (`aria-label`) — the TopBar's transport-mode segmented control is ALSO a
     // role="radiogroup" with its own "Demo" option, elsewhere on the same page.
     const demoLiveToggle = page.getByLabel(viDict.onboarding.demoLiveToggle.aria)
-    await expect(demoLiveToggle.getByRole("radio", { name: "Demo", checked: true })).toBeVisible()
+    await expect(demoLiveToggle.getByRole("radio", { name: viDict.onboarding.demoLiveToggle.demo, checked: true })).toBeVisible()
+
+    // Default machine name is the VI-localized default (not the old hardcoded "Trạm vít demo" — it
+    // just happens to be the same string in this dictionary; the language-switch test below proves
+    // it actually tracks `t()`, not a lucky coincidence).
+    await expect(page.getByLabel(viDict.onboarding.register.nameLabel)).toHaveValue(viDict.onboarding.register.defaultName)
+
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
 
-    // Step 1 — Approval (demo: instantly approvable on the first check). `exact: true` — the
-    // paragraph above it ("Đang chờ quản trị viên duyệt…") contains this same word as a substring;
-    // this targets the status badge specifically.
+    // Step 1 — Approval: a real pending moment (headline + "Pending" badge), not a silent jump.
+    // `exact: true` on the badge — the description paragraph nearby contains the same word.
+    await expect(page.getByText(viDict.onboarding.poll.pendingTitle)).toBeVisible()
     await expect(page.getByText(viDict.onboarding.poll.pending, { exact: true })).toBeVisible()
-    await page.getByRole("button", { name: viDict.onboarding.poll.check }).click()
+    // Demo's honest label — the presenter IS the simulated admin, the button says so.
+    const approveButton = page.getByRole("button", { name: viDict.onboarding.poll.approveBtn })
+    await expect(approveButton).toBeVisible()
+    // Live-only guidance callout must NOT show while in Demo.
+    await expect(page.getByText(viDict.onboarding.poll.liveInstruction)).toHaveCount(0)
+    await approveButton.click()
 
-    // Step 2 — Claim (default sub-tab; demo ignores the token entirely).
+    // Step 2 — Claim (default sub-tab; demo ignores the token entirely). Description now says the
+    // machine is retrieving its configuration, not just "approved".
+    await expect(page.getByText(viDict.onboarding.claim.description)).toBeVisible()
     await expect(page.getByRole("tab", { name: viDict.onboarding.claim.tabClaim })).toBeVisible()
     await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
 
-    // Step 3 — Done: a real mk_ key was fabricated and stored (DPAPI, engine-side) for this serial.
-    // `exact: true` — the toast fired by this same success handler carries near-identical text
-    // (same sentence plus a trailing period), which a substring match would also pick up.
+    // Step 3 — Done: a real mk_ key was fabricated and stored (DPAPI, engine-side) for this serial,
+    // AND the machine actually joined the simulated fleet (W1's headline fix — functional-audit.md
+    // #2: the wizard used to promise this and not deliver). `exact: true` — the toast fired by this
+    // same success handler carries near-identical text (same sentence plus a trailing period), which
+    // a substring match would also pick up.
     await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
+    await expect(page.getByText(viDict.onboarding.done.joinedFleet({ code: serial }))).toBeVisible()
     const keyField = page.getByLabel("mk_ key")
     await expect(keyField).not.toHaveValue("")
 
@@ -59,9 +89,157 @@ test.describe("onboarding — register → approve → claim → done", () => {
 
     await assertNoSeriousA11yViolations(page)
 
-    // "Register another" returns to a fresh step 0.
+    // "Xem máy vừa thêm" (View new machine) — jumps straight to the just-joined machine's own
+    // detail page and proves the fleet-join is real, not just a log line. Asserted the same way
+    // `02-machine-detail.spec.ts`'s "unknown machine code" test tells found from not-found: an <h1>
+    // matching the machine CODE only ever renders once the machine is genuinely in the roster — the
+    // not-found card's heading is a fixed i18n string instead (see `gotoMachineDetail`'s doc comment)
+    // — so this fails loudly if the join didn't happen. Not using `gotoMachineDetail` itself here: it
+    // does a fresh `page.goto`, which would only prove the ROUTE works, not that the wizard's own
+    // button click (client-side navigation) actually lands there.
+    await page.getByRole("button", { name: viDict.onboarding.done.viewMachine }).click()
+    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(viDict.machineDetail.notFoundState.title)).toHaveCount(0)
+
+    // Starting the fleet (the wizard's own click already requests a start) makes the newly-joined
+    // machine cycle for real, not just sit idle in the roster. Same located-by-label-then-sibling
+    // technique as `02-machine-detail.spec.ts`'s IoT pass-rate assertion — "Chu kỳ" (Cycles) is also
+    // this screen's OWN header stat label (`HeaderStat`, a `<span>`, not a `<p>`), so scoping to
+    // `p.text-xs.text-text-muted` is what keeps this pinned to the Overview tile specifically.
+    const cyclesValue = page
+      .locator("p.text-xs.text-text-muted", { hasText: viDict.machineDetail.overview.cycles })
+      .locator("xpath=following-sibling::p[1]")
+    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: 20_000 }).toBeGreaterThan(0)
+  })
+
+  test("'register another machine' resets the wizard to a fresh step 0", async ({ page }) => {
+    await gotoOnboarding(page)
+    const serial = `SIM-E2E-RESET-${Date.now()}`
+
+    await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+    await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+    await page.getByRole("button", { name: viDict.onboarding.poll.approveBtn }).click()
+    await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
+    await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
+
     await page.getByRole("button", { name: viDict.onboarding.done.registerAnother }).click()
     await expect(page.getByLabel(viDict.onboarding.register.serialLabel)).toBeVisible()
+    // Back at step 1 of 4, not stuck mid-flow or still showing the previous machine's key.
+    await expect(page.getByRole("button", { name: viDict.onboarding.register.submit })).toBeVisible()
+    await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }))).toHaveCount(0)
+  })
+
+  test("register step default machine name tracks the UI language, and the mode indicator explains Demo vs Live", async ({
+    page,
+  }) => {
+    // English, primed via localStorage before first paint — same technique as
+    // `00-visual-and-a11y.spec.ts` (see `tests/support/theme.ts`), not a live click through Settings'
+    // language selector (that flow is already covered by `05-settings.spec.ts`); this spec is about
+    // the ONBOARDING wizard's own strings tracking whichever language is active. Not `gotoOnboarding`
+    // — that helper's own ready-check waits on the VI heading text, which never renders once the
+    // language is primed to English before first paint.
+    await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
+    await page.goto("/onboarding")
+    await expect(page.getByRole("heading", { name: en.onboarding.title, level: 1 })).toBeVisible()
+    await expect(page.getByText(en.shell.topBar.engineConnected)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByLabel(en.onboarding.register.serialLabel)).toBeVisible()
+
+    await expect(page.getByLabel(en.onboarding.register.nameLabel)).toHaveValue(en.onboarding.register.defaultName)
+    // The VI default text must NOT leak through regardless of language (functional-audit.md #4).
+    await expect(page.getByLabel(en.onboarding.register.nameLabel)).not.toHaveValue(viDict.onboarding.register.defaultName)
+    await expect(page.getByText(en.onboarding.modeHint.demo)).toBeVisible()
+
+    // No raw i18n keys anywhere on the pristine step-0 screen (a leftover `t()` typo renders the raw
+    // dot-path string, e.g. "onboarding.register.submit" — this regex is deliberately generic so it
+    // would catch a typo in ANY key on this screen, not just the ones asserted by name above).
+    await expect(page.getByText(/onboarding\.[a-zA-Z.]+/)).toHaveCount(0)
+
+    // Switching to Live surfaces the server-URL field and swaps the mode indicator's message — the
+    // visible "this is the real integration" signal the brief asked for. The indicator's new text
+    // depends on whatever `serverUrl` Settings happens to have saved in this environment (prefilled
+    // automatically — see `Onboarding.tsx`'s settings-prefill effect), so this asserts the Demo
+    // sentence is GONE rather than pinning an exact Live sentence this suite doesn't control.
+    await page.getByLabel(en.onboarding.demoLiveToggle.aria).getByRole("radio", { name: en.onboarding.demoLiveToggle.live }).click()
+    await expect(page.getByLabel(en.onboarding.register.serverUrlLabel)).toBeVisible()
+    await expect(page.getByText(en.onboarding.modeHint.demo)).toHaveCount(0)
+
+    await assertNoSeriousA11yViolations(page)
+  })
+
+  test("live mode: a failed register call surfaces a friendly error, not a crash, and claim POSTs the pasted token + name + type", async ({
+    page,
+  }) => {
+    await gotoOnboarding(page)
+    const serial = `SIM-LIVE-${Date.now()}`
+
+    await page.getByLabel(viDict.onboarding.demoLiveToggle.aria).getByRole("radio", { name: viDict.onboarding.demoLiveToggle.live }).click()
+    await page.getByLabel(viDict.onboarding.register.serverUrlLabel).fill("http://127.0.0.1:59999")
+    await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+    await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+
+    // The real engine tried a real TCP connect to an unreachable port and caught the exception —
+    // this round-trips through `OnboardingService.LiveRegisterAsync`'s own catch block, not a mock.
+    // Friendly (readable, explains what happened) and non-fatal: the wizard stays on step 0, no
+    // uncaught exception, no blank screen.
+    await expect(page.getByText(/Register failed/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByLabel(viDict.onboarding.register.serialLabel)).toBeVisible()
+
+    // The rest of this test is about the SHAPE of what the wizard sends, not about reaching a real
+    // server (there isn't one in this suite) — register/poll are now intercepted so the wizard can
+    // progress to Claim, where the one contractually load-bearing request (E2 added `name`/
+    // `machineType` to `OnboardingClaimRequest`; e2-report.md §3 flagged the web wizard as the one
+    // place still not sending them) is captured and asserted directly, not inferred from the UI.
+    await page.route("**/v1/onboarding/register", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ step: "Pending", machineCode: null, mkKey: null, isApproved: false, message: `Registered ${serial} — registrationStatus=pending` }),
+      })
+    })
+    await page.route("**/v1/onboarding/poll", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ step: "Approved", machineCode: null, mkKey: null, isApproved: true, message: "Poll approval: approved (requiresClaim=true)" }),
+      })
+    })
+    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST")
+    await page.route("**/v1/onboarding/claim", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          step: "Claimed",
+          machineCode: serial,
+          mkKey: `mk_${"a".repeat(48)}`,
+          isApproved: false,
+          message: `Claimed — mk_ key stored for ${serial}`,
+        }),
+      })
+    })
+
+    // Re-submit Register now that it (and Poll) are intercepted — advances past the pending moment
+    // to Claim without depending on a real reachable server, which this suite doesn't have.
+    await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+    await expect(page.getByText(viDict.onboarding.poll.liveInstruction)).toBeVisible()
+    await page.getByRole("button", { name: viDict.onboarding.poll.liveCheckBtn }).click()
+
+    await expect(page.getByLabel(viDict.onboarding.claim.claimTokenLabel)).toBeVisible()
+    await expect(page.getByText(viDict.onboarding.claim.claimTokenHintLive)).toBeVisible()
+    await page.getByLabel(viDict.onboarding.claim.claimTokenLabel).fill("mct_pasted_from_console")
+    await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn, exact: true }).click()
+
+    const body = JSON.parse((await claimRequest).postData() ?? "{}")
+    expect(body).toMatchObject({
+      serialNumber: serial,
+      claimToken: "mct_pasted_from_console",
+      isDemo: false,
+      serverUrl: "http://127.0.0.1:59999",
+      name: viDict.onboarding.register.defaultName,
+      machineType: "Automation",
+    })
+
+    await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
   })
 
   test("paste-an-existing-key card stores a key independently of the stepper", async ({ page }) => {
