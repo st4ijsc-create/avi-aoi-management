@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4i.EdgeCore.Transport;
 using St4iMachineSimulator.Infrastructure;
 using St4iMachineSimulator.Services;
 using St4iMachineSimulator.Views;
