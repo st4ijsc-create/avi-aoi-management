@@ -40,6 +40,12 @@ public sealed class FleetService : IDisposable
     /// dashboard visibly updates during a live demo.</summary>
     public IReadOnlyList<MachineDescriptor> Fleet { get; }
 
+    /// <summary>The same DI-resolved <see cref="ITransport"/> this service drives the pipeline with
+    /// (doc 16: Machine Detail's config-sync panel) — exposed so <c>FleetViewModel</c> can hand each
+    /// <c>MachineViewModel</c> the exact transport its readings actually flow through, rather than
+    /// resolving/constructing a second one.</summary>
+    public ITransport Transport => _transport;
+
     /// <summary>True once <see cref="Start"/> has kicked off the background pipeline task and it
     /// hasn't been <see cref="Stop"/>ped since (or the pipeline task hasn't faulted — see
     /// <see cref="LastError"/>).</summary>

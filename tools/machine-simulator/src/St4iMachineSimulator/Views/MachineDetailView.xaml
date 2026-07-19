@@ -1,0 +1,205 @@
+<UserControl x:Class="St4iMachineSimulator.Views.MachineDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:St4iMachineSimulator.Controls"
+             xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:MachineViewModel}"
+             d:DesignWidth="1000" d:DesignHeight="800">
+    <!--
+        Task 16 — Machine Detail screen. Hosted by swapping into AppShellViewModel.CurrentView (see
+        AppShellViewModel.OnMachineSelected); its DataContext IS the clicked machine's MachineViewModel
+        (same long-lived instance the dashboard tile was bound to — see that handler's remarks), so
+        every binding below is a direct, no-lookup path off that VM except the "← Dashboard" button,
+        which reaches past this view's own DataContext up to the shell (ShellView Window)'s via
+        RelativeSource, the same technique ShellView.xaml already uses for its nav buttons.
+
+        Body layout, top to bottom: header strip (code/class/status/pass-rate/cycles) → one chart panel
+        selected by DeviceClass via DataTrigger/Visibility (SPC for Automation, telemetry line for IoT,
+        AOI board view for AoiAvi — exactly one is ever visible) → config-sync panel → cycle-log grid.
+    -->
+    <UserControl.Resources>
+        <Style x:Key="PanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <Style x:Key="ValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="StatusDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Fill" Value="{StaticResource Brush.Status.Unknown}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText}" Value="OK">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Online}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="WARN">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Warn}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="FAIL">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Status.Offline}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="TELEMETRY">
+                    <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Exactly one of these 3 becomes Visible, keyed off MachineViewModel.Class. -->
+        <Style x:Key="AutomationPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Class}" Value="Automation">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="IotPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Class}" Value="Iot">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="AoiPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Class}" Value="AoiAvi">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <!-- ═══ Header ═══════════════════════════════════════════════ -->
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="← Dashboard"
+                        Style="{StaticResource TopBarButtonStyle}"
+                        Command="{Binding DataContext.BackToDashboardCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="24,0,0,0" VerticalAlignment="Center">
+                    <Ellipse Style="{StaticResource StatusDotStyle}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Code}" FontSize="24" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding MachineType}" Style="{StaticResource LabelStyle}" Margin="14,4,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding DriverKind}" Style="{StaticResource LabelStyle}" Margin="14,4,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Class}" Style="{StaticResource LabelStyle}" Margin="14,4,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- ═══ Status strip ═════════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Status" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource ValueStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Pass rate" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{Binding PassRate, StringFormat={}{0:P0}}" Style="{StaticResource ValueStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Cycles" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{Binding Cycles}" Style="{StaticResource ValueStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3">
+                        <TextBlock Text="Last cycle" Style="{StaticResource LabelStyle}" />
+                        <TextBlock Text="{Binding LastCycleSummary}" Style="{StaticResource ValueStyle}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ═══ Automation: SPC chart ════════════════════════════════ -->
+            <Border Style="{StaticResource AutomationPanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="SPC — individuals chart (I-MR approx.)" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource LabelStyle}" Margin="0,2,0,0"
+                               Text="Value line + mean/UCL/LCL (mean ± 3σ over the visible window)" />
+                    <lvc:CartesianChart Series="{Binding SpcSeries}" Height="260" Margin="0,12,0,0" Background="Transparent" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ IoT: telemetry chart ═════════════════════════════════ -->
+            <Border Style="{StaticResource IotPanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Telemetry" Style="{StaticResource SectionHeaderStyle}" />
+                    <lvc:CartesianChart Series="{Binding TelemetrySeries}" Height="260" Margin="0,12,0,0" Background="Transparent" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ AOI: board view ══════════════════════════════════════ -->
+            <Border Style="{StaticResource AoiPanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Board — latest inspection" Style="{StaticResource SectionHeaderStyle}" />
+                    <controls:BoardView Points="{Binding BoardPoints}" Height="420" Margin="0,12,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Config sync ══════════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Config sync" Style="{StaticResource SectionHeaderStyle}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                        <Button Content="Sync recipe"
+                                Style="{StaticResource TopBarButtonStyle}"
+                                Command="{Binding SyncConfigCommand}" />
+                        <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Drift state" Style="{StaticResource LabelStyle}" />
+                            <TextBlock Text="{Binding DriftState}" Style="{StaticResource ValueStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Cycle log ════════════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Cycle log" Style="{StaticResource SectionHeaderStyle}" />
+                    <DataGrid ItemsSource="{Binding CycleLog}" Margin="0,10,0,0" MaxHeight="360">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat={}{0:HH:mm:ss}}" Width="100" />
+                            <DataGridTextColumn Header="Serial" Binding="{Binding Serial}" Width="180" />
+                            <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="90" />
+                            <DataGridTextColumn Header="Key metric" Binding="{Binding KeyMetric}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

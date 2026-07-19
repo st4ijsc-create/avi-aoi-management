@@ -87,7 +87,8 @@ public partial class App : Application
             var vm = new AppShellViewModel(
                 sp.GetRequiredService<EventBus>(),
                 sp.GetRequiredService<FleetService>(),
-                sp.GetRequiredService<DashboardView>());
+                sp.GetRequiredService<DashboardView>(),
+                sp.GetRequiredService<FleetViewModel>());
             var auto = sp.GetRequiredService<AutoTransport>();
             // Background-thread event -> UI-thread property write; AppShellViewModel.HandleFallbackChanged
             // does the dispatcher marshaling itself so this subscription is safe from any thread.
@@ -173,11 +174,77 @@ public partial class App : Application
             $"TotalCycles={fleetVm.TotalCycles}, OnlineCount={fleetVm.OnlineCount}, Fpy={fleetVm.Fpy:P1}, " +
             $"FpyKpi.SubText judged count {judgedAt1s}(t=1s) -> {judgedAt3s}(t=3s) [\"{fleetVm.FpyKpi.SubText}\"]");
 
+        // ── Task 16: Machine Detail — per-class detail state + config-sync ─────────────────────
+        // The fleet has been running for 3s at this point (all 10 machines' first cycle fires
+        // near-simultaneously at t=0 — see SimulatedDriver's initial _nextDueAt seeding — so every
+        // DeviceClass should already have reported at least once), so this reuses that run rather
+        // than starting a second one.
+        RunMachineDetailSelfTest(fleetVm);
+
         vm.StopFleetCommand.Execute(null);
         if (vm.IsFleetRunning)
             throw new InvalidOperationException("selftest: StopFleet did not clear IsFleetRunning");
 
         Console.WriteLine("SELFTEST OK");
+    }
+
+    /// <summary>
+    /// Task 16 headless check: verifies each <see cref="DeviceClass"/>'s Machine Detail state actually
+    /// populated from the fleet run <see cref="RunSelfTest"/> already did (SpcValues for an automation
+    /// machine, TelemetryValues for an IoT machine, BoardPoints for an AOI machine, CycleLog for at
+    /// least one machine), then exercises <see cref="MachineViewModel.SyncConfigCommand"/> end to end
+    /// against the DI-resolved <see cref="ITransport"/> (Auto → falls back to <see cref="DemoTransport"/>
+    /// with no live server reachable, same as the rest of this build) and asserts it completed without
+    /// faulting and actually changed <see cref="MachineViewModel.DriftState"/>.
+    /// </summary>
+    private static void RunMachineDetailSelfTest(FleetViewModel fleetVm)
+    {
+        var automationMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.Automation && m.Cycles > 0)
+            ?? throw new InvalidOperationException("selftest: no Automation machine tile reported a cycle — cannot verify SpcSeries/SpcValues");
+        if (automationMachine.SpcValues.Count == 0)
+            throw new InvalidOperationException($"selftest: {automationMachine.Code}'s SpcValues is empty after {automationMachine.Cycles} cycles — SPC series did not populate");
+        if (automationMachine.SpcSeries.Length != 4)
+            throw new InvalidOperationException($"selftest: {automationMachine.Code}'s SpcSeries did not have the expected 4 series (value/mean/UCL/LCL), had {automationMachine.SpcSeries.Length}");
+
+        var iotMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.Iot && m.Cycles > 0)
+            ?? throw new InvalidOperationException("selftest: no Iot machine tile reported a cycle — cannot verify TelemetrySeries/TelemetryValues");
+        if (iotMachine.TelemetryValues.Count == 0)
+            throw new InvalidOperationException($"selftest: {iotMachine.Code}'s TelemetryValues is empty after {iotMachine.Cycles} cycles — telemetry series did not populate");
+
+        var aoiMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.AoiAvi && m.Cycles > 0)
+            ?? throw new InvalidOperationException("selftest: no AOI machine tile reported a cycle — cannot verify BoardPoints");
+        if (aoiMachine.BoardPoints.Count == 0)
+            throw new InvalidOperationException($"selftest: {aoiMachine.Code}'s BoardPoints is empty after {aoiMachine.Cycles} cycles — board points did not populate");
+
+        var cycleLoggedMachine = fleetVm.Machines.FirstOrDefault(m => m.CycleLog.Count > 0)
+            ?? throw new InvalidOperationException("selftest: no MachineViewModel's CycleLog grew — cycle log did not populate");
+
+        Console.WriteLine(
+            $"SELFTEST detail state: SPC[{automationMachine.Code}]={automationMachine.SpcValues.Count}pt(s), " +
+            $"Telemetry[{iotMachine.Code}]={iotMachine.TelemetryValues.Count}pt(s), " +
+            $"BoardPoints[{aoiMachine.Code}]={aoiMachine.BoardPoints.Count}pt(s), " +
+            $"CycleLog[{cycleLoggedMachine.Code}]={cycleLoggedMachine.CycleLog.Count} row(s)");
+
+        // SyncConfig: fire-and-forget by design (AsyncRelayCommand.Execute doesn't await), so pump the
+        // dispatcher briefly afterward and then poll IsRunning/ExecutionTask rather than blocking
+        // synchronously on the command's own task — this runs from OnStartup, before Application.Run()
+        // has installed WPF's DispatcherSynchronizationContext, so a raw .GetAwaiter().GetResult() here
+        // would risk deadlocking on whatever SynchronizationContext DemoTransport's internal await
+        // happens to capture; polling after a pump is safe regardless of which context (if any) is
+        // active.
+        var syncTarget = automationMachine;
+        var driftStateBeforeSync = syncTarget.DriftState;
+        syncTarget.SyncConfigCommand.Execute(null);
+        PumpDispatcherFor(TimeSpan.FromMilliseconds(500));
+
+        if (syncTarget.SyncConfigCommand.IsRunning)
+            throw new InvalidOperationException($"selftest: {syncTarget.Code}'s SyncConfigCommand was still running 500ms after Execute — DemoTransport.SyncConfigAsync did not complete in time");
+        if (syncTarget.SyncConfigCommand.ExecutionTask is { IsFaulted: true } faultedTask)
+            throw new InvalidOperationException($"selftest: {syncTarget.Code}'s SyncConfigCommand faulted: {faultedTask.Exception}");
+        if (string.IsNullOrEmpty(syncTarget.DriftState) || syncTarget.DriftState == driftStateBeforeSync)
+            throw new InvalidOperationException($"selftest: {syncTarget.Code}'s DriftState did not change after SyncConfig ran (was \"{driftStateBeforeSync}\", still \"{syncTarget.DriftState}\")");
+
+        Console.WriteLine($"SELFTEST config-sync: {syncTarget.Code} DriftState=\"{syncTarget.DriftState}\" (was \"{driftStateBeforeSync}\")");
     }
 
     /// <summary>

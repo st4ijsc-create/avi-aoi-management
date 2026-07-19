@@ -11,6 +11,7 @@
 
     <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
     <conv:NullOrEmptyToVisibilityConverter x:Key="NullToVisibilityConverter" />
+    <conv:ResultToBrushConverter x:Key="ResultToBrushConverter" />
 
     <!-- ─── Window ─────────────────────────────────────────────────────── -->
     <Style TargetType="Window">
@@ -139,6 +140,51 @@
     <Style x:Key="StatusTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
         <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- ─── DataGrid (Task 16: Machine Detail's cycle log) ────────────────── -->
+    <Style TargetType="DataGrid">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="RowBackground" Value="{StaticResource Brush.Bg.Panel}" />
+        <Setter Property="AlternatingRowBackground" Value="{StaticResource Brush.Bg.PanelRaised}" />
+        <Setter Property="GridLinesVisibility" Value="Horizontal" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="AutoGenerateColumns" Value="False" />
+        <Setter Property="CanUserAddRows" Value="False" />
+        <Setter Property="CanUserDeleteRows" Value="False" />
+        <Setter Property="CanUserReorderColumns" Value="False" />
+        <Setter Property="IsReadOnly" Value="True" />
+        <Setter Property="HeadersVisibility" Value="Column" />
+        <Setter Property="RowHeaderWidth" Value="0" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+        <Setter Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+        <Setter Property="BorderThickness" Value="0,0,1,1" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style TargetType="DataGridRow">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style TargetType="DataGridCell">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="8,4" />
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{StaticResource Brush.Accent.Muted}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

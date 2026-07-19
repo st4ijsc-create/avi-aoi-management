@@ -25,6 +25,7 @@ public partial class AppShellViewModel : ObservableObject
     private readonly EventBus _eventBus;
     private readonly FleetService _fleetService;
     private readonly DashboardView _dashboardView;
+    private readonly FleetViewModel _fleetViewModel;
 
     [ObservableProperty]
     private TransportMode mode = TransportMode.Auto;
@@ -63,14 +64,16 @@ public partial class AppShellViewModel : ObservableObject
     /// <summary>Values for the top-bar mode <c>ComboBox</c>.</summary>
     public IReadOnlyList<TransportMode> AvailableModes { get; } = Enum.GetValues<TransportMode>();
 
-    public AppShellViewModel(EventBus eventBus, FleetService fleetService, DashboardView dashboardView)
+    public AppShellViewModel(EventBus eventBus, FleetService fleetService, DashboardView dashboardView, FleetViewModel fleetViewModel)
     {
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _fleetService = fleetService ?? throw new ArgumentNullException(nameof(fleetService));
         _dashboardView = dashboardView ?? throw new ArgumentNullException(nameof(dashboardView));
+        _fleetViewModel = fleetViewModel ?? throw new ArgumentNullException(nameof(fleetViewModel));
         _eventBus.Traced += OnTraced;
+        _fleetViewModel.MachineSelected += OnMachineSelected;
 
-        // Nav[0] is Dashboard (Task 15) — the only real screen wired up so far; Nav rows 16-20 still
+        // Nav[0] is Dashboard (Task 15) — the only real screen wired up so far; Nav rows 17-20 still
         // fall back to SelectNavItem's placeholder text until their own tasks land.
         CurrentView = _dashboardView;
     }
@@ -125,6 +128,27 @@ public partial class AppShellViewModel : ObservableObject
     /// <see cref="HandleFallbackChanged"/> (publishers are transport/pipeline callbacks, not the UI
     /// thread).</summary>
     private void OnTraced(ApiTraceEvent e) => RunOnUiThread(() => TraceEventCount++);
+
+    /// <summary>
+    /// Task 16 — <see cref="FleetViewModel.MachineSelected"/> handler: a dashboard tile click. Builds
+    /// a fresh <see cref="MachineDetailView"/> around the clicked <see cref="MachineViewModel"/> (the
+    /// VM itself is a long-lived singleton owned by <c>FleetViewModel.Machines</c> — only the View
+    /// wrapper is created per-navigation, so re-opening the same machine later picks its state back up
+    /// exactly where it left off) and swaps it into <see cref="CurrentView"/>. Marshaled defensively
+    /// even though a real tile click already runs on the UI thread (see the event's own remarks) —
+    /// cheap and keeps this handler safe regardless of how it's invoked (e.g. from a future automated
+    /// scenario driver).
+    /// </summary>
+    private void OnMachineSelected(MachineViewModel machine) => RunOnUiThread(() =>
+    {
+        CurrentView = new MachineDetailView(machine);
+    });
+
+    /// <summary>"← Dashboard" affordance on <c>MachineDetailView</c> — bound via
+    /// <c>RelativeSource AncestorType=Window</c> since that view's own DataContext is the selected
+    /// <see cref="MachineViewModel"/>, not this shell.</summary>
+    [RelayCommand]
+    private void BackToDashboard() => CurrentView = _dashboardView;
 
     private void RefreshServerStatus()
     {

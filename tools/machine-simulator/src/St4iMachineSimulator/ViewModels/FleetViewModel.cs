@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using St4i.EdgeCore.Models;
 using St4iMachineSimulator.Services;
 
@@ -27,7 +28,7 @@ public sealed partial class FleetViewModel : ObservableObject
         _fleetService = fleetService ?? throw new ArgumentNullException(nameof(fleetService));
 
         Machines = new ObservableCollection<MachineViewModel>(
-            _fleetService.Fleet.Select(d => new MachineViewModel(d)));
+            _fleetService.Fleet.Select(d => new MachineViewModel(d, _fleetService.Transport)));
         _byCode = Machines.ToDictionary(m => m.Code);
 
         OnlineKpi = new KpiViewModel("ONLINE");
@@ -49,6 +50,20 @@ public sealed partial class FleetViewModel : ObservableObject
     public KpiViewModel CyclesKpi { get; }
 
     public KpiViewModel FpyKpi { get; }
+
+    /// <summary>Task 16 — fired when the user clicks a machine tile on the dashboard.
+    /// <c>AppShellViewModel</c> subscribes to this (not a direct reference back from
+    /// <see cref="MachineViewModel"/>, which stays navigation-agnostic) and opens that machine's
+    /// <c>MachineDetailView</c>. Always raised on whatever thread invoked <see cref="SelectMachineCommand"/>
+    /// — a real tile click is already on the UI thread, so no marshaling happens here.</summary>
+    public event Action<MachineViewModel>? MachineSelected;
+
+    [RelayCommand]
+    private void SelectMachine(MachineViewModel? machine)
+    {
+        if (machine is null) return;
+        MachineSelected?.Invoke(machine);
+    }
 
     /// <summary>Machines that have committed at least one reading. Frozen at its last value once the
     /// fleet is stopped (no more readings arrive to update it) rather than snapping to 0 — mirrors a

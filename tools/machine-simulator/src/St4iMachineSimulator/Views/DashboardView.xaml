@@ -95,7 +95,19 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:MachineViewModel}">
-                        <Border Style="{StaticResource MachineTileStyle}">
+                        <!--
+                            Task 16: clicking a tile opens that machine's MachineDetailView.
+                            FleetViewModel.SelectMachineCommand is bound via RelativeSource up to the
+                            ItemsControl (same "DataContext.<Command> off an ancestor" technique
+                            ShellView.xaml's nav buttons already use) since this DataTemplate's own
+                            ambient DataContext is the MachineViewModel, not FleetViewModel.
+                        -->
+                        <Border Style="{StaticResource MachineTileStyle}" Cursor="Hand">
+                            <Border.InputBindings>
+                                <MouseBinding MouseAction="LeftClick"
+                                              Command="{Binding DataContext.SelectMachineCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                              CommandParameter="{Binding}" />
+                            </Border.InputBindings>
                             <StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
