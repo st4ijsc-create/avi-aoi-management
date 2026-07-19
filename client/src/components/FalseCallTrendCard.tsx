@@ -127,7 +127,8 @@ export function FalseCallTrendCard({ scope }: { scope: FalseCallTrendScope }) {
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={trend} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                    {/* doc65 PRO-100: trục ngày dd/MM (đồng bộ filter DateField vi-VN, hết ISO giữa UI Việt) */}
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(d: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? `${m[3]}/${m[2]}` : d; }} />
                     <YAxis tick={{ fontSize: 10 }} unit="%" />
                     <Tooltip
                       formatter={(value: any) => [

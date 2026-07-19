@@ -591,7 +591,7 @@ export function OEEDashboardContent() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
                 <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.avgOee')}</span>
                 <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
@@ -612,7 +612,7 @@ export function OEEDashboardContent() {
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
                 <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
                 <span className="sm:hidden">{t('oee.machinesShort')}</span>
@@ -628,15 +628,16 @@ export function OEEDashboardContent() {
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
                 <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold">
-                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)} {t('oee.minutes')}
+              <div className="text-2xl sm:text-3xl font-bold whitespace-nowrap">
+                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)}
+                <span className="ml-1 text-base font-medium text-muted-foreground">{t('oee.minutes', 'phút')}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {Object.keys(downtimeByCategory).length} {t('oee.events')}
@@ -646,7 +647,7 @@ export function OEEDashboardContent() {
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
                 <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 {t('oee.alerts')}
               </CardTitle>

@@ -7,6 +7,7 @@ import { useSearch, useLocation } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
+import { DateField } from "@/components/patterns/DateField";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -128,22 +129,22 @@ function ScopeSelector({
               </SelectContent>
             </Select>
           </div>
+          {/* doc65 PRO-100: DateField dd/MM/yyyy cố định (native input hiển thị theo OS
+              locale → từng ra MM/DD/YYYY giữa UI Việt). Contract ISO giữ nguyên. */}
           <div className="space-y-1">
             <Label>{t("common.startDate")}</Label>
-            <Input
-              type="date"
+            <DateField
               aria-label={t("common.startDate")}
               value={scope.startDate}
-              onChange={(e) => onChange({ ...scope, startDate: e.target.value })}
+              onChange={(startDate) => onChange({ ...scope, startDate })}
             />
           </div>
           <div className="space-y-1">
             <Label>{t("common.endDate")}</Label>
-            <Input
-              type="date"
+            <DateField
               aria-label={t("common.endDate")}
               value={scope.endDate}
-              onChange={(e) => onChange({ ...scope, endDate: e.target.value })}
+              onChange={(endDate) => onChange({ ...scope, endDate })}
             />
           </div>
         </div>

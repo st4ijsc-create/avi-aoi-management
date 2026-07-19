@@ -1284,7 +1284,8 @@ export default function History() {
                   <div>
                     <CardTitle className="text-lg">{t("history.searchResults")}</CardTitle>
                     <CardDescription>
-                      {data?.total ? t("history.foundResults", { count: data.total }) : t("dashboard.noDataYet")}
+                      {/* doc65 PRO-100: dấu phân cách nghìn theo vi-VN (22.996) */}
+                      {data?.total ? t("history.foundResults", { count: data.total.toLocaleString("vi-VN") as unknown as number }) : t("dashboard.noDataYet")}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">

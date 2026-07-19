@@ -6364,7 +6364,7 @@
     "oeeCalculated": "OEE calculated",
     "machinesShort": "Máy short",
     "excelExported": "Đã xuất Excel",
-    "downtimeToday": "Thời gian dừng Hôm nay",
+    "downtimeToday": "Thời gian dừng hôm nay",
     "downtimeStats": "Thời gian dừng Thống kê",
     "downtimeEnded": "Thời gian dừng ended",
     "categoryLabel": "Danh mục Nhãn",
@@ -6416,7 +6416,7 @@
     "rejects": "Loại bỏ",
     "quality": "Chất lượng",
     "planned": "Kế hoạch",
-    "minutes": "Phút",
+    "minutes": "phút",
     "machine": "Máy",
     "endTime": "Kết thúc Thời gian",
     "csvTime": "Csv Thời gian",
@@ -13057,7 +13057,7 @@
     "reference": "Tham chiếu IPC"
   },
   "qualityCockpit": {
-    "title": "Buồng lái chất lượng",
+    "title": "Cockpit chất lượng",
     "subtitle": "Một không gian chất lượng — SPC, Pareto, heatmap lỗi, cổng và chú thích trong cùng phạm vi",
     "tabs": {
       "spc": "SPC",

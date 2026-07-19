@@ -2271,6 +2271,11 @@ const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
   // doc 63 AUD-N4 — /data-comparison đã được Comparison Studio GỘP (doc 46 FE-W3.3);
   // gate khớp (analytics_advanced) → ẩn row near-dup khỏi rail; ⌘K vẫn tìm được (IA-09).
   "/data-comparison",
+  // doc 65 PRO-100 (user duyệt) — "Tháp vận hành" (/control-tower) tự mô tả là "hợp nhất
+  // 6 màn command" = trùng vai trò IA với "Trung tâm chỉ huy" (/command-center) đứng ngay
+  // cạnh trên rail (finding v3/v4: 2 mục cùng khái niệm cạnh nhau). Gate khớp
+  // (machine_status/machine_monitoring) → ẩn row khỏi rail; ⌘K + deep-link vẫn hoạt động.
+  "/control-tower",
 ]);
 
 /** Remove collapsed rows from every group, then drop groups left empty. */

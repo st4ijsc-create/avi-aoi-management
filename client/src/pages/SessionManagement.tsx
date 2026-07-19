@@ -29,6 +29,28 @@ import {
   Trash2
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+
+// doc65 PRO-100 — fallback parse UA phía FE khi server chưa nhận diện được browser/os
+// (từng hiển thị "Trình duyệt không rõ trên Hệ điều hành không rõ" trong khi chuỗi UA
+// ngay bên dưới ghi rõ Windows NT 10.0 / HeadlessChrome).
+function parseUaFallback(ua: string | null | undefined): { browser: string | null; os: string | null } {
+  if (!ua) return { browser: null, os: null };
+  let browser: string | null = null;
+  let os: string | null = null;
+  if (/HeadlessChrome\//.test(ua)) browser = "Chrome (Headless)";
+  else if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/OPR\//.test(ua)) browser = "Opera";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua) && /Version\//.test(ua)) browser = "Safari";
+  if (/Windows NT 10\./.test(ua)) os = "Windows 10/11";
+  else if (/Windows NT/.test(ua)) os = "Windows";
+  else if (/Mac OS X|Macintosh/.test(ua)) os = "macOS";
+  else if (/Android/.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iOS/.test(ua)) os = "iOS";
+  else if (/Linux/.test(ua)) os = "Linux";
+  return { browser, os };
+}
 import { vi } from "date-fns/locale";
 import { useTranslation } from 'react-i18next';
 
@@ -87,8 +109,9 @@ export default function SessionManagement() {
   return (
     <DashboardLayout>
       <PageContainer>
-        {/* Header — DS PageHeader (shared pattern) */}
+        {/* Header — DS PageHeader (shared pattern); doc65 PRO-100: icon-square đồng nhất liên màn */}
         <PageHeader
+          icon={<Monitor className="h-6 w-6" />}
           title={t('session.title')}
           description={t('session.description')}
           actions={
@@ -165,7 +188,14 @@ export default function SessionManagement() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">
-                          {session.browser || t('session.unknownBrowser', 'Unknown browser')} {t('session.deviceOn', 'on')} {session.os || t('session.unknownOs', 'Unknown OS')}
+                          {(() => {
+                            // server có thể trả sẵn CHUỖI "không rõ/Unknown" (truthy) → coi như thiếu.
+                            const known = (v: string | null | undefined) => (v && !/không rõ|unknown/i.test(v) ? v : null);
+                            const ua = parseUaFallback(session.userAgent);
+                            const browser = known(session.browser) || ua.browser || t('session.unknownBrowser', 'Trình duyệt không rõ');
+                            const os = known(session.os) || ua.os || t('session.unknownOs', 'HĐH không rõ');
+                            return `${browser} ${t('session.deviceOn', 'trên')} ${os}`;
+                          })()}
                         </span>
                         {index === 0 && (
                           <StatusBadge status={t('session.currentSession')} tone="success" />
@@ -182,7 +212,7 @@ export default function SessionManagement() {
                         {session.ipAddress && (
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3 w-3" />
-                            {session.ipAddress}
+                            {/^(::1|127\.0\.0\.1)$/.test(session.ipAddress) ? t('session.localhost', 'Máy cục bộ') : session.ipAddress}
                             {session.location && ` (${session.location})`}
                           </span>
                         )}

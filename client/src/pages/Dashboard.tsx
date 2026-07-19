@@ -1095,13 +1095,16 @@ export default function Dashboard() {
   };
 
   // Trend indicator component
-  const TrendIndicator = ({ value, suffix = "%" }: { value: number | undefined; suffix?: string }) => {
+  // doc65 PRO-100 (ISA-101): màu trend theo NGỮ NGHĨA, không theo dấu — NG/NTF tăng là XẤU
+  // (goodWhen="down"); mặc định "up" cho sản lượng/FPY.
+  const TrendIndicator = ({ value, suffix = "%", goodWhen = "up" }: { value: number | undefined; suffix?: string; goodWhen?: "up" | "down" }) => {
     if (value === undefined || value === 0) return null;
-    const isPositive = value > 0;
+    const isUp = value > 0;
+    const isGood = goodWhen === "up" ? isUp : !isUp;
     return (
-      <span className={`text-xs flex items-center gap-0.5 ${isPositive ? 'text-success' : 'text-destructive'}`}>
-        {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-        {isPositive ? '+' : ''}{value.toFixed(1)}{suffix}
+      <span className={`text-xs flex items-center gap-0.5 ${isGood ? 'text-success' : 'text-destructive'}`}>
+        {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+        {isUp ? '+' : ''}{value.toFixed(1)}{suffix}
       </span>
     );
   };
@@ -1260,7 +1263,7 @@ export default function Dashboard() {
             </Select>
 
             <Select value={selectedLine} onValueChange={setSelectedLine}>
-              <SelectTrigger className="w-25 sm:w-40 shrink-0">
+              <SelectTrigger className="w-32 sm:w-44 shrink-0">
                 <SelectValue placeholder={t("dashboard.line", "Line")} />
               </SelectTrigger>
               <SelectContent>
@@ -1327,7 +1330,7 @@ export default function Dashboard() {
               </TooltipProvider>
               
               <Select value={autoRefreshInterval} onValueChange={setAutoRefreshInterval}>
-                <SelectTrigger className="w-22.5 border-0">
+                <SelectTrigger className="w-28 border-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1363,6 +1366,8 @@ export default function Dashboard() {
           links={[
             { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
             { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
+            // doc65 PRO-100: /control-tower rời rail (gộp IA với Trung tâm chỉ huy) — reachable qua đây + ⌘K.
+            { href: "/control-tower", labelKey: "nav.controlTower", labelDefault: "Tháp vận hành" },
             // W5-C (doc 27 F7): open the dedicated TV board (add ?kiosk=1&cycle=30 on the TV itself).
             { href: "/andon", labelKey: "nav.andonBoard", labelDefault: "Bảng Andon (TV)" },
           ]}
@@ -1470,7 +1475,7 @@ export default function Dashboard() {
                       <p className="text-2xl font-bold text-destructive">
                         {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
                       </p>
-                      <TrendIndicator value={trends?.ng} />
+                      <TrendIndicator value={trends?.ng} goodWhen="down" />
                     </div>
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
@@ -1489,7 +1494,7 @@ export default function Dashboard() {
                       <p className="text-2xl font-bold text-warning">
                         {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
                       </p>
-                      <TrendIndicator value={trends?.ntf} />
+                      <TrendIndicator value={trends?.ntf} goodWhen="down" />
                     </div>
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">

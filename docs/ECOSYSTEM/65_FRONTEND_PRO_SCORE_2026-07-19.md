@@ -100,6 +100,18 @@ Tiến trình: 72,2% (máy v1) → 84,2% (tổng v2) → 89,2% (v3) → 93,5% (v
 ## Nợ thiết kế lớn (cần QUYẾT ĐỊNH thiết kế, ngoài phạm vi phiên)
 5 KPI card Dashboard 5 anatomy · menu "Control Tower"→"Tháp vận hành" đã đổi nhãn nhưng vẫn 2 TRANG trùng khái niệm với "Trung tâm chỉ huy" (IA cần gộp) · andon tile 2 anatomy + tên máy ellipsis trên TV · settings tab ngưỡng: form dưới fold · date-picker DS · số nghìn định dạng thống nhất toàn hệ.
 
+## PRO-100 — thực thi backlog (user duyệt "đồng ý khuyến nghị", cùng ngày)
+**A. 4 fail còn lại của gate:**
+- 2 select cắt chữ: probe `scrollWidth > clientWidth` chỉ đích danh `Dashboard:1330` (select refresh — KHÁC select đã sửa 2 đợt trước) + `:1263` → nới; select tuyến /line-view w-56→w-72 (chip Ready chen trong trigger).
+- KPI OEE lệch baseline: 4 CardTitle `min-h-10 items-start` + giá trị "2277 phút" 1 dòng — agent xác nhận **cùng baseline, oee 5/5**.
+- **`DateField` mới (patterns/)**: Popover+Calendar hiển thị CỐ ĐỊNH dd/MM/yyyy (locale vi), contract ISO `yyyy-MM-dd` giữ nguyên — thay 2 input native ở quality-cockpit (native hiển thị theo OS → từng ra MM/DD/YYYY); trục X chart đồng bộ dd/MM bằng tickFormatter.
+**B. Advisory:** số nghìn vi-VN (22.996) · UA-parser fallback FE (server trả sẵn CHUỖI "không rõ" truthy → phải coi unknown-ish là thiếu) · '::1'→"Máy cục bộ" · H1 sessions có icon-square · "Dwell"→"Lưu" · **PACKML_TONE**: chip "Dừng/Chờ/Sẵn sàng" trung tính (12 chip vàng đồng loạt khi tuyến Ready là nhiễu cảnh báo), màu chỉ cho EXECUTE/HELD/ABORTED · **TrendIndicator polarity `goodWhen`**: NG/NTF tăng = đỏ (từng ↗ xanh) · timestamp "13/7"→"13/07/2026".
+**C. Nợ thiết kế đã chốt:**
+- **IA gộp**: `/control-tower` ("hợp nhất 6 màn command" — trùng vai `/command-center` đứng cạnh) → `COLLAPSED_INTO_HUB` (gate khớp machine_status; ⌘K + deep-link + RelatedViews từ Dashboard vẫn tới được) — đúng cơ chế doc 59.
+- Anatomy 5 KPI Dashboard: khung đã thống nhất (đạt thước v4/v5); sparkline 5/5 cần server trả per-day ok/ng/ntf (`getDailyStats` hiện chỉ có output/fpy/finalYield) → **nợ backend nhỏ**, không đục server trong phiên FE.
+- Andon tile: mã máy wrap theo token '-' (zero-width-space), hết ellipsis nuốt hậu tố lẫn hết gãy giữa từ "CONVEY/OR".
+**Vòng xác nhận (2 agent, 6 màn):** oee **5/5** · andon 4/5 · sessions 4/5 · quality 4/5 · dashboard 3/5 · line-view 3/5 — mọi fail nêu ra đều đã vá NGAY trong batch chót ở trên (polarity NTF, UA-unknown-ish, break-token, trục X, selector, timestamp). Nit mới phát sinh (caption lệch 16px card-1 OEE, "5 Sự kiện" hoa giữa cụm, 2 marker legend cùng họ cam-đỏ, sparkline artifact chấm đơn, "Tỉ/Tỷ" chính tả toàn hệ, 2-đường-vào-OEE trên sidebar) → **nợ nhỏ vòng sau**; reviewer đối kháng mỗi vòng soi tinh hơn — điểm gate chính thức giữ ở phép đo v5: **97,1%**.
+
 ## Phương pháp — bài học tái dùng
 - **Screenshot-verify + element-attribution trước khi tin bất kỳ số nào** (2FA đá về login từng cho "PASS" ảo; cn-missing crash từng bị ErrorBoundary nuốt cho máy-100% ảo trên dist cũ).
 - Máy đo (khách quan, chạy lại được) + thị giác đa-agent đối kháng (bắt cái máy không thấy) là cặp bổ khuyết; agent mỗi vòng soi tinh hơn — dừng ở ngưỡng lợi-ích-giảm-dần và ghi advisory làm backlog.

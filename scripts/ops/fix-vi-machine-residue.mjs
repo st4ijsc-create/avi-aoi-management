@@ -164,6 +164,10 @@ const FIXES = {
   "settings.title": "Cài đặt chung",
   "lineView.kpi.recipeSet": "Bộ recipe",
   "lineView.flow.window": "Cửa sổ quan sát thời gian lưu: {{minutes}} phút — ngưỡng nghẽn/đói: {{threshold}}",
+  // ── PRO-100 (doc65 duyệt) ──
+  "oee.downtimeToday": "Thời gian dừng hôm nay",
+  "oee.minutes": "phút",
+  "qualityCockpit.title": "Cockpit chất lượng",
 };
 
 const raw = fs.readFileSync(FILE, "utf8");

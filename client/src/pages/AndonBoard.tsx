@@ -406,8 +406,11 @@ export default function AndonBoard() {
                       )}
                       title={`${m.name} · ${m.stationName ?? ""}`}
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="truncate text-[clamp(0.7rem,1vw,1.3rem)] font-bold">{m.code}</span>
+                      <div className="flex items-start justify-between gap-1">
+                        {/* doc65 PRO-100: TV không có hover — mã máy được wrap tối đa 2 dòng
+                            (break-all) thay vì ellipsis nuốt hậu tố định danh ("SIM-L2-CONVE…"). */}
+                        {/* ​ sau '-' → wrap tại ranh giới token, không gãy giữa từ (CONVEY/OR). */}
+                        <span className="line-clamp-2 text-[clamp(0.7rem,1vw,1.3rem)] font-bold leading-tight [overflow-wrap:break-word]">{m.code.replace(/-/g, "-​")}</span>
                         {status === "offline" && <MonitorOff className="size-[0.9vw] min-h-3 min-w-3 shrink-0" aria-hidden />}
                         {m.andonState === "yellow" && status !== "andon" && (
                           <AlertTriangle className="size-[0.9vw] min-h-3 min-w-3 shrink-0 text-warning" aria-hidden />

@@ -165,7 +165,7 @@ export default function LineView() {
                 onValueChange={(v) => setLocation(`/line-view/${v}`)}
                 disabled={lines.length === 0}
               >
-                <SelectTrigger className="w-56">
+                <SelectTrigger className="w-72">
                   <SelectValue placeholder={t("lineView.selectLine", "Chọn tuyến")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,7 +228,7 @@ export default function LineView() {
                     {detail?.enteredAt && (
                       <span className="text-xs text-muted-foreground">
                         {t("lineView.kpi.inStateSince", "Vào trạng thái lúc {{time}}", {
-                          time: new Date(detail.enteredAt).toLocaleString(),
+                          time: new Date(detail.enteredAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }),
                         })}
                       </span>
                     )}
