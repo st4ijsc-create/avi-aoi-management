@@ -575,7 +575,7 @@ export default function Dashboard() {
   // doc 64 IA-10 S1 — trục phạm vi ISA-95: axis THẮNG dropdown factory cục bộ;
   // machineId từ trục đi thẳng vào stats. getAllMachinesStats/getAllOEE server
   // CHƯA nhận scope (DEP-S2, ghi doc 64) — các widget đó vẫn toàn-cục.
-  const { scope: assetScope } = useScope(["factory", "machine"]);
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
   useScopeWired();
   const effectiveFactoryId =
     assetScope.factoryId ?? (selectedFactory !== "all" ? parseInt(selectedFactory) : undefined);
@@ -594,6 +594,9 @@ export default function Dashboard() {
   const { data: machinesStats, isLoading: machinesLoading, refetch: refetchMachines } = trpc.dashboard.getAllMachinesStats.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
+    // doc 64 IA-10 S2 — lưới máy lọc theo trục (server DEP-S2 đã nhận).
+    factoryId: effectiveFactoryId,
+    lineId: assetScope.lineId,
   }, {
     refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });

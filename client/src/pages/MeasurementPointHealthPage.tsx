@@ -11,6 +11,9 @@
  *     the def is moved. A per-point suggestion pre-fills the likely target.
  */
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S2 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -51,7 +54,11 @@ export default function MeasurementPointHealthPage() {
   const canRemap = user?.role === "admin";
 
   const utils = trpc.useUtils();
-  const rateQ = trpc.measurementPoint.unmappedRate.useQuery(undefined);
+  // doc 64 IA-10 S2 — trục phạm vi: tỉ lệ unmapped lọc theo Máy của trục
+  // (listUnmapped server chưa nhận input — DEP-S3, doc 64).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  const rateQ = trpc.measurementPoint.unmappedRate.useQuery({ machineId: assetScope.machineId });
   const listQ = trpc.measurementPoint.listUnmapped.useQuery(undefined);
   const modelsQ = trpc.productModel.list.useQuery({});
 

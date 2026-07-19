@@ -22,6 +22,9 @@
  * legacy pages remain reachable (linked from the header) — see route map in the PR.
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+// doc 64 IA-10 S2 — trục phạm vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -217,8 +220,18 @@ export function UnifiedDeviceMonitorContent() {
   }, [byClass]);
   const deviceClassUi = isDeviceClassUiEnabled();
 
+  // doc 64 IA-10 S2 — trục phạm vi ISA-95: fleet lọc server-side theo Xưởng/Chuyền/Máy.
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
   // ── Data sources (slow refetch only for membership; live bits come via socket) ──
-  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(undefined, { refetchInterval: 60_000 });
+  const machinesQ = trpc.machineStatus.listWithStatus.useQuery(
+    {
+      factoryId: assetScope.factoryId,
+      lineId: assetScope.lineId,
+      machineId: assetScope.machineId,
+    },
+    { refetchInterval: 60_000 },
+  );
   const adaptersQ = trpc.deviceAdapter.list.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });
   const edgeStatusQ = trpc.edgeRuntime.status.useQuery(undefined, { enabled: canReadControl });
   const edgeNodesQ = trpc.edgeRuntime.listNodes.useQuery(undefined, { refetchInterval: 60_000, enabled: canReadControl });

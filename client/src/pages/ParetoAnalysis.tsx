@@ -1,4 +1,7 @@
 import { useState, useMemo } from "react";
+// doc 64 IA-10 S2 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -73,12 +76,17 @@ export function ParetoAnalysisContent() {
   const { data: lines } = trpc.line.list.useQuery();
   const { data: machines } = trpc.machine.list.useQuery();
 
+  // doc 64 IA-10 S2 — trục phạm vi: dropdown tại-trang THẮNG ("all" = chưa chọn),
+  // trục lấp chỗ trống → chọn Xưởng/Chuyền/Máy ở header là Pareto tự lọc.
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
+
   const commonFilter = {
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
-    factoryId: selectedFactory !== "all" ? Number(selectedFactory) : undefined,
-    lineId: selectedLine !== "all" ? Number(selectedLine) : undefined,
-    machineId: selectedMachine !== "all" ? Number(selectedMachine) : undefined,
+    factoryId: selectedFactory !== "all" ? Number(selectedFactory) : assetScope.factoryId,
+    lineId: selectedLine !== "all" ? Number(selectedLine) : assetScope.lineId,
+    machineId: selectedMachine !== "all" ? Number(selectedMachine) : assetScope.machineId,
   };
 
   const { data: byTypeData, isLoading: byTypeLoading, refetch: refetchByType } =

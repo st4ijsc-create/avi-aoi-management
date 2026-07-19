@@ -89,14 +89,15 @@ export default function LineView() {
   // ── Chọn tuyến: URL /line-view/:lineId? là nguồn sự thật; không có → tuyến đầu.
   const routeLineId = params?.lineId != null && /^\d+$/.test(params.lineId) ? Number(params.lineId) : null;
   // doc 64 IA-10 S1 — trục phạm vi ISA-95 (đọc Chuyền từ header khi route không chỉ định).
-  const { scope: assetScope } = useScope(["line"]);
+  const { scope: assetScope } = useScope(["factory", "line"]);
   useScopeWired();
 
   const listPolling = usePollingInterval(15_000);
-  const linesQ = trpc.lineController.listStates.useQuery(undefined, {
-    staleTime: 10_000,
-    ...listPolling,
-  });
+  const linesQ = trpc.lineController.listStates.useQuery(
+    // doc 64 IA-10 S2 — danh sách tuyến lọc theo Xưởng của trục (server DEP-S2).
+    { factoryId: assetScope.factoryId },
+    { staleTime: 10_000, ...listPolling },
+  );
   const lines = linesQ.data ?? [];
   // doc 64 IA-10 S1 — ưu tiên: route param (link chia sẻ) → trục phạm vi (header) → tuyến đầu.
   const selectedLineId = routeLineId ?? assetScope.lineId ?? lines[0]?.lineId ?? null;

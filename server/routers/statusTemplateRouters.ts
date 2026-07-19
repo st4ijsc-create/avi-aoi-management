@@ -17,11 +17,25 @@ import {
 import { resolveProductThresholdGate } from "../services/thresholdGovernanceService";
 
 export const machineStatusRouter = router({
+  // doc 64 IA-10 S2 (DEP-S2) — nhận scope trục ISA-95 (optional, additive):
+  // row đã mang đủ join {line, factory} nên lọc tại router, shape KHÔNG đổi.
   listWithStatus: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
-    return db.getAllMachinesWithStatus();
-  }),
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+      factoryId: z.number().int().positive().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const rows = await db.getAllMachinesWithStatus();
+      if (!input || (input.machineId === undefined && input.lineId === undefined && input.factoryId === undefined)) {
+        return rows;
+      }
+      return rows.filter((r: { id: number; line?: { id: number } | null; factory?: { id: number } | null }) =>
+        (input.machineId === undefined || r.id === input.machineId) &&
+        (input.lineId === undefined || r.line?.id === input.lineId) &&
+        (input.factoryId === undefined || r.factory?.id === input.factoryId));
+    }),
 
   getLogs: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))

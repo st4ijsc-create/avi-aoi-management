@@ -49,13 +49,22 @@ export const dashboardRouter = router({
     .input(z.object({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      // doc 64 IA-10 S2 (DEP-S2) — scope trục: lọc theo nhà máy/chuyền (row đã mang
+      // join factory/line; cacheKey sinh từ input nên cache tách theo scope tự nhiên).
+      factoryId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
     }))
     .query(async ({ input }) => {
       // Check cache first to avoid N+1 queries
       const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS + '_all', input);
 
       const compute = async () => {
-        const machinesWithHierarchy = await db.getMachinesWithHierarchy();
+        const machinesWithHierarchy = (await db.getMachinesWithHierarchy()).filter(
+          // doc 64 IA-10 S2 — scope trục (no-op khi không truyền).
+          (item) =>
+            (input.factoryId === undefined || item.factory?.id === input.factoryId) &&
+            (input.lineId === undefined || item.line?.id === input.lineId),
+        );
         const stats = await Promise.all(
           machinesWithHierarchy.map(async (item) => {
             // Use per-machine cache to avoid redundant DB calls

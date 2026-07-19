@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+// doc 64 IA-10 S2 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useSearch, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -233,6 +236,15 @@ export default function QualityCockpit() {
   })();
   const [scope, setScope] = useState<CockpitScope>(() => getDefaultDateRange());
   const [activeTab, setActiveTab] = useState(initialTab);
+  // doc 64 IA-10 S2 — trục phạm vi: Máy từ header seed vào cockpit-scope (user đổi
+  // tại trang vẫn thắng sau đó); tab SPC/Pareto tự đọc trục trong chính component.
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) {
+      setScope((s) => ({ ...s, machineId: assetScope.machineId }));
+    }
+  }, [assetScope.machineId]);
   const [, setLocation] = useLocation();
 
   // doc 36 W2 — write the active tab back to the URL so cockpit views are deep-linkable

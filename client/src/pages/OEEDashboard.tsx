@@ -174,7 +174,7 @@ export function OEEDashboardContent() {
 
   // doc 64 IA-10 S1 — máy từ trục phạm vi (header) tự chọn vào panel máy của trang.
   // getAllOEE (lưới fleet) server chưa nhận scope — DEP-S2 (doc 64).
-  const { scope: assetScope } = useScope(["machine"]);
+  const { scope: assetScope } = useScope(["line", "machine"]);
   useScopeWired();
   useEffect(() => {
     if (assetScope.machineId !== undefined) setSelectedMachine(assetScope.machineId);
@@ -183,9 +183,11 @@ export function OEEDashboardContent() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   // doc 40 DEV-10 — auto-refresh mỗi 60s (trước đây chỉ cập nhật khi bấm Refresh).
-  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
-    refetchInterval: 60_000,
-  });
+  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(
+    // doc 64 IA-10 S2 — lưới fleet OEE lọc theo trục (server DEP-S2 đã nhận).
+    { machineId: assetScope.machineId, lineId: assetScope.lineId },
+    { refetchInterval: 60_000 },
+  );
   const { data: machineOEE } = trpc.mqttClient.getMachineOEE.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }

@@ -66,6 +66,30 @@ Gate mỗi batch như S1.
 ### DEP-S2 (server nhận thêm filter — làm ở S2)
 `machineStatus.listWithStatus{machineId?,lineId?}` · `mqttClient.getAllOEE{lineId?,machineId?}` · `dashboard.getAllMachinesStats{factoryId?}` · `lineController.listStates{factoryId?}`.
 
+## S2 — KẾT QUẢ (2026-07-19, cùng ngày)
+
+### S2-A DEP-S2 server filters ✅ (4/4, đều optional/additive — không truyền = y hệt cũ)
+`machineStatus.listWithStatus{machineId,lineId,factoryId}` (post-filter trên row đã join) · `mqttClient.getAllOEE{machineId,lineId}` (lineId tra machines→stations 1 query) · `dashboard.getAllMachinesStats{factoryId,lineId}` (filter trước compute, cache tách theo input) · `lineController.listStates{factoryId}` (tra lines→workshops).
+
+### S2-B pilot đóng nốt ✅ — **6/6 trang wire**
+/device-monitor giờ lọc server-side 3 cấp (hết hoãn) · Dashboard lưới máy + OEE grid + LineView dropdown tuyến đều theo trục.
+
+### S2-C batch Chất lượng ✅ 4 trang wire (+2 defer trung thực)
+| Trang | Wire |
+|---|---|
+| /pareto-analysis (+tab Pareto trong cockpit) | ✅ dropdown thắng, trục lấp factory/line/machine |
+| /spc-analysis (+tab SPC trong cockpit) | ✅ máy: dropdown thắng, trục lấp |
+| /measurement-point-health | ✅ unmappedRate theo máy trục (listUnmapped không input — DEP-S3) |
+| /quality-cockpit | ✅ trục seed cockpit-scope.machineId + wired-chip |
+| /history | ⏸ **DEP-S3** — `inspection.search` nhận **CODE string** (factoryCode/machineCode…), không ID; cần map id→code hoặc server thêm id |
+| /defect-heatmap | ⏸ **S3** — page wrapper thuần; 3 component con giữ state riêng, wire = 3× seeding |
+
+### S2-D tool backfill ✅
+`scripts/ops/backfill-machine-parents.mjs` — báo cáo máy mồ côi (chuỗi station→line→workshop→factory đứt) + gán từ CSV `machineCode,stationCode` (`--apply` mới ghi; chạy owner-role). Cây do người vận hành curate qua UI /layout; tool chỉ nối parent.
+
+### S2-E SiteContext merge → **DEFER có căn cứ**
+SiteSwitcher = tầng FEDERATION đa-site (multi-instance), semantics khác trục tài sản nội-site; memory doc13: federation "cần ≥2 sites để test". Merge mù = không verify được. Để khi có site thứ 2; trục hiện tại đứng cạnh SiteSwitcher không xung đột.
+
 ### Định nghĩa XONG (sprint)
 1. Trục hiện ở header mọi trang, cascade đúng cây, bền qua điều hướng, URL chia sẻ được.
 2. ≥ S1 pilot: đổi scope → dữ liệu đổi thật (proof chụp).

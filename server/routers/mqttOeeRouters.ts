@@ -541,9 +541,33 @@ export const mqttClientRouter = router({
       };
     }),
 
-  getAllOEE: protectedProcedure.query(async () => {
+  // doc 64 IA-10 S2 (DEP-S2) — nhận scope trục (optional): machineId lọc trực tiếp;
+  // lineId tra machines→stations của chuyền (1 query indexed) rồi lọc theo set.
+  getAllOEE: protectedProcedure
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+    }).optional())
+    .query(async ({ input }) => {
     const { getAllMachinesOEELive } = await import('../services/oeeService');
-    const all = await getAllMachinesOEELive();
+    let all = await getAllMachinesOEELive();
+    if (input?.machineId !== undefined) {
+      all = all.filter((m) => m.machineId === input.machineId);
+    } else if (input?.lineId !== undefined) {
+      const { getDb } = await import('../db/connection');
+      const { machines, stations } = await import('../../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const dbc = await getDb();
+      if (dbc) {
+        const rows = await dbc
+          .select({ id: machines.id })
+          .from(machines)
+          .innerJoin(stations, eq(machines.stationId, stations.id))
+          .where(eq(stations.lineId, input.lineId));
+        const allowed = new Set(rows.map((r) => r.id));
+        all = all.filter((m) => allowed.has(m.machineId));
+      }
+    }
     // Frontend (CorporateDashboard avg, MachineHealthMonitoring comparison)
     // expects numeric factors. Machines lacking real inputs for any factor
     // are omitted honestly (rendered as "no data") rather than emitted with a

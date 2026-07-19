@@ -49,9 +49,26 @@ const recipeSetRefSchema = z
 
 export const lineControllerRouter = router({
   /** Mọi tuyến ACTIVE + trạng thái FSM (tuyến chưa có row → 'idle'). */
-  listStates: protectedProcedure.query(async () => {
-    return listLinesWithState();
-  }),
+  // doc 64 IA-10 S2 (DEP-S2) — nhận factoryId (optional): tra lineId thuộc nhà máy
+  // (lines→workshops, 1 query) rồi lọc kết quả. Không truyền = y hệt cũ.
+  listStates: protectedProcedure
+    .input(z.object({ factoryId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input }) => {
+      const all = await listLinesWithState();
+      if (input?.factoryId === undefined) return all;
+      const { getDb } = await import("../db/connection");
+      const { productionLines, workshops } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return all;
+      const rows = await db
+        .select({ id: productionLines.id })
+        .from(productionLines)
+        .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+        .where(eq(workshops.factoryId, input.factoryId));
+      const allowed = new Set(rows.map((r) => r.id));
+      return all.filter((l: { lineId: number }) => allowed.has(l.lineId));
+    }),
 
   /** Trạng thái + nhịp/bottleneck + readiness cache + transitions gần nhất. */
   getState: protectedProcedure
