@@ -145,11 +145,14 @@ export default function SlaCockpit() {
   const [windowHours, setWindowHours] = useState<number>(24);
 
   const polling = usePollingInterval(30_000);
-  // doc 64 IA-10 S3-D — danh sách andon theo trục Chuyền/Máy; metrics tổng hợp server
-  // CHƯA nhận scope (andon.metrics chỉ sinceHours — DEP-S4, doc 64) → giữ toàn cục.
+  // doc 64 IA-10 S3-D/S4 — cả danh sách LẪN metrics MTTA/MTTR theo trục Chuyền/Máy
+  // (andon.metrics đã nhận lineId/machineId ở S4).
   const { scope: assetScope } = useScope(["line", "machine"]);
   useScopeWired();
-  const metricsQ = trpc.andon.metrics.useQuery({ sinceHours: windowHours }, { staleTime: 20_000, ...polling });
+  const metricsQ = trpc.andon.metrics.useQuery(
+    { sinceHours: windowHours, lineId: assetScope.lineId, machineId: assetScope.machineId },
+    { staleTime: 20_000, ...polling },
+  );
   const listQ = trpc.andon.list.useQuery(
     { limit: LIST_CAP, lineId: assetScope.lineId, machineId: assetScope.machineId },
     { staleTime: 20_000, ...polling },

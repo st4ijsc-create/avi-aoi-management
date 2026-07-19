@@ -185,10 +185,18 @@ export const andonRouter = router({
 
   metrics: protectedProcedure
     .use(requirePermission("andon", "canView"))
-    .input(z.object({ sinceHours: z.number().int().min(1).max(24 * 90).default(24) }).optional())
+    .input(z.object({
+      sinceHours: z.number().int().min(1).max(24 * 90).default(24),
+      // doc 64 IA-10 S4 — trục phạm vi (optional/additive): MTTA/MTTR theo Chuyền/Máy.
+      lineId: z.number().int().positive().optional(),
+      machineId: z.number().int().positive().optional(),
+    }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
       const since = new Date(Date.now() - (input?.sinceHours ?? 24) * 3600 * 1000);
+      const conds = [gte(andonEvents.raisedAt, since)];
+      if (input?.lineId !== undefined) conds.push(eq(andonEvents.lineId, input.lineId));
+      if (input?.machineId !== undefined) conds.push(eq(andonEvents.machineId, input.machineId));
       const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,
@@ -198,7 +206,7 @@ export const andonRouter = router({
           avgMttr: sql<number>`coalesce(avg(${andonEvents.mttrSeconds}), 0)::float`,
         })
         .from(andonEvents)
-        .where(gte(andonEvents.raisedAt, since));
+        .where(and(...conds));
       return {
         total: row?.total ?? 0,
         active: row?.active ?? 0,

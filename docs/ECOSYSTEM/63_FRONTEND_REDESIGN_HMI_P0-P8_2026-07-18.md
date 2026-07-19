@@ -174,10 +174,11 @@ Nguyên tắc: chỉ đổi tầng trình bày, tái dùng token/primitive sẵn
 ### KHÔNG đóng được trong phiên (trung thực, kèm lý do)
 | Mục | Lý do | Kế |
 |---|---|---|
-| **IA-10 trục ISA-95 scoped-query** | Xâm lấn wiring **từng-trang** (~207 route đọc `useScope()`) + curate cây tài sản (nợ backfill machineType/site) — multi-session; làm ẩu = "scope-bar nói dối" (vi phạm bất biến trung thực) | Increment-2 sau live test |
+| ~~IA-10 trục ISA-95~~ | ✅ **ĐÃ ĐÓNG S0→S3+S4** (sprint doc 64, 2026-07-19): trục bền header + cascade cây thật + bất biến trung thực + **~22 bề mặt lọc server-side** + tool backfill + LIVE-proof mỗi wave | XONG |
 | **DEP-02 Hermes/CFX** | Cần **thiết bị thật 2 đầu** nói Hermes/CFX — chưa có pilot hardware | Khi pilot |
 | **Kiosk SCR-02 re-layout + hub deep-link** | Đổi hành vi điều hướng lớn — nên lấy feedback live test trước | Sau live test |
-| Panel-PC thật (glove-mode capacitive), máy yếu nhất, điểm-dữ-liệu-tối-đa/màn | Phần cứng/thông số chưa có | Chặn §S5 POC |
+| Panel-PC thật (glove-mode capacitive), máy yếu nhất, điểm-dữ-liệu-tối-đa/màn | Phần cứng/thông số chưa có — **§S5 POC bản máy-dev đã chạy** (Q4; số đo trong doc 64), hiệu chỉnh lại khi có panel thật | Khi có HW |
+| SiteContext merge vào trục | Federation cần site thứ 2 để verify (doc 13) | Khi có site 2 |
 
 ## GIẢ ĐỊNH & PHỤ THUỘC
 - **GĐ**: 7 vùng phủ hết ~207 route · `commandCenter.hierarchy` trả cây 5 tầng dùng được (nợ backfill machineType/site) · payload phần lớn có `lastEventAt` · DashboardLayout/Sidebar gánh được chrome.

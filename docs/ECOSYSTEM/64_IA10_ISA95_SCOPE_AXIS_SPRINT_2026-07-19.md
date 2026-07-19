@@ -100,11 +100,27 @@ SiteSwitcher = tầng FEDERATION đa-site (multi-instance), semantics khác tr�
 | **S3-C rail MachineWorkspace** | ✅ `MachineRail` đổi nguồn `machine.list` (không parent, không filter được) → `machineStatus.listWithStatus` **đã-scoped DEP-S2** → rail lọc server-side 3 cấp; không đụng machine.list (nhiều consumer) |
 | **S3-D batch** | ✅ 7 trang: **alarm-kpi** (summary+lineId/machineId) · **sla-cockpit** (andon.list scoped; metrics server chưa nhận → DEP-S4) · **war-room** (seed factory) · **production-dashboard** (dropdown thắng, trục lấp; compare-mode giữ toàn cục chủ đích) · **energy** (machineId lấp sau Apply) · **correlation** (seed máy khi trống) · **comparison-studio** (factory lấp + lineId vào 3 feed nhận: station-overview/yield-by-product/compare) |
 
-### DEP-S4 (server chưa nhận scope — ứng viên đợt sau)
-`andon.metrics{lineId?,machineId?}` · `field.health/healthSummary{...}` · `warRoom.briefing{lineId?}` · `measurementPoint.listUnmapped{machineId?}`.
+### DEP-S4 — KẾT QUẢ + ĐÍNH CHÍNH ngữ nghĩa (2026-07-19)
+| Đích | Quyết định |
+|---|---|
+| `andon.metrics{lineId,machineId}` | ✅ **ĐÃ LÀM** — MTTA/MTTR lọc theo Chuyền/Máy; SlaCockpit wire cả metrics lẫn list |
+| `measurementPoint.listUnmapped` | ✖ **KHÔNG phải đích trục** (đính chính) — unmapped point-def thuộc *product model* (__UNMAPPED__), không phải máy; ép machineId = ngữ nghĩa sai |
+| `warRoom.briefing{lineId}` | ✖ **Giữ factory-level chủ đích** — giao ban là nghi thức toàn xưởng; drill theo chuyền đã có ở /line-view (trục lineId ✓) |
+| `field.health/healthSummary` | ✖ **Tầng IoT/robot ngoài cây machines** — field device không map vào trục Xưởng›Chuyền›Máy; khi có tầng field trong cây (S-sau) mới xét |
 
 ### Trạng thái phủ trục sau S3
 **~21 bề mặt wired** (6 pilot + 4 Quality + 7 S3-D + rail + heatmap×3 + history) trên khoảng ~30 trang mang dữ liệu theo-tài-sản; các trang còn lại hoặc thuộc DEP-S4 hoặc admin/AI control-plane (ít giá trị trục). SiteContext merge vẫn chờ site 2 (federation).
+
+## §S5 POC — SỐ ĐO (2026-07-19, máy dev + CPU throttle ×4 ≈ panel yếu; Q4 user duyệt)
+Script: `scripts/audit/s5-poc.mjs` (CDP throttle, PerformanceObserver LCP/longtask, soak heap).
+
+| Phép đo | Kết quả | Ngưỡng G5 | Phán quyết |
+|---|---|---|---|
+| **LCP /dashboard** (throttle ×4) | **4.580ms** · 12 longtask (4.071ms) | < 2.000ms | ❌ **FAIL** |
+| Interaction (click→double-rAF) | **25ms** | < 200ms | ✅ PASS |
+| Soak /andon 2,8′ (poll 15s) | heap 33–75MB **dao động band, slope ÂM** (-12,6MB/′ do GC sau load) · 206 longtask | không tăng dần | ✅ không dấu hiệu leak (chỉ báo — ca 8h thật đo khi có panel) |
+
+**Chẩn đoán LCP-fail** (khớp P1 AUD-18): main chunk `index-*.js` **10,3MB (gzip 2,2MB)** + **61 trang import eager** trong App.tsx → parse/exec JS nghẹt CPU yếu. **→ S5-OPT (hạng mục kế, ưu tiên cao)**: (1) chuyển nốt eager→`React.lazy`; (2) `build.rollupOptions.manualChunks` tách vendor lớn (three/recharts/codemirror…); (3) đo lại POC sau mỗi bước. CHÚ THÍCH TRUNG THỰC: throttle ×4 là xấp xỉ — chuẩn cuối đo trên panel-PC thật khi có.
 
 ### Định nghĩa XONG (sprint)
 1. Trục hiện ở header mọi trang, cascade đúng cây, bền qua điều hướng, URL chia sẻ được.
