@@ -1,0 +1,88 @@
+using System.Text.Json.Serialization;
+using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Models;
+using St4i.EdgeCore.Transport;
+using St4i.EngineApi;
+using St4i.EngineApi.Endpoints;
+using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Hubs;
+
+// Task 3 — St4i.EngineApi: a thin ASP.NET host wrapping the SAME EdgeCore engine the WPF exhibition
+// app drives (SimulatedDriver/ScenarioAwareDriver/EdgePipeline/SwitchableTransport/TransportCoordinator
+// — the 4 WPF-independent classes this task relocated INTO EdgeCore so both apps share them
+// byte-for-byte), exposed over HTTP + WebSocket so the new web UI (Tasks 4-7) can drive the fleet. No
+// Go/Rust rewrite — see task-3-report.md for the full write-up.
+var builder = WebApplication.CreateBuilder(args);
+
+// Fixed default port 5199 (brief: "Serve on a fixed port... override via --urls/env") — only applied
+// when the caller didn't already pin one via --urls or ASPNETCORE_URLS, so both override mechanisms
+// the brief calls out keep working normally.
+if (!args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase)) &&
+    Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null)
+{
+    builder.WebHost.UseUrls("http://localhost:5199");
+}
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
+
+const string CorsPolicy = "EngineApiCors";
+builder.Services.AddCors(options =>
+{
+    // Vite dev origin + the Tauri webview origin the desktop-wrapped build runs under (Task 3 brief).
+    options.AddPolicy(CorsPolicy, policy => policy
+        .WithOrigins("http://localhost:5173", "tauri://localhost")
+        .AllowAnyHeader()
+        .AllowAnyMethod());
+});
+
+// ── EdgeCore composition root — mirrors the WPF app's App.xaml.cs ConfigureServices Live/Demo/Auto
+// transport-mode wiring byte-for-byte (now possible because SwitchableTransport/TransportCoordinator
+// live in EdgeCore, not the WPF project). DEFAULT MODE IS DEMO — bulletproof offline out of the box,
+// per the Task 3 brief.
+builder.Services.AddSingleton<EventBus>();
+builder.Services.AddSingleton<DemoTransport>();
+builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
+    serverUrl: FleetHost.DefaultServerUrl,
+    mkKey: string.Empty,
+    machineCode: FleetHost.DefaultMachineCode,
+    queuePath: null,
+    verifyTls: true));
+builder.Services.AddSingleton(sp => new AutoTransport(sp.GetRequiredService<LiveTransport>(), sp.GetRequiredService<DemoTransport>()));
+builder.Services.AddSingleton(sp => new SwitchableTransport(sp.GetRequiredService<DemoTransport>()));
+builder.Services.AddSingleton<ITransport>(sp => sp.GetRequiredService<SwitchableTransport>());
+builder.Services.AddSingleton(sp => new TransportCoordinator(
+    sp.GetRequiredService<SwitchableTransport>(),
+    sp.GetRequiredService<DemoTransport>(),
+    sp.GetRequiredService<LiveTransport>(),
+    sp.GetRequiredService<AutoTransport>(),
+    TransportMode.Demo));
+
+builder.Services.AddSingleton<FleetHost>();
+builder.Services.AddSingleton<OnboardingService>();
+
+var app = builder.Build();
+
+app.UseCors(CorsPolicy);
+app.UseWebSockets();
+
+app.MapFleetEndpoints();
+app.MapModeEndpoints();
+app.MapScenarioEndpoints();
+app.MapSettingsEndpoints();
+app.MapOnboardingEndpoints();
+app.MapInspectorStream();
+
+// Force-touch FleetHost now (rather than lazily on the first request) so its fleet.json/default-roster
+// resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is
+// actually useful, not silently on whichever request happens to hit it first.
+var fleetHost = app.Services.GetRequiredService<FleetHost>();
+app.Logger.LogInformation(
+    "St4i.EngineApi ready — {Count} machine(s) in the fleet roster: {Codes} (mode={Mode})",
+    fleetHost.Fleet.Count,
+    string.Join(", ", fleetHost.Fleet.Select(d => d.Code)),
+    fleetHost.Mode);
+
+app.Run();

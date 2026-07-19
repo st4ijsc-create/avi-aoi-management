@@ -1,17 +1,19 @@
 using St4i.EdgeCore.Models;
-using St4i.EdgeCore.Transport;
 
-namespace St4iMachineSimulator.Services;
+namespace St4i.EdgeCore.Transport;
 
 /// <summary>
-/// Task 19a — the seam that makes the shell's Live/Demo/Auto toggle actually switch the transport the
-/// running fleet sends through. Registered as the DI <see cref="ITransport"/> singleton (so
-/// <c>FleetService</c>/<c>EdgePipeline</c> and every <c>MachineViewModel</c> hold this ONE stable
-/// reference for the app's whole lifetime), it just forwards every call to whatever inner
-/// <see cref="ITransport"/> is currently set — <see cref="SetInner"/> atomically swaps it, so a mode
-/// change never requires re-resolving/re-wiring any consumer, and any in-flight call started against
-/// the old inner keeps running against exactly that instance (only calls made AFTER the swap observe
-/// the new one).
+/// The seam that makes a Live/Demo/Auto toggle actually switch the transport a running fleet sends
+/// through. Registered as the DI <see cref="ITransport"/> singleton (so a fleet's pipeline and every
+/// per-machine consumer hold this ONE stable reference for the whole process lifetime), it just
+/// forwards every call to whatever inner <see cref="ITransport"/> is currently set — <see cref="SetInner"/>
+/// atomically swaps it, so a mode change never requires re-resolving/re-wiring any consumer, and any
+/// in-flight call started against the old inner keeps running against exactly that instance (only calls
+/// made AFTER the swap observe the new one).
+///
+/// Relocated from the WPF app's <c>St4iMachineSimulator.Services.SwitchableTransport</c> into EdgeCore
+/// (Task 3, ASP.NET EngineApi host) — this class only ever depended on EdgeCore types, so both the WPF
+/// exhibition app and the headless EngineApi host can now share the exact same implementation.
 /// </summary>
 public sealed class SwitchableTransport : ITransport
 {

@@ -3,19 +3,24 @@ using System.Text;
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Models;
 
-namespace St4iMachineSimulator.Services;
+namespace St4i.EdgeCore.Engine;
 
 /// <summary>
-/// Task 19b — the sim-agnostic seam <see cref="FleetService"/> uses to inject
-/// <see cref="ScenarioConfig.ExtraDefectRate"/>/<see cref="ScenarioConfig.FaultRate"/> failures without
-/// any <see cref="St4i.EdgeCore.Drivers.Simulators.IMachineSimulator"/> knowing a scenario exists:
-/// wraps whatever <see cref="IDeviceDriver"/> the fleet is built on (today always a
+/// The sim-agnostic seam a fleet orchestrator uses to inject <see cref="ScenarioConfig.ExtraDefectRate"/>/
+/// <see cref="ScenarioConfig.FaultRate"/> failures without any
+/// <see cref="St4i.EdgeCore.Drivers.Simulators.IMachineSimulator"/> knowing a scenario exists: wraps
+/// whatever <see cref="IDeviceDriver"/> the fleet is built on (today always a
 /// <see cref="SimulatedDriver"/>, but this decorator works over any driver) and post-processes every
 /// <see cref="DeviceReading"/> it yields, reading the CURRENT <see cref="ScenarioConfig"/> fresh via
-/// <paramref name="scenario"/> on every single reading — so a slider drag (or <see cref="FleetService.Burst"/>'s
-/// automatic revert) takes effect on the very next reading, with no pipeline restart.
+/// <paramref name="scenario"/>-typed delegate on every single reading — so a slider drag (or an
+/// automatic Burst revert) takes effect on the very next reading, with no pipeline restart.
+///
+/// Relocated from the WPF app's <c>St4iMachineSimulator.Services.ScenarioAwareDriver</c> (there
+/// <c>internal</c>) into EdgeCore as <c>public</c> (Task 3, ASP.NET EngineApi host) — this class only
+/// ever depended on EdgeCore types, and both the WPF exhibition app and the headless EngineApi host now
+/// share the exact same implementation.
 /// </summary>
-internal sealed class ScenarioAwareDriver : IDeviceDriver
+public sealed class ScenarioAwareDriver : IDeviceDriver
 {
     private readonly IDeviceDriver _inner;
     private readonly Func<ScenarioConfig> _scenario;
@@ -44,18 +49,18 @@ internal sealed class ScenarioAwareDriver : IDeviceDriver
 
     /// <summary>
     /// Deterministically (never <see cref="DateTime"/>-seeded — same rule <c>SimRng</c>/<c>DemoTransport</c>'s
-    /// own hashes follow, doc-62 §6) decides whether THIS reading should be flipped to
-    /// <see cref="Verdict.Fail"/>. Telemetry readings (no pass/fail concept — <see cref="Verdict.Skip"/>
-    /// always) and readings a sim's own physics already failed are left untouched.
+    /// own hashes follow) decides whether THIS reading should be flipped to <see cref="Verdict.Fail"/>.
+    /// Telemetry readings (no pass/fail concept — <see cref="Verdict.Skip"/> always) and readings a
+    /// sim's own physics already failed are left untouched.
     /// </summary>
     private static DeviceReading Inject(DeviceReading reading, ScenarioConfig scenario)
     {
         if (reading.Kind == ReadingKind.Telemetry) return reading;
         if (reading.Verdict == Verdict.Fail) return reading;
 
-        // ExtraDefectRate and FaultRate are combined into one injected-failure probability (doc 19b
-        // brief: "if hard, fold [FaultRate] into ExtraDefectRate") — P(at least one of two independent
-        // events), not a plain sum, so two 60% knobs don't overflow past 100%.
+        // ExtraDefectRate and FaultRate are combined into one injected-failure probability — P(at
+        // least one of two independent events), not a plain sum, so two 60% knobs don't overflow past
+        // 100%.
         var combined = 1.0 - (1.0 - Clamp01(scenario.ExtraDefectRate)) * (1.0 - Clamp01(scenario.FaultRate));
         if (combined <= 0.0) return reading;
 

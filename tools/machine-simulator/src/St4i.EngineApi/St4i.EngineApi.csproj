@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- St4i.EdgeCore is net10.0-windows (it links the WPF-adjacent device-client SDK sample and
+         DPAPI-based CredentialStore), so this host must target the same TFM to reference it. The
+         Microsoft.NET.Sdk.Web SDK (below) still gets the full ASP.NET Core runtime under a "-windows"
+         TFM — it implicitly adds a FrameworkReference to Microsoft.AspNetCore.App itself (confirmed: an
+         explicit one here produced build warning NETSDK1086 "already implicitly referenced", so it was
+         removed); the "-windows" suffix only adds Windows-specific APIs on top, it does not drop ASP.NET
+         Core. This box has Microsoft.AspNetCore.App 10.0.10 installed (see the "dotnet list-runtimes"
+         output in task-3-report.md), so a plain "dotnet run" resolves it with no self-contained publish
+         needed (verified). -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Same packaging convention as St4iMachineSimulator.csproj (Task 22): ships the default
+         fleet.json + mapping/*.json presets next to the built/run exe so FleetHost's
+         AppContext.BaseDirectory lookup (mirrors FleetService.ResolveFleetPath) finds them with no
+         extra configuration. -->
+    <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
+    <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

@@ -1,17 +1,17 @@
 using St4i.EdgeCore.Models;
-using St4i.EdgeCore.Transport;
 
-namespace St4iMachineSimulator.Services;
+namespace St4i.EdgeCore.Transport;
 
 /// <summary>
-/// Task 19a composition-root helper — the single source of truth for the shell's Live/Demo/Auto
-/// <see cref="Mode"/> and the one place that knows how to point the DI <see cref="SwitchableTransport"/>
-/// singleton at the transport instance matching it. Both <c>AppShellViewModel</c> (the top-bar Mode
-/// combo) and <c>SettingsViewModel</c> (the Settings screen's own Mode selector + connection fields)
-/// depend on THIS class rather than on each other — avoids what would otherwise be a circular DI
-/// dependency between the two ViewModels (Settings needs to switch Mode; the shell needs to show
-/// Settings in its nav) — and gives both a single, always-consistent view of the current Mode via
-/// <see cref="ModeChanged"/>.
+/// Composition-root helper — the single source of truth for a host's Live/Demo/Auto <see cref="Mode"/>
+/// and the one place that knows how to point a <see cref="SwitchableTransport"/> singleton at the
+/// transport instance matching it. Multiple independent consumers (in the WPF app: the shell's top-bar
+/// Mode combo and the Settings screen; in the headless EngineApi host: the <c>/v1/mode</c> endpoints)
+/// depend on THIS class rather than on each other — avoids a circular dependency between them — and
+/// gives every dependent a single, always-consistent view of the current Mode via <see cref="ModeChanged"/>.
+///
+/// Relocated from the WPF app's <c>St4iMachineSimulator.Services.TransportCoordinator</c> into EdgeCore
+/// (Task 3, ASP.NET EngineApi host) — this class only ever depended on EdgeCore types.
 /// </summary>
 public sealed class TransportCoordinator
 {
@@ -46,7 +46,7 @@ public sealed class TransportCoordinator
     public event Action<bool>? FallbackChanged;
 
     /// <summary>Fired whenever <see cref="Mode"/> actually changes value (never re-fired for setting it
-    /// to what it already is — see <see cref="ApplyMode"/>), so dependent ViewModels can mirror it
+    /// to what it already is — see <see cref="ApplyMode"/>), so dependent consumers can mirror it
     /// without re-triggering each other back and forth.</summary>
     public event Action<TransportMode>? ModeChanged;
 
@@ -73,16 +73,15 @@ public sealed class TransportCoordinator
     }
 
     /// <summary>
-    /// Settings screen — rebuilds <see cref="LiveTransport"/> (and the <see cref="AutoTransport"/>
-    /// wrapping it) from new connection settings (server URL / TLS verification / credential) and, if
-    /// <see cref="Mode"/> is currently Live or Auto, re-points <see cref="SwitchableTransport"/> at the
-    /// fresh instance so the change takes effect immediately. A rebuild while Mode is Demo still
-    /// replaces the held Live/Auto instances (ready for the next switch to Live/Auto) without disturbing
-    /// what is actively serving traffic. Disposes the REPLACED <see cref="LiveTransport"/> (releasing
-    /// its wrapped <see cref="HttpClient"/>) once nothing new can be routed to it — see
-    /// <see cref="LiveTransport.Dispose"/>'s remarks: Settings can call this once per keystroke
-    /// (ServerUrl/MachineCode use <c>UpdateSourceTrigger=PropertyChanged</c>), so without this every
-    /// edit would leak an HttpClient.
+    /// Rebuilds <see cref="LiveTransport"/> (and the <see cref="AutoTransport"/> wrapping it) from new
+    /// connection settings (server URL / TLS verification / credential) and, if <see cref="Mode"/> is
+    /// currently Live or Auto, re-points <see cref="SwitchableTransport"/> at the fresh instance so the
+    /// change takes effect immediately. A rebuild while Mode is Demo still replaces the held Live/Auto
+    /// instances (ready for the next switch to Live/Auto) without disturbing what is actively serving
+    /// traffic. Disposes the REPLACED <see cref="LiveTransport"/> (releasing its wrapped
+    /// <see cref="HttpClient"/>) once nothing new can be routed to it — see <see cref="LiveTransport.Dispose"/>'s
+    /// remarks: a caller can call this once per keystroke/edit, so without this every edit would leak an
+    /// HttpClient.
     /// </summary>
     public void RebuildLive(string serverUrl, string machineCode, string? mkKey, bool verifyTls)
     {
@@ -98,7 +97,7 @@ public sealed class TransportCoordinator
             // rebuild runs could still deliver one stray FallbackChanged notification after the
             // unsubscribe below (or, rarely, miss one) — delegate -=/Invoke is thread-safe (no crash;
             // Invoke captures its own snapshot), this is purely "at most one notification off" during a
-            // Settings-triggered rebuild, not worth synchronizing further for this exhibition tool.
+            // rebuild, not worth synchronizing further for this exhibition/edge tool.
             _auto.FallbackChanged -= OnFallbackChanged;
             oldLive = _live;
             _live = newLive;

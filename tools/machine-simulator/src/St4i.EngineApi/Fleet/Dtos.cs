@@ -1,0 +1,114 @@
+using St4i.EdgeCore.Engine;
+using St4i.EdgeCore.Models;
+
+namespace St4i.EngineApi.Fleet;
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /v1/health
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record HealthDto(bool Ok, TransportMode Mode);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /v1/fleet
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record FleetTileDto(
+    string Code,
+    DeviceClass DeviceClass,
+    DriverKind DriverKind,
+    string StatusText,
+    double PassRate,
+    long Cycles,
+    string LastCycleSummary,
+    IReadOnlyList<double> Spark);
+
+public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy);
+
+public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis);
+
+public sealed record FleetActionResultDto(bool Running, string Mode);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /v1/machines/{code}
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record MachineDetailDto(
+    string Code,
+    DeviceClass Class,
+    DriverKind DriverKind,
+    string StatusText,
+    double PassRate,
+    long Cycles,
+    SpcSummaryDto Spc,
+    IReadOnlyList<TelemetrySeriesDto> Telemetry,
+    IReadOnlyList<BoardPointDto> BoardPoints,
+    IReadOnlyList<CycleLogEntry> CycleLog,
+    string DriftState);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET/PUT /v1/mode
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record ModeDto(TransportMode Mode);
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record ScenarioRequest(double CycleRate = 1.0, double DefectRate = 0.0, double FaultRate = 0.0, bool NetworkOutage = false)
+{
+    public ScenarioConfig ToScenarioConfig() => new(CycleRate, DefectRate, FaultRate, NetworkOutage);
+}
+
+public sealed record ScenarioPresetRequest(string Name);
+
+public sealed record ScenarioDto(double CycleRate, double DefectRate, double FaultRate, bool NetworkOutage, string ActivePreset, string StatusLine)
+{
+    public static ScenarioDto From(ScenarioConfig config, string activePreset) => new(
+        config.CycleRateMultiplier,
+        config.ExtraDefectRate,
+        config.FaultRate,
+        config.NetworkOutage,
+        activePreset,
+        BuildStatusLine(config, activePreset));
+
+    private static string BuildStatusLine(ScenarioConfig config, string activePreset)
+    {
+        var outageText = config.NetworkOutage ? "network outage (acks queued/failing)" : "network normal";
+        return $"{activePreset} — cycleRate={config.CycleRateMultiplier:0.00}x, defect={config.ExtraDefectRate:P0}, fault={config.FaultRate:P0}, {outageText}.";
+    }
+}
+
+/// <summary>One named scenario preset — kebab-case <see cref="Name"/> keys (an API ergonomics choice;
+/// the WPF app's own preset picker uses Vietnamese display names instead) that <c>POST
+/// /v1/scenario/preset</c> matches case-insensitively.</summary>
+public sealed record ScenarioPresetInfo(string Name, string Description, ScenarioConfig Config, bool TriggersHotFolderDemo = false);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET/PUT /v1/settings, POST /v1/settings/probe
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record SettingsDto(string ServerUrl, bool VerifyTls, string Language, string MachineCode, TransportMode Mode);
+
+/// <summary>All fields optional — an omitted field leaves that setting unchanged (a PUT that only wants
+/// to flip <c>language</c>, say, doesn't need to also resend <c>serverUrl</c>).</summary>
+public sealed record SettingsUpdateRequest(string? ServerUrl, bool? VerifyTls, string? Language, string? MachineCode);
+
+public sealed record ProbeRequest(string ServerUrl);
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/onboarding/*
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record OnboardingRegisterRequest(string SerialNumber, string? Name, string? MachineType, bool IsDemo = true, string? ServerUrl = null);
+
+public sealed record OnboardingPollRequest(string SerialNumber, bool IsDemo = true, string? ServerUrl = null);
+
+public sealed record OnboardingClaimRequest(string SerialNumber, string? ClaimToken, bool IsDemo = true, string? ServerUrl = null);
+
+public sealed record OnboardingEnrollRequest(string SerialNumber, string? EnrollToken, string? Name, string? MachineType, bool IsDemo = true, string? ServerUrl = null);
+
+public sealed record OnboardingPasteKeyRequest(string MachineCode, string MkKey);
+
+public sealed record OnboardingStepResult(string Step, string? MachineCode, string? MkKey, bool IsApproved, string Message);
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/machines/{code}/sync-config
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record SyncConfigResponse(string Code, bool Changed, string? Version, string? DriftState, bool Applied, string DriftStateText);
+
+public sealed record ApiErrorDto(string Error);
