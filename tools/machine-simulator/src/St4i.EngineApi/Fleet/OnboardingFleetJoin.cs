@@ -60,6 +60,12 @@ public static class OnboardingFleetJoin
         // ── iot ──
         ["IOT_SENSOR"] = new(DeviceClass.Iot, 0.4),
         ["IOT_GATEWAY"] = new(DeviceClass.Iot, 0.5),
+        // Completion-review #6: the register field is free text with placeholder hint "e.g. Automation,
+        // IoT, AOI/AVI" — "AOI"/"AVI" already map above, but the bare "IoT" the placeholder itself
+        // suggests wasn't in this table (only the more specific IOT_SENSOR/IOT_GATEWAY were), so it fell
+        // through to the Automation fallback below. Cycle rate matches IOT_SENSOR's — closest generic
+        // guess for an unqualified "IoT" entry.
+        ["IOT"] = new(DeviceClass.Iot, 0.4),
     };
 
     /// <summary>Fail-safe default for an unrecognized/blank machineType — mirrors the real server's

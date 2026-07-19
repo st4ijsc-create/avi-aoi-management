@@ -708,6 +708,13 @@ export default function Onboarding() {
     if (result) navigate(`/machines/${encodeURIComponent(result.machineCode)}`)
   }
 
+  // Completion-review #5: previously left serialNumber/name/machineType/nameTouched exactly as the
+  // finished run left them — re-running "as is" re-submits the SAME serial, which RegisterMachine's
+  // dup-check turns into an "already in the fleet" no-op join rather than a genuinely new machine.
+  // Clearing serialNumber forces a fresh one to be typed (the submit button is already disabled on an
+  // empty serial, so this can't be missed); clearing nameTouched (and restoring the localized default
+  // name) means a language switch after this point re-localizes it instead of staying pinned to
+  // whatever was typed for the PREVIOUS machine.
   const handleReset = () => {
     setStepIndex(0)
     setResult(null)
@@ -715,6 +722,10 @@ export default function Onboarding() {
     setCopied(false)
     setClaimToken("")
     setEnrollToken("")
+    setSerialNumber("")
+    setName(t("onboarding.register.defaultName"))
+    setNameTouched(false)
+    setMachineType("Automation")
   }
 
   const handleCopy = async () => {

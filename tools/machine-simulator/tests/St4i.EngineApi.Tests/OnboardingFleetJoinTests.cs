@@ -138,6 +138,21 @@ public sealed class OnboardingFleetJoinTests
         Assert.Equal(1, count);
     }
 
+    /// <summary>Completion-review #6 — the register field is free text with placeholder hint "e.g.
+    /// Automation, IoT, AOI/AVI". "AOI"/"AVI" already resolved correctly; the bare "IoT" the placeholder
+    /// itself suggests fell through to the Automation fallback because only the more specific
+    /// IOT_SENSOR/IOT_GATEWAY keys existed. Case-insensitive per <see cref="OnboardingFleetJoin.BuildDescriptor"/>'s
+    /// own <c>ToUpperInvariant()</c> normalization.</summary>
+    [Theory]
+    [InlineData("IoT")]
+    [InlineData("iot")]
+    [InlineData("IOT")]
+    public void BuildDescriptor_BareIotAlias_MapsToIotDeviceClass_NotAutomationFallback(string freeTextType)
+    {
+        var descriptor = OnboardingFleetJoin.BuildDescriptor("E2-IOT-ALIAS-01", "SN-IOT-ALIAS-01", freeTextType);
+        Assert.Equal(DeviceClass.Iot, descriptor.DeviceClass);
+    }
+
     [Fact]
     public void JoinFleetIfProvisioned_NonProvisioningStep_LeavesFleetUnchanged()
     {

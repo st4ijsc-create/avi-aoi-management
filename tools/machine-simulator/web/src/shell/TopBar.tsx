@@ -102,6 +102,12 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
   const { data: modeData } = useMode()
+  // Same query key/cadence ServerStatusDot polls (TanStack Query dedupes — not a second network poll).
+  // ServerStatusDot only ever reflects connectivity (isError/isPending); `.ok` is a DIFFERENT signal —
+  // a reachable engine whose fleet pipeline itself faulted (M-3/E1: FleetHost.LastError set) — so it
+  // gets its own small, unobtrusive badge rather than overloading the connection dot.
+  const { data: healthData } = useHealth()
+  const showEngineFaulted = healthData?.ok === false
 
   // `/machines/:code` is checked ahead of the generic NAV_ITEMS match (which would otherwise resolve
   // it to the generic "Machines" label via `startsWith("/machines")`) so the title reads "Machine
@@ -126,6 +132,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
       <div className="flex min-w-0 items-center gap-3">
         <h2 className="truncate text-sm font-semibold text-text-strong">{pageTitle}</h2>
         {showDemoFallback ? <StatusBadge status="warn">{t("shell.topBar.demoFallback")}</StatusBadge> : null}
+        {showEngineFaulted ? <StatusBadge status="danger">{t("shell.topBar.engineFaulted")}</StatusBadge> : null}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">

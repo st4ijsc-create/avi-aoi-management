@@ -509,9 +509,12 @@ export function useStopFleet() {
 }
 
 /**
- * Polled slowly, mainly to drive the TopBar server-status dot. `HealthDto.ok` is hardcoded `true`
- * server-side whenever the request succeeds at all — a failed fetch (network error / engine down)
- * is what actually signals "offline" here, via TanStack Query's `isError`.
+ * Polled slowly, mainly to drive the TopBar server-status dot. A failed fetch (network error / engine
+ * process down) signals "offline" via TanStack Query's `isError` — that's the common case. E1 also made
+ * `HealthDto.ok` real server-truth (`FleetHost.LastError is null`, `FleetEndpoints.cs`): a request that
+ * SUCCEEDS can still come back `ok: false` if the fleet pipeline itself faulted (see
+ * `FleetHost.StartLocked`'s catch), which `isError` alone would miss — TopBar's `ServerStatusDot` only
+ * covers connectivity; the separate faulted-engine badge next to the page title is what surfaces `.ok`.
  */
 export function useHealth(): UseQueryResult<Health> {
   return useQuery({

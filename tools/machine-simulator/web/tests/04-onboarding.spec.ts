@@ -116,17 +116,28 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await gotoOnboarding(page)
     const serial = `SIM-E2E-RESET-${Date.now()}`
 
+    const nameField = page.getByLabel(viDict.onboarding.register.nameLabel)
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+    await nameField.fill("Custom name for this run")
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
     await page.getByRole("button", { name: viDict.onboarding.poll.approveBtn }).click()
     await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
     await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
 
     await page.getByRole("button", { name: viDict.onboarding.done.registerAnother }).click()
-    await expect(page.getByLabel(viDict.onboarding.register.serialLabel)).toBeVisible()
+    const serialField = page.getByLabel(viDict.onboarding.register.serialLabel)
+    await expect(serialField).toBeVisible()
     // Back at step 1 of 4, not stuck mid-flow or still showing the previous machine's key.
     await expect(page.getByRole("button", { name: viDict.onboarding.register.submit })).toBeVisible()
     await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }))).toHaveCount(0)
+
+    // Completion-review #5: serial/name/machineType/nameTouched are cleared on reset — re-running
+    // "as is" used to re-submit the SAME serial (RegisterMachine's dup-check turns that into a silent
+    // "already in the fleet" no-op join) and kept the PREVIOUS custom name pinned regardless of a later
+    // language switch. Empty serial also means the submit button starts disabled again.
+    await expect(serialField).toHaveValue("")
+    await expect(nameField).toHaveValue(viDict.onboarding.register.defaultName)
+    await expect(page.getByRole("button", { name: viDict.onboarding.register.submit })).toBeDisabled()
   })
 
   test("register step default machine name tracks the UI language, and the mode indicator explains Demo vs Live", async ({

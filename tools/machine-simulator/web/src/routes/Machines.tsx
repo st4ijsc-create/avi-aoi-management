@@ -268,6 +268,18 @@ export default function Machines() {
     [roster]
   )
 
+  // Completion-review #4: statusOptions narrows to whatever's actually present in the roster (see its
+  // own comment above) — a running→stopped transition can shrink that set out from under an ALREADY
+  // selected value (e.g. filtered to "OK" while running, then Stop Fleet collapses every tile to
+  // "Idle"). The native <select> would keep `statusFilter` pointing at an option that no longer exists,
+  // so the table renders the "no match" empty state instead of self-correcting. Reset to ALL the moment
+  // the current selection falls outside the (possibly just-narrowed) option set.
+  React.useEffect(() => {
+    if (statusFilter !== ALL && !statusOptions.includes(statusFilter)) {
+      setStatusFilter(ALL)
+    }
+  }, [statusFilter, statusOptions])
+
   const filtersActive = search.trim() !== "" || typeFilter !== ALL || statusFilter !== ALL
 
   const filteredMachines = React.useMemo(() => {

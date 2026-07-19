@@ -44,6 +44,7 @@ export const vi = {
       engineOffline: "Mất kết nối engine",
       connecting: "Đang kết nối…",
       demoFallback: "Dự phòng Demo",
+      engineFaulted: "Engine gặp lỗi",
       paletteAria: "Mở bảng lệnh (⌘K)",
     },
     commandPalette: {
@@ -209,7 +210,7 @@ export const vi = {
       pendingTitle: "Đang chờ duyệt trên hệ thống ST4I",
       waitingPrefix: "Đang chờ quản trị viên duyệt",
       waitingSuffixDemo: ". Ở chế độ demo, nhấn nút bên dưới để duyệt ngay (mô phỏng admin).",
-      waitingSuffixLive: ". Trạng thái sẽ tự cập nhật khi quản trị viên duyệt trên SYNAPSE Admin Console.",
+      waitingSuffixLive: ". Sau khi quản trị viên duyệt trên SYNAPSE Admin Console, bấm \"Kiểm tra trạng thái\" bên dưới để cập nhật.",
       liveInstruction: "Mở SYNAPSE Admin Console để duyệt máy này, rồi dán mã claim (mct_…) bên dưới.",
       pending: "Đang chờ",
       back: "Quay lại",

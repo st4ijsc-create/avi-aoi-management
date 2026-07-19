@@ -33,6 +33,14 @@ public sealed class FleetHost
     private const double OutageLatencyMs = 60;
     private const string ConfigKind = "recipe";
 
+    /// <summary>Completion-review #1/#7 — bounded wait for a restart path's OLD run-task to finish
+    /// tearing down before the new one starts, so at most a sliver of time (never unbounded) has two
+    /// pipelines alive against the shared <see cref="_transport"/>. If the old task is still stuck past
+    /// this, the restart proceeds anyway (an exhibition demo must never hang on Register/Scenario) —
+    /// the identity guard in <see cref="StartLocked"/>'s catch handler is what actually prevents the
+    /// stale task from corrupting shared state whenever it does eventually finish.</summary>
+    private static readonly TimeSpan RestartTeardownTimeout = TimeSpan.FromSeconds(3);
+
     public const string DefaultServerUrl = "http://localhost:5000";
     public const string DefaultMachineCode = "ENGINE-API-01";
     public const string DefaultLanguage = "vi";
@@ -114,6 +122,13 @@ public sealed class FleetHost
 
     public ITransport Transport => _transport;
 
+    /// <summary>Test-only seam (default no-op) — lets <c>St4i.EngineApi.Tests</c> wrap the pipeline's
+    /// <see cref="IDeviceDriver"/> in a fault-injecting decorator so the restart-race identity guard
+    /// (completion-review.md #1/#7) can be reproduced deterministically instead of relying on real
+    /// non-determinism. Applied once per <see cref="StartLocked"/> call, right after the real driver is
+    /// built; production code never sets this (<c>internal</c>, requires <c>InternalsVisibleTo</c>).</summary>
+    internal Func<IDeviceDriver, IDeviceDriver>? DriverDecoratorForTests { get; set; }
+
     public bool IsRunning { get; private set; }
 
     public Exception? LastError { get; private set; }
@@ -131,6 +146,13 @@ public sealed class FleetHost
     // ─────────────────────────────────────────────────────────────────────
     // START/STOP
     // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Completion-review #1/#7 — the OLD run-task/CTS a <see cref="StopLocked"/> tears down,
+    /// handed back to the caller instead of being discarded so it can be awaited/disposed OUTSIDE
+    /// <see cref="_gate"/> (see <see cref="WaitAndDisposeOldPipeline"/>'s remarks on why that has to
+    /// happen off-lock).</summary>
+    private readonly record struct PipelineHandle(Task? RunTask, CancellationTokenSource? Cts);
+
     public void Start()
     {
         lock (_gate) StartLocked();
@@ -138,7 +160,12 @@ public sealed class FleetHost
 
     public void Stop()
     {
-        lock (_gate) StopLocked();
+        // Wait/dispose must happen OUTSIDE _gate — see WaitAndDisposeOldPipeline's remarks. Stop()
+        // itself stays synchronous (bounded by RestartTeardownTimeout) so a caller observing it return
+        // can trust the old pipeline is actually torn down, not just "cancel requested".
+        PipelineHandle handle;
+        lock (_gate) handle = StopLocked();
+        WaitAndDisposeOldPipeline(handle);
     }
 
     private void StartLocked()
@@ -156,6 +183,12 @@ public sealed class FleetHost
 
         var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
+
+        var decorator = DriverDecoratorForTests;
+        if (decorator is not null)
+        {
+            driver = decorator(driver);
+        }
 
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
         var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
@@ -178,18 +211,42 @@ public sealed class FleetHost
             }
             catch (Exception ex)
             {
-                LastError = ex;
-                IsRunning = false;
                 _logger?.LogError(ex, "FleetHost pipeline faulted");
+
+                // Completion-review #1: this runs off-thread, well after StartLocked() returned — a
+                // restart (StopLocked immediately followed by StartLocked, see RegisterMachine/
+                // ApplyScenario below) can already have replaced _cts/_currentPipeline with a NEW
+                // pipeline's by the time a stale/cancelled-but-slow-to-unwind task's catch gets here.
+                // Re-acquire _gate and only touch the shared IsRunning/LastError if THIS task's own
+                // `cts`/`pipeline` closures are still the CURRENT ones — otherwise this is a superseded
+                // pipeline's fault and must not clobber a freshly-restarted, healthy fleet.
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_cts, cts) && ReferenceEquals(_currentPipeline, pipeline))
+                    {
+                        LastError = ex;
+                        IsRunning = false;
+                    }
+                }
             }
         });
     }
 
-    private void StopLocked()
+    /// <summary>Cancels + detaches the current pipeline and returns it as a <see cref="PipelineHandle"/>
+    /// instead of discarding it — callers that immediately restart (<see cref="RegisterMachine"/>/
+    /// <see cref="ApplyScenario"/>) release <see cref="_gate"/>, wait for the old task via
+    /// <see cref="WaitAndDisposeOldPipeline"/>, THEN re-acquire the gate to call <see cref="StartLocked"/>
+    /// — never while still holding it (the catch above re-acquires <see cref="_gate"/>, so waiting for
+    /// the old task from inside this same lock would deadlock whenever that catch actually needs to
+    /// run). Assumes the caller already holds <see cref="_gate"/>.</summary>
+    private PipelineHandle StopLocked()
     {
-        if (!IsRunning) return;
+        if (!IsRunning) return default;
 
-        _cts?.Cancel();
+        var oldTask = _runTask;
+        var oldCts = _cts;
+
+        oldCts?.Cancel();
         _cts = null;
         _runTask = null;
         IsRunning = false;
@@ -199,6 +256,39 @@ public sealed class FleetHost
             _currentPipeline.Committed -= OnPipelineCommitted;
             _currentPipeline = null;
         }
+
+        return new PipelineHandle(oldTask, oldCts);
+    }
+
+    /// <summary>Completion-review #7 — bounded, OFF-LOCK wait for the old run-task to actually finish
+    /// (closing the "leaked CTS + briefly two pipelines share <see cref="_transport"/>" gap) before the
+    /// caller starts a new one. Must never be called while holding <see cref="_gate"/>: the run-task's
+    /// own catch handler (see <see cref="StartLocked"/>) re-acquires <see cref="_gate"/> to apply its
+    /// identity-guarded write, so a caller blocked on <c>Task.Wait()</c> for that same task WHILE holding
+    /// the gate would deadlock against it. If the old task is still stuck past the timeout, this gives up
+    /// and disposes the CTS anyway — Cancel() has already been requested, so the task will eventually
+    /// unwind and its own identity guard (not this method) is what keeps a late finish from corrupting
+    /// state.</summary>
+    private void WaitAndDisposeOldPipeline(PipelineHandle handle)
+    {
+        if (handle.RunTask is not null)
+        {
+            try
+            {
+                handle.RunTask.Wait(RestartTeardownTimeout);
+            }
+            catch (AggregateException ex)
+            {
+                // Defensive only: the run-task's own body catches every exception it can throw
+                // (OperationCanceledException and general Exception both handled internally, see
+                // StartLocked), so this Task should never actually fault. If something inside that catch
+                // itself somehow throws, this just keeps Task.Wait()'s unwrap-and-rethrow from surfacing
+                // as an unhandled exception on the restart caller instead of a log line.
+                _logger?.LogDebug(ex, "FleetHost old pipeline teardown wait observed a faulted task");
+            }
+        }
+
+        handle.Cts?.Dispose();
     }
 
     private void OnPipelineCommitted(DeviceReading reading, TransportAck ack)
@@ -267,20 +357,27 @@ public sealed class FleetHost
     /// already exists (case-insensitively) — E2's onboarding flow can call this speculatively without
     /// pre-checking for a race against another registration.
     ///
-    /// Concurrency: everything here happens under <see cref="_gate"/> — the same lock
-    /// <see cref="StartLocked"/>/<see cref="StopLocked"/>/<see cref="ApplyScenario"/> already serialize
-    /// on — so a concurrent <see cref="Start"/>/<see cref="Stop"/>/<see cref="ApplyScenario"/> call can't
-    /// interleave with this one. <see cref="Snapshot"/>/<see cref="MachineDetail"/> take no lock at all
-    /// (by design — they're hot GET paths) and remain safe to call concurrently with this method because
-    /// <see cref="_states"/> is a <see cref="ConcurrentDictionary{TKey,TValue}"/>: the new entry either
-    /// isn't visible yet or is fully constructed when it becomes visible, never torn.
+    /// Concurrency: the roster mutation (dup-check + <c>_fleet.Add</c> + <c>_states.TryAdd</c>) happens
+    /// under <see cref="_gate"/> — the same lock <see cref="StartLocked"/>/<see cref="StopLocked"/>/
+    /// <see cref="ApplyScenario"/> already serialize on. <see cref="Snapshot"/>/<see cref="MachineDetail"/>
+    /// take no lock at all (by design — they're hot GET paths) and remain safe to call concurrently with
+    /// this method because <see cref="_states"/> is a <see cref="ConcurrentDictionary{TKey,TValue}"/>:
+    /// the new entry either isn't visible yet or is fully constructed when it becomes visible, never torn.
     ///
-    /// If the fleet is currently running, the pipeline is restarted (<see cref="StopLocked"/> then
-    /// <see cref="StartLocked"/>, same pattern <see cref="ApplyScenario"/> uses for a cycle-rate change)
-    /// so the rebuilt <c>SimulatedDriver</c> roster includes the new machine and it actually starts
-    /// producing cycles — every other machine's <see cref="MachineState"/> (and its I-1 cycle-offset)
-    /// survives the restart untouched, exactly as it does for a scenario-triggered restart today. If the
-    /// fleet is stopped, the new machine is simply included the next time <see cref="Start"/> runs.
+    /// If the fleet is currently running, the pipeline is restarted — completion-review #1/#7:
+    /// <see cref="StopLocked"/> runs under <see cref="_gate"/> and hands back the OLD run-task/CTS, the
+    /// gate is released, <see cref="WaitAndDisposeOldPipeline"/> waits for that old task OFF-LOCK (bounded
+    /// by <see cref="RestartTeardownTimeout"/>, required — the old task's own catch re-acquires
+    /// <see cref="_gate"/>, so waiting for it while still holding the gate would deadlock), and only THEN
+    /// does a fresh <c>lock (_gate) StartLocked()</c> rebuild the pipeline from the current roster
+    /// (including whatever was just added). There's a narrow window between those two locked sections
+    /// where another thread could itself call <see cref="Stop"/>/<see cref="Start"/> and observe/flip
+    /// <see cref="IsRunning"/> — accepted the same way the pre-existing restart-under-one-lock code
+    /// accepted "last writer wins" for concurrent scenario/registration calls; this is a single-operator
+    /// exhibition tool, not a multi-writer production control plane. Every other machine's
+    /// <see cref="MachineState"/> (and its I-1 cycle-offset) survives the restart untouched, exactly as it
+    /// does for a scenario-triggered restart. If the fleet is stopped, the new machine is simply included
+    /// the next time <see cref="Start"/> runs.
     ///
     /// Either way, the new machine is visible in the very next <see cref="Snapshot"/> immediately —
     /// idle status, 0 cycles — since its <see cref="MachineState"/> is inserted before this method
@@ -292,6 +389,9 @@ public sealed class FleetHost
         {
             throw new ArgumentException("MachineDescriptor.Code must not be null/blank.", nameof(descriptor));
         }
+
+        PipelineHandle restartHandle = default;
+        var restarting = false;
 
         lock (_gate)
         {
@@ -312,12 +412,18 @@ public sealed class FleetHost
 
             if (IsRunning)
             {
-                StopLocked();
-                StartLocked();
+                restartHandle = StopLocked();
+                restarting = true;
             }
-
-            return true;
         }
+
+        if (restarting)
+        {
+            WaitAndDisposeOldPipeline(restartHandle);
+            lock (_gate) StartLocked();
+        }
+
+        return true;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -326,6 +432,9 @@ public sealed class FleetHost
     public ScenarioDto ApplyScenario(ScenarioConfig config, string? presetName = null)
     {
         ArgumentNullException.ThrowIfNull(config);
+
+        PipelineHandle restartHandle = default;
+        var restarting = false;
 
         lock (_gate)
         {
@@ -338,9 +447,17 @@ public sealed class FleetHost
             var multiplierChanged = Math.Abs(config.CycleRateMultiplier - previous.CycleRateMultiplier) > 1e-9;
             if (IsRunning && multiplierChanged)
             {
-                StopLocked();
-                StartLocked();
+                restartHandle = StopLocked();
+                restarting = true;
             }
+        }
+
+        // Completion-review #1/#7 — same off-lock wait-then-restart shape as RegisterMachine above;
+        // see its doc comment for the full deadlock/identity-guard reasoning.
+        if (restarting)
+        {
+            WaitAndDisposeOldPipeline(restartHandle);
+            lock (_gate) StartLocked();
         }
 
         return ScenarioDto.From(_scenario, _activePresetName);

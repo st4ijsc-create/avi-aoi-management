@@ -41,6 +41,7 @@ export const en: Dictionary = {
       engineOffline: "Engine offline",
       connecting: "Connecting…",
       demoFallback: "Demo fallback",
+      engineFaulted: "Engine faulted",
       paletteAria: "Open command palette (⌘K)",
     },
     commandPalette: {
@@ -206,7 +207,7 @@ export const en: Dictionary = {
       pendingTitle: "Waiting for approval on the ST4I system",
       waitingPrefix: "Waiting for an administrator to approve",
       waitingSuffixDemo: ". In demo mode, press the button below to approve instantly (simulating an admin).",
-      waitingSuffixLive: ". Status updates automatically once an administrator approves in the SYNAPSE Admin Console.",
+      waitingSuffixLive: ". After an administrator approves in the SYNAPSE Admin Console, press \"Check status\" below to update.",
       liveInstruction: "Open the SYNAPSE Admin Console to approve this machine, then paste the claim code (mct_…) below.",
       pending: "Pending",
       back: "Back",

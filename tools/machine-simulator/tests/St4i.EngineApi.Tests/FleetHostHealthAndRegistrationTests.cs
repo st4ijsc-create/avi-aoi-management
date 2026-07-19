@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
@@ -229,5 +231,125 @@ public sealed class FleetHostHealthAndRegistrationTests
         {
             host.Stop();
         }
+    }
+
+    /// <summary>Completion-review completion-fixes — deterministic reproduction of #1/#7 ("Faulted-pipeline
+    /// `catch` writes `IsRunning`/`LastError` off-thread, unsynchronized — can clobber a freshly-restarted
+    /// fleet"), using <see cref="FleetHost.DriverDecoratorForTests"/> (a test-only seam,
+    /// <c>internal</c> + <c>InternalsVisibleTo</c>) instead of hoping real teardown non-determinism shows
+    /// up on this run. <see cref="FaultyTeardownDriver"/> intercepts the OLD pipeline's cancellation and,
+    /// instead of letting a clean <see cref="OperationCanceledException"/> propagate, waits past
+    /// FleetHost's own (private) restart-teardown-wait timeout and THEN throws a plain exception — the
+    /// exact "non-OCE during/after teardown" shape the review called out. Because the fault fires only
+    /// after the bounded wait already gave up and let <see cref="FleetHost.RegisterMachine"/> start a
+    /// fresh pipeline, the old task's catch handler is guaranteed to run AFTER <c>_cts</c>/
+    /// <c>_currentPipeline</c> have already been replaced — precisely the race the identity guard in
+    /// <c>FleetHost.StartLocked</c>'s catch has to survive. Before the fix this test reproducibly failed
+    /// (<c>IsRunning</c> flipped back to <see langword="false"/> and <c>LastError</c> got set); after the
+    /// fix it stays green because the guard's <c>ReferenceEquals(_cts, cts)</c>/
+    /// <c>ReferenceEquals(_currentPipeline, pipeline)</c> checks fail for the stale task and it no-ops.</summary>
+    [Fact]
+    public async Task RestartRace_OldPipelineFaultsAfterNewPipelineAlreadyStarted_DoesNotClobberIsRunningOrLastError()
+    {
+        var host = CreateHost();
+
+        // Longer than FleetHost's own internal restart-teardown wait (3s, private) — guarantees
+        // RegisterMachine's bounded wait for the OLD task gives up and starts the NEW pipeline well
+        // before this fake fault actually throws.
+        var faultDelay = TimeSpan.FromSeconds(5);
+        host.DriverDecoratorForTests = driver => new FaultyTeardownDriver(driver, faultDelay);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online (through the faulty-teardown decorator) before triggering a restart");
+
+            // Only the pipeline already running (captured above) should be faulty — the fresh one
+            // RegisterMachine is about to build must behave normally so this test can tell "old pipeline's
+            // stale fault" apart from "new pipeline is also broken".
+            host.DriverDecoratorForTests = null;
+
+            const string code = "E1-RACE-01";
+            var added = host.RegisterMachine(NewFastMachine(code));
+            Assert.True(added);
+
+            // RegisterMachine's own bounded wait-for-old-task already blocked here for ~3s (the old
+            // task is stuck behind `faultDelay`, which hasn't elapsed yet) before giving up and starting
+            // the new pipeline — so by the time control returns to us, a fresh pipeline is live.
+            Assert.True(host.IsRunning, "registering mid-run must leave the pipeline running, not stopped, even with a slow-to-unwind old pipeline in flight");
+            Assert.Null(host.LastError);
+
+            // Let the old task's delayed fault actually fire (it throws ~`faultDelay` after cancellation
+            // was requested) and give its identity-guarded catch a moment to run.
+            await Task.Delay(faultDelay + TimeSpan.FromSeconds(3));
+
+            // The assertion that matters: a stale pipeline's late, non-cancellation fault must NOT have
+            // clobbered the freshly-restarted fleet's shared state.
+            Assert.True(host.IsRunning, "a stale pipeline's late non-OCE fault must not flip a healthy, freshly-restarted fleet to stopped");
+            Assert.Null(host.LastError);
+
+            // And the fleet is genuinely healthy, not just reporting IsRunning=true — the newly
+            // registered machine is actually cycling on the new pipeline.
+            await WaitUntilAsync(() => host.MachineDetail(code)?.Cycles > 0, $"{code} to cycle on the fresh, post-restart pipeline");
+        }
+        finally
+        {
+            host.DriverDecoratorForTests = null;
+            host.Stop();
+        }
+    }
+
+    /// <summary>Test double for <see cref="RestartRace_OldPipelineFaultsAfterNewPipelineAlreadyStarted_DoesNotClobberIsRunningOrLastError"/>
+    /// — wraps a real <see cref="IDeviceDriver"/> and, once its stream observes cancellation, deliberately
+    /// withholds the clean <see cref="OperationCanceledException"/> FleetHost's catch normally expects on
+    /// Stop(): it waits <c>faultDelay</c> (via <see cref="CancellationToken.None"/>, so the delay itself
+    /// is never itself cancelled) and then throws a plain <see cref="InvalidOperationException"/> instead —
+    /// the "non-OCE during/after teardown" shape completion-review.md #1 describes.</summary>
+    private sealed class FaultyTeardownDriver : IDeviceDriver
+    {
+        private readonly IDeviceDriver _inner;
+        private readonly TimeSpan _faultDelay;
+
+        public FaultyTeardownDriver(IDeviceDriver inner, TimeSpan faultDelay)
+        {
+            _inner = inner;
+            _faultDelay = faultDelay;
+        }
+
+        public string Id => _inner.Id;
+
+        public DriverKind Kind => _inner.Kind;
+
+        public DriverHealthState Health => _inner.Health;
+
+        public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
+        {
+            var enumerator = _inner.ReadAsync(ct).GetAsyncEnumerator(ct);
+            try
+            {
+                while (true)
+                {
+                    bool hasNext;
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        await Task.Delay(_faultDelay, CancellationToken.None).ConfigureAwait(false);
+                        throw new InvalidOperationException("FaultyTeardownDriver: simulated non-cancellation teardown fault (test double)");
+                    }
+
+                    if (!hasNext) yield break;
+                    yield return enumerator.Current;
+                }
+            }
+            finally
+            {
+                await enumerator.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        public ValueTask DisposeAsync() => _inner.DisposeAsync();
     }
 }
