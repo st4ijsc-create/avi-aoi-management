@@ -41,8 +41,15 @@ public sealed class FleetService : IDisposable
     public IReadOnlyList<MachineDescriptor> Fleet { get; }
 
     /// <summary>True once <see cref="Start"/> has kicked off the background pipeline task and it
-    /// hasn't been <see cref="Stop"/>ped since.</summary>
+    /// hasn't been <see cref="Stop"/>ped since (or the pipeline task hasn't faulted — see
+    /// <see cref="LastError"/>).</summary>
     public bool IsRunning { get; private set; }
+
+    /// <summary>Set if the background pipeline task faulted (an exception other than the expected
+    /// <see cref="OperationCanceledException"/> from <see cref="Stop"/>) — <see cref="EdgePipeline"/>
+    /// itself already survives per-reading transport failures internally (see its own remarks), so
+    /// this should stay null in normal operation. Cleared on the next successful <see cref="Start"/>.</summary>
+    public Exception? LastError { get; private set; }
 
     /// <summary>Fired once per reading committed through the pipeline, on whatever background thread
     /// happened to be running <see cref="EdgePipeline.RunAsync"/>'s loop — never the UI thread.
@@ -60,6 +67,7 @@ public sealed class FleetService : IDisposable
     {
         if (IsRunning) return;
 
+        LastError = null;
         var sims = Fleet.Select((d, i) => BuildSimulator(d, seed: 1000 + i)).ToList();
         var driver = new SimulatedDriver(sims);
         // Normalizer only consults MappingProfile.DefaultStepType/UnitMap (never DeviceClass) — see
@@ -84,6 +92,15 @@ public sealed class FleetService : IDisposable
             {
                 // Expected on Stop() — the pipeline's cancellable read loop propagates this per its
                 // documented contract; it is not a fleet failure.
+            }
+            catch (Exception ex)
+            {
+                // A genuinely unexpected fault (EdgePipeline.RunAsync itself already survives
+                // per-reading transport throws/failures internally — see its own remarks — so this is
+                // NOT the normal "one bad reading" path). Don't leave IsRunning stuck true with no
+                // signal that the fleet silently died.
+                LastError = ex;
+                IsRunning = false;
             }
         });
     }

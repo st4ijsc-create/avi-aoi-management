@@ -89,6 +89,14 @@ public sealed partial class FleetViewModel : ObservableObject
             Fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
         }
 
+        // Unconditional (not driven off OnFpyChanged) — see RefreshFpySubText remarks: Fpy lands on
+        // the bit-exact same double (1.0) for every reading during an all-Pass/all-Warn streak, so
+        // the ObservableProperty change-notification (and OnFpyChanged with it) stops firing even
+        // though _totalPass/_totalJudged keep advancing underneath. Refreshing here, every committed
+        // reading, keeps the "X/Y judged" text honest regardless of whether the ratio's floating-point
+        // value happened to change.
+        RefreshFpySubText();
+
         OnlineCount = Machines.Count(m => m.Cycles > 0);
     });
 
@@ -96,17 +104,28 @@ public sealed partial class FleetViewModel : ObservableObject
 
     partial void OnTotalCyclesChanged(long value) => CyclesKpi.ValueText = value.ToString("N0");
 
-    partial void OnFpyChanged(double value)
-    {
-        FpyKpi.ValueText = value.ToString("P1");
+    /// <summary>Only the formatted percentage — deliberately NOT the "X/Y judged" subtext (that's
+    /// <see cref="RefreshFpySubText"/>, called unconditionally from <see cref="OnCommitted"/>; see its
+    /// remarks for why relying on this change-notification hook alone freezes it).</summary>
+    partial void OnFpyChanged(double value) => FpyKpi.ValueText = value.ToString("P1");
+
+    /// <summary>Bug fix (post-review): during any all-Pass or all-Warn streak, n/n is the bit-exact
+    /// same <see cref="double"/> (1.0) every cycle, so CommunityToolkit.Mvvm's generated
+    /// <c>Fpy</c> setter sees no value change and never invokes <see cref="OnFpyChanged"/> — while
+    /// <see cref="_totalPass"/>/<see cref="_totalJudged"/> keep incrementing underneath. Relying on
+    /// <see cref="OnFpyChanged"/> alone therefore froze this subtext (observed: stuck at "3/3 judged"
+    /// while the real count kept climbing). Called unconditionally from <see cref="OnCommitted"/>
+    /// instead, so it always reflects the current counters regardless of whether the ratio's
+    /// floating-point value changed.</summary>
+    private void RefreshFpySubText() =>
         FpyKpi.SubText = _totalJudged == 0 ? "no data yet" : $"{_totalPass}/{_totalJudged} judged";
-    }
 
     private void RefreshKpiDisplay()
     {
         OnOnlineCountChanged(OnlineCount);
         OnTotalCyclesChanged(TotalCycles);
         OnFpyChanged(Fpy);
+        RefreshFpySubText();
     }
 
     /// <summary>Same dispatcher-marshaling pattern as <c>AppShellViewModel.RunOnUiThread</c> (Task 14):

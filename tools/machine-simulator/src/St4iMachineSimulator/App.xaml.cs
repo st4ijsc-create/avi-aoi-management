@@ -142,7 +142,25 @@ public partial class App : Application
         if (!vm.IsFleetRunning)
             throw new InvalidOperationException("selftest: StartFleet did not set IsFleetRunning");
 
-        PumpDispatcherFor(TimeSpan.FromSeconds(3));
+        // Split the wait into two pumps (still 3s total) so we can snapshot FpyKpi.SubText's "X/Y
+        // judged" count twice and prove it's still advancing at t=3s — regression check for the
+        // post-review fix: OnFpyChanged (a CommunityToolkit.Mvvm value-change hook) stops firing
+        // during an all-Pass/all-Warn streak because n/n is the bit-exact same double every cycle, so
+        // relying on it alone froze this subtext even as the underlying judged count kept climbing.
+        PumpDispatcherFor(TimeSpan.FromSeconds(1));
+        var judgedAt1s = ParseJudgedCount(fleetVm.FpyKpi.SubText)
+            ?? throw new InvalidOperationException($"selftest: FpyKpi.SubText had no parseable \"X/Y judged\" count after 1s (was \"{fleetVm.FpyKpi.SubText}\")");
+
+        PumpDispatcherFor(TimeSpan.FromSeconds(2));
+        var judgedAt3s = ParseJudgedCount(fleetVm.FpyKpi.SubText)
+            ?? throw new InvalidOperationException($"selftest: FpyKpi.SubText had no parseable \"X/Y judged\" count after 3s (was \"{fleetVm.FpyKpi.SubText}\")");
+
+        if (judgedAt3s <= judgedAt1s)
+            throw new InvalidOperationException(
+                $"selftest: FpyKpi.SubText's judged count did not advance between t=1s ({judgedAt1s}) and t=3s ({judgedAt3s}) — " +
+                "looks frozen (the FPY-subtext-freeze-on-pass-streak bug)");
+        if (judgedAt3s > fleetVm.TotalCycles)
+            throw new InvalidOperationException($"selftest: FpyKpi.SubText's judged count ({judgedAt3s}) exceeds TotalCycles ({fleetVm.TotalCycles})");
 
         var reportingMachines = fleetVm.Machines.Count(m => m.Cycles > 0);
         if (reportingMachines == 0)
@@ -152,7 +170,8 @@ public partial class App : Application
 
         Console.WriteLine(
             $"SELFTEST fleet: {reportingMachines}/{fleetVm.Machines.Count} machine tiles reported >=1 cycle, " +
-            $"TotalCycles={fleetVm.TotalCycles}, OnlineCount={fleetVm.OnlineCount}, Fpy={fleetVm.Fpy:P1}");
+            $"TotalCycles={fleetVm.TotalCycles}, OnlineCount={fleetVm.OnlineCount}, Fpy={fleetVm.Fpy:P1}, " +
+            $"FpyKpi.SubText judged count {judgedAt1s}(t=1s) -> {judgedAt3s}(t=3s) [\"{fleetVm.FpyKpi.SubText}\"]");
 
         vm.StopFleetCommand.Execute(null);
         if (vm.IsFleetRunning)
@@ -181,6 +200,19 @@ public partial class App : Application
         };
         timer.Start();
         Dispatcher.PushFrame(frame);
+    }
+
+    /// <summary>Parses the judged count ("Y" in FleetViewModel.FpyKpi's "X/Y judged" SubText) back
+    /// out for the regression check in <see cref="RunSelfTest"/>. Returns null for "no data yet" (no
+    /// judged readings committed yet) or anything unparseable.</summary>
+    private static long? ParseJudgedCount(string? subText)
+    {
+        if (string.IsNullOrEmpty(subText)) return null;
+        var slash = subText.IndexOf('/');
+        if (slash < 0) return null;
+        var space = subText.IndexOf(' ', slash + 1);
+        if (space < 0) return null;
+        return long.TryParse(subText.AsSpan(slash + 1, space - slash - 1), out var judged) ? judged : null;
     }
 
     /// <summary>
