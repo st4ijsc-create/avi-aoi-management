@@ -527,6 +527,42 @@ export const machineRecipeRouter = router({
         return row;
       }),
 
+    /**
+     * Nguồn recipe cho FORM YÊU CẦU của operator (đọc catalog metadata, không payload).
+     * Gate machine_monitoring/canView (mức operator) — nhất quán triết lý request-inert:
+     * đọc danh mục để CHỌN không phải actuation; tường thực thi vẫn ở approve.
+     * Trả các bản active/approved khớp máy (machineId cụ thể HOẶC generic theo machineType).
+     */
+    recipeOptions: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .input(z.object({ machineId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        const [machine] = await db
+          .select({ id: machines.id, machineType: machines.machineType })
+          .from(machines).where(eq(machines.id, input.machineId)).limit(1);
+        if (!machine) return [];
+        return db
+          .select({
+            id: machineRecipes.id,
+            code: machineRecipes.code,
+            name: machineRecipes.name,
+            version: machineRecipes.version,
+            status: machineRecipes.status,
+            machineId: machineRecipes.machineId,
+            approvedBy: machineRecipes.approvedBy,
+          })
+          .from(machineRecipes)
+          .where(and(
+            sql`${machineRecipes.status} != 'archived'`,
+            machine.machineType
+              ? sql`(${machineRecipes.machineId} = ${input.machineId} OR (${machineRecipes.machineId} IS NULL AND ${machineRecipes.machineType} = ${machine.machineType}))`
+              : eq(machineRecipes.machineId, input.machineId),
+          ))
+          .orderBy(desc(machineRecipes.updatedAt))
+          .limit(100);
+      }),
+
     /** Yêu cầu CỦA TÔI (operator theo dõi trạng thái xử lý). */
     listMine: protectedProcedure
       .use(requirePermission("machine_monitoring", "canView"))

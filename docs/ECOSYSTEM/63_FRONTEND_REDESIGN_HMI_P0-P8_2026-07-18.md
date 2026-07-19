@@ -136,6 +136,30 @@ Nguyên tắc: chỉ đổi tầng trình bày, tái dùng token/primitive sẵn
 
 ---
 
+## Phụ lục A (2026-07-19) — Audit NAVBAR TRÁI (AUD-N) + tiêu thụ DEP ở FE
+
+### Audit [M] (đo bằng grep/inventory trên navigation.tsx + vi.json)
+| Mã | Phát hiện | Số liệu |
+|---|---|---|
+| AUD-N1 | **Label quá dài**: 28/120 nhãn rail ≥20 ký tự (23%), 11 nhãn ≥26; tệ nhất 36 ("Vật tư tại line (Feeder/MSD/Stencil)"). Mẫu song ngữ "VN (English)" ×15; tiền tố lặp "Trung tâm…"×9, "Bảng…"×8, "Phân tích…"×6; "cockpit/hub" dịch 3 kiểu (Buồng lái/Xưởng/Trung tâm) | 120 item rail / 148 leaf |
+| AUD-N1b | **8 label RAW-STRING** hardcode trong navigation.tsx (vi phạm chính quy tắc i18n của nav): control-tower, executive, war-room, sla-cockpit, routing, materials, comparison-studio (label+desc), factory-command… | 8 chỗ |
+| AUD-N2 | "Thao tác mở vô nghĩa": `buildModuleL2` ĐÃ promote section 0/1-item thành link (rule ≥2) — vấn đề thật là **hub-launcher row → trang-menu-tiles (menu 2 tầng)** ×7 hub và **near-dup rows** (data-comparison đã bị Comparison Studio gộp nhưng vẫn chiếm row; "Bảng điều khiển" vs "Bảng điều hành" khác 1 chữ) | 7 hub · 2 cặp near-dup |
+| AUD-N3 | Recent sidebar hiện 5 (user chốt: **3**) | slice(0,5) |
+
+### Đã sửa (commit này)
+| Fix | Chi tiết |
+|---|---|
+| Recent → **3** | `SidebarQuickAccess` slice(0,3); store giữ 5 cho ⌘K |
+| **27 nhãn rút gọn** (vi, en/zh đồng bộ) | Bỏ ngoặc song ngữ; ≤20 ký tự mục tiêu. VD: "Trung tâm Điều hành (Control Tower)"→"Control Tower" · "Trung tâm Điều hành Hệ sinh thái"→"Trung tâm chỉ huy" · "Bảng điều khiển doanh nghiệp"→"Tổng quan tập đoàn" · "Phân tích nguyên nhân gốc"→"Nguyên nhân gốc" · "Buồng lái chất lượng"→"Cockpit chất lượng" (nhất quán cockpit) · "Bảng điều hành"→"Phòng vận hành" (hết va "Bảng điều khiển") |
+| **7 raw-label → i18n key** | nav.controlTower/executiveMobile/warRoom/slaCockpit/routingMaster/materialsAtLine/comparisonStudio(+Desc) — thêm đủ vi/en/zh |
+| **Collapse near-dup** | `/data-comparison` vào COLLAPSED_INTO_HUB (Comparison Studio đã gộp, gate khớp analytics_advanced; ⌘K vẫn tìm được nhờ IA-09) |
+| GATE-1 note | Hub-2-tầng (row menu → trang tile-menu): cân nhắc deep-link thẳng tab nội dung đầu tiên của hub — đổi hành vi điều hướng, để GATE-1 |
+
+### FE tiêu thụ DEP (commit này)
+- **DEP-05 → UI**: tab Serial (`TraceabilityLineage`) thêm Card **"Hành trình xuyên trạm"** — timeline gộp chain ∪ AOI/AVI ∪ process ∪ lắp linh kiện từ `genealogy.getFullHistory` + chip vật tư + đếm nguồn (đóng nốt AUD-04 ở UI).
+- **DEP-08 → UI**: `ChangeoverQueue` nhúng trong ProductChangeoverWizard — operator chọn recipe (`changeover.recipeOptions`, gate machine_monitoring — catalog metadata) + gửi yêu cầu + "Yêu cầu của tôi"; người duyệt thấy hàng đợi pending với Duyệt (lỗi 2FA/SoD hiện nguyên văn từ server) / Từ chối (≥3 ký tự); người không có quyền → panel tự ẩn (FORBIDDEN → hide, không toast).
+- i18n mới: `freshness.* / cockpit.alarm* / trace.stationJourney* / changeover.*` ×3 locale.
+
 ## GIẢ ĐỊNH & PHỤ THUỘC
 - **GĐ**: 7 vùng phủ hết ~207 route · `commandCenter.hierarchy` trả cây 5 tầng dùng được (nợ backfill machineType/site) · payload phần lớn có `lastEventAt` · DashboardLayout/Sidebar gánh được chrome.
 - **DEP-02** Hermes/CFX handshake+WIP · **DEP-05** full genealogy tRPC · **DEP-06** field cause alarm · **DEP-08** changeover 2-người.

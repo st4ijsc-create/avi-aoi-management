@@ -46,8 +46,9 @@ export function SidebarQuickAccess({ onNavigate }: { onNavigate: (href: string) 
     return readRecent()
       .filter((href) => href !== location && !favSet.has(href))
       .map((href) => ({ href, item: getNavItemByHref(href) }))
+      // doc 63 AUD-N3 — user chốt: sidebar chỉ hiện 3 mục "Gần đây" (store vẫn giữ 5 cho ⌘K).
       .filter((x): x is Resolved => !!x.item && hasAccessToItem(x.href, userRole, hasPermission as never))
-      .slice(0, 5);
+      .slice(0, 3);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, location, isAdmin, favorites]);
 

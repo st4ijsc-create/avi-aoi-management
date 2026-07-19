@@ -187,7 +187,7 @@ export const navGroups: NavGroup[] = [
         // doc 46 FE-W3.1 (D4) — Executive Control Tower: persona-configurable single
         // surface hợp nhất 6 màn command, cross-link ra view chuyên sâu. Mục cửa-ngõ.
         href: "/control-tower",
-        label: "Trung tâm Điều hành (Control Tower)",
+        label: "nav.controlTower",
         icon: <LayoutDashboard className="h-4 w-4" />,
         description: "Bảng điều hành 1-cửa theo persona: OEE/andon/kế hoạch/AI · liên kết ra 6 màn command chuyên sâu",
         requiredPermission: "machine_status",
@@ -261,7 +261,7 @@ export const navGroups: NavGroup[] = [
         // doc 46 FE-W3.5 (D5) — Executive mobile/PWA: OEE/KPI briefing + AI summary +
         // duyệt nhanh, tối ưu điện thoại (cài PWA). Cửa-ngõ điều hành trên di động.
         href: "/executive",
-        label: "Điều hành Di động (Executive)",
+        label: "nav.executiveMobile",
         icon: <LayoutGrid className="h-4 w-4" />,
         description: "Bảng điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
         requiredPermission: "dashboard_corporate",
@@ -303,7 +303,7 @@ export const navGroups: NavGroup[] = [
         // Công cụ giao ban cốt lõi của quản đốc/quản lý → tier simple. Nhãn tiếng Việt
         // trực tiếp (i18n key hoãn sang đợt i18n — theo tiền lệ Feeder/ECN/NCR).
         href: "/war-room",
-        label: "Giao ban (War-room)",
+        label: "nav.warRoom",
         icon: <Presentation className="h-4 w-4" />,
         description: "Bảng giao ban theo ca: OEE theo Line · top máy dừng · so sánh ca · kế hoạch vs thực tế",
         requiredPermission: "machine_status",
@@ -316,7 +316,7 @@ export const navGroups: NavGroup[] = [
         // (companion của Alarm KPI). MTTA/MTTR = trpc.andon.metrics (backend-aggregated);
         // breach/breakdown tính từ andon.list. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
         href: "/sla-cockpit",
-        label: "Cockpit SLA (MTTA/MTTR)",
+        label: "nav.slaCockpit",
         icon: <Gauge className="h-4 w-4" />,
         description: "SLA cảnh báo/Andon: thời gian tiếp nhận (MTTA) · khắc phục (MTTR) · vi phạm leo thang · quá hạn",
         // Gate = /andon board (dashboard_view) → cùng đối tượng có andon/canView (supervisor/operator);
@@ -446,7 +446,7 @@ export const navGroups: NavGroup[] = [
         // Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: định tuyến công đoạn
         // theo sản phẩm là MES/kế hoạch, thuộc "Đơn hàng & Lịch".
         href: "/routing-master",
-        label: "Định tuyến sản xuất (Routing)",
+        label: "nav.routingMaster",
         icon: <ClipboardList className="h-4 w-4" />,
         description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
         requiredPermission: "production_orders",
@@ -467,7 +467,7 @@ export const navGroups: NavGroup[] = [
         // module Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: quản lý vật tư
         // tại line (feeder/MSD/stencil) thuộc BOM & Máng cấp, không phải bảo trì máy.
         href: "/feeder-verify",
-        label: "Vật tư tại line (Feeder/MSD/Stencil)",
+        label: "nav.materialsAtLine",
         icon: <ClipboardList className="h-4 w-4" />,
         description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
         requiredPermission: "machine_status",
@@ -1166,9 +1166,9 @@ export const navGroups: NavGroup[] = [
         // doc 46 FE-W3.3 — Comparison Studio: hợp nhất so sánh đa chiều (tuyến/ca/SP/kỳ)
         // + benchmark, 1 công cụ (gộp data-comparison/product-comparison/history-comparison).
         href: "/comparison-studio",
-        label: "So sánh Đa chiều (Comparison Studio)",
+        label: "nav.comparisonStudio",
         icon: <GitCompare className="h-4 w-4" />,
-        description: "So sánh tuyến/ca/sản phẩm/kỳ + đường benchmark trong 1 công cụ · xuất báo cáo font-chuẩn",
+        description: "nav.comparisonStudioDesc",
         requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
         section: "analysis",
@@ -2268,6 +2268,9 @@ const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
   "/golden-samples", "/defect-catalog", "/measurement-point-health", "/product-comparison",
   // → /reporting-studio (hub gate reports_view). GIỮ /scheduled-reports (gate reports_schedule ≠ hub)
   "/report-builder", "/pdf-reports", "/powerpoint-export",
+  // doc 63 AUD-N4 — /data-comparison đã được Comparison Studio GỘP (doc 46 FE-W3.3);
+  // gate khớp (analytics_advanced) → ẩn row near-dup khỏi rail; ⌘K vẫn tìm được (IA-09).
+  "/data-comparison",
 ]);
 
 /** Remove collapsed rows from every group, then drop groups left empty. */
