@@ -97,7 +97,9 @@ export function PageHeader({
             {icon}
           </div>
         )}
-        <div className="flex-1 min-w-0">
+        {/* doc65 V2: floor 16rem — cụm actions dài không được ép title/description
+            bẹp thành cột 1-từ/dòng; thiếu chỗ thì actions wrap xuống dòng (flex-wrap cha). */}
+        <div className="flex-1 min-w-[min(16rem,100%)]">
           <Heading level={headingLevel} as={as}>
             {title}
           </Heading>

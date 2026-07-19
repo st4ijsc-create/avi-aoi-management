@@ -440,7 +440,9 @@ export function AIActionInboxLauncher() {
           <span
             className={cn(
               "absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white",
-              criticalCount > 0 ? "bg-red-500 animate-pulse" : "bg-amber-500",
+              // doc65 V1 (ISA-101/18.2): bộ đếm GỢI Ý không được mượn màu cảnh báo —
+              // amber chỉ dành cho alarm thật; đếm thường dùng trung tính.
+              criticalCount > 0 ? "bg-red-500 animate-pulse" : "bg-muted-foreground",
             )}
           >
             {count > 9 ? "9+" : count}

@@ -12,7 +12,9 @@ function Progress({
     <ProgressPrimitive.Root
       data-slot="progress"
       className={cn(
-        "bg-primary/20 relative h-2 w-full overflow-hidden rounded-full",
+        // doc65 V1: track TRUNG TÍNH — track teal mờ làm progress 0% trông như "đầy nhạt",
+        // mâu thuẫn giá trị (ISA-101). Indicator mang màu; track chỉ là nền.
+        "bg-muted relative h-2 w-full overflow-hidden rounded-full",
         className
       )}
       {...props}

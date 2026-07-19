@@ -266,7 +266,13 @@ export default function AndonBoard() {
             value={fmtPct(kpis?.finalYield)}
             tone={kpis?.finalYield == null ? "muted" : kpis.finalYield < params.critPct ? "crit" : kpis.finalYield < params.warnPct ? "warn" : "good"}
           />
-          <KpiTile label={t("andonBoard.fpy", "FPY")} value={fmtPct(kpis?.fpy)} tone="neutral" />
+          {/* doc65 V4: FPY dùng CÙNG quy tắc ngưỡng màu với Final Yield — 2 ô cạnh nhau
+              cùng 100% mà một xanh một trắng là bất nhất tín hiệu. */}
+          <KpiTile
+            label={t("andonBoard.fpy", "FPY")}
+            value={fmtPct(kpis?.fpy)}
+            tone={kpis?.fpy == null ? "muted" : kpis.fpy < params.critPct ? "crit" : kpis.fpy < params.warnPct ? "warn" : "good"}
+          />
           <KpiTile
             label={t("andonBoard.output", "Sản lượng")}
             value={kpis ? String(kpis.total) : "—"}
@@ -354,7 +360,7 @@ export default function AndonBoard() {
                   const idx = lines.indexOf(line);
                   setViewIndex(drilled ? 0 : idx + 1);
                 }}
-                className="mb-[0.5vh] flex w-full items-baseline gap-[1vw] border-b border-border pb-[0.3vh] text-left"
+                className="mb-[0.5vh] flex min-h-10 w-full items-baseline gap-[1vw] border-b border-border pb-[0.3vh] text-left"
                 title={drilled ? t("andonBoard.showAll", "Xem tất cả line") : t("andonBoard.drillLine", "Xem riêng line này")}
               >
                 <span className="flex items-center gap-2 text-[clamp(0.9rem,1.5vw,1.9rem)] font-extrabold uppercase">
@@ -469,7 +475,7 @@ export default function AndonBoard() {
                           ? t("andonBoard.ackHint", "Xác nhận đã tiếp nhận Andon này")
                           : t("andonBoard.ackNoPerm", "Bạn không có quyền xác nhận Andon")
                       }
-                      className="inline-flex items-center gap-1 rounded-md border border-current px-2 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-bold uppercase transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex min-h-10 items-center gap-1 rounded-md border border-current px-2.5 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-bold uppercase transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {ackingId === a.id ? (
                         <Loader2 className="size-[0.9vw] min-h-3 min-w-3 animate-spin" aria-hidden />

@@ -73,7 +73,7 @@ export function ShellAlertChip({ className }: { className?: string }) {
           type="button"
           aria-label={t("andonChip.aria", "Cảnh báo đang mở")}
           className={cn(
-            "inline-flex h-9 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold",
+            "inline-flex h-10 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold",
             critical
               ? "border-transparent text-white animate-pulse"
               : "border-transparent",

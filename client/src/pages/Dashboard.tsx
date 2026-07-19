@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { DashboardTemplatePrompt } from "@/components/DashboardTemplatePrompt";
@@ -1227,7 +1228,7 @@ export default function Dashboard() {
               setSelectedWorkshop("all");
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-30 sm:w-40 shrink-0">
+              <SelectTrigger className="w-32 sm:w-44 shrink-0">
                 <Factory className="h-4 w-4 mr-1 sm:hidden" />
                 <SelectValue placeholder={t("dashboard.factory")} />
               </SelectTrigger>
@@ -1245,7 +1246,7 @@ export default function Dashboard() {
               setSelectedWorkshop(v);
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-30 sm:w-40 shrink-0">
+              <SelectTrigger className="w-32 sm:w-44 shrink-0">
                 <SelectValue placeholder={t("dashboard.workshop")} />
               </SelectTrigger>
               <SelectContent>
@@ -1273,7 +1274,7 @@ export default function Dashboard() {
             </Select>
 
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as DashboardTimeRange)}>
-              <SelectTrigger className="w-22.5 sm:w-30 shrink-0">
+              <SelectTrigger className="w-28 sm:w-36 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1518,7 +1519,7 @@ export default function Dashboard() {
                   <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
                 </div>
                 <Link href="/settings">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">{t("dashboard.configuration")}</Button>
+                  <Button variant="ghost" size="sm" className="h-10 text-xs px-2">{t("dashboard.configuration")}</Button>
                 </Link>
               </div>
               {yieldAlerts.length > 0 ? (
@@ -1572,32 +1573,40 @@ export default function Dashboard() {
                   <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
                 </div>
                 <Link href="/machine-status">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
+                  <Button variant="ghost" size="sm" className="h-10 text-xs px-2">
                     {t("common.details")}
                   </Button>
                 </Link>
               </div>
+              {/* doc65 V1 (ISA-101): màu THEO GIÁ TRỊ — "Trực tuyến 0" không được tô xanh
+                  (0 máy online là tình trạng xấu nhất); "Ngoại tuyến 0" không được tô đỏ. */}
               <div className="grid grid-cols-4 gap-2">
                 <div className="flex flex-col items-center p-2 rounded-lg bg-muted/30">
                   <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
                   <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-success/10">
-                  <p className="text-lg font-bold text-success">{onlineMachines.size}</p>
+                <div className={cn("flex flex-col items-center p-2 rounded-lg", onlineMachines.size > 0 ? "bg-success/10" : "bg-muted/30")}>
+                  <p className={cn("text-lg font-bold", onlineMachines.size > 0 ? "text-success" : "text-muted-foreground")}>{onlineMachines.size}</p>
                   <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
                 </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-destructive/10">
-                  <p className="text-lg font-bold text-destructive">
-                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
-                </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-primary/10">
-                  <p className="text-lg font-bold">
-                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.avail")}</p>
-                </div>
+                {(() => {
+                  const offlineN = Math.max(0, (machinesStats?.length || 0) - onlineMachines.size);
+                  return (
+                    <div className={cn("flex flex-col items-center p-2 rounded-lg", offlineN > 0 ? "bg-destructive/10" : "bg-muted/30")}>
+                      <p className={cn("text-lg font-bold", offlineN > 0 ? "text-destructive" : "text-muted-foreground")}>{offlineN}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const availPct = machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0;
+                  return (
+                    <div className={cn("flex flex-col items-center p-2 rounded-lg", availPct > 0 ? "bg-primary/10" : "bg-muted/30")}>
+                      <p className={cn("text-lg font-bold", availPct === 0 && "text-muted-foreground")}>{availPct}%</p>
+                      <p className="text-[10px] text-muted-foreground">{t("dashboard.avail")}</p>
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>

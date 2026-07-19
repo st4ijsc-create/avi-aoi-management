@@ -148,8 +148,9 @@ export default function LineView() {
   return (
     <DashboardLayout title={t("lineView.title", "Line View")} navItems={navItems} currentPath={CURRENT_PATH}>
       <PageContainer className="space-y-6">
+        {/* doc65 V2: KHÔNG truyền breadcrumbs — DashboardLayout đã render breadcrumb ở
+            thanh trên; truyền vào PageHeader làm breadcrumb xuất hiện 2 LẦN trên màn. */}
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Waypoints className="h-6 w-6" />}
           title={t("lineView.title", "Line View")}
           description={t(

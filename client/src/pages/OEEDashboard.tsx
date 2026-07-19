@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { cn } from "@/lib/utils";
 // doc 64 IA-10 S1 — truc pham vi ISA-95.
 import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
@@ -437,7 +438,7 @@ export function OEEDashboardContent() {
         {/* Header */}
         <PageHeader
           icon={<Gauge className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
-          title="OEE Dashboard"
+          title={t('oee.title', 'Bảng OEE')}
           description={t('oee.subtitle')}
           actions={
             <>
@@ -591,16 +592,20 @@ export function OEEDashboardContent() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
+                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.avgOee')}</span>
                 <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
-              <Progress value={avgOEE} className="mt-2" />
+              {/* doc65 V1: thanh tiến trình phải mang màu THEO NGƯỠNG — 0% mà thanh teal đầy là nói dối thị giác */}
+              <Progress value={avgOEE} className={cn("mt-2", avgOEE >= 85 ? "[&>div]:bg-success" : avgOEE >= 60 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive")} />
               <p className="text-xs text-muted-foreground mt-1">
-                {avgOEE >= 85 ? "World Class" : avgOEE >= 60 ? "Typical" : t('oee.needsImprovement')}
+                {/* doc65 V5: không phán xét khi CHƯA có dữ liệu — 0 máy giám sát ≠ "cần cải thiện" */}
+                {!allOEE?.length
+                  ? t('oee.noData', 'Chưa có dữ liệu')
+                  : avgOEE >= 85 ? t('oee.worldClass', 'Hàng đầu (≥85%)') : avgOEE >= 60 ? t('oee.typical', 'Trung bình (60–85%)') : t('oee.needsImprovement')}
               </p>
             </CardContent>
           </Card>
@@ -608,7 +613,7 @@ export function OEEDashboardContent() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
                 <span className="sm:hidden">{t('oee.machinesShort')}</span>
               </CardTitle>
@@ -624,7 +629,7 @@ export function OEEDashboardContent() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
@@ -642,7 +647,7 @@ export function OEEDashboardContent() {
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
+                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 {t('oee.alerts')}
               </CardTitle>
             </CardHeader>
@@ -659,9 +664,9 @@ export function OEEDashboardContent() {
 
         <Tabs defaultValue="oee" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="oee">OEE Machines</TabsTrigger>
-            <TabsTrigger value="downtime">Downtime</TabsTrigger>
-            <TabsTrigger value="health">Machine Health</TabsTrigger>
+            <TabsTrigger value="oee">{t('oee.tabMachines', 'Máy theo OEE')}</TabsTrigger>
+            <TabsTrigger value="downtime">{t('oee.tabDowntime', 'Thời gian dừng')}</TabsTrigger>
+            <TabsTrigger value="health">{t('oee.tabHealth', 'Sức khỏe máy')}</TabsTrigger>
           </TabsList>
 
           {/* OEE Tab */}

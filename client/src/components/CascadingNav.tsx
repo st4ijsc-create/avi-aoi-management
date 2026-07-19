@@ -417,7 +417,7 @@ function ItemRow({ item, isActive, onNavigate, variant = "default", tabIndex, bu
       onClick={() => onNavigate(item.href)}
       title={hint}
       className={cn(
-        "flex w-full items-center gap-2 text-sm transition-colors",
+        "flex min-h-10 w-full items-center gap-2 text-sm transition-colors",
         variant === "pill" ? "gap-3 rounded-full px-3 py-2.5" : "rounded-lg px-2 py-2",
         "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isActive ? "bg-sidebar-accent text-primary font-medium" : "text-popover-foreground",

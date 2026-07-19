@@ -189,3 +189,7 @@ scripts/.fe-auth/
 # doc 54 — tool output + local model binaries (not source)
 .playwright-mcp/
 uploads/models/
+
+# doc65 audit artifacts (local only)
+scripts/audit/.s6-shots/
+scripts/audit/.s6-results.json

@@ -7,8 +7,9 @@ const sql = postgres("postgresql://aoi:aoi@127.0.0.1:5434/aoi_management", { max
 try {
   if (mode === "on") {
     const hash = await bcrypt.hash("P1audit_2026x", 10);
-    // two_factor_enabled=false: account POC không 2FA (neutralize phiên trước có thể đã bật)
-    const r = await sql`UPDATE users SET "passwordHash" = ${hash}, "isActive" = true, two_factor_enabled = false, two_factor_secret = NULL WHERE username = 'p1_audit_admin' RETURNING id, username, "isActive", two_factor_enabled`;
+    // doc65: account audit BẬT 2FA thật (adminProcedure đòi 2FA theo IEC 62443 — trạng thái
+    // admin thật của hệ). Secret base32 cố định cho harness sinh TOTP (RFC test vector).
+    const r = await sql`UPDATE users SET "passwordHash" = ${hash}, "isActive" = true, two_factor_enabled = true, two_factor_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'p1_audit_admin' RETURNING id, username, "isActive", two_factor_enabled`;
     console.log("ACTIVATED:", JSON.stringify(r));
   } else if (mode === "off") {
     const r = await sql`UPDATE users SET "isActive" = false, "passwordHash" = 'LOCKED-no-valid-hash' WHERE username LIKE ${"p1_audit_%"} RETURNING username, "isActive"`;

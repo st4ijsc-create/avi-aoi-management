@@ -366,7 +366,7 @@ function DashboardLayoutContent({
             {isMobile ? (
               // Mobile sheet header: full logo + title.
               <div className="flex items-center gap-3 px-2 w-full">
-                <Link href="/" className="flex items-center gap-2 min-w-0">
+                <Link href="/" className="flex min-h-10 items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
@@ -380,7 +380,7 @@ function DashboardLayoutContent({
               // When collapsed to the icon rail, only the logo shows (title + in-rail toggle
               // hidden — the header SidebarTrigger re-expands the rail).
               <div className="flex items-center gap-2 px-2 w-full group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
-                <Link href="/" className="flex items-center gap-2 min-w-0">
+                <Link href="/" className="flex min-h-10 items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
@@ -390,7 +390,7 @@ function DashboardLayoutContent({
                 </Link>
                 <button
                   onClick={toggleSidebar}
-                  className="ml-auto h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 group-data-[collapsible=icon]:hidden"
+                  className="ml-auto h-10 w-10 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 group-data-[collapsible=icon]:hidden"
                   aria-label="Toggle navigation"
                 >
                   <PanelLeft className="h-4 w-4 text-sidebar-foreground" />
@@ -440,7 +440,7 @@ function DashboardLayoutContent({
                     ? t("nav.showAdvanced", "Show advanced menu")
                     : t("nav.showSimple", "Simple menu")
                 }
-                className="mb-2 flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="mb-2 flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {navMode === "simple" ? (
                   <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -537,7 +537,7 @@ function DashboardLayoutContent({
         <div data-app-chrome="header" className="flex border-b border-border h-14 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
-          <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
+          <SidebarTrigger className="h-10 w-10 rounded-lg shrink-0" />
           {/* doc 40 — App Launcher trigger (top-shell): waffle opens a two-column DROPDOWN
               (app list + that app's pages) so a cross-app jump is 2 clicks with no landing
               detour. Mobile falls back to the full-screen overlay. "All apps ⊞" inside the
@@ -562,7 +562,7 @@ function DashboardLayoutContent({
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label={t("nav.searchPlaceholder")}
-            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-10 min-w-10 flex-1 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left text-sm">{t("nav.searchPlaceholder")}</span>
@@ -629,7 +629,8 @@ function DashboardLayoutContent({
         <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
-        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto focus:outline-none", isMobile && "pb-20")}>
+        {/* doc65 V3: pb-24 desktop — chừa chỗ cho FAB chat góc phải-dưới, không đè nội dung cuối trang */}
+        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 pb-24 overflow-auto focus:outline-none", isMobile && "pb-20")}>
           {/* doc 22 P4 — one-line "Beta / needs setup" banner on framework/flag-gated
               routes so first-time users don't expect live data. Driven by the nav flag. */}
           {isBetaRoute(currentPath || location) && <BetaBanner />}

@@ -135,7 +135,9 @@ export function FalseCallEscapePanel({ scope }: { scope: FalseCallEscapeScope })
             </div>
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-xs text-muted-foreground">{t("qualityCockpit.fce.escapeRate")}</p>
-              <p className="text-2xl font-bold text-red-500">
+              {/* doc65 V1: đỏ CHỈ khi có giá trị thật — "—" (no-data) phải trung tính,
+                  đỏ là màu báo động không phải placeholder. */}
+              <p className={`text-2xl font-bold ${esc.available && esc.escapeRate != null ? "text-red-500" : "text-muted-foreground"}`}>
                 {esc.available && esc.escapeRate != null ? `${esc.escapeRate.toFixed(2)}%` : "—"}
               </p>
               <p className="text-xs text-muted-foreground">

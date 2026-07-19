@@ -996,6 +996,9 @@ export function AILocalChatBubble() {
   // UX group A — the global FAB is redundant on the full-page chat (/ai-chat),
   // so hide it there to avoid two AI entry points stacking on the same screen.
   if (location.startsWith("/ai-chat")) return null;
+  // doc65 V3/V5 — /andon là wallboard TV nhìn xa: widget chat cá nhân không thuộc
+  // ngữ cảnh đó và FAB đè lên ticker cảnh báo ở mép dưới → ẩn hẳn.
+  if (location.startsWith("/andon")) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">

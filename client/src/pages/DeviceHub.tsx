@@ -34,7 +34,7 @@ const TABS: readonly TabbedHubTab[] = [
   { value: "fleet", labelKey: "deviceHub.tabs.fleet", fallback: "Fleet", icon: <Server className="h-4 w-4" />, Content: UnifiedDeviceMonitorContent },
   { value: "health", labelKey: "deviceHub.tabs.health", fallback: "Health", icon: <HeartPulse className="h-4 w-4" />, Content: MachineHealthMonitoringContent },
   // doc 40 DEV-10 — OEE & Downtime là tab thứ 4 (trước là /oee-dashboard riêng; nay redirect vào ?tab=oee).
-  { value: "oee", labelKey: "deviceHub.tabs.oee", fallback: "OEE & Downtime", icon: <Gauge className="h-4 w-4" />, Content: OEEDashboardContent },
+  { value: "oee", labelKey: "deviceHub.tabs.oee", fallback: "OEE & Dừng máy", icon: <Gauge className="h-4 w-4" />, Content: OEEDashboardContent },
   { value: "field", labelKey: "deviceHub.tabs.field", fallback: "Field Devices", icon: <Radio className="h-4 w-4" />, Content: FieldDevicesContent },
 ];
 

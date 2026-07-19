@@ -9,6 +9,7 @@ import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { machineTypeLabel } from "@/lib/machineTypeLabel";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Cpu, Search } from "lucide-react";
@@ -74,14 +75,14 @@ export function MachineRail({ selectedId, onSelect }: MachineRailProps) {
                   type="button"
                   onClick={() => onSelect(m.id)}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/60",
+                    "flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent/60",
                     selectedId === m.id && "bg-accent font-medium",
                   )}
                 >
                   <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">{m.name ?? m.code ?? `#${m.id}`}</span>
                   {m.machineType && (
-                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{m.machineType}</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{machineTypeLabel(t, m.machineType)}</span>
                   )}
                 </button>
               </li>

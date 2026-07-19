@@ -44,14 +44,23 @@ export interface StationFlowProps {
   className?: string;
 }
 
-/** Chấm presence nhỏ cạnh tên máy (online/offline/unknown). */
+/** doc65 V5 — PackML token → nhãn Việt ngắn (StatusBadge mặc định in raw "STOPPED"). */
+const PACKML_LABEL_VI: Record<string, string> = {
+  STOPPED: "Dừng", EXECUTE: "Đang chạy", IDLE: "Chờ", READY: "Sẵn sàng",
+  HELD: "Giữ", SUSPENDED: "Tạm ngưng", COMPLETE: "Hoàn tất", ABORTED: "Hủy",
+  RESETTING: "Đặt lại", STARTING: "Khởi động", STOPPING: "Đang dừng", UNKNOWN: "Không rõ",
+};
+
+/** Chấm presence nhỏ cạnh tên máy (online/offline/unknown).
+ * doc65 V1 (ISA-101): presence = KẾT NỐI, không phải trạng thái chạy — dùng info (xanh dương),
+ * không mượn xanh lá "running" (đứng cạnh badge STOPPED sẽ thành 2 tín hiệu mâu thuẫn). */
 function PresenceDot({ presence }: { presence: "online" | "offline" | "unknown" }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
         "inline-block size-1.5 shrink-0 rounded-full",
-        presence === "online" && "bg-success",
+        presence === "online" && "bg-info",
         presence === "offline" && "bg-destructive",
         presence === "unknown" && "bg-muted-foreground/50",
       )}
@@ -165,7 +174,7 @@ export function StationFlow({
                         {m.code}
                       </span>
                     </span>
-                    <StatusBadge status={m.opState} className="px-1.5 py-0 text-[10px]" />
+                    <StatusBadge status={m.opState} label={PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""] ?? m.opState} className="px-1.5 py-0 text-[10px]" />
                   </li>
                 ))}
               </ul>

@@ -3,12 +3,11 @@ import { chromium } from "@playwright/test";
 
 const BASE = "http://localhost:3000";
 const route = process.argv[2] ?? "/dashboard";
+import { loginAuditAdmin } from "./login-totp.mjs";
+
 const browser = await chromium.launch({ headless: true });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "vi-VN" });
-await ctx.request.post(BASE + "/api/auth/login", {
-  data: { username: "p1_audit_admin", password: "P1audit_2026x" },
-  headers: { "Content-Type": "application/json" },
-});
+await loginAuditAdmin(ctx, BASE);
 const page = await ctx.newPage();
 const js = [];
 page.on("response", async (r) => {

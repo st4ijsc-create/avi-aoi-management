@@ -53,7 +53,7 @@ export function RelatedViews({
         <Link
           key={l.href}
           href={l.href}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-3 py-1 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border bg-muted/40 px-3 py-1 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           {l.icon}
           {t(l.labelKey, l.labelDefault)}

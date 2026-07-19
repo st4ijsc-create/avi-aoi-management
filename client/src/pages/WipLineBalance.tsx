@@ -91,8 +91,13 @@ export default function WipLineBalance() {
     { refetchInterval: 20_000 },
   );
 
+  // doc65 V5: enum WIP thô (in_process/hold…) không được lộ ra legend — map nhãn Việt.
+  const WIP_STATUS_LABEL: Record<string, string> = {
+    in_process: "Đang xử lý", hold: "Tạm giữ", queued: "Chờ xử lý",
+    completed: "Hoàn tất", scrapped: "Hủy", blocked: "Bị chặn", starved: "Đói việc",
+  };
   const pieData = useMemo(
-    () => (summary.data?.byStatus ?? []).map((s) => ({ name: s.status, value: s.count })),
+    () => (summary.data?.byStatus ?? []).map((s) => ({ name: WIP_STATUS_LABEL[s.status] ?? s.status, value: s.count })),
     [summary.data],
   );
   const dwellData = useMemo(
@@ -159,40 +164,47 @@ export default function WipLineBalance() {
             </CardHeader>
             <CardContent><div className="text-3xl font-bold">{summary.data?.total ?? 0}</div></CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" /> {t("wipDashboard.blocked", "Blocked")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-destructive">
-                {(summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4 text-warning" /> {t("wipDashboard.starved", "Starved")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-warning">
-                {(summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Gauge className="h-4 w-4" /> {t("wipDashboard.bottlenecks", "Nút thắt")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{dispatch.data?.bottleneckStationIds.length ?? 0}</div>
-            </CardContent>
-          </Card>
+          {/* doc65 V1 (ISA-101): màu THEO GIÁ TRỊ — 0 = bình thường (trung tính);
+              chỉ tô màu cảnh báo khi thật sự có blocked/starved/bottleneck. */}
+          {(() => {
+            const blockedN = (summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0;
+            const starvedN = (summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0;
+            const bottleneckN = dispatch.data?.bottleneckStationIds.length ?? 0;
+            return (
+              <>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <AlertTriangle className={`h-4 w-4 ${blockedN > 0 ? "text-destructive" : "text-muted-foreground"}`} /> {t("wipDashboard.blocked", "Bị chặn")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${blockedN > 0 ? "text-destructive" : "text-foreground"}`}>{blockedN}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Clock className={`h-4 w-4 ${starvedN > 0 ? "text-warning" : "text-muted-foreground"}`} /> {t("wipDashboard.starved", "Đói việc")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${starvedN > 0 ? "text-warning" : "text-foreground"}`}>{starvedN}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Gauge className={`h-4 w-4 ${bottleneckN > 0 ? "text-warning" : "text-muted-foreground"}`} /> {t("wipDashboard.bottlenecks", "Nút thắt")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${bottleneckN > 0 ? "text-warning" : "text-foreground"}`}>{bottleneckN}</div>
+                  </CardContent>
+                </Card>
+              </>
+            );
+          })()}
         </div>
 
         {/* Charts */}

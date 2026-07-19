@@ -59,9 +59,9 @@ export function TabbedHub({ tabs, basePath, defaultTab, className, header }: Tab
   return (
     <Tabs value={activeTab} onValueChange={handleChange} className={className ?? "space-y-2"}>
       {header}
-      <TabsList className="flex h-9 flex-wrap">
+      <TabsList className="flex min-h-12 flex-wrap">
         {tabs.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value} className="h-7 gap-1.5 text-xs">
+          <TabsTrigger key={tab.value} value={tab.value} className="min-h-10 gap-1.5 text-xs">
             {tab.icon}
             {t(tab.labelKey, tab.fallback ?? tab.value)}
           </TabsTrigger>

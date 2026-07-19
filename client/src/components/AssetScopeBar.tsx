@@ -97,7 +97,8 @@ export function AssetScopeBar({ className }: { className?: string }) {
     else setAxis({ machineId: refId }, { machine: node?.name });
   };
 
-  const selectCls = "h-8 w-auto min-w-24 max-w-40 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent focus:ring-1";
+  // doc65 F: 40px vùng chạm (panel + găng); chữ vẫn text-xs cho gọn thị giác.
+  const selectCls = "h-10 w-auto min-w-24 max-w-40 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent focus:ring-1";
 
   return (
     <div className={cn("items-center gap-0.5 rounded-full border border-border/60 px-1", className)}>

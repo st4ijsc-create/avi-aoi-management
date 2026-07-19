@@ -68,7 +68,7 @@ export function DashboardTemplatePrompt() {
         <Button size="sm" onClick={() => { remember(); navigate("/dashboard-templates"); }}>
           {t("dashTemplate.choose", "Chọn mẫu")}
         </Button>
-        <Button size="sm" variant="ghost" onClick={remember} aria-label={t("dashTemplate.skip", "Để sau")}>
+        <Button size="sm" variant="ghost" className="min-w-10" onClick={remember} aria-label={t("dashTemplate.skip", "Để sau")}>
           <X className="h-4 w-4" />
         </Button>
       </div>

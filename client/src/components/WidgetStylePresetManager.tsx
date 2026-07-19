@@ -448,7 +448,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
         <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <Palette className="h-4 w-4" />
-            Style Presets
+            {`Kiểu thẻ`}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">

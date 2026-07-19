@@ -39,7 +39,7 @@ const METRIC_INFO = {
     unit: "%"
   },
   FY: {
-    name: "Fail Yield",
+    name: "Final Yield",
     descriptionKey: 'settings.fyDescription',
     icon: TrendingDown,
     color: "text-destructive",
@@ -381,7 +381,7 @@ export default function YieldThresholdSettings() {
               <h4 className="font-medium">{t('settings.thresholdGuide')}</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• <strong>FPY (First Pass Yield)</strong>: {t('settings.fpyGuide')}</li>
-                <li>• <strong>FY (Fail Yield)</strong>: {t('settings.fyGuide')}</li>
+                <li>• <strong>FY (Final Yield)</strong>: {t('settings.fyGuide')}</li>
                 <li>• <strong>NTF (No Trouble Found)</strong>: {t('settings.ntfGuide')}</li>
                 <li>• <strong>UPH (Units Per Hour)</strong>: {t('settings.uphGuide')}</li>
               </ul>

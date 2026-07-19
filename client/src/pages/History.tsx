@@ -1098,7 +1098,7 @@ export default function History() {
               <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">{t("history.productCodeLabel")}</label>
                 <Input
-                  placeholder="VD: MODEL-A, PRODUCT-001"
+                  placeholder="VD: MODEL-A"
                   value={filters.productModel}
                   onChange={(e) => setFilters({ ...filters, productModel: e.target.value })}
                 />
@@ -1304,7 +1304,7 @@ export default function History() {
 
                     {/* Page Size Selector */}
                     <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
-                      <SelectTrigger className="w-25">
+                      <SelectTrigger className="w-30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

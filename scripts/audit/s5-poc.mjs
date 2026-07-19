@@ -19,12 +19,12 @@ const SAMPLE_MS = 10_000;
 const ROUTE = process.env.POC_ROUTE ?? "/dashboard";
 const SKIP_SOAK = !!process.env.POC_SKIP_SOAK;
 
+// doc65: account audit giờ BẬT 2FA (đúng trạng thái admin thật) — login qua helper TOTP.
+import { loginAuditAdmin } from "./login-totp.mjs";
+
 const browser = await chromium.launch({ headless: true });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "vi-VN" });
-await ctx.request.post(BASE + "/api/auth/login", {
-  data: { username: "p1_audit_admin", password: "P1audit_2026x" },
-  headers: { "Content-Type": "application/json" },
-});
+await loginAuditAdmin(ctx, BASE);
 const page = await ctx.newPage();
 
 // doc64 S5-OPT V4 — chế độ đo STEADY-STATE (mặc định): nudge template (doc10 U11) chỉ hiện

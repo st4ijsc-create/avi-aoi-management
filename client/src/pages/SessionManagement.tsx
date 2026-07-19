@@ -97,9 +97,12 @@ export default function SessionManagement() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {t('common.refresh')}
               </Button>
+              {/* doc65 V1 (ISA-101): đỏ filled thường trực = mượn màu alarm; hành động
+                  phá hủy dùng outline + màu chữ đỏ, đỏ đậm chỉ ở dialog xác nhận. */}
               {sessions && sessions.length > 1 && (
                 <Button
-                  variant="destructive"
+                  variant="outline"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setShowRevokeAllDialog(true)}
                 >
                   <LogOut className="h-4 w-4 mr-2" />
