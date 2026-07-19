@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using LiveChartsCore;
@@ -91,6 +92,15 @@ public partial class App : Application
         services.AddSingleton(sp => new InspectorViewModel(sp.GetRequiredService<EventBus>()));
         services.AddSingleton(sp => new ApiInspectorView(sp.GetRequiredService<InspectorViewModel>()));
 
+        // Task 18 — Onboarding wizard. Singleton (same lifetime pattern as every other nav screen's
+        // ViewModel) so the wizard's step/mk_ key/log state survives navigating away and back rather
+        // than resetting. OnboardingViewModel's parameterless ctor builds its own HttpClient — never
+        // actually used unless the user flips IsDemo off and clicks Register/PollApproval/Claim/Enroll,
+        // same "constructing never dials out" property LiveTransport's client has (see
+        // PlaceholderServerUrl's remarks above).
+        services.AddSingleton<OnboardingViewModel>();
+        services.AddSingleton(sp => new OnboardingView(sp.GetRequiredService<OnboardingViewModel>()));
+
         services.AddSingleton(sp =>
         {
             var vm = new AppShellViewModel(
@@ -98,7 +108,8 @@ public partial class App : Application
                 sp.GetRequiredService<FleetService>(),
                 sp.GetRequiredService<DashboardView>(),
                 sp.GetRequiredService<FleetViewModel>(),
-                sp.GetRequiredService<ApiInspectorView>());
+                sp.GetRequiredService<ApiInspectorView>(),
+                sp.GetRequiredService<OnboardingView>());
             var auto = sp.GetRequiredService<AutoTransport>();
             // Background-thread event -> UI-thread property write; AppShellViewModel.HandleFallbackChanged
             // does the dispatcher marshaling itself so this subscription is safe from any thread.
@@ -197,6 +208,9 @@ public partial class App : Application
 
         // ── Task 17: API Inspector ──────────────────────────────────────────────────────────
         RunInspectorSelfTest();
+
+        // ── Task 18: Onboarding wizard ──────────────────────────────────────────────────────
+        RunOnboardingSelfTest();
 
         Console.WriteLine("SELFTEST OK");
     }
@@ -302,6 +316,89 @@ public partial class App : Application
             throw new InvalidOperationException("selftest inspector: PauseResumeCommand did not clear IsPaused");
 
         cts.Cancel();
+    }
+
+    /// <summary>
+    /// Task 18 headless check for the Onboarding wizard. Runs the DEMO flow end to end (never touches
+    /// the network — see <see cref="OnboardingViewModel"/>'s class remarks): Register → asserts
+    /// <see cref="OnboardingStep.Pending"/>, PollApproval → asserts <see cref="OnboardingStep.Approved"/>,
+    /// Claim → asserts a fabricated <c>mk_...</c> key was produced AND persisted (read back via
+    /// <see cref="CredentialStore.Load"/>, not just held in the ViewModel's own property). Then
+    /// exercises the two fast paths that bypass the wizard entirely: PasteKey (store+reload a
+    /// hand-entered key) and LoadFleet (against a temp <c>fleet.json</c> this method writes and cleans
+    /// up itself).
+    /// </summary>
+    private void RunOnboardingSelfTest()
+    {
+        var vm = Services.GetRequiredService<OnboardingViewModel>();
+
+        vm.SerialNumber = "SIM-SELFTEST-01";
+        vm.Name = "Selftest Machine";
+        vm.MachineType = "SCREWDRIVE";
+        vm.IsDemo = true;
+
+        // ── Register → Pending ──────────────────────────────────────────────────────────────
+        vm.RegisterCommand.Execute(null);
+        if (vm.Step != OnboardingStep.Pending)
+            throw new InvalidOperationException($"selftest onboarding: Step after Register was {vm.Step}, expected Pending");
+
+        // ── PollApproval → Approved ─────────────────────────────────────────────────────────
+        vm.PollApprovalCommand.Execute(null);
+        if (vm.Step != OnboardingStep.Approved)
+            throw new InvalidOperationException($"selftest onboarding: Step after PollApproval was {vm.Step}, expected Approved");
+
+        // ── Claim → Claimed, mk_ key fabricated AND persisted ───────────────────────────────
+        vm.ClaimCommand.Execute(null);
+        if (vm.Step != OnboardingStep.Claimed)
+            throw new InvalidOperationException($"selftest onboarding: Step after Claim was {vm.Step}, expected Claimed");
+        if (string.IsNullOrEmpty(vm.MkKey) || !vm.MkKey.StartsWith("mk_", StringComparison.Ordinal) || vm.MkKey.Length != "mk_".Length + 48)
+            throw new InvalidOperationException($"selftest onboarding: MkKey after Claim was \"{vm.MkKey}\" — expected \"mk_\" + 48 hex chars");
+        if (string.IsNullOrEmpty(vm.MachineCode))
+            throw new InvalidOperationException("selftest onboarding: MachineCode was empty after Claim");
+
+        var storedKey = CredentialStore.Load(vm.MachineCode);
+        if (storedKey != vm.MkKey)
+            throw new InvalidOperationException($"selftest onboarding: CredentialStore.Load(\"{vm.MachineCode}\") returned \"{storedKey}\", expected \"{vm.MkKey}\" — Claim did not durably persist the credential");
+
+        Console.WriteLine($"SELFTEST onboarding claim: MachineCode={vm.MachineCode}, MkKey={vm.MkKey[..12]}... — stored+loaded back via CredentialStore OK");
+
+        // ── PasteKey fast path: store+reload a hand-entered key ────────────────────────────
+        const string pastedCode = "SIM-SELFTEST-PASTE";
+        const string pastedKey = "mk_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead";
+        vm.PasteMachineCode = pastedCode;
+        vm.PasteMkKey = pastedKey;
+        vm.PasteKeyCommand.Execute(null);
+        var pastedStored = CredentialStore.Load(pastedCode);
+        if (pastedStored != pastedKey)
+            throw new InvalidOperationException($"selftest onboarding: paste-key round trip failed — Load(\"{pastedCode}\") returned \"{pastedStored}\", expected \"{pastedKey}\"");
+        if (vm.MachineCode != pastedCode || vm.MkKey != pastedKey)
+            throw new InvalidOperationException("selftest onboarding: PasteKeyCommand did not update MachineCode/MkKey on the ViewModel");
+
+        Console.WriteLine($"SELFTEST onboarding paste-key: {pastedCode} — stored+loaded back via CredentialStore OK");
+
+        // ── LoadFleet fast path: FleetConfig.Load against a temp fleet.json ─────────────────
+        var tempFleetPath = Path.Combine(Path.GetTempPath(), $"st4i-selftest-fleet-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(tempFleetPath, """
+            [
+              { "code": "SELFTEST-01", "serialSeed": "SN-SELFTEST-01", "deviceClass": "automation", "machineType": "SCREWDRIVE", "stepType": "screw_tightening", "driverKind": "simulated", "recipeCode": "RC-SELFTEST-A", "mappingProfile": null, "cycleSeconds": 1.0 },
+              { "code": "SELFTEST-02", "serialSeed": "SN-SELFTEST-02", "deviceClass": "iot", "machineType": "IOT_SENSOR", "stepType": null, "driverKind": "simulated", "recipeCode": null, "mappingProfile": null, "cycleSeconds": 0.5 }
+            ]
+            """);
+            vm.FleetPath = tempFleetPath;
+            vm.LoadFleetCommand.Execute(null);
+            if (vm.LoadedMachineCount != 2)
+                throw new InvalidOperationException($"selftest onboarding: LoadFleetCommand loaded {vm.LoadedMachineCount} machine(s), expected 2");
+            if (vm.LoadedMachines.Count != 2)
+                throw new InvalidOperationException($"selftest onboarding: LoadedMachines.Count was {vm.LoadedMachines.Count}, expected 2");
+
+            Console.WriteLine($"SELFTEST onboarding load-fleet: {vm.LoadedMachineCount} machine(s) loaded from {tempFleetPath}");
+        }
+        finally
+        {
+            if (File.Exists(tempFleetPath)) File.Delete(tempFleetPath);
+        }
     }
 
     /// <summary>

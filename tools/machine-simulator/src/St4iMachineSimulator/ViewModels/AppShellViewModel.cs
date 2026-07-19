@@ -27,6 +27,7 @@ public partial class AppShellViewModel : ObservableObject
     private readonly DashboardView _dashboardView;
     private readonly FleetViewModel _fleetViewModel;
     private readonly ApiInspectorView _apiInspectorView;
+    private readonly OnboardingView _onboardingView;
 
     [ObservableProperty]
     private TransportMode mode = TransportMode.Auto;
@@ -70,19 +71,21 @@ public partial class AppShellViewModel : ObservableObject
         FleetService fleetService,
         DashboardView dashboardView,
         FleetViewModel fleetViewModel,
-        ApiInspectorView apiInspectorView)
+        ApiInspectorView apiInspectorView,
+        OnboardingView onboardingView)
     {
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _fleetService = fleetService ?? throw new ArgumentNullException(nameof(fleetService));
         _dashboardView = dashboardView ?? throw new ArgumentNullException(nameof(dashboardView));
         _fleetViewModel = fleetViewModel ?? throw new ArgumentNullException(nameof(fleetViewModel));
         _apiInspectorView = apiInspectorView ?? throw new ArgumentNullException(nameof(apiInspectorView));
+        _onboardingView = onboardingView ?? throw new ArgumentNullException(nameof(onboardingView));
         _eventBus.Traced += OnTraced;
         _fleetViewModel.MachineSelected += OnMachineSelected;
 
-        // Nav[0] is Dashboard (Task 15), Nav[3] is API Inspector (Task 17) — the only real screens
-        // wired up so far; the remaining Nav rows still fall back to SelectNavItem's placeholder text
-        // until their own tasks (18-20) land.
+        // Nav[0] is Dashboard (Task 15), Nav[2] is Onboarding (Task 18), Nav[3] is API Inspector
+        // (Task 17) — the only real screens wired up so far; the remaining Nav rows still fall back to
+        // SelectNavItem's placeholder text until their own tasks (19-20) land.
         CurrentView = _dashboardView;
     }
 
@@ -99,8 +102,9 @@ public partial class AppShellViewModel : ObservableObject
         CurrentView = item.Key switch
         {
             "dashboard" => _dashboardView,
+            "onboarding" => _onboardingView,
             "inspector" => _apiInspectorView,
-            _ => $"{item.Title} — chưa triển khai (Task 18-20)",
+            _ => $"{item.Title} — chưa triển khai (Task 19-20)",
         };
     }
 

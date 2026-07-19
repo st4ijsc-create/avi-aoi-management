@@ -1,0 +1,304 @@
+<UserControl x:Class="St4iMachineSimulator.Views.OnboardingView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:St4iMachineSimulator.ViewModels"
+             xmlns:models="clr-namespace:St4i.EdgeCore.Models;assembly=St4i.EdgeCore"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:OnboardingViewModel}"
+             d:DesignWidth="1000" d:DesignHeight="900">
+    <!--
+        Task 18 — the Onboarding wizard (doc 62 §5.10 "Onboarding"): the machine credential lifecycle
+        this build exists to showcase — register -> poll for admin approval -> claim (mct_) or enroll
+        (met_) -> store the mk_ key — plus two fast paths that skip the wizard entirely: pasting an
+        already-issued mk_ key, and loading a whole fleet's roster from fleet.json. IsDemo (default ON)
+        fabricates the register/poll/claim/enroll round trip locally with no network call, so the whole
+        flow can be demonstrated with no live server reachable — see OnboardingViewModel's remarks.
+
+        Layout, top to bottom: header (title + Demo toggle) -> step chips -> "1. Register" panel ->
+        "2. Claim / Enroll" panel -> "Paste mk_" panel -> "Load fleet.json" panel -> activity log.
+    -->
+    <UserControl.Resources>
+        <Style x:Key="PanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.Panel}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="SectionSubtextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+
+        <Style x:Key="ValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontFamily" Value="Consolas" />
+        </Style>
+
+        <!-- One labeled input field: label above, TextBox below, fixed width so the register/claim/
+             enroll/paste forms line up in tidy horizontal rows. -->
+        <Style x:Key="FieldStackStyle" TargetType="StackPanel">
+            <Setter Property="Orientation" Value="Vertical" />
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="Width" Value="200" />
+        </Style>
+
+        <!-- ═══ Step chips ════════════════════════════════════════════════ -->
+        <Style x:Key="StepChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Bg.PanelRaised}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="16,7" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+        <Style x:Key="StepChipTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="StepChipRegisterStyle" TargetType="Border" BasedOn="{StaticResource StepChipStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="{x:Static vm:OnboardingStep.Pending}">
+                    <Setter Property="Background" Value="{StaticResource Brush.Accent.Muted}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="StepChipApprovedStyle" TargetType="Border" BasedOn="{StaticResource StepChipStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="{x:Static vm:OnboardingStep.Approved}">
+                    <Setter Property="Background" Value="{StaticResource Brush.Accent.Muted}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Lights up for EITHER terminal state — Claimed (via a one-time claim token) or Enrolled
+             (via a zero-touch enrollment token) both mean "credential issued". -->
+        <Style x:Key="StepChipCredentialStyle" TargetType="Border" BasedOn="{StaticResource StepChipStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Step}" Value="{x:Static vm:OnboardingStep.Claimed}">
+                    <Setter Property="Background" Value="{StaticResource Brush.Status.OnlineRowBg}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Online}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Step}" Value="{x:Static vm:OnboardingStep.Enrolled}">
+                    <Setter Property="Background" Value="{StaticResource Brush.Status.OnlineRowBg}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Brush.Status.Online}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="4">
+            <!-- ═══ Header ════════════════════════════════════════════════ -->
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Onboarding" FontSize="20" FontWeight="Bold" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Register a machine, wait for admin approval, then claim or enroll to receive its mk_ key." />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <CheckBox Content="Demo mode (no server needed)"
+                              IsChecked="{Binding IsDemo, Mode=TwoWay}"
+                              VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- ═══ Step chips ════════════════════════════════════════════ -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <Border Style="{StaticResource StepChipStyle}">
+                    <TextBlock Text="Idle" Style="{StaticResource StepChipTextStyle}" />
+                </Border>
+                <Border Style="{StaticResource StepChipRegisterStyle}">
+                    <TextBlock Text="Registered / Pending" Style="{StaticResource StepChipTextStyle}" />
+                </Border>
+                <Border Style="{StaticResource StepChipApprovedStyle}">
+                    <TextBlock Text="Approved" Style="{StaticResource StepChipTextStyle}" />
+                </Border>
+                <Border Style="{StaticResource StepChipCredentialStyle}">
+                    <TextBlock Text="Claimed / Enrolled" Style="{StaticResource StepChipTextStyle}" />
+                </Border>
+                <TextBlock Text="{Binding Step, StringFormat=Current: {0}}"
+                           Style="{StaticResource SectionSubtextStyle}"
+                           Margin="16,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- ═══ 1. Register + Poll ═══════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="1. Register" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="POST /api/machine/register, then poll GET /api/machine/config for admin approval." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Serial number" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding SerialNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Name" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Machine type" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding MachineType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Server URL" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="Register" Style="{StaticResource TopBarButtonStyle}" Command="{Binding RegisterCommand}" Margin="0,0,8,0" />
+                        <Button Content="Poll approval" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PollApprovalCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ 2. Claim / Enroll ═══════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="2. Claim or enroll" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Claim redeems a one-time mct_ token; Enroll redeems a zero-touch met_ token. Either yields the mk_ key." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Claim token (mct_)" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding ClaimToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="Claim" Style="{StaticResource TopBarButtonStyle}" Command="{Binding ClaimCommand}"
+                                VerticalAlignment="Bottom" Margin="0,0,24,0" />
+
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Enroll token (met_)" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding EnrollToken, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="Enroll" Style="{StaticResource TopBarButtonStyle}" Command="{Binding EnrollCommand}"
+                                VerticalAlignment="Bottom" />
+                    </StackPanel>
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Machine code" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="{Binding MachineCode}" Style="{StaticResource ValueStyle}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="mk_ key (stored via CredentialStore)" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="{Binding MkKey}" Style="{StaticResource ValueStyle}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Paste mk_ fast path ══════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Paste mk_ key" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Already have an mk_ key from another tool? Store it directly, skipping the wizard." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="320">
+                            <TextBlock Text="mk_ key" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding PasteMkKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FieldStackStyle}">
+                            <TextBlock Text="Machine code" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding PasteMachineCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="Save" Style="{StaticResource TopBarButtonStyle}" Command="{Binding PasteKeyCommand}" VerticalAlignment="Bottom" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Load fleet.json fast path ═══════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Load fleet.json" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Style="{StaticResource SectionSubtextStyle}"
+                               Text="Preview a whole simulated fleet's roster from a fleet.json file." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <StackPanel Style="{StaticResource FieldStackStyle}" Width="420">
+                            <TextBlock Text="fleet.json path" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox Text="{Binding FleetPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <Button Content="Browse…" Style="{StaticResource TopBarButtonStyle}" Command="{Binding BrowseFleetFileCommand}"
+                                VerticalAlignment="Bottom" Margin="0,0,8,0" />
+                        <Button Content="Load" Style="{StaticResource TopBarButtonStyle}" Command="{Binding LoadFleetCommand}"
+                                VerticalAlignment="Bottom" />
+                        <StackPanel Margin="24,0,0,0" VerticalAlignment="Bottom">
+                            <TextBlock Text="Loaded" Style="{StaticResource FieldLabelStyle}" />
+                            <TextBlock Text="{Binding LoadedMachineCount, StringFormat={}{0} machine(s)}" Style="{StaticResource ValueStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ItemsControl ItemsSource="{Binding LoadedMachines}" Margin="0,10,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:MachineDescriptor}">
+                                <Border Background="{StaticResource Brush.Bg.PanelRaised}"
+                                        BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                                        CornerRadius="4" Padding="8,3" Margin="0,0,8,8">
+                                    <TextBlock FontSize="11">
+                                        <Run Text="{Binding Code, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text=" · " Foreground="{StaticResource Brush.Text.Muted}" />
+                                        <Run Text="{Binding MachineType, Mode=OneWay}" Foreground="{StaticResource Brush.Text.Secondary}" />
+                                    </TextBlock>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══ Activity log ═════════════════════════════════════════════ -->
+            <Border Style="{StaticResource PanelStyle}">
+                <StackPanel>
+                    <TextBlock Text="Activity log" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBox Text="{Binding StatusLog, Mode=OneWay}"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             Height="160"
+                             Margin="0,10,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
