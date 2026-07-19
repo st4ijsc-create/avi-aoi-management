@@ -118,6 +118,42 @@
   /* DS F1b — surface elevation ramp (1 = page bg → 3 = raised panel). Derived
      from the existing background/card scale so it composes with current cards. */
   --surface-1: oklch(0.145 0.015 260); /* = --background */
+
+  /* doc 63 (P5) — ISA-101 HMI token layer (additive; dark). Neutral "silent" substrate;
+     saturated hues reserved for abnormal (alarm/stale). Consumed by isaStateBadges + FreshnessStrip. */
+  --isa-field: oklch(0.19 0.006 260);
+  --isa-panel: oklch(0.235 0.007 260);
+  --isa-graphic: oklch(0.74 0.004 260);
+  --isa-graphic-muted: oklch(0.50 0.004 260);
+  /* ISA-18.2 alarm priority — 4 DISTINCT hues (AUD-08): P1 red-25 / P2 orange-55 / P3 amber-85 / P4 pale-95 */
+  --alarm-critical: oklch(0.70 0.18 25);
+  --alarm-critical-fill: oklch(0.55 0.22 25);
+  --alarm-critical-fg: oklch(0.99 0 0);
+  --alarm-high: oklch(0.76 0.16 55);
+  --alarm-high-fill: oklch(0.72 0.17 55);
+  --alarm-high-fg: oklch(0.20 0 0);
+  --alarm-medium: oklch(0.84 0.14 85);
+  --alarm-medium-fill: oklch(0.82 0.15 85);
+  --alarm-medium-fg: oklch(0.20 0 0);
+  --alarm-low: oklch(0.82 0.07 95);
+  --alarm-low-fill: oklch(0.86 0.07 95);
+  --alarm-low-fg: oklch(0.20 0 0);
+  /* PackML mode family (AUD-09) — COOL, low-chroma; distinct from warm alarm palette */
+  --packml-run: oklch(0.78 0.06 180);
+  --packml-ready: oklch(0.72 0.006 260);
+  --packml-acting: oklch(0.76 0.07 235);
+  --packml-held: oklch(0.72 0.09 300);
+  --packml-suspend: oklch(0.68 0.05 265);
+  --packml-abort: oklch(0.64 0.10 22);
+  /* SEMI E10 6-state availability — own palette, distinct from PackML + alarm (AUD-09) */
+  --e10-pt: oklch(0.72 0.15 150);
+  --e10-sb: oklch(0.74 0.11 210);
+  --e10-et: oklch(0.68 0.13 285);
+  --e10-sd: oklch(0.70 0.06 250);
+  --e10-ud: oklch(0.66 0.16 355);
+  --e10-ns: oklch(0.62 0.006 260);
+  /* Stale (G8) — scrim for desaturating stale tiles */
+  --stale-scrim: oklch(0.30 0 0 / 0.55);
   --surface-2: oklch(0.18 0.015 260);  /* = --card */
   --surface-3: oklch(0.22 0.015 260);  /* = --muted (raised) */
   /* DS F1b — text emphasis ramp (1 = primary text → 3 = subtle/disabled). */
@@ -175,6 +211,37 @@
   --info-foreground: oklch(0.98 0.005 260);
 
   --surface-1: oklch(0.98 0.005 260); /* = --background */
+
+  /* doc 63 (P5) — ISA-101 HMI token layer (additive; LIGHT theme values) */
+  --isa-field: oklch(0.91 0.004 260);
+  --isa-panel: oklch(0.965 0.003 260);
+  --isa-graphic: oklch(0.40 0.006 260);
+  --isa-graphic-muted: oklch(0.64 0.005 260);
+  --alarm-critical: oklch(0.50 0.19 25);
+  --alarm-critical-fill: oklch(0.52 0.20 25);
+  --alarm-critical-fg: oklch(0.99 0 0);
+  --alarm-high: oklch(0.56 0.14 55);
+  --alarm-high-fill: oklch(0.65 0.16 55);
+  --alarm-high-fg: oklch(0.20 0 0);
+  --alarm-medium: oklch(0.58 0.12 85);
+  --alarm-medium-fill: oklch(0.75 0.12 85);
+  --alarm-medium-fg: oklch(0.20 0 0);
+  --alarm-low: oklch(0.55 0.10 92);
+  --alarm-low-fill: oklch(0.80 0.09 95);
+  --alarm-low-fg: oklch(0.20 0 0);
+  --packml-run: oklch(0.48 0.08 180);
+  --packml-ready: oklch(0.50 0.006 260);
+  --packml-acting: oklch(0.50 0.10 235);
+  --packml-held: oklch(0.48 0.12 300);
+  --packml-suspend: oklch(0.46 0.06 265);
+  --packml-abort: oklch(0.45 0.12 22);
+  --e10-pt: oklch(0.50 0.13 150);
+  --e10-sb: oklch(0.52 0.09 210);
+  --e10-et: oklch(0.46 0.12 285);
+  --e10-sd: oklch(0.50 0.06 250);
+  --e10-ud: oklch(0.50 0.16 355);
+  --e10-ns: oklch(0.50 0.006 260);
+  --stale-scrim: oklch(0.75 0 0 / 0.45);
   --surface-2: oklch(1 0 0);          /* = --card */
   --surface-3: oklch(0.94 0.01 260);  /* = --muted (raised) */
   --text-1: oklch(0.15 0.02 260);  /* = --foreground */
