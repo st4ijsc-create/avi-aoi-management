@@ -62,6 +62,10 @@ import {
 // Global QueryClient defaults are staleTime 30s + refetchOnWindowFocus:false
 // (main.tsx). An exec briefing wants the opposite: refetch when they re-open the
 // tab, plus a slow poll as a fallback. We opt in per-query.
+// doc 67 W6 (việc 3) — mobile-network poll trim: only the KPI-briefing trio
+// (getStats + getAllOEE + warRoom.briefing) keeps the 60s cadence. Everything
+// else (insights/approvals feeds) moved to SLOW_OPTS below — 5' poll + focus
+// refetch is plenty for lists an exec acts on via the full inbox anyway.
 const LIVE_OPTS = {
   refetchOnWindowFocus: true,
   refetchInterval: 60_000,
@@ -73,6 +77,17 @@ const SUMMARY_OPTS = {
   refetchOnWindowFocus: true,
   refetchInterval: 300_000,
   staleTime: 120_000,
+} as const;
+
+// doc 67 W6 (việc 3) — non-KPI feeds (aiInsight / thresholdApproval / aiInbox /
+// listDeployApprovals): 5' poll; refetchOnWindowFocus:true stays explicit because
+// the global QueryClient default is false (main.tsx). PollFreshness is untouched:
+// freshestAt derives ONLY from the three 60s queries above, so its
+// staleAfterMs=150_000 (2.5× the 60s cadence) remains correct.
+const SLOW_OPTS = {
+  refetchOnWindowFocus: true,
+  refetchInterval: 300_000,
+  staleTime: 60_000,
 } as const;
 
 type Tone = "default" | "success" | "warning" | "info" | "destructive";
@@ -281,7 +296,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
     enabled: canViewWarRoom,
   });
   // Live advisory AI insights → "top risks" (distinct real source from the AI narrative).
-  const insightsQ = trpc.aiInsight.list.useQuery({ status: "new", limit: 20 }, LIVE_OPTS);
+  const insightsQ = trpc.aiInsight.list.useQuery({ status: "new", limit: 20 }, SLOW_OPTS);
 
   // ── (2) AI executive summary ─────────────────────────────────────────────────
   const summaryQ = trpc.executiveReport.latest.useQuery(undefined, SUMMARY_OPTS);
@@ -289,11 +304,11 @@ export default function ExecutiveMobile(): React.JSX.Element {
   // ── (3) Pending approvals (read-only counts + top items) ─────────────────────
   const thresholdQ = trpc.thresholdApproval.list.useQuery(
     { status: "requested", limit: 50 },
-    { ...LIVE_OPTS, enabled: canViewThresholds },
+    { ...SLOW_OPTS, enabled: canViewThresholds },
   );
-  const aiInboxQ = trpc.aiInbox.list.useQuery({ limit: 50 }, LIVE_OPTS);
+  const aiInboxQ = trpc.aiInbox.list.useQuery({ limit: 50 }, SLOW_OPTS);
   const deployQ = trpc.programming.listDeployApprovals.useQuery(undefined, {
-    ...LIVE_OPTS,
+    ...SLOW_OPTS,
     enabled: canViewDeploys,
   });
 

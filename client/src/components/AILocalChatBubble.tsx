@@ -292,7 +292,14 @@ export function AILocalChatBubble() {
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: health, isLoading: healthLoading } = trpc.aiLocalKb.health.useQuery();
+  // doc 67 W6 (việc 2) — LAZY health: this bubble mounts globally (App root) so an
+  // eager query fired on EVERY page load. The health badge/gate only renders inside
+  // the opened panel (closed FAB shows just the local unread count) → fetch on
+  // first open only, then keep for 5' (reopening within 5' does not refetch).
+  const { data: health, isLoading: healthLoading } = trpc.aiLocalKb.health.useQuery(undefined, {
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
   const reloadMutation = trpc.aiLocalKb.reload.useMutation();
   const feedbackMutation = trpc.aiLocalKb.feedback.useMutation();
   // GĐ2 — HITL write-action confirm/cancel.
@@ -308,8 +315,10 @@ export function AILocalChatBubble() {
   const cancelSessionMutation = trpc.aiAgent.cancelSession.useMutation();
   const startPlaybookMutation = trpc.aiAgent.startPlaybook.useMutation();
   // Gate: empty/disabled for non-agentic roles → no agentic UI shown.
+  // doc 67 W6 (việc 2) — LAZY like health above: the playbook picker/agentic UI
+  // only exists inside the opened panel, so don't fire this on every page load.
   const { data: playbooksData } = trpc.aiAgent.listPlaybooks.useQuery(undefined, {
-    enabled: !!user,
+    enabled: !!user && open,
     staleTime: 5 * 60 * 1000,
   });
   const agenticEnabled = playbooksData?.enabled === true;

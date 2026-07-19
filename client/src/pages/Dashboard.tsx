@@ -78,7 +78,7 @@ import { DeferredMount } from "@/components/DeferredMount";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import type { WidgetData } from "@/components/WidgetDataExport";
 import CustomDashboardViewer from "@/components/CustomDashboardViewer";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, memo, type CSSProperties } from "react";
 // doc 64 IA-10 S1 — truc pham vi ISA-95.
 import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
@@ -298,10 +298,24 @@ export default function Dashboard() {
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
   const [urgentAlerts, setUrgentAlerts] = useState<Array<{id: string; type: string; severity: string; title: string; message: string; timestamp: Date}>>([]);
   const socketRef = useRef<Socket | null>(null);
-  // Realtime connection state + live OEE pushed over the socket (oee:update).
+  // Realtime connection state. doc67 W6 [P1-3]: liveOEE/lastRealtimeAt đã TÁCH khỏi
+  // root — trước đây mỗi push oee:update setState ở gốc → re-render cả cây ~3400
+  // dòng. Nay <LiveOeeWidget>/<HeaderRealtimePulse> tự subscribe socket và giữ
+  // state riêng; root chỉ còn socketConnected (đổi hiếm: connect/disconnect).
   const [socketConnected, setSocketConnected] = useState(false);
-  const [liveOEE, setLiveOEE] = useState<LiveOEERow[] | null>(null);
-  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  // doc67 W6 [P1-2] — socket-invalidate: khi socket LIVE, các query nặng NGỪNG poll
+  // (refetchInterval: false); nhịp làm-mới lấy từ server đẩy:
+  //   - oee:update       heartbeat ~60s (OEE_BROADCAST_INTERVAL_SEC, mặc định 60)
+  //   - dashboard:update mỗi inspection mới
+  // → invalidate cụm dashboard, throttle 55s ⇒ tối đa ~1 refetch/phút thay vì
+  // 8 query × 30s. invalidate() chỉ refetch query ĐANG ACTIVE nên các query đã
+  // gate theo tab (P0) không bị kéo dậy.
+  const trpcUtils = trpc.useUtils();
+  const trpcUtilsRef = useRef(trpcUtils);
+  trpcUtilsRef.current = trpcUtils;
+  // Khởi tạo = now: các query vừa fetch lúc mount, khỏi invalidate ngay nhịp đầu.
+  const lastSocketInvalidateRef = useRef(Date.now());
 
   // WebSocket connection for realtime machine status + urgent alerts
   useEffect(() => {
@@ -320,33 +334,22 @@ export default function Dashboard() {
       setOnlineMachines(new Set(data.machines));
     };
 
-    // Live OEE push — single source of truth (oeeService). The broadcaster sends
-    // { metrics, at }; the legacy per-machine path may send a raw array/object.
-    // Normalize all shapes; honour honest nulls (never synthesize a factor).
-    const onOeeUpdate = (payload: any) => {
-      const raw = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.metrics)
-          ? payload.metrics
-          : payload && typeof payload === 'object' && payload.machineId != null
-            ? [payload]
-            : [];
-      if (raw.length === 0) return;
-      const rows: LiveOEERow[] = raw.map((m: any) => ({
-        machineId: m.machineId,
-        machineCode: m.machineCode ?? String(m.machineId),
-        availability: m.availability ?? null,
-        performance: m.performance ?? null,
-        quality: m.quality ?? null,
-        oee: m.oee ?? null,
-      }));
-      setLiveOEE((prev) => {
-        // Merge per-machine updates over the existing live snapshot.
-        const byId = new Map<number, LiveOEERow>((prev ?? []).map((r) => [r.machineId, r]));
-        for (const r of rows) byId.set(r.machineId, r);
-        return Array.from(byId.values()).sort((a, b) => a.machineId - b.machineId);
-      });
-      setLastRealtimeAt(new Date());
+    // doc67 W6 [P1-2] — nhịp làm-mới theo socket (KHÔNG setState → không re-render):
+    // throttle 55s để mỗi phút tối đa 1 loạt invalidate cho cụm query nặng.
+    const invalidateDashboardOnPush = () => {
+      const now = Date.now();
+      if (now - lastSocketInvalidateRef.current < 55_000) return;
+      lastSocketInvalidateRef.current = now;
+      const u = trpcUtilsRef.current;
+      void u.dashboard.getStatsWithComparison.invalidate();
+      void u.dashboard.getAllMachinesStats.invalidate();
+      void u.dashboard.getShiftStats.invalidate();
+      void u.dashboard.getTopBottomMachines.invalidate();
+      void u.dashboard.getActiveAlertsCount.invalidate();
+      void u.dashboard.getHourlyStats.invalidate();
+      // 2 query của MqttAlertWidget cũng ngừng poll khi socket live → mời theo nhịp này.
+      void u.mqttAlert.unresolved.invalidate();
+      void u.mqttClientManagement.getAlertWidgetData.invalidate();
     };
 
     const onStatusChange = (data: { machineCode: string; status: 'online' | 'offline' }) => {
@@ -396,7 +399,8 @@ export default function Dashboard() {
     socket.on('disconnect', onDisconnect);
     socket.on('machine:online_list', onOnlineList);
     socket.on('machine:status_change', onStatusChange);
-    socket.on('oee:update', onOeeUpdate);
+    socket.on('oee:update', invalidateDashboardOnPush);
+    socket.on('dashboard:update', invalidateDashboardOnPush);
     socket.on('inspection:alert', onInspectionAlert);
     socket.on('yield:warning', onYieldWarning);
     socket.on('ng:alert', onNgAlert);
@@ -413,7 +417,8 @@ export default function Dashboard() {
       socket.off('disconnect', onDisconnect);
       socket.off('machine:online_list', onOnlineList);
       socket.off('machine:status_change', onStatusChange);
-      socket.off('oee:update', onOeeUpdate);
+      socket.off('oee:update', invalidateDashboardOnPush);
+      socket.off('dashboard:update', invalidateDashboardOnPush);
       socket.off('inspection:alert', onInspectionAlert);
       socket.off('yield:warning', onYieldWarning);
       socket.off('ng:alert', onNgAlert);
@@ -609,7 +614,12 @@ export default function Dashboard() {
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — socket LIVE: ngừng poll, dựa socket-invalidate (nhịp đẩy
+    // ~60s ở effect socket phía trên). Poll theo Play/Pause + interval chỉ còn là
+    // FALLBACK khi socket rớt (cùng pattern getAllOEE trong LiveOeeWidget).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch all machines stats
@@ -626,7 +636,10 @@ export default function Dashboard() {
     factoryId: effectiveFactoryId,
     lineId: assetScope.lineId,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // doc65 W2 (AUD-01) — TUỔI DỮ LIỆU của các KPI chính: mốc MỚI NHẤT trong
@@ -638,9 +651,13 @@ export default function Dashboard() {
   // Ngưỡng "cũ" = 2× chu kỳ auto-refresh hiện hành (sàn 15s để không nhấp nháy
   // với chu kỳ 5s). Khi người dùng TẮT auto-refresh, dữ liệu già theo chủ ý →
   // nới ngưỡng 5 phút (quá 5 phút vẫn cảnh báo trung thực).
+  // doc67 W6 [P1-2] — socket LIVE: các query nặng KHÔNG poll nữa mà làm mới theo
+  // nhịp socket-invalidate (~60s heartbeat oee:update) → ngưỡng cũ = 2× nhịp = 120s.
   const kpiRefreshMs =
     isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : 0;
-  const kpiStaleAfterMs = kpiRefreshMs > 0 ? Math.max(kpiRefreshMs * 2, 15_000) : 300_000;
+  const kpiStaleAfterMs = socketConnected
+    ? 120_000
+    : kpiRefreshMs > 0 ? Math.max(kpiRefreshMs * 2, 15_000) : 300_000;
 
   // Fetch shift stats
   const { data: shiftStats } = trpc.dashboard.getShiftStats.useQuery({
@@ -648,7 +665,10 @@ export default function Dashboard() {
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch top/bottom machines
@@ -660,12 +680,18 @@ export default function Dashboard() {
     // additive optional). Trục máy đơn không áp cho ranking đa-máy.
     factoryId: effectiveFactoryId,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch active alerts count
   const { data: activeAlertsCount } = trpc.dashboard.getActiveAlertsCount.useQuery(undefined, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch daily stats for sparklines
@@ -687,7 +713,10 @@ export default function Dashboard() {
     machineId: assetScope.machineId,
     hours: 24,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch yield alert thresholds for realtime alerts
@@ -699,17 +728,21 @@ export default function Dashboard() {
   const { data: lines } = trpc.line.list.useQuery();
 
   // Fetch line product assignments and production orders for line info
-  const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery();
-  const { data: productionOrders } = trpc.productionOrder.list.useQuery();
-  const { data: productModels } = trpc.productModel.list.useQuery();
-
-  // Fetch recent inspections for selected machine
-  const { data: recentInspections } = trpc.inspection.list.useQuery({
-    machineId: selectedMachine?.id,
-    limit: 20,
-  }, {
-    enabled: !!selectedMachine,
+  // doc67 W6 [P0] — 3 query này chỉ phục vụ tab "Bố cục" (thẻ line info) → gate
+  // theo activeTab, không bắn khi mở trang ở tab Tổng quan mặc định.
+  const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
   });
+  const { data: productionOrders } = trpc.productionOrder.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
+  });
+  const { data: productModels } = trpc.productModel.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
+  });
+
+  // doc67 W6 [P2] — XÓA query chết `recentInspections` (inspection.list limit 20):
+  // không nơi nào tiêu thụ — dialog chi tiết máy dùng `filteredInspections` (query
+  // riêng bên dưới, limit 50 + lọc trạng thái, enabled theo machineDetailOpen).
 
   // Fetch filtered inspections for selected machine (by status)
   const { data: filteredInspections, isLoading: filteredInspectionsLoading } = trpc.inspection.list.useQuery({
@@ -721,46 +754,51 @@ export default function Dashboard() {
   });
 
   // Fetch workstation summary for top defects (overview tab)
+  // doc67 W6 [P0] — card "Top 5 trạm lỗi cao" của tab Tổng quan dùng TRỰC TIẾP
+  // query này (dải ngày dateRange người dùng chọn) → gate theo tab overview.
+  // KHÔNG gộp được với bản ng-visual bên dưới: bản đó chạy dải ngày riêng
+  // (ngDateRange theo ngTimeFilter, mặc định 1 tháng) — 2 input khác nhau nên
+  // 2 cache-entry khác nhau; nhờ gate theo tab, mỗi thời điểm chỉ 1 bản bắn.
   const { data: workstationSummary } = trpc.workstation.summary.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
+  }, {
+    enabled: activeTab === 'overview',
   });
 
-  // Fetch top NG measurement points (overview tab)
-  const { data: topNGPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-    limit: 15,
-  });
+  // doc67 W6 [P2] — XÓA query chết `topNGPoints` (workstation.topNGMeasurementPoints
+  // limit 15, dải dateRange): không nơi nào tiêu thụ — tab NG trực quan dùng
+  // `ngTopNGPoints` (limit 20, dải ngDateRange) bên dưới.
 
-  // Fetch live OEE metrics for mini-widget — first-load fallback when no socket
-  // push has arrived yet. Once oee:update pushes arrive (socketConnected), we
-  // stop polling and rely on the realtime stream.
-  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
-    refetchInterval: socketConnected ? false : 30000,
-  });
-
-  // Effective OEE: prefer the realtime socket stream (oee:update), fall back to
-  // the query for the first paint. No synthetic values — null factors stay null.
-  const effectiveOEE = useMemo<LiveOEERow[]>(() => {
-    if (liveOEE && liveOEE.length > 0) return liveOEE;
-    const q = allOEE as LiveOEERow[] | undefined;
-    return Array.isArray(q) ? q : [];
-  }, [liveOEE, allOEE]);
-
-  const oeeIsLive = !!(socketConnected && liveOEE && liveOEE.length > 0);
+  // doc67 W6 [P1-3] — query mqttClient.getAllOEE + effectiveOEE/oeeIsLive đã dời
+  // vào <LiveOeeWidget> (cuối file) cùng state liveOEE/lastRealtimeAt.
 
   // Fetch workstation summary for NG Visual tab (with separate time filter)
+  // doc67 W6 [P0] — cụm 7 query tab "NG trực quan" gate theo activeTab: không bắn
+  // khi mở trang ở tab Tổng quan (TabsContent không mount tab ẩn nên không ai đọc).
   const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading } = trpc.workstation.summary.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
+
+  // doc67 W6 [P0] — điều kiện cho 2 query *Direct fallback: chỉ bắn khi nguồn chính
+  // (workstation.summary bản ng-visual) ĐÃ trả về và KHÔNG có dữ liệu thực — khớp
+  // cách effectiveNGSummary chọn nguồn (length > 0 && some(totalInspections > 0)).
+  const ngWorkstationSourceEmpty = useMemo(() => {
+    const wsData = ngWorkstationSummary as any[] | undefined;
+    if (wsData === undefined) return false; // chưa trả → chưa cho fallback bắn
+    return !(wsData.length > 0 && wsData.some((w: any) => Number(w.totalInspections) > 0));
+  }, [ngWorkstationSummary]);
 
   // Fetch top NG measurement points for NG Visual tab
   const { data: ngTopNGPoints, isLoading: ngTopNGLoading } = trpc.workstation.topNGMeasurementPoints.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
     limit: 20,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fetch measurement points for selected workstation drilldown
@@ -778,26 +816,39 @@ export default function Dashboard() {
     endDate: ngDateRange.endDate,
     workstationId: trendFilterWorkstationId,
     measurementPointDefId: trendFilterMeasurementPointId,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fetch NG comparison data
-  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
+  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates, {
+    enabled: activeTab === 'ng-visual',
+  });
 
   // Fallback: NG summary by machine (when workstation data is unavailable)
   const { data: ngMachineSummary } = trpc.workstation.ngSummaryByMachine.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fallback: NG trend from product_inspections directly
+  // doc67 W6 [P0] — fallback *Direct chỉ bắn khi nguồn workstation đã trả RỖNG
+  // (ngWorkstationSourceEmpty): pipeline workstation có dữ liệu thì 2 query này
+  // là tải thừa trên mỗi lần mở tab.
   const { data: ngTrendDirectData } = trpc.workstation.ngTrendDirect.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
     machineId: trendFilterWorkstationId, // reuse filter for machine
+  }, {
+    enabled: activeTab === 'ng-visual' && ngWorkstationSourceEmpty,
   });
 
   // Fallback: NG comparison from product_inspections directly
-  const { data: ngComparisonDirectData } = trpc.workstation.ngComparisonDirect.useQuery(ngComparisonDates);
+  const { data: ngComparisonDirectData } = trpc.workstation.ngComparisonDirect.useQuery(ngComparisonDates, {
+    enabled: activeTab === 'ng-visual' && ngWorkstationSourceEmpty,
+  });
 
   // Determine effective NG data: prefer workstation-based, fallback to machine-based
   const effectiveNGSummary = useMemo(() => {
@@ -825,7 +876,10 @@ export default function Dashboard() {
   }, [ngComparisonData, ngComparisonDirectData]);
 
   // Fetch all workstations for filter dropdown
-  const { data: allWorkstations } = trpc.workstation.list.useQuery();
+  // doc67 W6 [P0] — dropdown lọc trạm chỉ nằm trong tab NG trực quan → gate theo tab.
+  const { data: allWorkstations } = trpc.workstation.list.useQuery(undefined, {
+    enabled: activeTab === 'ng-visual',
+  });
 
   // Fetch all measurement points for filter dropdown (we'll filter by workstation in UI)
   const { data: allMeasurementPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -1361,7 +1415,9 @@ export default function Dashboard() {
           description={
             <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
-              <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
+              {/* doc67 W6 [P1-3] — badge tự giữ mốc oee:update gần nhất, root không
+                  còn setState theo từng push (khỏi re-render cả cây). */}
+              <HeaderRealtimePulse connected={socketConnected} />
               {/* doc65 W2 (AUD-01) — TUỔI DỮ LIỆU KPI (poll) đặt CẠNH trạng thái
                   SOCKET: RealtimeBadge nói về kết nối đẩy, PollFreshness nói về
                   lần fetch KPI gần nhất — 2 khái niệm, cùng hiển thị. */}
@@ -1815,70 +1871,13 @@ export default function Dashboard() {
                 khe paint đầu — hero KPI/thẻ trạng thái phía trên paint được ngay thay vì
                 chờ cả cây nặng render xong (LCP ~5s → mục tiêu <2,5s). */}
             <DeferredMount placeholder={<ChartSkeleton />}>
-            {/* MQTT Alert Widget */}
-            <MqttAlertWidget />
+            {/* MQTT Alert Widget — doc67 W6 [P1-2]: socket live → ngừng poll 30s */}
+            <MqttAlertWidget socketConnected={socketConnected} />
 
-            {/* OEE Mini-widget — live (oee:update) with first-load query fallback */}
-            {effectiveOEE.length > 0 && (() => {
-              const oeeData = effectiveOEE;
-              // Average only over machines that actually have each factor (honest).
-              const avgOf = (sel: (m: LiveOEERow) => number | null): number | null => {
-                const vals = oeeData.map(sel).filter((v): v is number => v != null);
-                return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-              };
-              const avgA = avgOf((m) => m.availability);
-              const avgP = avgOf((m) => m.performance);
-              const avgQ = avgOf((m) => m.quality);
-              const avgOEE = avgOf((m) => m.oee);
-              const oeeColor = (v: number) => v >= 85 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--destructive)';
-              const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
-              return (
-              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                    {t("dashboard.oeeTitle", "OEE — Overall Equipment Effectiveness")}
-                    <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
-                  </CardTitle>
-                  <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Aggregate 4-card OEE cluster */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {([
-                      { label: t("dashboard.oeeAvailability", "Availability"), value: avgA, icon: "A" },
-                      { label: t("dashboard.oeePerformance", "Performance"), value: avgP, icon: "P" },
-                      { label: t("dashboard.oeeQuality", "Quality"), value: avgQ, icon: "Q" },
-                      { label: "OEE", value: avgOEE, icon: "OEE" },
-                    ] as const).map((item) => (
-                      <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
-                        <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
-                        <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? 'var(--muted-foreground)' : oeeColor(item.value) }}>{fmt(item.value)}</p>
-                        <p className="text-[11px] text-muted-foreground">{item.label}</p>
-                      </a>
-                    ))}
-                  </div>
-                  {/* Per-machine detail grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {oeeData.map((m) => {
-                      const color = m.oee == null ? 'var(--muted-foreground)' : oeeColor(m.oee);
-                      return (
-                        <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
-                          <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
-                          <p className="text-xl font-bold" style={{ color }}>{fmt(m.oee)}</p>
-                          <div className="text-[10px] text-muted-foreground space-y-0.5">
-                            <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
-                            <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>
-                            <div className="flex justify-between"><span>Q</span><span>{fmt(m.quality)}</span></div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-              );
-            })()}
+            {/* OEE Mini-widget — doc67 W6 [P1-3]: tách thành component con sở hữu
+                state liveOEE/lastRealtimeAt riêng (tự subscribe oee:update); mỗi
+                push chỉ re-render widget này, không re-render cả cây Dashboard. */}
+            <LiveOeeWidget socketConnected={socketConnected} cardStyleProps={cardStyleProps} />
 
             {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -3339,7 +3338,10 @@ export default function Dashboard() {
 }
 
 // MQTT Alert Widget Component - Combined alerts from mqttAlert and mqttClientManagement
-function MqttAlertWidget() {
+// doc67 W6 [P1-2] — socket live: ngừng poll 30s, 2 query này được root invalidate
+// theo nhịp socket (~60s); chỉ poll khi socket rớt. memo: chỉ re-render khi
+// socketConnected đổi (props duy nhất) thay vì theo mọi render của root.
+const MqttAlertWidget = memo(function MqttAlertWidget({ socketConnected }: { socketConnected: boolean }) {
   const { t } = useTranslation();
   // Rule-based alerts
   // doc65 W2 (AUD-01) — widget poll 30s nhưng trước đây KHÔNG khai tuổi dữ liệu;
@@ -3349,7 +3351,7 @@ function MqttAlertWidget() {
     dataUpdatedAt: ruleAlertsUpdatedAt,
     isFetching: ruleAlertsFetching,
   } = trpc.mqttAlert.unresolved.useQuery(undefined, {
-    refetchInterval: 30000,
+    refetchInterval: socketConnected ? false : 30000,
   });
 
   // Connection alerts from scheduler
@@ -3358,7 +3360,7 @@ function MqttAlertWidget() {
     dataUpdatedAt: connAlertsUpdatedAt,
     isFetching: connAlertsFetching,
   } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
-    refetchInterval: 30000,
+    refetchInterval: socketConnected ? false : 30000,
   });
 
   // Mốc mới nhất giữa hai query của widget (poll 30s → ngưỡng cũ mặc định 60s).
@@ -3429,10 +3431,13 @@ function MqttAlertWidget() {
                 <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
               )}
             </div>
-            {/* doc65 W2 (AUD-01) — tuổi dữ liệu của widget poll-30s (mặc định cũ sau 60s) */}
+            {/* doc65 W2 (AUD-01) — tuổi dữ liệu widget. doc67 W6 [P1-2]: socket live
+                → làm mới theo nhịp socket-invalidate ~60s ⇒ ngưỡng cũ 2× = 120s;
+                socket rớt → poll 30s ⇒ ngưỡng mặc định 60s như cũ. */}
             <PollFreshness
               updatedAt={alertsUpdatedAt}
               isFetching={ruleAlertsFetching || connAlertsFetching}
+              staleAfterMs={socketConnected ? 120_000 : 60_000}
               className="ml-1 font-normal"
             />
           </CardTitle>
@@ -3492,4 +3497,158 @@ function MqttAlertWidget() {
       </CardContent>
     </Card>
   );
-}
+});
+
+// doc67 W6 [P1-3] — HeaderRealtimePulse: RealtimeBadge ở header cần mốc push
+// oee:update gần nhất. Tách khỏi root để mỗi nhịp đẩy (~60s) chỉ re-render badge
+// nhỏ này thay vì cả cây Dashboard ~3400 dòng (trước đây setLastRealtimeAt ở gốc).
+const HeaderRealtimePulse = memo(function HeaderRealtimePulse({ connected }: { connected: boolean }) {
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const socket = getSharedSocket();
+    const onOeeUpdate = () => setLastRealtimeAt(new Date());
+    socket.on('oee:update', onOeeUpdate);
+    return () => {
+      socket.off('oee:update', onOeeUpdate);
+      releaseSharedSocket();
+    };
+  }, []);
+
+  return <RealtimeBadge connected={connected} pollingFallback lastEventAt={lastRealtimeAt} />;
+});
+
+// doc67 W6 [P1-3] — LiveOeeWidget: widget OEE sở hữu state liveOEE/lastRealtimeAt
+// riêng + tự subscribe socket 'oee:update' (root chỉ truyền socketConnected +
+// cardStyleProps đã memo). Query getAllOEE (fallback first-paint / socket rớt)
+// cũng dời vào đây. Logic dữ liệu GIỮ NGUYÊN từ bản root (normalize mọi shape,
+// honest null — không bịa factor).
+const LiveOeeWidget = memo(function LiveOeeWidget({
+  socketConnected,
+  cardStyleProps,
+}: {
+  socketConnected: boolean;
+  cardStyleProps: { style: CSSProperties; className: string; accentColor: string; textColor: string };
+}) {
+  const { t } = useTranslation();
+  const [liveOEE, setLiveOEE] = useState<LiveOEERow[] | null>(null);
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const socket = getSharedSocket();
+
+    // Live OEE push — single source of truth (oeeService). The broadcaster sends
+    // { metrics, at }; the legacy per-machine path may send a raw array/object.
+    // Normalize all shapes; honour honest nulls (never synthesize a factor).
+    const onOeeUpdate = (payload: any) => {
+      const raw = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.metrics)
+          ? payload.metrics
+          : payload && typeof payload === 'object' && payload.machineId != null
+            ? [payload]
+            : [];
+      if (raw.length === 0) return;
+      const rows: LiveOEERow[] = raw.map((m: any) => ({
+        machineId: m.machineId,
+        machineCode: m.machineCode ?? String(m.machineId),
+        availability: m.availability ?? null,
+        performance: m.performance ?? null,
+        quality: m.quality ?? null,
+        oee: m.oee ?? null,
+      }));
+      setLiveOEE((prev) => {
+        // Merge per-machine updates over the existing live snapshot.
+        const byId = new Map<number, LiveOEERow>((prev ?? []).map((r) => [r.machineId, r]));
+        for (const r of rows) byId.set(r.machineId, r);
+        return Array.from(byId.values()).sort((a, b) => a.machineId - b.machineId);
+      });
+      setLastRealtimeAt(new Date());
+    };
+
+    socket.on('oee:update', onOeeUpdate);
+    return () => {
+      socket.off('oee:update', onOeeUpdate);
+      releaseSharedSocket();
+    };
+  }, []);
+
+  // Fetch live OEE metrics — first-load fallback when no socket push has arrived
+  // yet. Once oee:update pushes arrive (socketConnected), we stop polling and
+  // rely on the realtime stream.
+  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
+    refetchInterval: socketConnected ? false : 30000,
+  });
+
+  // Effective OEE: prefer the realtime socket stream (oee:update), fall back to
+  // the query for the first paint. No synthetic values — null factors stay null.
+  const effectiveOEE = useMemo<LiveOEERow[]>(() => {
+    if (liveOEE && liveOEE.length > 0) return liveOEE;
+    const q = allOEE as LiveOEERow[] | undefined;
+    return Array.isArray(q) ? q : [];
+  }, [liveOEE, allOEE]);
+
+  const oeeIsLive = !!(socketConnected && liveOEE && liveOEE.length > 0);
+
+  if (effectiveOEE.length === 0) return null;
+
+  const oeeData = effectiveOEE;
+  // Average only over machines that actually have each factor (honest).
+  const avgOf = (sel: (m: LiveOEERow) => number | null): number | null => {
+    const vals = oeeData.map(sel).filter((v): v is number => v != null);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  };
+  const avgA = avgOf((m) => m.availability);
+  const avgP = avgOf((m) => m.performance);
+  const avgQ = avgOf((m) => m.quality);
+  const avgOEE = avgOf((m) => m.oee);
+  const oeeColor = (v: number) => v >= 85 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--destructive)';
+  const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
+
+  return (
+    <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+      <CardHeader className="pb-2 flex flex-row items-center justify-between">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
+          {t("dashboard.oeeTitle", "OEE — Overall Equipment Effectiveness")}
+          <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
+        </CardTitle>
+        <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Aggregate 4-card OEE cluster */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {([
+            { label: t("dashboard.oeeAvailability", "Availability"), value: avgA, icon: "A" },
+            { label: t("dashboard.oeePerformance", "Performance"), value: avgP, icon: "P" },
+            { label: t("dashboard.oeeQuality", "Quality"), value: avgQ, icon: "Q" },
+            { label: "OEE", value: avgOEE, icon: "OEE" },
+          ] as const).map((item) => (
+            <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
+              <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? 'var(--muted-foreground)' : oeeColor(item.value) }}>{fmt(item.value)}</p>
+              <p className="text-[11px] text-muted-foreground">{item.label}</p>
+            </a>
+          ))}
+        </div>
+        {/* Per-machine detail grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {oeeData.map((m) => {
+            const color = m.oee == null ? 'var(--muted-foreground)' : oeeColor(m.oee);
+            return (
+              <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
+                <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
+                <p className="text-xl font-bold" style={{ color }}>{fmt(m.oee)}</p>
+                <div className="text-[10px] text-muted-foreground space-y-0.5">
+                  <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
+                  <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>
+                  <div className="flex justify-between"><span>Q</span><span>{fmt(m.quality)}</span></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+});

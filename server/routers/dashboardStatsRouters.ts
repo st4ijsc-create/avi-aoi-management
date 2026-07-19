@@ -156,6 +156,21 @@ export const dashboardRouter = router({
       return db.getActiveAlertsCount();
     }),
 
+  // doc 67 W6 (việc 4) — registry sizes for the CorporateDashboard KPI cards:
+  // {factories, lines, machines} via COUNT(*) (same isActive filter as the
+  // factory/line/machine list procedures) instead of shipping three full lists
+  // to the client just to read .length. Cached 1' — the registry changes rarely.
+  overviewCounts: protectedProcedure
+    .query(async () => {
+      const cacheKey = "dashboard:overviewCounts:";
+      const cached = statsCache.get<Awaited<ReturnType<typeof db.getOverviewEntityCounts>>>(cacheKey);
+      if (cached) return cached;
+
+      const counts = await db.getOverviewEntityCounts();
+      statsCache.set(cacheKey, counts, CACHE_TTL.MEDIUM);
+      return counts;
+    }),
+
   // Hourly stats for timeline chart.
   // W4-B (doc 27 A7): this is the main-dashboard hourly rollup (Dashboard.tsx
   // timeline + throughput widget, both polling). Served from the

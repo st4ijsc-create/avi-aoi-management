@@ -33,8 +33,8 @@
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Environment, Grid, Text } from "@react-three/drei";
+import { Canvas, invalidate, type ThreeEvent } from "@react-three/fiber";
+import { OrbitControls, PerspectiveCamera, Grid, Text } from "@react-three/drei";
 import * as THREE from "three";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
@@ -48,6 +48,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useEcosystemEvents, type EcosystemEvent, type EcosystemSeverity } from "@/hooks/useEcosystemEvents";
 import PollFreshness from "@/components/PollFreshness";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   Gauge, Boxes, AlertTriangle, Bot, Network, Sparkles, Zap, Activity, Factory,
   ChevronRight, ChevronDown, Cpu, Radio, RefreshCw, ExternalLink,
@@ -408,20 +409,22 @@ function TwinBlock({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const ref = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const isRobot = node.kind === "robot";
   const color = node.color || statusHexFromTwinState(node.state);
-  useFrame(() => {
-    if (!ref.current) return;
-    const s = selected || hovered ? 1.12 : 1;
-    ref.current.scale.lerp(new THREE.Vector3(s, s, s), 0.18);
-  });
+  // W6 (doc 67, việc 2+3): frameloop='demand' — bỏ useFrame-lerp (đứng hình ở
+  // demand-mode) + bỏ cấp phát new THREE.Vector3 mỗi frame × N thiết bị; scale
+  // đặt TRỰC TIẾP qua prop, đổi hover/selection thì invalidate() vẽ lại 1 frame.
+  const scale = selected || hovered ? 1.12 : 1;
+  useEffect(() => { invalidate(); }, [hovered, selected]);
+  // W6 (việc 5): thiết bị KHÔNG-ok hiện nhãn mã máy thường trực (không chỉ hover).
+  const st = (node.state ?? "").toLowerCase();
+  const isOk = st === "running" || st === "execute" || st === "active";
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
   return (
     <group
-      ref={ref}
       position={position}
+      scale={scale}
       onClick={(e) => { stop(e); onSelect(); }}
       onPointerOver={(e) => { stop(e); setHovered(true); }}
       onPointerOut={() => setHovered(false)}
@@ -440,7 +443,7 @@ function TwinBlock({
           <meshBasicMaterial color="#06b6d4" side={THREE.DoubleSide} />
         </mesh>
       )}
-      {(hovered || selected) && (
+      {(hovered || selected || !isOk) && (
         <Text position={[0, -0.7, 0.8]} fontSize={0.24} color="#fff" anchorX="center" anchorY="top" outlineWidth={0.01} outlineColor="#000">
           {node.code}
         </Text>
@@ -457,14 +460,20 @@ function CompactTwinScene({
   onSelect: (id: string) => void;
 }) {
   const camDist = Math.max(18, FLOOR_W * 0.9);
+  // W6 (doc 67, việc 2): frameloop='demand' — dữ liệu/lựa chọn đổi thì vẽ lại
+  // 1 frame (kèm invalidate theo hover/selection trong TwinBlock; OrbitControls
+  // của drei tự invalidate khi xoay/zoom ở demand-mode).
+  useEffect(() => { invalidate(); }, [devices, selectedId]);
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, camDist * 0.8, camDist]} fov={50} />
       <OrbitControls enablePan enableZoom enableRotate minDistance={8} maxDistance={140} maxPolarAngle={Math.PI / 2.1} target={[0, 0, 0]} />
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[16, 22, 10]} intensity={1.05} castShadow />
-      <pointLight position={[-10, 9, -10]} intensity={0.35} color="#06b6d4" />
-      <Environment preset="night" />
+      {/* W6 (doc 67, việc 1 — AIR-GAP): BỎ <Environment preset="night"> vì drei
+          tải HDR từ CDN internet → mạng nhà máy không internet sẽ suspend vĩnh
+          viễn (khung đen). Bù sáng bằng ambient/directional tăng nhẹ. */}
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[16, 22, 10]} intensity={1.25} castShadow />
+      <pointLight position={[-10, 9, -10]} intensity={0.45} color="#06b6d4" />
       <Grid args={[FLOOR_W + 10, FLOOR_D + 12]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={60} fadeStrength={1} infiniteGrid />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow>
         <planeGeometry args={[FLOOR_W + 12, FLOOR_D + 14]} />
@@ -545,9 +554,26 @@ function CenterOverview({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [webglOk, setWebglOk] = useState(true);
 
+  // W6 (doc 67, việc 5): toggle 2D/3D — persist localStorage; mặc định '2d' trên
+  // panel-PC (bề rộng ≤1366px lúc mount), '3d' màn lớn. Ở 2D KHÔNG mount Canvas
+  // (tiết kiệm toàn bộ GPU cho iGPU panel-PC).
+  const [viewMode, setViewMode] = useState<"2d" | "3d">(() => {
+    try {
+      const saved = localStorage.getItem("commandCenter:viewMode");
+      if (saved === "2d" || saved === "3d") return saved;
+    } catch { /* storage bị chặn → rơi về mặc định theo bề rộng */ }
+    return window.innerWidth <= 1366 ? "2d" : "3d";
+  });
+  const changeViewMode = useCallback((m: "2d" | "3d") => {
+    setViewMode(m);
+    try { localStorage.setItem("commandCenter:viewMode", m); } catch { /* noop */ }
+  }, []);
+
+  // W6 (doc 67, việc 4): 10s → 30s — sceneGraph trả mảng mới mỗi lần fetch nên
+  // mỗi chu kỳ là 1 lần re-render toàn scene; 30s đủ tươi cho sơ đồ tổng quan.
   const sceneQ = trpc.twin.sceneGraph.useQuery(
     { factoryId: factoryId ?? 0 },
-    { enabled: factoryId != null, refetchInterval: 10_000, staleTime: 5_000 },
+    { enabled: factoryId != null, refetchInterval: 30_000, staleTime: 5_000 },
   );
   const devices = useMemo<TwinDevice[]>(() => sceneQ.data?.devices ?? [], [sceneQ.data]);
   const selectedDevice = devices.find((d) => d.id === selectedDeviceId) ?? null;
@@ -586,12 +612,35 @@ function CenterOverview({
       }
       action={
         <div className="flex items-center gap-2">
-          {/* AUD-01 (doc 65 W2): tuổi dữ liệu scene — poll 10s, amber khi >2× chu kỳ. */}
+          {/* W6 (doc 67, việc 5): toggle 2D/3D — chỉ hiện khi 3D là lựa chọn khả dụng. */}
+          {factoryId != null && webglOk && devices.length > 0 && (
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5" role="group" aria-label="Chế độ hiển thị sơ đồ nhà máy">
+              <Button
+                size="sm"
+                variant={viewMode === "2d" ? "secondary" : "ghost"}
+                className="h-7 px-2"
+                aria-pressed={viewMode === "2d"}
+                onClick={() => changeViewMode("2d")}
+              >
+                2D
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === "3d" ? "secondary" : "ghost"}
+                className="h-7 px-2"
+                aria-pressed={viewMode === "3d"}
+                onClick={() => changeViewMode("3d")}
+              >
+                3D
+              </Button>
+            </div>
+          )}
+          {/* AUD-01 (doc 65 W2) + W6 (việc 4): tuổi dữ liệu scene — poll 30s, amber khi >2× chu kỳ. */}
           {factoryId != null && (
             <PollFreshness
               updatedAt={sceneQ.dataUpdatedAt || undefined}
               isFetching={sceneQ.isFetching}
-              staleAfterMs={20_000}
+              staleAfterMs={60_000}
             />
           )}
           {factoryId != null && (
@@ -611,8 +660,22 @@ function CenterOverview({
         <div className="flex h-[420px] items-center justify-center text-sm text-muted-foreground">
           {t("cmd.loadingScene", "Loading factory scene…")}
         </div>
-      ) : canRender3D ? (
-        <>
+      ) : canRender3D && viewMode === "3d" ? (
+        /* W6 (doc 67, việc 1): ErrorBoundary quanh Canvas — scene lỗi (driver GPU,
+           context-lost, shader…) rơi về lưới trạng thái thay vì khung đen; key theo
+           factoryId để đổi nhà máy thì boundary tự reset. */
+        <ErrorBoundary
+          key={factoryId}
+          fallback={
+            <>
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] text-warning">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                Không dựng được cảnh 3D — hiển thị lưới trạng thái trực tiếp thay thế.
+              </div>
+              <StatusGridFallback factory={factoryNode} t={t} />
+            </>
+          }
+        >
           {/* W4 (doc 67): role="img" + aria-label mô tả — nội dung WebGL vô hình
               với screen-reader; kèm tóm tắt sr-only số liệu theo trạng thái. */}
           <div
@@ -620,7 +683,9 @@ function CenterOverview({
             aria-label={sceneAriaLabel}
             className="h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]"
           >
-            <Canvas shadows onPointerMissed={() => setSelectedDeviceId(null)}>
+            {/* W6 (doc 67): frameloop='demand' — cảnh tĩnh không đốt GPU 60fps;
+                dpr trần 1.5 giới hạn độ phân giải render cho iGPU panel-PC. */}
+            <Canvas shadows frameloop="demand" dpr={[1, 1.5]} onPointerMissed={() => setSelectedDeviceId(null)}>
               <Suspense fallback={null}>
                 <CompactTwinScene devices={devices} selectedId={selectedDeviceId} onSelect={setSelectedDeviceId} />
               </Suspense>
@@ -643,7 +708,11 @@ function CenterOverview({
               </span>
             )}
           </div>
-        </>
+        </ErrorBoundary>
+      ) : canRender3D ? (
+        /* W6 (doc 67, việc 5): chế độ 2D chủ động — Canvas KHÔNG được mount,
+           lưới trạng thái trực tiếp (line→station→device) thay thế toàn phần. */
+        <StatusGridFallback factory={factoryNode} t={t} />
       ) : (
         <>
           <div className="mb-2 flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-2 py-1 text-[11px] text-info">

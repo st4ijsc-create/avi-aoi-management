@@ -127,9 +127,12 @@ export default function CorporateDashboard() {
   );
   // Danh mục thực thể (factory/line/machine) là số đăng ký HIỆN CÓ — không phải
   // chuỗi thời gian, không lọc theo kỳ được → card tương ứng ghi chú trung thực.
-  const { data: factories } = trpc.factory.list.useQuery();
-  const { data: lines } = trpc.line.list.useQuery();
-  const { data: machinesList } = trpc.machine.list.useQuery();
+  // doc 67 W6 (việc 4): trước đây fetch NGUYÊN 3 list (factory/line/machine) chỉ
+  // để đếm .length → thay bằng 1 procedure COUNT(*) (cùng filter isActive với các
+  // list). Danh mục đổi chậm → staleTime 5', không cần poll.
+  const { data: overviewCounts } = trpc.dashboard.overviewCounts.useQuery(undefined, {
+    staleTime: 300_000,
+  });
   const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery(
     { days: periodRange.days },
     { staleTime: POLL_HISTORY_MS, refetchInterval: POLL_HISTORY_MS },
@@ -178,13 +181,13 @@ export default function CorporateDashboard() {
         ? new Set(yieldByCorp.filter(c => !isUnassignedCode(c.corporateCode)).map(c => c.corporateCode)).size
         : 0,
       factoriesWithData: yieldByFactory ? new Set(yieldByFactory.map(f => f.factoryCode)).size : 0,
-      totalFactories: factories?.length ?? 0,
-      totalLines: lines?.length ?? 0,
-      totalMachines: machinesList?.length ?? 0,
+      totalFactories: overviewCounts?.factories ?? 0,
+      totalLines: overviewCounts?.lines ?? 0,
+      totalMachines: overviewCounts?.machines ?? 0,
       avgYield: Math.round(avgYield * 100) / 100,
       avgOEE: realAvgOEE,
     };
-  }, [dashboardStats, yieldByCorp, yieldByFactory, factories, lines, machinesList, realAvgOEE]);
+  }, [dashboardStats, yieldByCorp, yieldByFactory, overviewCounts, realAvgOEE]);
 
   // W1-P2: nhãn hiển thị cho nhóm inspection chưa gán tập đoàn (corporateCode
   // null/'N/A' phía server) — gộp một dòng, style muted, xếp CUỐI danh sách và

@@ -591,6 +591,9 @@ const OPERATOR_ROUTE_WARMERS: Record<string, () => Promise<unknown>> = {
   "/device-monitor": () => import("./pages/DeviceHub"),
   "/oee-dashboard": () => import("./pages/OEEDashboard"),
   "/wip-dashboard": () => import("./pages/WipLineBalance"),
+  // doc 67 W6 — hai màn command trực-ca cũng direct-load qua RouteGuard nối tiếp auth.
+  "/control-tower": () => import("./pages/ControlTower"),
+  "/command-center": () => import("./pages/CommandCenter"),
 };
 
 function useOperatorRouteWarmer() {

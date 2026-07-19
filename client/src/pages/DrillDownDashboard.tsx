@@ -20,7 +20,7 @@
  */
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -40,6 +40,13 @@ import {
 } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import {
   DrillSpine,
@@ -96,6 +103,40 @@ const DRILLDOWN_EVENT_KINDS: ReadonlySet<EcosystemKind> = new Set<EcosystemKind>
   "quality_gate",
 ]);
 
+/**
+ * doc 67 W6 — kỳ dữ liệu của drill-down. Trước đây số liệu là "toàn bộ lịch sử
+ * cắt 50k" không khai kỳ; giờ người dùng chọn kỳ tường minh, mặc định "Hôm nay".
+ * State đặt trong URL (?range=...) để giữ nguyên khi F5 / chia sẻ link.
+ */
+type DrillRange = "today" | "7d" | "30d" | "all";
+
+const DRILL_RANGE_LABELS: Record<DrillRange, string> = {
+  today: "Hôm nay",
+  "7d": "7 ngày qua",
+  "30d": "30 ngày qua",
+  all: "Toàn thời gian",
+};
+
+function parseDrillRange(raw: string | null): DrillRange {
+  return raw === "7d" || raw === "30d" || raw === "all" || raw === "today"
+    ? raw
+    : "today";
+}
+
+/**
+ * Mốc bắt đầu kỳ, chặt về 00:00 địa phương — GIÁ TRỊ ổn định trong ngày (đổi
+ * identity mỗi render không sao: react-query hash input theo cấu trúc), chỉ đổi
+ * khi sang ngày mới hoặc đổi kỳ. 'all' → undefined = không lọc thời gian.
+ */
+function drillRangeFrom(range: DrillRange): Date | undefined {
+  if (range === "all") return undefined;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (range === "7d") start.setDate(start.getDate() - 6);
+  else if (range === "30d") start.setDate(start.getDate() - 29);
+  return start;
+}
+
 /** Normalise any tier's stat into the shared KPI row. */
 function toRow(item: AnyStat): DrillRow {
   const id = "id" in item ? item.id : undefined;
@@ -117,25 +158,40 @@ function toRow(item: AnyStat): DrillRow {
 export default function DrillDownDashboard(): React.JSX.Element {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const [drillState, setDrillState] = useState<DrillDownState>({ level: "corporate" });
+
+  // ── doc 67 W6: kỳ dữ liệu — nguồn sự thật là URL (?range=today|7d|30d|all),
+  //    mặc định "Hôm nay". Đổi kỳ chỉ ghi URL (replace) → không rác history. ──
+  const range = parseDrillRange(new URLSearchParams(search).get("range"));
+  const rangeFrom = drillRangeFrom(range);
+  const rangeLabel = DRILL_RANGE_LABELS[range];
+  const handleRangeChange = useCallback(
+    (value: string) => {
+      setLocation(`/drill-down?range=${parseDrillRange(value)}`, { replace: true });
+    },
+    [setLocation],
+  );
+  // Input kỳ truyền xuống cả 4 tầng (máy cũng nhận — thiếu thì tổng các tầng lệch).
+  const periodInput = rangeFrom ? { from: rangeFrom } : {};
 
   // ── Queries per level. Realtime = socket-first (U1 invalidate); refetchInterval
   //    60s is the POLL FALLBACK so an enabled level never freezes if the socket
   //    drops. Only the enabled level polls. ────────────────────────────────────
   const { data: corporateStats, isLoading: corporateLoading, dataUpdatedAt: corporateUpdatedAt } = trpc.drillDown.corporateStats.useQuery(
-    undefined,
+    rangeFrom ? { from: rangeFrom } : undefined,
     { enabled: drillState.level === "corporate", refetchInterval: 60_000 },
   );
   const { data: factoryStats, isLoading: factoryLoading, dataUpdatedAt: factoryUpdatedAt } = trpc.drillDown.factoriesByCorporate.useQuery(
-    { corporateCode: drillState.corporateCode! },
+    { corporateCode: drillState.corporateCode!, ...periodInput },
     { enabled: drillState.level === "factory" && !!drillState.corporateCode, refetchInterval: 60_000 },
   );
   const { data: lineStats, isLoading: lineLoading, dataUpdatedAt: lineUpdatedAt } = trpc.drillDown.linesByFactory.useQuery(
-    { factoryId: drillState.factoryId! },
+    { factoryId: drillState.factoryId!, ...periodInput },
     { enabled: drillState.level === "line" && !!drillState.factoryId, refetchInterval: 60_000 },
   );
   const { data: machineStats, isLoading: machineLoading, dataUpdatedAt: machineUpdatedAt } = trpc.drillDown.machinesByLine.useQuery(
-    { lineId: drillState.lineId! },
+    { lineId: drillState.lineId!, ...periodInput },
     { enabled: drillState.level === "machine" && !!drillState.lineId, refetchInterval: 60_000 },
   );
 
@@ -343,6 +399,28 @@ export default function DrillDownDashboard(): React.JSX.Element {
 
         {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
         <RelatedViews pageId="drill-down" />
+
+        {/* doc 67 W6 — bộ chọn kỳ dữ liệu + nhãn kỳ ngay cạnh 4 MetricCard tổng:
+            số liệu bên dưới LUÔN khai rõ thuộc kỳ nào (trước đây là "toàn bộ
+            lịch sử cắt 50k" không khai kỳ). State kỳ nằm trong URL (?range=). */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            Kỳ dữ liệu:{" "}
+            <span className="font-medium text-foreground">{rangeLabel}</span>
+          </p>
+          <Select value={range} onValueChange={handleRangeChange}>
+            {/* W4 touch: min-h-11 (44px) — operator panel-PC với găng tay. */}
+            <SelectTrigger className="min-h-11 w-[180px]" aria-label="Chọn kỳ dữ liệu">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Hôm nay</SelectItem>
+              <SelectItem value="7d">7 ngày</SelectItem>
+              <SelectItem value="30d">30 ngày</SelectItem>
+              <SelectItem value="all">Toàn thời gian</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Summary rollup — real inspection metrics only (no fabricated OEE). */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -30,85 +30,78 @@ type FactoryDrillStat = {
   isUnassigned?: boolean;
 };
 
+/**
+ * doc 67 W6 — kỳ dữ liệu optional cho các tầng drill. Không truyền = toàn thời gian
+ * (client /drill-down mặc định gửi kỳ "Hôm nay"). superjson transformer → z.date()
+ * đi qua wire nguyên bản.
+ */
+const drillPeriodInput = z.object({
+  from: z.date().optional(),
+  to: z.date().optional(),
+});
+
 export const drillDownRouter = router({
   // Get stats by corporate
+  // doc 67 W6: trước đây fetch tới 50.000 row inspection rồi group bằng Map trong
+  // Node (mỗi client poll 60s + socket-invalidate → full-scan lặp). Giờ GROUP BY
+  // COALESCE(corporateCode,'Unknown') thẳng trong PG (getDrillStatsByCorporate) —
+  // giữ nguyên shape trả về + sentinel W1 + access-control (corporate/factory
+  // assignment OR, không assignment → rỗng, hệt getProductInspections cũ).
   corporateStats: protectedProcedure
-    .query(async ({ ctx }) => {
-      // Get inspections grouped by corporate code
-      const { data: inspections } = await db.getProductInspections({ 
-        limit: 50000,
+    .input(drillPeriodInput.optional())
+    .query(async ({ ctx, input }) => {
+      const stats = await db.getDrillStatsByCorporate({
+        startDate: input?.from,
+        endDate: input?.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
-      // Group by corporate code
-      const corporateMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
-      
-      for (const inspection of inspections) {
-        const corpCode = inspection.corporateCode || UNASSIGNED_CORPORATE_CODE;
-        
-        if (!corporateMap.has(corpCode)) {
-          corporateMap.set(corpCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
-        }
-        
-        const stats = corporateMap.get(corpCode)!;
-        stats.total++;
-        if (inspection.overallResult === 'OK') stats.ok++;
-        else if (inspection.overallResult === 'NG') stats.ng++;
-        else if (inspection.overallResult === 'NTF') stats.ntf++;
-      }
-      
-      return Array.from(corporateMap.entries()).map(([code, stats]) => ({
-        code,
-        name: code,
-        total: stats.total,
-        ok: stats.ok,
-        ng: stats.ng,
-        ntf: stats.ntf,
-        yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+
+      return stats.map(s => ({
+        code: s.code,
+        name: s.code,
+        total: s.total,
+        ok: s.ok,
+        ng: s.ng,
+        ntf: s.ntf,
+        yieldRate: s.total > 0 ? (s.ok / s.total) * 100 : 0,
         // W1: đánh dấu bucket "chưa gán tập đoàn" để client đổi nhãn + xếp cuối
         // (hàng này VẪN drill được — factoriesByCorporate hiểu sentinel = NULL).
-        isUnassigned: code === UNASSIGNED_CORPORATE_CODE ? (true as const) : undefined,
+        isUnassigned: s.code === UNASSIGNED_CORPORATE_CODE ? (true as const) : undefined,
       })).sort((a, b) => b.total - a.total);
     }),
 
   // Get factories by corporate
   factoriesByCorporate: protectedProcedure
-    .input(z.object({ corporateCode: z.string() }))
+    .input(z.object({ corporateCode: z.string() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allFactories = await db.getFactories();
       // W1: 'Unknown' là sentinel "chưa gán tập đoàn" do corporateStats phát ra
-      // (corporateCode NULL) — không phải mã thật nên KHÔNG thể lọc eq() ở DB
-      // (trước đây trả rỗng → drill ngõ cụt). Lấy không lọc rồi giữ lại các
-      // inspection có corporateCode NULL/rỗng trong bộ nhớ.
+      // (corporateCode NULL/rỗng) — không phải mã thật nên KHÔNG lọc eq() mà match
+      // NULL/'' trong SQL (unassignedCorporate). doc 67 W6: group ở PG thay vì
+      // fetch 50k row rồi Map trong Node.
       const isUnassignedCorporate = input.corporateCode === UNASSIGNED_CORPORATE_CODE;
-      const { data: fetchedInspections } = await db.getProductInspections({
-        ...(isUnassignedCorporate ? {} : { corporateCode: input.corporateCode }),
-        limit: 50000,
+      const factoryAgg = await db.getDrillStatsByFactory({
+        ...(isUnassignedCorporate
+          ? { unassignedCorporate: true }
+          : { corporateCode: input.corporateCode }),
+        startDate: input.from,
+        endDate: input.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      const inspections = isUnassignedCorporate
-        ? fetchedInspections.filter(i => !i.corporateCode)
-        : fetchedInspections;
 
-      // Group inspections by factory code
+      // Bucket theo factoryCode (SQL đã COALESCE NULL/'' → 'Unknown' hệt JS cũ).
       const factoryStatsMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
-
-      for (const inspection of inspections) {
-        const factoryCode = inspection.factoryCode || 'Unknown';
-        
-        if (!factoryStatsMap.has(factoryCode)) {
-          factoryStatsMap.set(factoryCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
-        }
-        
-        const stats = factoryStatsMap.get(factoryCode)!;
-        stats.total++;
-        if (inspection.overallResult === 'OK') stats.ok++;
-        else if (inspection.overallResult === 'NG') stats.ng++;
-        else if (inspection.overallResult === 'NTF') stats.ntf++;
+      for (const agg of factoryAgg) {
+        factoryStatsMap.set(agg.factoryCode, {
+          total: agg.total,
+          ok: agg.ok,
+          ng: agg.ng,
+          ntf: agg.ntf,
+        });
       }
-      
+
       // Map to factories (khớp master data)
       const rows: FactoryDrillStat[] = allFactories
         .filter(f => factoryStatsMap.has(f.code))
@@ -158,46 +151,40 @@ export const drillDownRouter = router({
     }),
 
   // Get lines by factory
+  // doc 67 W6: group ở PG (JOIN machines→stations, GROUP BY lineId) thay vì fetch
+  // 50k row + lọc từng line trong Node. Semantics giữ nguyên: chỉ đếm inspection
+  // mang factoryCode của nhà máy; line không có inspection vẫn trả total=0.
   linesByFactory: protectedProcedure
-    .input(z.object({ factoryId: z.number() }))
+    .input(z.object({ factoryId: z.number() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allLines = await db.getProductionLines();
       const factory = await db.getFactoryById(input.factoryId);
       if (!factory) return [];
-      
+
       // Get workshops for this factory
       const allWorkshops = await db.getWorkshops();
       const factoryWorkshops = allWorkshops.filter(w => w.factoryId === input.factoryId);
       const workshopIds = factoryWorkshops.map(w => w.id);
-      
-      const { data: inspections } = await db.getProductInspections({ 
+
+      // Get lines for this factory (via workshops)
+      const factoryLines = allLines.filter(l => workshopIds.includes(l.workshopId));
+
+      const lineAgg = await db.getDrillStatsByLine({
         factoryCode: factory.code,
-        limit: 50000,
+        startDate: input.from,
+        endDate: input.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
-      // Get lines for this factory (via workshops)
-      const factoryLines = allLines.filter(l => workshopIds.includes(l.workshopId));
-      
-      // Group inspections by machine, then map to lines
-      const allMachines = await db.getMachines();
-      const allStations = await db.getStations();
-      
+      const lineAggMap = new Map(lineAgg.map(a => [a.lineId, a]));
+
       return factoryLines.map(line => {
-        // Get stations for this line
-        const lineStations = allStations.filter(s => s.lineId === line.id);
-        const stationIds = lineStations.map(s => s.id);
-        
-        // Get machines for these stations
-        const lineMachineIds = allMachines.filter(m => stationIds.includes(m.stationId)).map(m => m.id);
-        const lineInspections = inspections.filter(i => lineMachineIds.includes(i.machineId));
-        
-        const total = lineInspections.length;
-        const ok = lineInspections.filter(i => i.overallResult === 'OK').length;
-        const ng = lineInspections.filter(i => i.overallResult === 'NG').length;
-        const ntf = lineInspections.filter(i => i.overallResult === 'NTF').length;
-        
+        const stats = lineAggMap.get(line.id);
+        const total = stats?.total ?? 0;
+        const ok = stats?.ok ?? 0;
+        const ng = stats?.ng ?? 0;
+        const ntf = stats?.ntf ?? 0;
+
         return {
           id: line.id,
           code: line.code,
@@ -212,8 +199,10 @@ export const drillDownRouter = router({
     }),
 
   // Get machines by line
+  // doc 67 W6: nhận kỳ from/to như 3 tầng trên — thiếu nó, drill tới tầng máy sẽ
+  // âm thầm đổi sang "toàn thời gian" và tổng các tầng lệch nhau (phản W1).
   machinesByLine: protectedProcedure
-    .input(z.object({ lineId: z.number() }))
+    .input(z.object({ lineId: z.number() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allMachines = await db.getMachines();
       const allStations = await db.getStations();
@@ -229,8 +218,10 @@ export const drillDownRouter = router({
       const machineIds = lineMachines.map(m => m.id);
       
       const results = await Promise.all(lineMachines.map(async (machine) => {
-        const { data: machineInspections } = await db.getProductInspections({ 
+        const { data: machineInspections } = await db.getProductInspections({
           machineId: machine.id,
+          startDate: input.from,
+          endDate: input.to,
           limit: 10000,
           userId: ctx.user.id,
           userRole: ctx.user.role as 'admin' | 'user',

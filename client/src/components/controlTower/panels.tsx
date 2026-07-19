@@ -40,6 +40,16 @@ import type { PanelKey } from "./personas";
 const POLL_FAST = 30_000;
 const POLL_SLOW = 120_000;
 
+/**
+ * W6 (doc 67) — poll-gate theo socket: trang ControlTower cấp trạng thái live
+ * (commandCenter.status.mode === "live") qua context; panel có nguồn ĐƯỢC socket
+ * invalidate (nhóm andon/alarm — xem scheduleRefresh của trang) tắt poll khi live
+ * (`refetchInterval: isLive ? false : POLL_x` — mẫu đúng sẵn có ở CommandCenter),
+ * poll chỉ còn là fallback khi socket rớt. Panel dữ liệu chậm / KHÔNG được socket
+ * invalidate (corporate, execSummary, topRisks, briefing) giữ poll như cũ.
+ */
+export const PanelLiveContext = React.createContext(false);
+
 const VALUE_TONE: Record<Tone, string> = {
   default: "text-foreground",
   success: "text-success",
@@ -319,7 +329,13 @@ function TopRisksPanel(): React.JSX.Element {
 /** ISA-18.2 alarm KPI health (rate, flood, standing). */
 function AlarmHealthPanel(): React.JSX.Element {
   const { t } = useTranslation();
-  const q = trpc.alarmKpi.summary.useQuery({ windowHours: 24 }, { refetchInterval: POLL_FAST, staleTime: 20_000 });
+  // W6 (doc 67): alarmKpi.summary được socket invalidate (nhóm andon/alarm) → khi
+  // live tắt poll; POLL_FAST chỉ là fallback lúc socket rớt.
+  const isLive = React.useContext(PanelLiveContext);
+  const q = trpc.alarmKpi.summary.useQuery(
+    { windowHours: 24 },
+    { refetchInterval: isLive ? false : POLL_FAST, staleTime: 20_000 },
+  );
   const d = q.data;
 
   // W1-P0: hai nguồn đếm cảnh báo khác phạm vi — panel này đếm PHÁT SINH trong 24h
@@ -344,7 +360,9 @@ function AlarmHealthPanel(): React.JSX.Element {
       isEmpty={!q.isLoading && !d}
       onRetry={q.refetch}
       dataUpdatedAt={q.dataUpdatedAt}
-      pollIntervalMs={POLL_FAST}
+      // W6: khi live không còn poll — ngưỡng stale nới theo POLL_SLOW để pill tuổi
+      // dữ liệu không "kêu oan" lúc socket im ắng (không có event = không có gì mới).
+      pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
       preset="stats"
       emptyText={t("controlTower.alarmHealth.empty", "No alarm activity in the window.")}
     >
@@ -624,7 +642,13 @@ function TopDowntimePanel(): React.JSX.Element {
 /** Andon board — active signals + open alerts (from dashboard.getAndonBoard). */
 function AndonRailPanel(): React.JSX.Element {
   const { t } = useTranslation();
-  const q = trpc.dashboard.getAndonBoard.useQuery({}, { refetchInterval: POLL_FAST, staleTime: 10_000 });
+  // W6 (doc 67): getAndonBoard được socket invalidate (nhóm andon/alarm) → khi live
+  // tắt poll; POLL_FAST chỉ là fallback lúc socket rớt.
+  const isLive = React.useContext(PanelLiveContext);
+  const q = trpc.dashboard.getAndonBoard.useQuery(
+    {},
+    { refetchInterval: isLive ? false : POLL_FAST, staleTime: 10_000 },
+  );
   const board = q.data;
   const andons = board?.andons ?? [];
   const open = andons.filter((a) => a.status !== "resolved");
@@ -651,7 +675,8 @@ function AndonRailPanel(): React.JSX.Element {
       isEmpty={!q.isLoading && open.length === 0}
       onRetry={q.refetch}
       dataUpdatedAt={q.dataUpdatedAt}
-      pollIntervalMs={POLL_FAST}
+      // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
+      pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
       preset="list"
       emptyText={t("controlTower.andonRail.empty", "No active Andon signals. All clear.")}
     >
@@ -678,7 +703,13 @@ function AndonRailPanel(): React.JSX.Element {
 /** Live unified alarm rail (from commandCenter.recentAlerts; page invalidates on socket events). */
 function LiveAlarmsPanel(): React.JSX.Element {
   const { t } = useTranslation();
-  const q = trpc.commandCenter.recentAlerts.useQuery({ limit: 30 }, { refetchInterval: POLL_FAST, staleTime: 5_000 });
+  // W6 (doc 67): recentAlerts được socket invalidate (nhóm andon/alarm) → khi live
+  // tắt poll; POLL_FAST chỉ là fallback lúc socket rớt (mẫu CommandCenter).
+  const isLive = React.useContext(PanelLiveContext);
+  const q = trpc.commandCenter.recentAlerts.useQuery(
+    { limit: 30 },
+    { refetchInterval: isLive ? false : POLL_FAST, staleTime: 5_000 },
+  );
   const alerts = q.data?.alerts ?? [];
   return (
     <PanelShell
@@ -692,7 +723,8 @@ function LiveAlarmsPanel(): React.JSX.Element {
       isEmpty={!q.isLoading && alerts.length === 0}
       onRetry={q.refetch}
       dataUpdatedAt={q.dataUpdatedAt}
-      pollIntervalMs={POLL_FAST}
+      // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
+      pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
       preset="list"
       emptyText={t("controlTower.liveAlarms.empty", "No active alarms. All clear.")}
     >

@@ -38,12 +38,17 @@ import { RelatedViews } from "@/components/RelatedViews";
 import { PageContainer, PageHeader, StatChip, StatChipRow } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
+import {
+  useEcosystemEvents,
+  type EcosystemEvent,
+  type EcosystemKind,
+} from "@/hooks/useEcosystemEvents";
 import { cn } from "@/lib/utils";
 
 import { LivePill } from "@/components/controlTower/PanelShell";
 import { PollFreshness } from "@/components/PollFreshness";
-import { PANEL_COMPONENTS } from "@/components/controlTower/panels";
+import { DeferredMount } from "@/components/DeferredMount";
+import { PANEL_COMPONENTS, PanelLiveContext } from "@/components/controlTower/panels";
 import {
   PERSONAS,
   PERSONA_META,
@@ -53,6 +58,11 @@ import {
   storePersona,
   type Persona,
 } from "@/components/controlTower/personas";
+
+// W6 (doc 67) — phân loại event của useEcosystemEvents cho invalidate chọn lọc:
+// nhóm cảnh báo (andon + các lớp alarm-class cùng họ) và nhóm sản lượng/chất lượng.
+const ALARM_EVENT_KINDS: readonly EcosystemKind[] = ["andon", "safety", "escalation", "anomaly", "spc"];
+const PRODUCTION_EVENT_KINDS: readonly EcosystemKind[] = ["inspection", "yield", "ng", "quality_gate"];
 
 export default function ControlTower(): React.JSX.Element {
   const { t } = useTranslation();
@@ -100,21 +110,40 @@ export default function ControlTower(): React.JSX.Element {
   // ── shared KPI strip ───────────────────────────────────────────────────────
   const kpiQ = trpc.commandCenter.kpiSummary.useQuery({}, { refetchInterval: 20_000, staleTime: 5_000 });
 
-  // ── realtime: socket invalidates active queries (debounced); poll is fallback ─
+  // ── realtime: socket invalidates SELECTIVELY per event kind (debounced); poll is fallback ─
+  // W6 (doc 67): trước đây MỖI event invalidate cả 8 query key (bão refetch khi stream
+  // dồn dập). Nay: debounce nâng 1,5s→5s, gom `kind` của các event trong cửa sổ rồi chỉ
+  // invalidate NHÓM nguồn tương ứng:
+  //   • andon/alarm-class → alarmKpi.summary + dashboard.getAndonBoard + commandCenter.recentAlerts
+  //     (đúng 3 nguồn được poll-gate trong panels.tsx — PanelLiveContext);
+  //   • inspection/yield  → drillDown.corporateStats + dashboard.getStats;
+  //   • oee               → mqttClient.getAllOEE (mean OEE live của panel corporate).
+  // executiveReport / aiInsight KHÔNG đi theo event — hai nguồn chậm này giữ poll riêng.
   const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleRefresh = useCallback(() => {
-    if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
-    invalidateTimer.current = setTimeout(() => {
-      void utils.commandCenter.kpiSummary.invalidate();
-      void utils.commandCenter.recentAlerts.invalidate();
-      void utils.warRoom.briefing.invalidate();
-      void utils.alarmKpi.summary.invalidate();
-      void utils.aiInsight.list.invalidate();
-      void utils.dashboard.getAndonBoard.invalidate();
-      void utils.dashboard.getStats.invalidate();
-      void utils.mqttClient.getAllOEE.invalidate();
-    }, 1_500);
-  }, [utils]);
+  const pendingKinds = useRef<Set<EcosystemKind>>(new Set());
+  const scheduleRefresh = useCallback(
+    (evt: EcosystemEvent) => {
+      pendingKinds.current.add(evt.kind);
+      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+      invalidateTimer.current = setTimeout(() => {
+        const kinds = pendingKinds.current;
+        pendingKinds.current = new Set();
+        if (ALARM_EVENT_KINDS.some((k) => kinds.has(k))) {
+          void utils.alarmKpi.summary.invalidate();
+          void utils.dashboard.getAndonBoard.invalidate();
+          void utils.commandCenter.recentAlerts.invalidate();
+        }
+        if (PRODUCTION_EVENT_KINDS.some((k) => kinds.has(k))) {
+          void utils.drillDown.corporateStats.invalidate();
+          void utils.dashboard.getStats.invalidate();
+        }
+        if (kinds.has("oee")) {
+          void utils.mqttClient.getAllOEE.invalidate();
+        }
+      }, 5_000);
+    },
+    [utils],
+  );
   useEcosystemEvents({ onEvent: scheduleRefresh });
   useEffect(
     () => () => {
@@ -123,15 +152,18 @@ export default function ControlTower(): React.JSX.Element {
     [],
   );
 
+  // W6 (doc 67): nút "Làm mới" — refetchType:'active' tường minh: chỉ query đang có
+  // observer (panel đang hiển thị) refetch ngay, phần còn lại chỉ bị đánh dấu stale.
   const refreshAll = useCallback(() => {
-    void utils.commandCenter.invalidate();
-    void utils.warRoom.invalidate();
-    void utils.alarmKpi.invalidate();
-    void utils.aiInsight.invalidate();
-    void utils.dashboard.invalidate();
-    void utils.mqttClient.getAllOEE.invalidate();
-    void utils.executiveReport.invalidate();
-    void utils.drillDown.invalidate();
+    const activeOnly = { refetchType: "active" as const };
+    void utils.commandCenter.invalidate(undefined, activeOnly);
+    void utils.warRoom.invalidate(undefined, activeOnly);
+    void utils.alarmKpi.invalidate(undefined, activeOnly);
+    void utils.aiInsight.invalidate(undefined, activeOnly);
+    void utils.dashboard.invalidate(undefined, activeOnly);
+    void utils.mqttClient.getAllOEE.invalidate(undefined, activeOnly);
+    void utils.executiveReport.invalidate(undefined, activeOnly);
+    void utils.drillDown.invalidate(undefined, activeOnly);
   }, [utils]);
 
   const panelKeys = PERSONA_PANELS[persona];
@@ -217,13 +249,29 @@ export default function ControlTower(): React.JSX.Element {
           />
         </div>
 
-        {/* Persona panel grid */}
-        <div className="grid gap-4 md:grid-cols-2">
-          {panelKeys.map((key) => {
-            const Panel = PANEL_COMPONENTS[key];
-            return <Panel key={key} />;
-          })}
-        </div>
+        {/* Persona panel grid.
+            W6 (doc 67): PanelLiveContext cấp trạng thái socket cho panel poll-gate
+            (refetchInterval: isLive ? false : POLL_x); hàng panel thứ 2 trở đi
+            (dưới fold ở 800px cao, grid md:grid-cols-2 → index ≥2) bọc DeferredMount
+            để first-paint chỉ mount KPI strip + hàng panel đầu. */}
+        <PanelLiveContext.Provider value={isLive}>
+          <div className="grid gap-4 md:grid-cols-2">
+            {panelKeys.map((key, idx) => {
+              const Panel = PANEL_COMPONENTS[key];
+              if (idx < 2) return <Panel key={key} />;
+              return (
+                <DeferredMount
+                  key={key}
+                  placeholder={
+                    <div className="h-64 animate-pulse rounded-lg border border-border bg-muted/30" aria-hidden="true" />
+                  }
+                >
+                  <Panel />
+                </DeferredMount>
+              );
+            })}
+          </div>
+        </PanelLiveContext.Provider>
       </PageContainer>
     </DashboardLayout>
   );

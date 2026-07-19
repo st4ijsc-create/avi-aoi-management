@@ -902,6 +902,30 @@ export async function getActiveAlertsCount() {
   return Number(result[0]?.count) || 0;
 }
 
+// ============ OVERVIEW ENTITY COUNTS (doc 67 W6, việc 4) ============
+// CorporateDashboard only needs the REGISTRY sizes for its KPI cards — it was
+// fetching factory.list + line.list + machine.list in full just to read .length.
+// One COUNT(*) round-trip instead; filters mirror the list procedures exactly
+// (getFactories / getProductionLines / getMachines all filter isActive = true —
+// soft-deletes on these tables are isActive=false tombstones), so the numbers
+// match what the lists would have counted.
+export async function getOverviewEntityCounts() {
+  const db = await getDb();
+  if (!db) return { factories: 0, lines: 0, machines: 0 };
+
+  const [result] = await db.select({
+    factories: sql<number>`(SELECT count(*) FROM ${factories} WHERE ${factories.isActive} = true)`,
+    lines: sql<number>`(SELECT count(*) FROM ${productionLines} WHERE ${productionLines.isActive} = true)`,
+    machines: sql<number>`(SELECT count(*) FROM ${machines} WHERE ${machines.isActive} = true)`,
+  }).from(sql`(SELECT 1) AS one`);
+
+  return {
+    factories: Number(result?.factories) || 0,
+    lines: Number(result?.lines) || 0,
+    machines: Number(result?.machines) || 0,
+  };
+}
+
 // ============ DAILY STATS ============
 export async function getDailyStats(factoryId?: number, workshopId?: number, days: number = 30) {
   const db = await getDb();
@@ -3045,4 +3069,186 @@ export async function getMeasurementPointImagesByProduct(params: {
   }
 
   return grouped;
+}
+
+// ============ DRILL-DOWN AGGREGATES (doc 67 W6) ============
+//
+// Thay thế đường "fetch 50k row → group bằng Map trong Node" của drillDownRouter
+// (annotationRouters.ts) bằng GROUP BY trực tiếp trên product_inspections.
+// Contract shape của router GIỮ NGUYÊN — các hàm này chỉ trả aggregate thô
+// (bucket + đếm), router map sang code/name/yieldRate/isUnassigned như cũ.
+
+/** 1 bucket aggregate thô của drill-down (đếm theo overallResult). */
+export interface DrillAggRow {
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+}
+
+/**
+ * Access-control cho drill-down — SAO NGUYÊN logic của getProductInspections
+ * (inspection.ts): non-admin bị giới hạn theo corporate-assignment OR
+ * factory-assignment; không có assignment nào → KHÔNG có quyền (trả granted=false,
+ * caller trả []).
+ */
+async function drillAccessCondition(
+  userId?: number,
+  userRole?: 'admin' | 'user',
+): Promise<{ granted: boolean; condition?: SQL }> {
+  if (!userId || userRole === 'admin') return { granted: true };
+  const corporateAssignments = await getUserCorporateAssignments(userId);
+  const factoryAssignments = await getUserFactoryAssignments(userId);
+  const accessConditions: SQL[] = [];
+  if (corporateAssignments.length > 0) {
+    accessConditions.push(
+      inArray(productInspections.corporateCode, corporateAssignments.map(a => a.corporateCode)),
+    );
+  }
+  if (factoryAssignments.length > 0) {
+    accessConditions.push(
+      inArray(productInspections.factoryCode, factoryAssignments.map(a => a.factoryCode)),
+    );
+  }
+  if (accessConditions.length === 0) return { granted: false };
+  return { granted: true, condition: or(...accessConditions) as SQL };
+}
+
+/** Các cột đếm dùng chung cho 3 hàm drill (đếm theo overallResult). */
+const drillCountColumns = {
+  total: sql<number>`COUNT(*)`,
+  ok: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+  ng: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+  ntf: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+};
+
+/**
+ * Tầng CORPORATE: GROUP BY COALESCE(NULLIF(corporateCode,''),'Unknown') — bucket
+ * 'Unknown' = sentinel "chưa gán tập đoàn" (W1), khớp hệt hành vi JS cũ
+ * `corporateCode || 'Unknown'` (NULL và chuỗi rỗng đều vào bucket sentinel).
+ */
+export async function getDrillStatsByCorporate(filters: {
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { code: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const corpBucket = sql<string>`COALESCE(NULLIF(${productInspections.corporateCode}, ''), 'Unknown')`;
+
+  const rows = await db
+    .select({ code: corpBucket, ...drillCountColumns })
+    .from(productInspections)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(corpBucket);
+
+  return rows.map(r => ({
+    code: r.code,
+    total: Number(r.total),
+    ok: Number(r.ok),
+    ng: Number(r.ng),
+    ntf: Number(r.ntf),
+  }));
+}
+
+/**
+ * Tầng FACTORY: GROUP BY COALESCE(NULLIF(factoryCode,''),'Unknown') trong 1
+ * corporate. `unassignedCorporate: true` = drill từ sentinel 'Unknown' (W1) —
+ * match corporateCode NULL/rỗng thay vì eq().
+ */
+export async function getDrillStatsByFactory(filters: {
+  corporateCode?: string;
+  /** true → lọc corporateCode NULL/'' (drill từ bucket "Chưa gán tập đoàn"). */
+  unassignedCorporate?: boolean;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { factoryCode: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [];
+  if (filters.unassignedCorporate) {
+    conditions.push(
+      sql`(${productInspections.corporateCode} IS NULL OR ${productInspections.corporateCode} = '')`,
+    );
+  } else if (filters.corporateCode) {
+    conditions.push(eq(productInspections.corporateCode, filters.corporateCode));
+  }
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const factoryBucket = sql<string>`COALESCE(NULLIF(${productInspections.factoryCode}, ''), 'Unknown')`;
+
+  const rows = await db
+    .select({ factoryCode: factoryBucket, ...drillCountColumns })
+    .from(productInspections)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(factoryBucket);
+
+  return rows.map(r => ({
+    factoryCode: r.factoryCode,
+    total: Number(r.total),
+    ok: Number(r.ok),
+    ng: Number(r.ng),
+    ntf: Number(r.ntf),
+  }));
+}
+
+/**
+ * Tầng LINE: JOIN machines→stations rồi GROUP BY stations."lineId" trong 1
+ * factory (lọc theo factoryCode của inspection — giữ hệt semantics cũ: chỉ đếm
+ * inspection mang factoryCode của nhà máy đang drill). INNER JOIN đồng nghĩa
+ * machine không gắn station bị loại — khớp JS cũ (stationIds.includes(null) = false).
+ */
+export async function getDrillStatsByLine(filters: {
+  factoryCode: string;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { lineId: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [eq(productInspections.factoryCode, filters.factoryCode)];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const rows = await db
+    .select({ lineId: stations.lineId, ...drillCountColumns })
+    .from(productInspections)
+    .innerJoin(machines, eq(productInspections.machineId, machines.id))
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .where(and(...conditions))
+    .groupBy(stations.lineId);
+
+  return rows
+    .filter(r => r.lineId != null)
+    .map(r => ({
+      lineId: Number(r.lineId),
+      total: Number(r.total),
+      ok: Number(r.ok),
+      ng: Number(r.ng),
+      ntf: Number(r.ntf),
+    }));
 }
