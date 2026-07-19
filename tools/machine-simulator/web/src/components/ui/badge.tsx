@@ -18,7 +18,9 @@ const badgeVariants = cva(
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
+        // See button.tsx link variant: --primary-text (not --primary) is the AA-safe
+        // text-on-surface color — --primary itself is tuned as a button fill.
+        link: "text-primary-text underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {

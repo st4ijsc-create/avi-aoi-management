@@ -1,130 +1,303 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/inter";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-theme="dark"] *));
 
-@theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
-    --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
-}
+/* ==========================================================================
+   ST4I Design System — white-dominant + navy
+   Single source of truth: Doc 65 §2 (docs/ECOSYSTEM/65_SIMULATOR_UI_WEB_UPGRADE_PLAN)
+   Raw palette lives in :root / :root[data-theme="dark"] below; the @theme
+   block only maps those custom properties onto Tailwind utility names.
+   NEVER hardcode a hex value in a component — use these tokens.
+   ========================================================================== */
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+  /* Surfaces (white-dominant) */
+  --surface-base: #ffffff;
+  --surface-subtle: #f8fafc;
+  --surface-muted: #f1f5f9;
+  --surface-card: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* Navy — brand + primary */
+  --navy-50: #f4f7fc;
+  --navy-100: #e8eef9;
+  --navy-500: #2749a8;
+  --navy-600: #1e3a8a;
+  --navy-700: #163561;
+  --navy-800: #10254a;
+  --navy-900: #0b1b34;
+
+  /* Text */
+  --text-strong: #0b1b34;
+  --text-body: #334155;
+  /* Doc 65's #64748b clears AA (4.76:1) on surface-base/subtle but drops to
+     4.34:1 on surface-muted — a real pairing that occurs (e.g. inline code
+     chips, muted captions on a muted panel). Darkened just enough to hold
+     4.5:1 against surface-muted too (axe-verified); still reads as the same
+     "muted" tier, clearly lighter than text-body. */
+  --text-muted: #5e6d85;
+
+  /* Accent (teal) */
+  --accent-100: #e2f5f6;
+  --accent-500: #0e9aa7;
+  --accent-600: #0b7e89;
+
+  /* Status — solid hue (dots/borders/tint fills, ≥3:1 non-text contrast on white) */
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --info: #2563eb;
+  --neutral: #94a3b8;
+  /* Status text — AA-safe (≥4.5:1) variant for colored labels on their own
+     10% tint fill (axe-verified against the *composited* tint, not pure
+     white — a same-hue tint background lowers the effective contrast, so
+     e.g. plain `--danger` text on `--danger`/10 only clears 4.13:1 even
+     though it clears 4.83:1 on pure white). Never set `neutral` as text
+     color — it's an idle/disabled indicator only, always paired with a
+     normal-contrast text label. */
+  --ok-text: #166534;
+  --warn-text: #b45309;
+  --danger-text: #b91c1c;
+  --info-text: #1d4ed8;
+
+  /* Radius */
+  --radius: 0.5rem; /* 8px — controls (button/input) */
+  --radius-card: 0.75rem; /* 12px — card/dialog */
+  --radius-pill: 999px;
+
+  /* Shadow — navy-tinted, not pure black, for a calmer/cohesive elevation */
+  --shadow-color: 220 45% 12%;
+  --shadow-2xs: 0 1px 1px 0 hsl(var(--shadow-color) / 0.03);
+  --shadow-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.05);
+  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 1px 1px -1px hsl(var(--shadow-color) / 0.04);
+  --shadow-md: 0 6px 16px -4px hsl(var(--shadow-color) / 0.1), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.18), 0 6px 12px -4px hsl(var(--shadow-color) / 0.08);
+  --shadow-xl: 0 28px 64px -16px hsl(var(--shadow-color) / 0.22), 0 10px 20px -8px hsl(var(--shadow-color) / 0.1);
+  --shadow-2xl: 0 40px 96px -20px hsl(var(--shadow-color) / 0.28);
+
+  /* --- shadcn semantic tokens, repointed onto the palette above --- */
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: #ffffff;
+  --popover-foreground: var(--text-strong);
+  --primary: var(--navy-600);
+  --primary-foreground: #ffffff;
+  /* --primary tuned as a *button fill* (white text on top). Used bare as
+     *text* on a surface (Button/Badge "link" variant, brand-accent labels)
+     it's plenty safe in light mode (navy-600 on white = 10:1) but not in
+     dark mode (see override below) — always use --primary-text for text. */
+  --primary-text: var(--primary);
+  --secondary: var(--navy-100);
+  --secondary-foreground: var(--navy-700);
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-600);
+  /* Button/Badge "destructive" variants render this as text on a bg-destructive/10
+     tint of itself — plain --danger only clears 4.13:1 there (axe-verified), so
+     this semantic token uses the tint-safe --danger-text instead. Borders/rings
+     that reference --destructive stay just as legible with the darker red. */
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: var(--navy-600);
+  --chart-1: var(--navy-600);
+  --chart-2: var(--accent-500);
+  --chart-3: #7c3aed;
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--surface-subtle);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--navy-600);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--navy-100);
+  --sidebar-accent-foreground: var(--navy-700);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--navy-600);
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+:root[data-theme="dark"] {
+  /* Dark surfaces built from the navy scale, not a generic gray dark mode —
+     keeps the brand identity when the operator flips to dark. */
+  --surface-base: var(--navy-900);
+  --surface-subtle: var(--navy-800);
+  --surface-muted: #16264a;
+  --surface-card: var(--navy-800);
+  --border: #24345c;
+  --border-strong: #35477a;
+
+  --text-strong: #f8fafc;
+  --text-body: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-100: #123338;
+  --accent-500: #14b8c4;
+  --accent-600: #45cdd7;
+
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --neutral: #94a3b8;
+  /* Mostly light enough against navy-800/900 to read as text directly —
+     except `danger` composited into its own bg-destructive/10 button tint,
+     which measured 4.17:1 (axe); bumped to red-300 (5.2:1+) to clear it. */
+  --ok-text: var(--ok);
+  --warn-text: var(--warn);
+  --danger-text: #fca5a5;
+  --info-text: var(--info);
+
+  --shadow-color: 220 60% 2%;
+
+  --background: var(--surface-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--navy-800);
+  --popover-foreground: var(--text-strong);
+  --primary: #4a6cc4;
+  --primary-foreground: #f8fafc;
+  /* #4a6cc4 is tuned as a button fill (4.96:1 with white text) — too dark
+     to use bare as text on a navy-800/900 surface (3.05:1, axe-verified).
+     Lighter indigo for text-only usage (Button/Badge "link" variant,
+     brand-accent labels); 5:1+ against navy-800. */
+  --primary-text: #7b93d6;
+  --secondary: #1c2c54;
+  --secondary-foreground: #dbe4fa;
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--accent-100);
+  --accent-foreground: var(--accent-600);
+  --destructive: var(--danger-text);
+  --input: var(--border);
+  --ring: #6f8ddb;
+  --chart-1: #6f8ddb;
+  --chart-2: var(--accent-500);
+  --chart-3: #a78bfa;
+  --chart-4: var(--ok);
+  --chart-5: var(--warn);
+  --sidebar: var(--navy-900);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: #4a6cc4;
+  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-accent: #1c2c54;
+  --sidebar-accent-foreground: #dbe4fa;
+  --sidebar-border: var(--border);
+  --sidebar-ring: #6f8ddb;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces */
+  --color-surface-base: var(--surface-base);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-card: var(--surface-card);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  /* Navy scale */
+  --color-navy-50: var(--navy-50);
+  --color-navy-100: var(--navy-100);
+  --color-navy-500: var(--navy-500);
+  --color-navy-600: var(--navy-600);
+  --color-navy-700: var(--navy-700);
+  --color-navy-800: var(--navy-800);
+  --color-navy-900: var(--navy-900);
+
+  /* Text */
+  --color-text-strong: var(--text-strong);
+  --color-text-body: var(--text-body);
+  --color-text-muted: var(--text-muted);
+
+  /* Accent */
+  --color-accent-100: var(--accent-100);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+
+  /* Status — solid hue: dots, borders, chart series, ≥10% tint fills */
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-neutral: var(--neutral);
+  /* Status text — always use these (not the solid hue above) for colored
+     type, to hold AA 4.5:1 on white/tint backgrounds. */
+  --color-ok-text: var(--ok-text);
+  --color-warn-text: var(--warn-text);
+  --color-danger-text: var(--danger-text);
+  --color-info-text: var(--info-text);
+
+  /* Radius */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: calc(var(--radius-card) * 1.34);
+  --radius-3xl: calc(var(--radius-card) * 1.6);
+  --radius-4xl: var(--radius-pill);
+
+  /* shadcn semantic colors */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
-    @apply bg-background text-foreground;
-    }
+    @apply bg-background text-foreground antialiased;
+  }
   html {
     @apply font-sans;
-    }
+  }
+  ::selection {
+    background-color: var(--navy-100);
+    color: var(--navy-900);
+  }
+}
+
+@layer utilities {
+  /* Numeric readouts (KPI tiles, tables, counters) always align on tabular figures */
+  .font-numeric {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
 }
