@@ -104,8 +104,37 @@ export const vi = {
   machines: {
     title: "Danh sách máy",
     description:
-      "Danh sách đầy đủ, lọc theo nhóm thiết bị và loại driver. Bấm vào một thẻ máy ở Bảng điều khiển để tới thẳng trang chi tiết.",
-    comingSoon: "Sẽ có trong tác vụ sau",
+      "Toàn bộ đội máy mô phỏng — tìm và lọc theo nhóm thiết bị, driver hoặc trạng thái. Bấm vào một dòng để xem chi tiết.",
+    onlineCount: (vars: Vars) => `${vars.online} / ${vars.total} đang hoạt động`,
+    search: {
+      label: "Tìm máy",
+      placeholder: "Tìm theo mã máy…",
+    },
+    filters: {
+      type: "Nhóm thiết bị",
+      status: "Trạng thái",
+      all: "Tất cả",
+      clear: "Xóa bộ lọc",
+    },
+    shownLabel: "hiển thị",
+    ofTotal: (vars: Vars) => `trên ${vars.count} máy`,
+    table: {
+      code: "Mã máy",
+      type: "Nhóm thiết bị",
+      driver: "Driver",
+      status: "Trạng thái",
+      passRate: "Tỷ lệ đạt",
+      cycles: "Chu kỳ",
+      trend: "Xu hướng",
+      viewAction: "Xem chi tiết",
+      rowAria: (vars: Vars) => `Xem chi tiết máy ${vars.code}`,
+    },
+    empty: {
+      noMachinesTitle: "Chưa có máy nào",
+      noMachinesDescription: "Đội máy mô phỏng hiện chưa có máy nào. Thêm một máy mới qua Onboarding để bắt đầu.",
+      noMatchTitle: "Không tìm thấy máy phù hợp",
+      noMatchDescription: "Không có máy nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
+    },
   },
 
   notFound: {

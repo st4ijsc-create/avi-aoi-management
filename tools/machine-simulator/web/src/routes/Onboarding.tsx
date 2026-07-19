@@ -692,9 +692,11 @@ export default function Onboarding() {
     )
   }
 
+  /** "Xem đội máy" — W2 built the real Machine List, so this now lands there (was `/`, the Dashboard,
+   * back when `/machines` was still a placeholder — see Machines.tsx's own header comment history). */
   const handleLoadFleet = () => {
     if (!isRunning) startFleet.mutate()
-    navigate("/")
+    navigate("/machines")
   }
 
   /** "Xem máy vừa thêm" — jumps straight to the just-joined machine's own detail page (`/machines/

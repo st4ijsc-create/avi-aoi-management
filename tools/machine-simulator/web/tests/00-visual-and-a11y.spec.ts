@@ -5,6 +5,7 @@ import {
   gotoDashboard,
   gotoInspector,
   gotoMachineDetail,
+  gotoMachines,
   gotoOnboarding,
   gotoScenario,
   gotoSettings,
@@ -47,6 +48,13 @@ const SCREENS: ScreenCase[] = [
     visit: async (page, theme) => {
       await primeAppStorage(page, { theme })
       await gotoDashboard(page)
+    },
+  },
+  {
+    slug: "machines",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoMachines(page)
     },
   },
   {

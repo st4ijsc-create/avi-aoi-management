@@ -23,6 +23,14 @@ export async function gotoDashboard(page: Page): Promise<void> {
   await expect(page.getByText(viDict.dashboard.kpi.machinesOnline)).toBeVisible()
 }
 
+export async function gotoMachines(page: Page): Promise<void> {
+  await page.goto("/machines")
+  await expect(page.getByRole("heading", { name: viDict.machines.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  // Past the skeleton — the table header only renders once `useFleet()` has resolved at least once.
+  await expect(page.getByRole("columnheader", { name: viDict.machines.table.code })).toBeVisible()
+}
+
 export async function gotoMachineDetail(page: Page, code: string): Promise<void> {
   await page.goto(`/machines/${code}`)
   await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })

@@ -101,8 +101,37 @@ export const en: Dictionary = {
   machines: {
     title: "Machines",
     description:
-      "Full roster with filters by device class and driver kind. Click a card on the Dashboard to jump straight to a machine's detail view.",
-    comingSoon: "Coming in a later task",
+      "The full simulated fleet — search and filter by device class, driver, or status. Click a row to see its detail.",
+    onlineCount: (vars: Vars) => `${vars.online} / ${vars.total} online`,
+    search: {
+      label: "Search machines",
+      placeholder: "Search by machine code…",
+    },
+    filters: {
+      type: "Device class",
+      status: "Status",
+      all: "All",
+      clear: "Clear filters",
+    },
+    shownLabel: "shown",
+    ofTotal: (vars: Vars) => `of ${vars.count} machines`,
+    table: {
+      code: "Code",
+      type: "Type",
+      driver: "Driver",
+      status: "Status",
+      passRate: "Pass rate",
+      cycles: "Cycles",
+      trend: "Trend",
+      viewAction: "View detail",
+      rowAria: (vars: Vars) => `View machine ${vars.code}`,
+    },
+    empty: {
+      noMachinesTitle: "No machines yet",
+      noMachinesDescription: "The simulated fleet doesn't have any machines yet. Add one through Onboarding to get started.",
+      noMatchTitle: "No matching machines",
+      noMatchDescription: "No machine matches the current search or filters — try clearing them.",
+    },
   },
 
   notFound: {
