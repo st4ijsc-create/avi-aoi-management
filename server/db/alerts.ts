@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { eq, desc, and, gte } from "drizzle-orm";
+import { eq, desc, and, gte, isNull, type SQL } from "drizzle-orm";
 import {
   alertSettings,
   type InsertAlertSetting,
@@ -53,19 +53,23 @@ export async function deleteAlertSetting(id: number) {
   await db.delete(alertSettings).where(eq(alertSettings.id, id));
 }
 
-export async function getAlertHistory(alertSettingId?: number, limit: number = 50) {
+/**
+ * doc 67 W3 (việc 6): `onlyOpen` lọc acknowledged_at IS NULL Ở SERVER.
+ * Trước đây console lấy 50 bản MỚI NHẤT rồi client lọc đã-ack → nếu 50 bản gần
+ * nhất đều đã ack thì breach mở CŨ hơn biến mất khỏi console (mất cảnh báo).
+ * Với onlyOpen=true, limit áp lên đúng tập "đang mở" nên breach mở cũ vẫn hiện.
+ */
+export async function getAlertHistory(alertSettingId?: number, limit: number = 50, onlyOpen?: boolean) {
   const db = await getDb();
   if (!db) return [];
-  
-  if (alertSettingId) {
-    return db.select().from(alertHistory)
-      .where(eq(alertHistory.alertSettingId, alertSettingId))
-      .orderBy(desc(alertHistory.createdAt))
-      .limit(limit);
-  }
-  return db.select().from(alertHistory)
-    .orderBy(desc(alertHistory.createdAt))
-    .limit(limit);
+
+  const conditions: SQL[] = [];
+  if (alertSettingId) conditions.push(eq(alertHistory.alertSettingId, alertSettingId));
+  if (onlyOpen) conditions.push(isNull(alertHistory.acknowledgedAt));
+
+  const base = db.select().from(alertHistory);
+  const query = conditions.length > 0 ? base.where(and(...conditions)) : base;
+  return query.orderBy(desc(alertHistory.createdAt)).limit(limit);
 }
 
 export async function createAlertHistory(data: InsertAlertHistory) {

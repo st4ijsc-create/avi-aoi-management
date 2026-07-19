@@ -331,9 +331,12 @@ export const alertRouter = router({
     .input(z.object({
       alertSettingId: z.number().optional(),
       limit: z.number().min(1).max(100).optional(),
+      // doc 67 W3: lọc "chưa acknowledge" ở SERVER — không thì limit ăn vào các
+      // bản đã-ack mới nhất và breach mở cũ rớt khỏi console (mất cảnh báo).
+      onlyOpen: z.boolean().optional(),
     }))
     .query(async ({ input }) => {
-      return db.getAlertHistory(input.alertSettingId, input.limit);
+      return db.getAlertHistory(input.alertSettingId, input.limit, input.onlyOpen);
     }),
 
   // Cursor-based pagination for alert history
