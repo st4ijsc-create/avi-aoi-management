@@ -31,16 +31,6 @@ public sealed class FleetService : IDisposable
 
     private static readonly TimeSpan BurstDuration = TimeSpan.FromSeconds(4);
 
-    /// <summary>Fix-pass — bound on how long a CycleRateMultiplier-driven restart (<see cref="ApplyScenario"/>)
-    /// waits for the OUTGOING pipeline's background task to unwind before starting the replacement.
-    /// Short and best-effort: <see cref="StopLocked"/> already detaches the outgoing pipeline's
-    /// <see cref="EdgePipeline.Committed"/> handler SYNCHRONOUSLY (the fix that actually eliminates every
-    /// stray old-generation event reaching <see cref="Committed"/>/VMs, regardless of how long the old
-    /// task takes to unwind) — this wait is a further narrowing of the window where the old and new
-    /// pipeline's background loops could both be mid-flight against the same transport/EventBus, not the
-    /// thing that makes the restart safe.</summary>
-    private const int RestartAwaitTimeoutMs = 300;
-
     /// <summary>Floor on a scaled <see cref="MachineDescriptor.CycleSeconds"/> — guards against a
     /// runaway near-zero interval if a future caller ever combines an extreme
     /// <see cref="ScenarioConfig.CycleRateMultiplier"/> with an already-fast sim.</summary>
@@ -181,20 +171,34 @@ public sealed class FleetService : IDisposable
     /// so dragging the Defect/Fault sliders never causes the visible "cycle count reset to 1" a restart
     /// produces (see <c>MachineViewModel.Cycles</c>' own remarks on why a restart resets it).
     ///
-    /// Fix-pass: a multiplier-changed restart no longer does a bare <c>StopLocked(); StartLocked();</c>
-    /// back-to-back under one lock — <see cref="StopLocked"/> now detaches the outgoing pipeline's
-    /// <see cref="EdgePipeline.Committed"/> handler SYNCHRONOUSLY (so no straggling old-generation
-    /// reading can ever reach <see cref="Committed"/>/the VMs again, regardless of timing), and this
-    /// method additionally gives the outgoing background task up to <see cref="RestartAwaitTimeoutMs"/>
-    /// to actually unwind — awaited OUTSIDE <see cref="_gate"/> (never block other callers of
-    /// <see cref="Stop"/>/<see cref="ApplyScenario"/> while holding the lock) before starting the
-    /// replacement pipeline.
+    /// Fix-pass (round 2): a multiplier-changed restart is <c>StopLocked(); StartLocked();</c> back to
+    /// back under a SINGLE <see cref="_gate"/> acquisition (as it originally was) — NOT split across two
+    /// lock blocks with an unlocked gap between them (round 2 briefly tried that, awaiting the outgoing
+    /// task's unwind in the gap; round 3 removed it — see round 3 below for why). <see cref="StopLocked"/>
+    /// detaches the outgoing pipeline's <see cref="EdgePipeline.Committed"/> handler SYNCHRONOUSLY, right
+    /// there inside this same lock, before <see cref="StartLocked"/> subscribes the replacement's — that
+    /// detach alone is what makes it safe for no straggling old-generation reading to ever reach
+    /// <see cref="Committed"/>/the VMs again, regardless of how long the outgoing background task takes
+    /// to actually unwind (its own cancellation observes <see cref="_cts"/> on its next await and it ends
+    /// on its own, updating nothing since nothing is listening).
+    ///
+    /// Fix-pass (round 3): an earlier version of this method additionally blocked the CALLING thread on
+    /// <c>Task.WhenAny(outgoingTask, Task.Delay(...)).GetAwaiter().GetResult()</c> between the two lock
+    /// blocks, "to let the outgoing task unwind before starting the replacement". That await was never
+    /// load-bearing for correctness (the synchronous <c>Committed</c> detach above already guarantees no
+    /// stray events) and every caller of this method — <c>ScenarioViewModel.Burst()</c>,
+    /// <c>ApplyPresetAsync</c>, and every live slider tick via <c>OnCycleRateChanged</c> — runs on the UI
+    /// thread, so it silently blocked the UI for up to that bound on every Burst click, preset click, or
+    /// CycleRate slider drag: the exact <c>.GetAwaiter().GetResult()</c>-on-the-UI-thread anti-pattern
+    /// this project otherwise avoids everywhere else (see e.g. the Onboarding/Settings selftest remarks
+    /// on why blocking is dangerous). Removed — this method is restored to its original single-lock
+    /// <c>StopLocked(); StartLocked();</c> shape (see below), with only the synchronous <c>Committed</c>
+    /// detach carried forward from round 2.
     /// </summary>
     public void ApplyScenario(ScenarioConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        Task? outgoingTask = null;
         lock (_gate)
         {
             var previous = _scenario;
@@ -205,23 +209,7 @@ public sealed class FleetService : IDisposable
             var multiplierChanged = Math.Abs(config.CycleRateMultiplier - previous.CycleRateMultiplier) > 1e-9;
             if (IsRunning && multiplierChanged)
             {
-                outgoingTask = _runTask;
                 StopLocked(); // cancels + detaches Committed synchronously — see this method's own remarks
-            }
-        }
-
-        if (outgoingTask is not null)
-        {
-            // Best-effort: let the cancelled pipeline's Task.Run continuation actually finish before the
-            // replacement starts. Task.WhenAny never throws for a faulted awaited task (it just resolves
-            // to whichever completes first), and neither Task.Delay nor the outgoing task's own
-            // ConfigureAwait(false) continuation needs a captured SynchronizationContext — safe to block
-            // synchronously here from any thread (UI or the Burst-revert background continuation) with no
-            // deadlock risk.
-            Task.WhenAny(outgoingTask, Task.Delay(RestartAwaitTimeoutMs)).GetAwaiter().GetResult();
-
-            lock (_gate)
-            {
                 StartLocked();
             }
         }
