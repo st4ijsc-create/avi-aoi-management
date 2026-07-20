@@ -454,15 +454,39 @@ function TreeNode({
 const FLOOR_W = 34;
 const FLOOR_D = 24;
 
-function toScenePos(pos: { x: number; y: number; z?: number } | null, idx: number, n: number): [number, number, number] {
-  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-    const norm = pos.x >= 0 && pos.x <= 1 && pos.y >= 0 && pos.y <= 1;
-    if (norm) return [(pos.x - 0.5) * FLOOR_W, 0.5, (pos.y - 0.5) * FLOOR_D];
-    return [pos.x, typeof pos.z === "number" ? pos.z + 0.5 : 0.5, pos.y];
-  }
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n || 1)));
-  const c = idx % cols, r = Math.floor(idx / cols);
-  return [-FLOOR_W / 2 + 1.5 + c * 3, 0.5, FLOOR_D / 2 + 2 + r * 3];
+// doc 68 — LƯỚI GỌN: KHÔNG dùng toạ độ không-gian-thật của thiết bị nữa. Trước
+// đây mỗi máy đặt theo device.position (chuyền 3 + vài máy lẻ nằm rải rác xa cụm
+// chính) → hộp bao giãn rộng → auto-fit buộc zoom-ra → khoảng trống giữa canvas.
+// Nay xếp TOÀN BỘ N thiết bị thành LƯỚI ĐỀU compact lấp đầy khung. Vị-trí gán
+// theo THỨ TỰ SORT ỔN ĐỊNH (stationId→code→id) nên (a) cùng trạm/chuyền ở gần
+// nhau, (b) 1 thiết bị LUÔN ở 1 ô cố định (không nhảy ô giữa các lần render),
+// (c) id không đổi → click vẫn mở đúng ContextDrawer.
+const GRID_SPACING = 2.2; // khoảng cách tâm-tâm giữa 2 ô (khối máy rộng 1.4u)
+function gridPositions(devices: TwinDevice[]): [number, number, number][] {
+  const n = devices.length;
+  if (n === 0) return [];
+  // thứ tự xếp ổn định: gom theo trạm (≈ chuyền) → mã máy → id chốt tie-break.
+  const order = devices
+    .map((d, i) => ({ i, d }))
+    .sort((a, b) => {
+      const sa = a.d.stationId ?? Number.MAX_SAFE_INTEGER;
+      const sb = b.d.stationId ?? Number.MAX_SAFE_INTEGER;
+      if (sa !== sb) return sa - sb;
+      const c = a.d.code.localeCompare(b.d.code);
+      return c !== 0 ? c : a.d.id.localeCompare(b.d.id);
+    });
+  // khung ~4:3 → cols = ⌈√(n·1.4)⌉ (rộng hơn cao); tâm lưới tại gốc toạ độ.
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.4)));
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const out = new Array<[number, number, number]>(n);
+  order.forEach((o, k) => {
+    const col = k % cols;
+    const row = Math.floor(k / cols);
+    const x = (col - (cols - 1) / 2) * GRID_SPACING;
+    const z = (row - (rows - 1) / 2) * GRID_SPACING;
+    out[o.i] = [x, 0.5, z]; // y = 0.5 (mặt sàn) giữ nguyên
+  });
+  return out;
 }
 
 function TwinBlock({
@@ -529,7 +553,7 @@ function CompactTwinScene({
   // dưới (nguyên nhân "mất cân đối" chính, không phải tỷ lệ pane). Trước đây camera
   // cố định [0,24.5,30.6] nhìn gốc toạ độ nên cụm máy lệch tâm & thu nhỏ giữa khung.
   const positions = useMemo<[number, number, number][]>(
-    () => devices.map((d, i) => toScenePos(d.position, i, devices.length)),
+    () => gridPositions(devices),
     [devices],
   );
   const fit = useMemo(() => {
