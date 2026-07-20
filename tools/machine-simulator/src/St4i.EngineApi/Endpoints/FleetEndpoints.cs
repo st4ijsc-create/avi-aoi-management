@@ -38,6 +38,23 @@ public static class FleetEndpoints
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
         });
 
+        // Branch-review C-2/C-3 — the E-STOP latch (FleetHost.EstopEngaged), engine-owned so it's
+        // shared across every panel/tab and survives a reload. Both return the FULL fleet snapshot
+        // (not just the action-result shape /start and /stop use) so the client can update its shared
+        // fleet-runtime state from ONE trustworthy, already-confirmed response — the mutation itself
+        // IS the "did the machine actually stop" confirmation (C-3), not a fire-and-forget.
+        app.MapPost("/v1/fleet/estop", (FleetHost host) =>
+        {
+            host.Estop();
+            return Results.Ok(host.Snapshot());
+        });
+
+        app.MapPost("/v1/fleet/estop/reset", (FleetHost host) =>
+        {
+            host.ResetEstop();
+            return Results.Ok(host.Snapshot());
+        });
+
         app.MapPost("/v1/machines/{code}/sync-config", async (string code, FleetHost host, CancellationToken ct) =>
         {
             var result = await host.SyncConfigAsync(code, ct).ConfigureAwait(false);

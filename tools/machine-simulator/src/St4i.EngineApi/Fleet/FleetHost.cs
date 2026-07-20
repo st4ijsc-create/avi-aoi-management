@@ -144,6 +144,15 @@ public sealed class FleetHost
 
     public bool IsRunning { get; private set; }
 
+    /// <summary>Branch-review C-2 — the E-STOP latch, now owned by the engine (not any one browser
+    /// tab's React state) so it's shared across every panel that polls <see cref="Snapshot"/> and
+    /// survives a page reload. Only <see cref="Estop"/> sets it; only <see cref="ResetEstop"/> clears
+    /// it — never touched implicitly by <see cref="Start"/>/<see cref="Stop"/>, so an operator/API
+    /// stop is never mistaken for an emergency one.</summary>
+    public bool EstopEngaged { get { lock (_gate) return _estopEngaged; } }
+
+    private bool _estopEngaged;
+
     public Exception? LastError { get; private set; }
 
     public TransportMode Mode => _transportCoordinator.Mode;
@@ -181,9 +190,41 @@ public sealed class FleetHost
         WaitAndDisposeOldPipeline(handle);
     }
 
+    /// <summary>Branch-review C-2/C-3 — a real, confirmed emergency stop: tears the pipeline down (same
+    /// path <see cref="Stop"/> uses) and only THEN latches <see cref="EstopEngaged"/>, so a caller
+    /// awaiting this method genuinely knows the machine stopped before it reports success (C-3 — the
+    /// client used to latch and log a success banner on a fire-and-forget POST that could still fail).
+    /// The latch itself is engine-owned (not client React state), so it's visible on every subsequent
+    /// <see cref="Snapshot"/> to every panel/tab, and survives a page reload.</summary>
+    public void Estop()
+    {
+        PipelineHandle handle;
+        lock (_gate)
+        {
+            handle = StopLocked();
+            _estopEngaged = true;
+        }
+
+        WaitAndDisposeOldPipeline(handle);
+    }
+
+    /// <summary>Clears the E-STOP latch — an explicit, separate transition from <see cref="Start"/>
+    /// (spec/C-2: "RESET clears the latch but does NOT auto-restart the fleet"). The fleet stays
+    /// stopped until an operator presses START again.</summary>
+    public void ResetEstop()
+    {
+        lock (_gate)
+        {
+            _estopEngaged = false;
+        }
+    }
+
     private void StartLocked()
     {
-        if (IsRunning) return;
+        // Defense in depth: the client already disables START while latched, but the engine itself
+        // must refuse too — a stale client, a second panel, or a direct API call must never be able to
+        // restart a machine that's still emergency-stopped.
+        if (IsRunning || _estopEngaged) return;
         LastError = null;
 
         // Assumes the caller already holds _gate (Start()/ApplyScenario()/RegisterMachine() all do) —
@@ -334,9 +375,11 @@ public sealed class FleetHost
         // so both the per-tile status projection and the online count use the exact same running/stopped
         // verdict — no window where one reflects a stale value the other doesn't.
         bool isRunning;
+        bool estopEngaged;
         lock (_gate)
         {
             isRunning = IsRunning;
+            estopEngaged = _estopEngaged;
         }
 
         // _states.Values (ConcurrentDictionary) is a point-in-time copy, safe to enumerate here even if
@@ -356,11 +399,24 @@ public sealed class FleetHost
             fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
         }
 
-        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy), isRunning);
+        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy), isRunning, estopEngaged);
     }
 
-    public MachineDetailDto? MachineDetail(string code) =>
-        _states.TryGetValue(code, out var state) ? state.ToDetail() : null;
+    /// <summary>Branch-review I-9 — gated exactly like <see cref="ToTile(bool)"/>: when the fleet
+    /// pipeline is NOT running, the reported <c>StatusText</c> is forced to idle regardless of the last
+    /// real verdict, so <c>GET /v1/machines/{code}</c> can no longer disagree with <c>GET /v1/fleet</c>
+    /// about whether a stopped machine is "OK" (the live-reproduced bug: a stopped machine kept
+    /// rendering a green "ĐẠT" pass badge because this DTO alone was never gated).</summary>
+    public MachineDetailDto? MachineDetail(string code)
+    {
+        bool isRunning;
+        lock (_gate)
+        {
+            isRunning = IsRunning;
+        }
+
+        return _states.TryGetValue(code, out var state) ? state.ToDetail(isRunning) : null;
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // DYNAMIC REGISTRATION (E1) — foundation for the onboarding overhaul (E2 calls this).

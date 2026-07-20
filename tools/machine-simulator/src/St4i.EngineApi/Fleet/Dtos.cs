@@ -27,8 +27,13 @@ public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy);
 /// running was only ever reported back by the start/stop POST responses, so a client that reloaded the
 /// page while a fleet was genuinely running had no way to recover that fact from a plain GET and its
 /// Stop button stayed disabled (self-healing only once Start was clicked, a no-op server-side). Mirrors
-/// <see cref="FleetHost.IsRunning"/> directly.</summary>
-public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis, bool IsRunning);
+/// <see cref="FleetHost.IsRunning"/> directly.
+///
+/// <c>EstopEngaged</c> added for branch-review C-2: the E-STOP latch used to be component-local React
+/// state on the HMI panel, so a second panel/tab/reload silently forgot an active emergency stop. It now
+/// lives here — mirrors <see cref="FleetHost.EstopEngaged"/> — so every observer of this same polled
+/// snapshot (every HMI panel, every tab) agrees on the latch and a reload recovers it.</summary>
+public sealed record FleetSnapshotDto(IReadOnlyList<FleetTileDto> Machines, FleetKpisDto Kpis, bool IsRunning, bool EstopEngaged);
 
 public sealed record FleetActionResultDto(bool Running, string Mode);
 

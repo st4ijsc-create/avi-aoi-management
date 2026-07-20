@@ -212,8 +212,22 @@ public sealed class MachineState
         }
     }
 
-    /// <summary>Snapshot for <c>GET /v1/machines/{code}</c>.</summary>
-    public MachineDetailDto ToDetail()
+    /// <summary>Snapshot for <c>GET /v1/machines/{code}</c>, reporting the machine's real
+    /// last-observed status unconditionally. Equivalent to <see cref="ToDetail(bool)"/> with
+    /// <c>fleetRunning: true</c> — kept for existing callers/tests that don't care about the
+    /// running/stopped distinction (mirrors <see cref="ToTile()"/>'s own back-compat overload).</summary>
+    public MachineDetailDto ToDetail() => ToDetail(fleetRunning: true);
+
+    /// <summary>Snapshot for <c>GET /v1/machines/{code}</c>. Branch-review I-9: when the fleet pipeline
+    /// is NOT running, <paramref name="fleetRunning"/> is false and the reported <c>StatusText</c> is
+    /// forced to <see cref="IdleStatusText"/> regardless of the last real verdict — the exact same gate
+    /// <see cref="ToTile(bool)"/> already applies. Before this, <c>ToDetail()</c> was the one snapshot
+    /// that skipped the gate, so a stopped machine kept reporting its last real verdict (e.g. "OK") to
+    /// this endpoint even while <c>GET /v1/fleet</c> correctly reported it idle — reproduced live as a
+    /// stopped machine's detail page/HMI panel rendering a green "ĐẠT" pass badge. Every other field
+    /// (Cycles/PassRate/board points/cycle log/telemetry/SPC) is left untouched either way, same as
+    /// <see cref="ToTile(bool)"/>'s own contract.</summary>
+    public MachineDetailDto ToDetail(bool fleetRunning)
     {
         lock (_gate)
         {
@@ -229,7 +243,7 @@ public sealed class MachineState
                 Code,
                 Descriptor.DeviceClass,
                 Descriptor.DriverKind,
-                StatusText,
+                fleetRunning ? StatusText : IdleStatusText,
                 PassRate,
                 Cycles,
                 spc,
