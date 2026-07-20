@@ -5723,6 +5723,8 @@
     },
     "section": {
       "cockpit": "Bảng điều khiển chất lượng",
+      "overviewDashboards": "Bảng tổng hợp",
+      "overviewOps": "Vận hành",
       "mes": "MES",
       "inspection": "Kiểm tra",
       "ordersSchedule": "Đơn hàng & Lịch",

@@ -5743,6 +5743,8 @@
     },
     "section": {
       "cockpit": "Quality cockpit",
+      "overviewDashboards": "Dashboards",
+      "overviewOps": "Operations",
       "mes": "MES",
       "inspection": "Inspection",
       "ordersSchedule": "Orders & Schedule",

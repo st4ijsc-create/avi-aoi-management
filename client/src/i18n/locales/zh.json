@@ -5526,6 +5526,8 @@
     },
     "section": {
       "cockpit": "质量驾驶舱",
+      "overviewDashboards": "综合看板",
+      "overviewOps": "运行",
       "mes": "MES",
       "inspection": "检验",
       "ordersSchedule": "订单与排程",
