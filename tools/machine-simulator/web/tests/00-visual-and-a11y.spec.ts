@@ -7,6 +7,8 @@ import {
   gotoMachineDetail,
   gotoMachines,
   gotoOnboarding,
+  gotoProductConfig,
+  gotoProductConfigDetail,
   gotoScenario,
   gotoSettings,
   gotoTokens,
@@ -90,6 +92,20 @@ const SCREENS: ScreenCase[] = [
     visit: async (page, theme) => {
       await primeAppStorage(page, { theme })
       await gotoScenario(page)
+    },
+  },
+  {
+    slug: "product-config",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoProductConfig(page)
+    },
+  },
+  {
+    slug: "product-config-detail",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoProductConfigDetail(page, "MODEL-A")
     },
   },
   {

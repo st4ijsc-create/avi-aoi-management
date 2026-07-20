@@ -24,6 +24,7 @@ export const vi = {
     nav: {
       dashboard: "Bảng điều khiển",
       machines: "Danh sách máy",
+      productConfig: "Cấu hình sản phẩm",
       onboarding: "Thêm máy mới",
       inspector: "Theo dõi API",
       scenario: "Kịch bản",
@@ -67,6 +68,18 @@ export const vi = {
     Simulated: "Mô phỏng",
     HotFolderAoi: "Hot-folder AOI",
     Mqtt: "MQTT",
+  },
+
+  lifecycleStatus: {
+    development: "Đang phát triển",
+    active: "Đang dùng",
+    eol: "Ngừng sản xuất",
+    archived: "Lưu trữ",
+  },
+
+  coordinateMode: {
+    pixel: "Pixel",
+    mm: "Milimét (mm)",
   },
 
   status: {
@@ -138,6 +151,73 @@ export const vi = {
     },
   },
 
+  productConfig: {
+    title: "Cấu hình sản phẩm",
+    description:
+      "Danh mục sản phẩm AOI/AVI — điểm đo, thông số kỹ thuật và ảnh tham chiếu dùng để kiểm tra. Bấm vào một sản phẩm để chỉnh sửa.",
+    countLabel: (vars: Vars) => `${vars.count} sản phẩm`,
+    createBtn: "Tạo sản phẩm",
+    search: {
+      label: "Tìm sản phẩm",
+      placeholder: "Tìm theo mã hoặc tên…",
+    },
+    filters: {
+      lifecycle: "Vòng đời",
+      all: "Tất cả",
+      clear: "Xóa bộ lọc",
+    },
+    shownLabel: "hiển thị",
+    ofTotal: (vars: Vars) => `trên ${vars.count} sản phẩm`,
+    table: {
+      image: "Ảnh",
+      code: "Mã sản phẩm",
+      name: "Tên sản phẩm",
+      lifecycle: "Vòng đời",
+      points: "Điểm đo",
+      version: "Phiên bản",
+      viewAction: "Xem chi tiết",
+      rowAria: (vars: Vars) => `Xem chi tiết sản phẩm ${vars.code}`,
+    },
+    versionShort: (vars: Vars) => `v${vars.version}`,
+    noImageAlt: "Chưa có ảnh tham chiếu",
+    empty: {
+      noProductsTitle: "Chưa có sản phẩm nào",
+      noProductsDescription: "Danh mục sản phẩm hiện chưa có sản phẩm nào. Tạo sản phẩm đầu tiên để bắt đầu cấu hình điểm đo.",
+      noMatchTitle: "Không tìm thấy sản phẩm phù hợp",
+      noMatchDescription: "Không có sản phẩm nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
+    },
+    createDialog: {
+      title: "Tạo sản phẩm mới",
+      description: "Tạo một sản phẩm AOI/AVI mới — có thể thêm điểm đo sau khi tạo.",
+      codeLabel: "Mã sản phẩm",
+      codePlaceholder: "vd: MODEL-C",
+      codeHint: "Định danh duy nhất, không phân biệt hoa/thường — không thể đổi sau khi tạo.",
+      codeRequired: "Cần nhập mã sản phẩm.",
+      codeDuplicate: (vars: Vars) => `Mã "${vars.code}" đã tồn tại.`,
+      nameLabel: "Tên sản phẩm",
+      namePlaceholder: "vd: Bo mạch điều khiển phụ",
+      nameRequired: "Cần nhập tên sản phẩm.",
+      cancel: "Hủy",
+      submit: "Tạo sản phẩm",
+      submitting: "Đang tạo…",
+      createFailed: "Tạo sản phẩm thất bại.",
+    },
+    form: {
+      nameLabel: "Tên sản phẩm",
+      lifecycleLabel: "Trạng thái vòng đời",
+      coordinateModeLabel: "Hệ tọa độ",
+      imageWidthLabel: "Chiều rộng ảnh (px)",
+      imageHeightLabel: "Chiều cao ảnh (px)",
+      referenceImageLabel: "Ảnh tham chiếu",
+      referenceImageUrlPlaceholder: "URL ảnh, hoặc tải tệp lên bên dưới…",
+      uploadBtn: "Tải ảnh lên",
+      removeImageBtn: "Bỏ ảnh",
+      previewAlt: "Xem trước ảnh tham chiếu",
+      imageTooLarge: "Ảnh quá lớn (tối đa 5 MB).",
+      imageReadFailed: "Không thể đọc tệp ảnh.",
+    },
+  },
+
   notFound: {
     title: "Không tìm thấy trang",
     description: "Đường dẫn này không tồn tại. Dùng thanh bên hoặc nhấn ⌘K để tới một màn hình.",
@@ -167,6 +247,76 @@ export const vi = {
       title: "Không tìm thấy máy",
       description: (vars: Vars) =>
         `Không có máy với mã ${vars.code} trong đội máy này. Có thể máy chưa khởi động, hoặc mã đã gõ sai.`,
+    },
+  },
+
+  productConfigDetail: {
+    back: "Về cấu hình sản phẩm",
+    versionBadge: (vars: Vars) => `Phiên bản điểm đo v${vars.version}`,
+    notFoundState: {
+      title: "Không tìm thấy sản phẩm",
+      description: (vars: Vars) => `Không có sản phẩm với mã ${vars.code}. Có thể đã bị xóa, hoặc mã đã gõ sai.`,
+    },
+    tabs: {
+      info: "Thông tin sản phẩm",
+      points: "Điểm đo",
+      sync: "Đồng bộ",
+    },
+    info: {
+      title: "Thông tin sản phẩm",
+      codeLabel: "Mã sản phẩm",
+      save: "Lưu thay đổi",
+      saving: "Đang lưu…",
+      dirty: "Có thay đổi chưa lưu.",
+      clean: "Đã lưu.",
+      saveFailed: "Lưu sản phẩm thất bại.",
+      nameRequired: "Cần nhập tên sản phẩm.",
+      dangerZoneTitle: "Xóa sản phẩm",
+      dangerZoneHint: "Xóa vĩnh viễn sản phẩm này cùng toàn bộ điểm đo, fiducial và biến thể đã cấu hình.",
+      deleteBtn: "Xóa sản phẩm",
+      deleteConfirmTitle: (vars: Vars) => `Xóa sản phẩm ${vars.code}?`,
+      deleteConfirmDescription: (vars: Vars) =>
+        `Thao tác này xóa vĩnh viễn "${vars.name}" và ${vars.pointCount} điểm đo đã cấu hình. Không thể hoàn tác.`,
+      deleteConfirmCancel: "Hủy",
+      deleteConfirmSubmit: "Xóa vĩnh viễn",
+      deleting: "Đang xóa…",
+      deleteFailed: "Xóa sản phẩm thất bại.",
+    },
+    points: {
+      title: "Điểm đo",
+      countLabel: (vars: Vars) => `${vars.count} điểm đo đang hoạt động`,
+      empty: {
+        title: "Chưa có điểm đo nào",
+        description: "Sản phẩm này chưa có điểm đo được cấu hình.",
+      },
+      table: {
+        code: "Mã điểm",
+        name: "Tên điểm",
+        type: "Loại đo",
+        limits: "Giới hạn",
+      },
+      noLimits: "—",
+    },
+    sync: {
+      title: "Kiểm tra đồng bộ theo máy",
+      description:
+        "Chọn một máy trong đội máy để so sánh phiên bản cấu hình điểm đo cục bộ của máy đó với phiên bản của sản phẩm này.",
+      machineLabel: "Máy",
+      machinePlaceholder: "Chọn máy…",
+      checkBtn: "Kiểm tra",
+      checking: "Đang kiểm tra…",
+      checkFailed: "Kiểm tra đồng bộ thất bại.",
+      noMachines: "Đội máy hiện chưa có máy AOI/AVI nào để kiểm tra.",
+      resultLocalVersion: "Phiên bản cục bộ",
+      resultEcosystemVersion: "Phiên bản sản phẩm",
+      resultState: "Trạng thái",
+      driftState: {
+        in_sync: "Đã đồng bộ",
+        drift: "Lệch phiên bản",
+        unknown: "Máy chưa từng nhận sản phẩm này",
+      },
+      viewMachineLink: (vars: Vars) => `Xem máy ${vars.code}`,
+      seamNote: "Kéo/đẩy đầy đủ với xem khác biệt và lịch sử đồng bộ ở trang chi tiết máy.",
     },
   },
 
@@ -521,6 +671,9 @@ export const vi = {
     configSynced: (vars: Vars) => `Đã đồng bộ cấu hình cho ${vars.code}.`,
     configSyncFailed: "Đồng bộ cấu hình thất bại.",
     keyCopied: "Đã sao chép khóa.",
+    productCreated: (vars: Vars) => `Đã tạo sản phẩm ${vars.code}.`,
+    productSaved: "Đã lưu sản phẩm.",
+    productDeleted: (vars: Vars) => `Đã xóa sản phẩm ${vars.code}.`,
   },
 }
 

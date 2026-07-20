@@ -21,6 +21,7 @@ export const en: Dictionary = {
     nav: {
       dashboard: "Dashboard",
       machines: "Machines",
+      productConfig: "Product Config",
       onboarding: "Onboarding",
       inspector: "API Inspector",
       scenario: "Scenario",
@@ -64,6 +65,18 @@ export const en: Dictionary = {
     Simulated: "Simulated",
     HotFolderAoi: "Hot-folder AOI",
     Mqtt: "MQTT",
+  },
+
+  lifecycleStatus: {
+    development: "In development",
+    active: "Active",
+    eol: "End of life",
+    archived: "Archived",
+  },
+
+  coordinateMode: {
+    pixel: "Pixel",
+    mm: "Millimeters (mm)",
   },
 
   status: {
@@ -135,6 +148,73 @@ export const en: Dictionary = {
     },
   },
 
+  productConfig: {
+    title: "Product Config",
+    description:
+      "AOI/AVI product catalog — inspection points, spec, and reference images. Click a product to edit it.",
+    countLabel: (vars: Vars) => `${vars.count} product${vars.count === 1 ? "" : "s"}`,
+    createBtn: "Create product",
+    search: {
+      label: "Search products",
+      placeholder: "Search by code or name…",
+    },
+    filters: {
+      lifecycle: "Lifecycle",
+      all: "All",
+      clear: "Clear filters",
+    },
+    shownLabel: "shown",
+    ofTotal: (vars: Vars) => `of ${vars.count} products`,
+    table: {
+      image: "Image",
+      code: "Code",
+      name: "Name",
+      lifecycle: "Lifecycle",
+      points: "Points",
+      version: "Version",
+      viewAction: "View detail",
+      rowAria: (vars: Vars) => `View product ${vars.code}`,
+    },
+    versionShort: (vars: Vars) => `v${vars.version}`,
+    noImageAlt: "No reference image yet",
+    empty: {
+      noProductsTitle: "No products yet",
+      noProductsDescription: "The product catalog doesn't have any products yet. Create the first one to start configuring inspection points.",
+      noMatchTitle: "No matching products",
+      noMatchDescription: "No product matches the current search or filters — try clearing them.",
+    },
+    createDialog: {
+      title: "Create a new product",
+      description: "Create a new AOI/AVI product — inspection points can be added afterward.",
+      codeLabel: "Product code",
+      codePlaceholder: "e.g. MODEL-C",
+      codeHint: "Unique identifier, case-insensitive — cannot be changed after creation.",
+      codeRequired: "Product code is required.",
+      codeDuplicate: (vars: Vars) => `Code "${vars.code}" already exists.`,
+      nameLabel: "Product name",
+      namePlaceholder: "e.g. Auxiliary control board",
+      nameRequired: "Product name is required.",
+      cancel: "Cancel",
+      submit: "Create product",
+      submitting: "Creating…",
+      createFailed: "Couldn't create the product.",
+    },
+    form: {
+      nameLabel: "Product name",
+      lifecycleLabel: "Lifecycle status",
+      coordinateModeLabel: "Coordinate system",
+      imageWidthLabel: "Image width (px)",
+      imageHeightLabel: "Image height (px)",
+      referenceImageLabel: "Reference image",
+      referenceImageUrlPlaceholder: "Image URL, or upload a file below…",
+      uploadBtn: "Upload image",
+      removeImageBtn: "Remove image",
+      previewAlt: "Reference image preview",
+      imageTooLarge: "Image too large (5 MB max).",
+      imageReadFailed: "Couldn't read the image file.",
+    },
+  },
+
   notFound: {
     title: "Page not found",
     description: "That route doesn't exist. Use the sidebar or press ⌘K to jump to a screen.",
@@ -164,6 +244,75 @@ export const en: Dictionary = {
       title: "Machine not found",
       description: (vars: Vars) =>
         `No machine with code ${vars.code} is registered in this fleet. It may not have started yet, or the code was mistyped.`,
+    },
+  },
+
+  productConfigDetail: {
+    back: "Back to Product Config",
+    versionBadge: (vars: Vars) => `Points config version v${vars.version}`,
+    notFoundState: {
+      title: "Product not found",
+      description: (vars: Vars) => `No product with code ${vars.code}. It may have been deleted, or the code was mistyped.`,
+    },
+    tabs: {
+      info: "Product info",
+      points: "Points",
+      sync: "Sync",
+    },
+    info: {
+      title: "Product info",
+      codeLabel: "Product code",
+      save: "Save changes",
+      saving: "Saving…",
+      dirty: "You have unsaved changes.",
+      clean: "Saved.",
+      saveFailed: "Couldn't save the product.",
+      nameRequired: "Product name is required.",
+      dangerZoneTitle: "Delete product",
+      dangerZoneHint: "Permanently deletes this product along with every point, fiducial, and variant configured on it.",
+      deleteBtn: "Delete product",
+      deleteConfirmTitle: (vars: Vars) => `Delete product ${vars.code}?`,
+      deleteConfirmDescription: (vars: Vars) =>
+        `This permanently deletes "${vars.name}" and its ${vars.pointCount} configured point${vars.pointCount === 1 ? "" : "s"}. This can't be undone.`,
+      deleteConfirmCancel: "Cancel",
+      deleteConfirmSubmit: "Delete permanently",
+      deleting: "Deleting…",
+      deleteFailed: "Couldn't delete the product.",
+    },
+    points: {
+      title: "Points",
+      countLabel: (vars: Vars) => `${vars.count} active point${vars.count === 1 ? "" : "s"}`,
+      empty: {
+        title: "No points yet",
+        description: "This product doesn't have any inspection points configured yet.",
+      },
+      table: {
+        code: "Point code",
+        name: "Point name",
+        type: "Type",
+        limits: "Limits",
+      },
+      noLimits: "—",
+    },
+    sync: {
+      title: "Per-machine sync check",
+      description: "Pick a machine from the fleet to compare its local points-config version against this product's.",
+      machineLabel: "Machine",
+      machinePlaceholder: "Choose a machine…",
+      checkBtn: "Check",
+      checking: "Checking…",
+      checkFailed: "Sync check failed.",
+      noMachines: "The fleet doesn't have any AOI/AVI machines to check yet.",
+      resultLocalVersion: "Local version",
+      resultEcosystemVersion: "Product version",
+      resultState: "State",
+      driftState: {
+        in_sync: "In sync",
+        drift: "Version drift",
+        unknown: "Machine has never received this product",
+      },
+      viewMachineLink: (vars: Vars) => `View machine ${vars.code}`,
+      seamNote: "Full pull/push with diff view and sync history lives on the machine detail page.",
     },
   },
 
@@ -518,5 +667,8 @@ export const en: Dictionary = {
     configSynced: (vars: Vars) => `Config synced for ${vars.code}.`,
     configSyncFailed: "Config sync failed.",
     keyCopied: "Key copied.",
+    productCreated: (vars: Vars) => `Product ${vars.code} created.`,
+    productSaved: "Product saved.",
+    productDeleted: (vars: Vars) => `Product ${vars.code} deleted.`,
   },
 }

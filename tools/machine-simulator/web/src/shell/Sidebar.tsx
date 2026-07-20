@@ -1,5 +1,6 @@
 import * as React from "react"
 import {
+  Boxes,
   Factory,
   LayoutDashboard,
   PlugZap,
@@ -23,6 +24,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { labelKey: "shell.nav.dashboard", path: "/", icon: LayoutDashboard },
   { labelKey: "shell.nav.machines", path: "/machines", icon: Factory },
+  { labelKey: "shell.nav.productConfig", path: "/products", icon: Boxes },
   { labelKey: "shell.nav.onboarding", path: "/onboarding", icon: PlugZap },
   { labelKey: "shell.nav.inspector", path: "/inspector", icon: Terminal },
   { labelKey: "shell.nav.scenario", path: "/scenario", icon: SlidersHorizontal },

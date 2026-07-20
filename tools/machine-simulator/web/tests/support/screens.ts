@@ -50,6 +50,22 @@ export async function gotoOnboarding(page: Page): Promise<void> {
   await expect(page.getByLabel(viDict.onboarding.register.serialLabel)).toBeVisible()
 }
 
+export async function gotoProductConfig(page: Page): Promise<void> {
+  await page.goto("/products")
+  await expect(page.getByRole("heading", { name: viDict.productConfig.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  // Past the skeleton — the table header only renders once `useProducts()` has resolved at least once.
+  await expect(page.getByRole("columnheader", { name: viDict.productConfig.table.code })).toBeVisible()
+}
+
+export async function gotoProductConfigDetail(page: Page, code: string): Promise<void> {
+  await page.goto(`/products/${code}`)
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await waitForEngineConnected(page)
+  // Past the skeleton — the tab strip only renders once `useProduct(code)` has resolved at least once.
+  await expect(page.getByRole("tab", { name: viDict.productConfigDetail.tabs.info })).toBeVisible()
+}
+
 export async function gotoSettings(page: Page): Promise<void> {
   await page.goto("/settings")
   await expect(page.getByRole("heading", { name: viDict.settings.title, level: 1 })).toBeVisible()

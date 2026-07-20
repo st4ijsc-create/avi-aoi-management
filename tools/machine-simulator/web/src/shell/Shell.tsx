@@ -4,6 +4,8 @@ import { Route, Switch } from "wouter"
 import Dashboard from "@/routes/Dashboard"
 import Machines from "@/routes/Machines"
 import MachineDetail from "@/routes/MachineDetail"
+import ProductConfig from "@/routes/ProductConfig"
+import ProductConfigDetail from "@/routes/ProductConfigDetail"
 import Onboarding from "@/routes/Onboarding"
 import ApiInspector from "@/routes/ApiInspector"
 import Scenario from "@/routes/Scenario"
@@ -37,6 +39,8 @@ export function Shell() {
             <Route path="/" component={Dashboard} />
             <Route path="/machines" component={Machines} />
             <Route path="/machines/:code" component={MachineDetail} />
+            <Route path="/products" component={ProductConfig} />
+            <Route path="/products/:code" component={ProductConfigDetail} />
             <Route path="/onboarding" component={Onboarding} />
             <Route path="/inspector" component={ApiInspector} />
             <Route path="/scenario" component={Scenario} />
