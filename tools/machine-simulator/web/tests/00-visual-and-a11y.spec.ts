@@ -9,6 +9,7 @@ import {
   gotoOnboarding,
   gotoProductConfig,
   gotoProductConfigDetail,
+  gotoProductConfigPoints,
   gotoScenario,
   gotoSettings,
   gotoTokens,
@@ -106,6 +107,14 @@ const SCREENS: ScreenCase[] = [
     visit: async (page, theme) => {
       await primeAppStorage(page, { theme })
       await gotoProductConfigDetail(page, "MODEL-A")
+    },
+  },
+  {
+    // Task C5 — board image-overlay canvas + points list + full-spec form + fiducials/variants.
+    slug: "product-config-points",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoProductConfigPoints(page, "MODEL-A")
     },
   },
   {

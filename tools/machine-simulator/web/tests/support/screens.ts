@@ -66,6 +66,16 @@ export async function gotoProductConfigDetail(page: Page, code: string): Promise
   await expect(page.getByRole("tab", { name: viDict.productConfigDetail.tabs.info })).toBeVisible()
 }
 
+/** Product detail, "Điểm đo" tab — Task C5's PointsEditor (board canvas + points list + spec form +
+ * fiducials/variants). Waits past both the tab switch and the points query's own loading skeleton. */
+export async function gotoProductConfigPoints(page: Page, code: string): Promise<void> {
+  await gotoProductConfigDetail(page, code)
+  await page.getByRole("tab", { name: viDict.productConfigDetail.tabs.points }).click()
+  await expect(page.getByRole("heading", { name: viDict.pointsEditor.title, level: 2 })).toBeVisible()
+  // Past the skeleton — the canvas' labeled group only renders once `useProductPoints()` has resolved.
+  await expect(page.getByRole("group", { name: /Bản đồ điểm đo/ })).toBeVisible({ timeout: 15_000 })
+}
+
 export async function gotoSettings(page: Page): Promise<void> {
   await page.goto("/settings")
   await expect(page.getByRole("heading", { name: viDict.settings.title, level: 1 })).toBeVisible()

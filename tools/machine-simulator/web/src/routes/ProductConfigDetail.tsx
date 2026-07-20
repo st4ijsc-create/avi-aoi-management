@@ -23,7 +23,6 @@ import {
   useProductPoints,
   useSaveProduct,
   useMachineConfigCheck,
-  type MeasurementPoint,
   type ProductLifecycleStatus,
   type ProductModel,
 } from "@/lib/configApi"
@@ -40,13 +39,12 @@ import {
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge, type statusBadgeVariants } from "@/components/ui/status-badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ProductFormFields, type ProductFormValues } from "@/components/ProductFormFields"
 import { ProductImageThumb } from "@/components/ProductImageThumb"
+import { PointsEditor } from "@/components/PointsEditor"
 
 type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"]>
-type T = (key: string, vars?: Record<string, string | number>) => string
 
 const LIFECYCLE_BADGE: Record<ProductLifecycleStatus, BadgeStatus> = {
   development: "info",
@@ -310,81 +308,9 @@ function ProductInfoTab({ product, pointCount }: { product: ProductModel; pointC
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// "Điểm đo" tab — SEAM FOR TASK C5. This is a real, functional read-only summary (GET
-// /v1/products/{code}/points, live data — not a placeholder), giving today's build genuine value:
-// seeing what's configured. Task C5 replaces/extends this component's body with the full
-// PointsEditor + BoardCanvas (image-overlay canvas, add/edit/soft-delete, spec form) — the
-// `TabsContent value="points"` slot in `ProductConfigDetailBody` below is the exact seam it fills.
-// ─────────────────────────────────────────────────────────────────────────
-
-function formatLimits(point: MeasurementPoint, t: T): string {
-  const unit = point.unit ? ` ${point.unit}` : ""
-  if (point.lowerLimit != null && point.upperLimit != null) return `${point.lowerLimit} – ${point.upperLimit}${unit}`
-  if (point.lowerLimit != null) return `≥ ${point.lowerLimit}${unit}`
-  if (point.upperLimit != null) return `≤ ${point.upperLimit}${unit}`
-  if (point.nominalValue != null) return `${point.nominalValue}${unit}`
-  return t("productConfigDetail.points.noLimits")
-}
-
-function ProductPointsTab({ code }: { code: string }) {
-  const t = useT()
-  const { data: points, isPending, isError } = useProductPoints(code)
-
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Target className="size-4 text-navy-600" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-text-strong">{t("productConfigDetail.points.title")}</h2>
-          </div>
-          {!isPending && !isError ? (
-            <StatusBadge status="neutral">{t("productConfigDetail.points.countLabel", { count: points?.length ?? 0 })}</StatusBadge>
-          ) : null}
-        </div>
-
-        {isPending ? (
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} className="h-9 w-full rounded-lg" />
-            ))}
-          </div>
-        ) : isError ? (
-          <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
-        ) : points && points.length > 0 ? (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("productConfigDetail.points.table.code")}</TableHead>
-                  <TableHead>{t("productConfigDetail.points.table.name")}</TableHead>
-                  <TableHead>{t("productConfigDetail.points.table.type")}</TableHead>
-                  <TableHead className="text-right">{t("productConfigDetail.points.table.limits")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {points.map((point) => (
-                  <TableRow key={point.code}>
-                    <TableCell className="font-medium text-text-strong">{point.code}</TableCell>
-                    <TableCell className="text-text-body">{point.name}</TableCell>
-                    <TableCell className="text-text-body">{point.measurementType}</TableCell>
-                    <TableCell className="font-numeric text-right text-text-muted">{formatLimits(point, t)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border py-10 text-center">
-            <p className="text-sm font-medium text-text-strong">{t("productConfigDetail.points.empty.title")}</p>
-            <p className="text-sm text-text-muted">{t("productConfigDetail.points.empty.description")}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
+// "Điểm đo" tab — Task C5's PointsEditor (board image-overlay canvas + points list + full-spec
+// point form + fiducials/variants) is wired directly into `TabsContent value="points"` below; see
+// `components/PointsEditor.tsx`.
 // ─────────────────────────────────────────────────────────────────────────
 // "Đồng bộ" tab — SEAM FOR TASK C7. Real functionality already, against the live C2/C3 sync engine
 // (`GET /v1/machines/{code}/config/check`): pick an AOI/AVI machine, see this product's version drift
@@ -579,8 +505,7 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
 
             <TabsContent value="points" className="pt-4">
               <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
-                {/* SEAM: Task C5 fills this slot with <PointsEditor/> + <BoardCanvas/>. */}
-                <ProductPointsTab code={product.code} />
+                <PointsEditor product={product} />
               </motion.div>
             </TabsContent>
 

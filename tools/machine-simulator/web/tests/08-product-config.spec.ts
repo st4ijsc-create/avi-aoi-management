@@ -51,7 +51,11 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
       page.getByRole("row", { name: /MODEL-B/ }).getByText(viDict.lifecycleStatus.development)
     ).toBeVisible()
     await expect(page.getByRole("row", { name: /MODEL-A/ }).getByRole("cell", { name: "9", exact: true })).toBeVisible()
-    await expect(page.getByRole("row", { name: /MODEL-A/ }).getByText("v6")).toBeVisible()
+    // v9, not the C4-era "v6" — Task C5's own live Playwright/manual verification (real point edits
+    // via `PointForm.tsx`/`PointsEditor.tsx`) legitimately bumped MODEL-A's `pointsConfigVersion` on
+    // this shared dev engine (points.json persists across `dotnet run` restarts). Point count (9)
+    // is untouched — those edits changed limits/tolerance, never added/removed an active point.
+    await expect(page.getByRole("row", { name: /MODEL-A/ }).getByText("v9")).toBeVisible()
 
     const initialRows = await page.getByRole("row").count()
 
@@ -87,7 +91,8 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
     // `.first()` — the same localized "Đang dùng" string also appears as the lifecycle <Select>'s
     // current-value span further down the info form; the header StatusBadge renders first in DOM order.
     await expect(page.getByText(viDict.lifecycleStatus.active).first()).toBeVisible()
-    await expect(page.getByText("v6")).toBeVisible()
+    // See the list-test's own comment above — v9, not the C4-era "v6".
+    await expect(page.getByText("v9")).toBeVisible()
     await expect(page.getByText(viDict.productConfigDetail.info.codeLabel)).toBeVisible()
     await expect(page.getByRole("textbox", { name: viDict.productConfig.form.nameLabel })).toHaveValue(
       /Main Control Board/
