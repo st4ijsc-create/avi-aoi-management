@@ -73,6 +73,22 @@ builder.Services.AddSingleton<ProductConfigStore>();
 builder.Services.AddSingleton<SimulatedEcosystem>();
 builder.Services.AddSingleton(sp => new SwitchableConfigSyncBackend(sp.GetRequiredService<SimulatedEcosystem>()));
 builder.Services.AddSingleton<IConfigSyncBackend>(sp => sp.GetRequiredService<SwitchableConfigSyncBackend>());
+
+// ── Config-sync Live (Task C3) — same "eager, unconfigured instance at startup, rebuilt on Settings"
+// shape as the LiveTransport/TransportCoordinator registration above. FleetHost forwards ApplyMode/
+// UpdateSettings into this coordinator too (see its own ctor) so a Live/Auto mode switch or a
+// serverUrl/machineCode edit re-points SwitchableConfigSyncBackend exactly like it already re-points
+// SwitchableTransport.
+builder.Services.AddSingleton(_ => LiveConfigSyncBackend.ForMachine(
+    serverUrl: FleetHost.DefaultServerUrl,
+    mkKey: string.Empty,
+    machineCode: FleetHost.DefaultMachineCode,
+    verifyTls: true));
+builder.Services.AddSingleton(sp => new ConfigSyncCoordinator(
+    sp.GetRequiredService<SwitchableConfigSyncBackend>(),
+    sp.GetRequiredService<SimulatedEcosystem>(),
+    sp.GetRequiredService<LiveConfigSyncBackend>()));
+
 builder.Services.AddSingleton<ConfigSyncEngine>();
 
 var app = builder.Build();

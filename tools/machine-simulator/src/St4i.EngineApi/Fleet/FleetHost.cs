@@ -62,6 +62,13 @@ public sealed class FleetHost
     private readonly ResilienceProbe _probe = new();
     private readonly ILogger<FleetHost>? _logger;
 
+    /// <summary>Task C3 — optional (defaults to null so pre-existing tests that construct
+    /// <see cref="FleetHost"/> directly without one, e.g. <c>FleetHostHealthAndRegistrationTests</c>,
+    /// keep compiling unchanged) config-sync analogue of <see cref="_transportCoordinator"/>: forwarded
+    /// the exact same mode/settings changes (see <see cref="ApplyMode"/>/<see cref="UpdateSettings"/>) so
+    /// <c>SwitchableConfigSyncBackend</c> tracks Live/Demo/Auto right alongside <see cref="_transport"/>.</summary>
+    private readonly St4i.EngineApi.Config.ConfigSyncCoordinator? _configSyncCoordinator;
+
     /// <summary>E1: per-machine live state, keyed case-insensitively by <see cref="MachineDescriptor.Code"/>.
     /// Was a plain <see cref="Dictionary{TKey,TValue}"/> built once in the ctor and never structurally
     /// mutated after — safe to read lock-free only because of that invariant. <see cref="RegisterMachine"/>
@@ -96,12 +103,18 @@ public sealed class FleetHost
     private string _language = DefaultLanguage;
     private string _machineCode = DefaultMachineCode;
 
-    public FleetHost(SwitchableTransport transport, TransportCoordinator transportCoordinator, EventBus eventBus, ILogger<FleetHost>? logger = null)
+    public FleetHost(
+        SwitchableTransport transport,
+        TransportCoordinator transportCoordinator,
+        EventBus eventBus,
+        ILogger<FleetHost>? logger = null,
+        St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger;
+        _configSyncCoordinator = configSyncCoordinator;
 
         _fleet = LoadFleet().ToList();
         _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
@@ -663,6 +676,7 @@ public sealed class FleetHost
         {
             var mkKey = CredentialStore.Load(_machineCode);
             _transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls);
+            _configSyncCoordinator?.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls, _transportCoordinator.Mode);
         }
 
         return GetSettings();
@@ -670,7 +684,11 @@ public sealed class FleetHost
 
     public Task<ProbeResult> ProbeAsync(string serverUrl, CancellationToken ct) => _probe.ProbeAsync(serverUrl, ct);
 
-    public void ApplyMode(TransportMode mode) => _transportCoordinator.ApplyMode(mode);
+    public void ApplyMode(TransportMode mode)
+    {
+        _transportCoordinator.ApplyMode(mode);
+        _configSyncCoordinator?.ApplyMode(mode);
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // FLEET ROSTER — same resolution order as the WPF app's FleetService.LoadFleet/ResolveFleetPath.
