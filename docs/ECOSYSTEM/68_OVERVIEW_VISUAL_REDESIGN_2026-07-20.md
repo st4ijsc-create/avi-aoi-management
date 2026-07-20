@@ -140,6 +140,17 @@ Nguyên tắc: **navbar trước (rẻ, đúng khiếu nại) → chuẩn hóa C
 **Ước tính**: tương tự doc 67 (mỗi wave vài agent song song trên cụm file không giao). V1 nhỏ có thể làm ngay để anh thấy navbar đúng ý trước.
 
 ## §5. Trạng thái duyệt (2026-07-20)
-✅ **USER ĐÃ DUYỆT** — Navbar Phương án B · pattern ContextDrawer xuyên module · V1→V5 cả 9 màn · **/command-center revised: Twin 3D = 80% chính, tree 20% trái, fly panel phải khi click canvas** (§3.1). Bắt đầu thực thi.
+✅ **USER ĐÃ DUYỆT** — Navbar Phương án B · pattern ContextDrawer xuyên module · V1→V5 cả 9 màn · **/command-center: GIỮ 3 CỘT, thu gọn 2 bên + twin rộng (§3.1 quyết định cuối)**.
 
-> Nguồn đầy đủ (wireframe ASCII + file:line từng màn): 10 báo cáo agent trong session này.
+## §6. KẾT QUẢ THỰC THI REDESIGN (2026-07-20)
+**2 commit trên `feat/hmi-dep`**: V1 navbar `2a92f398` · redesign 9 màn `252d0e7a`. Mỗi commit gate tsc(heap8GB)+i18n+build (+vitest andon 21/21). Đối chứng live (re-capture 9 màn): hScroll@1280 = false toàn bộ, 1 landmark main, 0 lỗi console.
+
+Đạt (xác nhận trên ảnh live):
+- ✅ Navbar: 8 màn hiển thị lại, landing "Tổng quan nhà máy" + nhóm "Bảng tổng hợp" + "Vận hành".
+- ✅ control-tower: HeroStatusBand đỏ "Sự cố · 3 nặng · 3 cao · 6 đang mở · Bất thường #1" neo mắt; toolbar gộp; KPI 5 chip; panel rỗng → "Tất cả ổn".
+- ✅ command-center: 3 cột 2.5/7/2.5 (2 bên gọn, twin rộng); KPI ribbon gộp ô rỗng muted; ContextDrawer chi tiết thiết bị khi click.
+- ✅ 7 màn còn lại: Hero + ContextDrawer + cân xứng theo §3 (corporate hero-3-số, dashboard Máy-cần-chú-ý, ops-console 2-cột+dải-ưu-tiên, andon tile-lý-do, drill-down rank, executive LEAD, dashboard-center card+drawer).
+
+**Nợ còn lại (thành thật)**: TWIN CANVAS 3D vẫn còn khoảng đen nửa dưới (thiết bị dồn nửa trên, sàn foreground trải trống) — auto-fit căn tâm nhưng góc nghiêng thấp chưa fix trọn "mất cân đối". → pass riêng chỉnh góc camera dốc hơn + zoom sát cụm + thu ground plane (đang thực thi). Mục nhỏ: control-tower persona-tab hero-band; đánh bóng typography sâu.
+
+> Nguồn đầy đủ (wireframe ASCII + file:line từng màn): 10 báo cáo agent design-critique + 9 báo cáo agent thực thi trong session.

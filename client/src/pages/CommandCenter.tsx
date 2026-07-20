@@ -534,9 +534,20 @@ function CompactTwinScene({
   );
   const fit = useMemo(() => {
     const fov = 50;
+    // doc 68 §3.1 [P1-fix] — CĂN KHUNG lại (phản hồi user "twin mất cân đối / nửa
+    // dưới đen"): (a) góc DỐC hơn 52° thay vì 45° chếch-thấp → bớt sàn foreground
+    // chiếm nửa dưới; (b) đệm auto-fit 1.08× (cũ 1.25×) + đặt magnitude camera ĐÚNG
+    // = dist (cũ dist×0.82×√2 = 1.16×dist làm cụm nhỏ thêm) → cụm lấp ~70-80% khung.
+    const PAD = 1.08;                     // đệm mép (giảm từ 1.25 → cụm to hơn)
+    const ELEV = (52 * Math.PI) / 180;    // độ chếch xuống ~52° (dốc hơn 45° cũ)
+    const sinE = Math.sin(ELEV), cosE = Math.cos(ELEV);
     if (positions.length === 0) {
       const d = Math.max(18, FLOOR_W * 0.9);
-      return { center: [0, 0, 0] as [number, number, number], camPos: [0, d * 0.8, d] as [number, number, number] };
+      return {
+        center: [0, 0, 0] as [number, number, number],
+        camPos: [0, d * sinE, d * cosE] as [number, number, number],
+        floorW: FLOOR_W, floorD: FLOOR_D,
+      };
     }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const [x, , z] of positions) {
@@ -544,13 +555,17 @@ function CompactTwinScene({
       if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
     }
     const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    const spanX = maxX - minX, spanZ = maxZ - minZ;
     // Bán kính hộp bao (nửa cạnh lớn nhất) + đệm 2.5u cho nhãn/khối máy.
-    const radius = Math.max(maxX - minX, maxZ - minZ, 6) / 2 + 2.5;
-    // Khoảng cách khớp fov đứng + đệm 1.25× để không sát mép; kẹp trong [12,130].
-    const dist = Math.min(130, Math.max(12, (radius / Math.tan((fov * Math.PI) / 180 / 2)) * 1.25));
+    const radius = Math.max(spanX, spanZ, 6) / 2 + 2.5;
+    // Khoảng cách khớp fov đứng + đệm PAD; kẹp trong [12,130].
+    const dist = Math.min(130, Math.max(12, (radius / Math.tan((fov * Math.PI) / 180 / 2)) * PAD));
     return {
       center: [cx, 0, cz] as [number, number, number],
-      camPos: [cx, dist * 0.82, cz + dist * 0.82] as [number, number, number],
+      // magnitude = dist chuẩn; phân rã theo góc chếch ELEV → cao/ngang cân đối.
+      camPos: [cx, dist * sinE, cz + dist * cosE] as [number, number, number],
+      // sàn + lưới THU về vừa hộp bao (+đệm 6u), không trải mênh mông ra foreground.
+      floorW: spanX + 6, floorD: spanZ + 6,
     };
   }, [positions]);
   // W6 (doc 67, việc 2): frameloop='demand' — dữ liệu/lựa chọn/khung camera đổi thì
@@ -568,9 +583,12 @@ function CompactTwinScene({
       <ambientLight intensity={0.7} />
       <directionalLight position={[16, 22, 10]} intensity={1.25} castShadow />
       <pointLight position={[-10, 9, -10]} intensity={0.45} color="#06b6d4" />
-      <Grid args={[FLOOR_W + 10, FLOOR_D + 12]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={60} fadeStrength={1} infiniteGrid />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow>
-        <planeGeometry args={[FLOOR_W + 12, FLOOR_D + 14]} />
+      {/* Lưới + sàn THU về vừa hộp bao thiết bị & CĂN THEO tâm cụm (fit.center) —
+          bỏ infiniteGrid/plane cố-định-gốc-toạ-độ vì chúng trải ra foreground trống
+          gây mảng đen nửa dưới. */}
+      <Grid position={[fit.center[0], -0.49, fit.center[2]]} args={[fit.floorW, fit.floorD]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={Math.max(fit.floorW, fit.floorD)} fadeStrength={1.2} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center[0], -0.5, fit.center[2]]} receiveShadow>
+        <planeGeometry args={[fit.floorW, fit.floorD]} />
         <meshStandardMaterial color="#0f172a" transparent opacity={0.85} />
       </mesh>
       {devices.map((d, i) => (
