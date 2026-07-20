@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi;
+using St4i.EngineApi.Config;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Hubs;
@@ -63,6 +65,16 @@ builder.Services.AddSingleton(sp => new TransportCoordinator(
 builder.Services.AddSingleton<FleetHost>();
 builder.Services.AddSingleton<OnboardingService>();
 
+// ── Config-sync (Task C2) — ProductConfigStore (the MACHINE's local product-config) is separate from
+// SimulatedEcosystem (Demo's "the ecosystem"); ConfigSyncEngine is registered against the SWITCHABLE
+// backend, not SimulatedEcosystem directly, so Task C3 can add a Live backend and re-point it by mode
+// with no changes here — see SwitchableConfigSyncBackend's doc comment.
+builder.Services.AddSingleton<ProductConfigStore>();
+builder.Services.AddSingleton<SimulatedEcosystem>();
+builder.Services.AddSingleton(sp => new SwitchableConfigSyncBackend(sp.GetRequiredService<SimulatedEcosystem>()));
+builder.Services.AddSingleton<IConfigSyncBackend>(sp => sp.GetRequiredService<SwitchableConfigSyncBackend>());
+builder.Services.AddSingleton<ConfigSyncEngine>();
+
 var app = builder.Build();
 
 // Task 9 — serve the built web UI (`web/dist`, copied into `wwwroot/` at build time — see the
@@ -85,6 +97,7 @@ app.MapModeEndpoints();
 app.MapScenarioEndpoints();
 app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();
+app.MapConfigEndpoints();
 app.MapInspectorStream();
 
 app.MapFallbackToFile("index.html");

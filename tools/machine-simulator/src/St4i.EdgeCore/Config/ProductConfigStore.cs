@@ -348,7 +348,12 @@ public sealed class ProductConfigStore
     // the checksum/persistence round trip actually exercises non-ASCII text, not just ASCII codes.
     // ─────────────────────────────────────────────────────────────────────
 
-    private static List<ProductModel> SeedProducts() => new() { SeedModelA(), SeedModelB() };
+    /// <summary>Public so C2's <c>SimulatedEcosystem</c> (a different assembly, <c>St4i.EngineApi</c>)
+    /// can start from this SAME byte-identical seed and apply its own small, deliberate divergence on
+    /// top — rather than duplicating ~300 lines of seed point data a second time. Every call returns a
+    /// fresh set of instances (no shared mutable state with whatever <see cref="ProductConfigStore"/>
+    /// itself seeded into its own <see cref="_products"/>).</summary>
+    public static List<ProductModel> SeedProducts() => new() { SeedModelA(), SeedModelB() };
 
     private static ProductModel SeedModelA()
     {
@@ -625,7 +630,9 @@ public sealed class ProductConfigStore
         };
     }
 
-    private static List<Recipe> SeedRecipes()
+    /// <summary>Public for the same reason as <see cref="SeedProducts"/> — C2's <c>SimulatedEcosystem</c>
+    /// starts from this exact baseline and diverges a copy of it.</summary>
+    public static List<Recipe> SeedRecipes()
     {
         var recipe = new Recipe
         {
